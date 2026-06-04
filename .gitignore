@@ -1,0 +1,16 @@
+build.claude/
+*.exe
+*.exe~
+*.test
+*.out
+coverage.txt
+
+# editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
