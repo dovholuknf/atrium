@@ -1,5 +1,14 @@
 build.claude/
 *.exe
+
+# mercurius design-review rounds. Generated per review, and the decisions that
+# came out of them live in docs/ instead.
+.mercurius/
+
+# the daemon's own state
+*.db
+*.db-wal
+*.db-shm
 *.exe~
 *.test
 *.out

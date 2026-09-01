@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "atrium-agent": {
+      "command": "D:/git/github/dovholuknf/atrium/build.claude/atrium.exe",
+      "args": ["agent", "--url", "http://localhost:7777"]
+    }
+  }
+}

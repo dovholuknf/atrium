@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -15,8 +16,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/dovholuknf/atrium/internal/agent"
+	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/hub"
 	"github.com/dovholuknf/atrium/internal/server"
 	"github.com/dovholuknf/atrium/internal/state"
+	"github.com/dovholuknf/atrium/internal/tui"
 )
 
 // Execute runs the cobra root. Returns the exit code.
@@ -35,8 +40,193 @@ func newRoot() *cobra.Command {
 		Long: "Atrium is a read-only aggregator over the state that the gwt session hooks write " +
 			"to disk. It exposes the state via a CLI table, a tail-able event stream, and an MCP server.",
 	}
-	root.AddCommand(newStatus(), newWatch(), newServe())
+	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon())
 	return root
+}
+
+// ── daemon ──────────────────────────────────────────────────────────────────
+
+func newDaemon() *cobra.Command {
+	var agentAddr, humanAddr, dbPath string
+	var timeoutSec, ledgerPollSec, ledgerDays int
+	var withTUI, ledger bool
+	c := &cobra.Command{
+		Use:   "daemon",
+		Short: "Run the v2 daemon: durable state, an agent listener, and the board.",
+		Long: "Serves two listeners. Agents POST to the agent address exactly as they do against " +
+			"`atrium hub`. Humans get the JSON API, the SSE stream, and the board on the human " +
+			"address. State is durable, so restarting no longer wipes what you were doing.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runDaemon(cmd.Context(), daemon.Options{
+				AgentAddr:  agentAddr,
+				HumanAddr:  humanAddr,
+				DBPath:     dbPath,
+				LongPoll:   time.Duration(timeoutSec) * time.Second,
+				Ledger:       ledger,
+				LedgerPoll:   time.Duration(ledgerPollSec) * time.Second,
+				LedgerMaxAge: time.Duration(ledgerDays) * 24 * time.Hour,
+			}, withTUI)
+		},
+	}
+	c.Flags().StringVar(&agentAddr, "addr", ":7777", "agent-facing listen address")
+	c.Flags().StringVar(&humanAddr, "http", ":7778", "human-facing listen address (API and board)")
+	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")
+	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "agent long-poll timeout in seconds")
+	c.Flags().BoolVar(&withTUI, "tui", false, "also attach the terminal UI in this process")
+	c.Flags().BoolVar(&ledger, "ledger", true,
+		"adopt claude sessions from the gwt session ledger, so ones started outside atrium appear")
+	c.Flags().IntVar(&ledgerPollSec, "ledger-poll", 3, "seconds between ledger reads")
+	c.Flags().IntVar(&ledgerDays, "ledger-days", 7,
+		"how many days back a finished session is still worth adopting. live sessions are always adopted")
+	return c
+}
+
+func runDaemon(ctx context.Context, opts daemon.Options, withTUI bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	d, err := daemon.New(opts)
+	if err != nil {
+		// Tier one: a store that will not open is not something to run without.
+		return fmt.Errorf("refusing to start: %w", err)
+	}
+	defer d.Close()
+
+	if !withTUI {
+		return d.Run(ctx)
+	}
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- d.Run(ctx) }()
+
+	p := tui.New(ctx, d.Hub())
+	if _, err := p.Run(); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	select {
+	case err := <-runErr:
+		return err
+	case <-time.After(2 * time.Second):
+		return nil
+	}
+}
+
+// ── hub ─────────────────────────────────────────────────────────────────────
+
+func newHub() *cobra.Command {
+	var addr string
+	var timeoutSec int
+	var simple bool
+	c := &cobra.Command{
+		Use:   "hub",
+		Short: "Run the HTTP broker + terminal UI: agents POST here, you type prompts in.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runHub(cmd.Context(), addr, time.Duration(timeoutSec)*time.Second, simple)
+		},
+	}
+	c.Flags().StringVar(&addr, "addr", ":7777", "HTTP listen address (host:port)")
+	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "hub-side long-poll timeout in seconds")
+	c.Flags().BoolVar(&simple, "simple", false, "use the plain stdin TUI instead of the Bubble Tea full-screen UI")
+	return c
+}
+
+func runHub(ctx context.Context, addr string, longPoll time.Duration, simple bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	h := hub.New(longPoll)
+
+	if simple {
+		fmt.Fprintf(os.Stdout, "[atrium hub] listening on %s (long-poll %s)\n", addr, longPoll)
+		errCh := make(chan error, 1)
+		go func() { errCh <- h.Serve(ctx, addr) }()
+		go func() { errCh <- h.RunTUI(ctx, os.Stdout, os.Stdin) }()
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-errCh:
+			return err
+		}
+	}
+
+	// Bubble Tea full-screen UI. Server runs in a goroutine; quitting the UI
+	// cancels ctx which shuts down the server.
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- h.Serve(ctx, addr) }()
+
+	p := tui.New(ctx, h)
+	if _, err := p.Run(); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	select {
+	case err := <-serveErr:
+		return err
+	case <-time.After(2 * time.Second):
+		return nil
+	}
+}
+
+// ── agent ───────────────────────────────────────────────────────────────────
+
+func newAgent() *cobra.Command {
+	var url, name string
+	c := &cobra.Command{
+		Use:   "agent",
+		Short: "Run the claude-side MCP server. Wire this into a claude session's mcpServers config.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			resolved := resolveAgentName(name)
+			if resolved == "" {
+				return fmt.Errorf("could not determine agent name; pass --name explicitly")
+			}
+			return runAgent(cmd.Context(), url, resolved)
+		},
+	}
+	c.Flags().StringVar(&url, "url", "http://localhost:7777", "atrium hub base URL")
+	c.Flags().StringVar(&name, "name", "", "agent name (defaults to the leaf of the current working dir)")
+	return c
+}
+
+func resolveAgentName(explicit string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return explicit
+	}
+	if v := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")); v != "" {
+		return v
+	}
+	base := ""
+	if cwd, err := os.Getwd(); err == nil {
+		b := filepath.Base(cwd)
+		if b != "" && b != "." && b != string(filepath.Separator) {
+			base = b
+		}
+	}
+	if base == "" {
+		return ""
+	}
+	// Append a short PID-derived suffix so two agents in the same dir get
+	// distinct wire names. Modulo keeps it readable. Use /rename in the hub
+	// for a friendlier display name.
+	return fmt.Sprintf("%s-%d", base, os.Getpid()%100000)
+}
+
+func runAgent(ctx context.Context, url, name string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	s := agent.New(url, name)
+	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
 // ── status ──────────────────────────────────────────────────────────────────

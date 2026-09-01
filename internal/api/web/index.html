@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atrium</title>
+<style>
+  :root {
+    --bg-0: #0B1B2E; --bg-1: #071322; --bg-2: #040B14;
+    --teal: #00E3B0; --blue: #28C2FF;
+    --card-0: #12293F; --card-1: #0A1A2B;
+    --shell-0: #0D2135; --shell-1: #081625;
+    --stroke: #2C5F84; --stroke-dim: #25506F; --grid: #1B3B5A;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4;
+    --dim: #5E819C; --dimmest: #456C88;
+    --warn: #FFC64D; --danger: #FF6B6B;
+    --chip: #173A57; --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; color: var(--body);
+    font: 15px/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 60px 60px; opacity: .32;
+    mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 40%, transparent 100%);
+  }
+  .accent-text {
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+  /* ── header ─────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(14px);
+    background: linear-gradient(180deg, rgba(7,19,34,.94), rgba(7,19,34,.72));
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .bar { display: flex; align-items: center; gap: 22px; padding: 14px 26px; }
+  .wordmark {
+    font-size: 15px; font-weight: 700; letter-spacing: .34em; margin: 0;
+    text-transform: uppercase;
+  }
+  .rule { height: 2px; background: linear-gradient(90deg, var(--teal), var(--blue) 40%, transparent); }
+  nav { display: flex; gap: 2px; }
+  .tab {
+    padding: 7px 15px; border-radius: 7px; cursor: pointer; color: var(--label);
+    border: 1px solid transparent; font-size: 13px; font-weight: 500;
+    transition: color .15s, background .15s, border-color .15s; user-select: none;
+  }
+  .tab:hover { color: var(--head); }
+  .tab.on {
+    color: var(--head); background: var(--chip); border-color: var(--stroke);
+  }
+  .tab .count {
+    display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: 20px;
+    font: 600 11px/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
+  }
+  .tab .count:empty, .tab .count.zero { display: none; }
+  .grow { flex: 1; }
+  .conn {
+    font: 500 12px/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: 7px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+  .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+
+  #wedge {
+    display: none; padding: 13px 26px; gap: 12px; align-items: baseline;
+    background: linear-gradient(90deg, rgba(255,107,107,.18), rgba(255,107,107,.04));
+    border-bottom: 1px solid var(--danger); color: #FFD7DD; font-size: 14px;
+  }
+  #wedge strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
+  #wedge code { font-family: var(--mono); font-size: 12px; color: #FFB3BC; }
+
+  main { position: relative; z-index: 1; padding: 26px; }
+
+  /* ── board ──────────────────────────────────────────── */
+  .board {
+    display: grid; gap: 16px; align-items: start;
+    grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  }
+  .col {
+    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
+    border: 1px solid var(--stroke-dim); border-radius: 12px; padding: 13px 12px 10px;
+    min-height: 108px;
+  }
+  .col-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font: 600 10.5px/1 Inter, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--label); margin-bottom: 12px; padding: 0 3px;
+  }
+  .col-head .n { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
+  .col[data-status="needs-input"] .col-head,
+  .col[data-status="needs-permission"] .col-head { color: var(--warn); }
+
+  .card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 9px; cursor: pointer;
+    box-shadow: 0 10px 22px rgba(2,6,9,.45);
+    transition: transform .16s ease, border-color .16s, box-shadow .16s;
+  }
+  .card:hover {
+    transform: translateY(-2px); border-color: var(--blue);
+    box-shadow: 0 16px 30px rgba(2,6,9,.62);
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--teal), var(--blue)); opacity: 0;
+    transition: opacity .16s;
+  }
+  .card:hover::before { opacity: 1; }
+  .card.waiting::before { opacity: 1; background: var(--warn); }
+  .card .title {
+    color: var(--head); font-weight: 600; font-size: 14.5px; margin-bottom: 7px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
+    animation: pulse 1.9s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,198,77,.5); }
+    50% { opacity: .55; box-shadow: 0 0 0 6px rgba(255,198,77,0); }
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font: 500 11px/1.6 var(--mono); padding: 1px 8px; border-radius: 5px;
+    background: var(--chip); color: var(--label); border: 1px solid transparent;
+  }
+  .chip.accent {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  .chip.warn { background: rgba(255,198,77,.13); color: var(--warn); }
+  .why {
+    font-size: 12.5px; color: var(--dim); margin-top: 9px; padding-top: 8px;
+    border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
+  }
+  .empty {
+    color: var(--dimmest); font-size: 12px; text-align: center; padding: 14px 0 12px;
+    font-family: var(--mono);
+  }
+
+  /* ── stack + perms ──────────────────────────────────── */
+  .panel {
+    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
+    border: 1px solid var(--stroke-dim); border-radius: 12px; overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 16px; padding: 15px 20px;
+    border-bottom: 1px solid rgba(37,80,111,.5); cursor: pointer;
+    transition: background .14s;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: rgba(23,58,87,.4); }
+  .wait {
+    font: 700 21px/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
+  }
+  .row .who { flex: 1; }
+  .row .who b { display: block; color: var(--head); font-weight: 600; font-size: 14.5px; }
+  .row .who span { font-size: 12.5px; color: var(--dim); }
+  /* Rule and decision rows are list entries, not cards. They get read in bulk,
+     so they stay tight enough to scan a screenful at a time. */
+  .row.compact { padding: 7px 14px; gap: 11px; align-items: center; }
+  .row.compact .who b { font-size: 13px; font-weight: 500; }
+  .row.compact .who b code { font-family: var(--mono); color: var(--head); }
+  .row.compact .who span { font-size: 11.5px; color: var(--dimmest); }
+  .row.compact .chip { font-size: 10.5px; padding: 1px 7px; }
+  .row.compact button { padding: 3px 10px; font-size: 11.5px; }
+  .row.compact .cmd { font-size: 11.5px; padding: 5px 9px; margin-top: 5px; }
+
+  /* One line per entry: everything on a single row, the wide field truncates. */
+  .row.line {
+    display: flex; align-items: baseline; gap: 12px; cursor: default;
+    padding: 6px 14px; font-size: 12px;
+  }
+  .row.line .stamp { font: 11.5px/1 var(--mono); color: var(--dim); flex: none; }
+  .row.line .stamp time { color: var(--label); }
+  .row.line .stamp i { color: var(--dimmest); font-style: normal; }
+  .row.line .tool { color: var(--head); font-weight: 600; flex: none; min-width: 54px; }
+  .row.line code { font: 11.5px/1.5 var(--mono); color: var(--body); }
+  .row.line .grow { flex: 1; min-width: 0; }
+  .row.line .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.line .by { color: var(--dimmest); font-size: 11px; flex: none; }
+  .row.line .by code { color: var(--label); }
+  .row.line button { padding: 2px 9px; font-size: 11px; flex: none; }
+
+  .subhead {
+    font-size: 12.5px; color: var(--dim); margin: -4px 0 12px; max-width: 78ch;
+  }
+  .subhead code { font-family: var(--mono); color: var(--label); font-size: 12px; }
+  .subhead b { color: var(--body); font-weight: 600; }
+  .cmd {
+    font: 12.5px/1.5 var(--mono); color: var(--head); background: rgba(4,11,20,.65);
+    border: 1px solid var(--stroke-dim); border-radius: 7px; padding: 8px 11px;
+    margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  textarea.cmd.edit {
+    display: block; width: 100%; resize: vertical; margin: 0;
+    transition: border-color .14s;
+  }
+  textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
+  .actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+
+  .row .who label.eyebrow { margin: 11px 0 6px; }
+  /* One box on the card: the command. The rule pattern sits on a plain line
+     under it, editable in place without looking like a second field. */
+  .scope {
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(44,95,132,.35);
+    display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  }
+  .scope .lbl { font-size: 11.5px; color: var(--dimmest); flex: none; }
+  .patview {
+    font: 12px/1.4 var(--mono); color: var(--chip-accent-text);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    border-radius: 5px; padding: 2px 8px; word-break: break-all;
+  }
+  .scope .hints { margin-top: 0; width: 100%; }
+  button.hint.on {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke);
+    color: var(--chip-accent-text);
+  }
+  .picker { display: flex; gap: 9px; align-items: center; }
+  .picker select {
+    font: 14px/1.4 Inter, sans-serif; color: var(--head); flex: 1;
+    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    border-radius: 8px; padding: 9px 11px;
+  }
+  .picker select:focus { outline: none; border-color: var(--blue); }
+  input[type=range] { width: 100%; accent-color: var(--teal); }
+  .hintline { display: block; font-size: 12px; color: var(--dimmest); margin-top: 7px; }
+  .toolbar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+
+  /* A question mark that explains a section without permanently spending
+     screen space on the explanation. */
+  .help {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%; flex: none;
+    border: 1px solid var(--stroke); color: var(--label);
+    font: 600 10px/1 Inter, sans-serif; cursor: help; position: relative;
+    text-transform: none; letter-spacing: 0;
+  }
+  .help:hover, .help:focus { border-color: var(--teal); color: var(--chip-accent-text); outline: none; }
+  .help:focus::after { opacity: 1; visibility: visible; }
+  details > summary.col-head .help { margin-left: 2px; }
+  /* The bubble sits against its label. The panel itself is positioned in JS,
+     because CSS alone cannot know whether it would fall off the window. */
+  #tip {
+    position: fixed; z-index: 90; max-width: 420px; pointer-events: none;
+    background: var(--shell-0); color: var(--body);
+    border: 1px solid var(--stroke); border-radius: 9px; padding: 11px 14px;
+    font: 400 12.5px/1.55 Inter, sans-serif; text-align: left; letter-spacing: 0;
+    white-space: pre-line; box-shadow: 0 14px 34px rgba(2,6,9,.75);
+    opacity: 0; visibility: hidden; transition: opacity .13s;
+    /* Long paths must wrap rather than force the panel wider than the window,
+       which is what previously clipped the text and grew a scrollbar. */
+    overflow-wrap: anywhere;
+  }
+  #tip.on { opacity: 1; visibility: visible; }
+
+  .filters { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
+  .filters input[type=search] {
+    font: 12.5px/1.4 var(--mono); color: var(--head); flex: 1; min-width: 160px;
+    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    border-radius: 7px; padding: 7px 11px;
+  }
+  .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
+  .seg { display: flex; gap: 4px; }
+  .seg button {
+    padding: 6px 12px; font-size: 12px; background: transparent;
+    border-color: var(--stroke-dim); color: var(--dim);
+  }
+  .seg button.on {
+    background: var(--chip); color: var(--head); border-color: var(--stroke);
+  }
+  .matchcount { font: 11.5px/1 var(--mono); color: var(--dimmest); margin-left: auto; }
+  button.big { font-size: 13.5px; padding: 10px 18px; }
+  button.go.big { box-shadow: 0 0 18px rgba(0,227,176,.14); }
+
+  /* Toast: the in-page counterpart to a desktop notification, for when the
+     tab is visible and a browser notification would be suppressed. */
+  #held {
+    position: fixed; left: 50%; top: 74px; transform: translateX(-50%) translateY(-12px);
+    z-index: 55; display: none; opacity: 0; transition: opacity .18s, transform .18s;
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    color: var(--chip-accent-text); font-size: 12.5px; padding: 8px 16px; border-radius: 20px;
+    box-shadow: 0 10px 26px rgba(2,6,9,.6);
+  }
+  #held.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
+  #held:hover { border-color: var(--teal); }
+
+  #toasts {
+    position: fixed; right: 20px; bottom: 20px; z-index: 60;
+    display: flex; flex-direction: column-reverse; gap: 10px; max-width: min(420px, 88vw);
+  }
+  .toast {
+    display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-left: 3px solid var(--warn);
+    border-radius: 10px; padding: 13px 15px;
+    box-shadow: 0 18px 40px rgba(2,6,9,.7);
+    animation: toastin .22s ease-out;
+  }
+  .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
+  .toast.leaving { animation: toastout .2s ease-in forwards; }
+  @keyframes toastin { from { transform: translateY(14px); opacity: 0; } }
+  @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
+  .toast .body { flex: 1; min-width: 0; }
+  .toast b { display: block; color: var(--head); font-size: 13.5px; margin-bottom: 3px; }
+  .toast span { font: 12px/1.45 var(--mono); color: var(--dim); word-break: break-all; }
+  .toast .x {
+    flex: none; color: var(--dimmest); font-size: 15px; line-height: 1;
+    background: none; border: none; padding: 0 2px; cursor: pointer;
+  }
+  .toast .x:hover { color: var(--head); }
+  .hints { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+  button.hint {
+    font: 500 11px/1.5 var(--mono); padding: 2px 9px; border-radius: 5px;
+    background: var(--chip); border-color: transparent; color: var(--label);
+  }
+  button.hint:hover { border-color: var(--teal); color: var(--chip-accent-text); }
+
+  /* Collapsible sections. The caret sits right next to its label, and the
+     count is pushed away on its own, so the three do not spread apart. */
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary.col-head {
+    justify-content: flex-start; gap: 10px; cursor: pointer;
+    padding: 4px 3px; border-radius: 7px; user-select: none;
+  }
+  details > summary.col-head:hover { color: var(--head); background: rgba(23,58,87,.35); }
+  details > summary.col-head::before {
+    content: "\25B8"; font-size: 17px; line-height: 1; color: var(--teal);
+    display: inline-block; transition: transform .15s; width: 12px;
+  }
+  details[open] > summary.col-head::before { transform: rotate(90deg); }
+  details > summary.col-head .n { margin-left: auto; }
+  /* Keep the bubble beside its label rather than letting the flex row fling
+     it to the far edge. */
+  .col-head > .help { margin-right: auto; }
+
+  button {
+    font: 600 12.5px/1 Inter, sans-serif; color: var(--body); cursor: pointer;
+    background: var(--chip); border: 1px solid var(--stroke-dim);
+    border-radius: 7px; padding: 8px 14px; transition: all .14s;
+  }
+  button:hover { color: var(--head); border-color: var(--blue); }
+  button.go {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(0,227,176,.22); }
+  button.no:hover { border-color: var(--danger); color: #FFC3C9; box-shadow: 0 0 14px rgba(255,107,107,.18); }
+  button.icon {
+    padding: 6px 11px; font-size: 15px; line-height: 1; color: var(--teal);
+    background: transparent; border-color: transparent;
+  }
+  button.icon:hover { border-color: var(--stroke-dim); }
+  button.icon.muted { color: var(--dimmest); }
+
+  /* ── detail dialog ──────────────────────────────────── */
+  dialog {
+    padding: 0; width: min(720px, 94vw); color: var(--body);
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: 14px;
+    box-shadow: 0 30px 70px rgba(2,6,9,.8);
+  }
+  dialog::backdrop { background: rgba(4,11,20,.74); backdrop-filter: blur(3px); }
+  .dlg-head {
+    padding: 18px 22px 15px; border-bottom: 1px solid var(--stroke-dim);
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .dlg-head h2 { margin: 0 0 8px; font-size: 18px; color: var(--head); font-weight: 600; }
+  .dlg-body { padding: 20px 22px; max-height: 62vh; overflow-y: auto; }
+  .field { margin-bottom: 20px; }
+  label.eyebrow {
+    display: block; font: 600 10.5px/1 Inter, sans-serif; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--label); margin-bottom: 8px;
+  }
+  input[type=text] {
+    font: 14px/1.4 Inter, sans-serif; color: var(--head); width: 100%;
+    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    border-radius: 8px; padding: 10px 12px; transition: border-color .14s;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--blue); }
+  input[type=text]::placeholder { color: var(--dimmest); }
+  .statuses { display: flex; gap: 7px; flex-wrap: wrap; }
+  .statuses button.on {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  .timeline { border-left: 1px solid var(--stroke-dim); margin-left: 5px; padding-left: 0; }
+  .ev { position: relative; padding: 7px 0 7px 22px; font-size: 12.5px; }
+  .ev::before {
+    content: ""; position: absolute; left: -4px; top: 14px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--stroke);
+  }
+  .ev.key::before { background: linear-gradient(90deg, var(--teal), var(--blue)); }
+  .ev .k { color: var(--head); font-weight: 600; margin-right: 9px; }
+  .ev .t { font-family: var(--mono); color: var(--dimmest); font-size: 11.5px; }
+  .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
+  .scroll-x { overflow-x: auto; }
+
+  @media (max-width: 640px) {
+    .bar { padding: 12px 16px; gap: 14px; flex-wrap: wrap; }
+    main { padding: 16px; }
+    .board { grid-template-columns: 1fr; }
+    .wait { min-width: 48px; font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1 class="wordmark accent-text">Atrium</h1>
+    <nav>
+      <div class="tab on" data-view="board">board</div>
+      <div class="tab" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
+      <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
+    </nav>
+    <div class="grow"></div>
+    <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
+    <button id="gear" class="icon" title="sound settings">&#9881;</button>
+    <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
+  </div>
+  <div class="rule"></div>
+</header>
+<div id="wedge"><strong>wedged</strong><span id="wedge-t"></span></div>
+
+<main>
+  <div id="board" class="board"></div>
+  <div id="stack" hidden></div>
+  <!-- Built once. Only the list bodies are refreshed, so a filter you are
+       typing into never gets rebuilt out from under you. -->
+  <div id="perms" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>waiting on you</span>
+      <span class="help" tabindex="0" data-tip="Agents blocked right now. Each one is frozen until you answer.
+
+approve once — let this one through
+always — approve, and stop asking about the scope shown
+block — refuse, and hand your reason back to the agent
+never — refuse, and stop asking about the scope shown
+
+The command box is editable. Approve and what you typed is what runs.">?</span>
+    </div>
+    <div id="perms-list"></div>
+
+    <div class="col-head" style="margin:26px 0 10px">
+      <span>rules</span>
+      <span class="help" tabindex="0" data-tip="Standing answers. A matching request is answered instantly and never shown to you.
+
+prefix — plain text, matched against the START of the command.
+  'go build' covers 'go build ./...' but not 'go install'.
+
+wildcard — contains * or ?, matched against the WHOLE command.
+  * spans anything, including slashes. ? is exactly one character.
+
+The most specific match wins, so a narrow block beats a broad approve.">?</span>
+    </div>
+    <div id="rules-toolbar"></div>
+    <details id="rules-d">
+      <summary class="col-head" style="margin:16px 0 10px">
+        <span>standing rules</span><span class="n" id="rules-count"></span>
+      </summary>
+      <div class="filters">
+        <input type="search" id="rules-q" placeholder="filter by tool or pattern" spellcheck="false">
+        <div class="seg" id="rules-seg">
+          <button class="on" data-v="">all</button>
+          <button data-v="approve">approve</button>
+          <button data-v="block">block</button>
+        </div>
+        <span class="matchcount" id="rules-match"></span>
+        <button onclick="exportRulesView('json')" title="download what is showing as json">export json</button>
+        <button onclick="exportRulesView('csv')" title="download what is showing as csv">csv</button>
+      </div>
+      <div id="rules-list"></div>
+    </details>
+
+    <details id="hist-d">
+      <summary class="col-head" style="margin:26px 0 10px">
+        <span>decisions</span>
+        <span class="help" tabindex="0" data-tip="Every request already answered, newest first.
+
+by you — you clicked it
+by rule — a standing rule answered it and you never saw it
+you, made rule — you clicked always or never, creating that rule
+
+Exports honour whatever filter is applied.">?</span>
+        <span class="n" id="hist-count"></span>
+      </summary>
+      <div class="filters">
+        <input type="search" id="hist-q" placeholder="filter by tool or command" spellcheck="false">
+        <div class="seg" id="hist-seg">
+          <button class="on" data-v="">all</button>
+          <button data-v="approve">approved</button>
+          <button data-v="block">blocked</button>
+          <button data-v="rule">by rule</button>
+          <button data-v="you">by you</button>
+        </div>
+        <span class="matchcount" id="hist-match"></span>
+        <button onclick="exportHistory('json')" title="download what is showing as json">export json</button>
+        <button onclick="exportHistory('csv')" title="download what is showing as csv">csv</button>
+      </div>
+      <div id="history-list"></div>
+    </details>
+  </div>
+</main>
+
+<div id="tip"></div>
+
+<button id="held" onclick="applyHeld()" title="the view is paused while you type">
+  &#8635;&nbsp; new activity, click to update</button>
+
+<div id="toasts"></div>
+
+<dialog id="settings">
+  <div class="dlg-head">
+    <div class="grow"><h2>sound</h2></div>
+    <button onclick="document.getElementById('settings').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow">volume</label>
+      <input type="range" id="s-vol" min="0" max="100" step="5">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-input">a task needs your input</label>
+      <div class="picker"><select id="s-input"></select>
+        <button onclick="previewFor('input')">test</button></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-perm">a permission is waiting</label>
+      <div class="picker"><select id="s-perm"></select>
+        <button onclick="previewFor('perm')">test</button></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">desktop notifications</label>
+      <div class="picker">
+        <span id="s-notify-state" class="chip"></span>
+        <button id="s-notify-ask" onclick="askNotify()">enable</button>
+        <button onclick="testNotify()">send a test</button>
+      </div>
+      <span class="hintline" id="s-notify-hint"></span>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="detail">
+  <div class="dlg-head">
+    <div class="grow">
+      <h2 id="d-title"></h2>
+      <div class="chips" id="d-chips"></div>
+    </div>
+    <button onclick="detail.close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="d-why">why am I doing this</label>
+      <input type="text" id="d-why" placeholder="what is this for? written once, read later">
+    </div>
+    <div class="field">
+      <label class="eyebrow">move to</label>
+      <div class="statuses" id="d-statuses"></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">history</label>
+      <div class="timeline" id="d-events"></div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const COLUMNS = [
+  ["backlog", "backlog"], ["running", "running"], ["needs-input", "needs input"],
+  ["needs-permission", "needs permission"], ["done", "done"], ["shelved", "shelved"], ["dead", "dead"]
+];
+const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
+const detail = document.getElementById("detail");
+let current = null;
+
+const api = async (path, opts) => {
+  const res = await fetch(path, opts);
+  if (!res.ok && res.status !== 204) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return res.status === 204 ? null : res.json();
+};
+
+const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function ago(secs) {
+  if (secs == null) return "";
+  if (secs < 60) return secs + "s";
+  if (secs < 3600) return Math.floor(secs / 60) + "m";
+  if (secs < 86400) return Math.floor(secs / 3600) + "h";
+  return Math.floor(secs / 86400) + "d";
+}
+
+const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
+
+function switchView(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
+  ["board", "stack", "perms"].forEach(v => document.getElementById(v).hidden = v !== name);
+  refresh();
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
+
+function cardHTML(t) {
+  const w = isWaiting(t);
+  return `<div class="card ${w ? "waiting" : ""}" onclick="openTask('${t.id}')">
+    <div class="title">${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</div>
+    <div class="chips">
+      <span class="chip accent">${esc(t.runner || "?")}</span>
+      <span class="chip">idle ${ago(t.idle_seconds)}</span>
+      ${w ? `<span class="chip warn">waiting ${ago(t.wait_seconds)}</span>` : ""}
+    </div>
+    ${t.why ? `<div class="why">${esc(t.why)}</div>` : ""}
+  </div>`;
+}
+
+async function renderBoard() {
+  const { tasks } = await api("/v1/tasks");
+  document.getElementById("board").innerHTML = COLUMNS.map(([status, label]) => {
+    const mine = (tasks || []).filter(t => t.status === status);
+    return `<section class="col" data-status="${status}">
+      <div class="col-head"><span>${label}</span><span class="n">${mine.length}</span></div>
+      ${mine.length ? mine.map(cardHTML).join("") : '<div class="empty">empty</div>'}
+    </section>`;
+  }).join("");
+}
+
+async function renderStack() {
+  const { tasks } = await api("/v1/waiting");
+  const list = tasks || [];
+  document.getElementById("stack").innerHTML = list.length
+    ? `<div class="panel">` + list.map(t => `
+        <div class="row" onclick="openTask('${t.id}')">
+          <div class="wait">${ago(t.wait_seconds)}</div>
+          <div class="who">
+            <b>${esc(t.display_title)}</b>
+            <span>${esc(t.why || t.worktree || "no note yet")}</span>
+          </div>
+          <span class="chip ${t.status === "needs-permission" ? "warn" : ""}">${t.status}</span>
+        </div>`).join("") + `</div>`
+    : `<div class="panel"><div class="empty">nothing is waiting on you</div></div>`;
+}
+
+// Pending cards are built once and then left alone. Rebuilding markup on a
+// poll is what silently reverted a typed pattern and applied the wrong rule,
+// so this never re-renders a card that already exists: it only adds new ones
+// and removes answered ones.
+function permCard(p) {
+  const el = document.createElement("div");
+  el.className = "row perm";
+  el.dataset.id = p.id;
+  el.style.cssText = "cursor:default;align-items:flex-start;flex-wrap:wrap";
+  // One input only: the command. Editing it changes what actually runs.
+  // The scope for always and never is chosen from the buttons underneath, so
+  // there is never a second box to mistake for this one.
+  el.innerHTML = `
+    <div class="who">
+      <b>${esc(p.tool)}</b>
+      <span>asked ${esc((p.requested_at || "").slice(11, 19))} &middot;
+        edit the command below to run something different</span>
+      <textarea class="cmd edit" id="cmd-${p.id}" rows="2" spellcheck="false"
+        title="whatever is in here is what runs once you approve"></textarea>
+      <div class="scope">
+        <span class="lbl">always / never applies to</span>
+        <code class="patview" id="pat-${p.id}"></code>
+        <div class="hints">
+          ${hintsFor(p).map(h =>
+            `<button class="hint" data-v="${esc(h.value)}" title="${esc(h.why)}">${esc(h.label)}</button>`).join("")}
+          <button class="hint custom" data-custom="1" title="type your own pattern">custom&hellip;</button>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="go" data-do="approve">approve once</button>
+      <button class="go" data-do="approve" data-forever="1"
+        title="approve, and never ask again about the scope shown">always</button>
+      <button class="no" data-do="block">block</button>
+      <button class="no" data-do="block" data-forever="1"
+        title="block, and never ask again about the scope shown">never</button>
+    </div>`;
+
+  // Values are set as properties, not markup, so nothing re-serialises them.
+  const cmd = el.querySelector(".cmd.edit");
+  cmd.value = p.command;
+  cmd.defaultValue = p.command;
+
+  const view = el.querySelector(".patview");
+  const setScope = (value, btn) => {
+    el.dataset.pattern = value;
+    view.textContent = value;
+    el.querySelectorAll(".hint").forEach(x => x.classList.toggle("on", x === btn));
+  };
+  const hints = el.querySelectorAll(".hint:not(.custom)");
+  setScope(prefixOf(p.tool, p.command), hints[0]);
+
+  // Retyping the command re-derives the scope, unless you picked one yourself.
+  cmd.addEventListener("input", () => {
+    if (el.dataset.chosen === "1") return;
+    setScope(prefixOf(p.tool, cmd.value), null);
+  });
+  el.querySelectorAll(".hint").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.custom) {
+      const v = prompt(
+        "Never ask again about:\n\n" +
+        "plain text matches the start of the command\n" +
+        "add * or ? to match against the whole command",
+        el.dataset.pattern || "");
+      if (v === null || !v.trim()) return;
+      el.dataset.chosen = "1";
+      setScope(v.trim(), b);
+      return;
+    }
+    el.dataset.chosen = "1";
+    setScope(b.dataset.v, b);
+  }));
+  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", () =>
+    decide(p.id, b.dataset.do, b.dataset.forever === "1")));
+  return el;
+}
+
+async function renderPerms() {
+  const { permissions } = await api("/v1/permissions");
+  const list = permissions || [];
+  const host = document.getElementById("perms-list");
+
+  let panel = host.querySelector(".panel.perms");
+  if (!panel) {
+    host.innerHTML = `<div class="panel perms"></div>`;
+    panel = host.querySelector(".panel.perms");
+  }
+
+  const want = new Set(list.map(p => p.id));
+  // Drop answered ones.
+  panel.querySelectorAll(".perm").forEach(el => {
+    if (!want.has(el.dataset.id)) el.remove();
+  });
+  // Add new ones. Anything already on screen keeps whatever you typed in it.
+  const have = new Set([...panel.querySelectorAll(".perm")].map(el => el.dataset.id));
+  list.forEach(p => { if (!have.has(p.id)) panel.appendChild(permCard(p)); });
+
+  let empty = panel.querySelector(".empty");
+  if (!list.length && !empty) {
+    panel.innerHTML = `<div class="empty">no pending permissions</div>`;
+  } else if (list.length && empty) {
+    empty.remove();
+  }
+
+  renderRules();
+  renderHistory();
+}
+
+// Everything already answered, newest first. Auto-approved requests never
+// appear in the pending queue, so this is the only place they are visible.
+let allHistory = [];
+
+async function renderHistory() {
+  try {
+    allHistory = (await api("/v1/permissions/history?limit=300")).permissions || [];
+  } catch (e) { return; }
+  const auto = allHistory.filter(p => p.decided_by && p.decided_by !== "you").length;
+  document.getElementById("hist-count").innerHTML =
+    `${allHistory.length}${auto ? ` &middot; ${auto} by rule` : ""}`;
+  paintHistory();
+}
+
+function paintHistory() {
+  const q = (document.getElementById("hist-q").value || "").toLowerCase();
+  const only = document.querySelector("#hist-seg .on").dataset.v;
+  const byRule = p => p.decided_by && p.decided_by !== "you";
+  const list = allHistory.filter(p => {
+    if (only === "rule" && !byRule(p)) return false;
+    if (only === "you" && byRule(p)) return false;
+    if ((only === "approve" || only === "block") && p.decision !== only) return false;
+    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "")).toLowerCase().includes(q);
+  });
+
+  document.getElementById("hist-match").textContent =
+    list.length === allHistory.length ? "" : `${list.length} of ${allHistory.length}`;
+
+  // One line per decision. The command takes the slack and truncates, with the
+  // whole thing on hover, so a screen shows many rather than four.
+  document.getElementById("history-list").innerHTML = list.length
+    ? `<div class="panel">` + list.map(p => `
+        <div class="row line">
+          <span class="chip ${p.decision === "approve" ? "accent" : "warn"}">${p.decision}</span>
+          <span class="stamp">${when(p.decided_at)}</span>
+          <span class="tool">${esc(p.tool)}</span>
+          <code class="grow ell" title="${esc(p.command)}">${esc(p.command)}</code>
+          <span class="by" title="${esc(p.reason || "")}">${byRule(p)
+            ? `rule <code>${esc(p.decided_by)}</code>`
+            : p.rule_created
+              ? `you, made rule <code>${esc(p.rule_created)}</code>`
+              : "you"}</span>
+        </div>`).join("") + `</div>`
+    : `<div class="panel"><div class="empty">${allHistory.length
+        ? "nothing matches that filter" : "nothing decided yet"}</div></div>`;
+}
+
+// hintsFor offers a few ready-made patterns per request, so widening a rule to
+// a whole repo is one click instead of typing a path by hand.
+// hintsFor offers ready-made patterns, ordered the way the path reads: broad
+// on the left, narrow on the right. Every one carries an explicit trailing *
+// so what you see is what it matches.
+function hintsFor(p) {
+  const cmd = (p.command || "").replace(/\\/g, "/");
+  const out = [];
+  if (FILE_TOOLS.includes(p.tool)) {
+    const parts = cmd.split(/\s+/)[0].split("/");
+    // Shallowest first, so it reads left to right like the path does.
+    for (let i = 2; i <= parts.length - 1; i++) {
+      const dir = parts.slice(0, i).join("/") + "/";
+      out.push({ value: dir + "*", label: parts[i - 1] + "/*", why: "anything under " + dir });
+    }
+    const ext = (cmd.split(/\s+/)[0].split(".").pop() || "").replace(/[^a-z0-9]/gi, "");
+    if (ext) out.push({ value: "*." + ext + " <- *", label: "*." + ext, why: "any ." + ext + " file, anywhere" });
+  } else {
+    const words = cmd.trim().split(/\s+/);
+    if (words[0]) out.push({ value: words[0] + " *", label: words[0] + " *", why: "any " + words[0] + " command" });
+    if (words.length > 1 && !words[1].startsWith("-")) {
+      out.push({ value: words[0] + " " + words[1] + " *", label: words[0] + " " + words[1] + " *",
+        why: "any " + words[0] + " " + words[1] + " command" });
+    }
+  }
+  const seen = new Set();
+  return out.filter(h => h.value && !seen.has(h.value) && seen.add(h.value));
+}
+
+
+// prefixOf mirrors the server's default so the tooltip tells you exactly what
+// "always" will cover. File tools get their directory, commands get two words.
+const FILE_TOOLS = ["Edit", "Write", "Read", "MultiEdit", "NotebookEdit"];
+function prefixOf(tool, command) {
+  const f = (command || "").trim().split(/\s+/);
+  if (!f[0]) return "";
+  if (FILE_TOOLS.includes(tool)) {
+    const path = f[0].replace(/\\/g, "/");
+    const i = path.lastIndexOf("/");
+    return i > 0 ? path.slice(0, i + 1) : path;
+  }
+  if (f.length < 2) return f[0];
+  return f[1].startsWith("-") ? f[0] : f[0] + " " + f[1];
+}
+
+const RULE_TOOLBAR = `
+  <div class="toolbar">
+    <button class="go big" onclick="importClaude()"
+      title="read your Claude Code allow and deny lists and turn them into standing rules">
+      &#8681;&nbsp; import rules from claude</button>
+    <button onclick="exportRules()" title="download every rule as json">export</button>
+    <button onclick="document.getElementById('rules-file').click()" title="load rules from a json file">import file</button>
+    <input type="file" id="rules-file" accept="application/json" hidden onchange="importFile(this)">
+  </div>`;
+
+// Dates on a rule and a decision answer "when did I agree to this". Absolute
+// for anything older than a day, relative while it is still fresh.
+// Always both: the timestamp you can read or copy, and how long ago that was.
+// Showing only one of the two makes you do arithmetic.
+function when(iso) {
+  if (!iso) return "";
+  const t = new Date(iso.endsWith("Z") ? iso : iso + "Z");
+  if (isNaN(t)) return esc(iso);
+  const pad = n => String(n).padStart(2, "0");
+  const sameDay = t.toDateString() === new Date().toDateString();
+  const stamp = (sameDay ? "" : `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} `)
+    + `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+  const secs = (Date.now() - t) / 1000;
+  const rel = secs < 60 ? "just now"
+    : secs < 3600 ? Math.floor(secs / 60) + "m ago"
+    : secs < 86400 ? Math.floor(secs / 3600) + "h ago"
+    : Math.floor(secs / 86400) + "d ago";
+  return `<time datetime="${esc(iso)}">${stamp}</time> <i>${rel}</i>`;
+}
+
+let allRules = [];
+
+async function renderRules() {
+  try { allRules = (await api("/v1/rules")).rules || []; } catch (e) { return; }
+  document.getElementById("rules-toolbar").innerHTML = RULE_TOOLBAR;
+  document.getElementById("rules-count").textContent = allRules.length;
+  paintRules();
+}
+
+function paintRules() {
+  const q = (document.getElementById("rules-q").value || "").toLowerCase();
+  const only = document.querySelector("#rules-seg .on").dataset.v;
+  const list = allRules.filter(r =>
+    (!only || r.decision === only) &&
+    (!q || (r.tool + " " + r.prefix + " " + (r.reason || "")).toLowerCase().includes(q)));
+
+  document.getElementById("rules-match").textContent =
+    list.length === allRules.length ? "" : `${list.length} of ${allRules.length}`;
+
+  document.getElementById("rules-list").innerHTML = list.length
+    ? `<div class="panel">` + list.map(r => `
+        <div class="row line">
+          <span class="chip ${r.decision === "approve" ? "accent" : "warn"}">${r.decision}</span>
+          <span class="stamp">${when(r.created_at)}</span>
+          <span class="tool">${esc(r.tool)}</span>
+          <code class="grow ell" title="${esc(r.prefix)}">${esc(r.prefix)}</code>
+          <span class="by">${/[*?]/.test(r.prefix) ? "wildcard" : "prefix"}</span>
+          <span class="by">${r.hits} use${r.hits === 1 ? "" : "s"}</span>
+          <button class="no" onclick="dropRule('${r.id}')">forget</button>
+        </div>`).join("") + `</div>`
+    : `<div class="panel"><div class="empty">${allRules.length
+        ? "nothing matches that filter"
+        : "no rules yet. import from claude to start with the ones you already trust."}</div></div>`;
+}
+
+// Keeps a collapsible's open state across reloads.
+function rememberOpen(id, key) {
+  const d = document.getElementById(id);
+  if (!d) return;
+  if (localStorage.getItem(key) === "1") d.open = true;
+  d.addEventListener("toggle", () => localStorage.setItem(key, d.open ? "1" : "0"));
+}
+
+// Wire the filter controls once. They live in the static shell, so they keep
+// focus and content across every refresh.
+function wireFilters(seg, input, repaint) {
+  document.querySelectorAll(`#${seg} button`).forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(`#${seg} button`).forEach(x => x.classList.toggle("on", x === b));
+    repaint();
+  }));
+  document.getElementById(input).addEventListener("input", repaint);
+}
+
+async function dropRule(id) {
+  try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { alert(e.message); }
+  refresh();
+}
+
+// Import shows what it would do before it does it, because a rule set is not
+// something to take on trust.
+async function importClaude() {
+  let preview;
+  try { preview = await api("/v1/rules/preview-claude"); } catch (e) { alert(e.message); return; }
+  const rules = preview.rules || [], skipped = preview.skipped || [];
+  const broad = rules.filter(r => r.broad);
+  const normal = rules.length - broad.length;
+  if (!rules.length) {
+    alert("nothing to import.\n\nlooked in:\n" + (preview.sources || []).join("\n"));
+    return;
+  }
+  let msg = `import ${normal} rule${normal === 1 ? "" : "s"} from Claude Code?\n\n`
+    + `read from:\n${(preview.sources || []).join("\n")}\n\n`
+    + rules.filter(r => !r.broad).slice(0, 12)
+        .map(r => `  ${r.decision === "block" ? "block" : "allow"}  ${r.tool} ${r.pattern}`).join("\n");
+  if (normal > 12) msg += `\n  ...and ${normal - 12} more`;
+  if (skipped.length) msg += `\n\n${skipped.length} entries cannot be translated and will be left alone.`;
+  if (!confirm(msg)) return;
+
+  let includeBroad = false;
+  if (broad.length) {
+    includeBroad = confirm(
+      `${broad.length} of them match EVERY request for their tool:\n\n`
+      + broad.map(r => `  ${r.decision}  ${r.tool}`).join("\n")
+      + `\n\nInclude those too? They stop atrium asking about that tool at all.`);
+  }
+  await runImport({ source: "claude", include_broad: includeBroad });
+}
+
+async function importFile(input) {
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  let parsed;
+  try { parsed = JSON.parse(await file.text()); } catch (e) { alert("not valid json: " + e.message); return; }
+  const rules = parsed.rules || parsed;
+  if (!Array.isArray(rules)) { alert("expected a rules array"); return; }
+  if (!confirm(`import ${rules.length} rule${rules.length === 1 ? "" : "s"} from ${file.name}?`)) return;
+  await runImport({ source: "json", rules, include_broad: true });
+}
+
+async function runImport(body) {
+  try {
+    const res = await api("/v1/rules/import", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    let msg = `added ${res.added}, updated ${res.updated}`;
+    if ((res.failed || []).length) {
+      msg += `\n\n${res.failed.length} failed:\n`
+        + res.failed.slice(0, 8).map(f => `  ${f.tool} ${f.pattern}: ${f.error}`).join("\n");
+    }
+    alert(msg);
+  } catch (e) { alert(e.message); }
+  refresh();
+}
+
+function exportRules() {
+  window.location = "/v1/rules/export";
+}
+
+// Exports what is currently on screen, filters included, so a search then an
+// export gives you exactly the slice you were looking at.
+function download(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function toCSV(rows, cols) {
+  const cell = v => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [cols.join(","), ...rows.map(r => cols.map(c => cell(r[c])).join(","))].join("\n");
+}
+
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function filteredHistory() {
+  const q = (document.getElementById("hist-q").value || "").toLowerCase();
+  const only = document.querySelector("#hist-seg .on").dataset.v;
+  const byRule = p => p.decided_by && p.decided_by !== "you";
+  return allHistory.filter(p => {
+    if (only === "rule" && !byRule(p)) return false;
+    if (only === "you" && byRule(p)) return false;
+    if ((only === "approve" || only === "block") && p.decision !== only) return false;
+    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "")).toLowerCase().includes(q);
+  });
+}
+
+function exportHistory(fmt) {
+  const rows = filteredHistory();
+  if (!rows.length) { alert("nothing to export"); return; }
+  if (fmt === "csv") {
+    download(`atrium-decisions-${stamp()}.csv`,
+      toCSV(rows, ["decided_at", "decision", "tool", "command", "decided_by", "reason"]), "text/csv");
+    return;
+  }
+  download(`atrium-decisions-${stamp()}.json`, JSON.stringify({ permissions: rows }, null, 2),
+    "application/json");
+}
+
+function exportRulesView(fmt) {
+  const q = (document.getElementById("rules-q").value || "").toLowerCase();
+  const only = document.querySelector("#rules-seg .on").dataset.v;
+  const rows = allRules.filter(r =>
+    (!only || r.decision === only) &&
+    (!q || (r.tool + " " + r.prefix + " " + (r.reason || "")).toLowerCase().includes(q)));
+  if (!rows.length) { alert("nothing to export"); return; }
+  if (fmt === "csv") {
+    download(`atrium-rules-${stamp()}.csv`,
+      toCSV(rows, ["created_at", "decision", "tool", "prefix", "hits", "reason"]), "text/csv");
+    return;
+  }
+  // Shaped so it can be handed straight back to import file.
+  download(`atrium-rules-${stamp()}.json`, JSON.stringify({
+    rules: rows.map(r => ({ tool: r.tool, pattern: r.prefix, decision: r.decision, source: "atrium" }))
+  }, null, 2), "application/json");
+}
+
+/* ── alerting ───────────────────────────────────────────
+   Two tones, so you can tell from the next room which one it is: a permission
+   is a rising two-note that needs you now, a task waiting for input is one
+   softer note. Tones are synthesised rather than shipped as audio files so the
+   binary stays self-contained. */
+
+// Each sound is a list of notes: [frequency, startSeconds, durationSeconds,
+// gain, waveform]. Synthesised rather than shipped as files so the binary
+// stays self-contained.
+const SOUNDS = {
+  chime:  { label: "chime",       notes: [[880,0,.18,.9,"sine"], [1318,.14,.3,.8,"sine"]] },
+  rise:   { label: "rise",        notes: [[523,0,.12,.8,"sine"], [784,.1,.12,.8,"sine"], [1046,.2,.3,.7,"sine"]] },
+  ping:   { label: "ping",        notes: [[1046,0,.35,.7,"sine"]] },
+  blip:   { label: "blip",        notes: [[660,0,.09,.8,"square"]] },
+  knock:  { label: "knock",       notes: [[196,0,.09,1,"triangle"], [196,.15,.09,.9,"triangle"]] },
+  bell:   { label: "bell",        notes: [[1318,0,.9,.55,"sine"], [2637,0,.5,.18,"sine"]] },
+  sub:    { label: "low thud",    notes: [[110,0,.4,1,"sine"]] },
+  alarm:  { label: "alarm",       notes: [[880,0,.1,.9,"square"], [880,.16,.1,.9,"square"], [880,.32,.1,.9,"square"]] },
+  drop:   { label: "drop",        notes: [[880,0,.1,.8,"sine"], [440,.09,.28,.8,"sine"]] },
+  chirp:  { label: "chirp",       notes: [[1400,0,.06,.6,"sine"], [1800,.05,.08,.5,"sine"]] },
+  none:   { label: "silent",      notes: [] }
+};
+
+const DEFAULT_PREFS = { muted: false, volume: 0.35, input: "chime", perm: "alarm" };
+
+function loadPrefs() {
+  try {
+    return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem("atrium.sound") || "{}"));
+  } catch (e) { return Object.assign({}, DEFAULT_PREFS); }
+}
+
+const alerting = (() => {
+  let ctx = null;
+  let prefs = loadPrefs();
+  // Ids we have already alerted for, so a 5s refresh does not re-ring.
+  let knownPerms = null, knownWaiting = null;
+
+  const btn = document.getElementById("sound");
+  const paint = () => {
+    btn.classList.toggle("muted", prefs.muted);
+    btn.innerHTML = prefs.muted ? "&#128263;" : "&#9835;";
+    btn.title = prefs.muted ? "muted. click for sound" : "sound on. click to mute";
+  };
+  paint();
+
+  const save = () => {
+    localStorage.setItem("atrium.sound", JSON.stringify(prefs));
+    paint();
+  };
+
+  // Browsers refuse to make noise until the page has been interacted with, so
+  // the context is built on the first gesture and reused after that.
+  const unlock = () => {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) ctx = new AC();
+    }
+    if (ctx && ctx.state === "suspended") ctx.resume();
+  };
+  document.addEventListener("pointerdown", unlock, { once: false });
+  document.addEventListener("keydown", unlock, { once: false });
+
+  function note(freq, start, dur, gain, type) {
+    const osc = ctx.createOscillator(), amp = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+    const peak = Math.max(0.0001, gain * prefs.volume);
+    // Shaped rather than square-edged, because a click on every alert grates.
+    amp.gain.setValueAtTime(0, ctx.currentTime + start);
+    amp.gain.linearRampToValueAtTime(peak, ctx.currentTime + start + 0.015);
+    amp.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+    osc.connect(amp).connect(ctx.destination);
+    osc.start(ctx.currentTime + start);
+    osc.stop(ctx.currentTime + start + dur + 0.02);
+  }
+
+  // preview plays a named sound regardless of mute, so the test buttons in
+  // settings always do something.
+  function preview(name) {
+    unlock();
+    const s = SOUNDS[name];
+    if (!s || !ctx || ctx.state !== "running") return;
+    s.notes.forEach(n => note(n[0], n[1], n[2], n[3], n[4]));
+  }
+
+  function play(kind) {
+    if (prefs.muted) return;
+    preview(kind === "permission" ? prefs.perm : prefs.input);
+  }
+
+  function notify(title, body, goTo, permId) {
+    if (prefs.muted || document.visibilityState === "visible") return;
+    showNotification(title, body, goTo, permId);
+  }
+
+  btn.onclick = () => {
+    prefs.muted = !prefs.muted;
+    save();
+    if (!prefs.muted) {
+      unlock();
+      play("waiting");
+    }
+  };
+
+  return {
+    check, play, preview, save, unlock,
+    get: () => prefs,
+    set: (patch) => { Object.assign(prefs, patch); save(); }
+  };
+
+  // check diffs an incoming set of ids against what we alerted on last time.
+  // The first pass only seeds, so opening the page does not fire for a queue
+  // that was already there.
+  function check(kind, items, describe) {
+    const ids = new Set(items.map(i => i.id));
+    const prev = kind === "permission" ? knownPerms : knownWaiting;
+    if (prev === null) {
+      if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
+      return;
+    }
+    const fresh = items.filter(i => !prev.has(i.id));
+    if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
+    if (!fresh.length) return;
+    play(kind);
+    const d = describe(fresh[0]);
+    const title = fresh.length > 1 ? `${fresh.length} things need you` : d.title;
+    // Buttons only make sense for a single named permission, not a pile.
+    const actionable = kind === "permission" && fresh.length === 1 ? fresh[0].id : "";
+    notify(title, d.body, kind === "permission" ? "perms" : "stack", actionable);
+    // A desktop notification is suppressed while the tab is visible, so the
+    // toast covers exactly that case. Clicking it goes where the work is.
+    toast(title, d.body, kind === "permission" ? "perms" : "stack",
+      fresh.length === 1 ? fresh[0].id : null);
+  }
+})();
+
+// ── desktop notifications ───────────────────────────────
+// Windows renders these itself, so the only things we control are the icon,
+// the text, whether it persists, and what a click does. An icon has to be a
+// raster image, so the mark is drawn to a canvas once and reused.
+let notifIcon = null;
+function iconDataURL() {
+  if (notifIcon) return notifIcon;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  g.fillStyle = "#0B1B2E";
+  g.fillRect(0, 0, 128, 128);
+  const grad = g.createLinearGradient(24, 96, 104, 32);
+  grad.addColorStop(0, "#00E3B0");
+  grad.addColorStop(1, "#28C2FF");
+  // An A for atrium: two legs and a crossbar.
+  g.strokeStyle = grad;
+  g.lineWidth = 12;
+  g.lineCap = "round";
+  g.beginPath();
+  g.moveTo(30, 100); g.lineTo(64, 28); g.lineTo(98, 100);
+  g.moveTo(44, 72);  g.lineTo(84, 72);
+  g.stroke();
+  notifIcon = c.toDataURL("image/png");
+  return notifIcon;
+}
+
+// The service worker is what makes buttons on a notification possible, and it
+// keeps working with no tab open. Registration is best effort: without it,
+// notifications still appear, just without buttons.
+let swReg = null;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js")
+    .then(r => { swReg = r; return navigator.serviceWorker.ready; })
+    .then(r => { swReg = r; })
+    .catch(e => console.warn("no service worker, notifications lose their buttons:", e));
+  // The worker asks the page to switch tabs when a notification is clicked.
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data && e.data.type === "goTo") { switchView(e.data.view); refresh(); }
+  });
+}
+
+function showNotification(title, body, goTo, permId) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return null;
+
+  // With a worker, the notification gets approve and block buttons and can
+  // outlive the page. Without one, fall back to a plain notification.
+  if (swReg && swReg.active) {
+    swReg.active.postMessage({
+      type: "notify", title, body: body || "", icon: iconDataURL(),
+      tag: goTo === "perms" ? "atrium-perm" : "atrium",
+      sticky: goTo === "perms", goTo, permId: permId || "",
+      origin: location.origin
+    });
+    return null;
+  }
+
+  const n = new Notification(title, {
+    body: body || "",
+    icon: iconDataURL(),
+    badge: iconDataURL(),
+    tag: goTo === "perms" ? "atrium-perm" : "atrium",
+    renotify: true,
+    // A blocked agent is not something to miss, so that one stays on screen.
+    requireInteraction: goTo === "perms",
+    // We play our own tone, and Windows adding a second one is jarring.
+    silent: true
+  });
+  n.onclick = () => {
+    window.focus();
+    if (goTo) switchView(goTo);
+    n.close();
+  };
+  return n;
+}
+
+// ── toasts ──────────────────────────────────────────────
+function toast(title, body, goTo, key) {
+  const host = document.getElementById("toasts");
+  const el = document.createElement("div");
+  el.className = "toast";
+  // A toast tied to a pending item is cleared when that item is answered,
+  // whether it was answered here or anywhere else.
+  if (key) el.dataset.key = key;
+  el.innerHTML = `<div class="body"><b></b><span></span></div><button class="x">&times;</button>`;
+  el.querySelector("b").textContent = title;
+  el.querySelector("span").textContent = body || "";
+  const dismiss = () => {
+    el.classList.add("leaving");
+    setTimeout(() => el.remove(), 200);
+  };
+  el.addEventListener("click", e => {
+    if (e.target.classList.contains("x")) { dismiss(); return; }
+    if (goTo) switchView(goTo);
+    window.focus();
+    dismiss();
+  });
+  el.dismiss = dismiss;
+  host.appendChild(el);
+  // Everything clears itself. A permission gets longer, because it blocks an
+  // agent and is worth noticing, but nothing sits on screen indefinitely: the
+  // pending count in the tab is the durable signal, not a pile of toasts.
+  setTimeout(dismiss, goTo === "perms" ? 30000 : 9000);
+  // Never let the stack grow past what fits on screen.
+  while (host.children.length > 4) host.firstChild.remove();
+}
+
+// Clears toasts whose subject is no longer pending. Called on every poll, so
+// answering a request from anywhere retires its toast.
+function reapToasts(liveKeys) {
+  document.querySelectorAll("#toasts .toast[data-key]").forEach(el => {
+    if (!liveKeys.has(el.dataset.key) && el.dismiss) el.dismiss();
+  });
+}
+
+// ── settings dialog ─────────────────────────────────────
+const settingsDlg = document.getElementById("settings");
+document.getElementById("gear").onclick = () => { paintSettings(); settingsDlg.showModal(); };
+
+function soundOptions(selected) {
+  return Object.entries(SOUNDS)
+    .map(([k, s]) => `<option value="${k}"${k === selected ? " selected" : ""}>${s.label}</option>`)
+    .join("");
+}
+
+function paintSettings() {
+  const p = alerting.get();
+  document.getElementById("s-vol").value = Math.round(p.volume * 100);
+  document.getElementById("s-input").innerHTML = soundOptions(p.input);
+  document.getElementById("s-perm").innerHTML = soundOptions(p.perm);
+  const state = document.getElementById("s-notify-state");
+  const hint = document.getElementById("s-notify-hint");
+  const ask = document.getElementById("s-notify-ask");
+  const perm = ("Notification" in window) ? Notification.permission : "unsupported";
+  state.textContent = perm === "default" ? "not asked yet" : perm;
+  state.className = "chip" + (perm === "granted" ? " accent" : perm === "denied" ? " warn" : "");
+  // "denied" is sticky: the browser will not ask again, and the enable button
+  // can do nothing about it. Say so rather than letting it look broken.
+  ask.disabled = perm !== "default";
+  hint.innerHTML = {
+    granted: "the browser is allowing them. if nothing appears, Windows is swallowing them: " +
+             "check <b>Settings &rsaquo; System &rsaquo; Notifications</b> is on, that your browser is " +
+             "listed and enabled there, and that <b>Do not disturb</b> or <b>Focus assist</b> is off. " +
+             "note that real alerts only fire while this tab is in the background, though " +
+             "<b>send a test</b> works either way.",
+    denied: "this browser has notifications blocked for localhost and will not ask again. " +
+            "click the icon at the left of the address bar, or open " +
+            "<code>chrome://settings/content/notifications</code>, and allow " +
+            "<code>localhost:7778</code>. then reload.",
+    default: "click enable, then allow it in the browser prompt.",
+    unsupported: "this browser has no notification support."
+  }[perm] || "";
+}
+
+document.getElementById("s-vol").addEventListener("input", e => {
+  alerting.set({ volume: Number(e.target.value) / 100 });
+});
+document.getElementById("s-vol").addEventListener("change", () => alerting.preview(alerting.get().input));
+document.getElementById("s-input").addEventListener("change", e => {
+  alerting.set({ input: e.target.value });
+  alerting.preview(e.target.value);
+});
+document.getElementById("s-perm").addEventListener("change", e => {
+  alerting.set({ perm: e.target.value });
+  alerting.preview(e.target.value);
+});
+
+function previewFor(which) {
+  const p = alerting.get();
+  alerting.preview(which === "perm" ? p.perm : p.input);
+}
+
+function askNotify() {
+  if (!("Notification" in window)) { alert("this browser has no notification support"); return; }
+  if (Notification.permission === "denied") { paintSettings(); return; }
+  // Some browsers still hand back a callback rather than a promise.
+  const done = () => paintSettings();
+  const result = Notification.requestPermission(done);
+  if (result && typeof result.then === "function") result.then(done);
+}
+
+// Fires regardless of tab visibility, so the test proves the browser side
+// works even while you are looking at this page.
+function testNotify() {
+  if (!("Notification" in window)) { alert("this browser has no notification support"); return; }
+  if (Notification.permission !== "granted") {
+    alert("notifications are '" + Notification.permission + "'. " +
+          "see the note under the buttons.");
+    return;
+  }
+  const n = showNotification("atrium", "click this notification to prove it works", "perms");
+  alerting.preview(alerting.get().perm);
+  if (!n) return;
+  // Confirm in the page too, so a click is not a silent no-op.
+  n.onclick = () => {
+    window.focus();
+    n.close();
+    document.getElementById("settings").close();
+    toast("notification click works", "it focused this window. real ones jump to the waiting item.");
+    alerting.preview("chime");
+  };
+  n.onerror = () => toast("the browser could not show it",
+    "Windows is blocking notifications for your browser. check Settings, System, Notifications.");
+}
+
+// Title carries the count so a background tab still tells you.
+function retitle(waiting, perms) {
+  const n = (waiting || 0) + (perms || 0);
+  document.title = n ? `(${n}) atrium` : "atrium";
+}
+
+function badge(id, n) {
+  const el = document.getElementById(id);
+  el.textContent = n || "";
+  el.classList.toggle("zero", !n);
+}
+
+async function decide(id, decision, forever) {
+  let reason = "", prefix = "";
+  if (decision === "block") {
+    reason = prompt("why not? this is handed back to the agent as the reason") || "";
+  }
+  if (forever) {
+    // Whatever is in the card's pattern field is what the rule covers. It is
+    // editable in place, so there is no popup to fight with.
+    const el = document.getElementById("pat-" + id);
+    prefix = el ? el.value.trim() : "";
+    if (!prefix) { alert("give the rule a pattern to match on"); return; }
+  }
+  // Send the command only when you actually changed it.
+  const cmdEl = document.getElementById("cmd-" + id);
+  const command = cmdEl && cmdEl.value.trim() !== cmdEl.defaultValue.trim() ? cmdEl.value.trim() : "";
+  try {
+    await api(`/v1/permissions/${id}/decide`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, reason, forever: !!forever, prefix, command })
+    });
+  } catch (e) { alert(e.message); }
+  refresh();
+}
+
+async function openTask(id) {
+  current = await api(`/v1/tasks/${id}`);
+  document.getElementById("d-title").textContent = current.display_title;
+  document.getElementById("d-chips").innerHTML = [
+    `<span class="chip accent">${esc(current.runner || "?")}</span>`,
+    `<span class="chip">${esc(current.status)}</span>`,
+    current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
+    current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
+    `<span class="chip">idle ${ago(current.idle_seconds)}</span>`
+  ].join("");
+  document.getElementById("d-why").value = current.why || "";
+  document.getElementById("d-statuses").innerHTML = COLUMNS.map(([s, label]) =>
+    `<button class="${s === current.status ? "on" : ""}" onclick="move('${s}')">${label}</button>`).join("");
+
+  const { events } = await api(`/v1/tasks/${id}/events?limit=200`);
+  document.getElementById("d-events").innerHTML = (events || []).length
+    ? (events || []).reverse().map(e => {
+        const p = e.payload || {};
+        const detailText = p.text || p.content || p.command
+          || (p.from ? `${p.from} to ${p.to}` : "") || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");
+        return `<div class="ev ${KEY_EVENTS.includes(e.kind) ? "key" : ""}">
+          <span class="k">${esc(e.kind)}</span><span class="t">${esc((e.at || "").slice(11, 19))}</span>
+          ${detailText ? `<span class="d">${esc(String(detailText).slice(0, 400))}</span>` : ""}
+        </div>`;
+      }).join("")
+    : '<div class="empty">nothing has happened yet</div>';
+  detail.showModal();
+}
+
+async function patch(body) {
+  if (!current) return;
+  try {
+    await api(`/v1/tasks/${current.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+  } catch (e) { alert(e.message); }
+  refresh();
+}
+
+async function move(status) {
+  await patch({ status });
+  detail.close();
+}
+
+// Saving the note on blur keeps it out of the way: type it, click off, it is kept.
+document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
+
+// While you are typing, repainting a list underneath you is hostile. Polling
+// keeps running in the background, but the repaint is held and a badge appears
+// saying there is something new. Clicking it, or leaving the field, applies it.
+let heldUpdate = false;
+
+function isEditing() {
+  const el = document.activeElement;
+  if (el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && el.type !== "range"))
+      && !el.closest("dialog")) {
+    return true;
+  }
+  // A pattern or command you changed but have not acted on yet counts as an
+  // edit in progress even after the field loses focus.
+  return [...document.querySelectorAll("#perms-list .pat, #perms-list .cmd.edit")]
+    .some(f => f.dataset.touched === "1" || (f.defaultValue !== undefined && f.value !== f.defaultValue));
+}
+
+function showHeld(show) {
+  document.getElementById("held").classList.toggle("on", !!show);
+}
+
+function applyHeld() {
+  heldUpdate = false;
+  showHeld(false);
+  repaintLists();
+}
+
+function repaintLists() {
+  const view = document.querySelector(".tab.on").dataset.view;
+  const render = { board: renderBoard, stack: renderStack, perms: renderPerms }[view];
+  render().catch(e => console.error(e));
+}
+
+async function refresh() {
+  if (isEditing()) {
+    // Hold the repaint, but keep the counters, sounds and toasts live: those
+    // are what tell you something arrived.
+    heldUpdate = true;
+    showHeld(true);
+  } else {
+    if (heldUpdate) { heldUpdate = false; showHeld(false); }
+    repaintLists();
+  }
+
+  // Waiting and permissions are polled whichever view is open, because the
+  // badges, the title, and the alert all have to work while you are looking at
+  // something else.
+  Promise.all([
+    api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
+    api("/v1/permissions").then(r => r.permissions || []).catch(() => null)
+  ]).then(([waiting, perms]) => {
+    if (waiting) {
+      badge("c-wait", waiting.length);
+      alerting.check("waiting", waiting, t => ({
+        title: t.display_title, body: "is waiting on you"
+      }));
+    }
+    if (perms) {
+      badge("c-perm", perms.length);
+      alerting.check("permission", perms, p => ({
+        title: "permission needed", body: `${p.tool}: ${(p.command || "").slice(0, 120)}`
+      }));
+    }
+    // Retire any toast whose request or task has since been answered.
+    if (waiting && perms) {
+      reapToasts(new Set([...waiting.map(t => t.id), ...perms.map(p => p.id)]));
+    }
+    retitle(waiting && waiting.length, perms && perms.length);
+  });
+
+  api("/v1/health").then(h => {
+    const el = document.getElementById("wedge");
+    el.style.display = h.wedged ? "flex" : "none";
+    if (h.wedged) {
+      document.getElementById("wedge-t").innerHTML =
+        `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
+    }
+  }).catch(() => {});
+}
+
+function connect() {
+  const es = new EventSource("/v1/events");
+  const conn = document.getElementById("conn");
+  const label = document.getElementById("conn-t");
+  es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
+  es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
+  ["task", "task-removed", "permission", "wedge"].forEach(k => es.addEventListener(k, refresh));
+}
+
+// ── tooltips ────────────────────────────────────────────
+// One floating panel, measured and then placed. It prefers to sit below and
+// left-aligned with its bubble, and flips or slides whenever that would put it
+// off screen, so a bubble near the right edge or the bottom still reads.
+const tipEl = document.getElementById("tip");
+
+function placeTip(anchor, text) {
+  tipEl.textContent = text;
+  tipEl.classList.add("on");
+  // Measure first: size depends on the text, and position depends on size.
+  tipEl.style.left = "0px";
+  tipEl.style.top = "0px";
+  const pad = 10;
+  // Never wider than the window, so the panel cannot introduce a horizontal
+  // scrollbar no matter how long the text is.
+  tipEl.style.maxWidth = Math.min(420, window.innerWidth - pad * 2) + "px";
+  const a = anchor.getBoundingClientRect();
+  const t = tipEl.getBoundingClientRect();
+
+  let left = a.left;
+  // Slide back inside rather than letting it spill off the right edge.
+  if (left + t.width > window.innerWidth - pad) left = window.innerWidth - t.width - pad;
+  if (left < pad) left = pad;
+
+  // Below by default, above when there is no room below but there is above.
+  let top = a.bottom + 9;
+  const roomBelow = window.innerHeight - a.bottom;
+  if (roomBelow < t.height + pad && a.top > t.height + pad) top = a.top - t.height - 9;
+  if (top < pad) top = pad;
+
+  tipEl.style.left = Math.round(left) + "px";
+  tipEl.style.top = Math.round(top) + "px";
+}
+
+function hideTip() { tipEl.classList.remove("on"); }
+
+document.addEventListener("pointerover", e => {
+  const help = e.target.closest && e.target.closest(".help");
+  if (help) placeTip(help, help.dataset.tip);
+});
+document.addEventListener("pointerout", e => {
+  if (e.target.closest && e.target.closest(".help")) hideTip();
+});
+document.addEventListener("focusin", e => {
+  const help = e.target.closest && e.target.closest(".help");
+  if (help) placeTip(help, help.dataset.tip);
+});
+document.addEventListener("focusout", hideTip);
+window.addEventListener("scroll", hideTip, true);
+window.addEventListener("resize", hideTip);
+
+wireFilters("rules-seg", "rules-q", paintRules);
+wireFilters("hist-seg", "hist-q", paintHistory);
+rememberOpen("rules-d", "atrium.rules.open");
+rememberOpen("hist-d", "atrium.history.open");
+
+connect();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
