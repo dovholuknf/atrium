@@ -1,0 +1,123 @@
+#                                     _           
+#  _ __ ___   ___ _ __ ___ _   _ _ __(_)_   _ ___ 
+# | '_ ` _ \ / _ \ '__/ __| | | | '__| | | | / __|
+# | | | | | |  __/ | | (__| |_| | |  | | |_| \__ \
+# |_| |_| |_|\___|_|  \___|\__,_|_|  |_|\__,_|___/
+#
+#         mediates the design-build duel.
+#  https://github.com/michaelquigley/mercurius
+#
+
+# example mercurius.yaml. copy this into a project directory as
+# `mercurius.yaml` and edit the fields below. fields omitted here fall back to
+# sane defaults (log_destination: .mercurius, max_findings: 6). the project
+# name is derived from the directory holding the config file.
+
+max_findings: 6
+
+# review_context is calibration: the stable framing of what kind of review this
+# is. state project posture - deployment model, stakes, scope, and the
+# simplicity-vs-defensiveness preference. it is true in round one and still true
+# in round fourteen. decisions the reviewer should stop raising do NOT go here;
+# those are guards, and they live in settled_decisions below.
+review_context: |
+  atrium is a personal workflow tool built by and for one operator. it is not a
+  product: no multi-tenancy, no accounts, no public deployment, nothing to sell.
+  single supervised implementer, pre-1.0, breaking changes are acceptable and
+  expected. prefer simple over highly defensive when both achieve correctness.
+
+  the artifact under review is a design document for a v2 rewrite, not code. v1
+  exists and works: a go binary where one terminal brokers many claude-code
+  sessions over http long-poll, with an mcp-based agent loop and a permission
+  gate. v2 splits that single process into a daemon that owns state and a set of
+  interchangeable clients, adds durable storage, a kanban web ui, process
+  supervision, and remote access.
+
+  primary platform is windows 11 with powershell. go 1.26. the deployment model
+  is one machine, loopback only, later exposed over an openziti overlay. judge
+  the document on whether it is buildable and whether the staging actually holds
+  together, not on production hardening it explicitly disclaims.
+
+# settled_decisions are guards: decisions already made that the reviewer should
+# not re-raise. each entry is {id, do_not_flag}. do_not_flag is the instruction
+# the reviewer acts on; id is your handle for finding, editing, or removing the
+# guard and is never shown to the reviewer. earn a guard by actually
+# re-litigating a finding and deciding it is out of scope - do not add them
+# speculatively. the field's worst failure mode is bloat: a ledger that grows
+# faster than the artifacts slows every cold read without buying anything.
+# mercurius re-reads this file at the start of every round, so adding or removing
+# a guard takes effect on the next round with no session reopen.
+settled_decisions:
+  - id: observability-out-of-scope
+    do_not_flag: >
+      missing production-grade observability or multi-tenant concerns
+  - id: no-auth-single-user
+    do_not_flag: >
+      absence of authentication, authorization, sessions, or user identity. the
+      daemon is loopback-only and single-operator. remote reach is delegated
+      entirely to an openziti overlay, which supplies identity and policy.
+      atrium will never grow its own auth layer.
+  - id: storage-sqlite-chosen
+    do_not_flag: >
+      the choice of sqlite over jsonl, an embedded kv store, or a server
+      database. postgres portability is a deliberate hedge, not a commitment,
+      and the cost of that hedge was already weighed and accepted.
+  - id: spa-over-server-rendered
+    do_not_flag: >
+      the choice of a react spa over server-rendered html, and the node
+      toolchain it drags in. the json-plus-sse boundary it forces is wanted,
+      because a native mobile app will later consume the same contract.
+  - id: persistence-reversal-intended
+    do_not_flag: >
+      that v2 abandons v1's documented "hub is intentionally amnesiac, restart
+      equals reset" invariant. the reversal is the point of v2 and is called out
+      in the document.
+  - id: perms-as-board-column
+    do_not_flag: >
+      folding the permission queue into the kanban board as a status column
+      rather than building a dedicated permission surface. this is an explicit
+      try-it-and-see decision pending real use.
+  - id: no-vendor-remote-control
+    do_not_flag: >
+      not reusing an llm vendor's own remote-control, session-format, or cloud
+      features. vendor independence is a hard requirement: the tool must drive
+      claude-code, codex, ollama, and bare shells as peers.
+
+# review_focus directs the reviewer at project-specific surfaces that the base
+# review philosophy does not already cover. the base prompt already carries
+# the universal subtle-vs-obvious filter, so this field is typically just one
+# paragraph naming the invariants or risks unique to this project.
+review_focus: |
+  three surfaces carry this design, and a flaw in any of them is worth more than
+  a dozen stylistic notes.
+
+  first, the resilience invariants inherited from v1. the agent client must never
+  expose a daemon disconnect or an empty prompt to the llm, because either one
+  causes idle token burn. the permission hook must fail open, so a dead daemon
+  degrades to the runner's native prompt instead of bricking the session. the
+  document claims these survive the split untouched. check whether the new
+  storage layer, the added task-id parameter on the agent-facing endpoints, and
+  the new status lifecycle actually preserve them, or whether they introduce a
+  failure path where the daemon is reachable but cannot persist.
+
+  second, the layering rule: no client gets a privileged path into the core. v1
+  handed the tui an in-process pointer and the tui read state through direct
+  method calls, which is why no human-facing api exists today. v2 forbids this.
+  look for places where the design quietly reintroduces a privileged path, and
+  for capabilities the tui or supervisor needs that the documented http surface
+  cannot express.
+
+  third, the process supervision tier. the design claims owning a pseudo-terminal
+  makes atrium runner-agnostic and subsumes the need for per-runner integration.
+  scrutinize that claim, the status-inference heuristics it depends on, and the
+  interaction between a supervised runner and the same runner cooperating over
+  the agent-facing endpoints.
+
+  also weigh the staged migration on its own terms. each stage claims to leave
+  the existing "atrium hub" command working. verify that ordering is real, and
+  say so if a stage depends on something a later stage delivers.
+
+reviewer:
+  name: codex
+  impl: codex
+  model: gpt-5.5
