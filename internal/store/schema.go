@@ -137,6 +137,60 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS task_external ON task (external_id)`,
 		},
 	},
+	{
+		// Runners are rows, not code. Adding claude, codex, ollama or anything
+		// else is configuration.
+		name: "0006_harness",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS harness (
+				id           TEXT PRIMARY KEY,
+				label        TEXT NOT NULL DEFAULT '',
+				enabled      INTEGER NOT NULL DEFAULT 0,
+				cmd          TEXT NOT NULL,
+				args         TEXT NOT NULL DEFAULT '[]',
+				cwd          TEXT NOT NULL DEFAULT '',
+				env          TEXT NOT NULL DEFAULT '{}',
+				launch_mode  TEXT NOT NULL DEFAULT 'window'
+				               CHECK (launch_mode IN ('window','pty')),
+				resume_args  TEXT NOT NULL DEFAULT '[]',
+				rules_source TEXT NOT NULL DEFAULT '',
+				notes        TEXT NOT NULL DEFAULT '',
+				sort         INTEGER NOT NULL DEFAULT 100,
+				created_at   TEXT NOT NULL
+			)`,
+			`ALTER TABLE task ADD COLUMN harness TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// Adopting from the gwt session ledger is gone. It filled the board
+		// with hundreds of sessions atrium could watch but never talk to, and
+		// the hook already brings a session in the moment it does something.
+		// The columns stay: resume_id is worth keeping for when a card can
+		// relaunch its own runner.
+		name: "0007_drop_adopted",
+		stmts: []string{
+			`DELETE FROM task WHERE external_id != '' AND (wire_name IS NULL OR wire_name = '')`,
+		},
+	},
+	{
+		// The seeded note still pointed at the gwt ledger, which no longer
+		// feeds anything. A seeded row is only inserted once, so fixing the
+		// default is not enough for a database that already has it.
+		name: "0008_harness_note",
+		stmts: []string{
+			`UPDATE harness SET notes =
+				'resume needs a session id, which only a runner that reports one can supply'
+			 WHERE id = 'claude' AND notes LIKE '%gwt ledger%'`,
+		},
+	},
+	{
+		// A path tells you which file, not what is changing. The diff is what
+		// a decision actually rests on.
+		name: "0009_permission_details",
+		stmts: []string{
+			`ALTER TABLE permission ADD COLUMN details TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

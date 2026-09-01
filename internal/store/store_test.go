@@ -162,7 +162,7 @@ func TestPermissionDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, decided, err := s.RecordPermission(task.ID, "Bash", "rm -rf /", "key-1")
+	first, decided, err := s.RecordPermission(task.ID, "Bash", "rm -rf /", "key-1", "")
 	if err != nil || decided {
 		t.Fatalf("first record: decided=%v err=%v", decided, err)
 	}
@@ -170,7 +170,7 @@ func TestPermissionDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Agent replays the same request after a restart.
-	again, decided, err := s.RecordPermission(task.ID, "Bash", "rm -rf /", "key-1")
+	again, decided, err := s.RecordPermission(task.ID, "Bash", "rm -rf /", "key-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

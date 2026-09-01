@@ -146,7 +146,7 @@ type Hooks struct {
 	// PermRequest records a pending permission and returns its durable id. A
 	// non-empty auto means a standing rule already answered it, in which case
 	// the hub replies immediately and never shows the request.
-	PermRequest func(agent, tool, command string) (permID string, auto *AutoDecision, err error)
+	PermRequest func(req PermissionRequest) (permID string, auto *AutoDecision, err error)
 	// PermDecided records the resolution of a permission.
 	PermDecided func(permID, decision, reason string)
 }
@@ -173,13 +173,13 @@ type AutoDecision struct {
 	Reason   string
 }
 
-func (h *Hooks) permRequest(agent, tool, command string) (string, *AutoDecision) {
+func (h *Hooks) permRequest(req PermissionRequest) (string, *AutoDecision) {
 	if h == nil || h.PermRequest == nil {
 		return "", nil
 	}
-	id, auto, err := h.PermRequest(agent, tool, command)
+	id, auto, err := h.PermRequest(req)
 	if err != nil {
-		log.Printf("[atrium hub] record permission from %s: %v", agent, err)
+		log.Printf("[atrium hub] record permission from %s: %v", req.Agent, err)
 		return "", nil
 	}
 	return id, auto
@@ -371,6 +371,16 @@ type PermissionRequest struct {
 	Agent   string `json:"agent"`
 	Command string `json:"command"`
 	Tool    string `json:"tool,omitempty"`
+	// PID is the runner's own process, not the hook's. It is what lets atrium
+	// tell a live session from a dead one by asking the operating system,
+	// which costs nothing, instead of asking the runner, which costs a turn.
+	PID int `json:"pid,omitempty"`
+	// Cwd is where the runner is working, used to fill in the card.
+	Cwd string `json:"cwd,omitempty"`
+	// Details is what the tool would actually do: the diff for an edit, the
+	// content for a write. The command line alone names the target without
+	// saying what happens to it, which is not enough to decide on.
+	Details string `json:"details,omitempty"`
 }
 
 // PermissionResponse is what the hub returns to the hook.
@@ -412,7 +422,7 @@ func (h *Hub) HandlePermission(w http.ResponseWriter, r *http.Request) {
 	// A standing rule answers without ever reaching the human. This is the
 	// whole point of deciding something "forever": the request is recorded for
 	// the history, then answered, and no card or banner appears.
-	storeID, auto := h.Record.permRequest(in.Agent, in.Tool, in.Command)
+	storeID, auto := h.Record.permRequest(in)
 	if auto != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(PermissionResponse{Decision: auto.Decision, Reason: auto.Reason})

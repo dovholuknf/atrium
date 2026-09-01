@@ -222,8 +222,13 @@ func (s *Store) Waiting() ([]*Task, error) {
 	var out []*Task
 	err := s.guard(func() error {
 		out = nil
+		// Only work you can actually act on from here. A session adopted from
+		// the ledger has no wire name, so atrium can watch it but cannot send
+		// it anything. Listing those as "waiting on you" would be a lie about
+		// what clicking them does.
 		rows, err := s.db.Query(`SELECT ` + taskColumns + ` FROM task
 			WHERE status IN ('needs-input','needs-permission')
+			  AND wire_name IS NOT NULL AND wire_name != ''
 			ORDER BY waiting_since ASC`)
 		if err != nil {
 			return err

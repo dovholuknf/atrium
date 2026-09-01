@@ -18,10 +18,14 @@
     --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  /* An author rule with a display value outranks the browser's built-in
+     [hidden] rule, so .board's display:grid kept the board visible on every
+     tab. This has to win. */
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0; color: var(--body);
-    font: 15px/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: 18px/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background:
       linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
     -webkit-font-smoothing: antialiased;
@@ -46,16 +50,16 @@
     background: linear-gradient(180deg, rgba(7,19,34,.94), rgba(7,19,34,.72));
     border-bottom: 1px solid var(--stroke-dim);
   }
-  .bar { display: flex; align-items: center; gap: 22px; padding: 14px 26px; }
+  .bar { display: flex; align-items: center; gap: 26px; padding: 16px 28px; }
   .wordmark {
-    font-size: 15px; font-weight: 700; letter-spacing: .34em; margin: 0;
+    font-size: 23px; font-weight: 700; letter-spacing: .34em; margin: 0;
     text-transform: uppercase;
   }
   .rule { height: 2px; background: linear-gradient(90deg, var(--teal), var(--blue) 40%, transparent); }
   nav { display: flex; gap: 2px; }
   .tab {
-    padding: 7px 15px; border-radius: 7px; cursor: pointer; color: var(--label);
-    border: 1px solid transparent; font-size: 13px; font-weight: 500;
+    padding: 10px 20px; border-radius: 8px; cursor: pointer; color: var(--label);
+    border: 1px solid transparent; font-size: 19.5px; font-weight: 500;
     transition: color .15s, background .15s, border-color .15s; user-select: none;
   }
   .tab:hover { color: var(--head); }
@@ -63,15 +67,15 @@
     color: var(--head); background: var(--chip); border-color: var(--stroke);
   }
   .tab .count {
-    display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: 20px;
-    font: 600 11px/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
+    display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: 20px;
+    font: 600 16px/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
   }
   .tab .count:empty, .tab .count.zero { display: none; }
   .grow { flex: 1; }
   .conn {
-    font: 500 12px/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: 7px;
+    font: 500 18px/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: 9px;
   }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
 
   #wedge {
@@ -82,23 +86,50 @@
   #wedge strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
   #wedge code { font-family: var(--mono); font-size: 12px; color: #FFB3BC; }
 
-  main { position: relative; z-index: 1; padding: 26px; }
+  /* Capped so a row's trailing buttons stay near its content. On an ultrawide
+     an uncapped row puts the actions a foot away from what they act on. */
+  /* Full width. A cap here left a third of a wide screen empty while a diff
+     was scrolling inside a box, which is the wrong trade. */
+  main { position: relative; z-index: 1; padding: 20px 26px; }
 
   /* ── board ──────────────────────────────────────────── */
+  /* One row, always. Seven columns wrapped onto a second row under the width
+     cap, which reads as two boards rather than one. Scroll sideways instead. */
   .board {
-    display: grid; gap: 16px; align-items: start;
-    grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+    display: flex; gap: 16px; align-items: flex-start;
+    overflow-x: auto; padding-bottom: 8px;
   }
+  .board .col { flex: 1 1 0; min-width: 230px; }
+  /* A folded column shrinks to its header so the rest get the room. */
+  .board .col.folded { flex: 0 0 auto; min-width: 0; }
   .col {
     background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
     border: 1px solid var(--stroke-dim); border-radius: 12px; padding: 13px 12px 10px;
     min-height: 108px;
   }
+  /* A collapsed column keeps its header and count but gives its space back.
+     needs-input can hold dozens of cards and drown everything else. */
+  .col.folded { min-height: 0; padding-bottom: 10px; }
+  .col.folded .cards { display: none; }
   .col-head {
     display: flex; justify-content: space-between; align-items: center;
-    font: 600 10.5px/1 Inter, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    font: 600 12.5px/1 Inter, sans-serif; letter-spacing: .16em; text-transform: uppercase;
     color: var(--label); margin-bottom: 12px; padding: 0 3px;
   }
+  .col > .col-head { cursor: pointer; user-select: none; margin-bottom: 12px; }
+  .col > .col-head:hover { color: var(--head); }
+  .col > .col-head .fold {
+    display: inline-block; width: 11px; color: var(--teal); font-size: 15px;
+    transition: transform .15s; margin-right: 6px;
+  }
+  .col.folded > .col-head .fold { transform: rotate(-90deg); }
+  .col.folded > .col-head { margin-bottom: 0; }
+
+  @keyframes flash {
+    0%, 100% { box-shadow: 0 10px 22px rgba(2,6,9,.45); }
+    30% { box-shadow: 0 0 0 3px var(--teal), 0 10px 22px rgba(2,6,9,.45); }
+  }
+  .flash { animation: flash 1.1s ease-out 2; }
   .col-head .n { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
   .col[data-status="needs-input"] .col-head,
   .col[data-status="needs-permission"] .col-head { color: var(--warn); }
@@ -168,33 +199,41 @@
     font: 700 21px/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
   }
   .row .who { flex: 1; }
-  .row .who b { display: block; color: var(--head); font-weight: 600; font-size: 14.5px; }
+  /* Direct child only. As a descendant selector this also matched the bold
+     used for word emphasis inside a diff, and won on specificity, which put
+     every emphasised word on its own full width line. */
+  .row .who > b { display: block; color: var(--head); font-weight: 600; font-size: 14.5px; }
   .row .who span { font-size: 12.5px; color: var(--dim); }
   /* Rule and decision rows are list entries, not cards. They get read in bulk,
      so they stay tight enough to scan a screenful at a time. */
-  .row.compact { padding: 7px 14px; gap: 11px; align-items: center; }
-  .row.compact .who b { font-size: 13px; font-weight: 500; }
+  .row.compact { padding: 8px 15px; gap: 12px; align-items: center; }
+  .row.compact .who b { font-size: 15px; font-weight: 500; }
   .row.compact .who b code { font-family: var(--mono); color: var(--head); }
-  .row.compact .who span { font-size: 11.5px; color: var(--dimmest); }
-  .row.compact .chip { font-size: 10.5px; padding: 1px 7px; }
-  .row.compact button { padding: 3px 10px; font-size: 11.5px; }
-  .row.compact .cmd { font-size: 11.5px; padding: 5px 9px; margin-top: 5px; }
+  .row.compact .who span { font-size: 13.5px; color: var(--dimmest); }
+  .row.compact .chip { font-size: 12.5px; padding: 2px 9px; }
+  .row.compact button { padding: 4px 12px; font-size: 13.5px; }
+  .row.compact .cmd { font-size: 13.5px; padding: 6px 10px; margin-top: 5px; }
 
   /* One line per entry: everything on a single row, the wide field truncates. */
   .row.line {
-    display: flex; align-items: baseline; gap: 12px; cursor: default;
-    padding: 6px 14px; font-size: 12px;
+    display: flex; align-items: baseline; gap: 14px; cursor: default;
+    padding: 8px 16px; font-size: 14.5px;
   }
-  .row.line .stamp { font: 11.5px/1 var(--mono); color: var(--dim); flex: none; }
+  .row.line:hover { background: rgba(23,58,87,.5); }
+  .row.line .stamp { font: 13.5px/1 var(--mono); color: var(--dim); flex: none; }
   .row.line .stamp time { color: var(--label); }
   .row.line .stamp i { color: var(--dimmest); font-style: normal; }
-  .row.line .tool { color: var(--head); font-weight: 600; flex: none; min-width: 54px; }
-  .row.line code { font: 11.5px/1.5 var(--mono); color: var(--body); }
+  .row.line .tool { color: var(--head); font-weight: 600; flex: none; min-width: 64px; }
+  .row.line code { font: 13.5px/1.5 var(--mono); color: var(--body); }
   .row.line .grow { flex: 1; min-width: 0; }
   .row.line .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row.line .by { color: var(--dimmest); font-size: 11px; flex: none; }
+  .row.line .by { color: var(--dimmest); font-size: 13px; flex: none; }
   .row.line .by code { color: var(--label); }
-  .row.line button { padding: 2px 9px; font-size: 11px; flex: none; }
+  .row.line button { padding: 4px 12px; font-size: 13px; flex: none; }
+  /* Actions only assert themselves for the row you are pointing at, so a long
+     list stays calm but the live row is obvious. */
+  .row.line button { opacity: .55; transition: opacity .12s, border-color .12s, color .12s; }
+  .row.line:hover button { opacity: 1; }
 
   .subhead {
     font-size: 12.5px; color: var(--dim); margin: -4px 0 12px; max-width: 78ch;
@@ -207,7 +246,7 @@
     margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   }
   textarea.cmd.edit {
-    display: block; width: 100%; resize: vertical; margin: 0;
+    display: block; width: 100%; resize: vertical; margin: 0; min-height: 44px;
     transition: border-color .14s;
   }
   textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
@@ -216,6 +255,55 @@
   .row .who label.eyebrow { margin: 11px 0 6px; }
   /* One box on the card: the command. The rule pattern sits on a plain line
      under it, editable in place without looking like a second field. */
+  /* The change itself, so a decision is made on what happens rather than on
+     which file it happens to. */
+  details.change { margin-top: 10px; }
+  details.change > summary {
+    font: 600 12px/1 Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--label); cursor: pointer; padding: 4px 0; user-select: none;
+  }
+  details.change > summary::before {
+    content: "\25B8"; display: inline-block; width: 13px; color: var(--teal);
+    font-size: 15px; transition: transform .15s;
+  }
+  details.change[open] > summary::before { transform: rotate(90deg); }
+  details.change > summary:hover { color: var(--head); }
+  /* Drag the bottom edge to make it as tall as the change deserves. The
+     default is enough to read a small edit without scrolling. */
+  pre.diff {
+    margin: 6px 0 0; padding: 10px 12px; overflow: auto;
+    height: 260px; min-height: 90px; resize: vertical;
+    background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
+    border-radius: 7px; font: 13px/1.5 var(--mono); white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Context recedes, changed lines carry a marker in the gutter, and the
+     changed words inside a replaced line are brightest. */
+  pre.diff i { display: block; font-style: normal; padding: 0 6px 0 22px; position: relative; }
+  pre.diff i.ctx { color: var(--dim); opacity: .65; }
+  pre.diff i.del, pre.diff i.add { font-weight: 500; }
+  pre.diff i.del {
+    background: rgba(255,107,107,.14); color: #FFB3BC;
+    box-shadow: inset 3px 0 0 var(--danger);
+  }
+  pre.diff i.add {
+    background: rgba(0,227,176,.12); color: var(--chip-accent-text);
+    box-shadow: inset 3px 0 0 var(--teal);
+  }
+  pre.diff i.del::before,
+  pre.diff i.add::before {
+    position: absolute; left: 9px; opacity: .8; font-weight: 700;
+  }
+  pre.diff i.del::before { content: "-"; }
+  pre.diff i.add::before { content: "+"; }
+  /* display:inline is load bearing. The row's own `.who b` rule makes bold
+     text a block, which put every emphasised word on its own line. */
+  pre.diff i b {
+    display: inline; font-weight: 700; border-radius: 3px; padding: 0 2px;
+    background: rgba(255,255,255,.18); color: var(--head);
+  }
+  pre.diff i.hdr { color: var(--dimmest); margin-top: 8px; padding-left: 6px; }
+
   .scope {
     margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(44,95,132,.35);
     display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
@@ -351,22 +439,30 @@
   .col-head > .help { margin-right: auto; }
 
   button {
-    font: 600 12.5px/1 Inter, sans-serif; color: var(--body); cursor: pointer;
+    font: 600 14.5px/1 Inter, sans-serif; color: var(--body); cursor: pointer;
     background: var(--chip); border: 1px solid var(--stroke-dim);
-    border-radius: 7px; padding: 8px 14px; transition: all .14s;
+    border-radius: 7px; padding: 9px 16px; transition: all .14s;
   }
-  button:hover { color: var(--head); border-color: var(--blue); }
+  button:hover {
+    color: var(--head); border-color: var(--blue);
+    background: #1d4666; transform: translateY(-1px);
+  }
+  button:active { transform: translateY(0); }
   button.go {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
   button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(0,227,176,.22); }
   button.no:hover { border-color: var(--danger); color: #FFC3C9; box-shadow: 0 0 14px rgba(255,107,107,.18); }
   button.icon {
-    padding: 6px 11px; font-size: 15px; line-height: 1; color: var(--teal);
+    padding: 8px 13px; font-size: 23px; line-height: 1; color: var(--teal);
     background: transparent; border-color: transparent;
   }
   button.icon:hover { border-color: var(--stroke-dim); }
   button.icon.muted { color: var(--dimmest); }
+  /* Sound is on, but the browser has not let this page make any yet. */
+  button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }
+  @keyframes nudge { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  button.newagent { font-size: 17px; padding: 10px 20px; }
 
   /* ── detail dialog ──────────────────────────────────── */
   dialog {
@@ -426,8 +522,10 @@
       <div class="tab on" data-view="board">board</div>
       <div class="tab" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
+      <div class="tab" data-view="runners">runners</div>
     </nav>
     <div class="grow"></div>
+    <button class="go newagent" onclick="openLaunch()">+ new agent</button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
@@ -514,6 +612,24 @@ Exports honour whatever filter is applied.">?</span>
       <div id="history-list"></div>
     </details>
   </div>
+
+  <div id="runners" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>start something</span>
+      <span class="help" tabindex="0" data-tip="Runners are rows in a table, not code. A runner is a command, a working directory, an environment, and a way to resume.
+
+Add your own with 'add a runner'. Nothing about claude, codex or ollama is special-cased.
+
+window mode opens a real terminal. pty mode has atrium own the process and stream it to the browser, and is not built yet.">?</span>
+    </div>
+    <div id="launchers"></div>
+
+    <div class="col-head" style="margin:26px 0 10px"><span>configuration</span></div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editHarness(null)">add a runner</button>
+    </div>
+    <div id="harness-list"></div>
+  </div>
 </main>
 
 <div id="tip"></div>
@@ -555,6 +671,98 @@ Exports honour whatever filter is applied.">?</span>
   </div>
 </dialog>
 
+<dialog id="harness">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="h-heading">runner</h2></div>
+    <button onclick="document.getElementById('harness').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="h-id">id</label>
+      <input type="text" id="h-id" spellcheck="false" placeholder="codex">
+      <span class="hintline">short and lowercase. cannot be changed later.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-label">label</label>
+      <input type="text" id="h-label" spellcheck="false" placeholder="codex cli">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-cmd">command</label>
+      <input type="text" id="h-cmd" spellcheck="false" placeholder="codex">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-args">arguments, one per line</label>
+      <textarea id="h-args" rows="3" spellcheck="false"></textarea>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-resume">resume arguments, one per line</label>
+      <textarea id="h-resume" rows="2" spellcheck="false"></textarea>
+      <span class="hintline">use <code>{resume}</code> where the session id goes. claude uses
+        <code>--resume</code> then <code>{resume}</code>.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-cwd">default working directory</label>
+      <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
+      <textarea id="h-env" rows="2" spellcheck="false"></textarea>
+    </div>
+    <div class="field">
+      <label class="eyebrow">launch mode</label>
+      <div class="seg" id="h-mode">
+        <button class="on" data-v="window">own terminal window</button>
+        <button data-v="pty">atrium owns it</button>
+      </div>
+      <span class="hintline">atrium-owned is not built yet.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-rules">rule import source</label>
+      <select id="h-rules">
+        <option value="">none, use atrium json</option>
+        <option value="claude">claude code settings.json</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-notes">notes</label>
+      <input type="text" id="h-notes" spellcheck="false">
+    </div>
+    <div class="toolbar">
+      <button class="go big" onclick="saveHarness()">save</button>
+      <button class="no" id="h-delete" onclick="deleteHarness()">delete</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="launch">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="l-heading">start</h2></div>
+    <button onclick="document.getElementById('launch').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field" id="l-pick-field">
+      <label class="eyebrow" for="l-harness">runner</label>
+      <div class="picker">
+        <select id="l-harness"></select>
+        <button onclick="switchView('runners');document.getElementById('launch').close()">configure</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="l-cwd">working directory</label>
+      <input type="text" id="l-cwd" spellcheck="false" placeholder="D:/git/github/dovholuknf/atrium">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="l-title">title</label>
+      <input type="text" id="l-title" spellcheck="false" placeholder="what is this one for">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="l-why">why</label>
+      <input type="text" id="l-why" spellcheck="false" placeholder="read this in a week and remember">
+    </div>
+    <div class="toolbar"><button class="go big" onclick="doLaunch()">start it</button></div>
+  </div>
+</dialog>
+
 <dialog id="detail">
   <div class="dlg-head">
     <div class="grow">
@@ -571,6 +779,10 @@ Exports honour whatever filter is applied.">?</span>
     <div class="field">
       <label class="eyebrow">move to</label>
       <div class="statuses" id="d-statuses"></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">runner</label>
+      <div class="toolbar" id="d-runner"></div>
     </div>
     <div class="field">
       <label class="eyebrow">history</label>
@@ -611,9 +823,11 @@ function ago(secs) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
+const VIEWS = ["board", "stack", "perms", "runners"];
+
 function switchView(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
-  ["board", "stack", "perms"].forEach(v => document.getElementById(v).hidden = v !== name);
+  VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
   refresh();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
@@ -635,11 +849,33 @@ async function renderBoard() {
   const { tasks } = await api("/v1/tasks");
   document.getElementById("board").innerHTML = COLUMNS.map(([status, label]) => {
     const mine = (tasks || []).filter(t => t.status === status);
-    return `<section class="col" data-status="${status}">
-      <div class="col-head"><span>${label}</span><span class="n">${mine.length}</span></div>
-      ${mine.length ? mine.map(cardHTML).join("") : '<div class="empty">empty</div>'}
+    const folded = foldedColumns().includes(status) ? " folded" : "";
+    return `<section class="col${folded}" data-status="${status}">
+      <div class="col-head" onclick="toggleColumn('${status}')">
+        <span><span class="fold">&#9662;</span>${label}</span>
+        <span class="n">${mine.length}</span>
+      </div>
+      <div class="cards">
+        ${mine.length ? mine.map(cardHTML).join("") : '<div class="empty">empty</div>'}
+      </div>
     </section>`;
   }).join("");
+}
+
+// Which columns are collapsed, remembered so the board opens the way you left
+// it rather than re-drowning you in the big one every reload.
+function foldedColumns() {
+  try { return JSON.parse(localStorage.getItem("atrium.folded") || "[]"); }
+  catch (e) { return []; }
+}
+
+function toggleColumn(status) {
+  const folded = foldedColumns();
+  const i = folded.indexOf(status);
+  if (i >= 0) folded.splice(i, 1); else folded.push(status);
+  localStorage.setItem("atrium.folded", JSON.stringify(folded));
+  const el = document.querySelector(`.col[data-status="${status}"]`);
+  if (el) el.classList.toggle("folded", i < 0);
 }
 
 async function renderStack() {
@@ -677,6 +913,10 @@ function permCard(p) {
         edit the command below to run something different</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="2" spellcheck="false"
         title="whatever is in here is what runs once you approve"></textarea>
+      ${p.details ? `<details class="change" open>
+        <summary>what changes</summary>
+        <pre class="diff">${diffHTML(p.details)}</pre>
+      </details>` : ""}
       <div class="scope">
         <span class="lbl">always / never applies to</span>
         <code class="patview" id="pat-${p.id}"></code>
@@ -815,6 +1055,121 @@ function paintHistory() {
 
 // hintsFor offers a few ready-made patterns per request, so widening a rule to
 // a whole repo is one click instead of typing a path by hand.
+// Colours the change block. The hook marks removals and additions with the
+// same --- and +++ a diff uses, so the lines under each marker are tinted
+// accordingly and a change is readable at a glance.
+// The hook sends the whole before and after text. Tinting both wholesale makes
+// a one word change look like a hundred line rewrite, so the two are diffed
+// here and only the lines that actually differ are marked. Unchanged context
+// stays dim, and within a replaced line the changed words are picked out.
+function splitChange(text) {
+  // Scanned line by line rather than matched with a regex: an end anchor under
+  // the multiline flag matches at every line break, which silently truncated
+  // the removed block to nothing and made every line look added.
+  const hunks = [];
+  let cur = null, into = null;
+  for (const line of (text || "").split("\n")) {
+    if (line === "=== next edit ===") { cur = null; into = null; continue; }
+    if (line === "--- removing") {
+      cur = { old: [], now: [] };
+      hunks.push(cur);
+      into = "old";
+      continue;
+    }
+    if (line === "+++ adding" || line === "+++ writing") {
+      if (!cur) { cur = { old: [], now: [] }; hunks.push(cur); }
+      into = "now";
+      continue;
+    }
+    if (cur && into) cur[into].push(line);
+  }
+  return hunks.map(h => ({ old: h.old.join("\n"), now: h.now.join("\n") }));
+}
+
+// Longest common subsequence over lines, walked back into a unified list.
+function lineDiff(a, b) {
+  const n = a.length, m = b.length;
+  // Guard against a pathological diff on a huge write.
+  if (n * m > 4000000) {
+    return [...a.map(t => ({ t: "del", s: t })), ...b.map(t => ({ t: "add", s: t }))];
+  }
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push({ t: "same", s: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: "del", s: a[i++] }); }
+    else { out.push({ t: "add", s: b[j++] }); }
+  }
+  while (i < n) out.push({ t: "del", s: a[i++] });
+  while (j < m) out.push({ t: "add", s: b[j++] });
+  return out;
+}
+
+// Marks the words that differ between a removed line and the line that
+// replaced it, so the eye lands on the edit rather than the line.
+function wordEmphasis(oldLine, newLine) {
+  const split = s => s.split(/(\s+)/);
+  const a = split(oldLine), b = split(newLine);
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head &&
+         a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const wrap = (parts) => esc(parts.slice(0, head).join("")) +
+    `<b>${esc(parts.slice(head, parts.length - tail).join(""))}</b>` +
+    esc(parts.slice(parts.length - tail).join(""));
+  // No shared edges means the whole line changed, so emphasis adds nothing.
+  if (head === 0 && tail === 0) return [esc(oldLine), esc(newLine)];
+  return [wrap(a), wrap(b)];
+}
+
+function diffHTML(text) {
+  const hunks = splitChange(text);
+  // Anything that is not a before and after pair is shown as it arrived.
+  if (!hunks.length) {
+    return (text || "").split("\n").map(l => `<i>${esc(l) || " "}</i>`).join("");
+  }
+
+  return hunks.map((h, idx) => {
+    const ops = lineDiff(h.old.split("\n"), h.now.split("\n"));
+    let html = idx ? `<i class="hdr">=== next edit ===</i>` : "";
+    const line = (cls, s) => `<i class="${cls}">${s || " "}</i>`;
+
+    for (let k = 0; k < ops.length; k++) {
+      if (ops[k].t === "same") {
+        html += line("ctx", esc(ops[k].s));
+        continue;
+      }
+      // Gather the whole run of removals, then the whole run of additions that
+      // follows. Pairing only a single removal with a single addition missed
+      // every multi line replacement, which is most real edits, and left them
+      // as two undifferentiated blocks of red and green.
+      const dels = [];
+      while (k < ops.length && ops[k].t === "del") dels.push(ops[k++].s);
+      const adds = [];
+      while (k < ops.length && ops[k].t === "add") adds.push(ops[k++].s);
+      k--;
+
+      // Interleave them so a replaced line sits directly above its
+      // replacement, and mark the words that differ in each pair.
+      const paired = Math.min(dels.length, adds.length);
+      for (let p = 0; p < paired; p++) {
+        const [l, r] = wordEmphasis(dels[p], adds[p]);
+        html += line("del", l) + line("add", r);
+      }
+      for (let p = paired; p < dels.length; p++) html += line("del", esc(dels[p]));
+      for (let p = paired; p < adds.length; p++) html += line("add", esc(adds[p]));
+    }
+    return html;
+  }).join("");
+}
+
 // hintsFor offers ready-made patterns, ordered the way the path reads: broad
 // on the left, narrow on the right. Every one carries an explicit trailing *
 // so what you see is what it matches.
@@ -1131,9 +1486,27 @@ const alerting = (() => {
       if (AC) ctx = new AC();
     }
     if (ctx && ctx.state === "suspended") ctx.resume();
+    paintAudioState();
   };
   document.addEventListener("pointerdown", unlock, { once: false });
   document.addEventListener("keydown", unlock, { once: false });
+  // A reload resets the audio context, and a browser will not let it start
+  // until the page has been interacted with. Without a visible signal, silence
+  // looks like a broken feature rather than a browser rule.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && ctx && ctx.state === "suspended") ctx.resume();
+  });
+
+  function audioBlocked() {
+    return !prefs.muted && (!ctx || ctx.state !== "running");
+  }
+  function paintAudioState() {
+    const el = document.getElementById("sound");
+    el.classList.toggle("blocked", audioBlocked());
+    if (audioBlocked()) el.title = "click anywhere on the page once to let the browser play sound";
+  }
+  // First paint, and again shortly after load in case the context settles.
+  setTimeout(paintAudioState, 300);
 
   function note(freq, start, dur, gain, type) {
     const osc = ctx.createOscillator(), amp = ctx.createGain();
@@ -1164,7 +1537,11 @@ const alerting = (() => {
   }
 
   function notify(title, body, goTo, permId) {
-    if (prefs.muted || document.visibilityState === "visible") return;
+    if (prefs.muted) return;
+    // A permission blocks an agent, so it is worth a desktop notification even
+    // when this tab is in front: the tab is rarely the window you are looking
+    // at. Everything else stays background-only.
+    if (goTo !== "perms" && document.visibilityState === "visible") return;
     showNotification(title, body, goTo, permId);
   }
 
@@ -1191,6 +1568,16 @@ const alerting = (() => {
     const prev = kind === "permission" ? knownPerms : knownWaiting;
     if (prev === null) {
       if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
+      // A permission that is already pending when the page loads still needs
+      // answering. Staying silent about it meant every reload swallowed the
+      // alert for whatever was already blocked, which during a working session
+      // is most of them.
+      if (kind === "permission" && items.length) {
+        play(kind);
+        const d = describe(items[0]);
+        notify(items.length > 1 ? `${items.length} permissions waiting` : d.title,
+          d.body, "perms", items.length === 1 ? items[0].id : "");
+      }
       return;
     }
     const fresh = items.filter(i => !prev.has(i.id));
@@ -1213,27 +1600,51 @@ const alerting = (() => {
 // Windows renders these itself, so the only things we control are the icon,
 // the text, whether it persists, and what a click does. An icon has to be a
 // raster image, so the mark is drawn to a canvas once and reused.
-let notifIcon = null;
-function iconDataURL() {
-  if (notifIcon) return notifIcon;
+// Two marks, because a permission blocks an agent and a waiting task does not.
+// Telling them apart from the corner of your eye is the whole point.
+const notifIcons = {};
+function iconDataURL(kind) {
+  kind = kind === "perm" ? "perm" : "atrium";
+  if (notifIcons[kind]) return notifIcons[kind];
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const g = c.getContext("2d");
   g.fillStyle = "#0B1B2E";
   g.fillRect(0, 0, 128, 128);
-  const grad = g.createLinearGradient(24, 96, 104, 32);
-  grad.addColorStop(0, "#00E3B0");
-  grad.addColorStop(1, "#28C2FF");
-  // An A for atrium: two legs and a crossbar.
-  g.strokeStyle = grad;
-  g.lineWidth = 12;
   g.lineCap = "round";
-  g.beginPath();
-  g.moveTo(30, 100); g.lineTo(64, 28); g.lineTo(98, 100);
-  g.moveTo(44, 72);  g.lineTo(84, 72);
-  g.stroke();
-  notifIcon = c.toDataURL("image/png");
-  return notifIcon;
+  g.lineJoin = "round";
+
+  if (kind === "perm") {
+    // An amber exclamation in a rounded square: something is blocked.
+    g.fillStyle = "#FFC64D";
+    g.beginPath();
+    g.moveTo(64, 20);
+    g.lineTo(108, 96);
+    g.lineTo(20, 96);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = "#0B1B2E";
+    g.lineWidth = 11;
+    g.beginPath();
+    g.moveTo(64, 50); g.lineTo(64, 74);
+    g.stroke();
+    g.beginPath();
+    g.arc(64, 87, 5.5, 0, Math.PI * 2);
+    g.fill();
+  } else {
+    const grad = g.createLinearGradient(24, 96, 104, 32);
+    grad.addColorStop(0, "#00E3B0");
+    grad.addColorStop(1, "#28C2FF");
+    // An A for atrium: two legs and a crossbar.
+    g.strokeStyle = grad;
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(30, 100); g.lineTo(64, 28); g.lineTo(98, 100);
+    g.moveTo(44, 72);  g.lineTo(84, 72);
+    g.stroke();
+  }
+  notifIcons[kind] = c.toDataURL("image/png");
+  return notifIcons[kind];
 }
 
 // The service worker is what makes buttons on a notification possible, and it
@@ -1258,7 +1669,8 @@ function showNotification(title, body, goTo, permId) {
   // outlive the page. Without one, fall back to a plain notification.
   if (swReg && swReg.active) {
     swReg.active.postMessage({
-      type: "notify", title, body: body || "", icon: iconDataURL(),
+      type: "notify", title, body: body || "",
+      icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
       tag: goTo === "perms" ? "atrium-perm" : "atrium",
       sticky: goTo === "perms", goTo, permId: permId || "",
       origin: location.origin
@@ -1268,8 +1680,8 @@ function showNotification(title, body, goTo, permId) {
 
   const n = new Notification(title, {
     body: body || "",
-    icon: iconDataURL(),
-    badge: iconDataURL(),
+    icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
+    badge: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
     tag: goTo === "perms" ? "atrium-perm" : "atrium",
     renotify: true,
     // A blocked agent is not something to miss, so that one stays on screen.
@@ -1304,6 +1716,9 @@ function toast(title, body, goTo, key) {
     if (e.target.classList.contains("x")) { dismiss(); return; }
     if (goTo) switchView(goTo);
     window.focus();
+    // Land on the actual request, not just the right tab. The list may still
+    // be rendering, so wait a frame before hunting for the card.
+    if (key) setTimeout(() => focusPerm(key), 60);
     dismiss();
   });
   el.dismiss = dismiss;
@@ -1314,6 +1729,19 @@ function toast(title, body, goTo, key) {
   setTimeout(dismiss, goTo === "perms" ? 30000 : 9000);
   // Never let the stack grow past what fits on screen.
   while (host.children.length > 4) host.firstChild.remove();
+}
+
+// Scrolls a pending request into view and flashes it, so clicking a toast puts
+// you on the thing that needs answering rather than near it.
+function focusPerm(id) {
+  const el = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+  const cmd = el.querySelector(".cmd.edit");
+  if (cmd) cmd.focus();
 }
 
 // Clears toasts whose subject is no longer pending. Called on every poll, so
@@ -1446,7 +1874,11 @@ async function decide(id, decision, forever) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision, reason, forever: !!forever, prefix, command })
     });
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    // Already answered somewhere else. A toast rather than an alert, because
+    // this is information, not a problem to acknowledge.
+    toast("too late", e.message);
+  }
   refresh();
 }
 
@@ -1463,6 +1895,19 @@ async function openTask(id) {
   document.getElementById("d-why").value = current.why || "";
   document.getElementById("d-statuses").innerHTML = COLUMNS.map(([s, label]) =>
     `<button class="${s === current.status ? "on" : ""}" onclick="move('${s}')">${label}</button>`).join("");
+
+  // Terminate is only offered when atrium knows the process. A window-mode
+  // launch owns itself, so saying so beats a button that cannot work.
+  document.getElementById("d-runner").innerHTML = [
+    current.pid > 0
+      ? `<button class="no" onclick="killTask()">terminate pid ${current.pid}</button>`
+      : `<span class="hintline">atrium does not own this process, so it cannot stop it.
+         close it in its own terminal.</span>`,
+    current.resume_id
+      ? `<button onclick="openLaunch('${esc(current.runner || "claude")}',
+          '${esc(current.resume_id)}', '${esc(current.worktree || "")}')">resume</button>`
+      : ""
+  ].join("");
 
   const { events } = await api(`/v1/tasks/${id}/events?limit=200`);
   document.getElementById("d-events").innerHTML = (events || []).length
@@ -1492,6 +1937,15 @@ async function patch(body) {
 async function move(status) {
   await patch({ status });
   detail.close();
+}
+
+async function killTask() {
+  if (!current) return;
+  if (!confirm(`stop ${current.display_title}? the runner is killed, the card and its history stay.`)) return;
+  try { await api(`/v1/tasks/${current.id}/kill`, { method: "POST" }); }
+  catch (e) { alert(e.message); return; }
+  detail.close();
+  refresh();
 }
 
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
@@ -1526,7 +1980,9 @@ function applyHeld() {
 
 function repaintLists() {
   const view = document.querySelector(".tab.on").dataset.view;
-  const render = { board: renderBoard, stack: renderStack, perms: renderPerms }[view];
+  const render = {
+    board: renderBoard, stack: renderStack, perms: renderPerms, runners: renderRunners
+  }[view];
   render().catch(e => console.error(e));
 }
 
@@ -1584,6 +2040,169 @@ function connect() {
   es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "wedge"].forEach(k => es.addEventListener(k, refresh));
+}
+
+// ── runners ─────────────────────────────────────────────
+let allHarnesses = [];
+let launchTarget = null;
+
+async function renderRunners() {
+  try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) { return; }
+
+  const on = allHarnesses.filter(h => h.enabled);
+  document.getElementById("launchers").innerHTML = on.length
+    ? `<div class="toolbar">` + on.map(h =>
+        `<button class="go big" onclick="openLaunch('${esc(h.id)}')">start a ${esc(h.label)}</button>`
+      ).join("") + `</div>`
+    : `<div class="panel"><div class="empty">
+        nothing is enabled. turn a runner on below, or add one.
+      </div></div>`;
+
+  document.getElementById("harness-list").innerHTML = `<div class="panel">` + allHarnesses.map(h => `
+    <div class="row line">
+      <span class="chip ${h.enabled ? "accent" : ""}">${h.enabled ? "on" : "off"}</span>
+      <span class="tool">${esc(h.label)}</span>
+      <code class="grow ell" title="${esc([h.cmd].concat(h.args || []).join(" "))}">${
+        esc([h.cmd].concat(h.args || []).join(" "))}</code>
+      <span class="by">${esc(h.launch_mode)}</span>
+      <span class="by">${h.rules_source ? "imports " + esc(h.rules_source) : ""}</span>
+      <button onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
+      <button onclick="editHarness('${esc(h.id)}')">edit</button>
+    </div>`).join("") + `</div>`;
+}
+
+function linesToList(v) {
+  return (v || "").split("\n").map(s => s.trim()).filter(Boolean);
+}
+
+function editHarness(id) {
+  const h = allHarnesses.find(x => x.id === id) || {
+    id: "", label: "", cmd: "", args: [], resume_args: [], cwd: "", env: {},
+    launch_mode: "window", rules_source: "", notes: "", enabled: false
+  };
+  document.getElementById("h-heading").textContent = id ? "edit " + h.label : "add a runner";
+  document.getElementById("h-id").value = h.id;
+  document.getElementById("h-id").disabled = !!id;
+  document.getElementById("h-label").value = h.label || "";
+  document.getElementById("h-cmd").value = h.cmd || "";
+  document.getElementById("h-args").value = (h.args || []).join("\n");
+  document.getElementById("h-resume").value = (h.resume_args || []).join("\n");
+  document.getElementById("h-cwd").value = h.cwd || "";
+  document.getElementById("h-env").value =
+    Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
+  document.getElementById("h-rules").value = h.rules_source || "";
+  document.getElementById("h-notes").value = h.notes || "";
+  document.querySelectorAll("#h-mode button").forEach(b =>
+    b.classList.toggle("on", b.dataset.v === (h.launch_mode || "window")));
+  document.getElementById("h-delete").style.display = id ? "" : "none";
+  document.getElementById("harness").dataset.editing = h.id || "";
+  document.getElementById("harness").dataset.enabled = h.enabled ? "1" : "0";
+  document.getElementById("harness").showModal();
+}
+
+document.querySelectorAll("#h-mode button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#h-mode button").forEach(x => x.classList.toggle("on", x === b));
+}));
+
+function harnessFromForm() {
+  const env = {};
+  linesToList(document.getElementById("h-env").value).forEach(line => {
+    const i = line.indexOf("=");
+    if (i > 0) env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  });
+  const dlg = document.getElementById("harness");
+  return {
+    id: document.getElementById("h-id").value.trim(),
+    label: document.getElementById("h-label").value.trim(),
+    enabled: dlg.dataset.enabled === "1",
+    cmd: document.getElementById("h-cmd").value.trim(),
+    args: linesToList(document.getElementById("h-args").value),
+    resume_args: linesToList(document.getElementById("h-resume").value),
+    cwd: document.getElementById("h-cwd").value.trim(),
+    env,
+    launch_mode: document.querySelector("#h-mode button.on").dataset.v,
+    rules_source: document.getElementById("h-rules").value,
+    notes: document.getElementById("h-notes").value.trim()
+  };
+}
+
+async function saveHarness() {
+  const h = harnessFromForm();
+  if (!h.id) { alert("give it an id"); return; }
+  try {
+    await api(`/v1/harnesses/${encodeURIComponent(h.id)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(h)
+    });
+  } catch (e) { alert(e.message); return; }
+  document.getElementById("harness").close();
+  refresh();
+}
+
+async function deleteHarness() {
+  const id = document.getElementById("harness").dataset.editing;
+  if (!id || !confirm(`delete the ${id} runner?`)) return;
+  try { await api(`/v1/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+  catch (e) { alert(e.message); return; }
+  document.getElementById("harness").close();
+  refresh();
+}
+
+async function toggleHarness(id) {
+  const h = allHarnesses.find(x => x.id === id);
+  if (!h) return;
+  try {
+    await api(`/v1/harnesses/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, h, { enabled: !h.enabled }))
+    });
+  } catch (e) { alert(e.message); }
+  refresh();
+}
+
+// Called with an id from the runners tab, or with nothing from the header's
+// new agent button, in which case you pick the runner here.
+async function openLaunch(id, resume, cwd) {
+  if (!allHarnesses.length) {
+    try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) {}
+  }
+  const enabled = allHarnesses.filter(h => h.enabled);
+  if (!enabled.length) {
+    alert("no runner is enabled yet. turn one on in the runners tab.");
+    switchView("runners");
+    return;
+  }
+  const picking = !id;
+  const h = allHarnesses.find(x => x.id === id) || enabled[0];
+
+  document.getElementById("l-pick-field").hidden = !picking;
+  document.getElementById("l-harness").innerHTML = enabled.map(x =>
+    `<option value="${esc(x.id)}"${x.id === h.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
+
+  launchTarget = { harness: h.id, resume: resume || "" };
+  document.getElementById("l-heading").textContent =
+    resume ? "resume " + (h.label || h.id) : picking ? "new agent" : "start " + (h.label || h.id);
+  document.getElementById("l-cwd").value = cwd || h.cwd || "";
+  document.getElementById("l-title").value = "";
+  document.getElementById("l-why").value = "";
+  document.getElementById("launch").showModal();
+}
+
+async function doLaunch() {
+  if (!launchTarget) return;
+  const picker = document.getElementById("l-harness");
+  const body = Object.assign({}, launchTarget, {
+    harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
+    cwd: document.getElementById("l-cwd").value.trim(),
+    title: document.getElementById("l-title").value.trim(),
+    why: document.getElementById("l-why").value.trim()
+  });
+  try {
+    await api("/v1/launch", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+  } catch (e) { alert(e.message); return; }
+  document.getElementById("launch").close();
+  switchView("board");
 }
 
 // ── tooltips ────────────────────────────────────────────

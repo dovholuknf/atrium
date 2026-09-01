@@ -9,6 +9,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,14 +32,6 @@ type Options struct {
 	HumanAddr string        // human-facing listener, e.g. ":7778"
 	DBPath    string        // sqlite file
 	LongPoll  time.Duration // agent long-poll ceiling
-	// Ledger adopts sessions from the gwt session ledger, so claude sessions
-	// that were started outside atrium still show up on the board.
-	Ledger     bool
-	LedgerPoll time.Duration
-	// LedgerMaxAge bounds how far back a finished session is worth adopting.
-	// The ledger keeps everything ever recorded, and without this the board
-	// fills with months of dead work on first run.
-	LedgerMaxAge time.Duration
 }
 
 // Daemon owns the store, the hub, and both listeners.
@@ -87,7 +81,17 @@ func New(opts Options) (*Daemon, error) {
 	d.hb.Record = d.hooks()
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
+	d.ap.Launch = d.launchFromJSON
+	d.ap.Kill = d.Kill
 	return d, nil
+}
+
+func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
+	var req LaunchRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+	return d.Launch(req)
 }
 
 // decide resolves a permission from a human client. It goes through the hub so
@@ -223,14 +227,22 @@ func (d *Daemon) onPrompt(agent, text string) {
 	d.publishTask(task.ID)
 }
 
-func (d *Daemon) onPermRequest(agent, tool, command string) (string, *hub.AutoDecision, error) {
-	task, _, err := d.st.Register(observedFor(agent))
+func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDecision, error) {
+	obs := observedFor(req.Agent)
+	// The hook reports the runner's own pid and working directory. The pid is
+	// what makes free liveness checks possible.
+	obs.PID = req.PID
+	if req.Cwd != "" {
+		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
+	}
+	task, _, err := d.st.Register(obs)
 	if err != nil {
 		return "", nil, err
 	}
+	tool, command := req.Tool, req.Command
 	// The hook does not send a dedup key yet, so requests are un-keyed for now
 	// and the store treats each as distinct.
-	p, decided, err := d.st.RecordPermission(task.ID, tool, command, "")
+	p, decided, err := d.st.RecordPermission(task.ID, tool, command, "", req.Details)
 	if err != nil {
 		return "", nil, err
 	}
@@ -292,6 +304,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)
 	agentMux.HandleFunc("/permission", d.hb.HandlePermission)
+	agentMux.HandleFunc("/session", d.handleSession)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
@@ -313,9 +326,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	log.Printf("[atrium] agents  -> http://localhost%s", d.opts.AgentAddr)
 	log.Printf("[atrium] board   -> http://localhost%s", d.opts.HumanAddr)
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
-	if d.opts.Ledger {
-		go d.watchLedger(ctx, d.opts.LedgerPoll)
-	}
+	// Free liveness: ask the operating system whether each runner still
+	// exists, rather than asking the runner.
+	go d.reap(ctx, ReapEvery)
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
 	errCh := make(chan error, 2)
@@ -353,6 +366,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 // so this can take several seconds. Silence for that long looks like a hang.
 func (d *Daemon) shutdown(servers ...*http.Server) {
 	start := time.Now()
+
+	// Release the event streams first. Each open browser tab holds one, and
+	// Shutdown waits for in-flight requests, so leaving them open is what made
+	// the board listener sit out the whole grace period.
+	d.ap.Close()
 
 	if n := d.blockedAgents(); n > 0 {
 		log.Printf("[atrium] %d agent connection(s) still parked. they will retry against the "+

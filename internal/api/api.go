@@ -9,6 +9,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,6 +33,11 @@ type Server struct {
 	// reply channel that only the hub can signal. Writing the decision without
 	// signalling would leave the runner hanging forever.
 	Decide func(permID, decision, reason, command string) (*store.Permission, error)
+	// Launch starts a runner. The daemon owns process spawning, so the API
+	// hands the request body straight through rather than reaching for it.
+	Launch func(body []byte) (*store.Task, error)
+	// Kill stops the runner behind a card.
+	Kill func(taskID string) error
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -79,6 +85,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/rules/export", s.exportRules)
 	mux.HandleFunc("POST /v1/rules/import", s.importRules)
 	mux.HandleFunc("GET /v1/rules/preview-claude", s.previewClaudeRules)
+	mux.HandleFunc("GET /v1/harnesses", s.listHarnesses)
+	mux.HandleFunc("PUT /v1/harnesses/{id}", s.saveHarness)
+	mux.HandleFunc("DELETE /v1/harnesses/{id}", s.deleteHarness)
+	mux.HandleFunc("POST /v1/launch", s.launch)
+	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.Handle("/", webHandler())
 	return mux
@@ -126,6 +137,9 @@ type view struct {
 	DisplayTitle string `json:"display_title"`
 	IdleSeconds  int64  `json:"idle_seconds"`
 	WaitSeconds  int64  `json:"wait_seconds"`
+	// Observed marks a session atrium is only watching. The board uses it to
+	// offer resume rather than a prompt box, and to stay quiet about it.
+	Observed bool `json:"observed"`
 }
 
 func toView(t *store.Task) view {
@@ -133,6 +147,7 @@ func toView(t *store.Task) view {
 		Task:         t,
 		DisplayTitle: t.DisplayTitle(),
 		IdleSeconds:  int64(time.Since(t.LastActivityAt).Seconds()),
+		Observed:     t.Observed(),
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -309,6 +324,30 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no agent transport wired"))
 		return
 	}
+	// Answering something already answered silently returns the original
+	// decision, which from a notification button looks like nothing happened.
+	// Say so instead, and say what the answer was.
+	if existing, err := s.st.GetPermission(r.PathValue("id")); err == nil && existing.DecidedAt != nil {
+		by := existing.DecidedBy
+		if by == "" || by == store.DecidedBySelf {
+			by = "you"
+		} else {
+			by = "the rule " + by
+		}
+		// "approve" plus "ed" is "approveed". Past tense is a lookup, not a
+		// suffix.
+		past := map[string]string{"approve": "approved", "block": "blocked"}[existing.Decision]
+		if past == "" {
+			past = existing.Decision
+		}
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": fmt.Sprintf("already %s by %s at %s",
+				past, by, existing.DecidedAt.Format("15:04:05")),
+			"already":  true,
+			"decision": existing.Decision,
+		})
+		return
+	}
 	p, err := s.Decide(r.PathValue("id"), body.Decision, body.Reason, body.Command)
 	if err != nil {
 		s.fail(w, err)
@@ -449,6 +488,77 @@ func (s *Server) importRules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
+	hs, err := s.st.Harnesses()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"harnesses": hs})
+}
+
+func (s *Server) saveHarness(w http.ResponseWriter, r *http.Request) {
+	var h store.Harness
+	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	h.ID = r.PathValue("id")
+	saved, err := s.st.SaveHarness(h)
+	if err != nil {
+		if wedged, _ := s.st.Wedged(); wedged {
+			s.fail(w, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	s.Broadcast("harnesses", saved)
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) deleteHarness(w http.ResponseWriter, r *http.Request) {
+	if err := s.st.DeleteHarness(r.PathValue("id")); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.Broadcast("harnesses", map[string]string{"removed": r.PathValue("id")})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
+	if s.Launch == nil {
+		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no launcher wired"))
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	task, err := s.Launch(body)
+	if err != nil {
+		// A bad harness, a missing directory or a mode that is not built are
+		// all the caller's problem, not a server fault.
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	s.Broadcast("task", toView(task))
+	writeJSON(w, http.StatusOK, toView(task))
+}
+
+func (s *Server) kill(w http.ResponseWriter, r *http.Request) {
+	if s.Kill == nil {
+		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no launcher wired"))
+		return
+	}
+	if err := s.Kill(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // events is the SSE stream every live client subscribes to.
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -472,7 +582,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case msg := <-sub:
+		case msg, ok := <-sub:
+			// A closed channel means the daemon is shutting down. Returning
+			// releases the request, which is what lets the listener close
+			// instead of waiting out an open stream.
+			if !ok {
+				return
+			}
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", msg.kind, msg.data)
 			flusher.Flush()
 		case <-ping.C:
@@ -482,6 +598,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Close releases every SSE subscriber. An event stream is an open request, and
+// http.Server.Shutdown waits for those, so without this a single browser tab
+// holds the board listener open until the shutdown grace period expires.
+func (s *Server) Close() { s.bus.close() }
+
 type message struct {
 	kind string
 	data []byte
@@ -490,8 +611,9 @@ type message struct {
 // bus is a tiny fan-out for SSE subscribers. Slow subscribers are dropped
 // rather than allowed to block a publisher.
 type bus struct {
-	mu   sync.Mutex
-	subs map[chan message]struct{}
+	mu     sync.Mutex
+	subs   map[chan message]struct{}
+	closed bool
 }
 
 func newBus() *bus { return &bus{subs: map[chan message]struct{}{}} }
@@ -499,15 +621,37 @@ func newBus() *bus { return &bus{subs: map[chan message]struct{}{}} }
 func (b *bus) subscribe() chan message {
 	ch := make(chan message, 32)
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		// Already shutting down. Hand back a closed channel so the caller
+		// returns immediately rather than parking on a stream nobody feeds.
+		close(ch)
+		return ch
+	}
 	b.subs[ch] = struct{}{}
-	b.mu.Unlock()
 	return ch
 }
 
 func (b *bus) unsubscribe(ch chan message) {
 	b.mu.Lock()
-	delete(b.subs, ch)
-	b.mu.Unlock()
+	defer b.mu.Unlock()
+	if _, ok := b.subs[ch]; ok {
+		delete(b.subs, ch)
+	}
+}
+
+// close releases every subscriber exactly once.
+func (b *bus) close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	b.closed = true
+	for ch := range b.subs {
+		close(ch)
+		delete(b.subs, ch)
+	}
 }
 
 func (b *bus) publish(kind string, payload any) {

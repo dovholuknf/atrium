@@ -25,7 +25,10 @@ self.addEventListener("message", event => {
     renotify: true,
     requireInteraction: !!m.sticky,
     silent: true,
-    data: { permId: m.permId || "", goTo: m.goTo || "", origin: m.origin || self.location.origin },
+    data: {
+      permId: m.permId || "", goTo: m.goTo || "",
+      origin: m.origin || self.location.origin, icon: m.icon
+    },
     actions: m.permId
       ? [{ action: "approve", title: "approve" }, { action: "block", title: "block" }]
       : []
@@ -41,7 +44,16 @@ async function decide(origin, permId, decision) {
       reason: decision === "block" ? "blocked from a notification" : ""
     })
   })
-  if (!res.ok) throw new Error(`decide failed: ${res.status}`)
+  if (res.ok) return
+  // A request answered elsewhere comes back as a conflict carrying what the
+  // answer was. Pressing a button and seeing nothing happen is worse than
+  // being told you are too late.
+  let msg = `could not answer that: ${res.status}`
+  try {
+    const body = await res.json()
+    if (body && body.error) msg = body.error
+  } catch (e) {}
+  throw new Error(msg)
 }
 
 // Bring an existing tab forward rather than piling up new ones.
@@ -66,10 +78,12 @@ self.addEventListener("notificationclick", event => {
       decide(origin, data.permId, event.action).catch(err =>
         // The request may have been answered elsewhere already, or the daemon
         // may be down. Say so rather than failing silently.
-        self.registration.showNotification("atrium could not answer that", {
+        self.registration.showNotification("atrium: too late", {
           body: String(err.message || err),
           icon: data.icon,
-          tag: "atrium-error"
+          badge: data.icon,
+          tag: "atrium-conflict-" + data.permId,
+          renotify: true
         })))
     return
   }

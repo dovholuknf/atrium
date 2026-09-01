@@ -3,10 +3,13 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,11 +26,43 @@ func freePort(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-func startDaemon(t *testing.T) (*Daemon, *bytes.Buffer, context.CancelFunc, chan error) {
+// safeBuf collects log output written from the daemon's goroutines while the
+// test reads it. A bare bytes.Buffer would be a data race.
+type safeBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuf) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// waitFor blocks until the log contains want, or gives up.
+func (b *safeBuf) waitFor(t *testing.T, want string) {
 	t.Helper()
-	var logs bytes.Buffer
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(b.String(), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("log never contained %q. got:\n%s", want, b.String())
+}
+
+func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan error) {
+	t.Helper()
+	logs := &safeBuf{}
 	old := log.Writer()
-	log.SetOutput(&logs)
+	log.SetOutput(logs)
 	t.Cleanup(func() { log.SetOutput(old) })
 
 	d, err := New(Options{
@@ -45,19 +80,10 @@ func startDaemon(t *testing.T) (*Daemon, *bytes.Buffer, context.CancelFunc, chan
 	errCh := make(chan error, 1)
 	go func() { errCh <- d.Run(ctx) }()
 
-	// Wait for both listeners rather than sleeping blind.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", d.opts.HumanAddr, 200*time.Millisecond)
-		if err == nil {
-			c.Close()
-			return d, &logs, cancel, errCh
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	cancel()
-	t.Fatal("daemon never came up")
-	return nil, nil, nil, nil
+	// A listener accepts as soon as net.Listen returns, which is before the
+	// startup lines are written. Waiting on the port would race the log.
+	logs.waitFor(t, "ready. ctrl-c to stop")
+	return d, logs, cancel, errCh
 }
 
 // Ctrl-C has to say what it is doing. Several seconds of silence while long
@@ -109,6 +135,45 @@ func TestShutdownIsPrompt(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 8*time.Second {
 		t.Errorf("shutdown took %s, which is long enough to look broken", elapsed)
+	}
+}
+
+// An open browser tab holds an SSE stream, and Shutdown waits for in-flight
+// requests. Without releasing subscribers first, one tab makes every shutdown
+// sit out the full grace period.
+func TestShutdownWithAnOpenEventStream(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+
+	streamed := make(chan struct{})
+	go func() {
+		resp, err := http.Get("http://" + d.opts.HumanAddr + "/v1/events")
+		if err != nil {
+			close(streamed)
+			return
+		}
+		defer resp.Body.Close()
+		close(streamed)
+		// Hold the stream open exactly as a browser would.
+		io.Copy(io.Discard, resp.Body)
+	}()
+
+	select {
+	case <-streamed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("event stream never opened")
+	}
+	// Let the subscription register before pulling the rug.
+	time.Sleep(200 * time.Millisecond)
+
+	start := time.Now()
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(15 * time.Second):
+		t.Fatal("daemon did not stop with a stream attached")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("an open event stream held shutdown for %s", elapsed)
 	}
 }
 

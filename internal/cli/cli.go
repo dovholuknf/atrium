@@ -48,8 +48,8 @@ func newRoot() *cobra.Command {
 
 func newDaemon() *cobra.Command {
 	var agentAddr, humanAddr, dbPath string
-	var timeoutSec, ledgerPollSec, ledgerDays int
-	var withTUI, ledger bool
+	var timeoutSec int
+	var withTUI bool
 	c := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the v2 daemon: durable state, an agent listener, and the board.",
@@ -62,9 +62,6 @@ func newDaemon() *cobra.Command {
 				HumanAddr:  humanAddr,
 				DBPath:     dbPath,
 				LongPoll:   time.Duration(timeoutSec) * time.Second,
-				Ledger:       ledger,
-				LedgerPoll:   time.Duration(ledgerPollSec) * time.Second,
-				LedgerMaxAge: time.Duration(ledgerDays) * 24 * time.Hour,
 			}, withTUI)
 		},
 	}
@@ -73,11 +70,6 @@ func newDaemon() *cobra.Command {
 	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")
 	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "agent long-poll timeout in seconds")
 	c.Flags().BoolVar(&withTUI, "tui", false, "also attach the terminal UI in this process")
-	c.Flags().BoolVar(&ledger, "ledger", true,
-		"adopt claude sessions from the gwt session ledger, so ones started outside atrium appear")
-	c.Flags().IntVar(&ledgerPollSec, "ledger-poll", 3, "seconds between ledger reads")
-	c.Flags().IntVar(&ledgerDays, "ledger-days", 7,
-		"how many days back a finished session is still worth adopting. live sessions are always adopted")
 	return c
 }
 
