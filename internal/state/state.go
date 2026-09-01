@@ -57,13 +57,12 @@ type rawSession struct {
 	WTSession       string `json:"WtSession"`
 }
 
-// Root returns the worktree root that Atrium reads from. Mirrors gwt's resolution:
-// $env:WORKTREE_ROOT (Windows-style) or "D:\\worktrees" as the historical default.
+// Root returns the worktree root that Atrium reads from, taken from
+// WORKTREE_ROOT. There is no default: one machine's layout is not a sensible
+// fallback for another, and an empty root makes a missing setting obvious
+// rather than sending reads somewhere that happens to exist.
 func Root() string {
-	if v := os.Getenv("WORKTREE_ROOT"); v != "" {
-		return strings.TrimRight(v, `\/`)
-	}
-	return `D:\worktrees`
+	return strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`)
 }
 
 // SessionDir returns the directory containing session JSONs.

@@ -749,7 +749,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
-      <input type="text" id="l-cwd" spellcheck="false" placeholder="D:/git/github/dovholuknf/atrium">
+      <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
     </div>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>
@@ -970,8 +970,16 @@ function permCard(p) {
     el.dataset.chosen = "1";
     setScope(b.dataset.v, b);
   }));
-  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", () =>
-    decide(p.id, b.dataset.do, b.dataset.forever === "1")));
+  // Wrapped so a fault in one handler cannot leave a button looking dead.
+  // Silence is the worst possible feedback for a click.
+  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", () => {
+    try {
+      decide(p.id, b.dataset.do, b.dataset.forever === "1");
+    } catch (err) {
+      console.error(err);
+      toast("that did not work", String(err && err.message || err));
+    }
+  }));
   return el;
 }
 
@@ -1860,11 +1868,14 @@ async function decide(id, decision, forever) {
     reason = prompt("why not? this is handed back to the agent as the reason") || "";
   }
   if (forever) {
-    // Whatever is in the card's pattern field is what the rule covers. It is
-    // editable in place, so there is no popup to fight with.
-    const el = document.getElementById("pat-" + id);
-    prefix = el ? el.value.trim() : "";
-    if (!prefix) { alert("give the rule a pattern to match on"); return; }
+    // The scope lives on the card, set by the buttons underneath it. Reading
+    // `.value` here was left over from when it was an input: a <code> element
+    // has no value, so this threw and the click did nothing at all.
+    const card = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+    const view = document.getElementById("pat-" + id);
+    prefix = (card && card.dataset.pattern) || (view && view.textContent) || "";
+    prefix = prefix.trim();
+    if (!prefix) { alert("pick a scope for the rule first"); return; }
   }
   // Send the command only when you actually changed it.
   const cmdEl = document.getElementById("cmd-" + id);
