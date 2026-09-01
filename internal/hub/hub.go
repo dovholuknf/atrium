@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -789,11 +790,17 @@ func parseTarget(line, def string) (string, string) {
 	return strings.TrimSpace(rest[:sp]), strings.TrimSpace(rest[sp+1:])
 }
 
-// HubDir returns the hub data dir under WORKTREE_ROOT (placeholder for future use).
+// HubDir returns the directory atrium keeps its own state in: a hub folder
+// under WORKTREE_ROOT when that is set, otherwise ~/.atrium.
+//
+// No hardcoded drive path. One machine's layout is not a default for another,
+// and a home directory exists everywhere.
 func HubDir() string {
-	root := os.Getenv("WORKTREE_ROOT")
-	if root == "" {
-		root = `D:\worktrees`
+	if root := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); root != "" {
+		return filepath.Join(root, "hub")
 	}
-	return strings.TrimRight(root, `\/`) + `\hub`
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".atrium")
+	}
+	return ".atrium"
 }

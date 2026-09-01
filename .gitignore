@@ -9,6 +9,9 @@ build.claude/
 *.db
 *.db-wal
 *.db-shm
+
+# scratch notes, not part of the project
+bug.md
 *.exe~
 *.test
 *.out

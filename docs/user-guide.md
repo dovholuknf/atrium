@@ -11,17 +11,17 @@ The simplest case. You sit at the hub terminal, fire prompts, one agent does the
 
 ```powershell
 # build once
-cd D:\git\github\dovholuknf\atrium
+cd <atrium-repo>
 go build -o build.claude\atrium.exe .\cmd\atrium
 
 # drop an .mcp.json into the dir where you want the agent to live.
 # the agent's name will be the leaf of that dir. for example, an agent in
-# D:\worktrees\github\openziti\ziti\fix-login will show up as 'fix-login'.
+# <worktree-root>\github\openziti\ziti\fix-login will show up as 'fix-login'.
 @'
 {
   "mcpServers": {
     "atrium-agent": {
-      "command": "D:/git/github/dovholuknf/atrium/build.claude/atrium.exe",
+      "command": "<atrium-repo>/build.claude/atrium.exe",
       "args": ["agent", "--url", "http://localhost:7777"]
     }
   }
@@ -282,9 +282,9 @@ substrate.
 
 | Thing | Path |
 | --- | --- |
-| Built binary | `D:\git\github\dovholuknf\atrium\build.claude\atrium.exe` |
+| Built binary | `<atrium-repo>\build.claude\atrium.exe` |
 | Project MCP config | `<repo or worktree>\.mcp.json` |
-| Atrium repo docs | `D:\git\github\dovholuknf\atrium\docs\` |
+| Atrium repo docs | `<atrium-repo>\docs\` |
 | gwt session JSONs | `$env:WORKTREE_ROOT\sessions\*.json` |
 | gwt state log | `$env:WORKTREE_ROOT\watch\state.log` |
 | claude MCP debug logs | check claude-code's per-session log location (varies by version) |

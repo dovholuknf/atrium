@@ -65,7 +65,7 @@ internal/server/server.go Mode B MCP server (snapshot, wait_for_change, focus_se
 internal/state/state.go   gwt session JSON + state.log reader
 ```
 
-External hook lives in the **dotfiles repo** at `D:\git\github\dovholuknf\dotfiles\claude\hooks\atrium-perm-hook.ps1`.
+External hook lives in the **dotfiles repo** at `<dotfiles-repo>\claude\hooks\atrium-perm-hook.ps1`.
 It's wired into `settings.json`'s `PreToolUse` array via the same dotfiles. The atrium repo itself does NOT
 own that file.
 
@@ -137,7 +137,7 @@ The test plan codifies each of these. Run section A through F before tagging a b
 ## How to build and run
 
 ```powershell
-pushd D:\git\github\dovholuknf\atrium
+pushd <atrium-repo>
 go mod tidy
 go build -o build.claude\atrium.exe .\cmd\atrium
 
@@ -156,7 +156,7 @@ popd
 For a friendlier wrapper, add this to your pwsh profile:
 
 ```powershell
-function atrium-hub { pushd D:\git\github\dovholuknf\atrium; go build -o build.claude\atrium.exe .\cmd\atrium; .\build.claude\atrium.exe hub; popd }
+function atrium-hub { pushd <atrium-repo>; go build -o build.claude\atrium.exe .\cmd\atrium; .\build.claude\atrium.exe hub; popd }
 ```
 
 ## Where the user wants this to go

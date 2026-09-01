@@ -8,9 +8,10 @@ distinct modes:
 1. **Hub / agent loop** (the working mode): one terminal where you type prompts; many claude sessions where each
    one runs as an MCP-driven agent that submits to the hub, blocks until you reply, acts on the reply, submits
    again. Forever. Built on simple HTTP long-poll.
-2. **Read-only state aggregator**: an MCP server that exposes the per-session state that `gwt` already tracks
-   (`snapshot`, `wait_for_change`, `focus_session`). Use this when you want any claude tab to be able to ask
-   "what are the other agents doing?"
+2. **Read-only state aggregator**: an MCP server that exposes per-session state tracked on disk by an external
+   tool (`snapshot`, `wait_for_change`, `focus_session`). Use this when you want any claude tab to be able to ask
+   "what are the other agents doing?" This mode is optional and inert unless `WORKTREE_ROOT` points at a session
+   ledger it understands, so nothing here depends on it.
 
 This README covers both. The hub/agent loop is what you most likely want first.
 
@@ -21,7 +22,7 @@ This README covers both. The hub/agent loop is what you most likely want first.
 ### 1. Build
 
 ```powershell
-cd D:\git\github\dovholuknf\atrium
+cd <atrium-repo>
 go mod tidy
 go build -o build.claude\atrium.exe .\cmd\atrium
 ```
@@ -46,14 +47,14 @@ This terminal is where you type prompts to agents and watch their responses.
 
 ### 3. Wire `atrium-agent` into a claude session via project-local `.mcp.json`
 
-In any dir you want to host an agent (e.g. `D:\git\github\dovholuknf\atrium\` itself, or any worktree), drop a
+In any dir you want to host an agent (e.g. `<atrium-repo>\` itself, or any worktree), drop a
 `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "atrium-agent": {
-      "command": "D:/git/github/dovholuknf/atrium/build.claude/atrium.exe",
+      "command": "<atrium-repo>/build.claude/atrium.exe",
       "args": ["agent", "--url", "http://localhost:7777"]
     }
   }
@@ -61,7 +62,7 @@ In any dir you want to host an agent (e.g. `D:\git\github\dovholuknf\atrium\` it
 ```
 
 The agent's name defaults to the leaf of the current working directory. If you launch claude in
-`D:\worktrees\github\openziti\ziti\fix-login`, the agent shows up as `fix-login` in the hub. Override with
+`<worktree-root>\github\openziti\ziti\fix-login`, the agent shows up as `fix-login` in the hub. Override with
 `--name <whatever>` in args if you want.
 
 Launch a fresh claude in that dir. The MCP loads but the loop does NOT auto-start; the model treats the
@@ -86,7 +87,7 @@ In the hub terminal:
 [atrium] -> atrium
 >
 [14:02:33] <atrium/response>
-D:\git\github\dovholuknf\atrium
+<atrium-repo>
 >
 ```
 
@@ -275,7 +276,7 @@ New-Item -ItemType SymbolicLink -Path "$env:ON_PATH\atrium.exe" `
 
 | Var | Default | Used by | Meaning |
 | --- | --- | --- | --- |
-| `WORKTREE_ROOT` | `D:\worktrees` | `serve`, `status`, `watch` | Where to read session JSONs + state.log. |
+| `WORKTREE_ROOT` | unset | `serve`, `status`, `watch`, `daemon` | Root of a [gwt](https://github.com/dovholuknf/gwt) style worktree tree. Mode B reads its session ledger from here, and the daemon keeps its database in `hub/` under it. Unset means Mode B has nothing to read and the daemon falls back to `~/.atrium`. |
 | `ATRIUM_LONG_POLL_TIMEOUT` | `30s` | `serve` (`wait_for_change`) | Default upper bound for long-poll if input omits `timeout_seconds`. |
 | `ATRIUM_DISCONNECTED_LOG_INTERVAL` | `10m` | `agent` | How often to nag stderr when the hub is unreachable. |
 | `ATRIUM_PERM_GATE` | unset (auto) | perm hook | `on`/`force` gates every session through the hub (permissions-only mode, no MCP). `off` disables. Unset auto-detects the atrium-agent MCP. |

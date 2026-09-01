@@ -7,7 +7,7 @@ expected behavior, and the most common failure mode.
 ## Pre-flight
 
 ```powershell
-cd D:\git\github\dovholuknf\atrium
+cd <atrium-repo>
 go build -o build.claude\atrium.exe .\cmd\atrium
 go vet ./...
 ```
@@ -21,7 +21,7 @@ Hard stop if build fails or vet flags anything.
 **Steps**
 
 1. Start hub: `.\build.claude\atrium.exe hub`
-2. In another wt tab: `cd D:\git\github\dovholuknf\atrium` then `claude`. The `.mcp.json` here wires
+2. In another wt tab: `cd <atrium-repo>` then `claude`. The `.mcp.json` here wires
    `atrium-agent`.
 3. Send the claude tab a kickoff: `go`
 4. Expect a greeting line in the hub chat view within ~2 seconds.
@@ -201,7 +201,7 @@ Hard stop if build fails or vet flags anything.
 
 **Steps**
 
-1. Hub running. Launch two claude tabs both `cd`'d to `D:\git\github\dovholuknf\atrium\` (or any single dir
+1. Hub running. Launch two claude tabs both `cd`'d to `<atrium-repo>\` (or any single dir
    with `.mcp.json`).
 2. Activate both with `atrium`.
 
