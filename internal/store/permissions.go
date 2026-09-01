@@ -10,7 +10,7 @@ import (
 // agent reconnects and re-posts the same request, and the operator must not be
 // asked the same question twice. A repeated key returns the existing row, along
 // with whether it has already been decided.
-func (s *Store) RecordPermission(taskID, tool, command, dedupKey string) (*Permission, bool, error) {
+func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string) (*Permission, bool, error) {
 	var (
 		p       *Permission
 		decided bool
@@ -30,16 +30,16 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey string) (*Permi
 		n := now()
 		rec := &Permission{
 			ID: newID(), TaskID: taskID, Tool: tool, Command: command,
-			RequestedAt: n, DedupKey: dedupKey,
+			RequestedAt: n, DedupKey: dedupKey, Details: details,
 		}
 		// The key is stored as NULL when absent. UNIQUE permits many NULLs but
 		// only one empty string, so defaulting to '' would make the second
 		// un-keyed request collide with the first.
 		if _, err := s.db.Exec(
-			`INSERT INTO permission (id, task_id, tool, command, requested_at, dedup_key)
-			 VALUES (?,?,?,?,?,?)`,
+			`INSERT INTO permission (id, task_id, tool, command, requested_at, dedup_key, details)
+			 VALUES (?,?,?,?,?,?,?)`,
 			rec.ID, rec.TaskID, rec.Tool, rec.Command, ts(rec.RequestedAt),
-			nullable(rec.DedupKey)); err != nil {
+			nullable(rec.DedupKey), rec.Details); err != nil {
 			return err
 		}
 		if err := s.appendEvent(taskID, EventPermRequested, map[string]any{
@@ -57,7 +57,7 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey string) (*Permi
 }
 
 const permColumns = `id, task_id, tool, command, requested_at, decided_at,
-	decision, reason, dedup_key, decided_by, rule_created`
+	decision, reason, dedup_key, decided_by, rule_created, details`
 
 func scanPermission(sc interface{ Scan(...any) error }) (*Permission, error) {
 	var (
@@ -68,7 +68,7 @@ func scanPermission(sc interface{ Scan(...any) error }) (*Permission, error) {
 		dedup     sql.NullString
 	)
 	if err := sc.Scan(&p.ID, &p.TaskID, &p.Tool, &p.Command, &req, &decidedAt,
-		&decision, &p.Reason, &dedup, &p.DecidedBy, &p.RuleCreated); err != nil {
+		&decision, &p.Reason, &dedup, &p.DecidedBy, &p.RuleCreated, &p.Details); err != nil {
 		return nil, err
 	}
 	p.DedupKey = dedup.String

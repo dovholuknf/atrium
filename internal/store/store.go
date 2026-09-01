@@ -101,6 +101,11 @@ func (t *Task) Display(field, observed string) string {
 // DisplayTitle is the title a client should render.
 func (t *Task) DisplayTitle() string { return t.Display("title", t.Title) }
 
+// Observed reports a session atrium can see but cannot talk to: adopted from
+// an external source, with no agent connected. These are watchable, and can be
+// resumed or opened, but there is nothing to send a prompt to.
+func (t *Task) Observed() bool { return t.ExternalID != "" && t.WireName == "" }
+
 // Observed is what a runner reports about itself on registration. Every field
 // here is knowable by the agent's own process, so none of it is ever worth a
 // model turn to ask for.
@@ -139,6 +144,9 @@ type Permission struct {
 	// RuleCreated is the pattern of the rule this decision established, set
 	// when the answer was "always" or "never" rather than a one-off.
 	RuleCreated string `json:"rule_created,omitempty"`
+	// Details is what is actually changing: the diff for an edit, the content
+	// for a write. A path alone says which file, not what happens to it.
+	Details string `json:"details,omitempty"`
 }
 
 // Store owns the database and the wedge state.
@@ -180,6 +188,10 @@ func Open(path string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.SeedHarnesses(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("seed harnesses: %w", err)
 	}
 	return s, nil
 }

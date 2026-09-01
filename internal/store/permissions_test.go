@@ -11,11 +11,11 @@ func TestUnkeyedPermissionsDoNotCollide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, _, err := s.RecordPermission(task.ID, "Bash", "ls", "")
+	first, _, err := s.RecordPermission(task.ID, "Bash", "ls", "", "")
 	if err != nil {
 		t.Fatalf("first un-keyed request: %v", err)
 	}
-	second, _, err := s.RecordPermission(task.ID, "Bash", "pwd", "")
+	second, _, err := s.RecordPermission(task.ID, "Bash", "pwd", "", "")
 	if err != nil {
 		t.Fatalf("second un-keyed request: %v", err)
 	}

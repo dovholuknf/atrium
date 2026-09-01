@@ -101,14 +101,14 @@ func TestDecisionRecordsWhoAnswered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byHand, _, err := s.RecordPermission(task.ID, "Bash", "ls", "")
+	byHand, _, err := s.RecordPermission(task.ID, "Bash", "ls", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DecidePermission(byHand.ID, "approve", ""); err != nil {
 		t.Fatal(err)
 	}
-	byRule, _, err := s.RecordPermission(task.ID, "Bash", "go build ./...", "")
+	byRule, _, err := s.RecordPermission(task.ID, "Bash", "go build ./...", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -423,24 +423,62 @@ concern.
 
 Each stage leaves `atrium hub` working.
 
-1. **Checkpoint.** Commit the existing working tree. The refactor needs a clean base.
-2. **Storage.** Add `internal/store` with the schema, migrations, and the rebind helper. Nothing consumes it yet.
-   Includes the three tier failure classification from "Failure posture," so the wedge exists before anything can
-   trigger it.
+1. **Checkpoint.** Commit the existing working tree. The refactor needs a clean base. **Done.**
+2. **Storage.** Add `internal/store` with the schema, migrations, and the rebind helper. Includes the three tier
+   failure classification from "Failure posture," so the wedge exists before anything can trigger it. **Done.**
 3. **Task model behind the existing hub.** Every `/submit` and `/permission` creates or updates a task and appends
    events. Behavior does not change on the happy path. State becomes durable, and the wedge becomes reachable, so
    the listener split and the hook's 5xx handling land here too. Registration goes in here as well: existing
    agents send no task id, so the self started path and the observed-versus-overrides rule have to work from the
-   first commit that touches storage.
-4. **Human facing API.** Add the `/v1` endpoints and the SSE stream on top of the task model.
+   first commit that touches storage. **Done.**
+4. **Human facing API.** Add the `/v1` endpoints and the SSE stream on top of the task model. **Done.**
 5. **Cut the pointer.** Rewrite the TUI against the HTTP API. Delete the privileged path. This is the stage that
-   proves the API is complete.
-6. **SPA.** Board, stack, and task detail against the same API.
+   proves the API is complete. **Not done.** The TUI still receives a `*Hub` in process. Everything since stage 4
+   has gone into the board instead, which means the API is exercised by only one client and its gaps are
+   invisible.
+6. **Board.** Kanban, stack, permissions and runners against the same API. **Done**, as a plain page rather than
+   the React SPA the decisions table names. The JSON plus SSE contract is unchanged, so swapping it is a client
+   side job.
 7. **Supervision.** PTY spawn, kill, and output capture, then browser attach over a WebSocket. Validate ConPTY
    first. Status inference for non-cooperative runners comes last, after attach proves the capture works.
-8. **Ziti.** Bind the daemon to a service and confirm the SPA works unchanged over the overlay.
+   **Partially done.** Window mode launches a runner in a real terminal, and a card can terminate a process whose
+   pid atrium knows. PTY mode refuses with "not built yet," so browser attach does not exist.
+8. **Ziti.** Bind the daemon to a service and confirm the board works unchanged over the overlay. **Not started.**
 
 Stages 1 through 5 are the load bearing refactor. 6 through 8 are additive.
+
+## Built since this document was written
+
+These were not in the original plan and are worth recording, because two of them replaced ideas it proposed.
+
+- **Standing rules.** A permission request that matches a stored pattern is answered without ever being shown.
+  Patterns are a prefix by default and a glob when they contain `*` or `?`, and the most specific match wins.
+  Importing from Claude Code's own allow and deny lists brought 134 rules across on the first run, which is the
+  difference between the board being usable and being a click farm.
+- **Runners are rows.** A harness is a command, arguments, a working directory, an environment, a launch mode and
+  a way to resume. Adding claude, codex, ollama or anything else is configuration. Nothing about any particular
+  runner is special cased in code.
+- **Sessions register through hooks, not through the model.** `SessionStart` and `SessionEnd` post to `/session`.
+  A session sitting at its prompt has made no tool call, so waiting for the permission hook would leave it
+  invisible, and asking the model to announce itself would spend a turn on something the harness already knows.
+  `SessionEnd` is the more valuable half: it is the only reliable signal that a session is over.
+- **Liveness is a syscall.** A card carries the runner's pid, and whether that process still exists is a question
+  the operating system answers for free. A reaper sweeps every twenty seconds. A card with no known pid is left
+  alone, because not knowing is not the same as being dead.
+- **The change, not just the target.** A permission request carries the actual diff, and the board renders it with
+  unchanged context dimmed and the changed words picked out. "Approve this edit" is not answerable from a file
+  path.
+- **Launching scrubs the environment.** The daemon is usually started from inside a claude session, so its
+  environment carries that session's markers. Passing them on made a launched runner believe it was a child
+  session, which silently disabled transcript saving.
+
+## Abandoned
+
+- **Adopting sessions from the gwt ledger.** Implemented, then removed. It turned every session the ledger had
+  ever seen into a card, and the ones it could see were ones it could not talk to, so the board filled with
+  hundreds of entries labelled as waiting on a human who had no way to answer them. Hooks bring a session in the
+  moment it does anything, which is both accurate and free. The `external_id` and `resume_id` columns survive for
+  whatever reports a session id next.
 
 ## Open risks
 
