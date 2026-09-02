@@ -85,6 +85,10 @@ type Task struct {
 	ResumeID   string `json:"resume_id,omitempty"`
 	Branch     string `json:"branch,omitempty"`
 	WindowName string `json:"window_name,omitempty"`
+	// Gated is whether this session has joined atrium. It is state rather than
+	// an environment variable so a running session can opt in or out without
+	// being restarted.
+	Gated bool `json:"gated"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when

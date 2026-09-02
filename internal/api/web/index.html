@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>atrium</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/xterm-addon-fit.js"></script>
 <style>
   :root {
     --bg-0: #0B1B2E; --bg-1: #071322; --bg-2: #040B14;
@@ -174,6 +177,11 @@
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
   .chip.warn { background: rgba(255,198,77,.13); color: var(--warn); }
+  .chip.attach {
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    color: var(--chip-accent-text); cursor: pointer;
+  }
+  .chip.attach:hover { border-color: var(--teal); }
   .why {
     font-size: 12.5px; color: var(--dim); margin-top: 9px; padding-top: 8px;
     border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
@@ -198,7 +206,11 @@
   .wait {
     font: 700 21px/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
   }
-  .row .who { flex: 1; }
+  /* Wraps rather than compresses. The action buttons do not shrink, so on a
+     narrow row a plain flex:1 left the content column at a hundred pixels and
+     the thing being decided became unreadable. A flex basis makes the buttons
+     drop to their own line instead. */
+  .row .who { flex: 1 1 320px; min-width: 0; }
   /* Direct child only. As a descendant selector this also matched the bold
      used for word emphasis inside a diff, and won on specificity, which put
      every emphasised word on its own full width line. */
@@ -250,9 +262,17 @@
     transition: border-color .14s;
   }
   textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
-  .actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+  .actions { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  /* A pending request always wraps: its content is what you are reading. */
+  .row.perm { flex-wrap: wrap; }
+  .row.perm .who { flex: 1 1 100%; order: 2; }
+  .row.perm .actions { flex: 1 1 100%; order: 1; justify-content: flex-start; }
 
-  .row .who label.eyebrow { margin: 11px 0 6px; }
+  .row .who label.eyebrow { margin: 11px 0 4px; }
+  /* The card's own hint sits under its label, not shouted in caps. */
+  .row .who .hintline { margin: 0 0 6px; }
+  .row.perm .who { min-width: 0; }
+  .row.perm textarea.cmd.edit { width: 100%; }
   /* One box on the card: the command. The rule pattern sits on a plain line
      under it, editable in place without looking like a second field. */
   /* The change itself, so a decision is made on what happens rather than on
@@ -330,6 +350,80 @@
   .hintline { display: block; font-size: 12px; color: var(--dimmest); margin-top: 7px; }
   .toolbar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
 
+  /* The terminal wants room. A cramped terminal is worse than no terminal,
+     because output reflows and stops matching what the runner drew. */
+  /* min-width:0 on both is load bearing. A flex item defaults to min-content
+     width, and xterm sizes its own element, so without it the terminal pushes
+     the pane wider than the window and the toolbar falls off the right edge. */
+  .term-layout { display: flex; gap: 14px; align-items: stretch; min-width: 0; }
+  .term-list {
+    flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px;
+    max-height: calc(100vh - 190px); overflow-y: auto;
+  }
+  .term-entry {
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-left: 3px solid transparent;
+    border-radius: 9px; padding: 10px 12px; cursor: pointer;
+    transition: border-color .14s, transform .14s;
+  }
+  .term-entry:hover { transform: translateY(-1px); border-color: var(--blue); }
+  .term-entry.on { border-left-color: var(--teal); background: var(--shell-0); }
+  .term-entry b { display: block; color: var(--head); font-size: 14px; font-weight: 600; }
+  .term-entry span { font: 11.5px/1.5 var(--mono); color: var(--dimmest); word-break: break-all; }
+  .term-entry .chip { margin-top: 6px; }
+
+  .term-pane {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
+    border: 1px solid var(--stroke-dim); border-radius: 12px; overflow: hidden;
+  }
+  .term-bar {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
+  }
+  .term-bar strong { color: var(--head); font-size: 15px; }
+  .term-bar button { padding: 6px 13px; font-size: 13px; }
+  #t-screen {
+    flex: 1; min-height: 300px; min-width: 0; height: calc(100vh - 260px);
+    padding: 10px 12px; overflow: hidden;
+  }
+  #t-screen .xterm { height: 100%; width: 100%; }
+  .term-entry .chip { white-space: nowrap; }
+
+  /* The runner draws rows that span the full width, and the viewport's
+     scrollbar sits over them, so a coloured row reads as banding across the
+     bar. Making the bar dark and narrow lets those rows end against something
+     that looks deliberate. */
+  #t-screen .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--stroke) transparent;
+    background: transparent !important;
+  }
+  #t-screen .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  #t-screen .xterm-viewport::-webkit-scrollbar-track { background: var(--bg-2); }
+  #t-screen .xterm-viewport::-webkit-scrollbar-thumb {
+    background: var(--stroke-dim); border-radius: 6px;
+    border: 2px solid var(--bg-2);
+  }
+  #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--stroke); }
+  .term-help {
+    padding: 8px 14px; border-top: 1px solid var(--stroke-dim);
+    font: 11.5px/1.4 var(--mono); color: var(--dimmest);
+  }
+  /* A request while attached: the runner is blocked and the terminal shows
+     nothing, so the question has to appear where you are looking. */
+  .term-perm {
+    display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+    padding: 12px 14px; border-bottom: 1px solid var(--warn);
+    background: linear-gradient(90deg, rgba(255,198,77,.16), rgba(255,198,77,.04));
+  }
+  .term-perm .who { flex: 1; min-width: 240px; }
+  .term-perm b { display: block; color: var(--warn); font-size: 13px; }
+  .term-perm code {
+    display: block; margin-top: 5px; font: 12.5px/1.5 var(--mono); color: var(--head);
+    word-break: break-all;
+  }
+
   /* A question mark that explains a section without permanently spending
      screen space on the explanation. */
   .help {
@@ -344,6 +438,20 @@
   details > summary.col-head .help { margin-left: 2px; }
   /* The bubble sits against its label. The panel itself is positioned in JS,
      because CSS alone cannot know whether it would fall off the window. */
+  dialog#ask { width: min(560px, 94vw); }
+  dialog#ask .dlg-head { border-bottom: none; padding-bottom: 0; }
+  .asktext {
+    font-size: 14.5px; line-height: 1.6; color: var(--body);
+    white-space: pre-line; margin-bottom: 16px;
+  }
+  .asktext code {
+    display: block; margin: 8px 0; padding: 9px 11px; border-radius: 7px;
+    background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
+    font: 12.5px/1.5 var(--mono); color: var(--head); word-break: break-all;
+  }
+  .asktext b { color: var(--head); font-weight: 600; }
+  dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
+
   #tip {
     position: fixed; z-index: 90; max-width: 420px; pointer-events: none;
     background: var(--shell-0); color: var(--body);
@@ -506,11 +614,80 @@
   .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
   .scroll-x { overflow-x: auto; }
 
-  @media (max-width: 640px) {
-    .bar { padding: 12px 16px; gap: 14px; flex-wrap: wrap; }
-    main { padding: 16px; }
-    .board { grid-template-columns: 1fr; }
-    .wait { min-width: 48px; font-size: 18px; }
+  /* ── narrow ─────────────────────────────────────────────
+     A phone is not a small desktop. Columns, one line rows and a side by side
+     terminal all assume width that is not there, so each becomes something
+     else rather than being squeezed. */
+  @media (max-width: 900px) {
+    .bar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
+    .wordmark { font-size: 17px; letter-spacing: .2em; }
+    nav { order: 3; width: 100%; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
+    .tab { font-size: 15px; padding: 8px 13px; white-space: nowrap; }
+    .tab .count { font-size: 13px; }
+    .grow { display: none; }
+    button.newagent { font-size: 14px; padding: 8px 14px; }
+    button.icon { font-size: 19px; padding: 6px 9px; }
+    .conn { font-size: 14px; }
+    main { padding: 14px 12px; }
+
+    /* One column at a time. A kanban that scrolls sideways on a phone means
+       never seeing the column you want. */
+    .board { flex-direction: column; overflow-x: visible; }
+    .board .col, .board .col.folded { flex: 1 1 auto; min-width: 0; width: 100%; }
+
+    /* Rows stop being rows. Truncating to an ellipsis on a narrow screen hides
+       the only part that matters. */
+    .row.line { flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; }
+    .row.line .grow { flex: 1 1 100%; order: 5; }
+    .row.line .ell { white-space: normal; overflow: visible; }
+    .row.line .tool { min-width: 0; }
+    .row.line button { margin-left: auto; }
+    .row { flex-wrap: wrap; }
+
+    /* A pending request is the one card that must not compress. Its command
+       box and scope have to keep the full width, or the thing being decided
+       is the thing you cannot read. */
+    .row.perm .who { flex: 1 1 100%; min-width: 0; order: 2; }
+    .row.perm .actions { flex: 1 1 100%; order: 1; justify-content: flex-start; }
+    .row.perm .actions button { flex: 1 1 auto; }
+    .row.perm .hints { width: 100%; }
+    textarea.cmd.edit, input.pat, pre.diff { width: 100%; min-width: 0; }
+    .scope { flex-direction: column; align-items: stretch; gap: 6px; }
+    .patview { width: fit-content; max-width: 100%; }
+    .wait { min-width: 0; font-size: 17px; }
+
+    .filters { gap: 6px; }
+    .filters input[type=search] { min-width: 100%; order: -1; }
+    .matchcount { margin-left: 0; }
+    .seg { flex-wrap: wrap; }
+
+    /* The terminal takes the whole screen, with its session list above it
+       rather than beside it. */
+    .term-layout { flex-direction: column; }
+    .term-list {
+      flex: 0 0 auto; flex-direction: row; max-height: none;
+      overflow-x: auto; padding-bottom: 4px;
+    }
+    .term-entry { flex: 0 0 auto; min-width: 190px; }
+    .term-entry span { display: none; }
+    .term-bar { gap: 8px; padding: 8px 10px; }
+    .term-bar strong { width: 100%; }
+    #t-screen { height: 60vh; padding: 6px; }
+    .term-help { display: none; }
+
+    dialog { width: 96vw; }
+    .dlg-body { padding: 14px; }
+    .subhead { font-size: 13px; }
+    #toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
+    #held { font-size: 13px; padding: 7px 12px; }
+  }
+
+  /* Very narrow: drop anything that is decoration. */
+  @media (max-width: 520px) {
+    .wordmark { display: none; }
+    .card .chips .chip:nth-child(2) { display: none; }
+    .term-entry { min-width: 150px; }
+    #t-screen { height: 55vh; }
   }
 </style>
 </head>
@@ -523,6 +700,7 @@
       <div class="tab" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
       <div class="tab" data-view="runners">runners</div>
+      <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"></span></div>
     </nav>
     <div class="grow"></div>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>
@@ -613,6 +791,32 @@ Exports honour whatever filter is applied.">?</span>
     </details>
   </div>
 
+  <!-- Terminals are a view, not a modal. A modal is the wrong shape for
+       something you switch between and leave open while doing other things. -->
+  <div id="terms" hidden>
+    <div class="term-layout">
+      <aside class="term-list" id="term-list"></aside>
+      <section class="term-pane">
+        <div class="term-bar">
+          <strong id="t-title">nothing attached</strong>
+          <span class="chips" id="t-chips"></span>
+          <span class="grow"></span>
+          <button onclick="sendSignal('int')"
+            title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
+          <button id="t-copymode" onclick="toggleCopyOnSelect()"></button>
+          <button class="no" onclick="closeTerm()">detach</button>
+        </div>
+        <div class="term-perm" id="term-perm" hidden></div>
+        <div id="t-screen"></div>
+        <div class="term-help">
+          ctrl-c copies when text is selected, interrupts otherwise &middot;
+          ctrl-v or shift-insert pastes &middot; ctrl-insert copies &middot;
+          ctrl-shift-c is not used, the browser takes it for dev tools
+        </div>
+      </section>
+    </div>
+  </div>
+
   <div id="runners" hidden>
     <div class="col-head" style="margin:0 0 10px">
       <span>start something</span>
@@ -631,6 +835,19 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <div id="harness-list"></div>
   </div>
 </main>
+
+<dialog id="ask">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="ask-title"></h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="ask-body" class="asktext"></div>
+    <div class="field" id="ask-field" hidden>
+      <input type="text" id="ask-input" spellcheck="false">
+    </div>
+    <div class="toolbar" id="ask-actions"></div>
+  </div>
+</dialog>
 
 <div id="tip"></div>
 
@@ -664,6 +881,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <div class="picker">
         <span id="s-notify-state" class="chip"></span>
         <button id="s-notify-ask" onclick="askNotify()">enable</button>
+        <button id="s-notify-toggle" onclick="toggleDesktop()"></button>
         <button onclick="testNotify()">send a test</button>
       </div>
       <span class="hintline" id="s-notify-hint"></span>
@@ -823,7 +1041,7 @@ function ago(secs) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms"];
 
 function switchView(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
@@ -840,6 +1058,8 @@ function cardHTML(t) {
       <span class="chip accent">${esc(t.runner || "?")}</span>
       <span class="chip">idle ${ago(t.idle_seconds)}</span>
       ${w ? `<span class="chip warn">waiting ${ago(t.wait_seconds)}</span>` : ""}
+      ${t.supervised ? `<span class="chip attach"
+        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
     </div>
     ${t.why ? `<div class="why">${esc(t.why)}</div>` : ""}
   </div>`;
@@ -909,8 +1129,9 @@ function permCard(p) {
   el.innerHTML = `
     <div class="who">
       <b>${esc(p.tool)}</b>
-      <span>asked ${esc((p.requested_at || "").slice(11, 19))} &middot;
-        edit the command below to run something different</span>
+      <span>asked ${esc((p.requested_at || "").slice(11, 19))}</span>
+      <label class="eyebrow" for="cmd-${p.id}">command</label>
+      <span class="hintline">this is what runs. edit it to run something else</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="2" spellcheck="false"
         title="whatever is in here is what runs once you approve"></textarea>
       ${p.details ? `<details class="change" open>
@@ -918,7 +1139,7 @@ function permCard(p) {
         <pre class="diff">${diffHTML(p.details)}</pre>
       </details>` : ""}
       <div class="scope">
-        <span class="lbl">always / never applies to</span>
+        <span class="lbl">stop asking about, if you press always or never</span>
         <code class="patview" id="pat-${p.id}"></code>
         <div class="hints">
           ${hintsFor(p).map(h =>
@@ -955,12 +1176,11 @@ function permCard(p) {
     if (el.dataset.chosen === "1") return;
     setScope(prefixOf(p.tool, cmd.value), null);
   });
-  el.querySelectorAll(".hint").forEach(b => b.addEventListener("click", () => {
+  el.querySelectorAll(".hint").forEach(b => b.addEventListener("click", async () => {
     if (b.dataset.custom) {
-      const v = prompt(
-        "Never ask again about:\n\n" +
-        "plain text matches the start of the command\n" +
-        "add * or ? to match against the whole command",
+      const v = await askText("stop asking about",
+        "Plain text matches the <b>start</b> of the command. " +
+        "Add <code>*</code> or <code>?</code> to match against the whole thing.",
         el.dataset.pattern || "");
       if (v === null || !v.trim()) return;
       el.dataset.chosen = "1";
@@ -970,14 +1190,21 @@ function permCard(p) {
     el.dataset.chosen = "1";
     setScope(b.dataset.v, b);
   }));
-  // Wrapped so a fault in one handler cannot leave a button looking dead.
-  // Silence is the worst possible feedback for a click.
-  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", () => {
+  // Wrapped so a fault in one handler cannot leave a button looking dead, and
+  // latched so a slow answer cannot be sent four times. Silence is the worst
+  // possible feedback for a click, and a second click on a request already
+  // being answered can only ever produce a conflict.
+  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", async () => {
+    if (el.dataset.deciding === "1") return;
+    el.dataset.deciding = "1";
+    el.querySelectorAll(".actions button").forEach(x => { x.disabled = true; });
     try {
-      decide(p.id, b.dataset.do, b.dataset.forever === "1");
+      await decide(p.id, b.dataset.do, b.dataset.forever === "1");
     } catch (err) {
       console.error(err);
       toast("that did not work", String(err && err.message || err));
+      el.dataset.deciding = "";
+      el.querySelectorAll(".actions button").forEach(x => { x.disabled = false; });
     }
   }));
   return el;
@@ -1305,7 +1532,7 @@ function wireFilters(seg, input, repaint) {
 }
 
 async function dropRule(id) {
-  try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { alert(e.message); }
+  try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { tellUser("atrium", e.message); }
   refresh();
 }
 
@@ -1313,28 +1540,31 @@ async function dropRule(id) {
 // something to take on trust.
 async function importClaude() {
   let preview;
-  try { preview = await api("/v1/rules/preview-claude"); } catch (e) { alert(e.message); return; }
+  try { preview = await api("/v1/rules/preview-claude"); } catch (e) { tellUser("atrium", e.message); return; }
   const rules = preview.rules || [], skipped = preview.skipped || [];
   const broad = rules.filter(r => r.broad);
   const normal = rules.length - broad.length;
   if (!rules.length) {
-    alert("nothing to import.\n\nlooked in:\n" + (preview.sources || []).join("\n"));
+    tellUser("nothing to import", "looked in:\n" + (preview.sources || []).join("\n"));
     return;
   }
-  let msg = `import ${normal} rule${normal === 1 ? "" : "s"} from Claude Code?\n\n`
-    + `read from:\n${(preview.sources || []).join("\n")}\n\n`
-    + rules.filter(r => !r.broad).slice(0, 12)
-        .map(r => `  ${r.decision === "block" ? "block" : "allow"}  ${r.tool} ${r.pattern}`).join("\n");
-  if (normal > 12) msg += `\n  ...and ${normal - 12} more`;
-  if (skipped.length) msg += `\n\n${skipped.length} entries cannot be translated and will be left alone.`;
-  if (!confirm(msg)) return;
+  let body = `Read from:<code>${esc((preview.sources || []).join("\n"))}</code>`
+    + `<code>` + esc(rules.filter(r => !r.broad).slice(0, 12)
+        .map(r => `${r.decision === "block" ? "block" : "allow"}  ${r.tool} ${r.pattern}`).join("\n"))
+    + (normal > 12 ? esc(`\n...and ${normal - 12} more`) : "") + `</code>`;
+  if (skipped.length) {
+    body += `${skipped.length} entries cannot be translated and will be left alone.`;
+  }
+  if (!await confirmUser(`import ${normal} rule${normal === 1 ? "" : "s"} from claude?`,
+    body, "import them")) return;
 
   let includeBroad = false;
   if (broad.length) {
-    includeBroad = confirm(
-      `${broad.length} of them match EVERY request for their tool:\n\n`
-      + broad.map(r => `  ${r.decision}  ${r.tool}`).join("\n")
-      + `\n\nInclude those too? They stop atrium asking about that tool at all.`);
+    includeBroad = await confirmUser("some of these match everything",
+      `${broad.length} of them match <b>every</b> request for their tool:` +
+      `<code>${esc(broad.map(r => `${r.decision}  ${r.tool}`).join("\n"))}</code>` +
+      "Including them stops atrium asking about those tools at all.",
+      "include them too");
   }
   await runImport({ source: "claude", include_broad: includeBroad });
 }
@@ -1344,10 +1574,12 @@ async function importFile(input) {
   input.value = "";
   if (!file) return;
   let parsed;
-  try { parsed = JSON.parse(await file.text()); } catch (e) { alert("not valid json: " + e.message); return; }
+  try { parsed = JSON.parse(await file.text()); } catch (e) { tellUser("not valid json", e.message); return; }
   const rules = parsed.rules || parsed;
-  if (!Array.isArray(rules)) { alert("expected a rules array"); return; }
-  if (!confirm(`import ${rules.length} rule${rules.length === 1 ? "" : "s"} from ${file.name}?`)) return;
+  if (!Array.isArray(rules)) { tellUser("atrium", "expected a rules array"); return; }
+  if (!await confirmUser("import from a file",
+    `${rules.length} rule${rules.length === 1 ? "" : "s"} from <b>${esc(file.name)}</b>.`,
+    "import them")) return;
   await runImport({ source: "json", rules, include_broad: true });
 }
 
@@ -1361,8 +1593,8 @@ async function runImport(body) {
       msg += `\n\n${res.failed.length} failed:\n`
         + res.failed.slice(0, 8).map(f => `  ${f.tool} ${f.pattern}: ${f.error}`).join("\n");
     }
-    alert(msg);
-  } catch (e) { alert(e.message); }
+    tellUser("atrium", msg);
+  } catch (e) { tellUser("atrium", e.message); }
   refresh();
 }
 
@@ -1408,7 +1640,7 @@ function filteredHistory() {
 
 function exportHistory(fmt) {
   const rows = filteredHistory();
-  if (!rows.length) { alert("nothing to export"); return; }
+  if (!rows.length) { tellUser("atrium", "nothing to export"); return; }
   if (fmt === "csv") {
     download(`atrium-decisions-${stamp()}.csv`,
       toCSV(rows, ["decided_at", "decision", "tool", "command", "decided_by", "reason"]), "text/csv");
@@ -1424,7 +1656,7 @@ function exportRulesView(fmt) {
   const rows = allRules.filter(r =>
     (!only || r.decision === only) &&
     (!q || (r.tool + " " + r.prefix + " " + (r.reason || "")).toLowerCase().includes(q)));
-  if (!rows.length) { alert("nothing to export"); return; }
+  if (!rows.length) { tellUser("atrium", "nothing to export"); return; }
   if (fmt === "csv") {
     download(`atrium-rules-${stamp()}.csv`,
       toCSV(rows, ["created_at", "decision", "tool", "prefix", "hits", "reason"]), "text/csv");
@@ -1459,7 +1691,7 @@ const SOUNDS = {
   none:   { label: "silent",      notes: [] }
 };
 
-const DEFAULT_PREFS = { muted: false, volume: 0.35, input: "chime", perm: "alarm" };
+const DEFAULT_PREFS = { muted: false, volume: 0.35, input: "chime", perm: "alarm", desktop: true };
 
 function loadPrefs() {
   try {
@@ -1545,7 +1777,7 @@ const alerting = (() => {
   }
 
   function notify(title, body, goTo, permId) {
-    if (prefs.muted) return;
+    if (prefs.muted || prefs.desktop === false) return;
     // A permission blocks an agent, so it is worth a desktop notification even
     // when this tab is in front: the tab is rarely the window you are looking
     // at. Everything else stays background-only.
@@ -1563,10 +1795,43 @@ const alerting = (() => {
   };
 
   return {
-    check, play, preview, save, unlock,
+    check, nag, play, preview, save, unlock,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
+
+  // A request nobody answers freezes an agent indefinitely. One alert when it
+  // arrives is not enough, because the alert is easy to miss and the cost of
+  // missing it is an agent doing nothing for an hour. So keep asking, at a
+  // widening interval so it stays a reminder rather than an assault.
+  const nagged = {};
+  function nag(perms) {
+    const now = Date.now();
+    perms.forEach(p => {
+      const since = Date.parse((p.requested_at || "").endsWith("Z")
+        ? p.requested_at : p.requested_at + "Z");
+      if (isNaN(since)) return;
+      const waitedMs = now - since;
+      if (waitedMs < 60000) return;
+
+      // Every minute for the first ten, then every five. A request waiting
+      // that long is either forgotten or being avoided, and both deserve
+      // saying out loud.
+      const mins = Math.floor(waitedMs / 60000);
+      const step = mins < 10 ? 1 : 5;
+      const slot = Math.floor(mins / step);
+      if (nagged[p.id] === slot) return;
+      nagged[p.id] = slot;
+
+      play("permission");
+      const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
+      notify(`still waiting, ${mins}m: an agent is frozen`, body, "perms", p.id);
+      toast(`waiting ${mins}m`, body, "perms", p.id);
+    });
+    // Forget anything answered, so a later request with a fresh id starts over.
+    const live = new Set(perms.map(p => p.id));
+    Object.keys(nagged).forEach(id => { if (!live.has(id)) delete nagged[id]; });
+  }
 
   // check diffs an incoming set of ids against what we alerted on last time.
   // The first pass only seeds, so opening the page does not fire for a queue
@@ -1600,7 +1865,8 @@ const alerting = (() => {
     // A desktop notification is suppressed while the tab is visible, so the
     // toast covers exactly that case. Clicking it goes where the work is.
     toast(title, d.body, kind === "permission" ? "perms" : "stack",
-      fresh.length === 1 ? fresh[0].id : null);
+      fresh.length === 1 ? fresh[0].id : null,
+      fresh.length === 1 ? fresh[0].task_id || fresh[0].id : null);
   }
 })();
 
@@ -1706,7 +1972,18 @@ function showNotification(title, body, goTo, permId) {
 }
 
 // ── toasts ──────────────────────────────────────────────
-function toast(title, body, goTo, key) {
+// Attaches to a task's terminal when atrium owns its runner. Returns whether
+// it did, so a caller can fall back to the tab it would otherwise have opened.
+async function attachIfSupervised(taskID) {
+  try {
+    const t = await api(`/v1/tasks/${taskID}`);
+    if (!t.supervised) return false;
+    openTerm(t);
+    return true;
+  } catch (e) { return false; }
+}
+
+function toast(title, body, goTo, key, taskFor) {
   const host = document.getElementById("toasts");
   const el = document.createElement("div");
   el.className = "toast";
@@ -1720,14 +1997,17 @@ function toast(title, body, goTo, key) {
     el.classList.add("leaving");
     setTimeout(() => el.remove(), 200);
   };
-  el.addEventListener("click", e => {
+  el.addEventListener("click", async e => {
     if (e.target.classList.contains("x")) { dismiss(); return; }
-    if (goTo) switchView(goTo);
     window.focus();
+    dismiss();
+    // If atrium owns the runner, the terminal is where the work is. Landing
+    // in the perms tab would mean answering and then going to find it.
+    if (taskFor && await attachIfSupervised(taskFor)) return;
+    if (goTo) switchView(goTo);
     // Land on the actual request, not just the right tab. The list may still
     // be rendering, so wait a frame before hunting for the card.
     if (key) setTimeout(() => focusPerm(key), 60);
-    dismiss();
   });
   el.dismiss = dismiss;
   host.appendChild(el);
@@ -1758,6 +2038,22 @@ function reapToasts(liveKeys) {
   document.querySelectorAll("#toasts .toast[data-key]").forEach(el => {
     if (!liveKeys.has(el.dataset.key) && el.dismiss) el.dismiss();
   });
+  reapNotifications(liveKeys);
+}
+
+// Desktop notifications for a permission are deliberately sticky, because a
+// blocked agent should not scroll away unnoticed. Sticky with nothing to close
+// them means they pile up forever, so answering a request has to take its
+// notification down too.
+function reapNotifications(liveKeys) {
+  if (!swReg || !swReg.getNotifications) return;
+  swReg.getNotifications().then(list => {
+    list.forEach(n => {
+      const id = n.data && n.data.permId;
+      // Untagged notifications and anything still pending are left alone.
+      if (id && !liveKeys.has(id)) n.close();
+    });
+  }).catch(() => {});
 }
 
 // ── settings dialog ─────────────────────────────────────
@@ -1781,11 +2077,23 @@ function paintSettings() {
   const perm = ("Notification" in window) ? Notification.permission : "unsupported";
   state.textContent = perm === "default" ? "not asked yet" : perm;
   state.className = "chip" + (perm === "granted" ? " accent" : perm === "denied" ? " warn" : "");
+
+  // Once granted, an enable button can do nothing, and a page cannot revoke
+  // its own permission. What atrium can control is whether it sends any, so
+  // that is what the button becomes.
+  const toggle = document.getElementById("s-notify-toggle");
+  const on = alerting.get().desktop !== false;
+  ask.hidden = perm !== "default";
+  toggle.hidden = perm !== "granted";
+  toggle.textContent = on ? "turn off" : "turn on";
+  toggle.className = on ? "no" : "go";
   // "denied" is sticky: the browser will not ask again, and the enable button
   // can do nothing about it. Say so rather than letting it look broken.
   ask.disabled = perm !== "default";
   hint.innerHTML = {
-    granted: "the browser is allowing them. if nothing appears, Windows is swallowing them: " +
+    granted: (on ? "" : "atrium is not sending any. turn them back on above. ") +
+             "a page cannot revoke its own permission, so fully blocking them is a browser setting. " +
+             "if nothing appears, Windows is swallowing them: " +
              "check <b>Settings &rsaquo; System &rsaquo; Notifications</b> is on, that your browser is " +
              "listed and enabled there, and that <b>Do not disturb</b> or <b>Focus assist</b> is off. " +
              "note that real alerts only fire while this tab is in the background, though " +
@@ -1817,8 +2125,13 @@ function previewFor(which) {
   alerting.preview(which === "perm" ? p.perm : p.input);
 }
 
+function toggleDesktop() {
+  alerting.set({ desktop: alerting.get().desktop === false });
+  paintSettings();
+}
+
 function askNotify() {
-  if (!("Notification" in window)) { alert("this browser has no notification support"); return; }
+  if (!("Notification" in window)) { tellUser("atrium", "this browser has no notification support"); return; }
   if (Notification.permission === "denied") { paintSettings(); return; }
   // Some browsers still hand back a callback rather than a promise.
   const done = () => paintSettings();
@@ -1829,10 +2142,10 @@ function askNotify() {
 // Fires regardless of tab visibility, so the test proves the browser side
 // works even while you are looking at this page.
 function testNotify() {
-  if (!("Notification" in window)) { alert("this browser has no notification support"); return; }
+  if (!("Notification" in window)) { tellUser("atrium", "this browser has no notification support"); return; }
   if (Notification.permission !== "granted") {
-    alert("notifications are '" + Notification.permission + "'. " +
-          "see the note under the buttons.");
+    tellUser("notifications are " + Notification.permission,
+      "see the note under the buttons.");
     return;
   }
   const n = showNotification("atrium", "click this notification to prove it works", "perms");
@@ -1865,7 +2178,13 @@ function badge(id, n) {
 async function decide(id, decision, forever) {
   let reason = "", prefix = "";
   if (decision === "block") {
-    reason = prompt("why not? this is handed back to the agent as the reason") || "";
+    // A block carries guidance, so this is the difference between "no" and
+    // "no, do it this way instead".
+    reason = await askText("why not?",
+      "Handed straight back to the agent as the reason it was refused. " +
+      "Telling it what to do instead is more useful than a wall.",
+      "", "use a temp directory instead");
+    if (reason === null) return;
   }
   if (forever) {
     // The scope lives on the card, set by the buttons underneath it. Reading
@@ -1875,11 +2194,42 @@ async function decide(id, decision, forever) {
     const view = document.getElementById("pat-" + id);
     prefix = (card && card.dataset.pattern) || (view && view.textContent) || "";
     prefix = prefix.trim();
-    if (!prefix) { alert("pick a scope for the rule first"); return; }
+    if (!prefix) { tellUser("atrium", "pick a scope for the rule first"); return; }
   }
   // Send the command only when you actually changed it.
   const cmdEl = document.getElementById("cmd-" + id);
   const command = cmdEl && cmdEl.value.trim() !== cmdEl.defaultValue.trim() ? cmdEl.value.trim() : "";
+
+  // Editing the command to something with a wildcard is almost always someone
+  // aiming at the rule scope and hitting the wrong field. The command box runs
+  // what is in it, so a star there becomes a shell glob and the tool fails on
+  // a path that does not exist.
+  if (command && /[*?]/.test(command) && !/[*?]/.test(cmdEl.defaultValue)) {
+    const asRule = await askUser({
+      title: "that wildcard is in the command box",
+      body: "The command box is what actually <b>runs</b>, so approving this would execute:" +
+        `<code>${esc(command)}</code>` +
+        "Wildcards belong in the scope line underneath, which decides what " +
+        "<b>always</b> and <b>never</b> cover.",
+      buttons: [
+        { label: "run it as typed", value: false },
+        { label: "use it as the rule scope", value: true, style: "go" }
+      ]
+    });
+    if (asRule === null) return;
+    if (asRule) {
+      const card = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+      if (card) {
+        card.dataset.pattern = command;
+        card.dataset.chosen = "1";
+        const view = document.getElementById("pat-" + id);
+        if (view) view.textContent = command;
+      }
+      cmdEl.value = cmdEl.defaultValue;
+      // Re-read, so the restored command is what gets sent.
+      return decide(id, decision, forever);
+    }
+  }
   try {
     await api(`/v1/permissions/${id}/decide`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1890,7 +2240,24 @@ async function decide(id, decision, forever) {
     // this is information, not a problem to acknowledge.
     toast("too late", e.message);
   }
-  refresh();
+  // Acting on a card always updates the view, even mid-edit. The pause exists
+  // so a poll cannot overwrite what you are typing, but you just finished with
+  // this card: leaving it on screen makes the click look like it did nothing,
+  // which is exactly how one approval turns into four.
+  forgetEdits(id);
+  applyHeld();
+}
+
+// Drops the edit state for a card that has been answered, so it no longer
+// counts as an edit in progress and no longer holds the view paused.
+function forgetEdits(id) {
+  const card = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+  if (!card) return;
+  card.querySelectorAll("textarea, input").forEach(f => {
+    f.dataset.touched = "";
+    if (f.defaultValue !== undefined) f.value = f.defaultValue;
+  });
+  card.remove();
 }
 
 async function openTask(id) {
@@ -1910,6 +2277,9 @@ async function openTask(id) {
   // Terminate is only offered when atrium knows the process. A window-mode
   // launch owns itself, so saying so beats a button that cannot work.
   document.getElementById("d-runner").innerHTML = [
+    current.supervised
+      ? `<button class="go" onclick="attachCurrent()">attach terminal</button>`
+      : "",
     current.pid > 0
       ? `<button class="no" onclick="killTask()">terminate pid ${current.pid}</button>`
       : `<span class="hintline">atrium does not own this process, so it cannot stop it.
@@ -1941,20 +2311,57 @@ async function patch(body) {
     await api(`/v1/tasks/${current.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
     });
-  } catch (e) { alert(e.message); }
+  } catch (e) { tellUser("atrium", e.message); }
   refresh();
 }
 
 async function move(status) {
+  // Moving a card answers anything it is holding. Say so before doing it,
+  // because the agent on the other end is frozen until something answers.
+  if (current && status !== "needs-permission") {
+    let pending = [];
+    try {
+      pending = ((await api("/v1/permissions")).permissions || [])
+        .filter(p => p.task_id === current.id);
+    } catch (e) {}
+    if (pending.length) {
+      const what = pending.length === 1 ? "1 request" : `${pending.length} requests`;
+      const extra = status === "shelved"
+        ? " While it stays shelved, anything else it asks for is blocked too, " +
+          "with the same explanation."
+        : "";
+      if (!await confirmUser(`this is holding ${what}`,
+        `<b>${esc(current.display_title)}</b> has an agent waiting on it. ` +
+        `Moving it to <b>${esc(status)}</b> answers ${pending.length === 1 ? "it" : "them"} ` +
+        `with block, so the agent is released and told why rather than waiting forever.${extra}`,
+        `move it to ${status}`)) {
+        return;
+      }
+    }
+  }
   await patch({ status });
   detail.close();
 }
 
+async function attachTask(id) {
+  try { openTerm(await api(`/v1/tasks/${id}`)); }
+  catch (e) { tellUser("atrium", e.message); }
+}
+
+function attachCurrent() {
+  if (!current) return;
+  const task = current;
+  detail.close();
+  openTerm(task);
+}
+
 async function killTask() {
   if (!current) return;
-  if (!confirm(`stop ${current.display_title}? the runner is killed, the card and its history stay.`)) return;
+  if (!await confirmUser("stop this runner?",
+    `<b>${esc(current.display_title)}</b> is killed. The card and its history stay.`,
+    "stop it")) return;
   try { await api(`/v1/tasks/${current.id}/kill`, { method: "POST" }); }
-  catch (e) { alert(e.message); return; }
+  catch (e) { tellUser("atrium", e.message); return; }
   detail.close();
   refresh();
 }
@@ -1992,7 +2399,8 @@ function applyHeld() {
 function repaintLists() {
   const view = document.querySelector(".tab.on").dataset.view;
   const render = {
-    board: renderBoard, stack: renderStack, perms: renderPerms, runners: renderRunners
+    board: renderBoard, stack: renderStack, perms: renderPerms,
+    runners: renderRunners, terms: renderTerms
   }[view];
   render().catch(e => console.error(e));
 }
@@ -2026,6 +2434,7 @@ async function refresh() {
       alerting.check("permission", perms, p => ({
         title: "permission needed", body: `${p.tool}: ${(p.command || "").slice(0, 120)}`
       }));
+      alerting.nag(perms);
     }
     // Retire any toast whose request or task has since been answered.
     if (waiting && perms) {
@@ -2051,6 +2460,251 @@ function connect() {
   es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "wedge"].forEach(k => es.addEventListener(k, refresh));
+}
+
+// ── terminal ────────────────────────────────────────────
+// Attaching to a runner atrium owns. Bytes arrive as binary frames and go
+// straight to xterm. Everything sent back is a JSON control frame, so a
+// keystroke and a resize stay distinguishable without inventing framing.
+let term = null, termFit = null, termSock = null, termTask = null;
+
+// Copy on selection, off by default because it surprises people who drag to
+// scroll. Remembered, like the other preferences.
+let copyOnSelect = localStorage.getItem("atrium.copyOnSelect") === "1";
+
+function paintCopyMode() {
+  const b = document.getElementById("t-copymode");
+  if (!b) return;
+  b.textContent = copyOnSelect ? "copy on select: on" : "copy on select: off";
+  b.className = copyOnSelect ? "go" : "";
+}
+
+function toggleCopyOnSelect() {
+  copyOnSelect = !copyOnSelect;
+  localStorage.setItem("atrium.copyOnSelect", copyOnSelect ? "1" : "0");
+  paintCopyMode();
+}
+
+function openTerm(task) {
+  if (typeof Terminal === "undefined") {
+    tellUser("atrium", "the terminal library did not load");
+    return;
+  }
+  // Switching sessions means tearing the old one down first, or two sockets
+  // write into one screen.
+  if (termSock || term) closeTerm(true);
+
+  switchView("terms");
+  termTask = task;
+  document.getElementById("t-title").textContent = task.display_title;
+  document.getElementById("t-chips").innerHTML =
+    `<span class="chip accent">${esc(task.runner || "?")}</span>` +
+    (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
+    `<span class="chip">${esc(task.worktree || "")}</span>`;
+  paintCopyMode();
+
+  const screen = document.getElementById("t-screen");
+  screen.innerHTML = "";
+  term = new Terminal({
+    // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
+    // it has the box drawing and powerline glyphs an agent's output uses, which
+    // Consolas renders as boxes.
+    fontFamily: "'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', " +
+      "'Fira Code', Consolas, ui-monospace, monospace",
+    fontSize: 14,
+    lineHeight: 1.2,
+    letterSpacing: 0.2,
+    cursorBlink: true,
+    // Enough that scrolling back through a long build is useful, without
+    // holding a whole session in memory.
+    scrollback: 5000,
+    // Matching the board, so an attached terminal does not look pasted in.
+    theme: {
+      background: "#040B14", foreground: "#D7DBE3", cursor: "#00E3B0",
+      selectionBackground: "#173A57"
+    }
+  });
+  termFit = new FitAddon.FitAddon();
+  term.loadAddon(termFit);
+  term.open(screen);
+
+  // Copy and paste have to win over the terminal, or selecting text and
+  // pressing ctrl-c interrupts the runner instead of copying. Returning false
+  // stops xterm treating the keystroke as input.
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== "keydown") return true;
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    // ctrl-shift-c is Chrome's inspect-element shortcut and the browser takes
+    // it before the page ever sees it, so binding copy there both copied and
+    // opened dev tools. The insert pair is the older terminal convention and
+    // nothing claims it.
+    if (ctrl && e.key === "Insert") { e.preventDefault(); copySelection(); return false; }
+    if (e.shiftKey && e.key === "Insert") { e.preventDefault(); pasteIntoTerm(); return false; }
+
+    // Plain ctrl-v pastes. xterm would otherwise send it to the runner as a
+    // control character, which does nothing useful in any agent.
+    if (ctrl && !e.shiftKey && e.code === "KeyV") { e.preventDefault(); pasteIntoTerm(); return false; }
+
+    // Plain ctrl-c interrupts, unless something is selected, in which case
+    // copying is what was meant. This is what every terminal does.
+    if (ctrl && !e.shiftKey && e.code === "KeyC" && term.hasSelection()) {
+      e.preventDefault();
+      copySelection();
+      return false;
+    }
+    return true;
+  });
+
+  term.onSelectionChange(() => {
+    if (copyOnSelect && term.hasSelection()) copySelection(true);
+  });
+
+  // Fit after the pane has a size, or the first resize is computed against a
+  // hidden element and the runner is told a nonsense width.
+  requestAnimationFrame(() => {
+    termFit.fit();
+    connectTerm(task.id);
+    renderTermList();
+  });
+}
+
+function copySelection(quiet) {
+  if (!term || !term.hasSelection()) return;
+  const text = term.getSelection();
+  navigator.clipboard.writeText(text)
+    .then(() => { if (!quiet) toast("copied", `${text.length} characters`); })
+    .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
+}
+
+async function pasteIntoTerm() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) send({ t: "in", d: text });
+  } catch (e) {
+    toast("could not paste", "the browser refused clipboard access");
+  }
+}
+
+// The list of things worth attaching to, so switching is a click.
+async function renderTermList() {
+  let tasks = [];
+  try { tasks = ((await api("/v1/tasks")).tasks || []).filter(t => t.supervised); } catch (e) { return; }
+  badge("c-term", tasks.length);
+  const host = document.getElementById("term-list");
+  host.innerHTML = tasks.length
+    ? tasks.map(t => `
+        <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""}"
+             onclick="attachTask('${t.id}')">
+          <b>${esc(t.display_title)}</b>
+          <span>${esc(t.worktree || "")}</span>
+          <span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
+        </div>`).join("")
+    : `<div class="panel"><div class="empty">
+         nothing to attach to. only a runner started in pty mode has a terminal atrium owns.
+       </div></div>`;
+}
+
+function connectTerm(taskID) {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach`);
+  termSock.binaryType = "arraybuffer";
+
+  termSock.onopen = () => {
+    sendResize();
+    term.focus();
+  };
+  termSock.onmessage = e => {
+    if (typeof e.data === "string") { term.write(e.data); return; }
+    term.write(new Uint8Array(e.data));
+  };
+  termSock.onclose = () => {
+    if (term) term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
+  };
+  termSock.onerror = () => {
+    if (term) term.write("\r\n\x1b[38;5;203m[atrium] connection failed\x1b[0m\r\n");
+  };
+
+  term.onData(d => send({ t: "in", d }));
+  window.addEventListener("resize", onTermResize);
+}
+
+function send(msg) {
+  if (termSock && termSock.readyState === WebSocket.OPEN) termSock.send(JSON.stringify(msg));
+}
+
+function sendResize() {
+  if (!term) return;
+  send({ t: "resize", cols: term.cols, rows: term.rows });
+}
+
+function onTermResize() {
+  if (!termFit || !term) return;
+  termFit.fit();
+  sendResize();
+}
+
+function sendSignal(s) { send({ t: "signal", s }); }
+
+function closeTerm(switching) {
+  window.removeEventListener("resize", onTermResize);
+  if (termSock) { termSock.close(); termSock = null; }
+  if (term) { term.dispose(); term = null; }
+  termFit = null;
+  termTask = null;
+  if (switching) return;
+  document.getElementById("t-title").textContent = "nothing attached";
+  document.getElementById("t-chips").innerHTML = "";
+  document.getElementById("t-screen").innerHTML = "";
+  document.getElementById("term-perm").hidden = true;
+  refresh();
+}
+
+// A permission request while attached: the runner is blocked and its terminal
+// shows nothing, so the question has to appear where you are already looking.
+async function renderTermPerm() {
+  const host = document.getElementById("term-perm");
+  if (!termTask) { host.hidden = true; return; }
+  let mine = [];
+  try {
+    mine = ((await api("/v1/permissions")).permissions || [])
+      .filter(p => p.task_id === termTask.id);
+  } catch (e) { return; }
+  if (!mine.length) { host.hidden = true; host.innerHTML = ""; return; }
+  const p = mine[0];
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="who">
+      <b>this session is blocked, waiting on you</b>
+      <code>${esc(p.tool)}: ${esc(p.command)}</code>
+    </div>
+    <div class="actions">
+      <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve</button>
+      <button class="no" onclick="decideFromTerm('${p.id}','block')">block</button>
+      <button onclick="switchView('perms')">open in perms</button>
+    </div>`;
+}
+
+async function decideFromTerm(id, decision) {
+  let reason = "";
+  if (decision === "block") {
+    reason = await askText("why not?", "Handed back to the agent as the reason.", "",
+      "use a temp directory instead");
+    if (reason === null) return;
+  }
+  try {
+    await api(`/v1/permissions/${id}/decide`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, reason })
+    });
+  } catch (e) { toast("too late", e.message); }
+  renderTermPerm();
+}
+
+// The terminals view refreshes its own two pieces.
+async function renderTerms() {
+  await renderTermList();
+  await renderTermPerm();
 }
 
 // ── runners ─────────────────────────────────────────────
@@ -2139,21 +2793,24 @@ function harnessFromForm() {
 
 async function saveHarness() {
   const h = harnessFromForm();
-  if (!h.id) { alert("give it an id"); return; }
+  if (!h.id) { tellUser("atrium", "give it an id"); return; }
   try {
     await api(`/v1/harnesses/${encodeURIComponent(h.id)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(h)
     });
-  } catch (e) { alert(e.message); return; }
+  } catch (e) { tellUser("atrium", e.message); return; }
   document.getElementById("harness").close();
   refresh();
 }
 
 async function deleteHarness() {
   const id = document.getElementById("harness").dataset.editing;
-  if (!id || !confirm(`delete the ${id} runner?`)) return;
+  if (!id) return;
+  if (!await confirmUser("delete this runner?",
+    `<b>${esc(id)}</b> is removed from the list. Anything it already started keeps running.`,
+    "delete it")) return;
   try { await api(`/v1/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" }); }
-  catch (e) { alert(e.message); return; }
+  catch (e) { tellUser("atrium", e.message); return; }
   document.getElementById("harness").close();
   refresh();
 }
@@ -2166,7 +2823,7 @@ async function toggleHarness(id) {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.assign({}, h, { enabled: !h.enabled }))
     });
-  } catch (e) { alert(e.message); }
+  } catch (e) { tellUser("atrium", e.message); }
   refresh();
 }
 
@@ -2178,7 +2835,7 @@ async function openLaunch(id, resume, cwd) {
   }
   const enabled = allHarnesses.filter(h => h.enabled);
   if (!enabled.length) {
-    alert("no runner is enabled yet. turn one on in the runners tab.");
+    tellUser("atrium", "no runner is enabled yet. turn one on in the runners tab.");
     switchView("runners");
     return;
   }
@@ -2211,10 +2868,79 @@ async function doLaunch() {
     await api("/v1/launch", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
     });
-  } catch (e) { alert(e.message); return; }
+  } catch (e) { tellUser("atrium", e.message); return; }
   document.getElementById("launch").close();
   switchView("board");
 }
+
+// ── dialogs ─────────────────────────────────────────────
+// The browser's own confirm, alert and prompt are the wrong furniture in an
+// app that looks like this, and they block the whole page while they are up.
+// One promise-based dialog replaces all three.
+const askDlg = document.getElementById("ask");
+
+function askClose(resolve, value) {
+  askDlg.close();
+  resolve(value);
+}
+
+// opts: { title, body (html), buttons: [{label, value, style}], input, value }
+function askUser(opts) {
+  return new Promise(resolve => {
+    document.getElementById("ask-title").textContent = opts.title || "";
+    document.getElementById("ask-body").innerHTML = opts.body || "";
+
+    const field = document.getElementById("ask-field");
+    const input = document.getElementById("ask-input");
+    field.hidden = !opts.input;
+    if (opts.input) {
+      input.value = opts.value || "";
+      input.placeholder = opts.placeholder || "";
+    }
+
+    const actions = document.getElementById("ask-actions");
+    actions.innerHTML = "";
+    const buttons = opts.buttons || [
+      { label: "cancel", value: null },
+      { label: "ok", value: true, style: "go" }
+    ];
+    buttons.forEach(b => {
+      const el = document.createElement("button");
+      el.textContent = b.label;
+      if (b.style) el.className = b.style;
+      el.onclick = () => askClose(resolve, opts.input && b.value !== null ? input.value : b.value);
+      actions.appendChild(el);
+    });
+
+    // Escape cancels, enter takes the last button, which is always the
+    // affirmative one. Same reflexes as the native dialog it replaces.
+    askDlg.onclose = () => resolve(null);
+    askDlg.onkeydown = e => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      e.preventDefault();
+      const last = buttons[buttons.length - 1];
+      askClose(resolve, opts.input && last.value !== null ? input.value : last.value);
+    };
+
+    askDlg.showModal();
+    if (opts.input) { input.focus(); input.select(); }
+  });
+}
+
+// Drop-in shapes for the three things the native dialogs did.
+const confirmUser = (title, body, okLabel) => askUser({
+  title, body,
+  buttons: [{ label: "cancel", value: null }, { label: okLabel || "ok", value: true, style: "go" }]
+}).then(v => v === true);
+
+const tellUser = (title, body) => askUser({
+  title, body, buttons: [{ label: "ok", value: true, style: "go" }]
+});
+
+const askText = (title, body, value, placeholder) => askUser({
+  title, body, input: true, value, placeholder,
+  buttons: [{ label: "cancel", value: null }, { label: "ok", value: "", style: "go" }]
+});
 
 // ── tooltips ────────────────────────────────────────────
 // One floating panel, measured and then placed. It prefers to sit below and
@@ -2266,6 +2992,10 @@ document.addEventListener("focusin", e => {
 document.addEventListener("focusout", hideTip);
 window.addEventListener("scroll", hideTip, true);
 window.addEventListener("resize", hideTip);
+
+// The copy mode button lives in static markup, so it has no text until
+// something paints it. Painting only on attach left it blank until clicked.
+paintCopyMode();
 
 wireFilters("rules-seg", "rules-q", paintRules);
 wireFilters("hist-seg", "hist-q", paintHistory);

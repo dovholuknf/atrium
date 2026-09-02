@@ -40,7 +40,8 @@ func newRoot() *cobra.Command {
 		Long: "Atrium is a read-only aggregator over the state that the gwt session hooks write " +
 			"to disk. It exposes the state via a CLI table, a tail-able event stream, and an MCP server.",
 	}
-	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon())
+	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon(),
+		newJoin(), newLeave())
 	return root
 }
 

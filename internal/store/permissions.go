@@ -18,7 +18,9 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 	err := s.guard(func() error {
 		p, decided = nil, false
 		if dedupKey != "" {
-			existing, err := s.permissionBy(`dedup_key = ?`, dedupKey)
+			// Scoped to the task: the key means "this agent's same request",
+			// so an identical key from another agent is a different question.
+			existing, err := s.permissionBy(`task_id = ? AND dedup_key = ?`, taskID, dedupKey)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
@@ -208,6 +210,43 @@ func (s *Store) GetPermission(id string) (*Permission, error) {
 		return nil
 	})
 	return p, err
+}
+
+// PendingForTask returns the undecided requests belonging to one task.
+func (s *Store) PendingForTask(taskID string) ([]*Permission, error) {
+	var out []*Permission
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(
+			`SELECT id FROM permission WHERE task_id = ? AND decided_at IS NULL
+			 ORDER BY requested_at ASC`, taskID)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		for _, id := range ids {
+			p, err := s.permissionBy(`id = ?`, id)
+			if err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out, err
 }
 
 // PendingPermissions returns undecided requests, oldest first.
