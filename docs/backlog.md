@@ -1,53 +1,105 @@
 # Backlog
 
-What is outstanding, why it matters, and what is deliberately not being done. Ordered roughly by value.
+What is outstanding, why it matters, and what is out of scope. Ordered roughly by value.
 
 Kept here rather than in a conversation, because a list that lives in a chat dies with it.
 
+## Where things stand
+
+The daemon is what gets used. It has durable state, a permission gate with standing rules, a web board, pseudo
+terminals it owns and can attach to from the browser, live activity per card, auto mode with a review, launching
+with a directory picker, a message channel into a running session, and a wind-down that is not a kill.
+
+`atrium hub` and `atrium serve` are untouched and still work.
+
+The gaps below are ordered by what would change day to day. The two that block existing features from working at
+all are first: neither is code, both are wiring.
+
 ## Next
 
-### Put atrium on PATH
+### Wire the activity hooks into settings.json
 
-The `atrium-join` and `atrium-leave` skills call `atrium` plainly and treat "not found" as the answer. Until the
-binary is on PATH they cannot work, and hardcoding a checkout path into a skill would work on one machine and rot
-the first time it moves.
+`atrium-activity-hook.ps1` exists and `/activity` is tested end to end, but nothing calls it yet, so every
+`running` card looks the same whether its session is working or sitting at a prompt.
+
+Four entries. See `docs/hooks.md` for what goes where and why.
 
 ### Small interface debts
 
-- **The launch form ignores the enter key.** Typing a directory and pressing enter should start the runner.
-- **Board actions need a right click or a `...` menu.** Shelve, done, attach and terminate are the things done
-  most, and each currently costs opening the detail dialog.
-- **Drag to reorder is not wired.** The `rank` column, midpoint insertion and the ordering rules all exist. The
-  board only reads rank, never writes it.
+- **A folder rule reads the command text, not what a shell would make of it.** An absolute path that only
+  exists after expansion, `$HOME/x` or `$(cat somewhere)`, is not seen, so a command reaching outside that way
+  is approved when the session sits inside an allowed folder. A literal `cd /elsewhere && rm x` IS caught,
+  because `/elsewhere` is visible in the text. Closing the rest means expanding shell syntax, which is its own
+  project and a source of new mistakes. Worth knowing before allowing a folder that matters.
+- **Auto mode has no time limit.** "For the next hour" is the right shape for something meant to be temporary.
+  Today it stays on until switched off, with only the card's `auto` badge as a reminder.
 
-### Shelving should stop the runner, not just move the card
+### An agent cannot say it finished
 
-Shelved is not another word for finished. Done and dead are both over: done because the work is over, dead because
-the process is. Shelved says the opposite, that this is coming back, and today it only moves a card while the
-runner keeps sitting there holding a conversation open.
+Everything an agent reports lands in `needs-input`, so the board cannot tell "finished, go look at the result"
+from "stuck, answer me". Only a human moving a card by hand produces `done`.
 
-What it should do instead: record the resume id, stop the runner, and turn the card's action into resume. That
-makes shelving cheap enough to use on anything not being worked on right now, which is the point of it.
+The v2 design named `submit(kind="task-complete")` for this and it was never built. Whatever carries it, the
+board needs the two states to arrive from the agent rather than being sorted out afterwards, because sorting them
+out afterwards means reading each one.
 
-`resume_id` is captured now, so the missing half is the stop-and-restart path.
+This is the largest remaining hole in the thing atrium exists to do.
+
+### No way to send a message from the board
+
+The back channel works end to end: a message reaches a busy session through its next tool call, an idle one
+through the Stop hook, and a supervised one by being typed straight into its terminal. `POST
+/v1/tasks/{id}/message` is the only way to send one, so in practice it means curl.
+
+A box on the card is the whole job.
+
+### Group cards by project, however the operator wants
+
+A card shows its leaf directory, so `dotfiles` and `targetted-releases` sit next to each other with nothing
+saying which repo either belongs to. With several worktrees per repo, the column is a list of names that only
+mean something if you already know them.
+
+Grouping by project is the fix, and the grouping rule should not be atrium's to decide: the operator already has
+a worktree layout with its own conventions. Two hooks, both plain JavaScript held in the browser:
+
+- **group a card**, `(task) => string`
+- **order the groups**, `(a, b) => number`
+
+With defaults that derive a project from the worktree path, so it works before anyone writes anything. A colour
+per group from a hash of its name, so it is stable without configuration.
+
+Running operator-supplied JavaScript in the operator's own browser on their own machine is not a security
+question, but a broken function must never take the board down: wrap it, fall back to the default, and show the
+error.
+
+### A runner atrium can ask for help
+
+Atrium knows things a model could act on: what a session did, what a rule would cover, why a launch failed.
+Right now every one of those ends in the operator reading it.
+
+A configured helper runner, which can be claude, codex, ollama or anything else, gives the board actions like
+"summarise what this session changed" and "explain why this failed". Runner agnostic like everything else: the
+harness table already describes how to start one, so this is a setting naming which row to use for it.
+
+Not the same as a launched runner. A helper answers one question and exits; it does not get a card.
 
 ### Working directories from a repo URL
 
-Launching asks for a directory that has to already exist. It should take a repo URL instead, and prepare the
-working directory the way the shell workflow already does: clone if needed, create a worktree for the branch, then
-start the runner there.
+Launching asks for a directory that has to already exist.
 
-This is what makes launching from the board sufficient on its own. Until then, every new piece of work starts in a
-terminal to make somewhere for it to run.
+**The inversion is better than building it in.** Atrium does not need to learn git worktree semantics. Whatever
+already creates worktrees can make the directory the way it likes and then hand it over, which `atrium launch`
+now does:
 
-### Live sub-state on a card
+```powershell
+atrium launch --cwd $worktree --title $branch --why "what this is for"
+```
 
-The columns answer "what needs me". A card should also say what its runner is doing right now: thinking, running
-a named tool, or waiting on N subagents. That is a badge on the card, not a column, because a column is a bucket
-for human attention and "thinking" never needs any.
+It prints the card id, so the caller can hold on to it. A `-WithAtrium` flag on an existing worktree workflow is
+the whole integration.
 
-The hooks to feed it exist: `PreToolUse` and `PostToolUse` carry the tool name, `SubagentStop` counts subagents.
-Nothing sends them yet.
+What is left is the other direction: atrium creating a worktree itself, for the case where there is no script to
+call it. Lower value now that the hand-off works.
 
 ### Pruning on a timer
 
@@ -68,6 +120,18 @@ Worth doing last, and worth keeping manual status override as the escape hatch.
 
 Left off on purpose until the behaviour is understood well enough to want it. A Stop hook that blocks makes a
 session keep working, so getting it wrong means sessions that will not stop.
+
+## Parked
+
+Real, understood, and not wanted yet.
+
+### atrium on PATH
+
+The `atrium-join` and `atrium-leave` skills call `atrium` by name and treat "not found" as the answer, so both
+are inert. Hardcoding a checkout path into a skill would work on one machine and rot the first time it moves.
+
+Parked because launching from the board covers the same ground: a runner atrium starts is already on the board
+and already gated, which is what joining was for.
 
 ## Known gaps
 
@@ -103,7 +167,7 @@ session keep working, so getting it wrong means sessions that will not stop.
 - **Notification buttons cap at two.** Chrome on Windows renders at most two actions, so it is approve and block.
   There is no inline text reply on desktop, which is a browser limitation rather than something to work around.
 
-## Deliberately not doing
+## Out of scope
 
 - Authentication. Single machine, loopback. Reaching it from elsewhere is a job for an overlay such as OpenZiti.
 - Multi tenancy, accounts, a deployment story. This is one person's tool.
@@ -125,11 +189,23 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   shown inline while attached, and a notification that attaches rather than landing on the board.
 - Join and leave, so a running session can put itself on the board without restarting.
 - Shelving answers what a card was holding, and a shelved card is a standing no.
+- Shelving stops the runner and unshelving starts the same conversation again, off the stored resume id. The card
+  is the launch spec: `runner` is the harness, `worktree` is the directory. When it cannot resume it says which
+  piece is missing rather than doing nothing.
+- Live activity per card, held in memory and never written down.
+- Auto mode, and the review that pays for it.
+- Folder rules, covering work inside a directory rather than a command shape.
+- Stopping the daemon without killing it, and a launch that proves the runner started.
 - A narrow layout, and the board served with no-store so a rebuild is always what is on screen.
-- Every browser alert, confirm and prompt replaced with the app's own dialog.
+- Every browser alert, confirm and prompt replaced with the app's own dialog, and no dialog that follows another
+  dialog.
 
 ## Review
 
 - Mercurius round two ran against the revised design. Two findings were stale documentation, since fixed. The
   third, a card leaving a waiting state without answering its pending requests, was a real bug and is fixed.
-- Round three has not been run against `docs/supervision-design.md` as built.
+- Mercurius round three ran against the code. Two folder-rule findings were real and security relevant: a command
+  naming a path inside an allowed folder AND one outside it was approved, and a quoted Windows path with spaces
+  was split into tokens that looked relative. Both fixed with regression tests. A third, `/activity` returning
+  400 on a malformed body against its own fail-open contract, was also real and fixed.
+- Nothing has been run against `docs/supervision-design.md` as built.

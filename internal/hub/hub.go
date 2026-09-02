@@ -22,7 +22,7 @@ import (
 // Message is one piece of content sent by an agent to the hub.
 type Message struct {
 	Agent   string    `json:"agent"`
-	Kind    string    `json:"kind"`    // "greeting" or "response"
+	Kind    string    `json:"kind"` // "greeting" or "response"
 	Content string    `json:"content"`
 	At      time.Time `json:"at"`
 }
@@ -135,7 +135,7 @@ type permissionDecision struct {
 // leaves v1's in-memory-only behavior exactly as it was, which is what keeps
 // `atrium hub` working while the daemon is built out around it.
 //
-// The hub does not know about wedging. When the store wedges the daemon closes
+// The hub knows nothing about halting. When the store halts the daemon closes
 // the agent-facing listener outright, so agents see connection-refused and park
 // on their existing backoff instead of being told about a failure they cannot
 // act on.
@@ -382,11 +382,20 @@ type PermissionRequest struct {
 	// content for a write. The command line alone names the target without
 	// saying what happens to it, which is not enough to decide on.
 	Details string `json:"details,omitempty"`
+	// DedupKey identifies one attempt, so a retried request is recognised as
+	// the same question rather than asked again.
+	//
+	// The hook fails open when atrium is unreachable, and it also retries. A
+	// daemon that crashed between recording a decision and answering would
+	// otherwise ask the operator the same thing twice, and the second answer
+	// would be given against a situation that had already moved on. Empty is
+	// allowed and means "treat this as new".
+	DedupKey string `json:"dedup_key,omitempty"`
 }
 
 // PermissionResponse is what the hub returns to the hook.
 type PermissionResponse struct {
-	Decision string `json:"decision"`        // "approve" or "block"
+	Decision string `json:"decision"` // "approve" or "block"
 	Reason   string `json:"reason,omitempty"`
 	// Command is present only when the human edited the command before
 	// approving it. A hook that does not understand this field ignores it and
@@ -438,8 +447,8 @@ func (h *Hub) HandlePermission(w http.ResponseWriter, r *http.Request) {
 
 	// Loud announce via inbox so the TUI prints it next to normal traffic.
 	announce := Message{
-		Agent:   in.Agent,
-		Kind:    "perm-request",
+		Agent: in.Agent,
+		Kind:  "perm-request",
 		Content: fmt.Sprintf("{bold}{yellow}[PERM #%d]{reset} %s wants to run ({cyan}%s{reset}): %s\n  {green}/approve %d{reset}  ·  {red}/deny %d{reset}  ·  '{green}y{reset}'/'{red}n{reset}' (oldest)  ·  in the perms tab, {bold}type guidance + enter{reset} to deny with instructions",
 			pp.ID, in.Agent, in.Tool, in.Command, pp.ID, pp.ID),
 		At: pp.At,

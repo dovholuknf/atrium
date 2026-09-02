@@ -256,10 +256,101 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS message_pending ON message (task_id, delivered_at)`,
 		},
 	},
+	{
+		// Auto mode: approve without asking, still routed through atrium so
+		// everything is written down.
+		//
+		// Per task, so one session is trusted for a stretch while the others
+		// are not. Durable: losing it on a restart would start interrupting
+		// again with no sign of why.
+		name: "0013_task_auto_approve",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
+	{
+		// Rules can now cover a directory instead of a command shape.
+		//
+		// "Let it work anywhere under this folder" was possible before only by
+		// hand-writing a glob that also had to account for the quoting around
+		// the path, which nobody gets right. A path rule says what it means.
+		//
+		// Existing rules default to command, which is what they all were.
+		// Rules can cover a directory instead of a command shape, so the
+		// uniqueness constraint has to include the kind: the same text is both
+		// a valid command pattern and a valid directory, answering different
+		// requests, and one must not overwrite the other.
+		//
+		// A rebuild rather than an ALTER: SQLite cannot change a UNIQUE
+		// constraint in place. Same as 0010.
+		//
+		// The column add is a separate statement so a database that ran it in
+		// an earlier build is not asked twice. The runner tolerates a duplicate
+		// column.
+		name: "0014_rule_kind",
+		stmts: []string{
+			`ALTER TABLE perm_rule ADD COLUMN kind TEXT NOT NULL DEFAULT 'command'`,
+			`CREATE TABLE perm_rule_rebuilt (
+				id         TEXT PRIMARY KEY,
+				tool       TEXT NOT NULL,
+				prefix     TEXT NOT NULL,
+				decision   TEXT NOT NULL CHECK (decision IN ('approve','block')),
+				reason     TEXT NOT NULL DEFAULT '',
+				scope      TEXT NOT NULL DEFAULT '',
+				kind       TEXT NOT NULL DEFAULT 'command'
+				             CHECK (kind IN ('command','path')),
+				created_at TEXT NOT NULL,
+				hits       INTEGER NOT NULL DEFAULT 0,
+				UNIQUE (tool, prefix, scope, kind)
+			)`,
+			`INSERT INTO perm_rule_rebuilt
+				(id, tool, prefix, decision, reason, scope, kind, created_at, hits)
+			 SELECT id, tool, prefix, decision, reason, scope,
+				CASE WHEN kind = '' THEN 'command' ELSE kind END, created_at, hits
+			 FROM perm_rule`,
+			`DROP TABLE perm_rule`,
+			`ALTER TABLE perm_rule_rebuilt RENAME TO perm_rule`,
+		},
+	},
+	{
+		// Atrium owns every runner it starts.
+		//
+		// Window mode hands the session to a terminal that then owns itself,
+		// which costs attach, terminate and liveness: atrium never learns the
+		// runner's process id, so the card cannot be stopped, watched or
+		// checked. It was the seeded default before pty mode worked, so rows
+		// created then are still on it.
+		//
+		// The column stays, and a row can be set back by hand for a runner
+		// that insists on its own window.
+		name: "0015_pty_by_default",
+		stmts: []string{
+			`UPDATE harness SET launch_mode = 'pty' WHERE launch_mode = 'window'`,
+		},
+	},
+	{
+		// How to ask a runner to exit, per runner.
+		//
+		// There is no common answer. A shell takes `exit` and a newline. Claude
+		// takes control-d twice. Ollama and codex take it once. Sending the
+		// wrong one leaves the process sitting there until the terminal is
+		// closed underneath it, which is the thing an exit button exists to
+		// avoid.
+		//
+		// Stored as tokens rather than bytes so the field is writable by hand:
+		// `ctrl-d`, `enter`, or any literal text to type.
+		name: "0016_harness_exit_keys",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN exit_keys TEXT NOT NULL DEFAULT '[]'`,
+			`UPDATE harness SET exit_keys = '["ctrl-d","ctrl-d"]' WHERE id = 'claude'`,
+			`UPDATE harness SET exit_keys = '["ctrl-d"]' WHERE id IN ('ollama','codex')`,
+			`UPDATE harness SET exit_keys = '["exit","enter"]' WHERE id = 'shell'`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
-// wedge exists, so failures return an error and the daemon refuses to start.
+// store can halt, so failures return an error and the daemon refuses to start.
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(
 		`CREATE TABLE IF NOT EXISTS schema_migration (

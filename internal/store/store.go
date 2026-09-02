@@ -8,11 +8,11 @@
 //     to start.
 //  2. Contention (SQLITE_BUSY, SQLITE_LOCKED). Not a failure. Retried
 //     internally and never surfaced.
-//  3. Any other failure. The store wedges: it records the cause, refuses all
-//     further work, and calls OnWedge so the daemon can close the agent-facing
-//     listener. A closed listener reads as connection-refused to an agent,
-//     which is the one failure the agent client already absorbs silently, so
-//     the fleet parks instead of burning tokens.
+//  3. Any other failure. The store halts: it records the cause, refuses all
+//     further work, and calls OnHalt so the daemon can close the agent-facing
+//     listener. To an agent a closed listener reads as connection-refused,
+//     the one failure its client already absorbs silently, so every session
+//     parks instead of burning tokens.
 package store
 
 import (
@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -58,8 +59,8 @@ const (
 	EventExited        = "exited"
 )
 
-// ErrWedged is returned by every store call once the store has wedged.
-var ErrWedged = errors.New("store is wedged")
+// ErrHalted is returned by every store call once the store has halted.
+var ErrHalted = errors.New("store is halted")
 
 // Task is one card on the board.
 type Task struct {
@@ -89,6 +90,13 @@ type Task struct {
 	// an environment variable so a running session can opt in or out without
 	// being restarted.
 	Gated bool `json:"gated"`
+	// AutoApprove answers this session's requests with approve instead of
+	// asking. Everything is still recorded, and the audit log is read
+	// afterwards to see what was let through.
+	//
+	// It does not override a standing never rule or a shelved card: auto mode
+	// stops new questions, it does not discard answers already given.
+	AutoApprove bool `json:"auto_approve"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when
@@ -153,22 +161,38 @@ type Permission struct {
 	Details string `json:"details,omitempty"`
 }
 
-// Store owns the database and the wedge state.
+// Store owns the database, and whether it has halted.
 type Store struct {
 	db *sql.DB
 
-	mu         sync.RWMutex
-	wedgeCause error
+	mu        sync.RWMutex
+	haltCause error
 
-	// OnWedge is called once, from the goroutine that trips the wedge. The
+	// OnHalt is called once, from the goroutine that hit the failure. The
 	// daemon uses it to close the agent-facing listener and stop supervised
 	// runners. It must not call back into the store.
-	OnWedge func(cause error)
+	OnHalt func(cause error)
+
+	fresh bool
 }
+
+// Fresh reports whether Open created the database rather than found one.
+//
+// Opening the wrong path looks identical to every card and every rule having
+// vanished. `WORKTREE_ROOT` unset once sent the path to the home directory and
+// a hundred and twenty five rules appeared to be gone. A caller is expected to
+// say loudly that it made a new one, and where.
+func (s *Store) Fresh() bool { return s.fresh }
 
 // Open opens the database and applies migrations. A failure here is tier one:
 // the caller is expected to refuse to start rather than continue degraded.
 func Open(path string) (*Store, error) {
+	// Checked before opening, since opening creates the file. See Store.Fresh.
+	fresh := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		fresh = true
+	}
+
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -188,7 +212,7 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("%s: %w", pragma, err)
 		}
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, fresh: fresh}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -203,22 +227,22 @@ func Open(path string) (*Store, error) {
 // Close releases the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// Wedged reports whether the store has wedged, and why.
-func (s *Store) Wedged() (bool, error) {
+// Halted reports whether the store has halted, and why.
+func (s *Store) Halted() (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.wedgeCause != nil, s.wedgeCause
+	return s.haltCause != nil, s.haltCause
 }
 
-// wedge trips the wedge exactly once and notifies the daemon.
-func (s *Store) wedge(cause error) {
+// halt stops the store once and notifies the daemon.
+func (s *Store) halt(cause error) {
 	s.mu.Lock()
-	if s.wedgeCause != nil {
+	if s.haltCause != nil {
 		s.mu.Unlock()
 		return
 	}
-	s.wedgeCause = cause
-	cb := s.OnWedge
+	s.haltCause = cause
+	cb := s.OnHalt
 	s.mu.Unlock()
 	if cb != nil {
 		cb(cause)
@@ -246,11 +270,11 @@ const (
 	retryBase     = 2 * time.Millisecond
 )
 
-// guard runs a database operation, retrying contention and wedging on anything
+// guard runs a database operation, retrying contention and halting on anything
 // else. Every store method goes through it.
 func (s *Store) guard(op func() error) error {
-	if wedged, cause := s.Wedged(); wedged {
-		return fmt.Errorf("%w: %v", ErrWedged, cause)
+	if halted, cause := s.Halted(); halted {
+		return fmt.Errorf("%w: %v", ErrHalted, cause)
 	}
 	delay := retryBase
 	var err error
@@ -263,8 +287,8 @@ func (s *Store) guard(op func() error) error {
 			return err
 		}
 		if !transient(err) {
-			s.wedge(err)
-			return fmt.Errorf("%w: %v", ErrWedged, err)
+			s.halt(err)
+			return fmt.Errorf("%w: %v", ErrHalted, err)
 		}
 		time.Sleep(delay)
 		if delay < 500*time.Millisecond {
@@ -272,8 +296,8 @@ func (s *Store) guard(op func() error) error {
 		}
 	}
 	// Contention that never cleared is no longer contention.
-	s.wedge(fmt.Errorf("contention did not clear after %d attempts: %w", retryAttempts, err))
-	return fmt.Errorf("%w: %v", ErrWedged, err)
+	s.halt(fmt.Errorf("contention did not clear after %d attempts: %w", retryAttempts, err))
+	return fmt.Errorf("%w: %v", ErrHalted, err)
 }
 
 func newID() string { return uuid.Must(uuid.NewV7()).String() }

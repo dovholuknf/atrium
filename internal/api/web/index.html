@@ -18,7 +18,55 @@
     --dim: #5E819C; --dimmest: #456C88;
     --warn: #FFC64D; --danger: #FF6B6B;
     --chip: #173A57; --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+
+    /* Warn and accent at the tints they get used at, so changing --warn moves
+       every surface derived from it instead of leaving hardcoded rgba behind. */
+    --warn-bg: rgba(255,198,77,.13);
+    --warn-bg-soft: rgba(255,198,77,.05);
+    --warn-stroke: rgba(255,198,77,.3);
+    --lift: rgba(255,255,255,.05);
+    --lift-strong: rgba(255,255,255,.09);
+    --hairline: rgba(255,255,255,.04);
+    --teal-bg: rgba(0,227,176,.10);
+
+    /* Type. Two families and one scale.
+       Every size in the page comes from this ladder, multiplied by --uiscale,
+       so making the interface bigger moves all of it. Scaling one region left
+       the rest at fixed pixels, which read as inconsistent rather than small. */
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
     --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+    --uiscale: 1;
+    --fs-xxs: calc(10.5px * var(--uiscale));
+    --fs-xs:  calc(11.5px * var(--uiscale));
+    --fs-sm:  calc(12.5px * var(--uiscale));
+    --fs-base: calc(13.5px * var(--uiscale));
+    --fs-md:  calc(14.5px * var(--uiscale));
+    --fs-lg:  calc(16px * var(--uiscale));
+    --fs-xl:  calc(18px * var(--uiscale));
+    --fs-2xl: calc(20px * var(--uiscale));
+    --fs-3xl: calc(23px * var(--uiscale));
+
+    /* Space between things. Scales with the text, so a bigger interface is
+       bigger rather than the same layout with larger words crammed into it.
+
+       Padding is NOT on this ladder. A chip's 1px 8px and a dialog's 20px 22px
+       are tuned to their own content, and bucketing them would move hit areas
+       and break alignment to buy nothing. */
+    --sp-1: calc(4px * var(--uiscale));
+    --sp-2: calc(6px * var(--uiscale));
+    --sp-3: calc(9px * var(--uiscale));
+    --sp-4: calc(13px * var(--uiscale));
+    --sp-5: calc(17px * var(--uiscale));
+    --sp-6: calc(24px * var(--uiscale));
+
+    /* Corners. Fixed, not scaled: a corner is a style, and a 12px radius on a
+       panel reads the same whatever size the text inside it is. */
+    --r-xs: 3px; --r-sm: 6px; --r-md: 9px; --r-lg: 12px; --r-pill: 999px;
+    --shadow-card: 0 10px 22px rgba(2,6,9,.45);
+    --shadow-lift: 0 16px 30px rgba(2,6,9,.62);
+    --shadow-pop: 0 14px 34px rgba(2,6,9,.75);
+    --shadow-dialog: 0 30px 70px rgba(2,6,9,.8);
+
   }
   * { box-sizing: border-box; }
   /* An author rule with a display value outranks the browser's built-in
@@ -28,7 +76,7 @@
   html, body { height: 100%; }
   body {
     margin: 0; color: var(--body);
-    font: 18px/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: var(--fs-xl)/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background:
       linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
     -webkit-font-smoothing: antialiased;
@@ -53,16 +101,16 @@
     background: linear-gradient(180deg, rgba(7,19,34,.94), rgba(7,19,34,.72));
     border-bottom: 1px solid var(--stroke-dim);
   }
-  .bar { display: flex; align-items: center; gap: 26px; padding: 16px 28px; }
+  .bar { display: flex; align-items: center; gap: var(--sp-6); padding: 16px 28px; }
   .wordmark {
-    font-size: 23px; font-weight: 700; letter-spacing: .34em; margin: 0;
+    font-size: var(--fs-3xl); font-weight: 700; letter-spacing: .34em; margin: 0;
     text-transform: uppercase;
   }
   .rule { height: 2px; background: linear-gradient(90deg, var(--teal), var(--blue) 40%, transparent); }
-  nav { display: flex; gap: 2px; }
+  nav { display: flex; gap: var(--sp-1); }
   .tab {
-    padding: 10px 20px; border-radius: 8px; cursor: pointer; color: var(--label);
-    border: 1px solid transparent; font-size: 19.5px; font-weight: 500;
+    padding: 10px 20px; border-radius: var(--r-md); cursor: pointer; color: var(--label);
+    border: 1px solid transparent; font-size: var(--fs-2xl); font-weight: 500;
     transition: color .15s, background .15s, border-color .15s; user-select: none;
   }
   .tab:hover { color: var(--head); }
@@ -70,24 +118,24 @@
     color: var(--head); background: var(--chip); border-color: var(--stroke);
   }
   .tab .count {
-    display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: 20px;
-    font: 600 16px/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
+    display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: var(--r-pill);
+    font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
   }
   .tab .count:empty, .tab .count.zero { display: none; }
   .grow { flex: 1; }
   .conn {
-    font: 500 18px/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: 9px;
+    font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: var(--sp-3);
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
 
-  #wedge {
-    display: none; padding: 13px 26px; gap: 12px; align-items: baseline;
+  #halted {
+    display: none; padding: 13px 26px; gap: var(--sp-4); align-items: baseline;
     background: linear-gradient(90deg, rgba(255,107,107,.18), rgba(255,107,107,.04));
-    border-bottom: 1px solid var(--danger); color: #FFD7DD; font-size: 14px;
+    border-bottom: 1px solid var(--danger); color: #FFD7DD; font-size: var(--fs-md);
   }
-  #wedge strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
-  #wedge code { font-family: var(--mono); font-size: 12px; color: #FFB3BC; }
+  #halted strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: var(--fs-sm); }
+  #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: #FFB3BC; }
 
   /* Capped so a row's trailing buttons stay near its content. On an ultrawide
      an uncapped row puts the actions a foot away from what they act on. */
@@ -98,16 +146,20 @@
   /* ── board ──────────────────────────────────────────── */
   /* One row, always. Seven columns wrapped onto a second row under the width
      cap, which reads as two boards rather than one. Scroll sideways instead. */
+  /* The one place the board's text size is set. Everything inside is sized in
+     em against it, so a column header, a group name and a card title move
+     together instead of drifting apart at any scale but one. */
   .board {
-    display: flex; gap: 16px; align-items: flex-start;
+    display: flex; gap: var(--sp-5); align-items: flex-start;
     overflow-x: auto; padding-bottom: 8px;
+
   }
   .board .col { flex: 1 1 0; min-width: 230px; }
   /* A folded column shrinks to its header so the rest get the room. */
   .board .col.folded { flex: 0 0 auto; min-width: 0; }
   .col {
     background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
-    border: 1px solid var(--stroke-dim); border-radius: 12px; padding: 13px 12px 10px;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); padding: 13px 12px 10px;
     min-height: 108px;
   }
   /* A collapsed column keeps its header and count but gives its space back.
@@ -116,39 +168,91 @@
   .col.folded .cards { display: none; }
   .col-head {
     display: flex; justify-content: space-between; align-items: center;
-    font: 600 12.5px/1 Inter, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
     color: var(--label); margin-bottom: 12px; padding: 0 3px;
   }
+  /* Only inside the board does it follow the board's size. The same class is
+     used for the perms and rules headings, which have no board to scale with. */
+  /* A swimlane heading names the whole column, so it outranks a group inside
+     it and a card's chips. */
+  .board .col-head { font-size: var(--fs-base); }
   .col > .col-head { cursor: pointer; user-select: none; margin-bottom: 12px; }
   .col > .col-head:hover { color: var(--head); }
   .col > .col-head .fold {
-    display: inline-block; width: 11px; color: var(--teal); font-size: 15px;
+    display: inline-block; width: 11px; color: var(--teal); font-size: var(--fs-lg);
     transition: transform .15s; margin-right: 6px;
   }
   .col.folded > .col-head .fold { transform: rotate(-90deg); }
   .col.folded > .col-head { margin-bottom: 0; }
 
   @keyframes flash {
-    0%, 100% { box-shadow: 0 10px 22px rgba(2,6,9,.45); }
+    0%, 100% { box-shadow: var(--shadow-card); }
     30% { box-shadow: 0 0 0 3px var(--teal), 0 10px 22px rgba(2,6,9,.45); }
   }
   .flash { animation: flash 1.1s ease-out 2; }
   .col-head .n { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
-  .col[data-status="needs-input"] .col-head,
-  .col[data-status="needs-permission"] .col-head { color: var(--warn); }
+  /* The count is pushed to the right edge; the ? sits with the label. */
+  .col > .col-head .n { margin-left: auto; }
+  .col > .col-head .help { margin-left: 7px; }
+  .col[data-column="needs-input"] .col-head,
+  .col[data-column="needs-permission"] .col-head { color: var(--warn); }
+
+  /* A column holding more than one status splits into collapsible groups.
+     done and dead are both over, so they share a column rather than taking two
+     across the board, but they are still different answers. */
+  .cardgroup { margin-bottom: 10px; }
+  .cardgroup > summary {
+    display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
+    list-style: none; padding: 4px 3px 7px; user-select: none;
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .cardgroup > summary::-webkit-details-marker { display: none; }
+  .cardgroup > summary:hover { color: var(--head); }
+  .cardgroup > summary::before {
+    content: "\25B8"; color: var(--teal); font-size: var(--fs-md); width: 10px;
+    display: inline-block; transition: transform .15s;
+  }
+  .cardgroup[open] > summary::before { transform: rotate(90deg); }
+  .cardgroup > summary .gn { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
+  .cardgroup > summary .chip.sweep { margin-left: auto; margin-right: 0; }
+
+  /* A project group. Coloured from a hash of its name, so a project keeps the
+     same colour without anyone configuring one, and the bar down the left is
+     what makes two groups in a column tell apart at a glance. */
+  .cardgroup.project {
+    border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);
+    border-radius: var(--r-xs) 9px 9px 3px;
+    padding-left: 9px; margin-bottom: 12px;
+  }
+  .cardgroup.project > summary { text-transform: none; letter-spacing: .02em; }
+  .cardgroup.project > summary .gname {
+    color: hsl(var(--ghue) 70% 72%); font-family: var(--mono); font-size: var(--fs-base);
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cardgroup.project > summary::before { color: hsl(var(--ghue) 65% 60%); }
+  .cardgroup.project > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
+  /* Nested inside a status group, the indent would stack. */
+  .cardgroup .cardgroup.project { margin-left: 0; }
 
   .card {
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
-    border: 1px solid var(--stroke); border-radius: 10px;
+    border: 1px solid var(--stroke); border-radius: var(--r-md);
     padding: 12px 14px; margin-bottom: 9px; cursor: pointer;
-    box-shadow: 0 10px 22px rgba(2,6,9,.45);
+    box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
   }
+  /* A card hovers in its group's colour. A single blue for every card meant
+     the one thing you were pointing at stopped saying which project it was in,
+     which is the moment that answer matters most. --ghue is inherited from the
+     group, so a card outside one falls back to blue. */
   .card:hover {
-    transform: translateY(-2px); border-color: var(--blue);
-    box-shadow: 0 16px 30px rgba(2,6,9,.62);
+    transform: translateY(-2px);
+    border-color: var(--hover, var(--blue));
+    box-shadow: var(--shadow-lift);
   }
+  .cardgroup.project { --hover: hsl(var(--ghue) 70% 60%); }
   .card::before {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: linear-gradient(180deg, var(--teal), var(--blue)); opacity: 0;
@@ -156,9 +260,10 @@
   }
   .card:hover::before { opacity: 1; }
   .card.waiting::before { opacity: 1; background: var(--warn); }
+  /* A card inherits the board's size. Everything on it is a fraction of that. */
   .card .title {
-    color: var(--head); font-weight: 600; font-size: 14.5px; margin-bottom: 7px;
-    display: flex; align-items: center; gap: 8px;
+    color: var(--head); font-weight: 600; font-size: var(--fs-md); margin-bottom: 7px;
+    display: flex; align-items: center; gap: var(--sp-3);
   }
   .pulse {
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
@@ -168,18 +273,163 @@
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,198,77,.5); }
     50% { opacity: .55; box-shadow: 0 0 0 6px rgba(255,198,77,0); }
   }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .chip {
-    font: 500 11px/1.6 var(--mono); padding: 1px 8px; border-radius: 5px;
+    font: 500 var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border-radius: var(--r-sm);
     background: var(--chip); color: var(--label); border: 1px solid transparent;
   }
   .chip.accent {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  .chip.warn { background: rgba(255,198,77,.13); color: var(--warn); }
+  /* A colour per runner, so which harness a session is takes no reading. The
+     four are the seeded ones; anything else falls back to the neutral chip
+     rather than being given a colour that means nothing. */
+  .chip.runner { background: var(--chip); color: var(--label); font-weight: 600; }
+  .chip.runner[data-runner="claude"] {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke);
+    color: var(--chip-accent-text);
+  }
+  .chip.runner[data-runner="codex"] {
+    background: rgba(140,170,255,.14); border-color: rgba(140,170,255,.32); color: #A8BEFF;
+  }
+  .chip.runner[data-runner="ollama"] {
+    background: rgba(214,140,255,.13); border-color: rgba(214,140,255,.3); color: #D9A8FF;
+  }
+  .chip.runner[data-runner="shell"] {
+    background: rgba(255,198,77,.10); border-color: var(--warn-stroke); color: var(--warn);
+  }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;
+  }
+  /* Live activity. A running tool breathes so a moving card is distinguishable
+     from a still one across a whole board, without reading it. */
+  .chip.live { background: rgba(80,220,190,.10); color: var(--teal); }
+  .chip.live.tool { animation: breathe 2.4s ease-in-out infinite; }
+  .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
+  .chip.sub { background: rgba(140,170,255,.12); color: #9db4ff; }
+  /* Nothing heard, and no process id to check. Dimmed rather than warned
+     about: it may be working, and a card that shouts is a card you distrust. */
+  .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
+  .card.nocontact { opacity: .68; }
+  .card.nocontact:hover { opacity: 1; }
+  @keyframes breathe { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .chip.live.tool { animation: none; opacity: 1; }
+  }
+  /* Dragging a card. The insertion line is drawn on the neighbour rather than
+     as a floating element, so it cannot end up in the wrong place. */
+  .card.dragging { opacity: .4; }
+  .col.drop-into { background: rgba(0,227,176,.05); border-radius: var(--r-md); }
+  .card.drop-before { box-shadow: 0 -2px 0 0 var(--teal); }
+  .card.drop-after { box-shadow: 0 2px 0 0 var(--teal); }
+
+  /* The card action menu. */
+  #cardmenu {
+    position: fixed; z-index: 90; display: none; min-width: 190px;
+    padding: 5px; border-radius: var(--r-md);
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: 0 14px 40px rgba(0,0,0,.55);
+  }
+  #cardmenu.on { display: block; }
+  #cardmenu button {
+    display: block; width: 100%; text-align: left; padding: 7px 11px;
+    border: none; background: transparent; color: var(--label);
+    font-size: var(--fs-base); border-radius: var(--r-sm); cursor: pointer;
+  }
+  #cardmenu button:hover { background: var(--lift); color: var(--head); }
+  #cardmenu button.danger { color: var(--warn); }
+  /* An entry that still works but does less than its name suggests. Dimmed,
+     not disabled: disabling unshelve would strand a card on the shelf. */
+  #cardmenu button.limited { color: var(--dim); }
+  #cardmenu button .note {
+    display: block; font-size: var(--fs-xs); color: var(--dimmest); margin-top: 2px;
+  }
+  #cardmenu button.limited .note { color: var(--warn); opacity: .8; }
+  #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
+
+  /* Recolouring a group. Hues only, at the lightness the board draws them at,
+     so every swatch is a colour a group can actually be. */
+  .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: 4px; }
+  .swatch {
+    width: 34px; height: 34px; border-radius: var(--r-md); cursor: pointer; padding: 0;
+    background: hsl(var(--ghue) 65% 55%);
+    border: 2px solid transparent;
+  }
+  .swatch:hover { border-color: var(--head); }
+
+  /* A folder scope reads differently from a command pattern, so it looks
+     different. Getting the two confused is how a rule ends up wider than
+     anyone agreed to. */
+  .hint.path { border-color: rgba(140,170,255,.35); color: #9db4ff; }
+  .patview.path { color: #9db4ff; }
+  code.path { color: #9db4ff; }
+
+  /* Directory browser and the quick picks under the path field. */
+  .crumb {
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--dim); margin-top: 4px;
+    word-break: break-all;
+  }
+  .dirlist { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: 10px; }
+  .dirlist .dir {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%;
+    text-align: left; padding: 8px 10px; border-radius: var(--r-sm);
+    background: transparent; border: 1px solid transparent; color: var(--label);
+    font-size: var(--fs-base); cursor: pointer;
+  }
+  .dirlist .dir:hover { background: var(--lift); border-color: var(--stroke-dim); }
+  .dirlist .dir .ic { color: var(--dimmest); font-size: var(--fs-xs); }
+  /* A checkout, so a folder of thirty shows which few are repositories. */
+  .dirlist .dir.repo .ic { color: var(--teal); }
+  .dirlist .dir.repo .nm { color: var(--head); font-weight: 600; }
+  .quickdirs { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: 7px; }
+  /* Full width rows rather than pills. A path is long, and a row of truncated
+     pills is a row of buttons you have to hover to tell apart. */
+  .quickdir {
+    font: var(--fs-sm) var(--mono); padding: 6px 11px; border-radius: var(--r-sm);
+    background: var(--hairline); border: 1px solid var(--stroke-dim);
+    color: var(--dim); cursor: pointer; text-align: left; width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .quickdir:hover { color: var(--head); border-color: var(--teal); }
+  .check { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; color: var(--label); }
+  .check input { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; }
+
+  /* The review screen: what a session was allowed to do. */
+  .rev-sum {
+    display: flex; gap: var(--sp-5); padding: 0 0 14px; margin-bottom: 14px;
+    border-bottom: 1px solid var(--stroke-dim); color: var(--dim); font-size: var(--fs-base);
+  }
+  .rev-sum b { color: var(--head); font-size: var(--fs-lg); margin-right: 4px; }
+  .rev-sum .hot b { color: var(--warn); }
+  .rev-group { margin-bottom: 10px; }
+  .rev-group > summary {
+    display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
+    padding: 7px 2px; list-style: none;
+  }
+  .rev-group > summary::-webkit-details-marker { display: none; }
+  .rev-group > summary::before { content: "\25B8"; color: var(--dimmest); }
+  .rev-group[open] > summary::before { content: "\25BE"; }
+  .rev-group > summary .tool { color: var(--head); font-weight: 600; }
+  .rev-group > summary .n { color: var(--dimmest); font: var(--fs-base) var(--mono); }
+  .rev-row {
+    display: flex; align-items: center; gap: var(--sp-3); padding: 5px 2px 5px 20px;
+    font-size: var(--fs-base); border-top: 1px solid var(--hairline);
+  }
+  .rev-row code {
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--label);
+    white-space: pre-wrap; word-break: break-all; min-width: 0;
+  }
+  /* The rows nobody saw, brought forward. */
+  .rev-row.unseen code { color: var(--head); }
+  .rev-row .rep { font: var(--fs-sm) var(--mono); color: var(--dimmest); flex: none; min-width: 34px; }
+  .rev-row .by { flex: none; color: var(--dimmest); font-size: var(--fs-sm); }
+  /* Auto mode, warn coloured: nothing is asking you, and the card says so
+     rather than leaving it in settings. */
+  .chip.auto {
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid var(--warn-stroke); font-weight: 600;
   }
   .chip.attach:hover { border-color: var(--teal); }
   /* Sits in a column header, so it stays quiet until reached for. */
@@ -189,28 +439,32 @@
   }
   .chip.sweep:hover { opacity: 1; color: var(--warn); }
   .why {
-    font-size: 12.5px; color: var(--dim); margin-top: 9px; padding-top: 8px;
+    font-size: var(--fs-sm); color: var(--dim); margin-top: 9px; padding-top: 8px;
     border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
   }
+  /* Inside the board these follow its scale rather than a fixed size. */
+
+
+
   .empty {
-    color: var(--dimmest); font-size: 12px; text-align: center; padding: 14px 0 12px;
+    color: var(--dimmest); font-size: var(--fs-base); text-align: center; padding: 14px 0 12px;
     font-family: var(--mono);
   }
 
   /* ── stack + perms ──────────────────────────────────── */
   .panel {
     background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
-    border: 1px solid var(--stroke-dim); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
   }
   .row {
-    display: flex; align-items: center; gap: 16px; padding: 15px 20px;
+    display: flex; align-items: center; gap: var(--sp-5); padding: 15px 20px;
     border-bottom: 1px solid rgba(37,80,111,.5); cursor: pointer;
     transition: background .14s;
   }
   .row:last-child { border-bottom: none; }
   .row:hover { background: rgba(23,58,87,.4); }
   .wait {
-    font: 700 21px/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
+    font: 700 var(--fs-2xl)/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
   }
   /* Wraps rather than compresses. The action buttons do not shrink, so on a
      narrow row a plain flex:1 left the content column at a hundred pixels and
@@ -220,58 +474,71 @@
   /* Direct child only. As a descendant selector this also matched the bold
      used for word emphasis inside a diff, and won on specificity, which put
      every emphasised word on its own full width line. */
-  .row .who > b { display: block; color: var(--head); font-weight: 600; font-size: 14.5px; }
-  .row .who span { font-size: 12.5px; color: var(--dim); }
+  .row .who > b { display: block; color: var(--head); font-weight: 600; font-size: var(--fs-md); }
+  .row .who span { font-size: var(--fs-sm); color: var(--dim); }
   /* Rule and decision rows are list entries, not cards. They get read in bulk,
      so they stay tight enough to scan a screenful at a time. */
-  .row.compact { padding: 8px 15px; gap: 12px; align-items: center; }
-  .row.compact .who b { font-size: 15px; font-weight: 500; }
+  .row.compact { padding: 8px 15px; gap: var(--sp-4); align-items: center; }
+  .row.compact .who b { font-size: var(--fs-lg); font-weight: 500; }
   .row.compact .who b code { font-family: var(--mono); color: var(--head); }
-  .row.compact .who span { font-size: 13.5px; color: var(--dimmest); }
-  .row.compact .chip { font-size: 12.5px; padding: 2px 9px; }
-  .row.compact button { padding: 4px 12px; font-size: 13.5px; }
-  .row.compact .cmd { font-size: 13.5px; padding: 6px 10px; margin-top: 5px; }
+  .row.compact .who span { font-size: var(--fs-base); color: var(--dimmest); }
+  .row.compact .chip { font-size: var(--fs-sm); padding: 2px 9px; }
+  .row.compact button { padding: 4px 12px; font-size: var(--fs-base); }
+  .row.compact .cmd { font-size: var(--fs-base); padding: 6px 10px; margin-top: 5px; }
 
   /* One line per entry: everything on a single row, the wide field truncates. */
   .row.line {
-    display: flex; align-items: baseline; gap: 14px; cursor: default;
-    padding: 8px 16px; font-size: 14.5px;
+    display: flex; align-items: baseline; gap: var(--sp-4); cursor: default;
+    padding: 8px 16px; font-size: var(--fs-md);
   }
   .row.line:hover { background: rgba(23,58,87,.5); }
-  .row.line .stamp { font: 13.5px/1 var(--mono); color: var(--dim); flex: none; }
+  .row.line .stamp { font: var(--fs-base)/1 var(--mono); color: var(--dim); flex: none; }
   .row.line .stamp time { color: var(--label); }
   .row.line .stamp i { color: var(--dimmest); font-style: normal; }
   .row.line .tool { color: var(--head); font-weight: 600; flex: none; min-width: 64px; }
-  .row.line code { font: 13.5px/1.5 var(--mono); color: var(--body); }
+  .row.line code { font: var(--fs-base)/1.5 var(--mono); color: var(--body); }
   .row.line .grow { flex: 1; min-width: 0; }
   .row.line .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row.line .by { color: var(--dimmest); font-size: 13px; flex: none; }
+  .row.line .by { color: var(--dimmest); font-size: var(--fs-base); flex: none; }
+  /* Whether a runner's command is really there. */
+  .row.line .by.found { color: var(--chip-accent-text); }
+  .row.line .by.missing { color: var(--warn); }
+  .row.line button[disabled] { opacity: .4; cursor: not-allowed; }
   .row.line .by code { color: var(--label); }
-  .row.line button { padding: 4px 12px; font-size: 13px; flex: none; }
+  /* Which session asked. With several running, the same command means
+     different things from different agents. */
+  .asker {
+    color: var(--chip-accent-text); font-size: var(--fs-sm); font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .row.line .asker { flex: none; max-width: 150px; }
+  /* A decision nobody saw. Marked apart from a rule, which somebody wrote. */
+  .by .auto { color: var(--warn); font-weight: 600; }
+  .row.line button { padding: 4px 12px; font-size: var(--fs-base); flex: none; }
   /* Actions only assert themselves for the row you are pointing at, so a long
      list stays calm but the live row is obvious. */
   .row.line button { opacity: .55; transition: opacity .12s, border-color .12s, color .12s; }
   .row.line:hover button { opacity: 1; }
 
   .subhead {
-    font-size: 12.5px; color: var(--dim); margin: -4px 0 12px; max-width: 78ch;
+    font-size: var(--fs-sm); color: var(--dim); margin: -4px 0 12px; max-width: 78ch;
   }
-  .subhead code { font-family: var(--mono); color: var(--label); font-size: 12px; }
+  .subhead code { font-family: var(--mono); color: var(--label); font-size: var(--fs-sm); }
   .subhead b { color: var(--body); font-weight: 600; }
   .cmd {
-    font: 12.5px/1.5 var(--mono); color: var(--head); background: rgba(4,11,20,.65);
-    border: 1px solid var(--stroke-dim); border-radius: 7px; padding: 8px 11px;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); background: rgba(4,11,20,.65);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 8px 11px;
     margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   }
-  /* Grows to whatever it holds, because deciding on a command you can only see
-     two lines of is not deciding. The cap keeps a pasted heredoc from pushing
-     the buttons off screen; past that it scrolls. */
+  /* Grows to hold the whole command: two visible lines of a long one is not
+     enough to decide on. The cap is high, and only stops a pasted heredoc from
+     pushing the buttons out of reach. Past it, scroll. */
   textarea.cmd.edit {
     display: block; width: 100%; resize: vertical; margin: 0; min-height: 44px;
-    max-height: 45vh; overflow-y: auto; transition: border-color .14s;
+    max-height: 80vh; overflow-y: auto; transition: border-color .14s;
   }
   textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
-  .actions { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  .actions { display: flex; gap: var(--sp-3); flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
   /* A pending request always wraps: its content is what you are reading. */
   .row.perm { flex-wrap: wrap; }
   .row.perm .who { flex: 1 1 100%; order: 2; }
@@ -288,12 +555,12 @@
      which file it happens to. */
   details.change { margin-top: 10px; }
   details.change > summary {
-    font: 600 12px/1 Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase;
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
     color: var(--label); cursor: pointer; padding: 4px 0; user-select: none;
   }
   details.change > summary::before {
     content: "\25B8"; display: inline-block; width: 13px; color: var(--teal);
-    font-size: 15px; transition: transform .15s;
+    font-size: var(--fs-lg); transition: transform .15s;
   }
   details.change[open] > summary::before { transform: rotate(90deg); }
   details.change > summary:hover { color: var(--head); }
@@ -303,7 +570,7 @@
     margin: 6px 0 0; padding: 10px 12px; overflow: auto;
     height: 260px; min-height: 90px; resize: vertical;
     background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
-    border-radius: 7px; font: 13px/1.5 var(--mono); white-space: pre-wrap;
+    border-radius: var(--r-sm); font: var(--fs-base)/1.5 var(--mono); white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   /* Context recedes, changed lines carry a marker in the gutter, and the
@@ -328,46 +595,52 @@
   /* display:inline is load bearing. The row's own `.who b` rule makes bold
      text a block, which put every emphasised word on its own line. */
   pre.diff i b {
-    display: inline; font-weight: 700; border-radius: 3px; padding: 0 2px;
+    display: inline; font-weight: 700; border-radius: var(--r-xs); padding: 0 2px;
     background: rgba(255,255,255,.18); color: var(--head);
   }
   pre.diff i.hdr { color: var(--dimmest); margin-top: 8px; padding-left: 6px; }
 
   .scope {
     margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(44,95,132,.35);
-    display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+    display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap;
   }
-  .scope .lbl { font-size: 11.5px; color: var(--dimmest); flex: none; }
+  .scope .lbl { font-size: var(--fs-xs); color: var(--dimmest); flex: none; }
   .patview {
-    font: 12px/1.4 var(--mono); color: var(--chip-accent-text);
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
-    border-radius: 5px; padding: 2px 8px; word-break: break-all;
+    border-radius: var(--r-sm); padding: 2px 8px; word-break: break-all;
   }
   .scope .hints { margin-top: 0; width: 100%; }
   button.hint.on {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke);
     color: var(--chip-accent-text);
   }
-  .picker { display: flex; gap: 9px; align-items: center; }
+  .picker { display: flex; gap: var(--sp-3); align-items: center; }
   .picker select {
-    font: 14px/1.4 Inter, sans-serif; color: var(--head); flex: 1;
+    font: var(--fs-md)/1.4 var(--sans); color: var(--head); flex: 1;
     background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
-    border-radius: 8px; padding: 9px 11px;
+    border-radius: var(--r-md); padding: 9px 11px;
   }
   .picker select:focus { outline: none; border-color: var(--blue); }
   input[type=range] { width: 100%; accent-color: var(--teal); }
-  .hintline { display: block; font-size: 12px; color: var(--dimmest); margin-top: 7px; }
-  .toolbar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .hintline { display: block; font-size: var(--fs-sm); color: var(--dimmest); margin-top: 7px; }
+  .toolbar { display: flex; gap: var(--sp-3); margin-top: 12px; flex-wrap: wrap; align-items: center; }
 
   /* The terminal wants room. A cramped terminal is worse than no terminal,
      because output reflows and stops matching what the runner drew. */
   /* min-width:0 on both is load bearing. A flex item defaults to min-content
      width, and xterm sizes its own element, so without it the terminal pushes
      the pane wider than the window and the toolbar falls off the right edge. */
-  .term-layout { display: flex; gap: 14px; align-items: stretch; min-width: 0; }
+  /* Fills whatever is left below the header, measured rather than guessed.
+     --shell is set from the real header height on load and on resize, so the
+     terminal reaches the bottom of the window at any zoom or bar wrap. */
+  .term-layout {
+    display: flex; gap: var(--sp-4); align-items: stretch; min-width: 0;
+    height: calc(100dvh - var(--shell, 96px));
+  }
   .term-list {
-    flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px;
-    max-height: calc(100vh - 190px); overflow-y: auto;
+    flex: 0 0 260px; display: flex; flex-direction: column; gap: var(--sp-3);
+    min-height: 0; overflow-y: auto;
     /* Room for the lift on hover and for a focus ring, or the top card's
        border is clipped by the scroll container. */
     padding: 3px 3px 6px;
@@ -377,7 +650,7 @@
     /* A visible left edge always, so an inactive card does not read as
        unfinished. The active one turns it teal rather than growing one. */
     border: 1px solid var(--stroke-dim); border-left: 3px solid var(--stroke-dim);
-    border-radius: 9px; padding: 10px 12px; cursor: pointer;
+    border-radius: var(--r-md); padding: 10px 12px; cursor: pointer;
     transition: border-color .14s, transform .14s, background .14s;
   }
   .term-entry:hover {
@@ -387,11 +660,11 @@
     border-left-color: var(--teal); border-color: var(--stroke); background: var(--shell-0);
   }
   .term-entry.attn { border-left-color: var(--warn); }
-  .term-entry b { display: block; color: var(--head); font-size: 14px; font-weight: 600; }
-  .term-entry span { font: 11.5px/1.5 var(--mono); color: var(--dimmest); word-break: break-all; }
+  .term-entry b { display: block; color: var(--head); font-size: var(--fs-md); font-weight: 600; }
+  .term-entry span { font: var(--fs-xs)/1.5 var(--mono); color: var(--dimmest); word-break: break-all; }
   .term-entry .chip { margin-top: 6px; margin-right: 5px; }
   button.termsort {
-    align-self: flex-start; font-size: 12px; padding: 5px 11px;
+    align-self: flex-start; font-size: var(--fs-sm); padding: 5px 11px;
     background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
   }
   button.termsort:hover { color: var(--head); border-color: var(--blue); }
@@ -399,50 +672,62 @@
   .term-pane {
     flex: 1; min-width: 0; display: flex; flex-direction: column;
     background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
-    border: 1px solid var(--stroke-dim); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
   }
   .term-bar {
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    display: flex; align-items: center; gap: var(--sp-4); padding: 10px 14px;
     border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
+    flex: 0 0 auto;
   }
-  .term-bar strong { color: var(--head); font-size: 15px; }
-  .term-bar button { padding: 6px 13px; font-size: 13px; }
+  .term-bar strong { color: var(--head); font-size: var(--fs-lg); }
+  /* An exited runner. The scrollback stays readable, since it carries the exit
+     and the resume id, but the pane stops looking like a live session. */
+  .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
+  .term-pane.dead .term-bar strong { color: var(--dim); }
+  .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
+  /* No height of its own. The bar and the help line take what they need and
+     this takes the rest, so nothing has to guess how tall they are. */
   #t-screen {
-    flex: 1; min-height: 300px; min-width: 0; height: calc(100vh - 260px);
+    flex: 1 1 auto; min-height: 0; min-width: 0;
     padding: 10px 12px; overflow: hidden;
   }
   #t-screen .xterm { height: 100%; width: 100%; }
   .term-entry .chip { white-space: nowrap; }
 
-  /* The runner draws rows that span the full width, and the viewport's
-     scrollbar sits over them, so a coloured row reads as banding across the
-     bar. Making the bar dark and narrow lets those rows end against something
-     that looks deliberate. */
-  /* Colour only, never width. The fit addon computes how many columns fit by
-     measuring the scrollbar, so changing its width here made xterm draw rows
-     a couple of characters too wide and the text ran under the bar. */
-  #t-screen .xterm-viewport { background: transparent !important; }
+  /* NEVER set a width here. Colour only.
+     The fit addon works out how many columns fit by measuring the viewport's
+     scrollbar, and a declared width changes that measurement out from under it,
+     so xterm draws rows a couple of characters too wide and the text runs
+     underneath the bar. This was found once, written down, then overridden on a
+     theory that it was a fit() timing problem. It is not. Leave the geometry to
+     the browser.
+
+     `scrollbar-width` is the same mistake in Firefox's spelling, so it is gone
+     too. `scrollbar-color` only paints, so that one stays. */
+  #t-screen .xterm-viewport {
+    background: transparent !important;
+    scrollbar-color: var(--stroke-dim) var(--bg-2);
+  }
   #t-screen .xterm-viewport::-webkit-scrollbar-track { background: var(--bg-2); }
   #t-screen .xterm-viewport::-webkit-scrollbar-thumb {
-    background: var(--stroke-dim); border-radius: 6px;
-    border: 3px solid var(--bg-2);
+    background: var(--stroke-dim); border-radius: var(--r-sm);
   }
   #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--stroke); }
   .term-help {
     padding: 8px 14px; border-top: 1px solid var(--stroke-dim);
-    font: 11.5px/1.4 var(--mono); color: var(--dimmest);
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--dimmest); flex: 0 0 auto;
   }
   /* A request while attached: the runner is blocked and the terminal shows
      nothing, so the question has to appear where you are looking. */
   .term-perm {
-    display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+    display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap;
     padding: 12px 14px; border-bottom: 1px solid var(--warn);
     background: linear-gradient(90deg, rgba(255,198,77,.16), rgba(255,198,77,.04));
   }
   .term-perm .who { flex: 1; min-width: 240px; }
-  .term-perm b { display: block; color: var(--warn); font-size: 13px; }
+  .term-perm b { display: block; color: var(--warn); font-size: var(--fs-base); }
   .term-perm code {
-    display: block; margin-top: 5px; font: 12.5px/1.5 var(--mono); color: var(--head);
+    display: block; margin-top: 5px; font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: break-all;
   }
 
@@ -452,7 +737,7 @@
     display: inline-flex; align-items: center; justify-content: center;
     width: 16px; height: 16px; border-radius: 50%; flex: none;
     border: 1px solid var(--stroke); color: var(--label);
-    font: 600 10px/1 Inter, sans-serif; cursor: help; position: relative;
+    font: 600 var(--fs-xxs)/1 var(--sans); cursor: help; position: relative;
     text-transform: none; letter-spacing: 0;
   }
   .help:hover, .help:focus { border-color: var(--teal); color: var(--chip-accent-text); outline: none; }
@@ -463,13 +748,13 @@
   dialog#ask { width: min(560px, 94vw); }
   dialog#ask .dlg-head { border-bottom: none; padding-bottom: 0; }
   .asktext {
-    font-size: 14.5px; line-height: 1.6; color: var(--body);
+    font-size: var(--fs-md); line-height: 1.6; color: var(--body);
     white-space: pre-line; margin-bottom: 16px;
   }
   .asktext code {
-    display: block; margin: 8px 0; padding: 9px 11px; border-radius: 7px;
+    display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
     background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
-    font: 12.5px/1.5 var(--mono); color: var(--head); word-break: break-all;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); word-break: break-all;
   }
   .asktext b { color: var(--head); font-weight: 600; }
   dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
@@ -477,33 +762,40 @@
   #tip {
     position: fixed; z-index: 90; max-width: 420px; pointer-events: none;
     background: var(--shell-0); color: var(--body);
-    border: 1px solid var(--stroke); border-radius: 9px; padding: 11px 14px;
-    font: 400 12.5px/1.55 Inter, sans-serif; text-align: left; letter-spacing: 0;
-    white-space: pre-line; box-shadow: 0 14px 34px rgba(2,6,9,.75);
+    border: 1px solid var(--stroke); border-radius: var(--r-md); padding: 11px 14px;
+    font: 400 var(--fs-base)/1.55 var(--sans); text-align: left; letter-spacing: 0;
+    white-space: pre-line; box-shadow: var(--shadow-pop);
     opacity: 0; visibility: hidden; transition: opacity .13s;
-    /* Long paths must wrap rather than force the panel wider than the window,
-       which is what previously clipped the text and grew a scrollbar. */
+    /* Long paths wrap. Forcing the panel wider than the window clipped the
+       text and grew a scrollbar. */
     overflow-wrap: anywhere;
   }
   #tip.on { opacity: 1; visibility: visible; }
 
-  .filters { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
+  .filters { display: flex; gap: var(--sp-3); align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
   .filters input[type=search] {
-    font: 12.5px/1.4 var(--mono); color: var(--head); flex: 1; min-width: 160px;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--head); flex: 1; min-width: 160px;
     background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
-    border-radius: 7px; padding: 7px 11px;
+    border-radius: var(--r-sm); padding: 7px 11px;
   }
   .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
-  .seg { display: flex; gap: 4px; }
+  /* Names what a row of pills does. Two unlabelled rows read as one bank, and
+     the sort row looked like more filters. */
+  .barlabel {
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dimmest); flex: none;
+    min-width: 52px;
+  }
+  .seg { display: flex; gap: var(--sp-1); }
   .seg button {
-    padding: 6px 12px; font-size: 12px; background: transparent;
+    padding: 6px 12px; font-size: var(--fs-sm); background: transparent;
     border-color: var(--stroke-dim); color: var(--dim);
   }
   .seg button.on {
     background: var(--chip); color: var(--head); border-color: var(--stroke);
   }
-  .matchcount { font: 11.5px/1 var(--mono); color: var(--dimmest); margin-left: auto; }
-  button.big { font-size: 13.5px; padding: 10px 18px; }
+  .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
+  button.big { font-size: var(--fs-base); padding: 10px 18px; }
   button.go.big { box-shadow: 0 0 18px rgba(0,227,176,.14); }
 
   /* Toast: the in-page counterpart to a desktop notification, for when the
@@ -512,21 +804,27 @@
     position: fixed; left: 50%; top: 74px; transform: translateX(-50%) translateY(-12px);
     z-index: 55; display: none; opacity: 0; transition: opacity .18s, transform .18s;
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
-    color: var(--chip-accent-text); font-size: 12.5px; padding: 8px 16px; border-radius: 20px;
+    color: var(--chip-accent-text); font-size: var(--fs-sm); padding: 8px 16px; border-radius: var(--r-pill);
     box-shadow: 0 10px 26px rgba(2,6,9,.6);
   }
   #held.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
   #held:hover { border-color: var(--teal); }
 
+  /* Anchored bottom right rather than centred, and click-through everywhere
+     except the toasts themselves, so a dialog underneath stays usable. */
   #toasts {
-    position: fixed; right: 20px; bottom: 20px; z-index: 60;
-    display: flex; flex-direction: column-reverse; gap: 10px; max-width: min(420px, 88vw);
+    position: fixed; right: 20px; bottom: 20px; left: auto; top: auto;
+    margin: 0; padding: 0; border: none; background: none; overflow: visible;
+    max-width: min(420px, 88vw); max-height: none; pointer-events: none;
+    display: flex; flex-direction: column-reverse; gap: var(--sp-3);
   }
+  #toasts:not([open]) { display: none; }
+  #toasts .toast { pointer-events: auto; }
   .toast {
-    display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+    display: flex; align-items: flex-start; gap: var(--sp-4); cursor: pointer;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-left: 3px solid var(--warn);
-    border-radius: 10px; padding: 13px 15px;
+    border-radius: var(--r-md); padding: 13px 15px;
     box-shadow: 0 18px 40px rgba(2,6,9,.7);
     animation: toastin .22s ease-out;
   }
@@ -535,16 +833,17 @@
   @keyframes toastin { from { transform: translateY(14px); opacity: 0; } }
   @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
   .toast .body { flex: 1; min-width: 0; }
-  .toast b { display: block; color: var(--head); font-size: 13.5px; margin-bottom: 3px; }
-  .toast span { font: 12px/1.45 var(--mono); color: var(--dim); word-break: break-all; }
-  .toast .x {
-    flex: none; color: var(--dimmest); font-size: 15px; line-height: 1;
+  .toast b { display: block; color: var(--head); font-size: var(--fs-base); margin-bottom: 3px; }
+  .toast span { font: var(--fs-sm)/1.45 var(--mono); color: var(--dim); word-break: break-all; }
+  .toast .x, .toast .copy {
+    flex: none; color: var(--dimmest); font-size: var(--fs-lg); line-height: 1;
     background: none; border: none; padding: 0 2px; cursor: pointer;
   }
-  .toast .x:hover { color: var(--head); }
-  .hints { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+  .toast .copy { font-size: var(--fs-base); opacity: .6; }
+  .toast .x:hover, .toast .copy:hover { color: var(--head); opacity: 1; }
+  .hints { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: 7px; }
   button.hint {
-    font: 500 11px/1.5 var(--mono); padding: 2px 9px; border-radius: 5px;
+    font: 500 var(--fs-xs)/1.5 var(--mono); padding: 2px 9px; border-radius: var(--r-sm);
     background: var(--chip); border-color: transparent; color: var(--label);
   }
   button.hint:hover { border-color: var(--teal); color: var(--chip-accent-text); }
@@ -554,12 +853,12 @@
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
   details > summary.col-head {
-    justify-content: flex-start; gap: 10px; cursor: pointer;
-    padding: 4px 3px; border-radius: 7px; user-select: none;
+    justify-content: flex-start; gap: var(--sp-3); cursor: pointer;
+    padding: 4px 3px; border-radius: var(--r-sm); user-select: none;
   }
   details > summary.col-head:hover { color: var(--head); background: rgba(23,58,87,.35); }
   details > summary.col-head::before {
-    content: "\25B8"; font-size: 17px; line-height: 1; color: var(--teal);
+    content: "\25B8"; font-size: var(--fs-xl); line-height: 1; color: var(--teal);
     display: inline-block; transition: transform .15s; width: 12px;
   }
   details[open] > summary.col-head::before { transform: rotate(90deg); }
@@ -569,9 +868,9 @@
   .col-head > .help { margin-right: auto; }
 
   button {
-    font: 600 14.5px/1 Inter, sans-serif; color: var(--body); cursor: pointer;
+    font: 600 var(--fs-md)/1 var(--sans); color: var(--body); cursor: pointer;
     background: var(--chip); border: 1px solid var(--stroke-dim);
-    border-radius: 7px; padding: 9px 16px; transition: all .14s;
+    border-radius: var(--r-sm); padding: 9px 16px; transition: all .14s;
   }
   button:hover {
     color: var(--head); border-color: var(--blue);
@@ -584,7 +883,7 @@
   button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(0,227,176,.22); }
   button.no:hover { border-color: var(--danger); color: #FFC3C9; box-shadow: 0 0 14px rgba(255,107,107,.18); }
   button.icon {
-    padding: 8px 13px; font-size: 23px; line-height: 1; color: var(--teal);
+    padding: 8px 13px; font-size: var(--fs-3xl); line-height: 1; color: var(--teal);
     background: transparent; border-color: transparent;
   }
   button.icon:hover { border-color: var(--stroke-dim); }
@@ -592,47 +891,86 @@
   /* Sound is on, but the browser has not let this page make any yet. */
   button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }
   @keyframes nudge { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-  button.newagent { font-size: 17px; padding: 10px 20px; }
+  button.newagent { font-size: var(--fs-xl); padding: 10px 20px; }
 
   /* ── detail dialog ──────────────────────────────────── */
   dialog {
     padding: 0; width: min(720px, 94vw); color: var(--body);
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
-    border: 1px solid var(--stroke); border-radius: 14px;
-    box-shadow: 0 30px 70px rgba(2,6,9,.8);
+    border: 1px solid var(--stroke); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog);
   }
   dialog::backdrop { background: rgba(4,11,20,.74); backdrop-filter: blur(3px); }
   .dlg-head {
     padding: 18px 22px 15px; border-bottom: 1px solid var(--stroke-dim);
-    display: flex; align-items: flex-start; gap: 14px;
+    display: flex; align-items: flex-start; gap: var(--sp-4);
   }
-  .dlg-head h2 { margin: 0 0 8px; font-size: 18px; color: var(--head); font-weight: 600; }
-  .dlg-body { padding: 20px 22px; max-height: 62vh; overflow-y: auto; }
+  .dlg-head h2 { margin: 0 0 8px; font-size: var(--fs-xl); color: var(--head); font-weight: 600; }
+  /* Tall enough that a form with a dozen fields is scrolled rarely rather
+     than constantly. The head and foot are fixed, so this is the only part
+     that moves. */
+  .dlg-body { padding: 20px 22px; max-height: 78vh; overflow-y: auto; }
   .field { margin-bottom: 20px; }
   label.eyebrow {
-    display: block; font: 600 10.5px/1 Inter, sans-serif; letter-spacing: .16em;
+    display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em;
     text-transform: uppercase; color: var(--label); margin-bottom: 8px;
   }
-  input[type=text] {
-    font: 14px/1.4 Inter, sans-serif; color: var(--head); width: 100%;
+  /* Every field in a dialog gets the same treatment. Textareas and selects
+     used to fall through to the browser default, which on a dark page is a
+     small white box at whatever width the rows attribute implied. */
+  input[type=text],
+  input[type=password],
+  input[type=number],
+  .dlg-body textarea,
+  .dlg-body select {
+    font: var(--fs-md)/1.5 var(--sans); color: var(--head); width: 100%;
     background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
-    border-radius: 8px; padding: 10px 12px; transition: border-color .14s;
+    border-radius: var(--r-md); padding: 10px 12px; transition: border-color .14s;
   }
-  input[type=text]:focus { outline: none; border-color: var(--blue); }
-  input[type=text]::placeholder { color: var(--dimmest); }
-  .statuses { display: flex; gap: 7px; flex-wrap: wrap; }
+  .dlg-body textarea {
+    font-family: var(--mono); font-size: var(--fs-base); min-height: 84px;
+    resize: vertical; display: block;
+  }
+  /* Native select arrows are drawn by the OS and cannot be recoloured, so the
+     control draws its own and hides the original. */
+  .dlg-body select {
+    appearance: none; cursor: pointer; padding-right: 34px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--label) 50%),
+      linear-gradient(135deg, var(--label) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .dlg-body select option { background: var(--card-1); color: var(--head); }
+  input[type=text]:focus,
+  .dlg-body textarea:focus,
+  .dlg-body select:focus { outline: none; border-color: var(--blue); }
+  input[type=text]::placeholder,
+  .dlg-body textarea::placeholder { color: var(--dimmest); }
+  /* A dialog's own scrollbar, so it does not arrive as a grey OS strip in the
+     middle of a dark panel. */
+  .dlg-body { scrollbar-width: thin; scrollbar-color: var(--stroke) transparent; }
+  .dlg-body::-webkit-scrollbar { width: 10px; }
+  .dlg-body::-webkit-scrollbar-track { background: transparent; }
+  .dlg-body::-webkit-scrollbar-thumb {
+    background: var(--stroke-dim); border-radius: var(--r-sm);
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  .dlg-body::-webkit-scrollbar-thumb:hover { background-clip: padding-box; }
+  .statuses { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .statuses button.on {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
   .timeline { border-left: 1px solid var(--stroke-dim); margin-left: 5px; padding-left: 0; }
-  .ev { position: relative; padding: 7px 0 7px 22px; font-size: 12.5px; }
+  .ev { position: relative; padding: 7px 0 7px 22px; font-size: var(--fs-sm); }
   .ev::before {
     content: ""; position: absolute; left: -4px; top: 14px;
     width: 7px; height: 7px; border-radius: 50%; background: var(--stroke);
   }
   .ev.key::before { background: linear-gradient(90deg, var(--teal), var(--blue)); }
   .ev .k { color: var(--head); font-weight: 600; margin-right: 9px; }
-  .ev .t { font-family: var(--mono); color: var(--dimmest); font-size: 11.5px; }
+  .ev .t { font-family: var(--mono); color: var(--dimmest); font-size: var(--fs-xs); }
   .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
   .scroll-x { overflow-x: auto; }
 
@@ -641,15 +979,15 @@
      terminal all assume width that is not there, so each becomes something
      else rather than being squeezed. */
   @media (max-width: 900px) {
-    .bar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
-    .wordmark { font-size: 17px; letter-spacing: .2em; }
-    nav { order: 3; width: 100%; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
-    .tab { font-size: 15px; padding: 8px 13px; white-space: nowrap; }
-    .tab .count { font-size: 13px; }
+    .bar { padding: 10px 12px; gap: var(--sp-3); flex-wrap: wrap; row-gap: var(--sp-3); }
+    .wordmark { font-size: var(--fs-xl); letter-spacing: .2em; }
+    nav { order: 3; width: 100%; overflow-x: auto; gap: var(--sp-1); padding-bottom: 2px; }
+    .tab { font-size: var(--fs-lg); padding: 8px 13px; white-space: nowrap; }
+    .tab .count { font-size: var(--fs-base); }
     .grow { display: none; }
-    button.newagent { font-size: 14px; padding: 8px 14px; }
-    button.icon { font-size: 19px; padding: 6px 9px; }
-    .conn { font-size: 14px; }
+    button.newagent { font-size: var(--fs-md); padding: 8px 14px; }
+    button.icon { font-size: var(--fs-2xl); padding: 6px 9px; }
+    .conn { font-size: var(--fs-md); }
     main { padding: 14px 12px; }
 
     /* One column at a time. A kanban that scrolls sideways on a phone means
@@ -659,7 +997,7 @@
 
     /* Rows stop being rows. Truncating to an ellipsis on a narrow screen hides
        the only part that matters. */
-    .row.line { flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; }
+    .row.line { flex-wrap: wrap; gap: var(--sp-2) 10px; padding: 10px 12px; }
     .row.line .grow { flex: 1 1 100%; order: 5; }
     .row.line .ell { white-space: normal; overflow: visible; }
     .row.line .tool { min-width: 0; }
@@ -674,34 +1012,35 @@
     .row.perm .actions button { flex: 1 1 auto; }
     .row.perm .hints { width: 100%; }
     textarea.cmd.edit, input.pat, pre.diff { width: 100%; min-width: 0; }
-    .scope { flex-direction: column; align-items: stretch; gap: 6px; }
+    .scope { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
     .patview { width: fit-content; max-width: 100%; }
-    .wait { min-width: 0; font-size: 17px; }
+    .wait { min-width: 0; font-size: var(--fs-xl); }
 
-    .filters { gap: 6px; }
+    .filters { gap: var(--sp-2); }
     .filters input[type=search] { min-width: 100%; order: -1; }
     .matchcount { margin-left: 0; }
     .seg { flex-wrap: wrap; }
 
     /* The terminal takes the whole screen, with its session list above it
-       rather than beside it. */
+       rather than beside it. The layout still fills the window, so the pane
+       gets whatever the list leaves. */
     .term-layout { flex-direction: column; }
     .term-list {
       flex: 0 0 auto; flex-direction: row; max-height: none;
-      overflow-x: auto; padding-bottom: 4px;
+      overflow-x: auto; overflow-y: hidden; padding-bottom: 4px;
     }
     .term-entry { flex: 0 0 auto; min-width: 190px; }
     .term-entry span { display: none; }
-    .term-bar { gap: 8px; padding: 8px 10px; }
+    .term-bar { gap: var(--sp-3); padding: 8px 10px; }
     .term-bar strong { width: 100%; }
-    #t-screen { height: 60vh; padding: 6px; }
+    #t-screen { padding: 6px; }
     .term-help { display: none; }
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }
-    .subhead { font-size: 13px; }
+    .subhead { font-size: var(--fs-base); }
     #toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
-    #held { font-size: 13px; padding: 7px 12px; }
+    #held { font-size: var(--fs-base); padding: 7px 12px; }
   }
 
   /* Very narrow: drop anything that is decoration. */
@@ -732,7 +1071,7 @@
   </div>
   <div class="rule"></div>
 </header>
-<div id="wedge"><strong>wedged</strong><span id="wedge-t"></span></div>
+<div id="halted"><strong>halted</strong><span id="halt-t"></span></div>
 
 <main>
   <div id="board" class="board"></div>
@@ -771,15 +1110,20 @@ The most specific match wins, so a narrow block beats a broad approve.">?</span>
         <span>standing rules</span><span class="n" id="rules-count"></span>
       </summary>
       <div class="filters">
-        <input type="search" id="rules-q" placeholder="filter by tool or pattern" spellcheck="false">
+        <span class="barlabel">show</span>
         <div class="seg" id="rules-seg">
           <button class="on" data-v="">all</button>
           <button data-v="approve">approve</button>
           <button data-v="block">block</button>
         </div>
+        <input type="search" id="rules-q" placeholder="filter by tool, pattern or reason" spellcheck="false">
         <span class="matchcount" id="rules-match"></span>
         <button onclick="exportRulesView('json')" title="download what is showing as json">export json</button>
         <button onclick="exportRulesView('csv')" title="download what is showing as csv">csv</button>
+      </div>
+      <div class="filters">
+        <span class="barlabel">sort by</span>
+        <div class="seg" id="rules-sort"></div>
       </div>
       <div id="rules-list"></div>
     </details>
@@ -796,8 +1140,10 @@ you, made rule — you clicked always or never, creating that rule
 Exports honour whatever filter is applied.">?</span>
         <span class="n" id="hist-count"></span>
       </summary>
+      <!-- Two rows, each labelled. Unlabelled they looked like one bank of
+           pills and the sort row read as more filters. -->
       <div class="filters">
-        <input type="search" id="hist-q" placeholder="filter by tool or command" spellcheck="false">
+        <span class="barlabel">show</span>
         <div class="seg" id="hist-seg">
           <button class="on" data-v="">all</button>
           <button data-v="approve">approved</button>
@@ -805,9 +1151,14 @@ Exports honour whatever filter is applied.">?</span>
           <button data-v="rule">by rule</button>
           <button data-v="you">by you</button>
         </div>
+        <input type="search" id="hist-q" placeholder="filter by agent, tool or command" spellcheck="false">
         <span class="matchcount" id="hist-match"></span>
         <button onclick="exportHistory('json')" title="download what is showing as json">export json</button>
         <button onclick="exportHistory('csv')" title="download what is showing as csv">csv</button>
+      </div>
+      <div class="filters">
+        <span class="barlabel">sort by</span>
+        <div class="seg" id="hist-sort"></div>
       </div>
       <div id="history-list"></div>
     </details>
@@ -826,7 +1177,10 @@ Exports honour whatever filter is applied.">?</span>
           <button onclick="sendSignal('int')"
             title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
           <button id="t-copymode" onclick="toggleCopyOnSelect()"></button>
-          <button class="no" onclick="closeTerm()">detach</button>
+          <button class="no" onclick="exitTerm()"
+            title="ask this runner to quit, the way its own harness says to">exit</button>
+          <button class="no" onclick="closeTerm()"
+            title="leave the terminal running and stop watching it">detach</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
         <div id="t-screen"></div>
@@ -855,6 +1209,9 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <button class="go" onclick="editHarness(null)">add a runner</button>
     </div>
     <div id="harness-list"></div>
+    <!-- Runners found on PATH that have no row yet. Offered, never added on
+         their own: what to run is a decision. -->
+    <div id="discovered"></div>
   </div>
 </main>
 
@@ -877,7 +1234,11 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   title="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
   &#8635;&nbsp; paused while you type, click to catch up</button>
 
-<div id="toasts"></div>
+<!-- A dialog, not a div, so toasts sit in the top layer.
+     A modal <dialog> renders above everything regardless of z-index, so a
+     toast raised while settings was open was drawn underneath it and never
+     seen. Only another top-layer element can beat one. -->
+<dialog id="toasts"></dialog>
 
 <dialog id="settings">
   <div class="dlg-head">
@@ -922,6 +1283,47 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       </div>
       <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
     </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-cardsize">text size</label>
+      <div class="picker">
+        <select id="s-cardsize">
+          <option value="0.9">smaller</option>
+          <option value="1">normal</option>
+          <option value="1.1">a little bigger</option>
+          <option value="1.25">bigger</option>
+          <option value="1.45">biggest</option>
+        </select>
+      </div>
+      <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
+        size in the page comes off one scale, so none of it is left behind.</span>
+    </div>
+
+    <!-- Grouping. The rule is the operator's, because their worktree layout
+         already has conventions atrium has no way to know. -->
+    <div class="field">
+      <label class="eyebrow">group cards</label>
+      <div class="picker">
+        <button id="s-group-toggle" onclick="toggleGrouping()"></button>
+        <button onclick="resetGrouping()">use the defaults</button>
+      </div>
+      <span class="hintline">Groups cards inside every column. The default reads a project out of
+        the worktree path.</span>
+    </div>
+    <div class="field" id="s-group-code" hidden>
+      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code></label>
+      <textarea id="s-group-by" rows="8" spellcheck="false"></textarea>
+      <span class="hintline">The body of a function taking <code>task</code>. Return the group name,
+        or <code>""</code> to leave a card ungrouped. <code>task</code> has
+        <code>worktree</code>, <code>runner</code>, <code>status</code>, <code>title</code>,
+        <code>why</code> and <code>pid</code>.</span>
+    </div>
+    <div class="field" id="s-order-code" hidden>
+      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code></label>
+      <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
+      <span class="hintline">The body of a comparator over two group names. Broken code falls back
+        to the default and says so rather than blanking the board.</span>
+    </div>
   </div>
 </dialog>
 
@@ -946,29 +1348,40 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     </div>
     <div class="field">
       <label class="eyebrow" for="h-args">arguments, one per line</label>
-      <textarea id="h-args" rows="3" spellcheck="false"></textarea>
+      <textarea id="h-args" rows="3" spellcheck="false"
+        placeholder="--dangerously-skip-permissions&#10;--model&#10;sonnet"></textarea>
+      <span class="hintline">one per line, not one line. an argument with a space in it stays whole
+        this way.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-resume">resume arguments, one per line</label>
-      <textarea id="h-resume" rows="2" spellcheck="false"></textarea>
-      <span class="hintline">use <code>{resume}</code> where the session id goes. claude uses
-        <code>--resume</code> then <code>{resume}</code>.</span>
+      <textarea id="h-resume" rows="2" spellcheck="false"
+        placeholder="--resume&#10;{resume}"></textarea>
+      <span class="hintline">used instead of the arguments above when picking a conversation back up.
+        put <code>{resume}</code> where the session id goes.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-cwd">default working directory</label>
-      <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
+      <div class="picker">
+        <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
+        <button onclick="browseInto('h-cwd')">browse</button>
+      </div>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
-      <textarea id="h-env" rows="2" spellcheck="false"></textarea>
+      <textarea id="h-env" rows="2" spellcheck="false"
+        placeholder="ATRIUM_PERM_GATE=on&#10;NO_COLOR=1"></textarea>
+      <span class="hintline">added to whatever the daemon passes on. atrium already strips the
+        markers of the session it was started from.</span>
     </div>
     <div class="field">
       <label class="eyebrow">launch mode</label>
       <div class="seg" id="h-mode">
-        <button class="on" data-v="window">own terminal window</button>
-        <button data-v="pty">atrium owns it</button>
+        <button data-v="window">own terminal window</button>
+        <button class="on" data-v="pty">atrium owns it</button>
       </div>
-      <span class="hintline">atrium-owned is not built yet.</span>
+      <span class="hintline">atrium-owned means you can attach to it in the browser, type into it, and
+        stop it. it also dies when the daemon does, so resuming is how you get it back.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-rules">rule import source</label>
@@ -1003,7 +1416,21 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
-      <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
+      <div class="picker">
+        <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
+        <button onclick="openBrowse()">browse</button>
+      </div>
+      <span class="hintline">Directories already on the board. Click one to use it.</span>
+      <div class="quickdirs" id="l-recent"></div>
+    </div>
+    <!-- Only shown when there is a conversation to pick up. Checked by
+         default: if you had one, continuing it is almost always the intent. -->
+    <div class="field" id="l-resume-field" hidden>
+      <label class="check">
+        <input type="checkbox" id="l-resume-on" checked>
+        <span>pick up where it left off</span>
+      </label>
+      <span class="hintline" id="l-resume-note"></span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>
@@ -1014,6 +1441,30 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <input type="text" id="l-why" spellcheck="false" placeholder="read this in a week and remember">
     </div>
     <div class="toolbar"><button class="go big" onclick="doLaunch()">start it</button></div>
+  </div>
+</dialog>
+
+<!-- Right click a card. Every entry here used to cost opening the detail
+     dialog, reading it, and closing it again. -->
+<div id="cardmenu"></div>
+
+<!-- Browsing the DAEMON's filesystem, not the browser's. The board is meant to
+     be opened from a phone and over an overlay network, and the browser's own
+     directory picker would offer the phone's folders to start a runner in. -->
+<dialog id="browse">
+  <div class="dlg-head">
+    <div class="grow">
+      <h2>pick a directory</h2>
+      <div class="crumb" id="b-path"></div>
+    </div>
+    <button onclick="document.getElementById('browse').close()">cancel</button>
+  </div>
+  <div class="dlg-body">
+    <div class="toolbar">
+      <button id="b-up" onclick="browseUp()">&#8593; up</button>
+      <button class="go" id="b-use" onclick="useBrowsed()">use this one</button>
+    </div>
+    <div class="dirlist" id="b-list"></div>
   </div>
 </dialog>
 
@@ -1037,6 +1488,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <div class="field">
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
+      <span class="hintline" id="d-auto-note"></span>
     </div>
     <div class="field">
       <label class="eyebrow">history</label>
@@ -1045,18 +1497,92 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   </div>
 </dialog>
 
+<!-- The counterpart to auto mode. Trading interruption for review only works
+     if the review is worth opening, so it gets its own screen rather than a
+     line in the history. -->
+<dialog id="review">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="rev-title">what it did</h2></div>
+    <button onclick="document.getElementById('review').close()">close</button>
+  </div>
+  <div class="dlg-body" id="rev-body"></div>
+</dialog>
+
 <script>
+// The columns, in the order you should read them: what is blocking an agent
+// right now, then what is waiting on you, then what is moving, then what is
+// over, then what you put down.
+//
+// `statuses` is what a column holds. Only `finished` holds more than one, and
+// it groups them: done and dead are both over, and separating them across the
+// board put two columns of things needing nothing next to each other.
+//
+// `drop` is where a card dragged onto the column lands, since a column holding
+// two statuses has to pick one.
+//
+// `backlog` is not here. Nothing ever creates a card in it, and an empty column
+// on every screen is a column you learn to skip past.
 const COLUMNS = [
-  ["backlog", "backlog"], ["running", "running"], ["needs-input", "needs input"],
-  ["needs-permission", "needs permission"], ["done", "done"], ["shelved", "shelved"], ["dead", "dead"]
+  // `accepts: false` refuses a card dragged in. These two columns are reports,
+  // not buckets: a card is in them because an agent said so. Dropping one into
+  // needs-permission would claim a request that does not exist, and into
+  // needs-input would claim an agent is waiting when it is not.
+  {
+    id: "needs-permission", label: "needs permission", statuses: ["needs-permission"],
+    accepts: false,
+    why: "An agent asked to run something and is frozen until you answer.\n\n" +
+      "Nothing else will answer for it, and it has no timeout. First column " +
+      "because this is the one costing an agent time right now.\n\n" +
+      "Cards arrive here on their own. You cannot drag one in, because there " +
+      "would be no request behind it."
+  },
+  {
+    id: "needs-input", label: "needs input", statuses: ["needs-input"],
+    accepts: false,
+    why: "The agent finished its turn and is waiting for you to say what is " +
+      "next. Nothing is frozen mid-tool, so it sits below permissions.\n\n" +
+      "Cards arrive here when a session's Stop hook fires. You cannot drag " +
+      "one in, because that would not make an agent be waiting."
+  },
+  {
+    id: "running", label: "running", statuses: ["running"],
+    why: "Working, or believed to be.\n\nWhen atrium knows a session's process " +
+      "id it asks the operating system every twenty seconds, so a card here " +
+      "with a pid is alive. Idle time then means the session is sitting at a " +
+      "prompt, not that it is gone.\n\nWith no process id there is nothing to " +
+      "ask. Those cards are marked NO CONTACT after twenty minutes of silence " +
+      "and moved to finished after three hours, and come back the moment the " +
+      "session says anything."
+  },
+  {
+    id: "finished", label: "finished", statuses: ["done", "dead"], drop: "done",
+    why: "Over, and split into two groups.\n\ndone is work that finished.\n" +
+      "dead is a process that is gone, whether it succeeded or not.\n\n" +
+      "Clear deletes a group and its history."
+  },
+  {
+    id: "shelved", label: "shelved", statuses: ["shelved"], drop: "shelved",
+    why: "Put down on purpose, to come back to.\n\nRequests from a shelved " +
+      "session are refused until you unshelve it, and clearing a column never " +
+      "takes one."
+  }
 ];
+
+// Every status a card can be moved to by hand, for the detail dialog.
+const MOVE_TO = [
+  ["running", "running"], ["needs-input", "needs input"],
+  ["needs-permission", "needs permission"], ["done", "done"],
+  ["shelved", "shelved"], ["dead", "dead"]
+];
+
 const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
+const reviewDlg = document.getElementById("review");
 let current = null;
 
-// Fits a box to its content. A textarea has no way to say "as tall as what is
-// in me", so the height is cleared, measured, then set. The CSS cap turns a very
-// long command into a scroll rather than a card that runs off the page.
+// Fits a box to its content: a textarea cannot say "as tall as what is in me",
+// so the height is cleared, measured, then set. The CSS cap turns a very long
+// command into a scroll rather than a card that runs off the page.
 //
 // Called after a value is set and on every keystroke, since editing adds and
 // removes lines.
@@ -1081,10 +1607,14 @@ const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
 
 function ago(secs) {
   if (secs == null) return "";
+  secs = Math.floor(secs);
   if (secs < 60) return secs + "s";
-  if (secs < 3600) return Math.floor(secs / 60) + "m";
-  if (secs < 86400) return Math.floor(secs / 3600) + "h";
-  return Math.floor(secs / 86400) + "d";
+  // Compound d/h/m so "2h" doesn't hide the minutes -- 90061s -> "1d1h1m".
+  // Zero units drop out; at least one of h/m is always present for secs >= 60.
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return (d ? d + "d" : "") + (h ? h + "h" : "") + (m ? m + "m" : "");
 }
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
@@ -1098,14 +1628,69 @@ function switchView(name) {
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
 
+// What the runner is doing right now, as a chip.
+//
+// The column says what a card needs from you; this says whether it is moving.
+// Cards in running are otherwise indistinguishable whether the session is
+// grinding through a build or hung.
+//
+// Not drawn while the card is waiting: the column and the wait chip carry that.
+// Absent when the daemon has heard nothing recently, which is the case for a
+// runner with no hooks.
+function activityChip(t) {
+  const a = t.activity;
+  if (!a || !a.what || isWaiting(t)) return "";
+  const label = a.what === "tool"
+    ? (a.tool ? `running ${esc(a.tool)}` : "running a tool")
+    : esc(a.what);
+  // "Running Bash for 40 minutes" says something the tool name alone does not.
+  const age = a.seconds > 5 ? ` ${ago(a.seconds)}` : "";
+  const sub = a.subagents > 0
+    ? `<span class="chip sub" title="subagents running under this session">&#8618; ${a.subagents}</span>`
+    : "";
+  return `<span class="chip live ${esc(a.what)}">${label}${age}</span>${sub}`;
+}
+
+// A card atrium cannot vouch for: nothing heard from the session, and no
+// process id to ask the operating system about. It may be working, it may have
+// ended without a word, and the difference is not knowable from here.
+//
+// The label is about what atrium knows, not about what the agent is doing.
+// Guessing at the agent's state and being wrong is what makes a board stop
+// being believed.
+const NO_CONTACT_AFTER_SECONDS = 20 * 60;
+const isOutOfContact = (t) =>
+  t.status === "running" && !t.pid && (t.idle_seconds || 0) > NO_CONTACT_AFTER_SECONDS;
+
 function cardHTML(t) {
   const w = isWaiting(t);
-  return `<div class="card ${w ? "waiting" : ""}" onclick="openTask('${t.id}')">
+  const dark = isOutOfContact(t);
+  // Draggable for reordering, right-clickable for the actions done most. Both
+  // exist because the alternative was opening the detail dialog for every
+  // shelve and every attach.
+  return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}"
+    onclick="openTask('${t.id}')"
+    data-id="${t.id}" data-rank="${t.rank}" draggable="true"
+    oncontextmenu="cardMenu(event, '${t.id}')">
     <div class="title">${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</div>
     <div class="chips">
-      <span class="chip accent">${esc(t.runner || "?")}</span>
+      <span class="chip runner" data-runner="${esc(t.runner || "")}"
+        >${esc(t.runner || "?")}</span>
+      ${activityChip(t)}
+      ${dark ? `<span class="chip nocontact"
+        title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
+        >no contact</span>` : ""}
       <span class="chip">idle ${ago(t.idle_seconds)}</span>
       ${w ? `<span class="chip warn">waiting ${ago(t.wait_seconds)}</span>` : ""}
+      ${t.auto_approve ? `<span class="chip auto"
+        title="auto mode: requests from this session are approved without asking, and recorded"
+        >auto</span>` : ""}
+      ${t.status === "shelved" ? `<span class="chip attach"
+        title="${cannotResume(t)
+          ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
+          : "start it again from where the conversation left off"}"
+        onclick="event.stopPropagation();unshelveCard('${t.id}')"
+        >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
     </div>
@@ -1113,29 +1698,595 @@ function cardHTML(t) {
   </div>`;
 }
 
-async function renderBoard() {
-  const { tasks } = await api("/v1/tasks");
-  document.getElementById("board").innerHTML = COLUMNS.map(([status, label]) => {
-    const mine = (tasks || []).filter(t => t.status === status);
-    const folded = foldedColumns().includes(status) ? " folded" : "";
-    return `<section class="col${folded}" data-status="${status}">
-      <div class="col-head" onclick="toggleColumn('${status}')">
-        <span><span class="fold">&#9662;</span>${label}</span>
-        ${(status === "done" || status === "dead") && mine.length
-          ? `<span class="chip sweep" title="delete every card in this column"
-               onclick="event.stopPropagation();pruneColumn('${status}')">clear</span>` : ""}
-        <span class="n">${mine.length}</span>
-      </div>
-      <div class="cards">
-        ${mine.length ? mine.map(cardHTML).join("") : '<div class="empty">empty</div>'}
-      </div>
-    </section>`;
+// ── grouping cards by project ───────────────────────────
+// A card shows its leaf directory, so `dotfiles` and `targetted-releases` sit
+// next to each other with nothing saying which repo either belongs to. With
+// several worktrees per repo the column is a list of names that mean something
+// only if you already know them.
+//
+// The rule is not atrium's to decide. The operator already has a worktree
+// layout with its own conventions, so both the grouping and the ordering are
+// JavaScript they can replace. The defaults below work with no configuration.
+
+const GROUPING_KEY = "atrium.grouping";
+
+// Defaults, shown in the settings dialog as the starting point and used when
+// nothing has been written.
+const DEFAULT_GROUP_BY = `// Return the group name for a card, or "" for no group.
+// The whole task is available: worktree, runner, status, title, why, pid.
+const path = (task.worktree || "").replace(/\\\\/g, "/");
+if (!path) return "";
+
+// .../<forge>/<org>/<repo>/... -> "org/repo"
+const forge = path.match(/\\/(?:github|gitlab|bitbucket)[^/]*\\/([^/]+)\\/([^/]+)/i);
+if (forge) return forge[1] + "/" + forge[2];
+
+// Otherwise the last two segments, which is usually parent/leaf.
+const parts = path.split("/").filter(Boolean);
+if (parts.length >= 2) return parts.slice(-2).join("/");
+return parts[0] || "";`;
+
+const DEFAULT_GROUP_ORDER = `// Sort two group names. Return <0, 0, or >0.
+// Alphabetical, with anything ungrouped last.
+if (!a) return 1;
+if (!b) return -1;
+return a.localeCompare(b);`;
+
+// On by default. A board of leaf directory names says nothing about which
+// repo any of them belong to, and the default rule works with no setup.
+const GROUPING_DEFAULTS = { on: true, by: "", order: "", hues: {} };
+
+function groupingPrefs() {
+  try {
+    return Object.assign({}, GROUPING_DEFAULTS,
+      JSON.parse(localStorage.getItem(GROUPING_KEY) || "{}"));
+  } catch (e) { return Object.assign({}, GROUPING_DEFAULTS); }
+}
+
+function setGrouping(patch) {
+  const next = Object.assign(groupingPrefs(), patch);
+  localStorage.setItem(GROUPING_KEY, JSON.stringify(next));
+  refresh();
+}
+
+// Compiles a function body once per render.
+//
+// Operator-supplied code running in the operator's own browser is not a
+// security question. A broken function taking the board down is, so a compile
+// or a call that throws falls back to the default and reports once.
+let groupingFault = "";
+function compiled(body, fallback, ...args) {
+  const src = (body || "").trim() ? body : fallback;
+  try {
+    return new Function(...args, src);
+  } catch (e) {
+    groupingFault = "your grouping code did not compile: " + e.message;
+    try { return new Function(...args, fallback); } catch (e2) { return null; }
+  }
+}
+
+// Builds the grouper and the sorter for one render, each already wrapped so a
+// throw on one card cannot stop the board drawing the rest.
+function grouper() {
+  const p = groupingPrefs();
+  if (!p.on) return null;
+  groupingFault = "";
+
+  const by = compiled(p.by, DEFAULT_GROUP_BY, "task");
+  const order = compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b");
+  if (!by) return null;
+
+  const safeBy = t => {
+    try { return String(by(t) ?? ""); }
+    catch (e) {
+      groupingFault = groupingFault || "your grouping code threw: " + e.message;
+      return "";
+    }
+  };
+  const safeOrder = (a, b) => {
+    if (!order) return a.localeCompare(b);
+    try { return Number(order(a, b)) || 0; }
+    catch (e) {
+      groupingFault = groupingFault || "your ordering code threw: " + e.message;
+      return a.localeCompare(b);
+    }
+  };
+  return { of: safeBy, cmp: safeOrder };
+}
+
+// A colour per group.
+//
+// Hashed from the name by default, so a project is coloured the moment it
+// appears and keeps that colour with nothing configured. A hash cannot know
+// that two projects you care about landed on similar hues, so an override
+// wins when there is one.
+function groupHue(name) {
+  const set = groupingPrefs().hues || {};
+  if (set[name] !== undefined) return set[name];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+}
+
+// The palette offered when recolouring. Spread around the wheel so two picks
+// are always tellable apart, which is the whole job of the colour.
+const GROUP_HUES = [0, 25, 45, 65, 95, 140, 170, 195, 215, 250, 285, 320];
+
+// Right click a group heading to recolour it.
+function groupMenu(e, name) {
+  e.preventDefault();
+  e.stopPropagation();
+  const set = groupingPrefs().hues || {};
+  showMenu(e, [
+    { label: name, act: () => {} },
+    { sep: true },
+    { label: "recolour…", act: () => pickGroupHue(name) },
+    set[name] !== undefined
+      ? { label: "back to the automatic colour", act: () => setGroupHue(name, null) }
+      : null
+  ]);
+}
+
+function setGroupHue(name, hue) {
+  const hues = Object.assign({}, groupingPrefs().hues || {});
+  if (hue === null) delete hues[name]; else hues[name] = hue;
+  setGrouping({ hues });
+}
+
+// Swatches rather than a colour input, because the colour is a hue on a fixed
+// lightness: a full picker would offer combinations the board cannot draw.
+function pickGroupHue(name) {
+  const body = `<div class="swatches">` + GROUP_HUES.map(h =>
+    `<button class="swatch" style="--ghue:${h}" data-hue="${h}"
+      title="hue ${h}"></button>`).join("") + `</div>`;
+  askUser({
+    title: "colour for " + name,
+    body,
+    buttons: [{ label: "cancel", value: null }]
+  });
+  // Wired after the dialog has drawn its body.
+  setTimeout(() => {
+    document.querySelectorAll("#ask-body .swatch").forEach(b => b.onclick = () => {
+      setGroupHue(name, Number(b.dataset.hue));
+      askDlg.close();
+    });
+  }, 0);
+}
+
+// Renders a list of cards, split into project groups when grouping is on.
+function cardsHTML(cards, g, keyPrefix) {
+  if (!cards.length) return '<div class="empty">empty</div>';
+  if (!g) return cards.map(cardHTML).join("");
+
+  const byName = new Map();
+  for (const t of cards) {
+    const name = g.of(t);
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(t);
+  }
+  // One group holding everything is not a grouping, so it is not drawn as one.
+  if (byName.size < 2 && byName.has("")) return cards.map(cardHTML).join("");
+
+  return [...byName.keys()].sort(g.cmp).map(name => {
+    const mine = byName.get(name);
+    if (!name) return mine.map(cardHTML).join("");
+    const key = keyPrefix + ":" + name;
+    const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+    return `<details class="cardgroup project"${shut}
+      style="--ghue:${groupHue(name)}">
+      <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
+        oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
+        <span class="gname" title="${esc(name)} &mdash; right click to recolour">${esc(name)}</span>
+        <span class="gn">${mine.length}</span>
+      </summary>
+      ${mine.map(cardHTML).join("")}
+    </details>`;
   }).join("");
 }
 
-// Deletes every card in a finished column. Only done and dead offer this: a
-// shelved card is something kept on purpose, and the daemon refuses to sweep
-// one even if asked.
+function rememberProject(e, key) {
+  const folded = foldedColumns();
+  const open = e.currentTarget.parentElement.open;
+  const i = folded.indexOf("proj:" + key);
+  if (open && i < 0) folded.push("proj:" + key);
+  if (!open && i >= 0) folded.splice(i, 1);
+  localStorage.setItem("atrium.folded", JSON.stringify(folded));
+}
+
+async function renderBoard() {
+  const { tasks } = await api("/v1/tasks");
+  const all = tasks || [];
+  const g = grouper();
+
+  document.getElementById("board").innerHTML = COLUMNS.map(col => {
+    const mine = all.filter(t => col.statuses.includes(t.status));
+    const folded = foldedColumns().includes(col.id) ? " folded" : "";
+
+    // A column holding one status is a flat list. One holding several splits
+    // into groups, each with its own count and its own clear. Project groups
+    // nest inside either.
+    const body = col.statuses.length === 1
+      ? cardsHTML(mine, g, col.id)
+      : col.statuses.map(s =>
+          groupHTML(s, all.filter(t => t.status === s), g)).join("");
+
+    return `<section class="col${folded}" data-column="${col.id}"
+      data-status="${esc(col.drop || col.statuses[0])}">
+      <div class="col-head" onclick="toggleColumn('${col.id}')">
+        <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
+        <span class="help" tabindex="0" onclick="event.stopPropagation()"
+          data-tip="${esc(col.why)}">?</span>
+        ${col.statuses.length === 1 && PRUNABLE.includes(col.statuses[0]) && mine.length
+          ? `<span class="chip sweep" title="delete every card in this column"
+               onclick="event.stopPropagation();pruneColumn('${col.statuses[0]}')">clear</span>` : ""}
+        <span class="n">${mine.length}</span>
+      </div>
+      <div class="cards">${body}</div>
+    </section>`;
+  }).join("");
+  wireDragging();
+
+  // Reported after the render, so a broken function shows an error and a board
+  // drawn with the defaults rather than a blank page.
+  if (groupingFault) {
+    toast("grouping code", groupingFault);
+    groupingFault = "";
+  }
+}
+
+// Statuses the daemon will delete. Anything else has no clear control, because
+// pressing one that does nothing is worse than not having it.
+const PRUNABLE = ["done", "dead"];
+
+// One status inside a column that holds several. Collapsible, so `dead` can be
+// shut away while `done` stays open.
+function groupHTML(status, cards, g) {
+  const shut = foldedColumns().includes("group:" + status) ? "" : " open";
+  return `<details class="cardgroup" data-status="${esc(status)}"${shut}>
+    <summary onclick="rememberGroup(event, '${status}')">
+      <span class="gname">${esc(status)}</span>
+      <span class="gn">${cards.length}</span>
+      ${PRUNABLE.includes(status) && cards.length
+        ? `<span class="chip sweep" title="delete every ${esc(status)} card"
+             onclick="event.stopPropagation();event.preventDefault();pruneColumn('${status}')"
+             >clear</span>` : ""}
+    </summary>
+    ${cardsHTML(cards, g, status)}
+  </details>`;
+}
+
+// Groups reuse the folded-columns list, prefixed, so open and shut survives a
+// reload the same way a column does.
+function rememberGroup(e, status) {
+  const key = "group:" + status;
+  const folded = foldedColumns();
+  const open = e.currentTarget.parentElement.open;
+  // The toggle has not happened yet, so `open` is the state being left.
+  const i = folded.indexOf(key);
+  if (open && i < 0) folded.push(key);
+  if (!open && i >= 0) folded.splice(i, 1);
+  localStorage.setItem("atrium.folded", JSON.stringify(folded));
+}
+
+// ── dragging cards ──────────────────────────────────────
+// Dropping between two cards sets the new rank to their midpoint, so an insert
+// never renumbers the column. Dropping onto a column changes status.
+let dragging = null;
+
+function wireDragging() {
+  document.querySelectorAll("#board .card").forEach(card => {
+    card.addEventListener("dragstart", e => {
+      dragging = card.dataset.id;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox will not start a drag without payload, even unused payload.
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+    });
+    card.addEventListener("dragend", () => {
+      dragging = null;
+      document.querySelectorAll(".dragging, .drop-before, .drop-after")
+        .forEach(el => el.classList.remove("dragging", "drop-before", "drop-after"));
+    });
+    card.addEventListener("dragover", e => {
+      if (!dragging || card.dataset.id === dragging) return;
+      const col = card.closest(".col");
+      if (!acceptsDrop(col)) {
+        // No preventDefault, so the browser draws the no-entry cursor and the
+        // drop never fires.
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
+      e.preventDefault();
+      // Above or below, from which half of the card the cursor is in.
+      const r = card.getBoundingClientRect();
+      const after = e.clientY > r.top + r.height / 2;
+      card.classList.toggle("drop-before", !after);
+      card.classList.toggle("drop-after", after);
+    });
+    card.addEventListener("dragleave", () =>
+      card.classList.remove("drop-before", "drop-after"));
+    card.addEventListener("drop", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const after = card.classList.contains("drop-after");
+      card.classList.remove("drop-before", "drop-after");
+      await dropCard(dragging, card, after);
+    });
+  });
+
+  document.querySelectorAll("#board .col").forEach(col => {
+    col.addEventListener("dragover", e => {
+      if (!dragging) return;
+      if (!acceptsDrop(col)) { e.dataTransfer.dropEffect = "none"; return; }
+      e.preventDefault();
+      col.classList.add("drop-into");
+    });
+    col.addEventListener("dragleave", () => col.classList.remove("drop-into"));
+    col.addEventListener("drop", async e => {
+      col.classList.remove("drop-into");
+      if (!dragging || !acceptsDrop(col)) return;
+      e.preventDefault();
+      // Landing on empty space in a column: change status, leave rank alone.
+      await patchTask(dragging, { status: col.dataset.status });
+      refresh();
+    });
+  });
+}
+
+// Whether a column takes a card dragged into it.
+//
+// `needs input` and `needs permission` refuse. They are reports of what an
+// agent said, not buckets to file things in: dropping into needs-permission
+// would claim a request that does not exist, and into needs-input would claim
+// an agent is waiting when nothing is.
+function acceptsDrop(col) {
+  if (!col) return false;
+  const def = COLUMNS.find(c => c.id === col.dataset.column);
+  return !def || def.accepts !== false;
+}
+
+// Places a card relative to a neighbour, moving it between columns if needed.
+async function dropCard(id, neighbour, after) {
+  if (!id || !neighbour) return;
+  // The group when the column holds several, so dropping next to a dead card
+  // lands on dead rather than on whatever the column's default is. Rank is
+  // computed within the same scope, since that is what was dropped between.
+  const scope = neighbour.closest(".cardgroup") || neighbour.closest(".col");
+  const col = neighbour.closest(".col");
+  const cards = [...scope.querySelectorAll(".card")];
+  const at = cards.indexOf(neighbour);
+  const idx = after ? at + 1 : at;
+
+  // Ranks come off the cards on screen rather than a fetch, so the midpoint is
+  // computed against what was actually dropped between.
+  const rankOf = el => Number(el.dataset.rank);
+  const before = idx > 0 ? rankOf(cards[idx - 1]) : null;
+  const behind = idx < cards.length ? rankOf(cards[idx]) : null;
+
+  let rank;
+  if (before === null && behind === null) rank = 0;
+  else if (before === null) rank = behind - 1;
+  else if (behind === null) rank = before + 1;
+  else rank = (before + behind) / 2;
+
+  const body = { rank };
+  const target = scope.dataset.status || (col && col.dataset.status);
+  if (target) body.status = target;
+  await patchTask(id, body);
+  refresh();
+}
+
+async function patchTask(id, body) {
+  try {
+    const res = await api(`/v1/tasks/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    // Shelving stops a runner and unshelving starts it again, neither of which
+    // is visible from a card moving between columns.
+    if (body.status === "shelved") toast("shelved", "its runner was stopped");
+    if (res && res.resumed) { toast("resumed", "picked up where it left off"); return res; }
+    if (res && res.resume_note) {
+      // Nothing started. A card in `running` with no process is the lie this
+      // whole board exists to avoid, so it is corrected here rather than left
+      // for the operator to notice. Handled in one place, so dragging, the
+      // menu and the dialog all end up somewhere true.
+      if (body.status === "running") {
+        await api(`/v1/tasks/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "dead" })
+        });
+        toast("off the shelf, but not running", res.resume_note);
+      } else {
+        toast("not resumed", res.resume_note);
+      }
+    }
+    return res;
+  } catch (e) { toast("that did not stick", e.message); }
+}
+
+// ── card action menu ────────────────────────────────────
+// Right click a card. Each entry previously cost opening the detail dialog,
+// reading it, and closing it again.
+const cardMenuEl = document.getElementById("cardmenu");
+
+// Why a shelved card cannot be started again, or "" when it can.
+//
+// Both answers come off the card itself: `resume_id` is the session's own id
+// for its conversation, and `runner` is which harness to start. Neither needs
+// asking the daemon.
+function cannotResume(t) {
+  if (t.supervised) return "it is already running";
+  if (!t.resume_id) {
+    return "atrium never learned this session's resume id, so there is no " +
+      "conversation to pick up. its session hooks were not wired when it ran, " +
+      "or its harness does not report one";
+  }
+  if (!t.runner) return "atrium does not know which runner this was";
+  // Resuming is per-runner configuration. Saying which runner and which field
+  // turns "it will not resume" into something the operator can fix.
+  const h = allHarnesses.find(x => x.id === t.runner);
+  if (h && !(h.resume_args || []).length) {
+    return `${t.runner} has no resume arguments configured. set them on the ` +
+      `runner, with {resume} where the session id goes`;
+  }
+  return "";
+}
+
+// Whether resume is worth offering at all: there is a conversation to pick up
+// and nothing already running it.
+const canResume = (t) => !!t.resume_id && !t.supervised;
+
+// Takes a card off the shelf, and puts it where the truth is.
+//
+// Unshelving does two things: it lifts the standing block on the card's
+// requests, and it starts the runner. When the second cannot happen there is
+// no process, so `running` would be a card describing something that is not
+// there. It goes to `finished` instead, which is what it is, and can be
+// launched fresh or forgotten from there.
+async function unshelveCard(id) {
+  await patchTask(id, { status: "running" });
+  refresh();
+}
+
+// Starts a finished card's runner again, onto the same card.
+//
+// The launch form rather than a silent relaunch, because resuming asks the same
+// questions launching does: which runner, in which directory. It arrives
+// pre-filled from the card and with the resume box already ticked.
+function resumeCard(id, t) {
+  const why = cannotResume(t);
+  if (why) { toast("cannot resume", why); return; }
+  openLaunch(t.runner || "claude", t.resume_id, t.worktree || "", id);
+}
+
+function unshelveItem(id, t) {
+  const why = cannotResume(t);
+  return {
+    label: why ? "unshelve" : "unshelve and resume",
+    note: why ? "cannot resume" : "",
+    limited: !!why,
+    tip: why
+      ? "The card comes off the shelf and stops refusing its requests, but " +
+        "nothing starts, so it lands in finished: " + why
+      : "Starts the runner again from where the conversation left off.",
+    act: () => unshelveCard(id)
+  };
+}
+
+async function cardMenu(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  const t = await api(`/v1/tasks/${id}`);
+
+  // A card that is finished has nothing to terminate, and offering it produced
+  // a dialog that failed and changed nothing. Auto mode and shelving are the
+  // same: they answer future requests from a session that will not make any.
+  const over = ["done", "dead", "shelved"].includes(t.status);
+
+  const items = [
+    { label: "details…", act: () => openTask(id) },
+    t.supervised ? { label: "attach terminal", act: () => attachTask(id) } : null,
+    { sep: true },
+    // A card already in a lane is not offered the move into it.
+    //
+    // Unshelving does two things: it lifts the standing block on this card's
+    // requests, and it starts the runner again. Only the second can fail, so
+    // the entry stays available and says what it will not do. Disabling it
+    // outright would strand the card on the shelf, still refusing everything
+    // its session asks for.
+    t.status === "shelved" ? unshelveItem(id, t)
+      : over ? null
+        : { label: "shelve", note: "stops its runner",
+            act: () => patchTask(id, { status: "shelved" }).then(refresh) },
+    t.status === "done" ? null
+      : { label: "done", act: () => patchTask(id, { status: "done" }).then(refresh) },
+    { sep: true },
+    over ? null : {
+      label: t.auto_approve ? "stop auto mode" : "auto mode",
+      act: () => patchTask(id, { auto_approve: !t.auto_approve }).then(refresh)
+    },
+    { label: "what did it do?", act: async () => { current = t; openReview(); } },
+    { sep: true },
+    // A finished card whose conversation atrium recorded can be started again.
+    // Offered here because the detail dialog was the only place it appeared,
+    // which meant opening a card to find out whether it could be resumed.
+    canResume(t) && t.status !== "shelved" ? {
+      label: "resume",
+      note: cannotResume(t) ? "cannot resume" : "",
+      limited: !!cannotResume(t),
+      tip: cannotResume(t) || "Starts this runner again from where the " +
+        "conversation left off.",
+      act: () => resumeCard(id, t)
+    } : null,
+    t.pid > 0 && !over
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
+    { label: "forget this card", danger: true, act: () => forgetCard(id, t.display_title) }
+  ];
+  showMenu(e, items);
+}
+
+// Draws a context menu at the pointer. Shared, so the board and the terminal
+// list cannot drift apart in how their menus look or behave.
+function showMenu(e, items) {
+  // Dropping entries leaves separators with nothing between them, or one
+  // stranded at an end.
+  items = items.filter(Boolean).filter((it, i, all) =>
+    !it.sep || (i > 0 && i < all.length - 1 && !all[i - 1].sep));
+
+  cardMenuEl.innerHTML = items.map((it, i) => it.sep
+    ? `<div class="sep"></div>`
+    : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}"
+        data-i="${i}"${it.tip ? ` title="${esc(it.tip)}"` : ""}>${esc(it.label)}${
+        it.note ? `<span class="note">${esc(it.note)}</span>` : ""}</button>`
+  ).join("");
+  cardMenuEl.querySelectorAll("button").forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    closeCardMenu();
+    items[Number(b.dataset.i)].act();
+  });
+
+  // Placed after it has a size, so a card near an edge does not open a menu
+  // off screen.
+  cardMenuEl.style.left = "0px";
+  cardMenuEl.style.top = "0px";
+  cardMenuEl.classList.add("on");
+  const r = cardMenuEl.getBoundingClientRect();
+  const x = Math.min(e.clientX, window.innerWidth - r.width - 8);
+  const y = Math.min(e.clientY, window.innerHeight - r.height - 8);
+  cardMenuEl.style.left = Math.max(8, x) + "px";
+  cardMenuEl.style.top = Math.max(8, y) + "px";
+}
+
+function closeCardMenu() { cardMenuEl.classList.remove("on"); }
+document.addEventListener("click", closeCardMenu);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeCardMenu(); });
+window.addEventListener("scroll", closeCardMenu, true);
+
+async function killById(id) {
+  const t = await api(`/v1/tasks/${id}`);
+  if (!await confirmUser(`terminate ${t.display_title}?`,
+    `Stops pid ${t.pid}. Anything it was part way through is lost. ` +
+    `The card and its history stay, in <b>dead</b>.`, "terminate")) return;
+  // A failure is a toast. A second dialog after the one you just answered is
+  // two dialogs for one decision.
+  try { await api(`/v1/tasks/${id}/kill`, { method: "POST" }); }
+  catch (e) { toast("could not terminate", e.message); }
+  refresh();
+}
+
+// Deleting one card, as opposed to clearing a whole column.
+async function forgetCard(id, title) {
+  if (!await confirmUser(`forget ${title}?`,
+    "The card and its whole history go. Anything still running is untouched.",
+    "forget it")) return;
+  try { await api(`/v1/tasks/${id}`, { method: "DELETE" }); }
+  catch (e) { toast("could not forget it", e.message); }
+  refresh();
+}
+
+// Deletes every card in a finished column. Only done and dead offer this; the
+// daemon refuses to sweep a shelved card even when asked.
 async function pruneColumn(status) {
   const { tasks } = await api("/v1/tasks");
   const n = (tasks || []).filter(t => t.status === status).length;
@@ -1148,7 +2299,9 @@ async function pruneColumn(status) {
   const res = await api("/v1/tasks/prune", {
     method: "POST", body: JSON.stringify({ statuses: [status] })
   });
-  tellUser(`cleared ${res.removed} card${res.removed === 1 ? "" : "s"}`);
+  // A toast, not a dialog. You already answered one, and the cards visibly
+  // going is the confirmation.
+  toast("cleared", `${res.removed} card${res.removed === 1 ? "" : "s"} gone`);
   refresh();
 }
 
@@ -1159,12 +2312,12 @@ function foldedColumns() {
   catch (e) { return []; }
 }
 
-function toggleColumn(status) {
+function toggleColumn(id) {
   const folded = foldedColumns();
-  const i = folded.indexOf(status);
-  if (i >= 0) folded.splice(i, 1); else folded.push(status);
+  const i = folded.indexOf(id);
+  if (i >= 0) folded.splice(i, 1); else folded.push(id);
   localStorage.setItem("atrium.folded", JSON.stringify(folded));
-  const el = document.querySelector(`.col[data-status="${status}"]`);
+  const el = document.querySelector(`.col[data-column="${id}"]`);
   if (el) el.classList.toggle("folded", i < 0);
 }
 
@@ -1201,7 +2354,8 @@ function permCard(p) {
   el.innerHTML = `
     <div class="who">
       <b>${esc(p.tool)}</b>
-      <span>asked ${esc((p.requested_at || "").slice(11, 19))}</span>
+      <span>${p.agent ? `<span class="asker">${esc(p.agent)}</span> &middot; ` : ""}asked ${
+        esc((p.requested_at || "").slice(11, 19))}</span>
       <label class="eyebrow" for="cmd-${p.id}">command</label>
       <span class="hintline">this is what runs. edit it to run something else</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="1" spellcheck="false"
@@ -1216,16 +2370,23 @@ function permCard(p) {
         <code class="patview" id="pat-${p.id}"></code>
         <div class="hints">
           ${hintsFor(p).map(h =>
-            `<button class="hint" data-v="${esc(h.value)}" title="${esc(h.why)}">${esc(h.label)}</button>`).join("")}
+            `<button class="hint ${h.kind === "path" ? "path" : ""}" data-v="${esc(h.value)}"
+              data-kind="${esc(h.kind || "command")}" title="${esc(h.why)}">${
+              esc((h.icon ? h.icon + " " : "") + h.label)}</button>`).join("")}
           <button class="hint custom" data-custom="1" title="type your own pattern">custom&hellip;</button>
         </div>
       </div>
     </div>
+    <!-- Two pairs, each reading the same way: what happens, then how long it
+         lasts. "block" against "approve once" made the first look like the
+         standing answer and the second like the exception. -->
     <div class="actions">
-      <button class="go" data-do="approve">approve once</button>
+      <button class="go" data-do="approve"
+        title="let this one through. the next matching request asks again">approve once</button>
+      <button class="no" data-do="block"
+        title="refuse this one. the next matching request asks again">block once</button>
       <button class="go" data-do="approve" data-forever="1"
         title="approve, and never ask again about the scope shown">always</button>
-      <button class="no" data-do="block">block</button>
       <button class="no" data-do="block" data-forever="1"
         title="block, and never ask again about the scope shown">never</button>
     </div>`;
@@ -1237,32 +2398,57 @@ function permCard(p) {
   autosize(cmd);
 
   const view = el.querySelector(".patview");
-  const setScope = (value, btn) => {
+  // The kind decides how the pattern is read: a command shape, or a directory.
+  // Kept on the card beside the pattern so decide sends both and cannot send a
+  // directory as a command prefix.
+  const setScope = (value, btn, kind) => {
     el.dataset.pattern = value;
+    el.dataset.kind = kind || "command";
     view.textContent = value;
+    view.classList.toggle("path", el.dataset.kind === "path");
     el.querySelectorAll(".hint").forEach(x => x.classList.toggle("on", x === btn));
   };
-  const hints = el.querySelectorAll(".hint:not(.custom)");
-  setScope(prefixOf(p.tool, p.command), hints[0]);
+  // The default scope is the command shape, not a folder. A rule is made from a
+  // request that was read, and widening it to a whole directory grants more
+  // than was agreed to.
+  const hints = [...el.querySelectorAll(".hint:not(.custom)")]
+    .find(b => b.dataset.kind !== "path");
+  setScope(prefixOf(p.tool, p.command), hints || null, "command");
 
   // Retyping the command re-derives the scope, unless you picked one yourself.
   cmd.addEventListener("input", () => {
     if (el.dataset.chosen === "1") return;
-    setScope(prefixOf(p.tool, cmd.value), null);
+    setScope(prefixOf(p.tool, cmd.value), null, "command");
   });
   el.querySelectorAll(".hint").forEach(b => b.addEventListener("click", async () => {
     if (b.dataset.custom) {
-      const v = await askText("stop asking about",
-        "Plain text matches the <b>start</b> of the command. " +
-        "Add <code>*</code> or <code>?</code> to match against the whole thing.",
+      const choice = await askUser({
+        title: "stop asking about",
+        body: "Two ways to say it.<br><br>" +
+          "<b>A command shape</b> matches the start of the command, or the whole " +
+          "thing when it contains <code>*</code> or <code>?</code>.<br><br>" +
+          "<b>A folder</b> matches any command that touches anything inside it, " +
+          "whatever the command is and however the path is quoted.",
+        buttons: [
+          { label: "a command shape", value: "command", style: "go" },
+          { label: "a folder", value: "path" }
+        ]
+      });
+      if (choice === null) return;
+      const v = await askText(
+        choice === "path" ? "which folder" : "which command shape",
+        choice === "path"
+          ? "Anything under this folder stops asking. Name the narrowest one that covers your work."
+          : "Plain text matches the <b>start</b> of the command. " +
+            "Add <code>*</code> or <code>?</code> to match against the whole thing.",
         el.dataset.pattern || "");
       if (v === null || !v.trim()) return;
       el.dataset.chosen = "1";
-      setScope(v.trim(), b);
+      setScope(v.trim(), b, choice);
       return;
     }
     el.dataset.chosen = "1";
-    setScope(b.dataset.v, b);
+    setScope(b.dataset.v, b, b.dataset.kind);
   }));
   // Wrapped so a fault in one handler cannot leave a button looking dead, and
   // latched so a slow answer cannot be sent four times. Silence is the worst
@@ -1337,29 +2523,108 @@ function paintHistory() {
     if (only === "rule" && !byRule(p)) return false;
     if (only === "you" && byRule(p)) return false;
     if ((only === "approve" || only === "block") && p.decision !== only) return false;
-    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "")).toLowerCase().includes(q);
+    // The agent is searchable too, so "show me everything the deploy session
+    // did" is one filter rather than a scan.
+    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "") + " " +
+      (p.agent || "")).toLowerCase().includes(q);
   });
 
   document.getElementById("hist-match").textContent =
     list.length === allHistory.length ? "" : `${list.length} of ${allHistory.length}`;
 
+  sortHistory(list);
+
   // One line per decision. The command takes the slack and truncates, with the
   // whole thing on hover, so a screen shows many rather than four.
+  //
+  // A rule name is a link to the rule. Reading "a rule allowed this" and then
+  // scrolling a list of a hundred and thirty to find which one is the work
+  // this saves.
   document.getElementById("history-list").innerHTML = list.length
     ? `<div class="panel">` + list.map(p => `
         <div class="row line">
           <span class="chip ${p.decision === "approve" ? "accent" : "warn"}">${p.decision}</span>
           <span class="stamp">${when(p.decided_at)}</span>
+          <span class="asker ell" title="${esc(p.agent || "")}">${esc(p.agent || "?")}</span>
           <span class="tool">${esc(p.tool)}</span>
           <code class="grow ell" title="${esc(p.command)}">${esc(p.command)}</code>
-          <span class="by" title="${esc(p.reason || "")}">${byRule(p)
-            ? `rule <code>${esc(p.decided_by)}</code>`
-            : p.rule_created
-              ? `you, made rule <code>${esc(p.rule_created)}</code>`
-              : "you"}</span>
+          <span class="by" title="${esc(p.reason || "")}">${p.decided_by === "auto"
+            ? `<span class="auto" title="auto mode answered this, nobody was asked">auto</span>`
+            : byRule(p)
+              ? `rule ${ruleLink(p.decided_by)}`
+              : p.rule_created
+                ? `you, made rule ${ruleLink(p.rule_created)}`
+                : "you"}</span>
         </div>`).join("") + `</div>`
     : `<div class="panel"><div class="empty">${allHistory.length
         ? "nothing matches that filter" : "nothing decided yet"}</div></div>`;
+}
+
+// A rule pattern rendered as a link to the rule itself.
+function ruleLink(pattern) {
+  return `<code class="rulelink" title="go to this rule"
+    onclick="event.stopPropagation();gotoRule('${esc(pattern).replace(/'/g, "&#39;")}')"
+    >${esc(pattern)}</code>`;
+}
+
+// Opens the standing rules, finds the rule and flashes it.
+//
+// The rules list is collapsed by default and filtered by a search box, so
+// getting to one rule out of a hundred and thirty means opening, typing and
+// scanning. This does all three.
+async function gotoRule(pattern) {
+  const rules = document.getElementById("rules-d");
+  if (rules && !rules.open) rules.open = true;
+  const q = document.getElementById("rules-q");
+  if (q) { q.value = pattern; paintRules(); }
+  // A frame for the list to repaint before hunting for the row.
+  setTimeout(() => {
+    const row = [...document.querySelectorAll("#rules-list .row.line code")]
+      .find(c => c.textContent.trim().replace(/^\u{1F4C1}\s*/u, "") === pattern);
+    const target = row && row.closest(".row");
+    if (!target) { toast("no rule matches", pattern + " is no longer in the list"); return; }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.remove("flash");
+    void target.offsetWidth;
+    target.classList.add("flash");
+  }, 60);
+}
+
+// ── sorting the decision log ────────────────────────────
+// Newest first is the right default and was the only option, with nothing on
+// screen saying so. Four columns are worth sorting by, and which one is active
+// is shown in the header rather than left to be guessed.
+const HIST_SORTS = {
+  when: { label: "when", cmp: (a, b) => (b.decided_at || "").localeCompare(a.decided_at || "") },
+  agent: { label: "agent", cmp: (a, b) => (a.agent || "").localeCompare(b.agent || "") },
+  tool: { label: "tool", cmp: (a, b) => (a.tool || "").localeCompare(b.tool || "") },
+  command: { label: "command", cmp: (a, b) => (a.command || "").localeCompare(b.command || "") },
+  answer: { label: "answer", cmp: (a, b) => (a.decided_by || "").localeCompare(b.decided_by || "") }
+};
+let histSort = "when";
+let histDesc = false;
+
+function sortHistory(list) {
+  const s = HIST_SORTS[histSort] || HIST_SORTS.when;
+  list.sort(s.cmp);
+  // `when` is already newest first, so reversing it means oldest first.
+  if (histDesc) list.reverse();
+}
+
+function setHistSort(key) {
+  if (histSort === key) histDesc = !histDesc;
+  else { histSort = key; histDesc = false; }
+  paintHistSort();
+  paintHistory();
+}
+
+function paintHistSort() {
+  document.getElementById("hist-sort").innerHTML =
+    Object.entries(HIST_SORTS).map(([k, s]) =>
+      `<button class="${k === histSort ? "on" : ""}" onclick="setHistSort('${k}')"
+        title="sort by ${s.label}${k === histSort ? ", again to reverse" : ""}"
+        >${s.label}${k === histSort ? (histDesc ? " ↑" : " ↓") : ""}</button>`
+    ).join("");
 }
 
 // hintsFor offers a few ready-made patterns per request, so widening a rule to
@@ -1482,9 +2747,51 @@ function diffHTML(text) {
 // hintsFor offers ready-made patterns, ordered the way the path reads: broad
 // on the left, narrow on the right. Every one carries an explicit trailing *
 // so what you see is what it matches.
+// Directories mentioned anywhere in a command, shallowest first, so "let it
+// work in here" is one click.
+//
+// As a command pattern the same thing means writing a glob that accounts for
+// the quoting around the path, and `rm -f "C:/x/*"` silently fails to match
+// `rm -f "C:/x/y.db"` over the closing quote alone.
+function dirsIn(command) {
+  const out = [];
+  const seen = new Set();
+  // Quoted runs first, since a path with spaces only survives in quotes.
+  const tokens = (command.match(/"[^"]+"|'[^']+'|\S+/g) || [])
+    .map(t => t.replace(/^["']|["']$/g, "").replace(/\\/g, "/"));
+  for (const t of tokens) {
+    if (!t.includes("/")) continue;
+    // A url is not a directory on this machine.
+    if (/^[a-z]+:\/\//i.test(t)) continue;
+    const parts = t.split("/");
+    // The last segment is a file or the directory itself, so its parent is the
+    // shallowest useful rule and the walk covers the rest.
+    for (let i = 2; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join("/");
+      // Too short to be anything but a drive or a root.
+      if (dir.replace(/[/:]/g, "").length < 2) continue;
+      if (seen.has(dir)) continue;
+      seen.add(dir);
+      out.push(dir);
+    }
+  }
+  // Deepest last, so the list reads outward. Capped, so a command naming ten
+  // paths does not bury the buttons that decide it.
+  return out.slice(0, 4);
+}
+
 function hintsFor(p) {
   const cmd = (p.command || "").replace(/\\/g, "/");
   const out = [];
+  // Offered for every tool: "anywhere under this folder" reads the same for a
+  // shell command and a file edit.
+  for (const dir of dirsIn(cmd)) {
+    const leaf = dir.split("/").filter(Boolean).pop() || dir;
+    out.push({
+      value: dir, kind: "path", label: leaf, icon: "\u{1F4C1}",
+      why: "anything anywhere under " + dir + ", whatever the command"
+    });
+  }
   if (FILE_TOOLS.includes(p.tool)) {
     const parts = cmd.split(/\s+/)[0].split("/");
     // Shallowest first, so it reads left to right like the path does.
@@ -1503,7 +2810,7 @@ function hintsFor(p) {
     }
   }
   const seen = new Set();
-  return out.filter(h => h.value && !seen.has(h.value) && seen.add(h.value));
+  return out.filter(h => h.value && !seen.has(h.kind + h.value) && seen.add(h.kind + h.value));
 }
 
 
@@ -1524,6 +2831,9 @@ function prefixOf(tool, command) {
 
 const RULE_TOOLBAR = `
   <div class="toolbar">
+    <button class="go big" onclick="allowFolder()"
+      title="stop asking about anything under a folder, whatever the command">
+      &#128193;&nbsp; allow a folder</button>
     <button class="go big" onclick="importClaude()"
       title="read your Claude Code allow and deny lists and turn them into standing rules">
       &#8681;&nbsp; import rules from claude</button>
@@ -1558,7 +2868,44 @@ async function renderRules() {
   try { allRules = (await api("/v1/rules")).rules || []; } catch (e) { return; }
   document.getElementById("rules-toolbar").innerHTML = RULE_TOOLBAR;
   document.getElementById("rules-count").textContent = allRules.length;
+  paintRuleSort();
   paintRules();
+}
+
+// ── sorting the rules ───────────────────────────────────
+// Most used first was the only order and nothing said so. With a hundred and
+// thirty rules, "which of these has never fired" and "what did I add last" are
+// both questions the list could not answer.
+const RULE_SORTS = {
+  hits: { label: "most used", cmp: (a, b) => (b.hits || 0) - (a.hits || 0) },
+  newest: { label: "newest", cmp: (a, b) => (b.created_at || "").localeCompare(a.created_at || "") },
+  tool: { label: "tool", cmp: (a, b) => (a.tool || "").localeCompare(b.tool || "") },
+  pattern: { label: "pattern", cmp: (a, b) => (a.prefix || "").localeCompare(b.prefix || "") },
+  kind: { label: "kind", cmp: (a, b) => (a.kind || "").localeCompare(b.kind || "") }
+};
+let ruleSort = "hits";
+let ruleDesc = false;
+
+function sortRules(list) {
+  const s = RULE_SORTS[ruleSort] || RULE_SORTS.hits;
+  list.sort(s.cmp);
+  if (ruleDesc) list.reverse();
+}
+
+function setRuleSort(key) {
+  if (ruleSort === key) ruleDesc = !ruleDesc;
+  else { ruleSort = key; ruleDesc = false; }
+  paintRuleSort();
+  paintRules();
+}
+
+function paintRuleSort() {
+  const host = document.getElementById("rules-sort");
+  if (!host) return;
+  host.innerHTML = Object.entries(RULE_SORTS).map(([k, s]) =>
+    `<button class="${k === ruleSort ? "on" : ""}" onclick="setRuleSort('${k}')"
+      title="sort by ${s.label}${k === ruleSort ? ", again to reverse" : ""}"
+      >${s.label}${k === ruleSort ? (ruleDesc ? " ↑" : " ↓") : ""}</button>`).join("");
 }
 
 function paintRules() {
@@ -1571,14 +2918,18 @@ function paintRules() {
   document.getElementById("rules-match").textContent =
     list.length === allRules.length ? "" : `${list.length} of ${allRules.length}`;
 
+  sortRules(list);
+
   document.getElementById("rules-list").innerHTML = list.length
     ? `<div class="panel">` + list.map(r => `
         <div class="row line">
           <span class="chip ${r.decision === "approve" ? "accent" : "warn"}">${r.decision}</span>
           <span class="stamp">${when(r.created_at)}</span>
           <span class="tool">${esc(r.tool)}</span>
-          <code class="grow ell" title="${esc(r.prefix)}">${esc(r.prefix)}</code>
-          <span class="by">${/[*?]/.test(r.prefix) ? "wildcard" : "prefix"}</span>
+          <code class="grow ell ${r.kind === "path" ? "path" : ""}"
+            title="${esc(r.prefix)}">${r.kind === "path" ? "\u{1F4C1} " : ""}${esc(r.prefix)}</code>
+          <span class="by">${r.kind === "path" ? "folder"
+            : /[*?]/.test(r.prefix) ? "wildcard" : "prefix"}</span>
           <span class="by">${r.hits} use${r.hits === 1 ? "" : "s"}</span>
           <button class="no" onclick="dropRule('${r.id}')">forget</button>
         </div>`).join("") + `</div>`
@@ -1603,6 +2954,58 @@ function wireFilters(seg, input, repaint) {
     repaint();
   }));
   document.getElementById(input).addEventListener("input", repaint);
+}
+
+// "Let it work in here, stop asking."
+//
+// A rule could otherwise only be born from a request just read, through always
+// or never, which misses the case where the answer is already known.
+//
+// A folder rule rather than a command glob: the glob has to account for the
+// quoting around the path, and `rm -f "C:/x/*"` silently fails against
+// `rm -f "C:/x/y.db"` over the closing quote alone.
+async function allowFolder() {
+  const dir = await askText("allow a folder",
+    "Every request that touches anything under this folder stops asking, " +
+    "whatever the command and however the path is quoted." +
+    "<br><br>Name the narrowest folder that covers the work.",
+    "", "D:/git/github/dovholuknf/atrium");
+  if (dir === null || !dir.trim()) return;
+
+  const tools = await askUser({
+    title: "which tools",
+    body: `Under <code>${esc(dir.trim())}</code>.`,
+    buttons: [
+      { label: "everything", value: "all", style: "go" },
+      { label: "just file edits", value: "files" },
+      { label: "just shell commands", value: "bash" }
+    ]
+  });
+  if (tools === null) return;
+
+  const which = tools === "bash" ? ["Bash"]
+    : tools === "files" ? FILE_TOOLS
+    : ["Bash", ...FILE_TOOLS];
+
+  let made = 0;
+  for (const tool of which) {
+    try {
+      await api("/v1/rules", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool, kind: "path", prefix: dir.trim(), decision: "approve",
+          reason: "allowed this folder"
+        })
+      });
+      made++;
+    } catch (e) {
+      toast("could not write the rule", e.message);
+      return;
+    }
+  }
+  toast(`${dir.trim()} is allowed`,
+    `${made} rule${made === 1 ? "" : "s"} written, nothing under it will ask again`);
+  refresh();
 }
 
 async function dropRule(id) {
@@ -1662,13 +3065,18 @@ async function runImport(body) {
     const res = await api("/v1/rules/import", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
     });
-    let msg = `added ${res.added}, updated ${res.updated}`;
-    if ((res.failed || []).length) {
-      msg += `\n\n${res.failed.length} failed:\n`
-        + res.failed.slice(0, 8).map(f => `  ${f.tool} ${f.pattern}: ${f.error}`).join("\n");
+    const failed = res.failed || [];
+    // A clean import is a toast: you answered a dialog to get here and the
+    // rules list is about to show the result. A partial one is a dialog,
+    // because a list of patterns that did not make it has to be read.
+    if (!failed.length) {
+      toast("imported", `added ${res.added}, updated ${res.updated}`);
+    } else {
+      tellUser(`imported ${res.added + res.updated}, ${failed.length} failed`,
+        `<code>${esc(failed.slice(0, 8)
+          .map(f => `${f.tool} ${f.pattern}: ${f.error}`).join("\n"))}</code>`);
     }
-    tellUser("atrium", msg);
-  } catch (e) { tellUser("atrium", e.message); }
+  } catch (e) { toast("import failed", e.message); }
   refresh();
 }
 
@@ -1708,7 +3116,10 @@ function filteredHistory() {
     if (only === "rule" && !byRule(p)) return false;
     if (only === "you" && byRule(p)) return false;
     if ((only === "approve" || only === "block") && p.decision !== only) return false;
-    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "")).toLowerCase().includes(q);
+    // The agent is searchable too, so "show me everything the deploy session
+    // did" is one filter rather than a scan.
+    return !q || (p.tool + " " + p.command + " " + (p.decided_by || "") + " " +
+      (p.agent || "")).toLowerCase().includes(q);
   });
 }
 
@@ -1717,7 +3128,8 @@ function exportHistory(fmt) {
   if (!rows.length) { tellUser("atrium", "nothing to export"); return; }
   if (fmt === "csv") {
     download(`atrium-decisions-${stamp()}.csv`,
-      toCSV(rows, ["decided_at", "decision", "tool", "command", "decided_by", "reason"]), "text/csv");
+      toCSV(rows, ["decided_at", "agent", "decision", "tool", "command", "decided_by", "reason"]),
+      "text/csv");
     return;
   }
   download(`atrium-decisions-${stamp()}.json`, JSON.stringify({ permissions: rows }, null, 2),
@@ -1765,9 +3177,8 @@ const SOUNDS = {
   none:   { label: "silent",      notes: [] }
 };
 
-// expiry is how many seconds a desktop notification stays on screen. 0 means
-// it stays until it is answered or clicked, which is what Windows does with a
-// sticky notification and what made them pile up.
+// expiry is how many seconds a desktop notification stays on screen. 0 keeps it
+// until it is answered or clicked, which on Windows is what made them pile up.
 const DEFAULT_PREFS = {
   muted: false, volume: 0.35, input: "chime", perm: "alarm",
   desktop: true, expiry: 30
@@ -1954,8 +3365,8 @@ const alerting = (() => {
 // Windows renders these itself, so the only things we control are the icon,
 // the text, whether it persists, and what a click does. An icon has to be a
 // raster image, so the mark is drawn to a canvas once and reused.
-// Two marks, because a permission blocks an agent and a waiting task does not.
-// Telling them apart from the corner of your eye is the whole point.
+// Two marks, distinguishable at a glance: a permission blocks an agent and a
+// waiting task does not.
 const notifIcons = {};
 function iconDataURL(kind) {
   kind = kind === "perm" ? "perm" : "atrium";
@@ -2075,15 +3486,35 @@ function toast(title, body, goTo, key, taskFor) {
   // A toast tied to a pending item is cleared when that item is answered,
   // whether it was answered here or anywhere else.
   if (key) el.dataset.key = key;
-  el.innerHTML = `<div class="body"><b></b><span></span></div><button class="x">&times;</button>`;
+  el.innerHTML = `<div class="body"><b></b><span></span></div>
+    <button class="copy" title="copy this message">&#128203;</button>
+    <button class="x" title="dismiss">&times;</button>`;
   el.querySelector("b").textContent = title;
   el.querySelector("span").textContent = body || "";
   const dismiss = () => {
     el.classList.add("leaving");
-    setTimeout(() => el.remove(), 200);
+    setTimeout(() => {
+      el.remove();
+      // A dialog left open with nothing in it still swallows Escape.
+      if (!host.children.length && host.open) host.close();
+    }, 200);
   };
   el.addEventListener("click", async e => {
     if (e.target.classList.contains("x")) { dismiss(); return; }
+    if (e.target.classList.contains("copy")) {
+      // The text, not the toast. Errors and resume reasons are the ones worth
+      // copying, and reading a path off a toast to retype it is the worst way
+      // to get it.
+      const text = body ? title + ": " + body : title;
+      try {
+        await navigator.clipboard.writeText(text);
+        e.target.textContent = "✓";
+        setTimeout(() => { e.target.innerHTML = "&#128203;"; }, 1200);
+      } catch (err) {
+        e.target.textContent = "✗";
+      }
+      return;
+    }
     window.focus();
     dismiss();
     // If atrium owns the runner, the terminal is where the work is. Landing
@@ -2096,9 +3527,15 @@ function toast(title, body, goTo, key, taskFor) {
   });
   el.dismiss = dismiss;
   host.appendChild(el);
-  // Everything clears itself. A permission gets longer, because it blocks an
-  // agent and is worth noticing, but nothing sits on screen indefinitely: the
-  // pending count in the tab is the durable signal, not a pile of toasts.
+  // Re-shown on every toast, not just the first. Top-layer order follows the
+  // order things were added to it, so a toast raised while a dialog is open
+  // has to be put back on top of that dialog.
+  try {
+    if (host.open) host.close();
+    host.show();
+  } catch (e) {}
+  // Everything clears itself. A permission gets longer since it blocks an
+  // agent. The pending count in the tab is the durable signal, not the toasts.
   setTimeout(dismiss, goTo === "perms" ? 30000 : 9000);
   // Never let the stack grow past what fits on screen.
   while (host.children.length > 4) host.firstChild.remove();
@@ -2126,23 +3563,22 @@ function reapToasts(liveKeys) {
   reapNotifications(liveKeys);
 }
 
-// Desktop notifications for a permission are deliberately sticky, because a
-// blocked agent should not scroll away unnoticed. Sticky with nothing to close
-// them means they pile up forever, so answering a request has to take its
-// notification down too.
+// Takes down notifications that have expired or been answered.
+//
+// A permission notification with no expiry is sticky so a blocked agent does
+// not scroll away unnoticed, and sticky means nothing removes it on its own.
 function reapNotifications(liveKeys) {
   if (!swReg || !swReg.getNotifications) return;
-  const expiry = (Number(alerting.get().expiry) || 0) * 1000;
   const now = Date.now();
   swReg.getNotifications().then(list => {
     list.forEach(n => {
-      const id = n.data && n.data.permId;
-      // The worker sets its own timer, but a browser is free to shut the
-      // worker down before it fires. This is the backstop that runs whenever
-      // the page is open, so a stale notification cannot outlive its expiry.
-      if (expiry > 0 && n.timestamp && now - n.timestamp > expiry) { n.close(); return; }
+      const d = n.data || {};
+      // The worker keeps its own timer and sweeps on every wake-up, but a
+      // browser can kill it at any time. This runs every poll while a page is
+      // open.
+      if (d.expireAt && now >= d.expireAt) { n.close(); return; }
       // Untagged notifications and anything still pending are left alone.
-      if (id && !liveKeys.has(id)) n.close();
+      if (d.permId && !liveKeys.has(d.permId)) n.close();
     });
   }).catch(() => {});
 }
@@ -2157,12 +3593,70 @@ function soundOptions(selected) {
     .join("");
 }
 
+// One scale for the whole page. Every size in the stylesheet is a --fs-* value
+// multiplied by this, so nothing is left behind at a fixed pixel size.
+const UI_SCALE_KEY = "atrium.uiscale";
+
+function uiScale() {
+  const v = Number(localStorage.getItem(UI_SCALE_KEY));
+  return v > 0 ? v : 1.1;
+}
+
+function applyUiScale() {
+  document.documentElement.style.setProperty("--uiscale", String(uiScale()));
+}
+applyUiScale();
+
+document.getElementById("s-cardsize").addEventListener("change", e => {
+  localStorage.setItem(UI_SCALE_KEY, e.target.value);
+  applyUiScale();
+});
+
+// The grouping controls. Blank code means the defaults, so the boxes are
+// seeded with the defaults as a starting point rather than left empty.
+function paintGrouping() {
+  const g = groupingPrefs();
+  // The button says what grouping IS, and pressing it flips that. A button
+  // reading "on" is ambiguous about whether that is the state or the action.
+  const btn = document.getElementById("s-group-toggle");
+  btn.textContent = g.on ? "enabled" : "disabled";
+  btn.title = g.on ? "click to disable grouping" : "click to enable grouping";
+  btn.className = g.on ? "go" : "";
+  document.getElementById("s-group-code").hidden = !g.on;
+  document.getElementById("s-order-code").hidden = !g.on;
+  document.getElementById("s-group-by").value = g.by || DEFAULT_GROUP_BY;
+  document.getElementById("s-group-order").value = g.order || DEFAULT_GROUP_ORDER;
+}
+
+function toggleGrouping() {
+  const g = groupingPrefs();
+  setGrouping({ on: !g.on });
+  paintGrouping();
+}
+
+function resetGrouping() {
+  setGrouping({ by: "", order: "" });
+  paintGrouping();
+  toast("grouping reset", "back to reading a project out of the worktree path");
+}
+
+// Saved on blur rather than on every keystroke, so a half-typed function is
+// not compiled and reported as broken while it is being written.
+document.getElementById("s-group-by").addEventListener("change", e => {
+  setGrouping({ by: e.target.value === DEFAULT_GROUP_BY ? "" : e.target.value });
+});
+document.getElementById("s-group-order").addEventListener("change", e => {
+  setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value });
+});
+
 function paintSettings() {
   const p = alerting.get();
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
   document.getElementById("s-perm").innerHTML = soundOptions(p.perm);
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
+  document.getElementById("s-cardsize").value = String(uiScale());
+  paintGrouping();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -2271,10 +3765,10 @@ function badge(id, n) {
 }
 
 async function decide(id, decision, forever) {
-  let reason = "", prefix = "";
+  let reason = "", prefix = "", kind = "command";
   if (decision === "block") {
-    // A block carries guidance, so this is the difference between "no" and
-    // "no, do it this way instead".
+    // A block includes guidance, so a refusal reads as "no, do it this way
+    // instead" rather than "no".
     reason = await askText("why not?",
       "Handed straight back to the agent as the reason it was refused. " +
       "Telling it what to do instead is more useful than a wall.",
@@ -2282,13 +3776,14 @@ async function decide(id, decision, forever) {
     if (reason === null) return;
   }
   if (forever) {
-    // The scope lives on the card, set by the buttons underneath it. Reading
-    // `.value` here was left over from when it was an input: a <code> element
-    // has no value, so this threw and the click did nothing at all.
+    // The scope lives on the card, set by the buttons underneath it. A `.value`
+    // read here threw, because a <code> element has no value, and the click
+    // silently did nothing.
     const card = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
     const view = document.getElementById("pat-" + id);
     prefix = (card && card.dataset.pattern) || (view && view.textContent) || "";
     prefix = prefix.trim();
+    kind = (card && card.dataset.kind) || "command";
     if (!prefix) { tellUser("atrium", "pick a scope for the rule first"); return; }
   }
   // Send the command only when you actually changed it.
@@ -2328,17 +3823,17 @@ async function decide(id, decision, forever) {
   try {
     await api(`/v1/permissions/${id}/decide`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision, reason, forever: !!forever, prefix, command })
+      body: JSON.stringify({ decision, reason, forever: !!forever, prefix, kind, command })
     });
   } catch (e) {
-    // Already answered somewhere else. A toast rather than an alert, because
-    // this is information, not a problem to acknowledge.
+    // Already answered somewhere else. A toast rather than an alert: there is
+    // nothing to acknowledge.
     toast("too late", e.message);
   }
-  // Acting on a card always updates the view, even mid-edit. The pause exists
-  // so a poll cannot overwrite what you are typing, but you just finished with
-  // this card: leaving it on screen makes the click look like it did nothing,
-  // which is exactly how one approval turns into four.
+  // Acting on a card updates the view even mid-edit. The pause stops a poll
+  // overwriting what you are typing, but this card is finished with, and left
+  // on screen the click looks like it did nothing. That turns one approval
+  // into four.
   forgetEdits(id);
   applyHeld();
 }
@@ -2366,7 +3861,7 @@ async function openTask(id) {
     `<span class="chip">idle ${ago(current.idle_seconds)}</span>`
   ].join("");
   document.getElementById("d-why").value = current.why || "";
-  document.getElementById("d-statuses").innerHTML = COLUMNS.map(([s, label]) =>
+  document.getElementById("d-statuses").innerHTML = MOVE_TO.map(([s, label]) =>
     `<button class="${s === current.status ? "on" : ""}" onclick="move('${s}')">${label}</button>`).join("");
 
   // Terminate is only offered when atrium knows the process. A window-mode
@@ -2379,11 +3874,16 @@ async function openTask(id) {
       ? `<button class="no" onclick="killTask()">terminate pid ${current.pid}</button>`
       : `<span class="hintline">atrium does not own this process, so it cannot stop it.
          close it in its own terminal.</span>`,
-    current.resume_id
-      ? `<button onclick="openLaunch('${esc(current.runner || "claude")}',
-          '${esc(current.resume_id)}', '${esc(current.worktree || "")}')">resume</button>`
-      : ""
+    current.resume_id ? `<button onclick="resumeCurrent()">resume</button>` : "",
+    // Auto mode and the review that pays for it, side by side.
+    `<button class="${current.auto_approve ? "no" : ""}" onclick="toggleAuto()">${
+      current.auto_approve ? "stop auto mode" : "auto mode"}</button>`,
+    `<button onclick="openReview()">what did it do?</button>`
   ].join("");
+  document.getElementById("d-auto-note").textContent = current.auto_approve
+    ? "requests from this session are approved without asking. everything is still recorded, " +
+      "and never rules and shelving still block."
+    : "";
 
   const { events } = await api(`/v1/tasks/${id}/events?limit=200`);
   document.getElementById("d-events").innerHTML = (events || []).length
@@ -2400,13 +3900,83 @@ async function openTask(id) {
   detail.showModal();
 }
 
+// Reads its arguments off `current` rather than carrying a worktree path
+// through an inline handler, where a directory named `it's mine` would break
+// out of the string literal.
+function resumeCurrent() {
+  if (!current) return;
+  openLaunch(current.runner || "claude", current.resume_id, current.worktree || "");
+}
+
+// Auto mode: stop asking, keep recording.
+//
+// Turning it on is confirmed, since it changes what the gate does. Turning it
+// off is not: going back to being asked is the safe direction.
+async function toggleAuto() {
+  if (!current) return;
+  const on = !current.auto_approve;
+  if (on) {
+    const ok = await confirmUser("let this session run unattended?",
+      `Requests from <b>${esc(current.display_title)}</b> will be approved without asking you.` +
+      `<br><br>Everything is still recorded, and <b>never</b> rules and shelving still block. ` +
+      `Read what it did afterwards with <b>what did it do?</b>`,
+      "turn auto mode on");
+    if (!ok) return;
+  }
+  const title = current.display_title;
+  await patch({ auto_approve: on });
+  detail.close();
+  toast(on ? "auto mode on" : "auto mode off",
+    on ? `${title} will not stop to ask` : `${title} will ask again`);
+}
+
+// The counterpart to auto mode: what this session was allowed to do.
+//
+// The daemon folds repeats, groups by tool, and puts the decisions nobody saw
+// first, since a flat list of four hundred approvals will not be read.
+async function openReview() {
+  if (!current) return;
+  const rev = await api(`/v1/tasks/${current.id}/review`);
+  const title = current.display_title;
+  if (!rev.total) {
+    tellUser("nothing to review", `${title} has not been asked about anything yet.`);
+    return;
+  }
+
+  const head = `<div class="rev-sum">
+    <span><b>${rev.total}</b> decisions</span>
+    <span class="${rev.unattended ? "hot" : ""}"><b>${rev.unattended}</b> nobody saw</span>
+    <span class="${rev.blocked ? "hot" : ""}"><b>${rev.blocked}</b> blocked</span>
+  </div>`;
+
+  const body = rev.groups.map(g => `
+    <details class="rev-group" ${g.unattended ? "open" : ""}>
+      <summary>
+        <span class="tool">${esc(g.tool)}</span>
+        <span class="n">${g.count}</span>
+        ${g.unattended ? `<span class="chip auto">${g.unattended} unseen</span>` : ""}
+        ${g.blocked ? `<span class="chip warn">${g.blocked} blocked</span>` : ""}
+      </summary>
+      ${g.entries.map(e => `
+        <div class="rev-row ${e.unattended ? "unseen" : ""}">
+          <span class="chip ${e.decision === "approve" ? "accent" : "warn"}">${e.decision}</span>
+          ${e.repeats > 1 ? `<span class="rep" title="identical calls folded together"
+            >&times;${e.repeats}</span>` : `<span class="rep"></span>`}
+          <code class="grow" title="${esc(e.command)}">${esc(e.command)}</code>
+          <span class="by">${e.unattended ? `<span class="auto">auto</span>` : esc(e.by || "you")}</span>
+        </div>`).join("")}
+    </details>`).join("");
+
+  reviewDlg.querySelector("#rev-title").textContent = `what ${title} did`;
+  reviewDlg.querySelector("#rev-body").innerHTML = head + body;
+  reviewDlg.showModal();
+}
+
+// Patches the card the detail dialog is open on. Goes through patchTask so
+// shelving and unshelving report what happened to the runner either way.
 async function patch(body) {
   if (!current) return;
-  try {
-    await api(`/v1/tasks/${current.id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
-    });
-  } catch (e) { tellUser("atrium", e.message); }
+  await patchTask(current.id, body);
   refresh();
 }
 
@@ -2440,7 +4010,7 @@ async function move(status) {
 
 async function attachTask(id) {
   try { openTerm(await api(`/v1/tasks/${id}`)); }
-  catch (e) { tellUser("atrium", e.message); }
+  catch (e) { toast("could not attach", e.message); }
 }
 
 function attachCurrent() {
@@ -2456,7 +4026,7 @@ async function killTask() {
     `<b>${esc(current.display_title)}</b> is killed. The card and its history stay.`,
     "stop it")) return;
   try { await api(`/v1/tasks/${current.id}/kill`, { method: "POST" }); }
-  catch (e) { tellUser("atrium", e.message); return; }
+  catch (e) { toast("could not terminate", e.message); return; }
   detail.close();
   refresh();
 }
@@ -2464,12 +4034,22 @@ async function killTask() {
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
 document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
 
-// While you are typing, repainting a list underneath you is hostile. Polling
-// keeps running in the background, but the repaint is held and a badge appears
-// saying there is something new. Clicking it, or leaving the field, applies it.
+// Holding the repaint while you type is TURNED OFF.
+//
+// It existed because a poll landing mid-edit could wipe a command you were
+// changing, and it cost a pill on screen saying the board was out of date. In
+// practice the edit survives, and the pill was confusing enough to be worse
+// than the problem.
+//
+// Left in place rather than deleted, because the failure it guarded against is
+// real and may come back with a longer poll or a slower machine. Set this to
+// true to bring it back.
+const HOLD_WHILE_TYPING = false;
+
 let heldUpdate = false;
 
 function isEditing() {
+  if (!HOLD_WHILE_TYPING) return false;
   const el = document.activeElement;
   if (el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && el.type !== "range"))
       && !el.closest("dialog")) {
@@ -2539,10 +4119,10 @@ async function refresh() {
   });
 
   api("/v1/health").then(h => {
-    const el = document.getElementById("wedge");
-    el.style.display = h.wedged ? "flex" : "none";
-    if (h.wedged) {
-      document.getElementById("wedge-t").innerHTML =
+    const el = document.getElementById("halted");
+    el.style.display = h.halted ? "flex" : "none";
+    if (h.halted) {
+      document.getElementById("halt-t").innerHTML =
         `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
     }
   }).catch(() => {});
@@ -2554,7 +4134,7 @@ function connect() {
   const label = document.getElementById("conn-t");
   es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
-  ["task", "task-removed", "permission", "wedge"].forEach(k => es.addEventListener(k, refresh));
+  ["task", "task-removed", "permission", "halted"].forEach(k => es.addEventListener(k, refresh));
 }
 
 // ── terminal ────────────────────────────────────────────
@@ -2693,6 +4273,35 @@ function toggleTermSort() {
 }
 
 // The list of things worth attaching to, so switching is a click.
+// Right click a session in the list. Renaming is the one people reach for
+// most: a launched runner is named after its directory and a timestamp, which
+// says nothing about what it is doing.
+async function termMenu(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  const t = await api(`/v1/tasks/${id}`);
+  showMenu(e, [
+    { label: "rename…", act: () => renameTask(id, t.display_title) },
+    { label: "attach", act: () => attachTask(id) },
+    { sep: true },
+    { label: "what did it do?", act: () => { current = t; openReview(); } },
+    { label: "details…", act: () => openTask(id) },
+    { sep: true },
+    t.pid > 0 ? { label: "terminate", danger: true, act: () => killById(id) } : null
+  ].filter(Boolean));
+}
+
+// The name is an override, so it survives the runner reconnecting and
+// reporting its directory again.
+async function renameTask(id, currentName) {
+  const name = await askText("rename this session",
+    "Shown on the card and in the terminal list. Kept when the runner " +
+    "reconnects and reports its own name again.", currentName || "");
+  if (name === null) return;
+  await patchTask(id, { overrides: { title: name.trim() } });
+  refresh();
+}
+
 async function renderTermList() {
   let tasks = [];
   try { tasks = ((await api("/v1/tasks")).tasks || []).filter(t => t.supervised); } catch (e) { return; }
@@ -2716,9 +4325,12 @@ async function renderTermList() {
     ? toggle + tasks.map(t => `
         <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""} ${
           isWaiting(t) ? "attn" : ""}"
-             onclick="attachTask('${t.id}')">
+             onclick="attachTask('${t.id}')"
+             oncontextmenu="termMenu(event, '${t.id}')">
           <b>${esc(t.display_title)}</b>
           <span>${esc(t.worktree || "")}</span>
+          <span class="chip runner" data-runner="${esc(t.runner || "")}"
+            >${esc(t.runner || "?")}</span>
           <span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
           <span class="chip">${ago(t.idle_seconds)}</span>
         </div>`).join("")
@@ -2742,13 +4354,19 @@ function connectTerm(taskID) {
   };
   termSock.onclose = () => {
     if (term) term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
+    // The socket also closes when the runner exits, leaving a live-looking
+    // header over a dead terminal, with the session list saying there is
+    // nothing to attach to. The scrollback is kept, since it holds the exit
+    // and the resume id, but it stops claiming to be a session.
+    markTermDead();
   };
   termSock.onerror = () => {
     if (term) term.write("\r\n\x1b[38;5;203m[atrium] connection failed\x1b[0m\r\n");
   };
 
   term.onData(d => send({ t: "in", d }));
-  window.addEventListener("resize", onTermResize);
+  // Resize is handled once, globally, by the observers near measureShell.
+  // Adding a listener here leaked one per connect.
 }
 
 function send(msg) {
@@ -2768,13 +4386,74 @@ function onTermResize() {
 
 function sendSignal(s) { send({ t: "signal", s }); }
 
+// Asks the attached runner to quit.
+//
+// The keystrokes are the runner's own, set on its harness, because there is no
+// common answer: a shell takes `exit`, claude takes control-d twice, ollama and
+// codex take it once. Sending the wrong one leaves it running.
+async function exitTerm() {
+  if (!termTask) return;
+  const t = termTask;
+  if (!await confirmUser(`ask ${t.display_title} to exit?`,
+    "Sends whatever this runner is configured to quit on, then waits. " +
+    "If it ignores that, its terminal is closed and the process is stopped." +
+    "<br><br>Its card and history stay, in <b>finished</b>.", "ask it to exit")) return;
+  try { await api(`/v1/tasks/${t.id}/exit`, { method: "POST" }); }
+  catch (e) { toast("could not exit", e.message); return; }
+  toast("asked to exit", t.display_title);
+}
+
+// The runner is gone. Keeps the scrollback, drops every claim that it is live.
+function markTermDead() {
+  const pane = document.querySelector(".term-pane");
+  if (pane) pane.classList.add("dead");
+  const title = document.getElementById("t-title");
+  if (title && termTask) title.textContent = termTask.display_title + " (exited)";
+  // The pid is gone and the runner chip reads as running, so neither belongs.
+  const chips = document.getElementById("t-chips");
+  if (chips) chips.innerHTML = `<span class="chip warn">exited</span>`;
+  document.getElementById("term-perm").hidden = true;
+
+  // Asking a dead terminal to exit, or detaching from it, are both nonsense.
+  // Replaced with the one thing left to do: clear it away. Kept rather than
+  // cleared automatically, because the scrollback holds the exit and the
+  // resume id, and taking that off screen the instant it appears is worse than
+  // a pane you have to dismiss.
+  const bar = document.querySelector(".term-bar");
+  if (bar) {
+    bar.querySelectorAll("button").forEach(b => {
+      const keep = b.id === "t-copymode";
+      b.hidden = !keep;
+    });
+    if (!bar.querySelector(".t-close")) {
+      const close = document.createElement("button");
+      close.className = "go t-close";
+      close.textContent = "close";
+      close.title = "clear this away. its card and history stay on the board";
+      close.onclick = () => closeTerm();
+      bar.appendChild(close);
+    }
+  }
+  // Its card is dead now, so the board and the session list have to agree.
+  refresh();
+}
+
 function closeTerm(switching) {
-  window.removeEventListener("resize", onTermResize);
   if (termSock) { termSock.close(); termSock = null; }
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
   if (switching) return;
+  const pane = document.querySelector(".term-pane");
+  if (pane) pane.classList.remove("dead");
+  // Undo what markTermDead did to the bar, so the next attach gets its own
+  // buttons back rather than a stranded close.
+  const bar = document.querySelector(".term-bar");
+  if (bar) {
+    bar.querySelectorAll("button").forEach(b => { b.hidden = false; });
+    const stale = bar.querySelector(".t-close");
+    if (stale) stale.remove();
+  }
   document.getElementById("t-title").textContent = "nothing attached";
   document.getElementById("t-chips").innerHTML = "";
   document.getElementById("t-screen").innerHTML = "";
@@ -2801,9 +4480,9 @@ async function renderTermPerm() {
       <code>${esc(p.tool)}: ${esc(p.command)}</code>
     </div>
     <div class="actions">
-      <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve</button>
-      <button class="no" onclick="decideFromTerm('${p.id}','block')">block</button>
-      <button onclick="switchView('perms')">open in perms</button>
+      <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve once</button>
+      <button class="no" onclick="decideFromTerm('${p.id}','block')">block once</button>
+      <button onclick="switchView('perms')" title="to set a standing rule for this">open in perms</button>
     </div>`;
 }
 
@@ -2845,17 +4524,63 @@ async function renderRunners() {
         nothing is enabled. turn a runner on below, or add one.
       </div></div>`;
 
+  // Whether the command exists is the difference between a runner that works
+  // and one that fails on first use looking like atrium is broken. The daemon
+  // resolves it the same way launching does, so what this shows is what will
+  // actually run.
   document.getElementById("harness-list").innerHTML = `<div class="panel">` + allHarnesses.map(h => `
     <div class="row line">
       <span class="chip ${h.enabled ? "accent" : ""}">${h.enabled ? "on" : "off"}</span>
       <span class="tool">${esc(h.label)}</span>
       <code class="grow ell" title="${esc([h.cmd].concat(h.args || []).join(" "))}">${
         esc([h.cmd].concat(h.args || []).join(" "))}</code>
+      ${h.found
+        ? `<span class="by found" title="${esc(h.found)}">on PATH</span>`
+        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
-      <span class="by">${h.rules_source ? "imports " + esc(h.rules_source) : ""}</span>
-      <button onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
+      <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
+        onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
       <button onclick="editHarness('${esc(h.id)}')">edit</button>
     </div>`).join("") + `</div>`;
+
+  renderDiscovered();
+}
+
+// Runners this machine has that atrium is not set up to use. Offered rather
+// than added: what to run is a decision, and a row that appeared on its own is
+// a row you did not agree to.
+async function renderDiscovered() {
+  const host = document.getElementById("discovered");
+  if (!host) return;
+  let found = [];
+  try { found = (await api("/v1/harnesses/discover")).candidates || []; } catch (e) { return; }
+  if (!found.length) { host.innerHTML = ""; return; }
+
+  host.innerHTML = `<div class="panel">
+    <div class="empty" style="text-align:left">
+      found on this machine and not set up yet
+    </div>` + found.map(c => `
+    <div class="row line">
+      <span class="tool">${esc(c.label)}</span>
+      <code class="grow ell" title="${esc(c.found)}">${esc(c.found)}</code>
+      <button class="go" onclick='addDiscovered(${JSON.stringify(c).replace(/'/g, "&#39;")})'
+        >set it up</button>
+    </div>`).join("") + `</div>`;
+}
+
+// Opens the runner form pre-filled from what was found. The command and the
+// path are known; anything that was not is left empty with the reason shown,
+// since a guessed flag produces a runner that fails on first use.
+function addDiscovered(c) {
+  editHarness("");
+  document.getElementById("h-id").value = c.id;
+  document.getElementById("h-id").disabled = false;
+  document.getElementById("h-label").value = c.label;
+  document.getElementById("h-cmd").value = c.cmd;
+  document.getElementById("h-args").value = (c.args || []).join("\n");
+  document.getElementById("h-resume").value = (c.resume_args || []).join("\n");
+  document.getElementById("h-notes").value = c.confirm || "";
+  if (c.confirm) toast("needs confirming", c.confirm);
 }
 
 function linesToList(v) {
@@ -2951,7 +4676,10 @@ async function toggleHarness(id) {
 
 // Called with an id from the runners tab, or with nothing from the header's
 // new agent button, in which case you pick the runner here.
-async function openLaunch(id, resume, cwd) {
+// `ontoTask` starts onto a card that already exists, which is what resuming a
+// finished card means. Without it the runner would come back as a second card
+// and the history would be split across two.
+async function openLaunch(id, resume, cwd, ontoTask) {
   if (!allHarnesses.length) {
     try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) {}
   }
@@ -2968,32 +4696,188 @@ async function openLaunch(id, resume, cwd) {
   document.getElementById("l-harness").innerHTML = enabled.map(x =>
     `<option value="${esc(x.id)}"${x.id === h.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
 
-  launchTarget = { harness: h.id, resume: resume || "" };
+  launchTarget = { harness: h.id, resume: resume || "", task_id: ontoTask || "" };
   document.getElementById("l-heading").textContent =
     resume ? "resume " + (h.label || h.id) : picking ? "new agent" : "start " + (h.label || h.id);
   document.getElementById("l-cwd").value = cwd || h.cwd || "";
   document.getElementById("l-title").value = "";
   document.getElementById("l-why").value = "";
+
+  // Resuming is opt-out. Where there is a conversation to pick up, continuing
+  // it is nearly always the intent, and starting fresh by accident discards
+  // everything the session worked out.
+  const rf = document.getElementById("l-resume-field");
+  rf.hidden = !resume;
+  if (resume) {
+    document.getElementById("l-resume-on").checked = true;
+    document.getElementById("l-resume-note").textContent =
+      "unchecked, this starts a fresh conversation in the same directory.";
+  }
+
+  renderRecentDirs();
   document.getElementById("launch").showModal();
+  document.getElementById("l-cwd").focus();
+}
+
+// Directories that already have cards, most recently active first, so a launch
+// into somewhere used before is one click and browsing is left for new ones.
+async function renderRecentDirs() {
+  let tasks = [];
+  try { tasks = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  tasks.sort((a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0));
+
+  const seen = new Set();
+  const dirs = [];
+  for (const t of tasks) {
+    const d = t.worktree;
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    dirs.push(d);
+    if (dirs.length >= 6) break;
+  }
+  const host = document.getElementById("l-recent");
+  // The whole path, not the leaf. Three worktrees of the same repo all end in
+  // the same word, so a row of leaf names is a row of identical buttons.
+  host.innerHTML = dirs.map(d =>
+    `<button class="quickdir" data-path="${esc(d)}" title="${esc(d)}">${esc(d)}</button>`).join("");
+  // Same as the browser: HTML escaping does nothing about an apostrophe inside
+  // a JavaScript string literal.
+  host.querySelectorAll(".quickdir").forEach(b => b.onclick = () => {
+    document.getElementById("l-cwd").value = b.dataset.path;
+  });
 }
 
 async function doLaunch() {
   if (!launchTarget) return;
   const picker = document.getElementById("l-harness");
+  const resumeOff = !document.getElementById("l-resume-field").hidden &&
+    !document.getElementById("l-resume-on").checked;
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
+    // No resume id means no resume arguments, so the daemon starts fresh.
+    resume: resumeOff ? "" : launchTarget.resume,
     cwd: document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim()
   });
+  let task;
   try {
-    await api("/v1/launch", {
+    task = await api("/v1/launch", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
     });
-  } catch (e) { tellUser("atrium", e.message); return; }
+  } catch (e) { tellUser("could not start it", e.message); return; }
   document.getElementById("launch").close();
+
+  // Straight to the terminal you just started. Landing on the board instead
+  // means finding the new card and clicking attach, which is two steps to get
+  // where you were already going.
+  if (task && task.supervised) {
+    switchView("terms");
+    openTerm(task);
+    return;
+  }
   switchView("board");
 }
+
+// Publishes the real height of everything above the view, as --shell.
+//
+// The terminal has to reach the bottom of the window, and the header is not a
+// fixed height: the nav wraps to a second row on a narrow window and the font
+// scales with zoom. A hardcoded calc() leaves a gap at one size and overflows
+// at another.
+function measureShell() {
+  const header = document.querySelector("header");
+  const main = document.querySelector("main");
+  if (!header || !main) return;
+  const pad = parseFloat(getComputedStyle(main).paddingTop) || 0;
+  document.documentElement.style.setProperty(
+    "--shell", (header.offsetHeight + pad * 2) + "px");
+}
+measureShell();
+addEventListener("resize", () => { measureShell(); onTermResize(); });
+// The header changes height when a badge appears or the nav wraps, neither of
+// which fires a resize.
+if (window.ResizeObserver) {
+  const header = document.querySelector("header");
+  if (header) {
+    new ResizeObserver(() => { measureShell(); onTermResize(); }).observe(header);
+  }
+  // The pane itself, so switching views or opening a permission strip inside
+  // it re-fits without waiting for a window resize that will never come.
+  const screen = document.getElementById("t-screen");
+  if (screen) new ResizeObserver(() => onTermResize()).observe(screen);
+}
+
+// ── directory browser ───────────────────────────────────
+// Browses the DAEMON's filesystem. The browser's own picker reads whatever
+// machine the browser is on, so a board open on a phone would offer the phone's
+// folders to start a runner in.
+const browseDlg = document.getElementById("browse");
+let browseAt = { path: "", parent: "" };
+// Which field the chosen path goes back into, so one dialog serves both the
+// launch form and the runner form.
+let browseInto_ = "l-cwd";
+
+function openBrowse() { return browseInto("l-cwd"); }
+
+async function browseInto(fieldID) {
+  browseInto_ = fieldID;
+  // Start from whatever is already typed, so browse refines a path rather than
+  // throwing it away.
+  const from = (document.getElementById(fieldID).value || "").trim();
+  await browseTo(from);
+  browseDlg.showModal();
+}
+
+async function browseTo(path) {
+  let data;
+  try {
+    data = await api("/v1/browse" + (path ? "?path=" + encodeURIComponent(path) : ""));
+  } catch (e) {
+    // A path that no longer exists, or one the daemon cannot read. Fall back to
+    // the roots rather than leaving an empty dialog.
+    if (path) { await browseTo(""); return; }
+    tellUser("cannot browse", e.message);
+    return;
+  }
+  browseAt = { path: data.path || "", parent: data.parent || "" };
+  document.getElementById("b-path").textContent = data.path || "this machine";
+  document.getElementById("b-up").disabled = !data.path;
+  document.getElementById("b-use").disabled = !data.path;
+
+  const entries = data.entries || [];
+  const list = document.getElementById("b-list");
+  list.innerHTML = entries.length
+    ? entries.map(e => `
+        <button class="dir ${e.repo ? "repo" : ""}" data-path="${esc(e.path)}"
+          title="${esc(e.path)}">
+          <span class="ic">${e.repo ? "&#9679;" : "&#9656;"}</span>
+          <span class="nm">${esc(e.name)}</span>
+        </button>`).join("")
+    : `<div class="empty">nothing to open in here</div>`;
+  // The path goes in an attribute and comes back through the DOM, never through
+  // an inline handler: HTML escaping is not JavaScript escaping, and a
+  // directory named `it's mine` breaks out of a quoted string literal.
+  list.querySelectorAll(".dir").forEach(b =>
+    b.onclick = () => browseTo(b.dataset.path));
+}
+
+function browseUp() { browseTo(browseAt.parent); }
+
+function useBrowsed() {
+  if (!browseAt.path) return;
+  document.getElementById("l-cwd").value = browseAt.path;
+  browseDlg.close();
+}
+
+// Enter starts the runner from any field in the launch form.
+document.getElementById("launch").addEventListener("keydown", e => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  const t = e.target;
+  if (t && t.tagName === "TEXTAREA") return;
+  e.preventDefault();
+  doLaunch();
+});
 
 // ── dialogs ─────────────────────────────────────────────
 // The browser's own confirm, alert and prompt are the wrong furniture in an

@@ -41,14 +41,14 @@ func newRoot() *cobra.Command {
 			"to disk. It exposes the state via a CLI table, a tail-able event stream, and an MCP server.",
 	}
 	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon(),
-		newJoin(), newLeave())
+		newJoin(), newLeave(), newStop(), newLaunch())
 	return root
 }
 
 // ── daemon ──────────────────────────────────────────────────────────────────
 
 func newDaemon() *cobra.Command {
-	var agentAddr, humanAddr, dbPath string
+	var agentAddr, humanAddr, dbPath, shutdownToken string
 	var timeoutSec int
 	var withTUI bool
 	c := &cobra.Command{
@@ -59,10 +59,11 @@ func newDaemon() *cobra.Command {
 			"address. State is durable, so restarting no longer wipes what you were doing.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDaemon(cmd.Context(), daemon.Options{
-				AgentAddr:  agentAddr,
-				HumanAddr:  humanAddr,
-				DBPath:     dbPath,
-				LongPoll:   time.Duration(timeoutSec) * time.Second,
+				AgentAddr:     agentAddr,
+				HumanAddr:     humanAddr,
+				DBPath:        dbPath,
+				LongPoll:      time.Duration(timeoutSec) * time.Second,
+				ShutdownToken: shutdownToken,
 			}, withTUI)
 		},
 	}
@@ -71,6 +72,8 @@ func newDaemon() *cobra.Command {
 	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")
 	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "agent long-poll timeout in seconds")
 	c.Flags().BoolVar(&withTUI, "tui", false, "also attach the terminal UI in this process")
+	c.Flags().StringVar(&shutdownToken, "shutdown-token", "",
+		"require this token on POST /v1/shutdown (default: loopback only, no token accepted)")
 	return c
 }
 

@@ -1,9 +1,9 @@
 // Package api is atrium's human-facing surface: the JSON endpoints and SSE
 // stream that the TUI, the SPA, and any future app all consume.
 //
-// This listener is deliberately separate from the agent-facing one. When the
-// store wedges, the agent listener closes so runners park on connection-refused
-// and stop burning tokens, while this one stays up to explain what broke.
+// This listener is separate from the agent-facing one. When the store halts,
+// the agent listener closes so runners park on connection-refused and stop
+// burning tokens, while this one stays up to explain what broke.
 package api
 
 import (
@@ -49,11 +49,23 @@ type Server struct {
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
+	// Shutdown winds the daemon down. Supplied by the daemon, which is the only
+	// thing that can stop itself and owns the access rules for doing so.
+	Shutdown http.HandlerFunc
+	// Shelve stops the runner behind a card being put down. The card and its
+	// resume id stay, so the work is paused rather than ended.
+	Shelve func(taskID string) error
+	// StopRunner asks a runner to exit the way its harness says to, rather
+	// than killing it. Supplied by the daemon, which owns the terminal.
+	StopRunner func(taskID string) error
+	// Unshelve starts it again from where the conversation left off. Returns
+	// whether it started, and why not when it did not, so the board can say so.
+	Unshelve func(taskID string) (bool, string, error)
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
 // never asks again.
-func (s *Server) forever(permID, decision, reason, prefix string) error {
+func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 	p, err := s.st.GetPermission(permID)
 	if err != nil {
 		return err
@@ -61,8 +73,14 @@ func (s *Server) forever(permID, decision, reason, prefix string) error {
 	if prefix == "" {
 		prefix = store.DefaultPrefix(p.Tool, p.Command)
 	}
-	if _, err := s.st.AddRule(p.Tool, prefix, decision, reason, ""); err != nil {
-		return err
+	var addErr error
+	if kind == store.KindPath {
+		_, addErr = s.st.AddPathRule(p.Tool, prefix, decision, reason, "")
+	} else {
+		_, addErr = s.st.AddRule(p.Tool, prefix, decision, reason, "")
+	}
+	if addErr != nil {
+		return addErr
 	}
 	// Recorded against the request so the audit log shows the rule at the
 	// moment it was agreed to, not just its existence afterwards.
@@ -86,22 +104,32 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
+	mux.HandleFunc("GET /v1/browse", s.browse)
+	if s.Shutdown != nil {
+		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
+	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
+	mux.HandleFunc("GET /v1/tasks/{id}/review", s.reviewTask)
 	mux.HandleFunc("POST /v1/tasks/{id}/prompt", s.promptTask)
 	mux.HandleFunc("GET /v1/waiting", s.waiting)
 	mux.HandleFunc("GET /v1/permissions", s.listPermissions)
 	mux.HandleFunc("POST /v1/permissions/{id}/decide", s.decidePermission)
 	mux.HandleFunc("GET /v1/permissions/history", s.permissionHistory)
 	mux.HandleFunc("GET /v1/rules", s.listRules)
+	mux.HandleFunc("POST /v1/rules", s.addRule)
 	mux.HandleFunc("DELETE /v1/rules/{id}", s.deleteRule)
 	mux.HandleFunc("GET /v1/rules/export", s.exportRules)
 	mux.HandleFunc("POST /v1/rules/import", s.importRules)
 	mux.HandleFunc("GET /v1/rules/preview-claude", s.previewClaudeRules)
 	mux.HandleFunc("GET /v1/harnesses", s.listHarnesses)
+	mux.HandleFunc("GET /v1/harnesses/discover", s.discoverRunners)
 	mux.HandleFunc("PUT /v1/harnesses/{id}", s.saveHarness)
 	mux.HandleFunc("DELETE /v1/harnesses/{id}", s.deleteHarness)
 	mux.HandleFunc("POST /v1/launch", s.launch)
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
+	if s.StopRunner != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/exit", s.exitRunner)
+	}
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
 	}
@@ -125,14 +153,14 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]string{"error": err.Error()})
 }
 
-// fail maps a store error to a response. A wedged store is reported as 503
-// with its cause, because this listener exists to explain the wedge.
+// fail maps a store error to a response. A halted store is reported as 503
+// with its cause, since explaining that is what this listener is for.
 func (s *Server) fail(w http.ResponseWriter, err error) {
-	if wedged, cause := s.st.Wedged(); wedged {
+	if halted, cause := s.st.Halted(); halted {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error":  "atrium is wedged and will not recover without a restart",
+			"error":  "atrium is halted and will not recover without a restart",
 			"cause":  fmt.Sprint(cause),
-			"wedged": true,
+			"halted": true,
 		})
 		return
 	}
@@ -140,9 +168,9 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	wedged, cause := s.st.Wedged()
-	body := map[string]any{"ok": !wedged, "wedged": wedged}
-	if wedged {
+	halted, cause := s.st.Halted()
+	body := map[string]any{"ok": !halted, "halted": halted}
+	if halted {
 		body["cause"] = fmt.Sprint(cause)
 	}
 	writeJSON(w, http.StatusOK, body)
@@ -162,11 +190,20 @@ type view struct {
 	// window mode launch is not supervised, so offering attach on it would be
 	// a button that cannot work.
 	Supervised bool `json:"supervised"`
+	// Activity is what the runner is doing right now, as opposed to what it
+	// needs. Absent when atrium has heard nothing recently, which is the case
+	// for a runner with no hooks and after a daemon restart. See
+	// docs/activity-design.md.
+	Activity any `json:"activity,omitempty"`
 }
 
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
 // daemon, since the supervisor lives there.
 var IsSupervised func(taskID string) bool
+
+// ActivityOf returns a task's live activity, or nil. Supplied by the daemon,
+// since the activity is held in memory there rather than in the store.
+var ActivityOf func(taskID string) any
 
 func toView(t *store.Task) view {
 	v := view{
@@ -177,6 +214,9 @@ func toView(t *store.Task) view {
 	}
 	if IsSupervised != nil {
 		v.Supervised = IsSupervised(t.ID)
+	}
+	if ActivityOf != nil {
+		v.Activity = ActivityOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -223,11 +263,18 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toView(t))
 }
 
+// autoModeReason answers a request already waiting when auto mode is switched
+// on. Named, because "approved" alone does not separate a human clicking from a
+// mode change sweeping the queue.
+const autoModeReason = "auto mode was switched on, so this was approved without being asked"
+
 type patchBody struct {
 	Status    *string           `json:"status"`
 	Why       *string           `json:"why"`
 	Rank      *float64          `json:"rank"`
 	Overrides map[string]string `json:"overrides"`
+	// AutoApprove turns auto mode on or off for this session.
+	AutoApprove *bool `json:"auto_approve"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +285,11 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cancelled := 0
+	// Whether unshelving started the runner again, and why not when it did not.
+	// Returned to the caller so the board can say so rather than leaving the
+	// operator to notice nothing happened.
+	resumed := false
+	resumeNote := ""
 	if body.Status != nil {
 		// Answer anything outstanding before the card moves. A request left
 		// pending on a card that is no longer waiting keeps its agent frozen
@@ -255,9 +307,34 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			}
 			cancelled = n
 		}
+		// Shelving stops the runner. The card, its history and its resume id
+		// stay, so unshelving starts the same conversation again. Before the
+		// status changes, or the runner's own exit would race it and land the
+		// card in dead.
+		if *body.Status == store.StatusShelved && s.Shelve != nil {
+			if err := s.Shelve(id); err != nil {
+				s.fail(w, err)
+				return
+			}
+		}
+
+		was, _ := s.st.Get(id)
 		if err := s.st.SetStatus(id, *body.Status); err != nil {
 			s.fail(w, err)
 			return
+		}
+
+		// Coming back off the shelf starts the runner again. After the status
+		// change, so a relaunch that fails leaves the card where the operator
+		// asked for it rather than stuck in shelved.
+		if was != nil && was.Status == store.StatusShelved &&
+			*body.Status != store.StatusShelved && s.Unshelve != nil {
+			started, why, err := s.Unshelve(id)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			resumed, resumeNote = started, why
 		}
 	}
 	if body.Why != nil {
@@ -270,6 +347,27 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.SetRank(id, *body.Rank); err != nil {
 			s.fail(w, err)
 			return
+		}
+	}
+	if body.AutoApprove != nil {
+		if err := s.st.SetAutoApprove(id, *body.AutoApprove); err != nil {
+			s.fail(w, err)
+			return
+		}
+		// Turning it on has to answer what is already waiting, or the session
+		// stays frozen behind a question nobody will now be asked.
+		if *body.AutoApprove && s.Decide != nil {
+			pending, err := s.st.PendingForTask(id)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			for _, p := range pending {
+				if _, err := s.Decide(p.ID, "approve", autoModeReason, ""); err != nil {
+					s.fail(w, err)
+					return
+				}
+			}
 		}
 	}
 	if body.Overrides != nil {
@@ -288,7 +386,10 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	if cancelled > 0 {
 		s.Broadcast("permission", map[string]any{"cancelled": cancelled, "task": id})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"task": out, "cancelled": cancelled})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task": out, "cancelled": cancelled,
+		"resumed": resumed, "resume_note": resumeNote,
+	})
 }
 
 func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
@@ -301,10 +402,8 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// pruneTasks clears out finished cards in one go.
-//
-// Done and dead only. A shelved card is something to come back to, so a sweep
-// never touches one no matter how long it has sat there.
+// pruneTasks clears out finished cards in one go. Done and dead only: a sweep
+// never touches a shelved card, however long it has sat there.
 func (s *Server) pruneTasks(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		// OlderThanHours defaults to now, meaning every finished card goes.
@@ -338,6 +437,19 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
+// reviewTask answers "what did this session actually do".
+//
+// The counterpart to auto mode: it folds repeats, groups by tool, and puts the
+// decisions nobody saw at the top.
+func (s *Server) reviewTask(w http.ResponseWriter, r *http.Request) {
+	rev, err := s.st.ReviewTask(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rev)
+}
+
 func (s *Server) promptTask(w http.ResponseWriter, r *http.Request) {
 	if s.Prompt == nil {
 		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no agent transport wired"))
@@ -357,13 +469,50 @@ func (s *Server) promptTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// permView is a request with the session that made it named.
+//
+// A permission carries a task id, which tells a reader nothing. With several
+// sessions running, the same command means different things from the one
+// working on the parser and the one deploying.
+type permView struct {
+	*store.Permission
+	Agent    string `json:"agent"`
+	Worktree string `json:"worktree,omitempty"`
+}
+
+// namePermissions attaches the asking session to each request.
+//
+// One pass over the tasks rather than a lookup per permission: the decisions
+// log runs to hundreds of rows and this paints it.
+func (s *Server) namePermissions(perms []*store.Permission) []permView {
+	out := make([]permView, 0, len(perms))
+	if len(perms) == 0 {
+		return out
+	}
+	byID := map[string]*store.Task{}
+	if tasks, err := s.st.List(); err == nil {
+		for _, t := range tasks {
+			byID[t.ID] = t
+		}
+	}
+	for _, p := range perms {
+		v := permView{Permission: p}
+		if t := byID[p.TaskID]; t != nil {
+			v.Agent = t.DisplayTitle()
+			v.Worktree = t.Worktree
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
 	perms, err := s.st.PendingPermissions()
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"permissions": perms})
+	writeJSON(w, http.StatusOK, map[string]any{"permissions": s.namePermissions(perms)})
 }
 
 func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
@@ -373,6 +522,10 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		Forever  bool   `json:"forever"`
 		Prefix   string `json:"prefix"`
 		Command  string `json:"command"`
+		// Kind is how Prefix should be read: a command shape, or a folder that
+		// covers everything inside it. Empty means command, which is what
+		// every caller sent before folders existed.
+		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -385,11 +538,12 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 	// The rule is written before the decision so a crash in between leaves the
 	// request pending rather than leaving a rule nobody agreed to.
 	if body.Forever {
-		if err := s.forever(r.PathValue("id"), body.Decision, body.Reason, body.Prefix); err != nil {
+		if err := s.forever(r.PathValue("id"), body.Decision, body.Reason,
+			body.Prefix, body.Kind); err != nil {
 			// A rejected pattern is the caller's problem, not a server fault,
-			// so it must not be reported as one. Only a wedged store gets to
+			// so it must not be reported as one. Only a halted store gets to
 			// take the 5xx path here.
-			if wedged, _ := s.st.Wedged(); wedged {
+			if halted, _ := s.st.Halted(); halted {
 				s.fail(w, err)
 				return
 			}
@@ -440,7 +594,60 @@ func (s *Server) permissionHistory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"permissions": perms})
+	writeJSON(w, http.StatusOK, map[string]any{"permissions": s.namePermissions(perms)})
+}
+
+// addRule writes a standing answer by hand.
+//
+// A rule could previously only be born from a request just read, through always
+// or never. That misses the case where the answer is already known: "this tool
+// may work under this folder". Waiting to be asked once per command shape so
+// you can press always is not a workflow.
+func (s *Server) addRule(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Tool     string `json:"tool"`
+		Prefix   string `json:"prefix"`
+		Decision string `json:"decision"`
+		Reason   string `json:"reason"`
+		// Scope narrows a rule to one worktree. Empty means every session.
+		//
+		// It changes which requests a rule is even considered for, so a caller
+		// that omits it gets a rule that applies everywhere. That is the right
+		// default for a hand-written rule, and it is stated here because
+		// getting it wrong silently produces a rule that never fires.
+		Scope string `json:"scope"`
+		// Kind is "command" (a prefix or glob) or "path" (a directory).
+		Kind string `json:"kind"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(body.Tool) == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("a rule needs a tool"))
+		return
+	}
+	if body.Decision != "approve" && body.Decision != "block" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("decision must be approve or block"))
+		return
+	}
+
+	var (
+		rule *store.Rule
+		err  error
+	)
+	if body.Kind == store.KindPath {
+		rule, err = s.st.AddPathRule(body.Tool, body.Prefix, body.Decision, body.Reason, body.Scope)
+	} else {
+		rule, err = s.st.AddRule(body.Tool, body.Prefix, body.Decision, body.Reason, body.Scope)
+	}
+	if err != nil {
+		// A refused pattern is the caller's to fix, not a server fault.
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	s.Broadcast("rule", rule)
+	writeJSON(w, http.StatusOK, rule)
 }
 
 func (s *Server) listRules(w http.ResponseWriter, r *http.Request) {
@@ -565,15 +772,6 @@ func (s *Server) importRules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
-	hs, err := s.st.Harnesses()
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"harnesses": hs})
-}
-
 func (s *Server) saveHarness(w http.ResponseWriter, r *http.Request) {
 	var h store.Harness
 	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
@@ -583,7 +781,7 @@ func (s *Server) saveHarness(w http.ResponseWriter, r *http.Request) {
 	h.ID = r.PathValue("id")
 	saved, err := s.st.SaveHarness(h)
 	if err != nil {
-		if wedged, _ := s.st.Wedged(); wedged {
+		if halted, _ := s.st.Halted(); halted {
 			s.fail(w, err)
 			return
 		}
@@ -630,6 +828,16 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Kill(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// exitRunner asks a runner to quit the way its own harness says to, rather
+// than killing it. `kill` remains for when asking does not work.
+func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
+	if err := s.StopRunner(r.PathValue("id")); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}

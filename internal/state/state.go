@@ -3,7 +3,7 @@
 // Two data sources:
 //   - <WORKTREE_ROOT>\sessions\*.json : one JSON per registered session, written by the gwt SessionStart hook
 //   - <WORKTREE_ROOT>\watch\state.log : append-only event log written by the set-session-state hook on every
-//                                        thinking/idle/needs-input transition
+//     thinking/idle/needs-input transition
 package state
 
 import (
@@ -177,7 +177,9 @@ func TailEvents() ([]Event, error) {
 }
 
 // parseEvent parses a single line in the form
-//   <iso-ts>  <state>  <branch>  @ <path>
+//
+//	<iso-ts>  <state>  <branch>  @ <path>
+//
 // returning (zero, false) on a malformed line.
 func parseEvent(line string) (Event, bool) {
 	at := strings.LastIndex(line, " @ ")

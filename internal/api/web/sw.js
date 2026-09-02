@@ -1,35 +1,54 @@
 // Service worker for atrium.
 //
-// It exists for one reason: a plain `new Notification(...)` cannot carry
-// buttons. Only a notification shown through a service worker registration can,
-// and only the worker can act on a button press. That also means the buttons
-// still work when no atrium tab is open at all, because the worker runs without
-// one.
+// A plain `new Notification(...)` cannot carry buttons. Only a notification
+// shown through a service worker registration can, and only the worker can act
+// on a press, so the buttons work with no atrium tab open.
 //
-// Chrome on Windows renders at most two action buttons, so the pair is
-// approve and block. Anything richer, editing the command or setting a rule,
-// needs the page, so clicking the notification body opens it.
+// Chrome on Windows renders at most two action buttons: approve and block.
+// Editing the command or setting a rule needs the page, so clicking the body
+// opens it.
 
 self.addEventListener("install", () => self.skipWaiting())
-self.addEventListener("activate", event => event.waitUntil(self.clients.claim()))
+// Activation claims open pages, and sweeps: a worker killed with notifications
+// on screen leaves overdue ones behind.
+self.addEventListener("activate", event => event.waitUntil(
+  Promise.all([self.clients.claim(), sweepExpired()])))
 
 // The page hands over what to show, since the worker has no view of state.
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-// Takes a notification down once its time is up. waitUntil keeps the worker
-// alive while this runs, but a browser may still shut the worker down first,
-// so the page reaps expired notifications as well.
-async function expire(tag, ms) {
+// A service worker can be killed at any time, and `waitUntil` only delays that.
+// A worker killed mid-sleep takes its timer with it, and on Windows the
+// notification then stays in the action centre until dismissed by hand.
+//
+// So each notification carries the wall-clock time it should be gone by, and
+// every event that wakes the worker sweeps whatever is overdue: a new
+// notification, a click, activation.
+
+// sweepExpired closes every notification whose time has passed.
+async function sweepExpired() {
+  const now = Date.now()
+  const list = await self.registration.getNotifications()
+  for (const n of list) {
+    const at = n.data && n.data.expireAt
+    if (at && now >= at) n.close()
+  }
+}
+
+// expireLater closes on time when the worker survives that long, rather than
+// waiting for the next event to sweep.
+async function expireLater(ms) {
   await sleep(ms)
-  const list = await self.registration.getNotifications({ tag })
-  list.forEach(n => n.close())
+  await sweepExpired()
 }
 
 self.addEventListener("message", event => {
   const m = event.data || {}
   if (m.type !== "notify") return
+  event.waitUntil(sweepExpired())
+
   const expireMs = Number(m.expireMs) || 0
-  if (expireMs > 0) event.waitUntil(expire(m.tag || "atrium", expireMs))
+  if (expireMs > 0) event.waitUntil(expireLater(expireMs))
   event.waitUntil(self.registration.showNotification(m.title, {
     body: m.body || "",
     icon: m.icon,
@@ -40,10 +59,15 @@ self.addEventListener("message", event => {
     silent: true,
     data: {
       permId: m.permId || "", goTo: m.goTo || "",
-      origin: m.origin || self.location.origin, icon: m.icon
+      origin: m.origin || self.location.origin, icon: m.icon,
+      // Wall clock, not a duration, so a sweep can decide correctly no matter
+      // how long the worker was dead in between.
+      expireAt: expireMs > 0 ? Date.now() + expireMs : 0
     },
     actions: m.permId
-      ? [{ action: "approve", title: "approve" }, { action: "block", title: "block" }]
+      // "once", matching the board, since neither button sets a standing rule.
+      // A rule needs the scope line, which only the page has.
+      ? [{ action: "approve", title: "approve once" }, { action: "block", title: "block once" }]
       : []
   }))
 })
@@ -85,6 +109,7 @@ self.addEventListener("notificationclick", event => {
   const data = event.notification.data || {}
   const origin = data.origin || self.location.origin
   event.notification.close()
+  event.waitUntil(sweepExpired())
 
   if (event.action && data.permId) {
     const tag = "atrium-conflict-" + data.permId

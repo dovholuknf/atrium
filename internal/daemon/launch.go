@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,9 +21,12 @@ type LaunchRequest struct {
 	Title   string `json:"title"`
 	Why     string `json:"why"`
 	// Resume picks a conversation back up instead of starting a new one. The
-	// value is the runner's own session id, which for claude comes off the
-	// card that adopted it from the gwt ledger.
+	// value is the runner's own session id, recorded by the session hooks.
 	Resume string `json:"resume"`
+	// TaskID starts a runner onto a card that already exists, instead of making
+	// one. Unshelving uses it: the card, its history and its resume id are the
+	// reason to pick the work back up, so a second card would defeat the point.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -111,12 +115,32 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	// will report when it first does something. Without this the runner would
 	// announce itself as the directory leaf and land on whichever card already
 	// claimed that name, which on a repo with two sessions is the wrong one.
-	agentName := fmt.Sprintf("%s-%d", filepath.Base(cwd), time.Now().UnixNano()%100000)
-	task, _, err := d.st.Register(store.Observed{
-		WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID,
-	})
-	if err != nil {
-		return nil, err
+	var (
+		task      *store.Task
+		agentName string
+	)
+	if req.TaskID != "" {
+		// Onto a card that already exists. Its wire name is kept, so the
+		// resumed session reports back to the same card rather than splitting
+		// the work in two.
+		t, err := d.st.Get(req.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("no card %s to start onto: %w", req.TaskID, err)
+		}
+		task = t
+		agentName = t.WireName
+	}
+	if agentName == "" {
+		agentName = fmt.Sprintf("%s-%d", filepath.Base(cwd), time.Now().UnixNano()%100000)
+	}
+	if task == nil {
+		t, _, err := d.st.Register(store.Observed{
+			WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		task = t
 	}
 
 	env := childEnv(h.Env, map[string]string{
@@ -131,22 +155,37 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// with the daemon rather than outliving it the way window mode does.
 		pid, err := d.spawnPTY(task.ID, h.Cmd, args, cwd, env)
 		if err != nil {
+			// The card was created before the process, so a failure to start
+			// has to move it. Left in `running` it describes a process that
+			// never existed.
+			d.launchFailed(task.ID, err.Error())
 			return nil, err
 		}
 		via = "pty"
-		// Recording the pid is the point: terminate and the liveness reaper
-		// both key off it, and a window mode launch never has one.
+		// Terminate and the liveness reaper both key off the pid. A window mode
+		// launch never has one.
 		if _, _, err := d.st.Register(store.Observed{
 			WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID, PID: pid,
 		}); err != nil {
 			return nil, err
 		}
 	} else {
-		argv := expandTemplate(TerminalTemplate, cwd, title, h.Cmd, args)
+		// Resolve the command before handing it to a terminal, for the same
+		// reason pty mode does: a tool installed through npm is a `.cmd`, and
+		// neither Windows Terminal nor CreateProcess can start one. Without
+		// this, `codex` reaches wt.exe as a bare name and comes back as
+		// 0x80070002, "the system cannot find the file specified", about a
+		// file that is on PATH.
+		cmdName, cmdArgs := h.Cmd, args
+		if resolved, err := exec.LookPath(cmdName); err == nil {
+			cmdName, cmdArgs = viaShellIfScript(resolved, args)
+		}
+		argv := expandTemplate(TerminalTemplate, cwd, title, cmdName, cmdArgs)
 		cmd := exec.Command(argv[0], argv[1:]...)
 		cmd.Dir = cwd
 		cmd.Env = env
 		if err := cmd.Start(); err != nil {
+			d.launchFailed(task.ID, err.Error())
 			return nil, fmt.Errorf("could not start %s: %w", h.Label, err)
 		}
 		// The terminal wrapper exits as soon as it has handed off, so reap it
@@ -176,8 +215,59 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}); err != nil {
 		return nil, err
 	}
+
+	// Starting is not running. A command on PATH still falls over on a bad
+	// flag, a missing key or a broken config, and does so within a moment.
+	if out, alive := d.settleFor(created.ID, settleWindow); !alive {
+		d.launchFailed(created.ID, out)
+		msg := fmt.Sprintf("%s exited as soon as it started", h.Label)
+		if out != "" {
+			msg += ":\n" + out
+		}
+		return nil, errors.New(msg)
+	}
+
 	d.publishTask(created.ID)
 	return d.st.Get(created.ID)
+}
+
+// launchFailed moves a card whose runner never got going, and records why.
+//
+// The reason goes on the card, not only in the event log: the board shows the
+// card, and a dead card with no explanation sends you to a terminal to find
+// out.
+func (d *Daemon) launchFailed(taskID, reason string) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "the runner exited immediately and said nothing"
+	}
+	if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
+		"by": "launch", "detected": "never started", "output": reason,
+	}); err != nil {
+		log.Printf("[atrium] record launch failure for %s: %v", taskID, err)
+	}
+	// Prefixed so it reads as atrium reporting rather than as something typed
+	// into the why field.
+	if err := d.st.SetWhy(taskID, "failed to start: "+firstLine(reason)); err != nil {
+		log.Printf("[atrium] note launch failure for %s: %v", taskID, err)
+	}
+	if err := d.st.SetStatus(taskID, store.StatusDead); err != nil {
+		log.Printf("[atrium] status after launch failure for %s: %v", taskID, err)
+	}
+	log.Printf("[atrium] %s never started: %s", taskID, firstLine(reason))
+	d.publishTask(taskID)
+}
+
+// firstLine keeps a card's one line summary to one line.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		s = s[:200] + "..."
+	}
+	return s
 }
 
 // inheritedTaint names environment variables that must not reach a launched
@@ -225,8 +315,8 @@ func childEnv(harnessEnv map[string]string, atrium map[string]string) []string {
 //
 // This only works when atrium knows the runner's own process id. A window-mode
 // launch does not qualify: the terminal wrapper hands the session off and
-// exits, so its pid belongs to a process that is already gone. Owning the
-// process, which is what pty mode is for, is what makes killing reliable.
+// exits, so its pid belongs to a process that is already gone. Only pty mode
+// owns the process, and only an owned process can be stopped reliably.
 func (d *Daemon) Kill(taskID string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
@@ -236,18 +326,32 @@ func (d *Daemon) Kill(taskID string) error {
 		return errors.New("atrium does not know this runner's process. " +
 			"a window-mode launch is handed to the terminal and owns itself, so close it there")
 	}
+	// A process that is already gone is not a failure. The request was "make
+	// this stop running", and it is not running, so the card converges to dead
+	// and the caller is told it worked. Reporting an error here made asking to
+	// terminate an already-dead card produce a dialog and change nothing.
+	gone := false
 	proc, err := os.FindProcess(t.PID)
 	if err != nil {
-		return fmt.Errorf("process %d is gone", t.PID)
+		gone = true
+	} else if err := proc.Kill(); err != nil {
+		if !processAlive(t.PID) {
+			gone = true
+		} else {
+			return fmt.Errorf("could not stop process %d: %w", t.PID, err)
+		}
 	}
-	if err := proc.Kill(); err != nil {
-		return fmt.Errorf("could not stop process %d: %w", t.PID, err)
+
+	detected := "you"
+	if gone {
+		detected = "already gone"
 	}
 	if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
-		"pid": t.PID, "by": "you",
+		"pid": t.PID, "by": detected,
 	}); err != nil {
 		return err
 	}
+	d.act.forget(taskID)
 	if err := d.st.SetStatus(taskID, store.StatusDead); err != nil {
 		return err
 	}

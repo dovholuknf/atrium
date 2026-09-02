@@ -5,6 +5,40 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Cards say what they are doing.** A live badge: thinking, running `Bash`, three subagents, and how long it has
+  been at it. Fed by `POST /activity` from the tool hooks, and for free from `/permission` for gated sessions,
+  since a permission request IS a tool starting. Never stored: a stored activity is a lie the moment the daemon
+  restarts, and expires on its own after fifteen minutes of silence so a killed session stops claiming to be
+  busy. See `docs/activity-design.md`.
+- **Auto mode.** Per session: approve without asking, record everything. It does not override a `never` rule, a
+  shelved card, or a queued message, because it means "stop asking me new questions" and not "forget the answers
+  I already gave". Its counterpart is **what did it do?**, `GET /v1/tasks/{id}/review`: the decision log grouped
+  by tool, identical calls folded into one line with a count, and the ones nobody saw put first. Interruption
+  traded for review. See `docs/auto-mode.md`.
+- **Rules can cover a folder.** A new rule kind covering work inside a directory: either the command names an
+  absolute path inside it, or the session is working inside it and the command does not reach out. The second
+  half is what makes it useful, since commands are written relative to where the session is and `go test ./...`
+  names no path at all. Reaching out with an absolute path, or climbing out with `..`, still asks. This was
+  previously only expressible as a command glob that had to account for the quoting itself, and
+  `rm -f "C:/x/*"` silently fails against `rm -f "C:/x/y.db"` over the closing quote alone. Offered as a scope
+  on any pending request, and as **allow a folder** in the rules toolbar. `POST /v1/rules` writes one by hand,
+  which was not possible before: a rule could only be born from a request you had just read.
+- **Board cards can be dragged and right clicked.** Drop between two cards for a midpoint rank, so an insert
+  never renumbers the column; drop on a column to change status. Right click for open, attach, shelve, done,
+  auto mode, review, terminate and forget, each of which previously cost opening the detail dialog.
+- **Permission requests say who is asking.** With several sessions running, the same command means different
+  things from different agents. On the pending card, in the decisions log, in the search, and in the CSV export.
+- **Stopping is not killing.** `atrium stop` and `POST /v1/shutdown` reach the same wind-down that ctrl-c does:
+  event streams released, supervised runners given ten seconds, listeners closed in order. Killing the process
+  closes every pseudo terminal at once and takes the runners with it. Loopback only unless `--shutdown-token` is
+  set, so a kill switch cannot be reached from a network the daemon was never meant to be on.
+- **Resume ids are recorded.** Session hooks have always sent the harness's own session id and it was thrown
+  away. Stored on every session event now, which is what makes a runner that was stopped, terminated, or lost
+  with the daemon something to start again rather than something to lose.
+- **A directory picker that browses the right machine.** `GET /v1/browse` lists the daemon's filesystem, with
+  checkouts marked and sorted first. The browser's own picker reads whatever machine the browser is on, which is
+  the wrong answer the moment the board is open on a phone. The launch form also gained recent directories, a
+  resume checkbox that defaults to on, and enter to start.
 - **Notifications take themselves down.** Permission notifications were sticky so a blocked agent could not
   scroll away unnoticed, and sticky on Windows means they never leave. There is now an expiry, default 30
   seconds, set under the gear. Choosing "never, until answered" restores the old behaviour on purpose. The
@@ -14,19 +48,33 @@ section heading is just "what landed in this iteration."
   to one status and to those untouched for a given number of hours. A `clear` control sits in the done and dead
   column headers. Shelved is never swept, whatever it is asked, since shelving is the one act that says come
   back to this.
-- **Resume ids are recorded.** Session hooks have always sent the harness's own session id and it was thrown
-  away. It is now stored on every session event, which is what makes a runner that was stopped, terminated, or
-  lost with the daemon something to start again rather than something to lose.
 - **The command box fits the command.** It was two lines tall regardless of content, so a long command had to be
-  scrolled inside a small window before it could be approved. It now grows to what it holds, up to 45% of the
+  scrolled inside a small window before it could be approved. It now grows to what it holds, up to 80% of the
   viewport, then scrolls.
+- **The terminal fills the window.** Its height was a hardcoded `calc()` guess, which left a gap at one zoom
+  level and overflowed at another. The header is measured instead, and the pane re-fits when anything around it
+  changes size. An exited runner keeps its scrollback, since that holds the exit and the resume id, but stops
+  presenting as a live session.
+- **Runners installed as batch shims start.** `codex` and often `claude` resolve to a `.cmd` written by npm, and
+  CreateProcess cannot start a batch file. It reported 0x80070002, "The system cannot find the file specified",
+  for a file sitting on PATH, which sends you to look at PATH, permissions and the environment. `cmd /c` now
+  goes in front of a `.cmd` or `.bat`, and PowerShell in front of a `.ps1`.
+- **A launched runner has to prove it started.** The card was created before the process and nothing checked
+  afterwards, so a misconfigured runner left a card in `running` describing a process that never got off the
+  ground. A launch now waits two seconds, and a runner that falls over in that window puts its last terminal
+  output on the card as the reason.
+- **A new database is announced.** Opening the wrong path looks identical to every card and every rule having
+  vanished, and `WORKTREE_ROOT` unset once made a hundred and twenty five rules appear to be gone. The daemon
+  now says loudly when it created a database rather than found one.
+- **Permission requests carry a dedup key.** The hook sends one built from the session and the exact request, so
+  a retry after a daemon crash is recognised as the same question instead of being asked again.
 
 ## 2026-09-01 -- v2 prototype: durable state, a human-facing API, and a board
 
 First working slice of `docs/architecture-v2.md`. New subcommand `atrium daemon` runs the whole thing.
 `atrium hub` is untouched and still works exactly as before.
 
-- **The hub is no longer amnesiac.** This deliberately reverses the "restart equals reset" invariant that
+- **The hub is no longer amnesiac.** This reverses the "restart equals reset" invariant that
   `CLAUDE.md` and `docs/state-of-the-art.md` both declared. Restarting used to be the reset switch. It is now
   just a restart, and cards, history, and permission state survive it. The reversal is the entire point of v2:
   "how long has this been sitting" and "what was I even doing" cannot be answered from memory that dies with
@@ -34,12 +82,12 @@ First working slice of `docs/architecture-v2.md`. New subcommand `atrium daemon`
 - **`internal/store`**: SQLite via `modernc.org/sqlite` (pure Go, so no cgo and no cross-compile pain). Schema
   written to stay Postgres portable: text ULID-ish keys, RFC3339 text timestamps, `CHECK` instead of enums,
   TEXT instead of JSONB, `?` placeholders. Tables are `task`, `event`, `permission`, `launch_spec`.
-- **The wedge.** Storage failure is not a degraded mode. Open or migration failure means the daemon refuses to
-  start. `SQLITE_BUSY` is retried internally and never surfaces. Anything else wedges: the agent-facing
+- **The halt.** Storage failure is not a degraded mode. Open or migration failure means the daemon refuses to
+  start. `SQLITE_BUSY` is retried internally and never surfaces. Anything else halts: the agent-facing
   listener closes and stays closed, so runners see connection-refused and park on the backoff they already
   have, burning nothing. The process stays alive and the human-facing listener reports the cause.
 - **Two listeners.** Agents on `--addr` (default `:7777`, same as the hub). Humans on `--http` (default
-  `:7778`). Separate so a wedge can kill the agent side without blinding the board.
+  `:7778`). Separate so a halt can kill the agent side without blinding the board.
 - **Task model.** Cards, not agent names. `wire_name` is now an attribute, and pid is only a reconnect hint,
   so restarting a runner no longer splits one piece of work across two cards.
 - **Observed versus overrides.** Runner-reported fields refresh on every reconnect. Operator-set values live in
@@ -54,7 +102,7 @@ First working slice of `docs/architecture-v2.md`. New subcommand `atrium daemon`
 - **`rank`** orders cards within a column, with midpoint insertion so reordering never renumbers neighbours.
   The board sorts by rank, the stack sorts by wait time, on purpose.
 - **First tests in the repo.** Ten in `internal/store` covering reconnect identity, override survival, waiting
-  order, the permission dedup replay, rank placement, and the wedge refusing further work.
+  order, the permission dedup replay, rank placement, and the halt refusing further work.
 
 Known gaps in this slice: the TUI still consumes `*Hub` in process rather than the API, agents do not send a
 registration payload yet (so observed data is limited to the wire name), and nothing launches or supervises
@@ -222,7 +270,7 @@ runners.
     (5s -> 60s) on every transport failure. Stderr nag once per `ATRIUM_DISCONNECTED_LOG_INTERVAL` (default 10m).
   - LLM never sees an empty prompt. Long-poll timeouts are absorbed internally as `kind="keepalive"`, which the
     hub does NOT display.
-- MCP `ServerOptions.Instructions` carries the loop bootstrap so the model knows to call `submit` on first turn
+- MCP `ServerOptions.Instructions` holds the loop bootstrap so the model knows to call `submit` on first turn
   without re-pasting a long prompt.
 - Agent name defaults to the cwd leaf when `--name` isn't passed. Override per `.mcp.json` if needed.
 - Hub TUI commands: `@<agent> text`, `/agents`, `/perms`, `/approve [id]`, `/deny [id]`, `/help`. Plus `y`/`n`

@@ -18,8 +18,8 @@ import (
 // hook events, so both are free and both fire at exactly the right moment.
 //
 // SessionEnd is the more valuable half: it is the only reliable signal that a
-// session is over, which is what makes a card go dead on its own rather than
-// sitting in running forever.
+// session is over, so a card goes dead on its own rather than sitting in
+// running forever.
 
 // SessionEvent is what a session hook posts.
 type SessionEvent struct {
@@ -117,10 +117,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		return err
 	}
 
-	// A supervised runner dies when the daemon does, because the daemon owns its
-	// pseudo terminal. Recording the id the harness resumes from is what turns
-	// that from losing the conversation into restarting it, so it is stored on
-	// every event rather than only at start.
+	// A supervised runner dies with the daemon, which owns its pseudo terminal.
+	// The id the harness resumes from turns that into a restart rather than a
+	// loss, so it is stored on every event rather than only at start.
 	if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
 		return err
 	}
@@ -182,6 +181,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		log.Printf("[atrium] %s left", in.Agent)
 
 	case "end":
+		// Left behind, the last activity would have the card claiming to run a
+		// tool inside a process that has exited.
+		d.act.forget(task.ID)
 		if err := d.st.AppendEvent(task.ID, store.EventExited, map[string]any{
 			"by": "session hook", "source": in.Source,
 		}); err != nil {
@@ -199,8 +201,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}); err != nil {
 			return err
 		}
-		// Starting revives a card that had been marked dead, which is what a
-		// resume looks like from here.
+		// Starting revives a card marked dead, which is how a resume arrives.
 		if task.Status == store.StatusDead || task.Status == store.StatusBacklog {
 			if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
 				return err

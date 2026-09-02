@@ -14,12 +14,25 @@ import (
 // runner, nothing wakes its model, and a session that died in the night is
 // marked dead rather than sitting in running forever.
 //
-// Cards with no known pid are left alone. Not knowing is not the same as being
-// dead, and guessing would move work you are still doing.
+// A card with no known pid cannot be checked that way, so it gets the other
+// test: how long since anything at all was heard from it. A session that has
+// said nothing for hours is not running in any useful sense, and a `running`
+// column full of those is what makes the board untrustworthy.
+//
+// Either way the card only moves to dead. Any later hook event revives it, so
+// being wrong costs one status change rather than losing work.
 
 // ReapEvery is how often liveness is checked. The check is a syscall per card,
 // so this can be frequent without costing anything meaningful.
 const ReapEvery = 20 * time.Second
+
+// QuietAfter is how long a card with no known process id may go without a word
+// before it is treated as gone.
+//
+// Generous, because it is a guess where the pid check is a fact. Anything a
+// session does revives the card, so the cost of being early is a card that
+// flips back to running the moment it speaks.
+const QuietAfter = 3 * time.Hour
 
 func (d *Daemon) reapOnce() error {
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
@@ -27,7 +40,32 @@ func (d *Daemon) reapOnce() error {
 		return err
 	}
 	for _, t := range tasks {
-		if t.PID <= 0 || processAlive(t.PID) {
+		// No pid to ask about, so fall back to silence. A card waiting on a
+		// human is exempt: it is quiet because nobody has answered it, and
+		// marking it dead would discard the question.
+		if t.PID <= 0 {
+			if t.Status != store.StatusRunning {
+				continue
+			}
+			if time.Since(t.LastActivityAt) < QuietAfter {
+				continue
+			}
+			if err := d.st.AppendEvent(t.ID, store.EventExited, map[string]any{
+				"by": "reaper", "detected": "no contact and no process id to check",
+				"quiet_for": time.Since(t.LastActivityAt).Round(time.Minute).String(),
+			}); err != nil {
+				return err
+			}
+			if err := d.st.SetStatus(t.ID, store.StatusDead); err != nil {
+				return err
+			}
+			d.act.forget(t.ID)
+			log.Printf("[atrium] %s assumed gone: silent for %s and no pid to check",
+				t.DisplayTitle(), time.Since(t.LastActivityAt).Round(time.Minute))
+			d.publishTask(t.ID)
+			continue
+		}
+		if processAlive(t.PID) {
 			continue
 		}
 		if err := d.st.AppendEvent(t.ID, store.EventExited, map[string]any{
@@ -38,6 +76,8 @@ func (d *Daemon) reapOnce() error {
 		if err := d.st.SetStatus(t.ID, store.StatusDead); err != nil {
 			return err
 		}
+		// Nothing a gone process was doing is still true.
+		d.act.forget(t.ID)
 		log.Printf("[atrium] %s is dead: pid %d is gone", t.DisplayTitle(), t.PID)
 		d.publishTask(t.ID)
 	}

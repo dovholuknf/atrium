@@ -14,19 +14,28 @@ import (
 // resume, which is why adding a new one is configuration rather than a change
 // here.
 type Harness struct {
-	ID       string            `json:"id"`
-	Label    string            `json:"label"`
-	Enabled  bool              `json:"enabled"`
-	Cmd      string            `json:"cmd"`
-	Args     []string          `json:"args"`
-	Cwd      string            `json:"cwd"`
-	Env      map[string]string `json:"env"`
+	ID      string            `json:"id"`
+	Label   string            `json:"label"`
+	Enabled bool              `json:"enabled"`
+	Cmd     string            `json:"cmd"`
+	Args    []string          `json:"args"`
+	Cwd     string            `json:"cwd"`
+	Env     map[string]string `json:"env"`
 	// LaunchMode is "window" to open a real terminal, or "pty" for atrium to
 	// own the process and stream it to the browser.
 	LaunchMode string `json:"launch_mode"`
 	// ResumeArgs replaces Args when picking a conversation back up. {resume}
 	// is substituted with the runner's own session id.
 	ResumeArgs []string `json:"resume_args"`
+	// ExitKeys is what to send to ask this runner to exit, in order.
+	//
+	// There is no common answer: a shell takes `exit` and a newline, claude
+	// takes control-d twice, ollama and codex take it once. Sending the wrong
+	// one leaves the process running until its terminal is closed underneath
+	// it, which is what an exit button exists to avoid.
+	//
+	// Tokens, not bytes, so the field can be written by hand. See ExitBytes.
+	ExitKeys []string `json:"exit_keys"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -57,17 +66,19 @@ func DefaultHarnesses() []Harness {
 		{
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
 			LaunchMode: LaunchPTY, ResumeArgs: []string{"--resume", "{resume}"},
+			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			RulesSource: "claude", Sort: 10,
-			Notes:       "resume needs a session id, which only a runner that reports one can supply",
+			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
-			LaunchMode: LaunchPTY, Sort: 20,
-			Notes:      "confirm the command and any resume flag before enabling",
+			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
+			Notes: "confirm the command and any resume flag before enabling",
 		},
 		{
 			ID: "ollama", Label: "ollama", Enabled: false, Cmd: "ollama",
 			Args: []string{"run", "llama3"}, LaunchMode: LaunchPTY, Sort: 30,
+			ExitKeys:    []string{"ctrl-d"},
 			Notes: "set the model in args. ollama has no permission config to import",
 		},
 		{
@@ -80,13 +91,13 @@ func DefaultHarnesses() []Harness {
 
 func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error) {
 	var (
-		h                     Harness
-		args, env, resume     string
-		created               string
-		enabled               int
+		h                       Harness
+		args, env, resume, exit string
+		created                 string
+		enabled                 int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
-		&h.LaunchMode, &resume, &h.RulesSource, &h.Notes, &h.Sort, &created); err != nil {
+		&h.LaunchMode, &resume, &exit, &h.RulesSource, &h.Notes, &h.Sort, &created); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -94,6 +105,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(resume, "[]")), &h.ResumeArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(exit, "[]")), &h.ExitKeys); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(env, "{}")), &h.Env); err != nil {
@@ -114,7 +128,7 @@ func orDefault(s, def string) string {
 }
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
-	resume_args, rules_source, notes, sort, created_at`
+	resume_args, exit_keys, rules_source, notes, sort, created_at`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -176,6 +190,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	exit, err := json.Marshal(orEmptySlice(h.ExitKeys))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -203,21 +221,58 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			enabled = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
 				launch_mode = excluded.launch_mode, resume_args = excluded.resume_args,
+				exit_keys = excluded.exit_keys,
 				rules_source = excluded.rules_source, notes = excluded.notes,
 				sort = excluded.sort`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
-			h.LaunchMode, string(resume), h.RulesSource, h.Notes, h.Sort, created)
+			h.LaunchMode, string(resume), string(exit), h.RulesSource, h.Notes, h.Sort, created)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.Harness(h.ID)
+}
+
+// ExitBytes turns the configured exit tokens into what to write to a terminal.
+//
+// A token is either a control key by name or literal text to type. Names
+// rather than escape sequences, so the field is writable without knowing that
+// control-d is 0x04.
+//
+// Returns one entry per token, because the sequence matters: claude wants two
+// separate control-d presses, and sending them as one write is not the same
+// thing to a program reading a terminal.
+func (h *Harness) ExitBytes() [][]byte {
+	var out [][]byte
+	for _, k := range h.ExitKeys {
+		key := strings.ToLower(strings.TrimSpace(k))
+		switch key {
+		case "":
+			continue
+		case "enter", "return", "cr":
+			out = append(out, []byte("\r"))
+		case "ctrl-c", "^c":
+			out = append(out, []byte{0x03})
+		case "ctrl-d", "^d", "eof":
+			out = append(out, []byte{0x04})
+		case "ctrl-z", "^z":
+			out = append(out, []byte{0x1a})
+		case "esc", "escape":
+			out = append(out, []byte{0x1b})
+		default:
+			// Literal text. A shell's `exit` needs a newline after it, and
+			// expecting the operator to add "enter" as a second token would be
+			// a rule they discover by it not working.
+			out = append(out, []byte(k+"\r"))
+		}
+	}
+	return out
 }
 
 func orEmptySlice(v []string) []string {

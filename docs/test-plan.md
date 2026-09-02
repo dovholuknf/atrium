@@ -1,18 +1,22 @@
 # Atrium test plan
 
 Manual test scenarios for every shipped feature. Run end-to-end before tagging a build, after touching the
-hub / agent / TUI / hook code. No formal harness yet (Mode A is interactive); each scenario lists steps,
-expected behavior, and the most common failure mode.
+hub / agent / TUI / hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
+
+Sections A through F cover v1: the hub, the agent loop and the permission surface they share. Section G covers
+the daemon, which is where the work now happens.
 
 ## Pre-flight
 
 ```powershell
 cd <atrium-repo>
-go build -o build.claude\atrium.exe .\cmd\atrium
+go build -o build.claude\ .\...
 go vet ./...
+go test ./...
 ```
 
-Hard stop if build fails or vet flags anything.
+Hard stop if any of the three fails. Unlike v1, most of the daemon has real tests, so a red suite means stop
+rather than "check by hand".
 
 ## A. Mode A (hub + agent loop)
 
@@ -494,6 +498,119 @@ Connect an agent, let it idle for 90 seconds. Hub chat must show NOTHING new dur
 
 While typing a long prompt in the hub, Ctrl-C the hub (don't press Enter). Reopen. Agent state on the next
 reconnect is fine; conversation is empty (no persistence is intentional).
+
+## G. The daemon
+
+Most of this is covered by `go test ./...`. What is listed here is the part a test cannot see: whether the
+board is usable.
+
+Start with a throwaway database so nothing here touches real state:
+
+```powershell
+.\build.claude\atrium.exe daemon --addr :7877 --http :7878 --db $env:TEMP\atrium-test.db
+```
+
+### G1. Cards, columns and clearing
+
+**Steps**
+
+1. Open <http://localhost:7878>. Register a session, or start one from **+ new agent**.
+2. Move a card to done, another to dead, another to shelved.
+3. Press **clear** in the done column header, confirm.
+
+**Expect** the done column empties, dead and shelved are untouched. Press clear on dead: it empties, shelved
+still stands.
+
+**Failure mode** shelved cards disappearing. Shelving is a promise to come back; the store refuses to sweep
+one no matter what it is asked, so if this happens the guard has been bypassed rather than loosened.
+
+### G2. Live activity on a card
+
+**Steps**
+
+1. With the activity hooks wired (see `docs/backlog.md`), have a session run something slow.
+2. Watch its card.
+
+**Expect** a badge reading `running Bash` that breathes, with an age once it passes five seconds. A subagent
+count appears when the session spawns one. The badge is absent while the card is waiting, because the column
+already says that.
+
+**Expect after a daemon restart** every badge is gone. This is correct: the daemon does not know any more, and
+a card claiming to run a tool inside a process that no longer exists is worse than a card saying nothing.
+
+**Failure mode** a badge stuck on a session that died. It should expire after fifteen minutes on its own.
+
+### G3. Auto mode and the review
+
+**Steps**
+
+1. Open a card, press **auto mode**, confirm.
+2. Have that session make several tool calls, including some repeats of the same command.
+3. Press **what did it do?**
+
+**Expect** nothing was asked, the card shows an `auto` badge, and the review shows every call grouped by
+tool with repeats folded into one line carrying a count. The totals count decisions, not lines.
+
+**Then**: write a `never` rule for something, and have the session try it.
+
+**Expect** it is still blocked. Auto mode means stop asking me new questions, not forget the answers I gave.
+Same for a shelved card and for a queued message, both of which still reach the session.
+
+### G4. A folder rule
+
+**Steps**
+
+1. **perms**, then **allow a folder**. Give it a directory and pick **everything**.
+2. Have a session run a command naming a file inside that folder, quoted, with backslashes.
+
+**Expect** no prompt. The same command against a sibling folder whose name merely starts the same, for
+example `D:/tmp` versus `D:/tmpfiles`, still asks.
+
+**Failure mode** this is the case a command glob silently fails: `rm -f "C:/x/*"` does not match
+`rm -f "C:/x/y.db"` because of the closing quote. If a folder rule ever starts behaving that way, it has been
+turned back into a glob somewhere.
+
+### G5. Which agent is asking
+
+**Steps** with two sessions gated, let both make a request.
+
+**Expect** each pending card names its agent above the command, the decisions log has an agent column, the
+search box matches on it, and a CSV export includes it.
+
+### G6. Stopping is not killing
+
+**Steps**
+
+1. Start a runner from the board so atrium owns its terminal. Attach to it.
+2. Run `atrium stop`, or POST to `/v1/shutdown`.
+
+**Expect** the CLI returns immediately, and the daemon's log narrates: event streams released, supervised
+runners given up to ten seconds, each listener closing and closed, then the database path and total time.
+
+**Compare** `taskkill /F` on the daemon: every supervised terminal dies at once with no chance to finish.
+That is the difference this endpoint exists for.
+
+**Then** with `--shutdown-token some-token`: a request with no token, or the wrong one, is refused with 403
+and the daemon keeps running.
+
+### G7. The directory picker
+
+**Steps** open **+ new agent**, press **browse**.
+
+**Expect** the daemon's filesystem, drives at the top level, checkouts marked and sorted first. Recent
+directories appear as one-click buttons under the path field. Enter starts the runner from any field.
+
+**Expect on a phone** the same listing, because it is the daemon's filesystem being listed and not the
+browser's. This is the whole reason it is not the native picker.
+
+### G8. Notifications take themselves down
+
+**Steps** set an expiry under the gear, trigger a permission request, and leave it.
+
+**Expect** the notification disappears on its own after that long. Set **never, until answered** and it stays
+until the request is decided from anywhere.
+
+**Failure mode** notifications piling up in the Windows action centre, which is what sticky means there.
 
 ## Notes for future automation
 

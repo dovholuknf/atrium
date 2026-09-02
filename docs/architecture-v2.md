@@ -16,12 +16,20 @@ implementation detail of one adapter.
 
 1. Organize agents. One view of everything running, across repos and across runners.
 2. Notify on completion, and distinguish "done" from "waiting on you." Show the one that has waited longest.
-3. Remember intent and history. Why did I start this, what has happened since, what failed. Survives restarts and
-   survives task switching.
-4. Kanban as the primary human surface. Cards move between columns. Age is visible on the card.
-5. Runner agnostic. claude-code, codex, ollama, aider, or a bare shell loop. No runner is privileged.
+   The notification reaches you where you are, not only where atrium is: a desktop notification carrying the
+   decision itself, an in page toast when the tab is already in front, and a different sound per kind.
+3. Remember intent and history. Why did I start this, what has happened since, what failed. Kept across restarts
+   and across task switching. The record is an append only event log, so the history can be read back rather than
+   inferred from whatever the current state happens to be.
+4. Kanban as the primary human surface. Cards move between columns. Age is visible on the card, and a column that
+   grows too tall can be folded out of the way.
+5. Runner agnostic. claude-code, codex, ollama, aider, or a bare shell loop. No runner is privileged, and adding
+   one is configuration rather than a code change.
 6. Launch and kill agents from atrium itself. The goal is to never open a runner's terminal by hand.
 7. Reachable from anywhere over OpenZiti, with a mobile friendly web UI and room for a native app later.
+8. Answer every question that does not need a model. Whether a process is still alive, whether a request matches
+   a rule already agreed to, what a pending edit would actually change: all of these are free, and spending a
+   turn on any of them is a bug rather than a design choice.
 
 ## Non goals
 
@@ -56,7 +64,7 @@ implementation detail of one adapter.
   └──────────────────────┘        └───────────────────────┘        └───────────────────┘
 ```
 
-The rule that keeps this honest: **no client gets a privileged path into the core.** In v1 the TUI receives an
+The rule that keeps this true: **no client gets a privileged path into the core.** In v1 the TUI receives an
 in process `*Hub` pointer (`internal/cli/cli.go` hands the same struct to `h.Serve` and `tui.New`) and reads
 state through direct method calls that never cross HTTP. That is why there is no human facing API today. In v2
 the TUI talks to the daemon over loopback HTTP like everything else. If the TUI can only see what the API
@@ -91,7 +99,7 @@ something has been sitting, or what you were trying to do.
 `needs-permission` returns to `running` on resolution. Transitions are recorded as events, so the board can show
 churn without the task table carrying history.
 
-### A waiting card cannot be quietly put down
+### A waiting card cannot be put down without answering
 
 An agent asking for permission is frozen. It stays frozen until something answers, and nothing else will: there is
 no timeout on the agent side, by design, because a timeout would either wake the model or guess at an answer.
@@ -105,11 +113,11 @@ Three rules close that off. They are lifecycle rules, not interface polish, so n
 opt out of them.
 
 1. **Moving a card out of a waiting state answers what it was holding.** Every pending request on that task is
-   decided as `block`, with a reason naming what the operator did. A block carries guidance, so the agent is
+   decided as `block`, with a reason naming what the operator did. A block includes guidance, so the agent is
    released and told why rather than left waiting.
 2. **A shelved card is a standing no.** While a task is shelved, a new request from it is blocked immediately
    with the same explanation, and never reaches the queue. Otherwise an agent asks, gets nothing, and freezes
-   behind a card that has been deliberately stopped being looked at. Unshelving restores normal behaviour, or
+   behind a card that has been nobody is looking at any more. Unshelving restores normal behaviour, or
    shelving would be a trap.
 3. **A request nobody answers keeps asking.** One alert on arrival is not enough, because the alert is easy to
    miss and the cost of missing it is an agent idle for an hour. After a minute the board nags: every minute for
@@ -216,7 +224,7 @@ New cards get a rank that places them at the top of their column. Dropping a car
 the position it was dropped at. Changing status through the API without specifying a position puts the card at the
 bottom.
 
-Board order and stack order are deliberately different. The Board sorts by `rank`, because that is a judgement
+Board order and stack order differ. The Board sorts by `rank`, because that is a judgement
 only the operator can make. The Stack sorts by `waiting_since`, because "who has waited longest" is a fact. Neither
 view overrides the other.
 
@@ -251,7 +259,7 @@ Two registration paths:
 
 1. **Launched by atrium.** The daemon creates the card before the process exists, so it passes the task id into
    the child's environment. No handshake, no ambiguity.
-2. **Self started.** The runner connects knowing only what its own process can see. Its first `/submit` carries the
+2. **Self started.** The runner connects knowing only what its own process can see. Its first `/submit` sends the
    observed bucket as a registration payload. The daemon matches an existing card by `wire_name`, or by the pid
    hint, or creates one, and returns the stable task id for every later call.
 
@@ -276,7 +284,7 @@ observed bucket from its own launch spec, and intent comes from the operator at 
 
 ## HTTP surface
 
-Two listeners, not one. The **agent facing** listener carries runners. The **human facing** listener carries the
+Two listeners, not one. The **agent facing** listener serves runners. The **human facing** listener serves the
 TUI, the SPA, and the CLI. They are separate so the agent side can be shut down independently while the human side
 stays up to explain why. See "Failure posture" below.
 
@@ -290,7 +298,25 @@ POST /v1/permission    { task, tool, command, dedup_key }
 POST /v1/describe      { task, title?, why? }    -> { ok }
 POST /session          { agent, event, runner?, cwd?, pid?, task_id?, resume?, source? }
                                                  -> { ok }
+GET  /gate?agent=X                               -> { gate: bool }
+POST /stop             { agent, stop_hook_active? }
+                                                 -> { continue } | { decision, reason }
+POST /activity         { agent, task_id?, event, tool? }
+                                                 -> { ok }                  (fire and forget)
 ```
+
+`/gate` is what makes `join` and `leave` take effect on the very next tool call. The hook used to decide from its
+own environment, which fixed the answer for the life of a session.
+
+`/stop` rides the harness's Stop hook, which fires as a turn ends. A Stop hook that blocks tells the model to keep
+going with the reason it was given, which is the only way to reach a session that is sitting idle and therefore
+making no tool calls at all. Nothing queued means `{"continue":true}` and the turn ends normally.
+
+`/activity` is what a card's live badge is made of, and it is the one endpoint whose failure posture lives on the
+**caller's** side. It rides `PreToolUse`, so a slow or stalled daemon would add latency to every tool call in
+every session. The hook gives it one second, ignores every failure, and nothing downstream reads its result. A
+session that never lands a single activity post behaves exactly as it did before the endpoint existed. See
+`docs/activity-design.md`.
 
 `/session` is posted by the harness's own session hooks rather than by the model, because a session sitting at its
 prompt has made no tool call and would otherwise be invisible, and asking the model to announce itself would spend
@@ -306,29 +332,54 @@ a turn on something the harness already knows. The rules it follows:
 - **Failure is silent.** A session must never fail to start because atrium was not listening.
 
 `task` is omitted only on a self started runner's first call, which instead sends the `observed` bucket described
-under "Identity and registration." The response always carries the resolved `task` id, and the runner uses it from
+under "Identity and registration." The response always returns the resolved `task` id, and the runner uses it from
 then on. `dedup_key` is what keeps a crash between decision and write from asking the operator the same question
 twice. `describe` is the small cooperative tool that lets a model set or revise intent.
 
-Human facing, none of which exists today:
+Human facing:
 
 ```
+GET    /v1/health                   ok, and the halt cause if there is one
 GET    /v1/tasks                    list, filterable by status
-POST   /v1/tasks                    create (title, why, repo, runner, launch spec)
-GET    /v1/tasks/{id}               detail
-PATCH  /v1/tasks/{id}               set overrides, change status, shelve, set rank
+GET    /v1/tasks/{id}               detail, with display title, ages, supervised, activity
+PATCH  /v1/tasks/{id}               overrides, status, why, rank, auto_approve
 DELETE /v1/tasks/{id}               forget
+POST   /v1/tasks/prune              { statuses?, older_than_hours? } -> { removed }
 GET    /v1/tasks/{id}/events        history, paged
+GET    /v1/tasks/{id}/review        what this session was allowed to do, folded and grouped
 POST   /v1/tasks/{id}/prompt        send text to the agent (the human's turn)
+POST   /v1/tasks/{id}/message       queue something to say to a running session
 GET    /v1/tasks/{id}/attach        WebSocket: live terminal, both directions
-POST   /v1/tasks/{id}/launch        spawn the runner
 POST   /v1/tasks/{id}/kill          terminate the runner
-GET    /v1/permissions              pending queue, oldest first
-POST   /v1/permissions/{id}/decide  { decision, reason }
+POST   /v1/launch                   spawn a runner from a harness row
+GET    /v1/permissions              pending queue, oldest first, each naming its agent
+POST   /v1/permissions/{id}/decide  { decision, reason, forever?, prefix?, kind?, command? }
+GET    /v1/permissions/history      decided requests, newest first, each naming its agent
+GET    /v1/rules                    standing answers, most used first
+POST   /v1/rules                    write one by hand { tool, prefix, kind, decision, reason, scope? }
+DELETE /v1/rules/{id}               forget one
+GET    /v1/rules/export             every rule as json
+POST   /v1/rules/import             load rules from json
+GET    /v1/rules/preview-claude     what importing from Claude Code would add
+GET    /v1/harnesses                runner configuration
+PUT    /v1/harnesses/{id}           add or update one
+GET    /v1/browse?path=             list directories on the DAEMON's filesystem
+POST   /v1/shutdown                 wind down. loopback only unless a token is configured
 GET    /v1/events                   SSE: every state change, for live clients
 ```
 
-## Failure posture: the wedge
+`/v1/browse` exists because the browser's own directory picker reads the filesystem of whatever machine the
+browser is on. That is the right answer only when it happens to be the same machine as the daemon, and the whole
+point of the remote-access goal is that it will not be. The daemon is what has to open the directory, so the
+daemon is what lists them.
+
+`kind` on a decide, and on a rule, is `command` or `path`. A `path` rule covers work inside a directory, which
+was previously expressible only as a command glob that had to account for the quoting around the path itself.
+
+`scope` on a rule narrows it to one worktree. Omitted means every session, which is the right default for a rule
+written by hand, and is stated because a wrong scope produces a rule that never fires.
+
+## Failure posture: the halt
 
 Idle token burn is the one failure this project exists to prevent. v1 prevents it by making the agent client
 absorb every transport failure silently. v2 adds durable storage to the agent facing path, which creates a failure
@@ -343,16 +394,16 @@ tiers.
    Loud on stderr, non-zero exit, before any runner can connect.
 2. **Contention** (`SQLITE_BUSY`, locked). Not a failure. Retried internally with backoff and never surfaced to any
    caller. Single writer contention clears in milliseconds and panicking on it would be self inflicted.
-3. **Any other write failure** (disk full, I/O error, corruption detected in flight). **Wedge the daemon.**
+3. **Any other write failure** (disk full, I/O error, corruption detected in flight). **Halt the daemon.**
 
 Wedging means:
 
 - Close the agent facing listener and drop every in flight agent connection. Do not reopen it.
-- Do not exit the process. The human facing listener stays up and reports `wedged` with the cause, so the TUI and
+- Do not exit the process. The human facing listener stays up and reports `halted` with the cause, so the TUI and
   the SPA can show a red banner that says what broke instead of going dark.
 - Stop all supervised runners (stage 7 onward). If the system cannot record what a runner does, it should not be
   spending tokens doing it.
-- Refuse to unwedge. Recovery is an operator fixing the underlying cause and restarting the daemon deliberately.
+- Refuse to restart out of it. Recovery is an operator fixing the underlying cause and restarting the daemon.
   No automatic retry, no half-open state.
 
 The reason this is correct rather than merely dramatic: a closed listener produces connection refused, and
@@ -369,7 +420,7 @@ Two consequences that do not follow from wedging alone and must be built anyway:
 - **Permission requests carry a dedup key.** If a decision is made, the write fails, and the agent reconnects to a
   restarted daemon, the same request must not appear a second time for a human to answer again.
 
-Wedge state lives in memory and on stderr, not in the database. By definition the database is what failed.
+Halt state lives in memory and on stderr, not in the database. By definition the database is what failed.
 
 ## Process supervision
 
@@ -389,7 +440,7 @@ One surprise, recorded here because it will otherwise cost an afternoon:
 
 The symptom is a daemon that logs a clean shutdown and then reports failure to whatever started it: a service
 manager restarting it in a loop, a CI step going red, a wrapper script taking the error branch. Nothing in the
-logs will suggest a cause, because the shutdown genuinely was clean. Any atrium build that owns a pty has to exit
+logs will suggest a cause, because the shutdown was clean. Any atrium build that owns a pty has to exit
 explicitly rather than falling off the end of `main`.
 
 Atrium does not replace the runner. claude-code is the agent: it owns the tool loop, context management,
@@ -428,7 +479,7 @@ ingestion tiers stay clean:
 ### Attach
 
 Captured output is worth having on its own, independent of status. Being able to open a card in the browser and
-watch, or type into, the live terminal is a first class goal, not a debugging afterthought.
+watch, or type into, the live terminal is a explicit goal, not a debugging afterthought.
 
 Two consequences:
 
@@ -485,7 +536,7 @@ concern.
 
 ## What v1 rules get retired
 
-- **"The hub is intentionally amnesiac. Restart equals reset."** Deliberately reversed. Goals 2 and 3 are
+- **"The hub is intentionally amnesiac. Restart equals reset."** Reversed. Goals 2 and 3 are
   unanswerable without durable state. Record the reversal in `CHANGELOG.md` rather than dropping it silently.
 - **"The hub keeps state in memory."** Replaced by SQLite.
 - **Agent identity as the routing key.** `wire_name` becomes an attribute of a task rather than the primary
@@ -500,9 +551,9 @@ Each stage leaves `atrium hub` working.
 
 1. **Checkpoint.** Commit the existing working tree. The refactor needs a clean base. **Done.**
 2. **Storage.** Add `internal/store` with the schema, migrations, and the rebind helper. Includes the three tier
-   failure classification from "Failure posture," so the wedge exists before anything can trigger it. **Done.**
+   failure classification from "Failure posture," so the halt exists before anything can trigger it. **Done.**
 3. **Task model behind the existing hub.** Every `/submit` and `/permission` creates or updates a task and appends
-   events. Behavior does not change on the happy path. State becomes durable, and the wedge becomes reachable, so
+   events. Behavior does not change on the happy path. State becomes durable, and the halt becomes reachable, so
    the listener split and the hook's 5xx handling land here too. Registration goes in here as well: existing
    agents send no task id, so the self started path and the observed-versus-overrides rule have to work from the
    first commit that touches storage. **Done.**
@@ -516,11 +567,14 @@ Each stage leaves `atrium hub` working.
    side job.
 7. **Supervision.** PTY spawn, kill, and output capture, then browser attach over a WebSocket. Validate ConPTY
    first. Status inference for non-cooperative runners comes last, after attach proves the capture works.
-   **Partially done.** Window mode launches a runner in a real terminal, and a card can terminate a process whose
-   pid atrium knows. PTY mode refuses with "not built yet," so browser attach does not exist.
+   **Done, except status inference.** Window mode launches a runner in a real terminal. PTY mode is now the
+   default for a launched runner: the daemon owns the pseudo terminal, holds 256KB of scrollback, fans output out
+   to every attached browser, and takes keystrokes, resizes and signals back over a WebSocket. Stopping walks
+   ctrl-c, then `exit`, then closing the terminal, then a kill, narrating each step. Status inference for a
+   runner with no hooks is still the missing piece.
 8. **Ziti.** Bind the daemon to a service and confirm the board works unchanged over the overlay. **Not started.**
 
-Stages 1 through 5 are the load bearing refactor. 6 through 8 are additive.
+Stages 1 through 5 are the critical refactor. 6 through 8 are additive.
 
 ## Built since this document was written
 
@@ -540,12 +594,31 @@ These were not in the original plan and are worth recording, because two of them
 - **Liveness is a syscall.** A card carries the runner's pid, and whether that process still exists is a question
   the operating system answers for free. A reaper sweeps every twenty seconds. A card with no known pid is left
   alone, because not knowing is not the same as being dead.
-- **The change, not just the target.** A permission request carries the actual diff, and the board renders it with
+- **The change, not just the target.** A permission request includes the actual diff, and the board renders it with
   unchanged context dimmed and the changed words picked out. "Approve this edit" is not answerable from a file
   path.
 - **Launching scrubs the environment.** The daemon is usually started from inside a claude session, so its
-  environment carries that session's markers. Passing them on made a launched runner believe it was a child
+  environment holds that session's markers. Passing them on made a launched runner believe it was a child
   session, which silently disabled transcript saving.
+- **Status is a column, activity is a badge.** The columns are buckets of human attention, so a card is in one
+  because you must act or because you decided something. What a runner is doing right now, thinking or running a
+  named tool or waiting on subagents, is a fact about the runner and never needs a human, so it goes on the card.
+  It is held in memory and never written down, because a stored activity is a lie the moment the daemon restarts.
+  `docs/activity-design.md`.
+- **Auto mode, and the review that pays for it.** A session can be told to approve without asking while still
+  recording everything, and the record is then readable: grouped by tool, identical calls folded, the ones nobody
+  saw first. Auto mode sits last in the permission chain, so a `never` rule, a shelved card and a queued message
+  all still win. `docs/auto-mode.md`.
+- **Rules can cover a folder.** Expressing "let it work in here" as a command glob means writing a pattern that
+  also accounts for the quoting around the path, and `rm -f "C:/x/*"` fails against `rm -f "C:/x/y.db"` over the
+  closing quote alone, silently. A folder rule says what was meant.
+- **A message back channel.** There is no way to type at a claude session from outside, so a queued message waits
+  until the session can hear one: typed straight into its terminal when atrium owns it, carried back on the next
+  tool call through the permission hook when it does not, or delivered as the turn ends through the Stop hook when
+  the session is idle. Framed so the model reads it as the operator talking rather than as a policy refusal.
+- **Stopping is not killing.** The daemon owns each pseudo terminal and closing one takes the attached process
+  with it, so killing the daemon ends every runner it started at once. `atrium stop` and `POST /v1/shutdown` reach
+  the narrated wind-down instead.
 
 ## Abandoned
 
@@ -553,12 +626,21 @@ These were not in the original plan and are worth recording, because two of them
   ever seen into a card, and the ones it could see were ones it could not talk to, so the board filled with
   hundreds of entries labelled as waiting on a human who had no way to answer them. Hooks bring a session in the
   moment it does anything, which is both accurate and free. The `external_id` and `resume_id` columns survive for
-  whatever reports a session id next.
+  whatever reports a session id next. `resume_id` is populated now, by the session hooks.
 
 ## Open risks
 
-- ConPTY behavior under Go on Windows 11 is unvalidated. If `go-pty` disappoints, stage 7 needs a different
-  library or a Windows specific path.
+- **A supervised runner cannot outlive the daemon.** The daemon owns each pseudo terminal, and on Windows closing
+  one terminates the attached process. ConPTY offers no reattach, so there is no orphan-survival path to build.
+  The answer is resume ids, which means a daemon restart costs a session its terminal but not its conversation.
+  Anything that makes the daemon restart often makes this worse.
+- **The subagent count is inferred.** There is no hook for a subagent starting, so a `Task` tool call counts up
+  and `SubagentStop` counts down. Inference drifts. The floor is enforced at zero so it can never render as
+  nonsense, and the whole activity record expires after fifteen minutes of silence, but the count can be wrong.
+- **Auto mode has no time limit.** It stays on until switched off. The card shows an `auto` badge so it is
+  never invisible, but "auto mode for the next hour" is the shape this should have.
+- ConPTY behavior under Go on Windows 11 is validated, with one trap: returning from `main` after tearing a
+  pseudo terminal down yields exit 127. See "ConPTY was validated, and it has one trap" above.
 - Inferring status from output for non-cooperative runners is heuristic. Expect it to be wrong sometimes, and keep
   manual status override in the UI as the escape hatch. Cooperative runners are exempt by rule, so this risk never
   touches claude-code.
