@@ -46,6 +46,9 @@ type Server struct {
 	// Supplied by the daemon, which owns the processes. Registered only when
 	// set, so a build without supervision has no dead route.
 	Attach http.HandlerFunc
+	// Message says something to a running session: typed into its terminal
+	// when atrium owns one, queued for the next hook otherwise.
+	Message http.HandlerFunc
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -82,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
+	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
 	mux.HandleFunc("POST /v1/tasks/{id}/prompt", s.promptTask)
 	mux.HandleFunc("GET /v1/waiting", s.waiting)
@@ -100,6 +104,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
+	}
+	if s.Message != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
 	}
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.Handle("/", webHandler())
@@ -292,6 +299,33 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Broadcast("task-removed", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// pruneTasks clears out finished cards in one go.
+//
+// Done and dead only. A shelved card is something to come back to, so a sweep
+// never touches one no matter how long it has sat there.
+func (s *Server) pruneTasks(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		// OlderThanHours defaults to now, meaning every finished card goes.
+		OlderThanHours *float64 `json:"older_than_hours"`
+		// Statuses narrows the sweep to one column. Empty means all prunable.
+		Statuses []string `json:"statuses"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+	var age time.Duration
+	if body.OlderThanHours != nil && *body.OlderThanHours > 0 {
+		age = time.Duration(*body.OlderThanHours * float64(time.Hour))
+	}
+	n, err := s.st.Prune(age, body.Statuses...)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if n > 0 {
+		s.Broadcast("tasks-pruned", map[string]int{"removed": n})
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": n})
 }
 
 func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {

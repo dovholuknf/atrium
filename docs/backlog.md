@@ -6,83 +6,68 @@ Kept here rather than in a conversation, because a list that lives in a chat die
 
 ## Next
 
-### Terminal UX, now that attach works
+### Put atrium on PATH
 
-Attaching works, but the surface around it does not match how it is used.
+The `atrium-join` and `atrium-leave` skills call `atrium` plainly and treat "not found" as the answer. Until the
+binary is on PATH they cannot work, and hardcoding a checkout path into a skill would work on one machine and rot
+the first time it moves.
 
-- **It is a modal.** Wrong shape for something you switch between and leave open. Should be a view with a list of
-  attachable sessions beside the terminal, so switching is a click rather than close-then-reopen.
-- **Copy and paste fight the terminal.** `ctrl-c` is sent as an interrupt even when text is selected, so copying
-  interrupts the runner. Needs `ctrl-shift-c` and `ctrl-shift-v`, `ctrl-c` interrupting only when nothing is
-  selected, and copy on selection as an option.
-- **A permission request is invisible while attached.** The runner blocks, the terminal shows nothing, and the
-  request is over in the perms tab. An attached terminal should show the pending request inline with its buttons.
-- **A notification should be able to attach.** When a supervised runner needs input, clicking through should land
-  in its terminal rather than the board.
+### Small interface debts
 
-### Mobile
+- **The launch form ignores the enter key.** Typing a directory and pressing enter should start the runner.
+- **Board actions need a right click or a `...` menu.** Shelve, done, attach and terminate are the things done
+  most, and each currently costs opening the detail dialog.
+- **Drag to reorder is not wired.** The `rank` column, midpoint insertion and the ordering rules all exist. The
+  board only reads rank, never writes it.
 
-The board is unusable below a certain width. Columns, one line rows and the terminal all assume a wide window.
-Needs a narrow layout: a single column list rather than a kanban, rows that wrap instead of truncating, and a
-decision about what a terminal even means on a phone.
+### Shelving should stop the runner, not just move the card
 
-### Board actions without opening a card
+Shelved is not another word for finished. Done and dead are both over: done because the work is over, dead because
+the process is. Shelved says the opposite, that this is coming back, and today it only moves a card while the
+runner keeps sitting there holding a conversation open.
 
-Right click, or a `...` menu per card, for the things done most: shelve, done, attach, terminate. Opening the
-detail dialog for every small action is too many clicks.
+What it should do instead: record the resume id, stop the runner, and turn the card's action into resume. That
+makes shelving cheap enough to use on anything not being worked on right now, which is the point of it.
 
-### Launch form needs the enter key
+`resume_id` is captured now, so the missing half is the stop-and-restart path.
 
-Typing a directory and pressing enter should start the runner rather than doing nothing.
+### Working directories from a repo URL
 
-### PTY supervision
+Launching asks for a directory that has to already exist. It should take a repo URL instead, and prepare the
+working directory the way the shell workflow already does: clone if needed, create a worktree for the branch, then
+start the runner there.
 
-The single largest gap. Three things people keep asking for all depend on it, and none of them can work while a
-launched runner owns its own terminal:
+This is what makes launching from the board sufficient on its own. Until then, every new piece of work starts in a
+terminal to make somewhere for it to run.
 
-- Attaching to a running agent from the browser.
-- A terminate button that works on a launched runner. Window mode hands the session to the terminal and the
-  wrapper exits, so there is no process for atrium to signal.
-- Shutdown waiting for its runners, which only means something once atrium owns them.
+### Live sub-state on a card
 
-Order of work:
+The columns answer "what needs me". A card should also say what its runner is doing right now: thinking, running
+a named tool, or waiting on N subagents. That is a badge on the card, not a column, because a column is a bucket
+for human attention and "thinking" never needs any.
 
-1. ~~Spike ConPTY under Go on Windows 11.~~ **Done.** go-pty v0.2.3 handles spawn, output with ANSI escapes,
-   keystrokes, resize, and clean child exit. One trap found and written up in `docs/architecture-v2.md`: after a
-   pty is torn down, returning normally from `main` leaves the process with exit status 127, so any build that
-   owns a pty must call `os.Exit(0)` explicitly. A daemon that logs a clean shutdown and then reports failure to
-   its service manager is the symptom.
-2. Spawn and own the process, with the pid on the card so the existing terminate and liveness paths light up.
-3. Capture output into a bounded per task ring buffer. Decide retention then, not before.
-4. Browser attach over a WebSocket with xterm.js. This is the one place the client contract widens past JSON and
-   SSE, so keep it scoped to attach alone.
-5. Status inference for runners that cannot report their own state. Last, because it is heuristic and every
-   cooperative runner is exempt by rule.
+The hooks to feed it exist: `PreToolUse` and `PostToolUse` carry the tool name, `SubagentStop` counts subagents.
+Nothing sends them yet.
 
-### Join and leave, from inside a session
+### Pruning on a timer
 
-A way for a claude session to put itself on the board, or take itself off, without restarting. Today gating is
-decided when the session starts, by the hook reading its environment, so a session that was not gated stays
-ungated for its whole life.
+Sweeping finished columns is a button. Cards still accumulate on their own between presses. An age based sweep on
+a schedule, with the age configurable, would keep the board from needing the button at all. Done and dead only:
+`Prune` refuses shelved no matter what it is asked, and that has to stay true.
 
-Shape: an `atrium` CLI subcommand, or a tiny MCP tool, that posts to `/session` with `join` or `leave`. Joining
-registers the session and turns gating on for it. Leaving marks the card done and stops gating, so a session can
-be handed back to itself.
+### Status inference for runners that cannot speak
 
-The permission hook already reads `ATRIUM_PERM_GATE` per call rather than caching it, so the gate can be flipped
-at runtime if the state lives somewhere the hook can see: the daemon knowing which sessions have joined is enough,
-since the hook already asks the daemon on every call.
+The last piece of supervision. A cooperative runner reports its own state, so atrium never guesses at its output.
+A bare shell or a runner with no hook has only its terminal, and inferring `needs-input` from that is heuristic.
+Worth doing last, and worth keeping manual status override as the escape hatch.
 
-### Resume has no session id
+### The Stop hook is written but not wired
 
-The resume button exists and the runner's resume arguments are configured, but nothing populates `resume_id` now
-that ledger adoption is gone. The session hook already receives `session_id` in its payload and sends it. Storing
-it on the card in `onSession` is a small job that makes an existing button real.
+`atrium-stop-hook.ps1` exists and the `/stop` endpoint it talks to is tested. It is not registered in
+`settings.json`, so a message queued for an idle session sits in the queue.
 
-### Verify the always button
-
-The fix for `always` doing nothing was found by reading the code, not by watching it work. Click it once against a
-live daemon and confirm a rule appears.
+Left off on purpose until the behaviour is understood well enough to want it. A Stop hook that blocks makes a
+session keep working, so getting it wrong means sessions that will not stop.
 
 ## Known gaps
 
@@ -91,18 +76,23 @@ live daemon and confirm a rule appears.
   and its gaps are invisible.
 - **The board is a plain page**, not the React app the decisions table names. It speaks the same JSON and SSE
   contract, so this is a client side swap whenever it is worth doing.
-- **Drag to reorder is not wired.** The `rank` column, midpoint insertion and the ordering rules all exist. The
-  board only uses rank for display.
-- **Permission requests carry no dedup key.** The store supports it and the replay path is tested, but the hook
-  does not send one, so a crash between a decision and its write could ask twice.
-- **A hook connected session with no pid never goes dead.** The reaper only acts on a known pid, and the session
-  hook's parent walk is best effort. A card whose runner vanished without a `SessionEnd` sits in running.
+- **Permission requests carry no dedup key.** The store supports it, the replay path is tested and the key is now
+  scoped per task, but the hook does not send one, so a crash between a decision and its write could ask twice.
+- **A session that dies without warning can hang.** `SessionEnd` covers a clean exit and the reaper covers a
+  known pid. A session that is killed outright, with no pid recorded, sits in `running` forever.
 - **Postgres portability is asserted, not tested.** The schema is written for it. Nothing runs the migrations
   against it. A CI job would settle it.
 - **`docs/test-plan.md` predates v2.** It covers the hub and the agent loop, not the daemon, the board, rules,
-  launching or the permission diff.
+  launching, supervision or the permission diff.
 - **Repo metadata is unset.** `gh repo edit` returns 403 with the current token, so the description and topics on
   the GitHub page are still empty. Needs `gh auth refresh -s repo` or setting them in the web UI.
+- **Supervised runners die with the daemon.** The daemon owns each pseudo terminal, and on Windows closing one
+  takes the attached process with it. There is no reattach. So stopping the daemon ends every runner it started,
+  and a runner cannot outlive a restart. Resume ids are the answer rather than orphan survival, which ConPTY does
+  not offer.
+- **The daemon can silently open an empty database.** `WORKTREE_ROOT` unset means it falls back to `~/.atrium`,
+  which looks exactly like every rule and card having vanished. It should say loudly when it creates a database
+  rather than opening one.
 
 ## Waiting on something external
 
@@ -121,8 +111,25 @@ live daemon and confirm a rule appears.
   watch but never talk to. See the abandoned section in `docs/architecture-v2.md`.
 - Replacing the runner. claude-code owns the tool loop, context and credentials. Atrium supervises, it does not
   become an agent harness.
+- Attaching to a session atrium did not start. A console cannot be handed to another process after the fact, so a
+  joined session gets gating, a card and history, and never a terminal. Only a runner launched under a pty is
+  attachable.
+
+## Done
+
+Kept short, because the point of the list is what is left. Recorded so the same ground is not re-covered.
+
+- Supervision: ConPTY validated, pty spawn, output capture, browser attach over a WebSocket, terminate, and a
+  shutdown that asks a runner to wind up before closing its terminal.
+- Terminals as a view with a session switcher, copy and paste that does not fight the runner, a pending request
+  shown inline while attached, and a notification that attaches rather than landing on the board.
+- Join and leave, so a running session can put itself on the board without restarting.
+- Shelving answers what a card was holding, and a shelved card is a standing no.
+- A narrow layout, and the board served with no-store so a rebuild is always what is on screen.
+- Every browser alert, confirm and prompt replaced with the app's own dialog.
 
 ## Review
 
-- Mercurius round two has not been run against the revised `docs/architecture-v2.md`. Round one is recorded in
-  `.mercurius/`, which is untracked, along with the decisions taken from it.
+- Mercurius round two ran against the revised design. Two findings were stale documentation, since fixed. The
+  third, a card leaving a waiting state without answering its pending requests, was a real bug and is fixed.
+- Round three has not been run against `docs/supervision-design.md` as built.

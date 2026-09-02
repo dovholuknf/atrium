@@ -91,6 +91,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Attach = d.handleAttach
+	d.ap.Message = d.handleMessage
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
@@ -261,6 +262,20 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return p.ID, &hub.AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
 	}
 
+	// Anything the operator queued for this session rides the next tool call.
+	// A busy session makes them constantly, so this is how a message reaches
+	// one that is working. The call is refused to carry the text, and the
+	// banner says plainly that the refusal is the delivery mechanism rather
+	// than a judgement on the command.
+	if msgs, err := d.takeMessages(task.ID, "permission"); err == nil && len(msgs) > 0 {
+		reason := messageBanner(msgs, true)
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, "message"); err != nil {
+			return "", nil, err
+		}
+		d.publishTask(task.ID)
+		return p.ID, &hub.AutoDecision{Decision: "block", Reason: reason}, nil
+	}
+
 	// A shelved card is a standing no. Putting work down has to answer for
 	// that work, or the agent asks, gets nothing, and freezes behind a card
 	// the operator has deliberately stopped looking at.
@@ -355,6 +370,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/permission", d.hb.HandlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
 	agentMux.HandleFunc("/gate", d.handleGate)
+	agentMux.HandleFunc("/stop", d.handleStop)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}

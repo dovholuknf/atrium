@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -326,6 +327,76 @@ func (s *Store) SetWhy(id, why string) error {
 			why, ts(now()), id)
 		return err
 	})
+}
+
+// SetResumeID records the runner's own id for the conversation, so the card
+// can start it again later.
+//
+// This is what makes shelving and terminating survivable. A supervised runner
+// dies with the daemon, because its pseudo terminal is owned by the daemon and
+// closing it takes the process with it. Without an id to resume from, that is
+// the end of the conversation. With one, it is a restart.
+//
+// An empty id is ignored rather than stored. Not every harness reports one, and
+// overwriting a good id with a blank would quietly break the resume button.
+func (s *Store) SetResumeID(id, resumeID string) error {
+	if strings.TrimSpace(resumeID) == "" {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
+		return err
+	})
+}
+
+// PrunableStatuses are the only statuses a sweep will ever delete.
+//
+// Shelved is deliberately absent. Shelving something says you mean to come back
+// to it, so a sweep that took shelved cards would throw away the one kind of
+// card that was kept on purpose.
+var PrunableStatuses = []string{StatusDone, StatusDead}
+
+// Prune deletes finished cards that have been sitting untouched. Returns how
+// many went. An empty statuses list sweeps everything prunable.
+func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) {
+	want := statuses
+	if len(want) == 0 {
+		want = PrunableStatuses
+	}
+	// Anything outside the prunable set is dropped rather than refused, so a
+	// caller can pass a column name without having to know the rule.
+	var keep []any
+	for _, s := range want {
+		for _, ok := range PrunableStatuses {
+			if s == ok {
+				keep = append(keep, s)
+			}
+		}
+	}
+	if len(keep) == 0 {
+		return 0, nil
+	}
+	var n int
+	err := s.guard(func() error {
+		args := append([]any{}, keep...)
+		args = append(args, ts(now().Add(-olderThan)))
+		res, err := s.db.Exec(
+			// Inclusive, because timestamps are stored to the second. With a
+			// zero age the cutoff is now, and a card that finished this second
+			// would otherwise survive a sweep meant to take everything.
+			`DELETE FROM task WHERE status IN (`+placeholders(len(keep))+`)
+			 AND last_activity_at <= ?`, args...)
+		if err != nil {
+			return err
+		}
+		got, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		n = int(got)
+		return nil
+	})
+	return n, err
 }
 
 // SetRank places a task at an explicit position within its column. Callers

@@ -50,25 +50,29 @@ const (
 // left off until their command line is confirmed.
 func DefaultHarnesses() []Harness {
 	return []Harness{
+		// pty by default. Something started from atrium should be something
+		// atrium can attach to, terminate and check the liveness of. Window
+		// mode remains for the one thing it does better: a runner that
+		// outlives the daemon.
 		{
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
-			LaunchMode: LaunchWindow, ResumeArgs: []string{"--resume", "{resume}"},
+			LaunchMode: LaunchPTY, ResumeArgs: []string{"--resume", "{resume}"},
 			RulesSource: "claude", Sort: 10,
 			Notes:       "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
-			LaunchMode: LaunchWindow, Sort: 20,
+			LaunchMode: LaunchPTY, Sort: 20,
 			Notes:      "confirm the command and any resume flag before enabling",
 		},
 		{
 			ID: "ollama", Label: "ollama", Enabled: false, Cmd: "ollama",
-			Args: []string{"run", "llama3"}, LaunchMode: LaunchWindow, Sort: 30,
+			Args: []string{"run", "llama3"}, LaunchMode: LaunchPTY, Sort: 30,
 			Notes: "set the model in args. ollama has no permission config to import",
 		},
 		{
 			ID: "shell", Label: "shell", Enabled: false, Cmd: "pwsh",
-			Args: []string{"-NoLogo"}, LaunchMode: LaunchWindow, Sort: 40,
+			Args: []string{"-NoLogo"}, LaunchMode: LaunchPTY, Sort: 40,
 			Notes: "a plain shell, supervised like any other runner",
 		},
 	}

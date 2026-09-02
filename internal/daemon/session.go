@@ -117,6 +117,14 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		return err
 	}
 
+	// A supervised runner dies when the daemon does, because the daemon owns its
+	// pseudo terminal. Recording the id the harness resumes from is what turns
+	// that from losing the conversation into restarting it, so it is stored on
+	// every event rather than only at start.
+	if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+		return err
+	}
+
 	switch in.Event {
 	case "join":
 		// Opting in while running. Gating is state from here on, so the very

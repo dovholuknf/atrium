@@ -182,6 +182,12 @@
     color: var(--chip-accent-text); cursor: pointer;
   }
   .chip.attach:hover { border-color: var(--teal); }
+  /* Sits in a column header, so it stays quiet until reached for. */
+  .chip.sweep {
+    cursor: pointer; opacity: .45; margin-left: auto; margin-right: 8px;
+    font-weight: 500; letter-spacing: .02em;
+  }
+  .chip.sweep:hover { opacity: 1; color: var(--warn); }
   .why {
     font-size: 12.5px; color: var(--dim); margin-top: 9px; padding-top: 8px;
     border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
@@ -257,9 +263,12 @@
     border: 1px solid var(--stroke-dim); border-radius: 7px; padding: 8px 11px;
     margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   }
+  /* Grows to whatever it holds, because deciding on a command you can only see
+     two lines of is not deciding. The cap keeps a pasted heredoc from pushing
+     the buttons off screen; past that it scrolls. */
   textarea.cmd.edit {
     display: block; width: 100%; resize: vertical; margin: 0; min-height: 44px;
-    transition: border-color .14s;
+    max-height: 45vh; overflow-y: auto; transition: border-color .14s;
   }
   textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
   .actions { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
@@ -359,18 +368,33 @@
   .term-list {
     flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px;
     max-height: calc(100vh - 190px); overflow-y: auto;
+    /* Room for the lift on hover and for a focus ring, or the top card's
+       border is clipped by the scroll container. */
+    padding: 3px 3px 6px;
   }
   .term-entry {
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
-    border: 1px solid var(--stroke); border-left: 3px solid transparent;
+    /* A visible left edge always, so an inactive card does not read as
+       unfinished. The active one turns it teal rather than growing one. */
+    border: 1px solid var(--stroke-dim); border-left: 3px solid var(--stroke-dim);
     border-radius: 9px; padding: 10px 12px; cursor: pointer;
-    transition: border-color .14s, transform .14s;
+    transition: border-color .14s, transform .14s, background .14s;
   }
-  .term-entry:hover { transform: translateY(-1px); border-color: var(--blue); }
-  .term-entry.on { border-left-color: var(--teal); background: var(--shell-0); }
+  .term-entry:hover {
+    transform: translateY(-1px); border-color: var(--blue); border-left-color: var(--blue);
+  }
+  .term-entry.on {
+    border-left-color: var(--teal); border-color: var(--stroke); background: var(--shell-0);
+  }
+  .term-entry.attn { border-left-color: var(--warn); }
   .term-entry b { display: block; color: var(--head); font-size: 14px; font-weight: 600; }
   .term-entry span { font: 11.5px/1.5 var(--mono); color: var(--dimmest); word-break: break-all; }
-  .term-entry .chip { margin-top: 6px; }
+  .term-entry .chip { margin-top: 6px; margin-right: 5px; }
+  button.termsort {
+    align-self: flex-start; font-size: 12px; padding: 5px 11px;
+    background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
+  }
+  button.termsort:hover { color: var(--head); border-color: var(--blue); }
 
   .term-pane {
     flex: 1; min-width: 0; display: flex; flex-direction: column;
@@ -394,16 +418,14 @@
      scrollbar sits over them, so a coloured row reads as banding across the
      bar. Making the bar dark and narrow lets those rows end against something
      that looks deliberate. */
-  #t-screen .xterm-viewport {
-    scrollbar-width: thin;
-    scrollbar-color: var(--stroke) transparent;
-    background: transparent !important;
-  }
-  #t-screen .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  /* Colour only, never width. The fit addon computes how many columns fit by
+     measuring the scrollbar, so changing its width here made xterm draw rows
+     a couple of characters too wide and the text ran under the bar. */
+  #t-screen .xterm-viewport { background: transparent !important; }
   #t-screen .xterm-viewport::-webkit-scrollbar-track { background: var(--bg-2); }
   #t-screen .xterm-viewport::-webkit-scrollbar-thumb {
     background: var(--stroke-dim); border-radius: 6px;
-    border: 2px solid var(--bg-2);
+    border: 3px solid var(--bg-2);
   }
   #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--stroke); }
   .term-help {
@@ -851,8 +873,9 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
 
 <div id="tip"></div>
 
-<button id="held" onclick="applyHeld()" title="the view is paused while you type">
-  &#8635;&nbsp; new activity, click to update</button>
+<button id="held" onclick="applyHeld()"
+  title="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
+  &#8635;&nbsp; paused while you type, click to catch up</button>
 
 <div id="toasts"></div>
 
@@ -885,6 +908,19 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
         <button onclick="testNotify()">send a test</button>
       </div>
       <span class="hintline" id="s-notify-hint"></span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-expiry">notifications disappear after</label>
+      <div class="picker">
+        <select id="s-expiry">
+          <option value="10">10 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="300">5 minutes</option>
+          <option value="0">never, until answered</option>
+        </select>
+      </div>
+      <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
     </div>
   </div>
 </dialog>
@@ -1018,6 +1054,18 @@ const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
 let current = null;
 
+// Fits a box to its content. A textarea has no way to say "as tall as what is
+// in me", so the height is cleared, measured, then set. The CSS cap turns a very
+// long command into a scroll rather than a card that runs off the page.
+//
+// Called after a value is set and on every keystroke, since editing adds and
+// removes lines.
+function autosize(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight + 2) + "px";
+}
+
 const api = async (path, opts) => {
   const res = await fetch(path, opts);
   if (!res.ok && res.status !== 204) {
@@ -1073,6 +1121,9 @@ async function renderBoard() {
     return `<section class="col${folded}" data-status="${status}">
       <div class="col-head" onclick="toggleColumn('${status}')">
         <span><span class="fold">&#9662;</span>${label}</span>
+        ${(status === "done" || status === "dead") && mine.length
+          ? `<span class="chip sweep" title="delete every card in this column"
+               onclick="event.stopPropagation();pruneColumn('${status}')">clear</span>` : ""}
         <span class="n">${mine.length}</span>
       </div>
       <div class="cards">
@@ -1080,6 +1131,25 @@ async function renderBoard() {
       </div>
     </section>`;
   }).join("");
+}
+
+// Deletes every card in a finished column. Only done and dead offer this: a
+// shelved card is something kept on purpose, and the daemon refuses to sweep
+// one even if asked.
+async function pruneColumn(status) {
+  const { tasks } = await api("/v1/tasks");
+  const n = (tasks || []).filter(t => t.status === status).length;
+  if (!n) return;
+  const ok = await confirmUser(
+    `clear ${n} ${status} card${n === 1 ? "" : "s"}?`,
+    "Their history goes with them. Anything still running is untouched.",
+    "clear");
+  if (!ok) return;
+  const res = await api("/v1/tasks/prune", {
+    method: "POST", body: JSON.stringify({ statuses: [status] })
+  });
+  tellUser(`cleared ${res.removed} card${res.removed === 1 ? "" : "s"}`);
+  refresh();
 }
 
 // Which columns are collapsed, remembered so the board opens the way you left
@@ -1125,14 +1195,17 @@ function permCard(p) {
   el.style.cssText = "cursor:default;align-items:flex-start;flex-wrap:wrap";
   // One input only: the command. Editing it changes what actually runs.
   // The scope for always and never is chosen from the buttons underneath, so
-  // there is never a second box to mistake for this one.
+  // there is never a second box to mistake for this one. The box grows to hold
+  // the whole command, because two visible lines of a long one is not enough to
+  // decide on.
   el.innerHTML = `
     <div class="who">
       <b>${esc(p.tool)}</b>
       <span>asked ${esc((p.requested_at || "").slice(11, 19))}</span>
       <label class="eyebrow" for="cmd-${p.id}">command</label>
       <span class="hintline">this is what runs. edit it to run something else</span>
-      <textarea class="cmd edit" id="cmd-${p.id}" rows="2" spellcheck="false"
+      <textarea class="cmd edit" id="cmd-${p.id}" rows="1" spellcheck="false"
+        oninput="autosize(this)"
         title="whatever is in here is what runs once you approve"></textarea>
       ${p.details ? `<details class="change" open>
         <summary>what changes</summary>
@@ -1161,6 +1234,7 @@ function permCard(p) {
   const cmd = el.querySelector(".cmd.edit");
   cmd.value = p.command;
   cmd.defaultValue = p.command;
+  autosize(cmd);
 
   const view = el.querySelector(".patview");
   const setScope = (value, btn) => {
@@ -1691,7 +1765,13 @@ const SOUNDS = {
   none:   { label: "silent",      notes: [] }
 };
 
-const DEFAULT_PREFS = { muted: false, volume: 0.35, input: "chime", perm: "alarm", desktop: true };
+// expiry is how many seconds a desktop notification stays on screen. 0 means
+// it stays until it is answered or clicked, which is what Windows does with a
+// sticky notification and what made them pile up.
+const DEFAULT_PREFS = {
+  muted: false, volume: 0.35, input: "chime", perm: "alarm",
+  desktop: true, expiry: 30
+};
 
 function loadPrefs() {
   try {
@@ -1938,6 +2018,10 @@ if ("serviceWorker" in navigator) {
 
 function showNotification(title, body, goTo, permId) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
+  const expiry = Number(alerting.get().expiry) || 0;
+  // Sticky means Windows never takes it down by itself. That is right for a
+  // blocked agent and wrong forever, so an expiry overrides it.
+  const sticky = goTo === "perms" && expiry === 0;
 
   // With a worker, the notification gets approve and block buttons and can
   // outlive the page. Without one, fall back to a plain notification.
@@ -1946,7 +2030,7 @@ function showNotification(title, body, goTo, permId) {
       type: "notify", title, body: body || "",
       icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
       tag: goTo === "perms" ? "atrium-perm" : "atrium",
-      sticky: goTo === "perms", goTo, permId: permId || "",
+      sticky, expireMs: expiry * 1000, goTo, permId: permId || "",
       origin: location.origin
     });
     return null;
@@ -1959,7 +2043,7 @@ function showNotification(title, body, goTo, permId) {
     tag: goTo === "perms" ? "atrium-perm" : "atrium",
     renotify: true,
     // A blocked agent is not something to miss, so that one stays on screen.
-    requireInteraction: goTo === "perms",
+    requireInteraction: sticky,
     // We play our own tone, and Windows adding a second one is jarring.
     silent: true
   });
@@ -1968,6 +2052,7 @@ function showNotification(title, body, goTo, permId) {
     if (goTo) switchView(goTo);
     n.close();
   };
+  if (expiry > 0) setTimeout(() => n.close(), expiry * 1000);
   return n;
 }
 
@@ -2047,9 +2132,15 @@ function reapToasts(liveKeys) {
 // notification down too.
 function reapNotifications(liveKeys) {
   if (!swReg || !swReg.getNotifications) return;
+  const expiry = (Number(alerting.get().expiry) || 0) * 1000;
+  const now = Date.now();
   swReg.getNotifications().then(list => {
     list.forEach(n => {
       const id = n.data && n.data.permId;
+      // The worker sets its own timer, but a browser is free to shut the
+      // worker down before it fires. This is the backstop that runs whenever
+      // the page is open, so a stale notification cannot outlive its expiry.
+      if (expiry > 0 && n.timestamp && now - n.timestamp > expiry) { n.close(); return; }
       // Untagged notifications and anything still pending are left alone.
       if (id && !liveKeys.has(id)) n.close();
     });
@@ -2071,6 +2162,7 @@ function paintSettings() {
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
   document.getElementById("s-perm").innerHTML = soundOptions(p.perm);
+  document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -2107,6 +2199,9 @@ function paintSettings() {
   }[perm] || "";
 }
 
+document.getElementById("s-expiry").addEventListener("change", e => {
+  alerting.set({ expiry: Number(e.target.value) });
+});
 document.getElementById("s-vol").addEventListener("input", e => {
   alerting.set({ volume: Number(e.target.value) / 100 });
 });
@@ -2586,19 +2681,46 @@ async function pasteIntoTerm() {
   }
 }
 
+// Sorting by most recent activity, so whichever agent just asked for something
+// or just finished rises to the top. On by default: with several running, the
+// one that moved is the one you want.
+let sortByActivity = localStorage.getItem("atrium.termSort") !== "0";
+
+function toggleTermSort() {
+  sortByActivity = !sortByActivity;
+  localStorage.setItem("atrium.termSort", sortByActivity ? "1" : "0");
+  renderTermList();
+}
+
 // The list of things worth attaching to, so switching is a click.
 async function renderTermList() {
   let tasks = [];
   try { tasks = ((await api("/v1/tasks")).tasks || []).filter(t => t.supervised); } catch (e) { return; }
   badge("c-term", tasks.length);
+
+  if (sortByActivity) {
+    // Anything waiting on a human first, then by how recently it moved.
+    tasks.sort((a, b) => {
+      const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
+      if (w) return w;
+      return (a.idle_seconds || 0) - (b.idle_seconds || 0);
+    });
+  }
+
   const host = document.getElementById("term-list");
+  const toggle = `<button class="termsort" onclick="toggleTermSort()"
+      title="newest activity first, and anything waiting on you above that">
+      ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>`;
+
   host.innerHTML = tasks.length
-    ? tasks.map(t => `
-        <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""}"
+    ? toggle + tasks.map(t => `
+        <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""} ${
+          isWaiting(t) ? "attn" : ""}"
              onclick="attachTask('${t.id}')">
           <b>${esc(t.display_title)}</b>
           <span>${esc(t.worktree || "")}</span>
           <span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
+          <span class="chip">${ago(t.idle_seconds)}</span>
         </div>`).join("")
     : `<div class="panel"><div class="empty">
          nothing to attach to. only a runner started in pty mode has a terminal atrium owns.
