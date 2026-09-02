@@ -239,6 +239,23 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN gated INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// Things to say to a running session. There is no channel into a
+		// claude session from outside, so a message waits here until a hook
+		// fires and can carry it back to the model.
+		name: "0012_message",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS message (
+				id           TEXT PRIMARY KEY,
+				task_id      TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+				text         TEXT NOT NULL,
+				created_at   TEXT NOT NULL,
+				delivered_at TEXT,
+				via          TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS message_pending ON message (task_id, delivered_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

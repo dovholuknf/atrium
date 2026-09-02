@@ -14,9 +14,22 @@ self.addEventListener("install", () => self.skipWaiting())
 self.addEventListener("activate", event => event.waitUntil(self.clients.claim()))
 
 // The page hands over what to show, since the worker has no view of state.
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+// Takes a notification down once its time is up. waitUntil keeps the worker
+// alive while this runs, but a browser may still shut the worker down first,
+// so the page reaps expired notifications as well.
+async function expire(tag, ms) {
+  await sleep(ms)
+  const list = await self.registration.getNotifications({ tag })
+  list.forEach(n => n.close())
+}
+
 self.addEventListener("message", event => {
   const m = event.data || {}
   if (m.type !== "notify") return
+  const expireMs = Number(m.expireMs) || 0
+  if (expireMs > 0) event.waitUntil(expire(m.tag || "atrium", expireMs))
   event.waitUntil(self.registration.showNotification(m.title, {
     body: m.body || "",
     icon: m.icon,
@@ -74,17 +87,21 @@ self.addEventListener("notificationclick", event => {
   event.notification.close()
 
   if (event.action && data.permId) {
+    const tag = "atrium-conflict-" + data.permId
     event.waitUntil(
-      decide(origin, data.permId, event.action).catch(err =>
+      decide(origin, data.permId, event.action).catch(async err => {
         // The request may have been answered elsewhere already, or the daemon
         // may be down. Say so rather than failing silently.
-        self.registration.showNotification("atrium: too late", {
+        await self.registration.showNotification("atrium: too late", {
           body: String(err.message || err),
           icon: data.icon,
           badge: data.icon,
-          tag: "atrium-conflict-" + data.permId,
+          tag,
           renotify: true
-        })))
+        })
+        // Nothing else clears this one, so it clears itself.
+        await expire(tag, 10000)
+      }))
     return
   }
   event.waitUntil(openBoard(origin, data.goTo))

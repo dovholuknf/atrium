@@ -3,6 +3,24 @@
 A running log of what's been built. Newest first. No formal version cuts yet (everything is `v0.0.0-dev`); each
 section heading is just "what landed in this iteration."
 
+## Unreleased
+
+- **Notifications take themselves down.** Permission notifications were sticky so a blocked agent could not
+  scroll away unnoticed, and sticky on Windows means they never leave. There is now an expiry, default 30
+  seconds, set under the gear. Choosing "never, until answered" restores the old behaviour on purpose. The
+  service worker holds its own timer and the board sweeps expired ones whenever it is open, because a browser
+  is free to shut a worker down before its timer fires.
+- **Finished columns can be cleared.** `POST /v1/tasks/prune` deletes done and dead cards, optionally narrowed
+  to one status and to those untouched for a given number of hours. A `clear` control sits in the done and dead
+  column headers. Shelved is never swept, whatever it is asked, since shelving is the one act that says come
+  back to this.
+- **Resume ids are recorded.** Session hooks have always sent the harness's own session id and it was thrown
+  away. It is now stored on every session event, which is what makes a runner that was stopped, terminated, or
+  lost with the daemon something to start again rather than something to lose.
+- **The command box fits the command.** It was two lines tall regardless of content, so a long command had to be
+  scrolled inside a small window before it could be approved. It now grows to what it holds, up to 45% of the
+  viewport, then scrolls.
+
 ## 2026-09-01 -- v2 prototype: durable state, a human-facing API, and a board
 
 First working slice of `docs/architecture-v2.md`. New subcommand `atrium daemon` runs the whole thing.
