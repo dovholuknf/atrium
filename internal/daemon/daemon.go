@@ -41,6 +41,9 @@ type Daemon struct {
 	hb   *hub.Hub
 	ap   *api.Server
 
+	// sup holds the runners atrium owns, when a harness launches in pty mode.
+	sup *supervisor
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -76,13 +79,21 @@ func New(opts Options) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Daemon{opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st)}
+	d := &Daemon{
+		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
+		sup: newSupervisor(),
+	}
 	st.OnWedge = d.onWedge
 	d.hb.Record = d.hooks()
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
+	d.ap.CancelPending = d.CancelPending
+	d.ap.Attach = d.handleAttach
+	// The board only offers attach for a runner atrium owns, because a window
+	// mode launch has no terminal here to show.
+	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
 	return d, nil
 }
 
@@ -250,6 +261,16 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return p.ID, &hub.AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
 	}
 
+	// A shelved card is a standing no. Putting work down has to answer for
+	// that work, or the agent asks, gets nothing, and freezes behind a card
+	// the operator has deliberately stopped looking at.
+	if task.Status == store.StatusShelved {
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "shelved"); err != nil {
+			return "", nil, err
+		}
+		return p.ID, &hub.AutoDecision{Decision: "block", Reason: shelvedReason}, nil
+	}
+
 	// A standing rule short-circuits the human entirely. The request is still
 	// recorded and resolved, so the history shows what ran and which rule let
 	// it through, but nothing is ever shown to be clicked.
@@ -275,6 +296,34 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	d.publishTask(task.ID)
 	d.ap.Broadcast("permission", p)
 	return p.ID, nil, nil
+}
+
+// shelvedReason is handed back to an agent whose request was refused because
+// its card is shelved. The agent is told why rather than left waiting, which is
+// the whole point of a block carrying a reason.
+const shelvedReason = "this task is shelved in atrium. unshelve it to answer requests from it."
+
+// CancelPending answers every outstanding request on a task with a block.
+//
+// Moving a card out of a waiting state has to answer the question, not just
+// hide it. Otherwise the agent stays frozen with nobody coming, and the request
+// sits in the queue to be approved later against a situation that has moved on.
+func (d *Daemon) CancelPending(taskID, reason string) (int, error) {
+	pending, err := d.st.PendingForTask(taskID)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range pending {
+		// Through decide, so the blocked agent is actually released rather
+		// than having its answer written to a row it never reads.
+		if _, err := d.decide(p.ID, "block", reason, ""); err != nil {
+			return 0, err
+		}
+	}
+	if len(pending) > 0 {
+		log.Printf("[atrium] blocked %d pending request(s) on %s: %s", len(pending), taskID, reason)
+	}
+	return len(pending), nil
 }
 
 func (d *Daemon) onPermDecided(permID, decision, reason string) {
@@ -305,6 +354,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)
 	agentMux.HandleFunc("/permission", d.hb.HandlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
+	agentMux.HandleFunc("/gate", d.handleGate)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
@@ -371,6 +421,11 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Shutdown waits for in-flight requests, so leaving them open is what made
 	// the board listener sit out the whole grace period.
 	d.ap.Close()
+
+	// Runners atrium owns get a real chance to wind up before their terminal
+	// closes underneath them. Ten seconds because an agent mid-turn may be
+	// writing a file, and losing that costs far more than a slow shutdown.
+	d.stopSupervised(10 * time.Second)
 
 	if n := d.blockedAgents(); n > 0 {
 		log.Printf("[atrium] %d agent connection(s) still parked. they will retry against the "+

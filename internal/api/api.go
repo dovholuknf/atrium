@@ -38,6 +38,14 @@ type Server struct {
 	Launch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
+	// CancelPending answers every outstanding request on a task with a block.
+	// Moving a card out of a waiting state has to answer the question rather
+	// than hide it, or the agent stays frozen with nobody coming.
+	CancelPending func(taskID, reason string) (int, error)
+	// Attach upgrades to a WebSocket carrying a supervised runner's terminal.
+	// Supplied by the daemon, which owns the processes. Registered only when
+	// set, so a build without supervision has no dead route.
+	Attach http.HandlerFunc
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -90,6 +98,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/harnesses/{id}", s.deleteHarness)
 	mux.HandleFunc("POST /v1/launch", s.launch)
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
+	if s.Attach != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
+	}
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.Handle("/", webHandler())
 	return mux
@@ -140,7 +151,15 @@ type view struct {
 	// Observed marks a session atrium is only watching. The board uses it to
 	// offer resume rather than a prompt box, and to stay quiet about it.
 	Observed bool `json:"observed"`
+	// Supervised marks a runner atrium owns and can therefore attach to. A
+	// window mode launch is not supervised, so offering attach on it would be
+	// a button that cannot work.
+	Supervised bool `json:"supervised"`
 }
+
+// IsSupervised reports whether atrium owns this task's runner. Supplied by the
+// daemon, since the supervisor lives there.
+var IsSupervised func(taskID string) bool
 
 func toView(t *store.Task) view {
 	v := view{
@@ -148,6 +167,9 @@ func toView(t *store.Task) view {
 		DisplayTitle: t.DisplayTitle(),
 		IdleSeconds:  int64(time.Since(t.LastActivityAt).Seconds()),
 		Observed:     t.Observed(),
+	}
+	if IsSupervised != nil {
+		v.Supervised = IsSupervised(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -208,7 +230,24 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	cancelled := 0
 	if body.Status != nil {
+		// Answer anything outstanding before the card moves. A request left
+		// pending on a card that is no longer waiting keeps its agent frozen
+		// and stays in the queue to be approved later against a situation the
+		// operator has already walked away from.
+		if *body.Status != store.StatusNeedsPermission && s.CancelPending != nil {
+			reason := fmt.Sprintf("the operator moved this task to %s in atrium", *body.Status)
+			if *body.Status == store.StatusShelved {
+				reason = "this task was shelved in atrium. unshelve it to answer requests from it."
+			}
+			n, err := s.CancelPending(id, reason)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			cancelled = n
+		}
 		if err := s.st.SetStatus(id, *body.Status); err != nil {
 			s.fail(w, err)
 			return
@@ -238,7 +277,11 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Broadcast("task", toView(t))
-	writeJSON(w, http.StatusOK, toView(t))
+	out := toView(t)
+	if cancelled > 0 {
+		s.Broadcast("permission", map[string]any{"cancelled": cancelled, "task": id})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task": out, "cancelled": cancelled})
 }
 
 func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {

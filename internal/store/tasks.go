@@ -10,7 +10,7 @@ import (
 
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
-	external_id, resume_id, branch, window_name`
+	external_id, resume_id, branch, window_name, gated`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -19,12 +19,14 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		wire         sql.NullString
 		created, act string
 		overrides    string
+		gated        int
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
-		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName); err != nil {
+		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated); err != nil {
 		return nil, err
 	}
+	t.Gated = gated != 0
 	var err error
 	if t.CreatedAt, err = parseTS(created); err != nil {
 		return nil, fmt.Errorf("task %s created_at: %w", t.ID, err)
@@ -136,10 +138,10 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -334,6 +336,46 @@ func (s *Store) SetRank(id string, rank float64) error {
 		_, err := s.db.Exec(`UPDATE task SET rank = ? WHERE id = ?`, rank, id)
 		return err
 	})
+}
+
+// SetGated records whether a session has joined atrium.
+//
+// Joining is what turns permission gating on for a session that was not
+// started with it. The hook asks the daemon rather than reading its own
+// environment, so this takes effect on the very next tool call without the
+// session being restarted.
+func (s *Store) SetGated(id string, on bool) error {
+	return s.guard(func() error {
+		v := 0
+		if on {
+			v = 1
+		}
+		_, err := s.db.Exec(`UPDATE task SET gated = ?, last_activity_at = ? WHERE id = ?`,
+			v, ts(now()), id)
+		return err
+	})
+}
+
+// GatedByWireName reports whether the session calling itself name has joined.
+// Unknown names are not gated: a session atrium has never heard of has not
+// opted in.
+func (s *Store) GatedByWireName(name string) (bool, error) {
+	var gated bool
+	err := s.guard(func() error {
+		gated = false
+		t, err := s.getBy(`wire_name = ?`, name)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		// A card put down is not a session to gate. Its requests are refused
+		// by the shelved rule instead.
+		gated = t.Gated && t.Status != StatusDone && t.Status != StatusDead
+		return nil
+	})
+	return gated, err
 }
 
 // Touch marks activity without changing status.

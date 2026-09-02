@@ -91,6 +91,34 @@ something has been sitting, or what you were trying to do.
 `needs-permission` returns to `running` on resolution. Transitions are recorded as events, so the board can show
 churn without the task table carrying history.
 
+### A waiting card cannot be quietly put down
+
+An agent asking for permission is frozen. It stays frozen until something answers, and nothing else will: there is
+no timeout on the agent side, by design, because a timeout would either wake the model or guess at an answer.
+
+That makes it possible to strand an agent by tidying the board. Shelve a card that is holding a request and the
+card moves while the question does not: the request stays in the queue, the agent stays frozen, and the request
+can be approved an hour later against a situation that has moved on. The interface would be offering a decision
+the operator has already mentally discarded.
+
+Three rules close that off. They are lifecycle rules, not interface polish, so nothing that changes a status can
+opt out of them.
+
+1. **Moving a card out of a waiting state answers what it was holding.** Every pending request on that task is
+   decided as `block`, with a reason naming what the operator did. A block carries guidance, so the agent is
+   released and told why rather than left waiting.
+2. **A shelved card is a standing no.** While a task is shelved, a new request from it is blocked immediately
+   with the same explanation, and never reaches the queue. Otherwise an agent asks, gets nothing, and freezes
+   behind a card that has been deliberately stopped being looked at. Unshelving restores normal behaviour, or
+   shelving would be a trap.
+3. **A request nobody answers keeps asking.** One alert on arrival is not enough, because the alert is easy to
+   miss and the cost of missing it is an agent idle for an hour. After a minute the board nags: every minute for
+   the first ten, then every five, by sound, desktop notification and toast. Widening rather than constant, so it
+   stays a reminder instead of an assault.
+
+The operator is told before rule one applies, not after. Moving a card that is holding requests asks first and
+says exactly what will happen to them.
+
 ### Schema
 
 Portable across SQLite and Postgres. Text ULID keys avoid the `AUTOINCREMENT` versus `SERIAL` split. Timestamps
@@ -139,7 +167,24 @@ CREATE TABLE permission (
   requested_at TEXT NOT NULL,
   decided_at   TEXT,
   decision     TEXT CHECK (decision IS NULL OR decision IN ('approve','block')),
-  reason       TEXT NOT NULL DEFAULT ''
+  reason       TEXT NOT NULL DEFAULT '',
+  -- What the tool would actually do: the diff for an edit, the content for a
+  -- write. A path names the target without saying what happens to it.
+  details      TEXT NOT NULL DEFAULT '',
+  -- "you" for a decision made by hand, or the pattern of the rule that
+  -- answered it. Without this the log cannot distinguish the two.
+  decided_by   TEXT NOT NULL DEFAULT '',
+  -- The pattern a rule this decision established, set when the answer was
+  -- "always" or "never". Distinguishes those from a one-off approval.
+  rule_created TEXT NOT NULL DEFAULT '',
+  -- Idempotency for the replay path. NULL when the caller sends no key,
+  -- because UNIQUE permits many NULLs but only one empty string.
+  --
+  -- Scoped to the task, not global. The key means "this agent's same
+  -- request", so two agents deriving keys the same way, from a hash of the
+  -- command for instance, must not collide and hand one the other's answer.
+  dedup_key    TEXT,
+  UNIQUE (task_id, dedup_key)
 );
 
 CREATE INDEX permission_pending ON permission (decided_at, requested_at);
@@ -243,7 +288,22 @@ POST /v1/submit        { task?, observed?, kind, content }
 POST /v1/permission    { task, tool, command, dedup_key }
                                                  -> { decision, reason }    (blocks)
 POST /v1/describe      { task, title?, why? }    -> { ok }
+POST /session          { agent, event, runner?, cwd?, pid?, task_id?, resume?, source? }
+                                                 -> { ok }
 ```
+
+`/session` is posted by the harness's own session hooks rather than by the model, because a session sitting at its
+prompt has made no tool call and would otherwise be invisible, and asking the model to announce itself would spend
+a turn on something the harness already knows. The rules it follows:
+
+- **Identity.** `task_id` binds a runner atrium launched to the card that launched it. Otherwise the task is
+  matched or created by `agent`, exactly as `/submit` does, and `pid` and `cwd` refresh the observed bucket.
+- **`event: "start"`** records a `launched` event. It moves a card to `running` only from `dead` or `backlog`,
+  which is what a resume looks like from here. A card already running or waiting is left where it is.
+- **`event: "end"`** records an `exited` event and moves the card to `dead`. Not to `done`: ending a session says
+  the runner is gone, not that the work succeeded, and only a human or a `task-complete` submit can claim that.
+  A card the operator shelved or marked done stays where they put it.
+- **Failure is silent.** A session must never fail to start because atrium was not listening.
 
 `task` is omitted only on a self started runner's first call, which instead sends the `observed` bucket described
 under "Identity and registration." The response always carries the resolved `task` id, and the runner uses it from
@@ -313,9 +373,24 @@ Wedge state lives in memory and on stderr, not in the database. By definition th
 
 ## Process supervision
 
-The daemon spawns each runner under a pseudo terminal and owns both directions of its stdio. ConPTY on Windows.
-`github.com/aymanbagabas/go-pty` is the candidate cross platform wrapper and **must be validated on Windows 11
-before we depend on it**.
+The daemon spawns each runner under a pseudo terminal and owns both directions of its stdio. ConPTY on Windows,
+through `github.com/aymanbagabas/go-pty`.
+
+### ConPTY was validated, and it has one trap
+
+A spike on Windows 11 with go-pty v0.2.3 confirmed all five things supervision depends on: spawning a process
+under a pty, reading its output including the ANSI escapes a browser terminal needs, writing keystrokes back,
+resizing so the child notices, and the child exiting rather than leaking when the pty closes.
+
+One surprise, recorded here because it will otherwise cost an afternoon:
+
+> **After tearing down a pty, returning normally from `main` leaves the process with exit status 127.**
+> An explicit `os.Exit(0)` gives 0. The parent shell is unaffected either way.
+
+The symptom is a daemon that logs a clean shutdown and then reports failure to whatever started it: a service
+manager restarting it in a loop, a CI step going red, a wrapper script taking the error branch. Nothing in the
+logs will suggest a cause, because the shutdown genuinely was clean. Any atrium build that owns a pty has to exit
+explicitly rather than falling off the end of `main`.
 
 Atrium does not replace the runner. claude-code is the agent: it owns the tool loop, context management,
 permission enforcement, and the MCP client. It also holds the subscription credentials, so bypassing it in favor

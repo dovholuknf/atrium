@@ -76,11 +76,6 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if !h.Enabled {
 		return nil, fmt.Errorf("%s is not enabled. turn it on in harness settings first", h.Label)
 	}
-	if h.LaunchMode == store.LaunchPTY {
-		// Owning the terminal is the design's stage seven and needs ConPTY
-		// validated first. Saying so is better than pretending to start it.
-		return nil, errors.New("pty mode is not built yet. set this harness to window mode")
-	}
 
 	cwd := strings.TrimSpace(req.Cwd)
 	if cwd == "" {
@@ -111,7 +106,6 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 
 	inner := shellJoin(append([]string{h.Cmd}, args...))
-	argv := expandTemplate(TerminalTemplate, cwd, title, h.Cmd, args)
 
 	// The card exists before the process does, and its name is what the runner
 	// will report when it first does something. Without this the runner would
@@ -125,19 +119,42 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = cwd
-	cmd.Env = childEnv(h.Env, map[string]string{
+	env := childEnv(h.Env, map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
 	})
+	via := ""
 
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("could not start %s: %w", h.Label, err)
+	if h.LaunchMode == store.LaunchPTY {
+		// Atrium owns the process. That is what makes terminate, the liveness
+		// reaper and browser attach work, and it is also why this runner dies
+		// with the daemon rather than outliving it the way window mode does.
+		pid, err := d.spawnPTY(task.ID, h.Cmd, args, cwd, env)
+		if err != nil {
+			return nil, err
+		}
+		via = "pty"
+		// Recording the pid is the point: terminate and the liveness reaper
+		// both key off it, and a window mode launch never has one.
+		if _, _, err := d.st.Register(store.Observed{
+			WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID, PID: pid,
+		}); err != nil {
+			return nil, err
+		}
+	} else {
+		argv := expandTemplate(TerminalTemplate, cwd, title, h.Cmd, args)
+		cmd := exec.Command(argv[0], argv[1:]...)
+		cmd.Dir = cwd
+		cmd.Env = env
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("could not start %s: %w", h.Label, err)
+		}
+		// The terminal wrapper exits as soon as it has handed off, so reap it
+		// rather than leaving a zombie. The runner keeps running, which is also
+		// why atrium never learns its pid.
+		go func() { _ = cmd.Wait() }()
+		via = argv[0]
 	}
-	// The terminal wrapper exits as soon as it has handed off, so reap it
-	// rather than leaving a zombie. The runner itself keeps running.
-	go func() { _ = cmd.Wait() }()
 
 	created, err := d.st.Get(task.ID)
 	if err != nil {
@@ -154,7 +171,8 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
-		"harness": h.ID, "cmd": inner, "cwd": cwd, "resume": req.Resume, "via": argv[0],
+		"harness": h.ID, "cmd": inner, "cwd": cwd, "resume": req.Resume,
+		"via": via, "mode": h.LaunchMode,
 	}); err != nil {
 		return nil, err
 	}

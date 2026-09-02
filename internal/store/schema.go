@@ -191,6 +191,54 @@ var migrations = []struct {
 			`ALTER TABLE permission ADD COLUMN details TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// The dedup key was unique across the whole table. That is wrong the
+		// moment two agents derive keys the same way, say from a hash of the
+		// command: agent B's identical request would collide with agent A's
+		// row and be handed A's answer. The key only ever means "this agent's
+		// same request", so scope it to the task.
+		//
+		// SQLite cannot drop a UNIQUE declared in CREATE TABLE, so the table is
+		// rebuilt. Done inside the migration's transaction, so a failure part
+		// way through leaves the original in place.
+		name: "0010_dedup_key_per_task",
+		stmts: []string{
+			`CREATE TABLE permission_rebuilt (
+				id           TEXT PRIMARY KEY,
+				task_id      TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+				tool         TEXT NOT NULL,
+				command      TEXT NOT NULL,
+				requested_at TEXT NOT NULL,
+				decided_at   TEXT,
+				decision     TEXT CHECK (decision IS NULL OR decision IN ('approve','block')),
+				reason       TEXT NOT NULL DEFAULT '',
+				dedup_key    TEXT,
+				decided_by   TEXT NOT NULL DEFAULT '',
+				rule_created TEXT NOT NULL DEFAULT '',
+				details      TEXT NOT NULL DEFAULT '',
+				UNIQUE (task_id, dedup_key)
+			)`,
+			`INSERT INTO permission_rebuilt
+				(id, task_id, tool, command, requested_at, decided_at, decision, reason,
+				 dedup_key, decided_by, rule_created, details)
+			 SELECT id, task_id, tool, command, requested_at, decided_at, decision, reason,
+				 dedup_key, decided_by, rule_created, details FROM permission`,
+			`DROP TABLE permission`,
+			`ALTER TABLE permission_rebuilt RENAME TO permission`,
+			`CREATE INDEX IF NOT EXISTS permission_pending ON permission (decided_at, requested_at)`,
+		},
+	},
+	{
+		// Whether a session has joined atrium. Until now gating was decided
+		// once, when the session started, from its environment, so a session
+		// that was not gated stayed ungated for its whole life. This lets a
+		// session opt in or out while it is running, which means the gate has
+		// to be state rather than an environment variable.
+		name: "0011_task_gated",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN gated INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
