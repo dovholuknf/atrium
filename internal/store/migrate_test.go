@@ -39,13 +39,13 @@ func TestMigrationRepairsDatabaseMissingPermRule(t *testing.T) {
 	}
 	rule, err := reopened.MatchRule("Bash", "go build ./...", "")
 	if err != nil {
-		t.Fatalf("rule lookup still fails, which is what wedged the daemon: %v", err)
+		t.Fatalf("rule lookup still fails, which is what halted the daemon: %v", err)
 	}
 	if rule == nil {
 		t.Fatal("restored table did not match")
 	}
-	if wedged, cause := reopened.Wedged(); wedged {
-		t.Fatalf("store wedged during repair: %v", cause)
+	if halted, cause := reopened.Halted(); halted {
+		t.Fatalf("store halted during repair: %v", cause)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 }
 
 // Every table the code touches has to exist after a fresh open. This is the
-// check that would have caught the missing perm_rule before it wedged.
+// check that would have caught the missing perm_rule before it halted.
 func TestAllTablesExistAfterMigrate(t *testing.T) {
 	s := open(t)
 	for _, table := range []string{"task", "event", "permission", "perm_rule", "launch_spec", "schema_migration"} {

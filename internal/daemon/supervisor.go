@@ -87,6 +87,9 @@ type runner struct {
 	taskID string
 	pty    pty.Pty
 	cmd    *pty.Cmd
+	// started separates "fell over on startup" from "finished". The first gets
+	// its last output put on the card.
+	started time.Time
 
 	mu       sync.Mutex
 	buf      *ringBuffer
@@ -199,6 +202,7 @@ func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env
 	if err != nil {
 		return 0, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
 	}
+	resolved, args = viaShellIfScript(resolved, args)
 
 	p, err := pty.New()
 	if err != nil {
@@ -213,7 +217,7 @@ func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env
 	}
 
 	r := &runner{
-		taskID: taskID, pty: p, cmd: c,
+		taskID: taskID, pty: p, cmd: c, started: time.Now(),
 		buf:      newRing(scrollback),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
@@ -250,10 +254,16 @@ func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env
 // awaitExit records the runner exiting and marks its card dead.
 func (d *Daemon) awaitExit(r *runner) {
 	err := r.cmd.Wait()
+	lived := time.Since(r.started)
 	r.exitOnce.Do(func() { close(r.done) })
 	r.closeWatchers()
+	// Read before the terminal closes. For a runner that dies on startup this
+	// text is the reason, and the only copy of it.
+	tail := lastOutput(r.buf.Snapshot(), 12)
 	_ = r.pty.Close()
 	d.sup.remove(r.taskID)
+	// The process is gone, so nothing it was doing is still true.
+	d.act.forget(r.taskID)
 
 	code := 0
 	if err != nil {
@@ -262,9 +272,20 @@ func (d *Daemon) awaitExit(r *runner) {
 			code = ee.ExitCode()
 		}
 	}
-	if err := d.st.AppendEvent(r.taskID, store.EventExited, map[string]any{
+	payload := map[string]any{
 		"exit_code": code, "by": "supervisor",
-	}); err != nil {
+		"ran_for": lived.Round(time.Millisecond).String(),
+	}
+	// A runner that lasted seconds did no work, so its last output is a failure
+	// message. One that ran for an hour ended for reasons its final twelve
+	// lines do not explain.
+	if lived < startupFailureWindow && tail != "" {
+		payload["output"] = tail
+		if err := d.st.SetWhy(r.taskID, "failed to start: "+firstLine(tail)); err != nil {
+			log.Printf("[atrium] note early exit for %s: %v", r.taskID, err)
+		}
+	}
+	if err := d.st.AppendEvent(r.taskID, store.EventExited, payload); err != nil {
 		log.Printf("[atrium] record exit for %s: %v", r.taskID, err)
 	}
 	// A card put down by hand stays where it was put.
@@ -296,45 +317,94 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 		wg.Add(1)
 		go func(r *runner) {
 			defer wg.Done()
-
-			// Ask before telling. An agent mid-turn may be part way through
-			// writing a file, and yanking its terminal away loses that work
-			// and whatever context it was holding.
-			//
-			// Order matters. A control-c interrupts what the runner is doing
-			// without ending it, and only then does exit ask it to wind up on
-			// its own terms. Closing the terminal first would deny it both.
-			_ = r.Write([]byte{0x03})
-			select {
-			case <-r.done:
-				log.Printf("[atrium] runner for %s stopped on its own", r.taskID)
-				return
-			case <-time.After(500 * time.Millisecond):
-			}
-			_ = r.Write([]byte("exit\r\n"))
-
-			select {
-			case <-r.done:
-				log.Printf("[atrium] runner for %s exited cleanly", r.taskID)
-				return
-			case <-time.After(grace):
-			}
-
-			// It did not take the hint. Close the terminal, which most
-			// processes treat as a hangup.
-			log.Printf("[atrium] runner for %s did not exit in %s, closing its terminal", r.taskID, grace)
-			_ = r.pty.Close()
-			select {
-			case <-r.done:
-				log.Printf("[atrium] runner for %s stopped", r.taskID)
-			case <-time.After(2 * time.Second):
-				log.Printf("[atrium] runner for %s is still up, killing it", r.taskID)
-				if r.cmd.Process != nil {
-					_ = r.cmd.Process.Kill()
-				}
-			}
+			windDown(r, grace, d.exitKeysFor(r.taskID))
 		}(r)
 	}
 	wg.Wait()
 	log.Printf("[atrium] all supervised runners stopped")
+}
+
+// stopOne winds a single runner down and waits for it. Returns whether atrium
+// owned a runner for that card at all.
+//
+// Used by shelving, which stops a session without ending the work: the card and
+// its resume id stay, so unshelving starts the same conversation again.
+func (d *Daemon) stopOne(taskID string, grace time.Duration) bool {
+	r := d.sup.get(taskID)
+	if r == nil {
+		return false
+	}
+	windDown(r, grace, d.exitKeysFor(taskID))
+	return true
+}
+
+// exitKeysFor is how this card's runner is asked to exit.
+//
+// Per runner, because there is no common answer: a shell takes `exit`, claude
+// takes control-d twice, ollama and codex take it once. Falls back to
+// control-c then `exit`, which is what a shell understands and what atrium did
+// before any of this was configurable.
+func (d *Daemon) exitKeysFor(taskID string) [][]byte {
+	fallback := [][]byte{{0x03}, []byte("exit\r\n")}
+	t, err := d.st.Get(taskID)
+	if err != nil || t.Runner == "" {
+		return fallback
+	}
+	h, err := d.st.Harness(t.Runner)
+	if err != nil {
+		return fallback
+	}
+	if keys := h.ExitBytes(); len(keys) > 0 {
+		return keys
+	}
+	return fallback
+}
+
+// windDown asks a runner to stop, then insists.
+//
+// `keys` is the runner's own way of being asked, one write per keystroke,
+// because two control-d presses are not the same to a program reading a
+// terminal as one write of two bytes. Each is given a moment to take effect
+// before the next, so a runner that quits on the first is never sent the rest.
+//
+// Only when all of them are ignored does the terminal close, and only after
+// that is the process killed. An agent mid-turn may be part way through
+// writing a file, and yanking its terminal away loses that.
+func windDown(r *runner, grace time.Duration, keys [][]byte) {
+	// A runner with no terminal has nothing to write to and nothing to close.
+	// Guarded rather than assumed, because reaching this with a partial runner
+	// would panic inside shutdown, which is the worst place to panic.
+	if r == nil || r.pty == nil {
+		return
+	}
+	for _, k := range keys {
+		_ = r.Write(k)
+		select {
+		case <-r.done:
+			log.Printf("[atrium] runner for %s exited when asked", r.taskID)
+			return
+		case <-time.After(600 * time.Millisecond):
+		}
+	}
+
+	select {
+	case <-r.done:
+		log.Printf("[atrium] runner for %s exited cleanly", r.taskID)
+		return
+	case <-time.After(grace):
+	}
+
+	// It did not take the hint. Close the terminal, which most processes treat
+	// as a hangup.
+	log.Printf("[atrium] runner for %s did not exit in %s, closing its terminal", r.taskID, grace)
+	_ = r.pty.Close()
+	select {
+	case <-r.done:
+		log.Printf("[atrium] runner for %s stopped", r.taskID)
+	case <-time.After(2 * time.Second):
+		log.Printf("[atrium] runner for %s is still up, killing it", r.taskID)
+		if r.cmd.Process != nil {
+			_ = r.cmd.Process.Kill()
+		}
+	}
 }

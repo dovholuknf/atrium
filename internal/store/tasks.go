@@ -11,7 +11,7 @@ import (
 
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
-	external_id, resume_id, branch, window_name, gated`
+	external_id, resume_id, branch, window_name, gated, auto_approve`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -20,14 +20,15 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		wire         sql.NullString
 		created, act string
 		overrides    string
-		gated        int
+		gated, auto  int
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
-		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated); err != nil {
+		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
+	t.AutoApprove = auto != 0
 	var err error
 	if t.CreatedAt, err = parseTS(created); err != nil {
 		return nil, fmt.Errorf("task %s created_at: %w", t.ID, err)
@@ -139,10 +140,10 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -186,6 +187,21 @@ func (s *Store) Get(id string) (*Task, error) {
 	return t, err
 }
 
+// GetByWireName returns the task a session calling itself name belongs to.
+// Hooks know their session's name, not its card id.
+func (s *Store) GetByWireName(name string) (*Task, error) {
+	var t *Task
+	err := s.guard(func() error {
+		got, err := s.getBy(`wire_name = ?`, name)
+		if err != nil {
+			return err
+		}
+		t = got
+		return nil
+	})
+	return t, err
+}
+
 // List returns tasks, newest activity first within each status, ordered by
 // rank. Pass an empty status set for everything.
 func (s *Store) List(statuses ...string) ([]*Task, error) {
@@ -219,7 +235,7 @@ func (s *Store) List(statuses ...string) ([]*Task, error) {
 }
 
 // Waiting returns everything blocked on a human, longest wait first. This is
-// the Stack view, and it deliberately ignores rank: "who has waited longest"
+// the Stack view, and it ignores rank: "who has waited longest"
 // is a fact, not a judgement.
 func (s *Store) Waiting() ([]*Task, error) {
 	var out []*Task
@@ -329,16 +345,26 @@ func (s *Store) SetWhy(id, why string) error {
 	})
 }
 
-// SetResumeID records the runner's own id for the conversation, so the card
-// can start it again later.
+// BackdateActivity moves a task's last activity into the past. Test support:
+// the alternative is a test that sleeps for hours.
+func (s *Store) BackdateActivity(id string, by time.Duration) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`,
+			ts(now().Add(-by)), id)
+		return err
+	})
+}
+
+// SetResumeID records the runner's own id for the conversation, so the card can
+// start it again later.
 //
-// This is what makes shelving and terminating survivable. A supervised runner
-// dies with the daemon, because its pseudo terminal is owned by the daemon and
-// closing it takes the process with it. Without an id to resume from, that is
-// the end of the conversation. With one, it is a restart.
+// A supervised runner dies with the daemon: the daemon owns its pseudo
+// terminal, and closing one takes the attached process with it. An id to resume
+// from turns that from losing the conversation into restarting it, and does the
+// same for shelving and terminating.
 //
-// An empty id is ignored rather than stored. Not every harness reports one, and
-// overwriting a good id with a blank would quietly break the resume button.
+// An empty id is ignored. Not every harness reports one, and overwriting a good
+// id with a blank breaks the resume button silently.
 func (s *Store) SetResumeID(id, resumeID string) error {
 	if strings.TrimSpace(resumeID) == "" {
 		return nil
@@ -351,9 +377,8 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 
 // PrunableStatuses are the only statuses a sweep will ever delete.
 //
-// Shelved is deliberately absent. Shelving something says you mean to come back
-// to it, so a sweep that took shelved cards would throw away the one kind of
-// card that was kept on purpose.
+// Shelved is absent: shelving says the work is coming back, so a sweep that
+// took shelved cards would discard the ones kept on purpose.
 var PrunableStatuses = []string{StatusDone, StatusDead}
 
 // Prune deletes finished cards that have been sitting untouched. Returns how
@@ -364,7 +389,7 @@ func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) 
 		want = PrunableStatuses
 	}
 	// Anything outside the prunable set is dropped rather than refused, so a
-	// caller can pass a column name without having to know the rule.
+	// caller can pass a column name without knowing the rule.
 	var keep []any
 	for _, s := range want {
 		for _, ok := range PrunableStatuses {
@@ -422,6 +447,23 @@ func (s *Store) SetGated(id string, on bool) error {
 			v = 1
 		}
 		_, err := s.db.Exec(`UPDATE task SET gated = ?, last_activity_at = ? WHERE id = ?`,
+			v, ts(now()), id)
+		return err
+	})
+}
+
+// SetAutoApprove turns auto mode on or off for one session.
+//
+// Per task, so one session can be trusted for a stretch while the others keep
+// asking. Stored rather than held in memory: losing it on a restart would start
+// interrupting again with no sign of why.
+func (s *Store) SetAutoApprove(id string, on bool) error {
+	return s.guard(func() error {
+		v := 0
+		if on {
+			v = 1
+		}
+		_, err := s.db.Exec(`UPDATE task SET auto_approve = ?, last_activity_at = ? WHERE id = ?`,
 			v, ts(now()), id)
 		return err
 	})

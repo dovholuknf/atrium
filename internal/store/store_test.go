@@ -246,10 +246,10 @@ func TestEventsRecordHistory(t *testing.T) {
 	}
 }
 
-func TestWedgeRefusesFurtherWork(t *testing.T) {
+func TestHaltRefusesFurtherWork(t *testing.T) {
 	s := open(t)
 	var gotCause error
-	s.OnWedge = func(cause error) { gotCause = cause }
+	s.OnHalt = func(cause error) { gotCause = cause }
 
 	// Close the underlying database to force a non-contention failure.
 	if err := s.db.Close(); err != nil {
@@ -258,15 +258,15 @@ func TestWedgeRefusesFurtherWork(t *testing.T) {
 	if _, _, err := s.Register(Observed{WireName: "x", Worktree: "d:/x", Runner: "claude"}); err == nil {
 		t.Fatal("expected an error once the database is unusable")
 	}
-	wedged, cause := s.Wedged()
-	if !wedged {
-		t.Fatal("store did not wedge on a hard failure")
+	halted, cause := s.Halted()
+	if !halted {
+		t.Fatal("store did not halt on a hard failure")
 	}
 	if cause == nil || gotCause == nil {
-		t.Fatalf("wedge cause not reported: cause=%v callback=%v", cause, gotCause)
+		t.Fatalf("halt cause not reported: cause=%v callback=%v", cause, gotCause)
 	}
 	// Every later call must refuse rather than retry.
 	if _, err := s.List(); err == nil {
-		t.Fatal("wedged store still served a read")
+		t.Fatal("halted store still served a read")
 	}
 }

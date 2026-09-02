@@ -19,10 +19,10 @@ import "time"
 //
 // Between the two, a message lands whatever the session is doing.
 type Message struct {
-	ID         string     `json:"id"`
-	TaskID     string     `json:"task_id"`
-	Text       string     `json:"text"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID          string     `json:"id"`
+	TaskID      string     `json:"task_id"`
+	Text        string     `json:"text"`
+	CreatedAt   time.Time  `json:"created_at"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 	// Via records how it reached the session: "permission" or "stop". Worth
 	// knowing, because one of those costs the agent a refused tool call.

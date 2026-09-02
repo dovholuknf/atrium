@@ -17,10 +17,9 @@ import (
 // HTTP request per keystroke is not a serious option, so attach is a WebSocket
 // and nothing else is.
 //
-// The protocol is deliberately thin. Bytes from the runner arrive as binary
-// messages and go straight to the terminal. Text messages from the browser are
-// JSON control frames, which keeps keystrokes and resizes distinguishable
-// without inventing a framing layer:
+// Bytes from the runner arrive as binary messages and go straight to the
+// terminal. Text messages from the browser are JSON control frames, which keeps
+// keystrokes and resizes distinguishable without a framing layer:
 //
 //	{"t":"in","d":"ls\r"}        keystrokes
 //	{"t":"resize","cols":120,"rows":40}

@@ -4,7 +4,7 @@ import "testing"
 
 // Requests without a dedup key must not collide with each other. UNIQUE
 // permits many NULLs but only one empty string, so an un-keyed request has to
-// store NULL rather than ''.
+// store NULL rather than ”.
 func TestUnkeyedPermissionsDoNotCollide(t *testing.T) {
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-f", Worktree: "d:/w", Runner: "claude"})

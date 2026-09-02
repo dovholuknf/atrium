@@ -96,6 +96,16 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		nothing()
 		return
 	}
+
+	// The turn ended, so it is the operator's move. This is the signal that
+	// makes `needs input` mean anything: without it a session that finished
+	// its turn stays in `running`, indistinguishable from one mid-build, and
+	// the column that answers "which of these wants me" stays empty.
+	//
+	// Recorded whatever happens next, including when a message is about to send
+	// the model back to work, since the message path sets it running again.
+	d.turnEnded(task.ID)
+
 	msgs, err := d.takeMessages(task.ID, "stop")
 	if err != nil || len(msgs) == 0 {
 		nothing()
@@ -111,8 +121,56 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		nothing()
 		return
 	}
+	// A blocked Stop sends the model back to work with the message as its
+	// instruction, so the turn is not over after all.
+	d.turnResumed(task.ID)
 	d.publishTask(task.ID)
 	_, _ = w.Write(out)
+}
+
+// turnEnded moves a card to needs-input, because the agent stopped and nothing
+// else will move until the operator says something.
+//
+// A card the operator put somewhere by hand stays put: shelved, done and dead
+// are all decisions, and a turn ending is not grounds to overrule one. A card
+// waiting on a permission also stays, since that is a more specific answer to
+// "what does this need" than needs-input is.
+func (d *Daemon) turnEnded(taskID string) {
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return
+	}
+	switch t.Status {
+	case store.StatusRunning, store.StatusDead:
+	default:
+		return
+	}
+	if err := d.st.SetStatus(taskID, store.StatusNeedsInput); err != nil {
+		log.Printf("[atrium] turn ended for %s: %v", taskID, err)
+		return
+	}
+	d.act.set(taskID, ActivityIdle, "")
+	d.publishTask(taskID)
+}
+
+// turnResumed moves a card back to running when the agent starts working
+// again, which is what a prompt or a delivered message means.
+func (d *Daemon) turnResumed(taskID string) {
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return
+	}
+	// Only from waiting. A shelved or finished card is where it was put, and a
+	// permission request is answered through its own path.
+	if t.Status != store.StatusNeedsInput {
+		return
+	}
+	if err := d.st.SetStatus(taskID, store.StatusRunning); err != nil {
+		log.Printf("[atrium] turn resumed for %s: %v", taskID, err)
+		return
+	}
+	d.act.set(taskID, ActivityThinking, "")
+	d.publishTask(taskID)
 }
 
 // handleMessage queues something to say to a session.

@@ -1,10 +1,10 @@
 // Package daemon wires the three layers together: the store owns state, the
 // hub serves agents, and the api serves humans.
 //
-// The two listeners are separate on purpose. When the store wedges, the
-// agent-facing listener closes and does not reopen, so every runner sees
-// connection-refused and parks on the backoff it already has. The human-facing
-// listener stays up so the board can say what broke.
+// The two listeners are separate so one can be closed without the other. When
+// the store halts the agent-facing listener closes and does not reopen, so
+// every runner sees connection-refused and parks on the backoff it already has,
+// while the human-facing listener stays up to say what broke.
 package daemon
 
 import (
@@ -32,6 +32,9 @@ type Options struct {
 	HumanAddr string        // human-facing listener, e.g. ":7778"
 	DBPath    string        // sqlite file
 	LongPoll  time.Duration // agent long-poll ceiling
+	// ShutdownToken guards POST /v1/shutdown. Empty means loopback only.
+	// Setting one says the endpoint is meant to be reachable remotely.
+	ShutdownToken string
 }
 
 // Daemon owns the store, the hub, and both listeners.
@@ -43,6 +46,13 @@ type Daemon struct {
 
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
+
+	// act holds what each runner is doing right now, in memory only. See
+	// docs/activity-design.md.
+	act *activityTracker
+
+	// stop is how a shutdown request reaches the wind-down Run is waiting on.
+	stop *stopper
 
 	mu          sync.Mutex
 	agentServer *http.Server
@@ -81,9 +91,9 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d := &Daemon{
 		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
-		sup: newSupervisor(),
+		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 	}
-	st.OnWedge = d.onWedge
+	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
@@ -92,9 +102,15 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Attach = d.handleAttach
 	d.ap.Message = d.handleMessage
+	d.ap.Shutdown = d.handleShutdown
+	d.ap.Shelve = d.Shelve
+	d.ap.StopRunner = d.StopRunner
+	d.ap.Unshelve = d.Unshelve
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
+	// What a runner is doing right now. Held in the daemon, never written down.
+	api.ActivityOf = d.activityFor
 	return d, nil
 }
 
@@ -144,9 +160,48 @@ func (d *Daemon) Store() *store.Store { return d.st }
 // Close releases the database.
 func (d *Daemon) Close() error { return d.st.Close() }
 
-// onWedge closes the agent-facing listener and leaves it closed.
-func (d *Daemon) onWedge(cause error) {
-	log.Printf("[atrium] WEDGED: %v", cause)
+// reportRunners says which configured runners this machine actually has.
+//
+// Printed at startup because PATH is read when the process starts. Installing
+// something afterwards is invisible until the daemon is restarted, and a
+// runner that fails to launch for that reason gives no hint that a restart is
+// the answer.
+func (d *Daemon) reportRunners() {
+	hs, err := d.st.Harnesses()
+	if err != nil || len(hs) == 0 {
+		return
+	}
+	width := 0
+	for _, h := range hs {
+		if len(h.ID) > width {
+			width = len(h.ID)
+		}
+	}
+	log.Printf("[atrium] runners, resolved against this process's PATH:")
+	missing := 0
+	for _, h := range hs {
+		state := "off"
+		if h.Enabled {
+			state = "on "
+		}
+		if p := api.LookPath(h.Cmd); p != "" {
+			log.Printf("[atrium]   %-*s  %s  %s", width, h.ID, state, p)
+			continue
+		}
+		log.Printf("[atrium]   %-*s  %s  NOT ON PATH (%s)", width, h.ID, state, h.Cmd)
+		if h.Enabled {
+			missing++
+		}
+	}
+	if missing > 0 {
+		log.Printf("[atrium] %d enabled runner(s) cannot start. install them, then restart "+
+			"the daemon so it picks up the new PATH.", missing)
+	}
+}
+
+// onHalt closes the agent-facing listener and leaves it closed.
+func (d *Daemon) onHalt(cause error) {
+	log.Printf("[atrium] HALTED: %v", cause)
 	log.Printf("[atrium] agent listener closing. runners will park on connection-refused and burn nothing.")
 	log.Printf("[atrium] fix the cause and restart. atrium will not recover on its own.")
 	d.mu.Lock()
@@ -158,7 +213,7 @@ func (d *Daemon) onWedge(cause error) {
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	}
-	d.ap.Broadcast("wedge", map[string]string{"cause": fmt.Sprint(cause)})
+	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
 }
 
 // prompt routes a prompt from a human client to the agent holding that task.
@@ -252,9 +307,18 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return "", nil, err
 	}
 	tool, command := req.Tool, req.Command
-	// The hook does not send a dedup key yet, so requests are un-keyed for now
-	// and the store treats each as distinct.
-	p, decided, err := d.st.RecordPermission(task.ID, tool, command, "", req.Details)
+	// A permission request is a tool starting, so it doubles as an activity
+	// report. A gated session therefore shows live activity with no activity
+	// hook wired up, at no cost: this call is already being made.
+	d.act.set(task.ID, ActivityTool, tool)
+	if strings.EqualFold(tool, "Task") {
+		d.act.addSubagents(task.ID, 1)
+	}
+	// The key makes a retry the same question rather than a new one. A daemon
+	// that crashed between recording a decision and answering would otherwise
+	// ask twice, and the second answer would be given against a situation that
+	// had moved on. Empty means the store treats this as distinct.
+	p, decided, err := d.st.RecordPermission(task.ID, tool, command, req.DedupKey, req.Details)
 	if err != nil {
 		return "", nil, err
 	}
@@ -262,11 +326,10 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return p.ID, &hub.AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
 	}
 
-	// Anything the operator queued for this session rides the next tool call.
-	// A busy session makes them constantly, so this is how a message reaches
-	// one that is working. The call is refused to carry the text, and the
-	// banner says plainly that the refusal is the delivery mechanism rather
-	// than a judgement on the command.
+	// Anything queued for this session rides the next tool call, which is how a
+	// message reaches a session that is working. The call is refused in order
+	// to carry the text, and the banner says so, or the model reads a delivery
+	// as a judgement on its command.
 	if msgs, err := d.takeMessages(task.ID, "permission"); err == nil && len(msgs) > 0 {
 		reason := messageBanner(msgs, true)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, "message"); err != nil {
@@ -276,9 +339,9 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return p.ID, &hub.AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
-	// A shelved card is a standing no. Putting work down has to answer for
-	// that work, or the agent asks, gets nothing, and freezes behind a card
-	// the operator has deliberately stopped looking at.
+	// A shelved card is a standing no. Putting work down has to answer for that
+	// work, or the agent asks, gets nothing, and freezes behind a card nobody
+	// is looking at any more.
 	if task.Status == store.StatusShelved {
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "shelved"); err != nil {
 			return "", nil, err
@@ -305,6 +368,25 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return p.ID, &hub.AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
 	}
 
+	// Auto mode: stop asking, keep recording.
+	//
+	// Last, after messages, shelving and standing rules. Auto mode stops new
+	// questions; it does not discard answers already given, so a never rule and
+	// a shelved card both still block. What it lets through goes to the same
+	// audit log as every other decision, marked auto, and the review reads it.
+	if task.AutoApprove {
+		if _, err := d.st.DecidePermissionBy(p.ID, "approve", autoReason, "auto"); err != nil {
+			return "", nil, err
+		}
+		if err := d.st.AppendEvent(task.ID, store.EventPermDecided, map[string]any{
+			"id": p.ID, "decision": "approve", "by": "auto", "auto": true,
+		}); err != nil {
+			return "", nil, err
+		}
+		d.ap.Broadcast("permission", p)
+		return p.ID, &hub.AutoDecision{Decision: "approve", Reason: autoReason}, nil
+	}
+
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
 		return "", nil, err
 	}
@@ -313,9 +395,12 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	return p.ID, nil, nil
 }
 
+// autoReason is recorded against every request auto mode lets through, so the
+// audit log separates "a human said yes" from "nobody was asked".
+const autoReason = "auto mode: approved without asking, and recorded"
+
 // shelvedReason is handed back to an agent whose request was refused because
-// its card is shelved. The agent is told why rather than left waiting, which is
-// the whole point of a block carrying a reason.
+// its card is shelved, so the agent is told why rather than left waiting.
 const shelvedReason = "this task is shelved in atrium. unshelve it to answer requests from it."
 
 // CancelPending answers every outstanding request on a task with a block.
@@ -371,6 +456,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/session", d.handleSession)
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/stop", d.handleStop)
+	agentMux.HandleFunc("/activity", d.handleActivity)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
@@ -392,6 +478,20 @@ func (d *Daemon) Run(ctx context.Context) error {
 	log.Printf("[atrium] agents  -> http://localhost%s", d.opts.AgentAddr)
 	log.Printf("[atrium] board   -> http://localhost%s", d.opts.HumanAddr)
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
+
+	// A new database is indistinguishable from every card and every rule having
+	// vanished. WORKTREE_ROOT unset once sent the path to the home directory,
+	// and a hundred and twenty five rules appeared to be gone.
+	d.reportRunners()
+
+	if d.st.Fresh() {
+		log.Printf("[atrium] ---------------------------------------------------------------")
+		log.Printf("[atrium] THIS IS A NEW DATABASE. There was no file at that path, so one")
+		log.Printf("[atrium] was created. The board will be empty and you will have no rules.")
+		log.Printf("[atrium] If you expected your existing state, you are pointed at the")
+		log.Printf("[atrium] wrong path. Check WORKTREE_ROOT, or pass --db explicitly.")
+		log.Printf("[atrium] ---------------------------------------------------------------")
+	}
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
@@ -400,8 +500,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	go func() {
 		err := agentSrv.Serve(agentLn)
-		// A wedge closes this listener on purpose, so its shutdown is not an
-		// error the daemon should exit on.
+		// A halt closes this listener, so its shutdown is not an error to exit
+		// on.
 		if errors.Is(err, http.ErrServerClosed) {
 			return
 		}
@@ -418,6 +518,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		log.Printf("[atrium] interrupt received, shutting down")
+	case <-d.stop.ch:
+		// The same wind-down as ctrl-c, reachable from anywhere the board is.
+		// Killing the process takes every supervised runner with it.
+		log.Printf("[atrium] stopping: %s", d.stop.why())
 	case err := <-errCh:
 		log.Printf("[atrium] listener failed, shutting down: %v", err)
 		d.shutdown(agentSrv, humanSrv)

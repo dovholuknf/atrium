@@ -1,8 +1,15 @@
 # State of the art (atrium)
 
-Read this before touching anything. Snapshot of where the project sits as of the last commit. Pair with
-`CLAUDE.md` (architectural conventions), `CHANGELOG.md` (full iteration log), `README.md` (user reference),
-and `docs/test-plan.md` (manual scenarios that must pass).
+> **This describes v1 only, and v1 is no longer where the action is.**
+>
+> `atrium daemon` is the surface that gets used: durable state, a permission gate, a web board, supervised
+> terminals. For that, read `README.md`, `CLAUDE.md`, `docs/architecture-v2.md` and `docs/backlog.md`.
+>
+> What follows is still accurate about the hub and the agent loop, which are untouched by v2 and still work.
+> Keep it for that. Do not read it as a description of the project.
+
+Pair with `CLAUDE.md` (architectural conventions), `CHANGELOG.md` (full iteration log), `README.md` (user
+reference), and `docs/test-plan.md` (manual scenarios that must pass).
 
 ## What atrium is, in one paragraph
 
@@ -95,7 +102,7 @@ Response (blocks until human resolves):
 { "decision": "approve|block", "reason": "string" }
 ```
 
-## Load-bearing invariants. DO NOT REGRESS
+## Critical invariants. DO NOT REGRESS
 
 1. **LLM never sees a hub disconnect.** Agent's `post` retries forever with backoff. If you tighten this,
    token burn returns.
@@ -183,4 +190,4 @@ Read in this order:
 When you add a feature: update CHANGELOG with a new dated section at the top, extend test-plan with the new
 scenario, update README user-facing reference if any user-visible behavior changed.
 
-Do not break any of the load-bearing invariants without a reason recorded in the CHANGELOG.
+Do not break any of the critical invariants without a reason recorded in the CHANGELOG.
