@@ -305,13 +305,19 @@
   /* Nested inside a status group, the indent would stack. */
   .cardgroup .cardgroup.project { margin-left: 0; }
 
+  /* One line: the name and its chips on the same row.
+     Two rows per card meant a column of eight filled the screen, so seeing
+     what a column held took scrolling, which is the one thing a column exists
+     to save you. The name takes the room it needs, the chips take what is
+     left, and they scroll sideways rather than wrapping the card tall again. */
   .card {
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-radius: var(--r-md);
-    padding: 12px 14px; margin-bottom: 9px; cursor: pointer;
+    padding: 8px 12px; margin-bottom: 7px; cursor: pointer;
     box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
+    display: flex; align-items: center; gap: var(--sp-3);
   }
   /* A card hovers in its group's colour. A single blue for every card meant
      the one thing you were pointing at stopped saying which project it was in,
@@ -332,9 +338,26 @@
   .card.waiting::before { opacity: 1; background: var(--warn); }
   /* A card inherits the board's size. Everything on it is a fraction of that. */
   .card .title {
-    color: var(--head); font-weight: 600; font-size: var(--fs-md); margin-bottom: 7px;
-    display: flex; align-items: center; gap: var(--sp-3);
+    color: var(--head); font-weight: 600; font-size: var(--fs-md);
+    display: flex; align-items: center; gap: var(--sp-2);
+    /* Shrinks before the chips do, since a truncated name is still readable
+       and a truncated duration is not. */
+    min-width: 0; flex: 0 1 auto;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* The stack's mark is 39px because a stack row is tall. On a one-line card
+     it sits inside the title, so it matches the text rather than dwarfing it. */
+  .card .title .rmark {
+    flex: none; width: 21px; height: 21px; border-radius: var(--r-sm);
+  }
+  .card .title .rmark svg { width: 15px; height: 15px; }
+  .card > .chips {
+    margin-left: auto; flex: 0 1 auto; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .card > .chips::-webkit-scrollbar { display: none; }
+  .card > .chips .chip { flex: none; }
   .pulse {
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
     animation: pulse 1.9s ease-in-out infinite;
@@ -1498,7 +1521,10 @@
   /* Very narrow: drop anything that is decoration. */
   @media (max-width: 520px) {
     .wordmark { display: none; }
-    .card .chips .chip:nth-child(2) { display: none; }
+    /* The chips used to wrap and a narrow screen hid one to stop a card
+       growing a third row. They scroll sideways now, so nothing needs
+       hiding, and hiding by position would drop whichever chip happened to
+       be second rather than the least useful one. */
     .term-entry { min-width: 150px; }
     #t-screen { height: 55vh; }
   }
@@ -2472,26 +2498,40 @@ function cardHTML(t) {
     onclick="openTask('${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
+    <!-- The runner as a mark rather than a word, the same one the stack uses.
+         `claude` on every card in a column of claude sessions spent a chip
+         saying nothing, and it is the widest chip there. -->
     <div class="title">${w ? '<span class="pulse"></span>' : ""}${
       t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
-      esc(t.display_title)}</div>
+      runnerMark(t.runner)}${esc(t.display_title)}</div>
     <div class="chips">
-      <span class="chip runner" data-runner="${esc(t.runner || "")}"
-        >${esc(t.runner || "?")}</span>
       ${tagChips(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
-      <!-- On a finished card the age is time since it ended, so calling it
-           idle is wrong. A dead card that has been dead an hour is telling you
-           something the word idle hides. -->
-      <span class="chip" title="${t.status === "dead" ? "how long since this stopped"
-        : t.status === "done" ? "how long since you marked it done"
-        : "how long since anything was heard from it"}"
-        >${t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle"} ${
-        ago(t.idle_seconds)}</span>
-      ${w ? `<span class="chip warn">waiting ${ago(t.wait_seconds)}</span>` : ""}
+      <!-- One chip: what state this is in, and how long it has been in it.
+           Three separate things were wrong with two. A ready card read
+           `idle 30m` beside `waiting 31m`, the same minute off two clocks
+           that start together, with a word the column had stopped using. A
+           dead card read `dead` beside `dead 1h`. And a card in the running
+           column read `idle`, which is the one column where that is a
+           different claim from the column it is sitting in.
+
+           A waiting card times how long it has been waiting. Everything else
+           has only idle to time, and says so in its own state's words: a dead
+           card that has been dead an hour is telling you something the word
+           idle hides. -->
+      ${w
+        ? `<span class="chip warn" title="${t.status === "needs-permission"
+              ? "how long this agent has been frozen waiting to be answered"
+              : "how long since it finished its turn and asked for you"}"
+             >${esc(statusLabel(t.status))} ${ago(t.wait_seconds)}</span>`
+        : `<span class="chip" title="${t.status === "dead" ? "how long since this stopped"
+             : t.status === "done" ? "how long since you marked it done"
+             : t.status === "running" ? "how long since it last did anything"
+             : "how long since anything was heard from it"}"
+             >${esc(statusLabel(t.status))} ${ago(t.idle_seconds)}</span>`}
       ${t.auto_approve ? `<span class="chip auto"
         title="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
@@ -3367,7 +3407,6 @@ function stackGroupsHTML(list, g) {
 function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
-  const age = t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle";
   return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
       t.pinned ? " pinned" : ""}"
     onclick="openTask('${t.id}')"
@@ -3388,9 +3427,15 @@ function stackRow(t) {
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
+      <!-- The state and how long it has been that way, as one chip, matching
+           the board. Two chips said it twice and sometimes disagreed with
+           themselves: a ready card read `idle 30m` beside `waiting 31m`, two
+           clocks that start together, and a dead one read `dead` beside
+           `dead 1h`. A waiting card times how long it has been waiting.
+           Everything else has nothing but idle to time. -->
       <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
-        title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
-      <span class="chip">${age} ${ago(t.idle_seconds)}</span>
+        title="${esc(t.status)}">${esc(statusLabel(t.status))} ${
+        w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</span>
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
     </div>

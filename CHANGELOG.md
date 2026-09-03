@@ -13,6 +13,17 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **A board card is one line, and its chips say the state they are in.** The runner is the mark the stack
+  already uses rather than the word `claude`, which was the widest chip on the card and said nothing in a
+  column of claude sessions. Two rows became one, so a column of eight fits on screen and seeing what a column
+  holds no longer takes scrolling, which is the one thing a column exists to save you.
+
+  The duration chip was three kinds of wrong at once. A ready card read `idle 30m` beside `waiting 31m`, the
+  same minute off two clocks that start together, and `waiting` was a word the column had stopped using. A dead
+  card read `dead` beside `dead 1h`. And a card in the running column read `idle`, the one column where that is
+  a different claim from the column it is sitting in. One chip now: the state, in the state's own words, and
+  how long it has been that way. A waiting card times how long it has waited, everything else times idle.
+
 - **An alert says who and what, and the operating system is only used when you are not looking.** Three things
   were wrong with "atrium is waiting on you". It named a card and then said the one thing true of everything in
   that list, so an agent frozen mid-tool and one that had simply finished its turn read identically. And the
