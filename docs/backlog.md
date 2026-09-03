@@ -139,6 +139,37 @@ Claude Code takes input while it is thinking, so the send is less urgent than it
 ordering: three notes queued during a long turn, sent as one instruction at the end, rather than three
 interruptions in the middle.
 
+### Popping a terminal out, and putting it back
+
+Every supervised terminal lives inside the board's terminal view, which means finding a session is a click into
+an app and then a click onto a tab. The habit it competes with is alt-tab, which is faster and which nothing
+here can beat while a session is a pane inside a page.
+
+The ask is a window per session and a lifecycle around it: pop out, put back, shelve, and whatever else belongs
+in that set. The last part is the honest one. Atrium has `shelve`, `unshelve`, `stop`, `kill` and `attach`, and
+they were each added when they were needed rather than designed as a set, so what "all that sort of lifecycle
+stuff" should contain is not yet decided.
+
+Two ways to do the window, and the difference matters more than it looks:
+
+- **`window.open` on the attach URL.** A browser window per session, which alt-tab does reach. Cheap: the
+  attach WebSocket already carries one terminal, so this is a page holding one pane and a name in its title
+  bar. What it gets wrong is that a browser window is not a terminal window. It has browser chrome, it is in
+  the browser's alt-tab group rather than beside a real terminal, and closing it has to detach without
+  stopping anything.
+- **Handing the session to a real terminal.** Windows Terminal opening on the same conversation, which is what
+  alt-tab actually wants. This is the harder one and it collides with a known limit: atrium owns the pseudo
+  terminal, closing a pty takes the process with it, and there is no reattach on Windows
+  (`docs/supervision-design.md`). Handing over would mean not owning it, which means giving up the attach, the
+  activity badge and the stop.
+
+The second one is the real want and the first is what is buildable today. Worth deciding which is being asked
+for before building either, because a browser window that pretends to be a terminal window is the kind of thing
+that gets used once.
+
+Related: the detached pty holder in `docs/charon.md` answers the reattach half on POSIX and does nothing for
+Windows, which is the machine this matters on.
+
 ### Moving files, and pasting into a session
 
 Reaching a board from another machine makes this obvious. Once atrium is not on the machine you are sitting at,
