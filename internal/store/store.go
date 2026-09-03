@@ -115,6 +115,11 @@ type Task struct {
 	// which is the point of colouring terminals: telling them apart at a
 	// glance, permanently. Empty means the board picks from the project name.
 	Theme string `json:"theme"`
+	// Sound names the tone this card rings with. Held on the card for the same
+	// reason as the theme: telling sessions apart without looking only works
+	// if the answer is the same tomorrow and in another browser. Empty means
+	// the board-wide default for whichever kind of alert fired.
+	Sound string `json:"sound"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when

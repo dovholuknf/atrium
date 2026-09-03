@@ -12,7 +12,7 @@ import (
 
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
-	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme`
+	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -28,7 +28,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
-		&tags, &pinned, &t.Theme); err != nil {
+		&tags, &pinned, &t.Theme, &t.Sound); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -163,10 +163,10 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		Tags: []string{},
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, ""); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", ""); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {

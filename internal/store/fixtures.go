@@ -201,3 +201,17 @@ func (s *Store) SetTheme(id, theme string) error {
 		return err
 	})
 }
+
+// SetSound records which tone a card rings with, on the card for the same
+// reason its theme is there: knowing a session by its sound only works if the
+// answer is the same tomorrow and in another browser.
+//
+// The name is not checked against a list. The board owns the set of tones and
+// gains new ones without a migration, and a name the board no longer knows
+// falls back to the default rather than failing.
+func (s *Store) SetSound(id, sound string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET sound = ? WHERE id = ?`, strings.TrimSpace(sound), id)
+		return err
+	})
+}
