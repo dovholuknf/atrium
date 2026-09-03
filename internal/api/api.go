@@ -71,6 +71,15 @@ type Server struct {
 	// StartOverlay opens a share, StopOverlay closes it.
 	StartOverlay func(kind string) error
 	StopOverlay  func(kind string) error
+	// SetupOverlay does the one thing standing between this machine and being
+	// able to share at all: a zrok environment, or a ziti identity. Returns
+	// what the tool said, on failure as well as success.
+	SetupOverlay func(kind string, body []byte) (string, error)
+	// TeardownOverlay undoes that.
+	TeardownOverlay func(kind string) (string, error)
+	// InspectToken reads an enrolment token without acting on it, so the
+	// board can show what it is for before anything is done with it.
+	InspectToken func(token string) (any, error)
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -115,6 +124,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/overlays/{kind}", s.putOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/start", s.startOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/stop", s.stopOverlay)
+	mux.HandleFunc("POST /v1/overlays/{kind}/setup", s.setupOverlay)
+	mux.HandleFunc("POST /v1/overlays/{kind}/teardown", s.teardownOverlay)
+	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)

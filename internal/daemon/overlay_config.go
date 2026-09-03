@@ -20,14 +20,23 @@ const (
 )
 
 // ZrokConfig is what a zrok share needs.
+//
+// The fields follow zrok v2, which is what the CLI actually accepts.
+// `zrok share reserved` is gone: a stable address now comes from reusing a
+// share token on a private share, or from a reserved name on a public one, and
+// those are two different flags rather than one subcommand.
 type ZrokConfig struct {
 	// Mode is public or private. Public gives anyone with the link the board;
 	// private needs zrok access on the other end, which is the safer default
 	// for something with no login.
 	Mode string `json:"mode"`
-	// Reserved is a share token from `zrok reserve`, so the address survives
-	// a restart. Empty means an ephemeral share and a new address every time.
-	Reserved string `json:"reserved"`
+	// ShareToken reuses an existing private share, from `zrok create share`,
+	// so the address survives a restart. Private only: `share public` has no
+	// such flag.
+	ShareToken string `json:"share_token"`
+	// Name is a reserved name from `zrok create name`, which is how a public
+	// share keeps one address. Public only.
+	Name string `json:"name"`
 	// Backend is what zrok is told to publish. Defaults to the board's own
 	// address, which is the only thing worth sharing here.
 	Backend string `json:"backend"`
@@ -36,19 +45,25 @@ type ZrokConfig struct {
 	Extra string `json:"extra"`
 }
 
-// ZitiConfig is what hosting the board on an OpenZiti network needs.
+// ZitiConfig is what serving the board on an OpenZiti network needs.
 //
-// One field, because one field is all `ziti tunnel host` takes. Which services
-// this hosts, and what each points at on this machine, are configured on the
-// network and reached through the identity's bind policies. There was a
-// service name and a backend address here and neither could be applied: they
-// asked for something atrium had no way to send, which is worse than not
-// asking, because a form that ignores what you type is one you stop trusting.
+// Service is back after being removed. Under `ziti tunnel host` it could not
+// be applied, because that command hosts whatever the identity's policies
+// allow and takes no service argument, so the field asked for something atrium
+// had no way to send. Serving natively, `Context.Listen(service)` takes
+// exactly that, so the field now does what it says.
+//
+// There is no backend address. Nothing is forwarded anywhere: the board
+// answers the ziti listener in this process.
 type ZitiConfig struct {
-	// Identity is the path to an enrolled identity JSON. Atrium never reads
-	// it: it is passed to the tunneler, which owns the private key.
+	// Identity is the path to an enrolled identity JSON. The SDK opens it and
+	// owns the key inside; atrium reads only the controller address out of it,
+	// to say which network this is.
 	Identity string `json:"identity"`
-	Extra    string `json:"extra"`
+	// Service is the ziti service this board answers. It has to already exist
+	// with a bind policy this identity satisfies.
+	Service string `json:"service"`
+	Extra   string `json:"extra"`
 }
 
 // defaultBackend is the board's own address, which is the thing being shared.
@@ -102,17 +117,24 @@ func (c ZrokConfig) zrokArgs() ([]string, error) {
 	if backend == "" {
 		return nil, fmt.Errorf("nothing to share: set what zrok should publish")
 	}
-	var args []string
-	if t := strings.TrimSpace(c.Reserved); t != "" {
-		// A reserved share already knows its mode and address, so the token
-		// is the whole instruction.
-		args = []string{"share", "reserved", t, "--headless", "--override-endpoint", backend}
-	} else {
-		mode := strings.TrimSpace(c.Mode)
-		if mode != "public" && mode != "private" {
-			return nil, fmt.Errorf("share mode must be public or private, not %q", mode)
+	mode := strings.TrimSpace(c.Mode)
+	if mode != "public" && mode != "private" {
+		return nil, fmt.Errorf("share mode must be public or private, not %q", mode)
+	}
+	args := []string{"share", mode, backend, "--headless"}
+
+	// Each mode keeps a stable address a different way, and neither flag
+	// exists on the other subcommand. Sending the wrong one is an unknown
+	// flag error from zrok rather than anything atrium could explain.
+	switch mode {
+	case "private":
+		if t := strings.TrimSpace(c.ShareToken); t != "" {
+			args = append(args, "--share-token", t)
 		}
-		args = []string{"share", mode, backend, "--headless"}
+	case "public":
+		if n := strings.TrimSpace(c.Name); n != "" {
+			args = append(args, "--name-selection", n)
+		}
 	}
 	return append(args, splitExtra(c.Extra)...), nil
 }

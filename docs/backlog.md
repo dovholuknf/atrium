@@ -16,6 +16,70 @@ The gaps below are ordered by what would change day to day.
 
 ## Next
 
+### The overlay lifecycle stops short of setting anything up
+
+Atrium can drive a zrok share or a ziti tunneler you already configured. It cannot get you to that point, and
+that is the half a human actually needs. See `docs/overlays.md` for what exists.
+
+Missing for zrok, roughly in the order somebody hits them:
+
+- No environment check. `zrok status` says whether this machine is enabled, and atrium never asks. Starting a
+  share on an unenabled environment fails with zrok's own message rather than "you are not enabled yet".
+- No path to getting enabled. The answer is `zrok invite`, then an emailed token, then `zrok enable <token>`.
+  Atrium should recognise the state and walk it, rather than leaving somebody to find the docs.
+- No `zrok reserve`. A reserved token is how an address survives a restart, and today it has to be created at a
+  terminal and pasted in.
+
+Missing for OpenZiti:
+
+- No enrolment. An identity comes from a JWT, and `ziti edge enroll` turns one into the identity file the
+  tunneler wants. Atrium takes the file and has nothing to say about where it comes from.
+- No view of what an identity can bind. The tunneler hosts whatever the network's policies allow, and atrium
+  shows none of it, so "is this going to work" is only answerable by starting it.
+- No service, config or policy creation. This one is probably correct to leave out: a network somebody
+  administers is not one a board should be editing.
+
+The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
+runner discovery already does this and is the model.
+
+### The forum: one board, many machines
+
+Designed and planned, not started. `docs/federation-design-v2.md` for why it is shaped the way it is, and
+`docs/forum-implementation.md` for the stages.
+
+The shape: leaves dial OUT to a forum, which holds nothing. A leaf's whole board is already one `http.Handler`
+(`internal/daemon/daemon.go:478`), so serving it on a connection the leaf dialled is `http.Serve` on that
+connection, and the forum forwards. Leaves keep owning every card, so there is no second copy of anything and
+no namespace atrium did not issue. Dialling out is what makes a container or a pod work with no port map.
+
+Stage one is a day: a forum that answers `GET /peers`, a daemon that dials it and reconnects, and nothing
+forwarded yet. Its acceptance test is killing the forum and watching both leaves carry on.
+
+Three things found while planning it that are worth knowing before anyone starts:
+
+- **A dialled connection reports the forum's address as `RemoteAddr`.** With a forum on the same machine, every
+  forwarded request presents as `127.0.0.1` to `isLoopback` in `internal/daemon/shutdown.go`. That is the
+  ordinary development setup, which makes the existing `sharing()` gate load-bearing rather than tidy, and it
+  needs a second wording because "a share is running" would be false.
+- **A browser caps HTTP/1.1 at six connections per origin.** One `EventSource` per leaf means the board stops
+  working at six of them, so the nudge stream has to be merged at the forum rather than opened per leaf.
+- **Alerting keys are id sets, and ids are minted per leaf.** `knownPerms` and `knownWaiting` in the board would
+  silently swallow a second machine's request on a collision, and nothing appearing is exactly what a working
+  board looks like. Every key has to become peer plus id.
+
+### An unexplained block, with no audit trail
+
+A tool call was refused with the shelved reason on a card that was never shelved, and nothing was written to the
+decision log. Verified after the fact: no `status-changed` to `shelved` in that card's whole history, no card
+shelved at the time, and zero blocks recorded across 1193 decisions on it.
+
+The one path that returns a block without writing an event is a decision replayed onto an already-decided
+request, since `DecidePermissionBy` returns the existing answer and appends nothing. That fits, and it is not
+proof. It matters because it means an agent can be refused and the audit log will not say it happened, which is
+the one thing that log exists to prevent.
+
+Worth doing regardless of the cause: make the replay path record that it replayed.
+
 ### Small interface debts
 
 - **A folder rule reads the command text, not what a shell would make of it.** An absolute path that only
@@ -44,6 +108,30 @@ through the Stop hook, and a supervised one by being typed straight into its ter
 /v1/tasks/{id}/message` is the only way to send one, so in practice it means curl.
 
 A box on the card is the whole job.
+
+### Hooks for runners that are not Claude Code
+
+The hook wiring is Claude Code's shape: `settings.json`, and the event names in
+`internal/claudeconf/hooks.go`. Codex keeps its configuration in TOML somewhere else, and its events are its own.
+
+Nothing about the daemon side is claude-specific. `/activity` and `/session` take an agent name and an event, so
+a second harness needs a writer next to `claudeconf` and its own entry in the wanted list, not a new endpoint.
+
+Also unverified and worth checking before building against it: Claude Code's hook list has reportedly grown to
+include `Setup`, `UserPromptExpansion`, `PermissionDenied` and `PostToolBatch`. None of those are wired, and none
+have been confirmed from the docs rather than from a summary of them.
+
+### Governed calls from sterling
+
+The strongest of the four integrations examined in `docs/ai-platform-fit.md`. Sterling's signed recipes classify
+every tool method `auto`, `prompt` or `deny`, and today `prompt` can only reach a human at a terminal, so
+unattended it fails closed and the only way through flips every prompt to auto at once.
+
+Atrium is a human that is not a terminal, and the wire shapes already match. Two conditions the fit depends on
+and neither is optional: atrium has to fail CLOSED for that caller, which inverts a documented guarantee and
+belongs in the resilience section rather than being smuggled in, and standing rules and auto mode have to be
+skipped for a governed call, or an unsigned database answers on behalf of a human that a signed artifact
+deliberately deferred to.
 
 ### A runner atrium can ask for help
 
@@ -128,6 +216,13 @@ and already gated, which is what joining was for.
   launching, supervision or the permission diff.
 - **Repo metadata is unset.** `gh repo edit` returns 403 with the current token, so the description and topics on
   the GitHub page are still empty. Needs `gh auth refresh -s repo` or setting them in the web UI.
+- **A share widens what loopback means.** A tunneler terminates on this machine, so while a share is up every
+  request presents as `127.0.0.1`. The shutdown endpoint now notices and demands its token, but that is one
+  endpoint. Anything else that ever decides by source address has the same problem, and there is no general
+  answer here, only the rule: do not publish the agent listener on `:7777`.
+- **`wire_name` is unique per database and derived from a directory name.** Fine on one machine. Two containers
+  off the same image in the same working directory would collide, and a collision does not error, it matches an
+  existing card. See `docs/federation-design.md`.
 - **Supervised runners die with the daemon.** The daemon owns each pseudo terminal, and on Windows closing one
   takes the attached process with it. There is no reattach. So stopping the daemon ends every runner it started,
   and a runner cannot outlive a restart. Resume ids are the answer rather than orphan survival, which ConPTY does
@@ -188,6 +283,10 @@ Kept short, because the point of the list is what is left. Recorded so the same 
 - Per-runner exit keys, so asking a runner to quit sends what that runner actually quits on.
 - A prepare command per harness, so a shell function that puts a toolchain on PATH can reach a launched agent.
 - Runner discovery against the daemon's own PATH at startup, reported in the log.
+- Reaching the board from elsewhere, by driving zrok or OpenZiti rather than becoming either. `docs/overlays.md`.
+- Global auto mode, board wide, recorded under its own name and kept across a restart.
+- The daemon recording where it is listening, so the CLI finds a non-default port with no flag.
+- The audit log as a table, with the command and what answered it on one line.
 - The activity hooks as `atrium hook --event <name>`, and a board that reports which are registered and writes
   the missing ones into `settings.json`. What used to be a documentation page is a button.
 
