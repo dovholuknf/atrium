@@ -143,7 +143,27 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		task = t
 	}
 
-	env := childEnv(h.Env, map[string]string{
+	// A prepare command runs first, in the directory the runner will use, and
+	// the runner inherits whatever environment it left. Failing here fails the
+	// launch: the point of preparing is that the runner needs what it sets up,
+	// so starting without it produces an agent that cannot find its tools and
+	// no explanation of why.
+	base := os.Environ()
+	if h.Prepare != "" {
+		prepared, err := captureEnv(h.Prepare, cwd)
+		if err != nil {
+			d.launchFailed(task.ID, err.Error())
+			return nil, err
+		}
+		base = base[:0]
+		for k, v := range prepared {
+			base = append(base, k+"="+v)
+		}
+		log.Printf("[atrium] prepared the environment for %s with: %s",
+			h.ID, firstLine(h.Prepare))
+	}
+
+	env := childEnvFrom(base, h.Env, map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
 	})
@@ -295,8 +315,16 @@ func inheritedTaint(key string) bool {
 // childEnv builds the environment for a launched runner: everything inherited
 // except the tainted keys, then the harness's own settings, then atrium's.
 func childEnv(harnessEnv map[string]string, atrium map[string]string) []string {
-	out := make([]string, 0, len(os.Environ())+len(harnessEnv)+len(atrium))
-	for _, kv := range os.Environ() {
+	return childEnvFrom(os.Environ(), harnessEnv, atrium)
+}
+
+// childEnvFrom is childEnv over a given base rather than this process's own.
+//
+// The base is what a prepare command left behind when there is one, which is
+// how a shell function that puts a toolchain on PATH reaches the runner.
+func childEnvFrom(base []string, harnessEnv map[string]string, atrium map[string]string) []string {
+	out := make([]string, 0, len(base)+len(harnessEnv)+len(atrium))
+	for _, kv := range base {
 		if i := strings.Index(kv, "="); i > 0 && inheritedTaint(kv[:i]) {
 			continue
 		}

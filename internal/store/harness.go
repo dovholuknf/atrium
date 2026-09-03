@@ -36,6 +36,19 @@ type Harness struct {
 	//
 	// Tokens, not bytes, so the field can be written by hand. See ExitBytes.
 	ExitKeys []string `json:"exit_keys"`
+	// Prepare is a shell command run before the runner starts, whose resulting
+	// environment the runner inherits.
+	//
+	// This is how a shell function that puts tools on PATH reaches an agent.
+	// The habit it replaces is opening a terminal, running the function, and
+	// starting the agent from that shell, which works and cannot be done from
+	// a board.
+	//
+	// The environment is captured and handed over, rather than the runner
+	// being started underneath a shell. Under a shell, the runner is no longer
+	// the process atrium owns, which costs the exit keys, the liveness check
+	// and the terminate button.
+	Prepare string `json:"prepare"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -78,13 +91,19 @@ func DefaultHarnesses() []Harness {
 		{
 			ID: "ollama", Label: "ollama", Enabled: false, Cmd: "ollama",
 			Args: []string{"run", "llama3"}, LaunchMode: LaunchPTY, Sort: 30,
-			ExitKeys:    []string{"ctrl-d"},
-			Notes: "set the model in args. ollama has no permission config to import",
+			ExitKeys: []string{"ctrl-d"},
+			Notes:    "set the model in args. ollama has no permission config to import",
 		},
 		{
+			// Not an agent. A plain shell in the chosen directory, running as
+			// whoever started the daemon, shown in the browser like any other
+			// supervised runner. Useful for the times the answer is a command
+			// rather than a conversation, and for watching one from a phone.
 			ID: "shell", Label: "shell", Enabled: false, Cmd: "pwsh",
 			Args: []string{"-NoLogo"}, LaunchMode: LaunchPTY, Sort: 40,
-			Notes: "a plain shell, supervised like any other runner",
+			ExitKeys: []string{"exit"},
+			Notes: "a plain shell, not an agent. runs as whoever started the daemon, " +
+				"reports nothing about itself, and its card shows the terminal and nothing else",
 		},
 	}
 }
@@ -97,7 +116,8 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		enabled                 int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
-		&h.LaunchMode, &resume, &exit, &h.RulesSource, &h.Notes, &h.Sort, &created); err != nil {
+		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
+		&h.Sort, &created); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -128,7 +148,7 @@ func orDefault(s, def string) string {
 }
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
-	resume_args, exit_keys, rules_source, notes, sort, created_at`
+	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -221,16 +241,17 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			enabled = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
 				launch_mode = excluded.launch_mode, resume_args = excluded.resume_args,
-				exit_keys = excluded.exit_keys,
+				exit_keys = excluded.exit_keys, prepare = excluded.prepare,
 				rules_source = excluded.rules_source, notes = excluded.notes,
 				sort = excluded.sort`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
-			h.LaunchMode, string(resume), string(exit), h.RulesSource, h.Notes, h.Sort, created)
+			h.LaunchMode, string(resume), string(exit), h.Prepare,
+			h.RulesSource, h.Notes, h.Sort, created)
 		return err
 	})
 	if err != nil {

@@ -94,8 +94,9 @@ func TestActivityGoesQuietWhenStale(t *testing.T) {
 	}
 }
 
-// The subagent count is inferred, so it drifts. A negative count would render
-// as nonsense, so the floor is enforced rather than assumed.
+// Every hook is best effort, so a dropped SubagentStart puts the count out of
+// step. A negative count would render as nonsense, so the floor is enforced
+// rather than assumed.
 func TestSubagentCountNeverGoesNegative(t *testing.T) {
 	tr := newActivityTracker()
 	tr.set("t1", ActivityThinking, "")
@@ -230,9 +231,10 @@ func TestActivityEndpointRecordsAgainstACard(t *testing.T) {
 	t.Fatalf("a finished tool left the card showing %v", d.act.get(task.ID))
 }
 
-// A Task tool call is the only signal that a subagent started, since there is
-// no hook for it.
-func TestTaskToolCountsAsASubagent(t *testing.T) {
+// SubagentStart takes the count up and SubagentStop takes it down. A Task tool
+// call raises the same subagent, so counting that as well would report double
+// what is running.
+func TestSubagentCountFollowsTheSubagentHooks(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -244,9 +246,15 @@ func TestTaskToolCountsAsASubagent(t *testing.T) {
 	}
 
 	url := "http://" + d.opts.AgentAddr + "/activity"
+	// Both halves of what one subagent actually posts: the Task call that
+	// spawned it, and the SubagentStart that reports it.
 	for i := 0; i < 2; i++ {
 		resp := postJSON(t, url, ActivityEvent{
 			Agent: "sub-test", Event: "tool-start", Tool: "Task",
+		})
+		resp.Body.Close()
+		resp = postJSON(t, url, ActivityEvent{
+			Agent: "sub-test", Event: "subagent-start",
 		})
 		resp.Body.Close()
 	}
@@ -258,7 +266,7 @@ func TestTaskToolCountsAsASubagent(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if a := d.act.get(task.ID); a == nil || a.Subagents != 2 {
-		t.Fatalf("two Task calls produced %v subagents, wanted 2", a)
+		t.Fatalf("two subagents produced %v, wanted 2", a)
 	}
 
 	resp := postJSON(t, url, ActivityEvent{Agent: "sub-test", Event: "subagent-end"})

@@ -101,9 +101,9 @@ func (a *activityTracker) set(taskID, what, tool string) {
 
 // addSubagents moves the tally, never below zero.
 //
-// Claude Code has no hook for a subagent starting, so the count is inferred: a
-// Task tool call is one starting, SubagentStop is one ending. Inference drifts,
-// and a negative count renders as nonsense, so the floor is enforced here.
+// SubagentStart takes it up and SubagentStop takes it down. A hook is best
+// effort, so a dropped one puts the count out of step, and a negative count
+// renders as nonsense, so the floor is enforced here.
 func (a *activityTracker) addSubagents(taskID string, delta int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -129,7 +129,8 @@ func (a *activityTracker) forget(taskID string) {
 type ActivityEvent struct {
 	Agent  string `json:"agent"`
 	TaskID string `json:"task_id,omitempty"`
-	// Event is tool-start, tool-end, prompt, subagent-end, idle or waiting.
+	// Event is tool-start, tool-end, prompt, subagent-start, subagent-end,
+	// idle or waiting.
 	//
 	// idle and waiting both mean the agent stopped and it is the operator's
 	// move: idle from a turn ending, waiting from the Notification hook, which
@@ -184,10 +185,6 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	switch in.Event {
 	case "tool-start":
 		d.act.set(taskID, ActivityTool, in.Tool)
-		// A Task call is a subagent starting. No hook reports that directly.
-		if strings.EqualFold(in.Tool, "Task") {
-			d.act.addSubagents(taskID, 1)
-		}
 		// A tool call is work, so a card that was waiting is not any more.
 		d.turnResumed(taskID)
 	case "tool-end":
@@ -199,6 +196,8 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// needs-input for the rest of the session.
 		d.act.set(taskID, ActivityThinking, "")
 		d.turnResumed(taskID)
+	case "subagent-start":
+		d.act.addSubagents(taskID, 1)
 	case "subagent-end":
 		d.act.addSubagents(taskID, -1)
 	case "idle", "waiting":

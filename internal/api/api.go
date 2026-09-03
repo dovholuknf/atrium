@@ -121,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/rules/export", s.exportRules)
 	mux.HandleFunc("POST /v1/rules/import", s.importRules)
 	mux.HandleFunc("GET /v1/rules/preview-claude", s.previewClaudeRules)
+	mux.HandleFunc("GET /v1/hooks", s.hookStatus)
+	mux.HandleFunc("POST /v1/hooks/install", s.installHooks)
 	mux.HandleFunc("GET /v1/harnesses", s.listHarnesses)
 	mux.HandleFunc("GET /v1/harnesses/discover", s.discoverRunners)
 	mux.HandleFunc("PUT /v1/harnesses/{id}", s.saveHarness)

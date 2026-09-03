@@ -5,6 +5,59 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Hooks can be wired one at a time, from the board or from a terminal.** Each row has its own `wire it`, and
+  `atrium hook install [--event x]` makes the same edit from a shell, so the manual route is the same job by
+  hand rather than a different one. Wanting the tool events and not the subagent count is a reasonable thing to
+  want, and one button for all five made that impossible to say. An install that finds everything already
+  correct writes nothing and keeps no backup, and says so rather than reporting a write.
+- **The board hears about a hook the moment it lands.** `hook install` posts to `/hooks-changed`, which
+  broadcasts over the event stream, so the count moves immediately instead of on the next poll of a tab that
+  has to be open. Best effort like everything else atrium sends: the edit is already on disk and the poll is
+  still behind it. The steps dialog drops each command as it is run and closes when the list empties, since a
+  command you have run is not a step any more.
+- **The daemon records where it is listening**, in the local runtime directory for the platform:
+  `%LOCALAPPDATA%` on Windows, `XDG_RUNTIME_DIR` or `~/.local/state` on Linux. Deliberately nothing that roams,
+  because a localhost port synced to another machine points a caller somewhere confidently wrong. `atrium hook`
+  reads it, so a daemon on a port that is not the default needs no flag baked into `settings.json`. A file left
+  behind by a daemon that was killed costs a connection refused in milliseconds, which is the fail-open path
+  every hook already takes.
+- **`atrium hook` cannot hang.** It read stdin to end of file, so run at a prompt it waited forever for someone
+  to type EOF. An interactive stdin is not read at all now, and a pipe gets the same one second the post gets. A
+  hook that can block indefinitely breaks the one rule that matters most: it must never fail a session.
+- **Clicking a toast or a notification closes whatever dialog is in the way.** A toast drawn over an open dialog
+  lives inside it, since the top layer is the only place anything can draw over one. The click registered and
+  the view changed, but the dialog stayed put over the thing you clicked to go and look at. A dialog holding
+  edits nobody has saved, which is the runner form and the launch form, asks before it goes: throwing away a
+  half-filled form because a toast arrived is worse than the toast being ignored.
+- **The hooks are a subcommand, and the board wires them.** `atrium hook --event tool-start` replaces the
+  PowerShell activity script. The script held a path only one machine had, so atrium could describe the wiring
+  and never write it; a subcommand's path is this binary's own, which atrium knows. The runners tab reports
+  which of the five are registered, which point at some other binary, and writes the missing ones into
+  `~/.claude/settings.json`. Everything else in that file survives the round trip, the old file is copied aside
+  first, and a settings file that will not parse is refused rather than rewritten. The `Stop` hook is not
+  offered: one that blocks makes a session keep working, so it stays a manual decision. Reached from a button on
+  the claude row, since these are claude's hooks and not that row's: they cover every claude on the machine and
+  outlive the row being disabled. The count on that button can be turned off, through the same "do not ask me
+  again" store as everything else, because not wiring them is a choice. Doing it by hand gets its own wide
+  dialog: one command per block, each with a copy button, and the settings path copyable too.
+- **Grouping is reachable from the board and the stack.** A `by project` / `off` control next to the sort pills,
+  rather than only in the gear. It is not folded into the sort pills, because sorting and grouping are two
+  questions and one control would mean picking a group rule costs you the sort. One setting behind both screens,
+  so turning it off on the stack turns it off on the board.
+- **A question you turned off can be turned back on.** Ticking "do not ask me again" saved the question as
+  skipped but there was no way to undo it, and the gear's "ask me again" button called a function that did not
+  exist. The gear now lists what is turned off and empties the list. Three questions carry the tick: asking a
+  runner to exit, terminating one, and moving a card an agent is waiting on. Forgetting a card, clearing a
+  column, deleting a runner and turning a session loose unattended ask every time, because each throws away
+  something there is no way back to.
+- **The subagent count comes from the subagent hooks.** `SubagentStart` takes it up, `SubagentStop` takes it
+  down. It used to count `Task` tool calls on the way up, which reported the same subagent twice once the real
+  hook was wired.
+- **The board only rewrites the DOM when the markup changed.** The five second refresh is still blind, because
+  ages tick with no server event, but the board, the stack, the terminal list, history and rules now compare
+  before they write. Permissions already did.
+- **Stack sort pills are one axis each.** `newest activity` and `quietest` were the same axis read two ways, as
+  were `show wants me` and `sort by needs me`. Activity is first and the default.
 - **Cards say what they are doing.** A live badge: thinking, running `Bash`, three subagents, and how long it has
   been at it. Fed by `POST /activity` from the tool hooks, and for free from `/permission` for gated sessions,
   since a permission request IS a tool starting. Never stored: a stored activity is a lie the moment the daemon

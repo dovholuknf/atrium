@@ -1,0 +1,420 @@
+package claudeconf
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// Reading and writing the hook entries in Claude Code's settings.json.
+//
+// Atrium learns what a session is doing from hooks, and the hooks were
+// something the operator had to install by hand from a documentation page.
+// A feature nobody wires up is a feature that does not exist, so the board
+// reports which are missing and writes them.
+//
+// Writing settings.json is the one place atrium edits a file it does not own.
+// Two things make that safe and both have to stay: the whole file is decoded
+// into a generic map so keys atrium knows nothing about survive the round
+// trip, and the previous contents are copied aside before anything is
+// replaced. A malformed settings.json breaks every claude session on the
+// machine, which is a much worse outcome than a hook that never got installed.
+
+// HookEvent is one hook atrium wants registered, and what it buys.
+type HookEvent struct {
+	// Hook is Claude Code's name for the event, the key in settings.json.
+	Hook string `json:"hook"`
+	// Event is what atrium calls it, passed to `atrium hook --event`.
+	Event string `json:"event"`
+	// Why is one line for the board, so the list is readable without the docs.
+	Why string `json:"why"`
+}
+
+// WantedHooks are the activity hooks, in the order they read best.
+//
+// The Stop hook is deliberately absent. It is the one hook that can change
+// what a session does rather than only reporting, since a Stop hook that
+// blocks tells the model to keep working. It stays a manual decision.
+var WantedHooks = []HookEvent{
+	{Hook: "PreToolUse", Event: "tool-start", Why: "which tool a session is running right now"},
+	{Hook: "PostToolUse", Event: "tool-end", Why: "when that tool finished, so the card stops claiming it"},
+	{Hook: "UserPromptSubmit", Event: "prompt", Why: "you answered, so the card leaves needs-input"},
+	{Hook: "SubagentStart", Event: "subagent-start", Why: "the subagent count going up"},
+	{Hook: "SubagentStop", Event: "subagent-end", Why: "and coming back down"},
+}
+
+// HookStatus is one wanted hook, and whether it is installed.
+type HookStatus struct {
+	HookEvent
+	// Installed is true when a command for this event is already registered.
+	Installed bool `json:"installed"`
+	// Found is the command that satisfied it, so a hook installed under a
+	// different path or an older script is visible rather than being reported
+	// as simply present.
+	Found string `json:"found,omitempty"`
+	// Stale marks a command that reports this event but is not the binary
+	// atrium is running from. Usually the old dotfiles script, or a second
+	// checkout.
+	Stale bool `json:"stale"`
+	// Want is the command atrium would write.
+	Want string `json:"want"`
+}
+
+// HookReport is everything the board needs to explain the situation.
+type HookReport struct {
+	// Path is the settings file this describes, which is the one atrium would
+	// write to.
+	Path string `json:"path"`
+	// Exists is false when there is no settings.json at all, which is normal
+	// on a fresh machine and means the write creates it.
+	Exists  bool         `json:"exists"`
+	Hooks   []HookStatus `json:"hooks"`
+	Missing int          `json:"missing"`
+	// Unreadable carries a parse error. Nothing is written when this is set,
+	// because rewriting a file atrium could not read would lose whatever is
+	// in it.
+	Unreadable string `json:"unreadable,omitempty"`
+}
+
+// UserSettingsPath is the file atrium reads and writes: the one in the home
+// directory.
+//
+// Not the project file. A hook belongs to the operator, not to a repository,
+// and a per-project hook would report only the sessions that happened to be
+// started there.
+func UserSettingsPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".claude", "settings.json"), nil
+}
+
+// The hooks section is walked as generic maps rather than decoded into a
+// struct.
+//
+// A struct round trip drops every key it does not declare, and this file
+// belongs to the operator: a `timeout`, a matcher shape atrium has never seen,
+// or a key Claude Code adds next month would all be deleted by a write that
+// only meant to add one command. Generic maps are more code to read and they
+// give the file back the way it arrived.
+
+// hooksSection pulls `hooks` out as the shape it is: hook name to a list of
+// matcher entries. A section in any other shape yields nothing, which reads
+// as "nothing installed".
+func hooksSection(doc map[string]json.RawMessage) map[string][]any {
+	out := map[string][]any{}
+	rawHooks, ok := doc["hooks"]
+	if !ok {
+		return out
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(rawHooks, &generic); err != nil {
+		return out
+	}
+	for hook, v := range generic {
+		list, ok := v.([]any)
+		if !ok {
+			continue
+		}
+		out[hook] = list
+	}
+	return out
+}
+
+// commandsIn reads the command strings out of one matcher entry.
+func commandsIn(entry any) []string {
+	m, ok := entry.(map[string]any)
+	if !ok {
+		return nil
+	}
+	list, ok := m["hooks"].([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, h := range list {
+		hm, ok := h.(map[string]any)
+		if !ok {
+			continue
+		}
+		if s, ok := hm["command"].(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Inspect reports which wanted hooks are already registered.
+//
+// exe is the absolute path of the atrium binary, which is what makes a
+// registered command "ours" rather than someone else's.
+func Inspect(exe string) (*HookReport, error) {
+	path, err := UserSettingsPath()
+	if err != nil {
+		return nil, err
+	}
+	rep := &HookReport{Path: filepath.ToSlash(path)}
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		// No file is a clean slate, not a problem.
+	case err != nil:
+		return nil, err
+	default:
+		rep.Exists = true
+	}
+
+	var doc map[string]json.RawMessage
+	if rep.Exists {
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			rep.Unreadable = err.Error()
+		}
+	}
+	installed := registeredCommands(doc)
+
+	for _, w := range WantedHooks {
+		st := HookStatus{HookEvent: w, Want: HookCommandFor(exe, w.Event)}
+		for _, cmd := range installed[w.Hook] {
+			if !reportsEvent(cmd, w.Event) {
+				continue
+			}
+			st.Installed = true
+			st.Found = cmd
+			st.Stale = !sameBinary(cmd, exe)
+			break
+		}
+		if !st.Installed || st.Stale {
+			rep.Missing++
+		}
+		rep.Hooks = append(rep.Hooks, st)
+	}
+	return rep, nil
+}
+
+// Install writes the missing hooks and returns the report as it now stands.
+//
+// Already-correct entries are left exactly as they are, including any
+// timeout or matcher the operator set. A stale one is replaced, because two
+// commands reporting the same event would double every count.
+// InstallResult says what an install actually did, so a caller can tell "I
+// changed your settings" from "there was nothing to change". Both are success,
+// and reporting them the same way is how a no-op comes to read as a write.
+type InstallResult struct {
+	// Changed is false when every named hook was already correct.
+	Changed bool `json:"changed"`
+	// Backup is where the previous file was copied, empty when nothing was
+	// written or when there was no file to copy.
+	Backup string `json:"backup,omitempty"`
+}
+
+// Install writes every wanted hook. See InstallOnly.
+func Install(exe string) (*HookReport, InstallResult, error) {
+	return InstallOnly(exe, nil)
+}
+
+// InstallOnly writes the named events, or all of them when events is empty.
+//
+// One at a time is what the manual route needs: the steps the board prints are
+// commands to run, one per hook, so somebody working through them can stop
+// half way and have exactly the ones they ran.
+func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error) {
+	var none InstallResult
+	path, err := UserSettingsPath()
+	if err != nil {
+		return nil, none, err
+	}
+
+	raw, readErr := os.ReadFile(path)
+	doc := map[string]json.RawMessage{}
+	existed := readErr == nil
+	if existed {
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			// Refuse rather than overwrite. Whatever is in there is the
+			// operator's, and atrium cannot merge into something it cannot
+			// parse.
+			return nil, none, fmt.Errorf("%s is not valid json, so nothing was changed: %w", path, err)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return nil, none, readErr
+	}
+
+	wanted := map[string]bool{}
+	for _, e := range events {
+		wanted[e] = true
+	}
+	matched, changed := 0, 0
+	for _, w := range WantedHooks {
+		if len(wanted) > 0 && !wanted[w.Event] {
+			continue
+		}
+		matched++
+		did, err := upsert(doc, w.Hook, exe, w.Event)
+		if err != nil {
+			return nil, none, err
+		}
+		if did {
+			changed++
+		}
+	}
+	if matched == 0 {
+		return nil, none, fmt.Errorf("no hook matches %v", events)
+	}
+	// Nothing to do is a success with no side effects. Writing anyway would
+	// leave a backup of a file that never changed, and running install a few
+	// times while working through the list would bury the one backup worth
+	// having.
+	if changed == 0 {
+		rep, err := Inspect(exe)
+		return rep, none, err
+	}
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, none, err
+	}
+	out = append(out, '\n')
+
+	res := InstallResult{Changed: true}
+	if existed {
+		backup := path + ".atrium-" + time.Now().Format("20060102-150405") + ".bak"
+		if err := os.WriteFile(backup, raw, 0o600); err != nil {
+			return nil, none, fmt.Errorf("could not keep a copy of the old settings, so nothing was changed: %w", err)
+		}
+		res.Backup = filepath.ToSlash(backup)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, none, err
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		return nil, none, err
+	}
+
+	rep, err := Inspect(exe)
+	return rep, res, err
+}
+
+// upsert puts atrium's command under one hook name, replacing a stale one and
+// leaving everything else in place.
+// changed reports whether anything was actually written, so an install that
+// finds everything already correct writes no file and keeps no backup.
+func upsert(doc map[string]json.RawMessage, hook, exe, event string) (changed bool, err error) {
+	all := hooksSection(doc)
+	if raw, ok := doc["hooks"]; ok {
+		var probe map[string]any
+		if err := json.Unmarshal(raw, &probe); err != nil {
+			return false, fmt.Errorf("the hooks section is not in the shape claude code uses: %w", err)
+		}
+	}
+
+	want := HookCommandFor(exe, event)
+	entries := all[hook]
+
+	// An entry that already reports this event is corrected in place, so a
+	// matcher or timeout the operator set survives.
+	for _, entry := range entries {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		list, _ := m["hooks"].([]any)
+		for _, h := range list {
+			hm, ok := h.(map[string]any)
+			if !ok {
+				continue
+			}
+			if s, _ := hm["command"].(string); reportsEvent(s, event) {
+				// Already exactly right. Rewriting it would produce another
+				// backup of a file nothing changed in.
+				if s == want {
+					if t, _ := hm["type"].(string); t == "command" {
+						return false, nil
+					}
+				}
+				hm["command"] = want
+				hm["type"] = "command"
+				all[hook] = entries
+				return true, store(doc, all)
+			}
+		}
+	}
+
+	// Otherwise it joins the first catch-all entry, since claude code runs
+	// every command under a matching entry and the permission hook usually
+	// already lives there.
+	for _, entry := range entries {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		matcher, _ := m["matcher"].(string)
+		if matcher != "" && matcher != "*" {
+			continue
+		}
+		list, _ := m["hooks"].([]any)
+		m["hooks"] = append(list, map[string]any{"type": "command", "command": want})
+		all[hook] = entries
+		return true, store(doc, all)
+	}
+
+	all[hook] = append(entries, map[string]any{
+		"matcher": "",
+		"hooks":   []any{map[string]any{"type": "command", "command": want}},
+	})
+	return true, store(doc, all)
+}
+
+func store(doc map[string]json.RawMessage, all map[string][]any) error {
+	b, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	doc["hooks"] = b
+	return nil
+}
+
+// registeredCommands pulls every command string out of the hooks section,
+// keyed by hook name. A section it cannot read yields nothing, which reports
+// as "not installed" rather than as an error.
+func registeredCommands(doc map[string]json.RawMessage) map[string][]string {
+	out := map[string][]string{}
+	for hook, entries := range hooksSection(doc) {
+		for _, e := range entries {
+			out[hook] = append(out[hook], commandsIn(e)...)
+		}
+	}
+	return out
+}
+
+// reportsEvent decides whether a registered command is atrium reporting this
+// event. Matched on the event name rather than on the path, so the old
+// PowerShell script counts as installed and gets replaced instead of being
+// added alongside.
+func reportsEvent(command, event string) bool {
+	low := strings.ToLower(command)
+	if !strings.Contains(low, "atrium") {
+		return false
+	}
+	return strings.Contains(low, "-event "+event) || strings.Contains(low, "--event "+event)
+}
+
+// sameBinary reports whether a command runs the atrium we are running.
+func sameBinary(command, exe string) bool {
+	return strings.Contains(
+		strings.ToLower(filepath.ToSlash(command)),
+		strings.ToLower(filepath.ToSlash(exe)))
+}
+
+// HookCommandFor is the command line for one event. It has to agree exactly
+// with what `atrium hook` accepts, so both live off the same shape.
+func HookCommandFor(exe, event string) string {
+	p := filepath.ToSlash(exe)
+	if strings.ContainsAny(p, " \t") {
+		p = `"` + p + `"`
+	}
+	return p + " hook --event " + event
+}

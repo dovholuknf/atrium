@@ -28,8 +28,7 @@ So status stays a column and activity becomes a badge on the card.
 | `idle` | the turn ended, nothing is running | `Stop` |
 | unknown | atrium has never heard from this session | no events yet, or a runner with no hooks |
 
-Alongside it, a count of live subagents. Claude Code has no "subagent started" hook, so the count comes from
-`PreToolUse` for the `Task` tool going up and `SubagentStop` coming down.
+Alongside it, a count of live subagents. `SubagentStart` takes the count up and `SubagentStop` takes it down.
 
 ## Never stored
 
