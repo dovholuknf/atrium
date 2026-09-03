@@ -190,6 +190,11 @@
     overflow-y: auto; overflow-x: hidden; min-height: 0;
     padding-right: 4px; margin-right: -4px;
     scrollbar-color: var(--stroke-dim) transparent;
+    /* Room for the lift. A card rises 2px on hover and this box clips, so the
+       first card's top border went under the heading and the card looked like
+       it was sliding behind it. The margin takes the space back so nothing
+       else moves. */
+    padding-top: 3px; margin-top: -3px;
   }
   /* One card per row, filling the lane.
      Packing them side by side once a lane was wide made that lane read
@@ -2817,13 +2822,23 @@ async function renderBoard() {
   const html = COLUMNS.map(col => {
     const mine = all.filter(t => col.statuses.includes(t.status));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
-    // An empty column gives its width back rather than holding an equal share
-    // for nothing. On a normal morning three of the five are empty, and an
-    // even split means the two columns you are actually reading get a third
-    // of the screen between them. It keeps its header, because a column that
-    // vanished when it emptied would take the place you drop a card onto with
-    // it, and because "nothing needs permission" is worth being able to see.
-    const vacant = mine.length === 0 ? " vacant" : "";
+    // A column with nothing to SHOW gives its width back rather than holding
+    // an equal share for nothing. On a normal morning three of the five are
+    // empty, and an even split means the two columns you are actually reading
+    // get a third of the screen between them.
+    //
+    // Nothing to show, not nothing to hold: `finished` collapses its done and
+    // dead groups by default, so a column with six cards in it can be six rows
+    // of nothing while taking a fifth of the board. Folding a group is saying
+    // you are not reading it, and the width should follow.
+    //
+    // The header stays either way. A column that vanished when it emptied
+    // would take the place you drop a card onto with it, and "nothing needs
+    // permission" is worth being able to see.
+    const shown = col.statuses.length === 1
+      ? mine.length
+      : col.statuses.filter(s => !foldedColumns().includes("group:" + s)).length;
+    const vacant = shown === 0 ? " vacant" : "";
 
     // A column holding one status is a flat list. One holding several splits
     // into groups, each with its own count and its own clear. Project groups
@@ -2890,6 +2905,11 @@ function rememberGroup(e, status) {
   if (open && i < 0) folded.push(key);
   if (!open && i >= 0) folded.splice(i, 1);
   localStorage.setItem("atrium.folded", JSON.stringify(folded));
+  // Redrawn now, because the column's WIDTH depends on whether any of its
+  // groups are open: a finished column with both groups shut is six rows of
+  // nothing taking a fifth of the board. Waiting for the next poll would mean
+  // expanding a group and reading it in a narrow column for five seconds.
+  refresh();
 }
 
 // ── dragging cards ──────────────────────────────────────
@@ -3261,8 +3281,11 @@ const STACK_SORTS = {
     label: "activity",
     cmp: (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0)
   },
+  // Longest wait first. Called `waiting` until the column it sorts by was
+  // renamed, at which point the board said ready and the sort said waiting for
+  // the same number.
   waited: {
-    label: "waiting",
+    label: "waited longest",
     cmp: (a, b) => (b.wait_seconds || 0) - (a.wait_seconds || 0)
   },
   status: {
