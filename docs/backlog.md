@@ -82,6 +82,37 @@ So the work splits:
 The line stays the same either way: atrium may start the flow and report what came back, and it never holds an
 identity, proxies traffic, or decides who may connect.
 
+### The settings dialog is one long scroll and needs a spine
+
+Everything is in one column in the order it was added. Three `h3` headings exist (`reach this board from
+elsewhere`, `sound`, `the board`) and they are the only structure, so finding a setting means scrolling past
+every other setting and knowing roughly how old it is.
+
+What is in there now, which is the argument on its own: two overlays with their own setup blocks and accordions,
+volume, two tone pickers, desktop notification permission, notification expiry, alert debounce, the
+confirmations you turned off, text size, and the grouping expression with its two code boxes. The grouping boxes
+are the worst of it: they are the tallest thing in the dialog and the least often changed.
+
+A left-hand nav with a pane per group. Roughly:
+
+- **Reaching it** - the two overlays, which already fold themselves.
+- **Alerts** - volume, tones, desktop permission, expiry, debounce. Nearly half the dialog and one topic.
+- **The board** - text size, grouping, and whatever display settings arrive next.
+- **This machine** - the atrium name, the hooks, the runners. Some of that lives in other tabs today and may or
+  may not want to move.
+
+Two things to decide rather than assume:
+
+- **Whether it should still be a modal.** A dialog with a nav inside it is most of a settings page, and a
+  settings page is a view. The board already has five tabs and a sixth is cheap. Against that: settings is
+  where you go from wherever you are and come straight back, and a modal returns you there for free.
+- **Where per-card settings live.** A card's bell and its theme are on the card, which is right, and neither
+  belongs in here. The line is "settings for the machine" against "settings for one piece of work", and it is
+  worth writing down before the next setting has to be placed.
+
+The overlay accordions are the pattern to reuse rather than invent past: state visible while collapsed,
+configuration behind a fold.
+
 ### NetFoundry front door as a third overlay
 
 Named as a want alongside the zrok and OpenZiti work and not specified. It needs its own entry once the shape

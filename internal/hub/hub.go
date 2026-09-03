@@ -390,7 +390,23 @@ type PermissionRequest struct {
 	// otherwise ask the operator the same thing twice, and the second answer
 	// would be given against a situation that had already moved on. Empty is
 	// allowed and means "treat this as new".
+	//
+	// A key built by hashing the session, the tool and the command is stable
+	// across a retry AND across running the same command tomorrow, which is
+	// why a decided key is only replayable for a couple of minutes. Prefer
+	// ToolUseID: it does not have that problem.
 	DedupKey string `json:"dedup_key,omitempty"`
+	// ToolUseID is the runner's own id for this tool-use ATTEMPT.
+	//
+	// Claude Code's PreToolUse payload carries `tool_use_id`, and Codex has
+	// the same field. It is exactly what a dedup key wants and what a hash of
+	// the command can never be: the same across a retry of this attempt, and
+	// different for an identical command run later.
+	//
+	// When present it becomes the key and the replay window does not apply,
+	// because there is nothing to guard against. A hook that sends only a hash
+	// keeps the old behaviour.
+	ToolUseID string `json:"tool_use_id,omitempty"`
 }
 
 // PermissionResponse is what the hub returns to the hook.

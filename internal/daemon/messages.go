@@ -86,7 +86,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		Resume string `json:"resume"`
 	}
 	w.Header().Set("Content-Type", "application/json")
-	nothing := func() { _, _ = w.Write([]byte(`{"continue":true}`)) }
+	// Nothing to say. The subcommand turns this into empty output, which is
+	// the documented way to let a turn end, and an empty object is the
+	// smallest thing that parses on the way there.
+	nothing := func() { _, _ = w.Write([]byte(`{}`)) }
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		nothing()

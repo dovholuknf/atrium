@@ -343,7 +343,15 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// that crashed between recording a decision and answering would otherwise
 	// ask twice, and the second answer would be given against a situation that
 	// had moved on. Empty means the store treats this as distinct.
-	p, decided, err := d.st.RecordPermission(task.ID, tool, command, req.DedupKey, req.Details)
+	// The runner's own id for this attempt beats a hash of the command, which
+	// cannot tell a retry from the same command run tomorrow. When one is sent
+	// the request is deduplicated exactly and the replay window does not
+	// apply. A hook that sends only a hash keeps the window.
+	key := req.DedupKey
+	if id := strings.TrimSpace(req.ToolUseID); id != "" {
+		key = store.ExactKey(id)
+	}
+	p, decided, err := d.st.RecordPermission(task.ID, tool, command, key, req.Details)
 	if err != nil {
 		return "", nil, err
 	}
