@@ -303,9 +303,10 @@ and already gated, which is what joining was for.
   request presents as `127.0.0.1`. The shutdown endpoint now notices and demands its token, but that is one
   endpoint. Anything else that ever decides by source address has the same problem, and there is no general
   answer here, only the rule: do not publish the agent listener on `:7777`.
-- **`wire_name` is unique per database and derived from a directory name.** Fine on one machine. Two containers
-  off the same image in the same working directory would collide, and a collision does not error, it matches an
-  existing card. See `docs/federation-design.md`.
+- **`wire_name` collisions are solved but not yet enforced.** `atrium name` prefixes every session an atrium
+  registers, so two machines cannot claim each other's cards. Nothing makes a satellite set one, though, and an
+  unnamed atrium still registers bare names. The forum handshake is the place to require it, since that is the
+  first moment a second atrium exists. See `docs/forum-implementation.md`.
 - **Supervised runners die with the daemon.** The daemon owns each pseudo terminal, and on Windows closing one
   takes the attached process with it. There is no reattach. So stopping the daemon ends every runner it started,
   and a runner cannot outlive a restart. Resume ids are the answer rather than orphan survival, which ConPTY does

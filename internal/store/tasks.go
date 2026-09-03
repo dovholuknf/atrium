@@ -74,6 +74,12 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 // never an identity, because processes restart and the operating system
 // recycles pids. It is only ever a hint that this is the same live process.
 func (s *Store) Register(obs Observed) (*Task, bool, error) {
+	// Qualified here rather than at the eight call sites, because this is the
+	// one boundary where a name off the wire becomes a name in the database.
+	// A session that says it is called `atrium` on a machine called `sg4` is
+	// stored as `sg4/atrium`, and cannot claim another machine's card.
+	obs.WireName = s.Qualify(obs.WireName)
+
 	var (
 		task    *Task
 		created bool
@@ -135,7 +141,10 @@ func (s *Store) refreshObserved(t *Task, obs Observed) error {
 
 func (s *Store) create(obs Observed) (*Task, error) {
 	n := now()
-	title := obs.WireName
+	// The name without the machine's prefix. On a board with one atrium the
+	// prefix is the same on every row and says nothing, and the title is the
+	// operator's to override anyway.
+	title := LocalName(obs.WireName)
 	if title == "" {
 		title = obs.Worktree
 	}
@@ -203,7 +212,12 @@ func (s *Store) Get(id string) (*Task, error) {
 
 // GetByWireName returns the task a session calling itself name belongs to.
 // Hooks know their session's name, not its card id.
+//
+// Qualified on the way in, matching Register, so a hook that says `atrium`
+// finds the card stored as `sg4/atrium`. A caller that already has the
+// qualified name is unaffected, since Qualify is idempotent.
 func (s *Store) GetByWireName(name string) (*Task, error) {
+	name = s.Qualify(name)
 	var t *Task
 	err := s.guard(func() error {
 		got, err := s.getBy(`wire_name = ?`, name)
@@ -547,6 +561,7 @@ func NormalizeTags(in []string) []string {
 // Unknown names are not gated: a session atrium has never heard of has not
 // opted in.
 func (s *Store) GatedByWireName(name string) (bool, error) {
+	name = s.Qualify(name)
 	var gated bool
 	err := s.guard(func() error {
 		gated = false
