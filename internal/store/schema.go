@@ -387,6 +387,42 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// Terminals that come up with the daemon.
+		//
+		// A row per fixture rather than a JSON blob in settings, because these
+		// are ordered, individually enabled, and edited one at a time. `sort`
+		// is what "the dotfiles one is always first" means.
+		//
+		// task_id is a soft reference on purpose, with no foreign key. A
+		// fixture describes what to start; the card it started last time may
+		// have been swept, and that must not delete the fixture.
+		name: "0020_fixture",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS fixture (
+				id         TEXT PRIMARY KEY,
+				label      TEXT NOT NULL DEFAULT '',
+				harness    TEXT NOT NULL,
+				cwd        TEXT NOT NULL DEFAULT '',
+				resume     INTEGER NOT NULL DEFAULT 1,
+				enabled    INTEGER NOT NULL DEFAULT 1,
+				sort       REAL NOT NULL DEFAULT 0,
+				theme      TEXT NOT NULL DEFAULT '',
+				task_id    TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL
+			)`,
+		},
+	},
+	{
+		// What a terminal looks like. Held on the card so a session keeps its
+		// colours across a restart, which is the whole reason the operator
+		// colours terminals in the first place: telling them apart at a
+		// glance, permanently.
+		name: "0021_task_theme",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN theme TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
