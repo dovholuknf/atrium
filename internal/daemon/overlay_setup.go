@@ -94,14 +94,14 @@ func (d *Daemon) DisableZrok() (string, error) {
 	return runSetup(name, []string{"disable"})
 }
 
-// EnrollZiti turns an enrolment token into an identity file.
+// EnrollZiti turns an enrollment token into an identity file.
 //
 // Returns the path it wrote, so the caller can store it as the configured
 // identity without somebody having to find it.
 func (d *Daemon) EnrollZiti(token, name string) (string, string, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return "", "", fmt.Errorf("no token: paste the enrolment JWT")
+		return "", "", fmt.Errorf("no token: paste the enrollment JWT")
 	}
 	// The token is checked before the binary. Both can be wrong at once, and
 	// "install ziti" is unhelpful advice for a token that is already dead: it
@@ -138,7 +138,7 @@ func (d *Daemon) EnrollZiti(token, name string) (string, string, error) {
 		return "", out, err
 	}
 	if _, statErr := os.Stat(outPath); statErr != nil {
-		return "", out, fmt.Errorf("enrolment reported success but wrote no identity to %s", outPath)
+		return "", out, fmt.Errorf("enrollment reported success but wrote no identity to %s", outPath)
 	}
 	return filepath.ToSlash(outPath), out, nil
 }

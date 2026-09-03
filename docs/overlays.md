@@ -36,8 +36,8 @@ first.
 The account token inside that file never leaves the daemon. Atrium reports THAT one is present, never what it
 is, because the board has no use for a credential.
 
-**OpenZiti needs an identity.** That comes from a one-use enrolment token your network administrator issues.
-Paste it and press enrol. Atrium runs `ziti enroll identity --jwt <file> --out <file>` and then points itself at
+**OpenZiti needs an identity.** That comes from a one-use enrollment token your network administrator issues.
+Paste it and press enroll. Atrium runs `ziti enroll identity --jwt <file> --out <file>` and then points itself at
 what came out, so there is no path to copy back.
 
 Two things happen before the token is spent. Its claims are read, so the board can say which network it is for

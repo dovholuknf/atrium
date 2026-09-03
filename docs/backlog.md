@@ -16,6 +16,91 @@ The gaps below are ordered by what would change day to day.
 
 ## Next
 
+### Grouping the board by an expression, and why that is a security question
+
+Today grouping is by a fixed set: status, tag, repo. The shape that would cover everything is two functions
+supplied by the operator, one deriving a group name from a card and one ordering the groups:
+
+```
+  group: (task) => string
+  order: (a, b) => number
+```
+
+That is a small feature and a large decision, because it means running text somebody typed as code. The
+worry is right, and it is worth being precise about what the actual risk is, because the obvious framing is
+wrong in both directions.
+
+**The board already runs arbitrary code.** It is a single HTML file served from the daemon, and anything with a
+script tag in it executes. Adding an expression box does not cross a line that has not been crossed.
+
+**The exfiltration risk is not the expression, it is where it is stored.** An expression held in `localStorage`
+is a preference on one machine, and somebody who can write it can already open dev tools. An expression stored
+in the daemon's database and shipped to every board is different: it becomes something one machine typed and
+another machine runs, which is exactly the shape of a stored XSS, and once federation lands it is a stored XSS
+that crosses a trust boundary. The card data those functions read is not innocent either. `why`, tags, worktree
+paths and the audit log all pass through the board, and the daemon's filesystem is browsable through
+`/v1/browse`, so a function with `fetch` in scope can read the disk and post it out.
+
+Three options, in the order they should be considered:
+
+1. **A restricted expression language rather than JavaScript.** No `fetch`, no `import`, no property access on
+   anything but the card. A tiny evaluator over a fixed grammar (field, comparison, and or not, a few string
+   functions) covers nearly every real grouping and cannot express a network call at all. Most work, and the
+   only option that is safe by construction rather than by enumeration.
+2. **JavaScript in a worker with no network.** A `Worker` from a blob URL, a Content-Security-Policy of
+   `connect-src 'none'`, structured-cloned card data in and a string out, with a timeout. Cheaper, and it
+   depends on getting a CSP exactly right, which is a thing that is routinely got wrong.
+3. **A fixed menu of more groupings.** No evaluation at all. Answers most of the need and none of the
+   interesting cases.
+
+Whichever is chosen, the storage question stands on its own: an expression must not be stored daemon-side and
+executed on another operator's board without that being a deliberate, named decision. Local-only is the default
+and needs no argument. Anything else is a federation trust question rather than a UI preference.
+
+### Enrolling a ziti identity with OIDC
+
+An identity comes from a one-time enrollment JWT today, which somebody has to be issued and then paste. The
+question is whether a human could instead authenticate to the controller with OIDC and have the identity fall
+out of that.
+
+It half fits, which is why it is worth writing down rather than deciding in a sentence. OpenZiti controllers do
+support OIDC for AUTHENTICATION, and the ziti CLI can log in that way. But an identity is a keypair and a
+certificate, and enrollment is what produces them. Those are two different things: logging in proves who you
+are to a controller for the length of a session, and enrolling gives this machine a lasting identity on the
+network. An OIDC login could plausibly be used to obtain an enrollment token without anybody emailing one
+around, which is the part that actually hurts today, but that is a controller-side capability and atrium cannot
+invent it.
+
+So the work splits:
+
+- **Find out what actually exists.** Whether a controller can issue an enrollment token to an OIDC-authenticated
+  caller, and whether `sdk-golang` exposes it. This is a research task and it decides the rest.
+- **If it does:** a button that opens the browser, completes the flow, and comes back with a token atrium then
+  enrolls with. The existing enrollment path is unchanged and this only replaces the paste.
+- **If it does not:** say so in `docs/overlays.md` and stop. Atrium holding an OIDC session in order to act as a
+  network administrator would put it on the wrong side of the line in `CLAUDE.md`.
+
+The line stays the same either way: atrium may start the flow and report what came back, and it never holds an
+identity, proxies traffic, or decides who may connect.
+
+### The overlay settings pages need reorganising, and zrok needs three more things
+
+Four separate items that landed together because they are all the same screen.
+
+- **Accordions rather than everything at once.** Both overlays show every field all the time, and most of them
+  are not being changed. Collapsed by default, expanded to configure, with the state that matters (running,
+  the address) visible while collapsed. This gets worse with every option added, and there are several below.
+- **SDK or binary, as a toggle.** zrok is driven through the embedded SDK, and the binary path is still shown as
+  though it were the primary answer. It should be a switch that says the SDK is the usual answer and the
+  executable is the fallback, rather than a path field with no explanation of when it is used.
+- **Pointing zrok at another instance.** The API endpoint is assumed to be the public one. Somebody running
+  their own zrok needs to point at it, and there is nowhere to say so.
+- **A link to where you sign up.** The public zrok infrastructure needs an account, and the board asks for a
+  token without saying where a token comes from.
+
+NetFoundry front door is named as a related want and is not specified here. It needs its own entry once the
+shape is known.
+
 ### The overlay lifecycle stops short of setting anything up
 
 Atrium can drive a zrok share or a ziti tunneler you already configured. It cannot get you to that point, and
@@ -32,7 +117,7 @@ Missing for zrok, roughly in the order somebody hits them:
 
 Missing for OpenZiti:
 
-- No enrolment. An identity comes from a JWT, and `ziti edge enroll` turns one into the identity file the
+- No enrollment. An identity comes from a JWT, and `ziti edge enroll` turns one into the identity file the
   tunneler wants. Atrium takes the file and has nothing to say about where it comes from.
 - No view of what an identity can bind. The tunneler hosts whatever the network's policies allow, and atrium
   shows none of it, so "is this going to work" is only answerable by starting it.
@@ -285,19 +370,6 @@ The last piece of supervision. A cooperative runner reports its own state, so at
 A bare shell or a runner with no hook has only its terminal, and inferring `needs-input` from that is heuristic.
 Worth doing last, and worth keeping manual status override as the escape hatch.
 
-### The Stop hook is written but not wired
-
-`atrium-stop-hook.ps1` exists and the `/stop` endpoint it talks to is tested. It is not registered in
-`settings.json`, so a message queued for an idle session sits in the queue.
-
-Deliberately the one hook the board does not offer to install. A Stop hook that blocks makes a session keep
-working, so getting it wrong means sessions that will not stop. Turning that into a button would be handing out
-a way to hang every session on the machine.
-
-Making it a subcommand the way the activity hooks now are is the smaller half of the job, and worth doing
-whenever the behaviour is wanted: the script holds a machine-specific path, which is exactly what the
-subcommand removes.
-
 ### Starting a card from a ticket, an issue or a pull request
 
 Researched and written up in `docs/intake-design.md`. Nothing built.
@@ -431,6 +503,9 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   the chain only runs when a request arrives and anything already waiting had asked before the switch existed.
 - Saying something to a session from the card, reporting which of the two routes it took and listing anything
   queued that has not arrived. The two are different promises and the box has to say which one it made.
+- The Stop hook, as `atrium turn --event end`. The only way to reach a session sitting idle, since an idle
+  session makes no tool calls for a message to ride. Offered by name and never installed by "install all",
+  because it is the one hook whose answer changes what a session does.
 - Folder rules, covering work inside a directory rather than a command shape.
 - Stopping the daemon without killing it, and a launch that proves the runner started.
 - A narrow layout, and the board served with no-store so a rebuild is always what is on screen.

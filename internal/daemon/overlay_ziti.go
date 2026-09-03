@@ -12,7 +12,7 @@ import (
 
 // Turning a JWT into an identity file the tunneler can use.
 //
-// An enrolment token is one use and short lived. It arrives by mail or from a
+// An enrollment token is one use and short lived. It arrives by mail or from a
 // console, and until now atrium asked for the identity file that comes out the
 // far side without saying anything about how to get one, which is the step
 // somebody is actually stuck on.
@@ -83,7 +83,7 @@ func zitiEnrolment(path string) ZitiEnrolment {
 	return out
 }
 
-// JWTClaims is the readable half of an enrolment token.
+// JWTClaims is the readable half of an enrollment token.
 //
 // Shown before enrolling so somebody can see which network a token is for and
 // whether it has already expired. A JWT's payload is base64, not encryption:
@@ -98,7 +98,7 @@ type JWTClaims struct {
 	Expired bool `json:"expired"`
 }
 
-// readJWT pulls the claims out of an enrolment token.
+// readJWT pulls the claims out of an enrollment token.
 //
 // The signature is NOT checked. Atrium is not the party that validates this,
 // the controller is, and pretending otherwise would mean carrying a trust
@@ -107,7 +107,7 @@ func readJWT(token string) (JWTClaims, error) {
 	var out JWTClaims
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) < 2 {
-		return out, fmt.Errorf("that does not look like an enrolment token")
+		return out, fmt.Errorf("that does not look like an enrollment token")
 	}
 	body, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
@@ -130,7 +130,7 @@ func readJWT(token string) (JWTClaims, error) {
 	return out, nil
 }
 
-// zitiEnrollArgs builds the enrolment command.
+// zitiEnrollArgs builds the enrollment command.
 //
 // The token is written to a file rather than passed as an argument, because an
 // argument is visible to anything on the machine that can list processes, and

@@ -13,6 +13,23 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **The Stop hook, as `atrium turn --event end`.** It existed as a script in somebody's dotfiles, holding a path
+  only their machine had, and was never registered, so a message queued for an idle session sat in the queue.
+  That is the case the queue exists for: a busy session makes tool calls constantly and a message rides the next
+  one, while an idle session makes none at all, which is exactly when you most want to reach it.
+
+  It is the only atrium hook that writes to stdout, because that is how a Stop hook says anything, and therefore
+  the only one that can change what a session does rather than just reporting. So it is the only hook marked
+  optional: offered by name, with what it does said next to the switch, and never written by "install all". A
+  hook that is off on purpose no longer counts as missing, though a stale one still does, since somebody asked
+  for that and it is now pointing at the wrong binary. Three things hold the line, and there is a test for each:
+  every failure path prints a plain continue and exits 0, `stop_hook_active` is honoured so it cannot block
+  twice in a row, and the daemon's answer is passed through only when it parses as a block with something to
+  say.
+
+  The board's message box stops promising what it cannot deliver. It said a queued message arrives "when its
+  turn ends", which was false on every machine, and it now says that only when the hook is actually wired.
+
 - **A message delivery is never replayed.** A queued message rides the next tool call by refusing it, and the
   banner tells the model the call was interrupted rather than judged, and to retry. The retry is the same
   command with the same dedup key, so it landed on the replay path and was handed back the identical
@@ -111,7 +128,7 @@ section heading is just "what landed in this iteration."
   The gear reports which of three states each overlay is in, and offers the next thing rather than a button that
   cannot work: not installed, installed but nothing set up, ready. zrok gets an enable button that takes an
   account token, and whether an environment exists is read from `~/.zrok2/environment.json`, the same file the
-  CLI checks, rather than parsed out of `zrok status` and its boxed tables. OpenZiti gets an enrol button that
+  CLI checks, rather than parsed out of `zrok status` and its boxed tables. OpenZiti gets an enroll button that
   takes a one-use JWT, reads its claims to refuse an expired one here with a date instead of at a controller,
   passes the token through a file rather than an argument where anything listing processes could read it, and
   points atrium at the identity that comes out so there is no path to copy back. The zrok account token and the

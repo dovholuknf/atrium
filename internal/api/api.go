@@ -82,7 +82,7 @@ type Server struct {
 	SetupOverlay func(kind string, body []byte) (string, error)
 	// TeardownOverlay undoes that.
 	TeardownOverlay func(kind string) (string, error)
-	// InspectToken reads an enrolment token without acting on it, so the
+	// InspectToken reads an enrollment token without acting on it, so the
 	// board can show what it is for before anything is done with it.
 	InspectToken func(token string) (any, error)
 }

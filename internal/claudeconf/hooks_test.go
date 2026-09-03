@@ -53,8 +53,8 @@ func TestInspectReportsEveryHookMissingOnAFreshMachine(t *testing.T) {
 	if rep.Exists {
 		t.Fatal("a settings file that is not there was reported as present")
 	}
-	if rep.Missing != len(WantedHooks) {
-		t.Fatalf("missing is %d, wanted %d", rep.Missing, len(WantedHooks))
+	if rep.Missing != wantedCount() {
+		t.Fatalf("missing is %d, wanted %d", rep.Missing, wantedCount())
 	}
 	for _, h := range rep.Hooks {
 		if h.Installed {
@@ -143,8 +143,8 @@ func TestInstallOnlyWritesWhatWasNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Missing != len(WantedHooks)-1 {
-		t.Fatalf("missing is %d after wiring one, wanted %d", rep.Missing, len(WantedHooks)-1)
+	if rep.Missing != wantedCount()-1 {
+		t.Fatalf("missing is %d after wiring one, wanted %d", rep.Missing, wantedCount()-1)
 	}
 	for _, h := range rep.Hooks {
 		want := h.Event == "tool-start"
@@ -159,8 +159,8 @@ func TestInstallOnlyWritesWhatWasNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Missing != len(WantedHooks)-2 {
-		t.Fatalf("missing is %d after wiring two, wanted %d", rep.Missing, len(WantedHooks)-2)
+	if rep.Missing != wantedCount()-2 {
+		t.Fatalf("missing is %d after wiring two, wanted %d", rep.Missing, wantedCount()-2)
 	}
 }
 
