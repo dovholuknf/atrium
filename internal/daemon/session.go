@@ -33,6 +33,12 @@ type SessionEvent struct {
 	TaskID string `json:"task_id,omitempty"`
 	// Resume is the runner's own session id, so a card can be picked back up.
 	Resume string `json:"resume,omitempty"`
+	// Resumable is whether there is a conversation behind that id yet.
+	//
+	// A pointer, so "the hook did not say" is distinguishable from "the hook
+	// said no". An older hook binary sends neither and is trusted, which is
+	// what it was before this existed.
+	Resumable *bool `json:"resumable,omitempty"`
 	// Source is the harness's own word for why the session started, such as
 	// startup, resume or clear. Recorded, not interpreted.
 	Source string `json:"source,omitempty"`
@@ -119,9 +125,49 @@ func (d *Daemon) onSession(in SessionEvent) error {
 
 	// A supervised runner dies with the daemon, which owns its pseudo terminal.
 	// The id the harness resumes from turns that into a restart rather than a
-	// loss, so it is stored on every event rather than only at start.
-	if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
-		return err
+	// loss.
+	//
+	// An id is stored only when there is a conversation behind it.
+	//
+	// A session that opened and was never typed into has no transcript, and
+	// resuming its id answers "no conversation found". Storing it anyway
+	// replaced a real conversation with one that can never work, so the next
+	// start failed, began again empty, and recorded another dud. The thread
+	// was lost a little more every restart.
+	//
+	// "Which event" was tried first and is not enough: a fresh session that
+	// does nothing still ends, and its end carried the same useless id. The
+	// hook answers the real question, because the transcript is a file it can
+	// look at. A hook that says nothing is trusted, which is what every hook
+	// did before this existed.
+	// One rule: a stored resume id is replaced only by one that is KNOWN to
+	// name a written conversation.
+	//
+	// The failure this closes took several attempts because it has several
+	// doors. An id is reported at session start, at session end, on join, and
+	// by the Stop hook, and a session that opened and was never typed into
+	// reports the same useless id through all of them. Guarding one door moved
+	// the leak to the next. Resuming that id answers "no conversation found",
+	// atrium starts fresh, the fresh session reports its own equally useless
+	// id, and the thread is a little further away every restart.
+	//
+	// So the test is not which event, and not whether the id looks new. It is
+	// whether anybody has confirmed there is something behind it. The hooks
+	// answer that by looking for the transcript, which is a file on the
+	// machine the session is running on.
+	//
+	// A card with nothing stored takes whatever it is offered, because an id
+	// that might not work still beats no id at all.
+	if in.Resume != "" && in.Resume != task.ResumeID {
+		written := in.Resumable != nil && *in.Resumable
+		if written || task.ResumeID == "" {
+			if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+				return err
+			}
+		} else {
+			log.Printf("[atrium] %s offered a resume id with nothing written behind it, keeping %s",
+				in.Agent, task.ResumeID)
+		}
 	}
 
 	switch in.Event {

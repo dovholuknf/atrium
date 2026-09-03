@@ -1357,7 +1357,15 @@
   @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
   .toast .body { flex: 1; min-width: 0; }
   .toast b { display: block; color: var(--head); font-size: var(--fs-base); margin-bottom: 3px; }
-  .toast span { font: var(--fs-sm)/1.45 var(--mono); color: var(--dim); word-break: break-all; }
+  /* Breaks at spaces, and mid-word only when a single word cannot fit.
+     break-all cuts wherever the line ends whatever is there, which was chosen
+     for toasts carrying a command or a path and is wrong now that most of them
+     carry a sentence: "wants your next instr / uction". A path still breaks,
+     because overflow-wrap steps in when a word genuinely does not fit. */
+  .toast span {
+    font: var(--fs-sm)/1.45 var(--mono); color: var(--dim);
+    word-break: normal; overflow-wrap: anywhere;
+  }
   .toast .x, .toast .copy {
     flex: none; color: var(--dimmest); font-size: var(--fs-lg); line-height: 1;
     background: none; border: none; padding: 0 2px; cursor: pointer;
@@ -4948,17 +4956,27 @@ const alerting = (() => {
     }
   };
 
+  // A request nobody answers freezes an agent indefinitely. One alert when it
+  // arrives is not enough, because the alert is easy to miss and the cost of
+  // missing it is an agent doing nothing for an hour. So keep asking, at a
+  // widening interval so it stays a reminder rather than an assault.
+  //
+  // Declared BEFORE the return, and this is not a style point. Everything
+  // below that return is unreachable: `function nag` is hoisted so it stays
+  // callable, but a `const` there never runs, and every call to nag threw
+  // "cannot access nagged before initialization" from inside a promise. The
+  // throw took the render with it and the panel came up blank. It went unseen
+  // because nag only fires when a permission has been waiting a minute, and
+  // with auto mode on that is almost never.
+  //
+  // A parser cannot catch this: it is valid JavaScript that fails when run.
+  const nagged = {};
+
   return {
     check, nag, play, preview, save, unlock,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
-
-  // A request nobody answers freezes an agent indefinitely. One alert when it
-  // arrives is not enough, because the alert is easy to miss and the cost of
-  // missing it is an agent doing nothing for an hour. So keep asking, at a
-  // widening interval so it stays a reminder rather than an assault.
-  const nagged = {};
   function nag(perms) {
     const now = Date.now();
     perms.forEach(p => {

@@ -56,6 +56,9 @@ type turnInput struct {
 	// StopHookActive is set when this turn is only still running because a
 	// Stop hook blocked the last one. Blocking again would never terminate.
 	StopHookActive bool `json:"stop_hook_active"`
+	// TranscriptPath is where this conversation is being written, which is
+	// what makes its id worth storing. See hasTranscript in session.go.
+	TranscriptPath string `json:"transcript_path"`
 }
 
 // keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
@@ -142,9 +145,10 @@ func turnEnded(hubURL, event, name string) string {
 	}
 
 	body, err := json.Marshal(map[string]any{
-		"agent":  agent,
-		"cwd":    filepath.ToSlash(cwd),
-		"resume": in.SessionID,
+		"agent":     agent,
+		"cwd":       filepath.ToSlash(cwd),
+		"resume":    in.SessionID,
+		"resumable": hasTranscript(in.TranscriptPath),
 	})
 	if err != nil {
 		return keepGoing
