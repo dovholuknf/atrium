@@ -101,17 +101,31 @@
     background: linear-gradient(180deg, rgba(7,19,34,.94), rgba(7,19,34,.72));
     border-bottom: 1px solid var(--stroke-dim);
   }
-  .bar { display: flex; align-items: center; gap: var(--sp-6); padding: 16px 28px; }
+  /* One line, always. Nothing here wraps: a button that breaks across two
+     lines reads as broken rather than as tight, and the header is the one
+     row on screen whose shape people navigate by.
+     The tabs give up their width first, since they can scroll; the actions on
+     the right keep theirs. */
+  .bar {
+    display: flex; align-items: center; gap: var(--sp-6); padding: 16px 28px;
+    flex-wrap: nowrap; min-width: 0;
+  }
+  .bar > * { flex: none; }
   .wordmark {
     font-size: var(--fs-3xl); font-weight: 700; letter-spacing: .34em; margin: 0;
-    text-transform: uppercase;
+    text-transform: uppercase; white-space: nowrap;
   }
   .rule { height: 2px; background: linear-gradient(90deg, var(--teal), var(--blue) 40%, transparent); }
-  nav { display: flex; gap: var(--sp-1); }
+  nav {
+    display: flex; gap: var(--sp-1); min-width: 0; flex: 0 1 auto;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  nav::-webkit-scrollbar { display: none; }
   .tab {
     padding: 10px 20px; border-radius: var(--r-md); cursor: pointer; color: var(--label);
     border: 1px solid transparent; font-size: var(--fs-2xl); font-weight: 500;
     transition: color .15s, background .15s, border-color .15s; user-select: none;
+    white-space: nowrap; flex: none;
   }
   .tab:hover { color: var(--head); }
   .tab.on {
@@ -496,6 +510,92 @@
   @media (prefers-reduced-motion: reduce) {
     .chip.auto { animation: none; }
   }
+  /* Global auto, in the header. Quiet while it is gating, and impossible to
+     miss while it is not: the whole point is that nothing else on screen will
+     tell you nobody is being asked. */
+  .gauto {
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 8px 12px; white-space: nowrap;
+    color: var(--dimmest); border-color: var(--stroke-dim); background: transparent;
+  }
+  .gauto::before { content: "\25CF"; margin-right: 6px; font-size: .9em; }
+  /* Narrow: the label goes, the dot and its colour stay. What matters is
+     whether it is on, and the colour says that on its own. */
+  @media (max-width: 1150px) {
+    .gauto { font-size: 0; padding: 8px 10px; }
+    .gauto::before { margin-right: 0; font-size: var(--fs-md); }
+  }
+  .gauto.on {
+    color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
+    animation: autopulse 2s ease-in-out infinite;
+  }
+  /* ── overlays ────────────────────────────────────────── */
+  /* One panel per way out, each carrying its own mark, its own colour and its
+     own state. They sit in the gear next to each other, so they have to be
+     told apart at a glance rather than by reading the heading. */
+  .ov {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(4,11,20,.35); padding: 14px 15px; margin-bottom: 12px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .ov.live { border-color: var(--chip-accent-stroke); box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset; }
+  .ov-head { display: flex; align-items: flex-start; gap: var(--sp-4); }
+  .ov-head b { display: block; color: var(--head); font-size: var(--fs-lg); }
+  .ov-head > .grow > span {
+    display: block; color: var(--dim); font-size: var(--fs-sm); margin-top: 3px;
+  }
+  .ov-mark {
+    flex: none; width: 40px; height: 40px; display: grid; place-items: center;
+    border-radius: var(--r-md);
+  }
+  .ov-mark svg { width: 25px; height: 25px; display: block; }
+  /* Each project's own colour, so the panel is recognised before it is read. */
+  .ov-mark[data-kind="zrok"] { color: #9BE8C8; background: rgba(155,232,200,.12); }
+  .ov-mark[data-kind="ziti"] { color: #8CC7FF; background: rgba(140,199,255,.12); }
+  /* Sharing right now. Green and steady rather than pulsing: unlike auto mode
+     this is a thing you went and turned on, and it is not a hazard. */
+  .ov-live {
+    flex: none; font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--chip-accent-text);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    border-radius: var(--r-pill); padding: 5px 10px;
+  }
+  .ov-live::before { content: "\25CF"; margin-right: 5px; }
+  .ov-body { margin-top: 12px; }
+  .ov-field { margin-bottom: 12px; }
+  .ov-field:last-child { margin-bottom: 0; }
+  .ov-field .hintline { margin-top: 4px; }
+  /* The address is what you came for, so it gets a line of its own. */
+  .ov-addr {
+    display: flex; align-items: center; gap: var(--sp-3); margin-top: 12px;
+    padding: 9px 11px; border-radius: var(--r-sm);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+  }
+  .ov-addr code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
+  }
+  .ov-err {
+    margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: var(--warn-bg); border: 1px solid var(--warn-stroke);
+    color: var(--warn); font-size: var(--fs-sm);
+  }
+  .ov-note {
+    margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: rgba(4,11,20,.5); border: 1px solid var(--stroke-dim);
+    color: var(--dim); font-size: var(--fs-xs); line-height: 1.5;
+  }
+  .ov-note code { font-family: var(--mono); color: var(--label); }
+  .ov-missing { margin-top: 10px; color: var(--dim); font-size: var(--fs-sm); }
+  .ov-missing a { color: var(--teal); }
+  .ov-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
+  .ov-actions .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-log { margin-top: 10px; }
+  .ov-log > summary {
+    cursor: pointer; color: var(--dimmest); font-size: var(--fs-xs); user-select: none;
+  }
+  .ov-log > summary:hover { color: var(--label); }
+  .ov-log pre.code { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
   .chip.attach:hover { border-color: var(--teal); }
   /* Sits in a column header, so it stays quiet until reached for. */
   .chip.sweep {
@@ -1048,7 +1148,13 @@
   /* Sound is on, but the browser has not let this page make any yet. */
   button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }
   @keyframes nudge { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-  button.newagent { font-size: var(--fs-xl); padding: 10px 20px; }
+  button.newagent { font-size: var(--fs-xl); padding: 10px 20px; white-space: nowrap; }
+  /* Narrow: the plus alone. The word is what wraps, and the plus has never
+     meant anything else here. */
+  @media (max-width: 1150px) {
+    button.newagent { font-size: 0; padding: 10px 14px; }
+    button.newagent::before { content: "+"; font-size: var(--fs-2xl); }
+  }
 
   /* ── detail dialog ──────────────────────────────────── */
   dialog {
@@ -1283,6 +1389,10 @@
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"></span></div>
     </nav>
     <div class="grow"></div>
+    <!-- In the header, not the gear. Nothing on this machine is asking you
+         while it is on, and a switch that broad has to be visible from every
+         tab without going looking for it. -->
+    <button id="gauto" onclick="toggleGlobalAuto()"></button>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
@@ -1645,6 +1755,18 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
       <span class="hintline">The body of a comparator over two group names. Broken code falls back
         to the default and says so rather than blanking the board.</span>
+    </div>
+
+    <!-- Reaching the board from elsewhere.
+         Atrium listens on loopback and has no login, on purpose: an auth layer
+         invented here would be a worse one than the overlays that already
+         exist. This is atrium driving one of those rather than becoming one.
+         It never handles an identity and never proxies traffic. -->
+    <div class="field">
+      <label class="eyebrow">reach this board from elsewhere</label>
+      <div id="overlays"></div>
+      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
+        publish it through something that already knows who is allowed to see it.</span>
     </div>
   </div>
 </dialog>
@@ -4362,6 +4484,258 @@ function paintGroupSegs() {
   });
 }
 
+// Global auto mode: every session, including ones that do not exist yet.
+//
+// Held by the daemon rather than the browser, so it is one answer for the
+// machine and it survives a restart. A restart is not consent to start asking
+// again, and it is not consent to keep approving either: it is whatever it
+// was when you left.
+let globalAuto = false;
+
+function paintGlobalAuto() {
+  const b = document.getElementById("gauto");
+  if (!b) return;
+  b.className = globalAuto ? "gauto on" : "gauto";
+  b.textContent = globalAuto ? "approving everything" : "asking";
+  b.title = globalAuto
+    ? "every session is approved without asking. click to start asking again."
+    : "requests are gated. click to approve everything from every session.";
+}
+
+async function loadGlobalAuto() {
+  try {
+    const s = await api("/v1/settings");
+    globalAuto = !!s.global_auto;
+  } catch (e) { return; }
+  paintGlobalAuto();
+}
+
+// Turning it ON asks; turning it off never does. The confirmation is not
+// skippable, since this is the widest thing on the board.
+async function toggleGlobalAuto() {
+  const on = !globalAuto;
+  if (on && !await confirmUser("approve everything, from every session?",
+    "Every request from every session on this machine is approved without asking, " +
+    "including sessions that have not started yet." +
+    "<br><br>Everything is still recorded, and <b>never</b> rules and shelved cards still " +
+    "block. Read what any session did with <b>what did it do?</b>",
+    "approve everything")) return;
+  try {
+    const s = await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ global_auto: on })
+    });
+    globalAuto = !!s.global_auto;
+  } catch (e) {
+    toast("that did not stick", e.message);
+    return;
+  }
+  paintGlobalAuto();
+  toast(on ? "approving everything" : "asking again",
+    on ? "nothing on this machine will stop to ask you"
+       : "requests are gated again");
+}
+
+// ── reaching the board from elsewhere ───────────────────
+//
+// Two overlays, configured and driven the same way. Everything about one of
+// them lives in OVERLAY_UI below, so adding a third is an entry rather than a
+// branch through the rendering.
+
+let overlays = [];
+
+// Marks, in each project's own colour. Abstract rather than a copy of a
+// trademark: a bad reproduction of somebody's logo is worse than a shape that
+// is merely distinct.
+const OVERLAY_MARKS = {
+  // A ring pierced by a line: a tunnel through a boundary.
+  zrok: `<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/>
+    <path d="M3 12h18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
+  // Two nodes and the path between them.
+  ziti: `<circle cx="5.5" cy="18.5" r="2.6" fill="currentColor"/>
+    <circle cx="18.5" cy="5.5" r="2.6" fill="currentColor"/>
+    <path d="M7.5 16.5C10 14 9 9 14 7.5" fill="none" stroke="currentColor"
+      stroke-width="2.2" stroke-linecap="round"/>`
+};
+
+// The fields each overlay takes. Rendered from this, so the form and what the
+// daemon stores cannot drift apart in one place and not the other.
+const OVERLAY_UI = {
+  zrok: [
+    { key: "mode", label: "share", type: "select",
+      options: [["private", "private — needs zrok on the other end"],
+                ["public", "public — anyone with the link"]],
+      hint: "A public share is a link with no login in front of it." },
+    { key: "backend", label: "what to publish", type: "text",
+      hint: "The board's own address. Change it only if you mean to share something else." },
+    { key: "reserved", label: "reserved token", type: "text",
+      placeholder: "from zrok reserve, optional",
+      hint: "Keeps the same address across restarts. Empty means a new one each time." },
+    { key: "extra", label: "extra options", type: "text", placeholder: "optional" }
+  ],
+  // One field, because one field is all `ziti tunnel host` takes. Which
+  // services this hosts and where each points are configured on the network,
+  // not here.
+  ziti: [
+    { key: "identity", label: "identity file", type: "text",
+      placeholder: "C:/path/to/identity.json",
+      hint: "Passed to the tunneler. Atrium never opens it: the key inside is not its business." },
+    { key: "extra", label: "extra options", type: "text", placeholder: "optional" }
+  ]
+};
+
+async function loadOverlays() {
+  try { overlays = (await api("/v1/overlays")).overlays || []; } catch (e) { return; }
+  paintOverlays();
+}
+
+function paintOverlays() {
+  const host = document.getElementById("overlays");
+  if (!host) return;
+  setHTML(host, overlays.map(overlayCard).join(""));
+}
+
+function overlayCard(o) {
+  const mark = OVERLAY_MARKS[o.kind] || "";
+  const missing = !o.found;
+
+  // What it is doing, in the one place somebody looks to find out.
+  const state = missing
+    ? `<span class="by missing">not installed</span>`
+    : o.running
+      ? `<span class="ov-live">sharing</span>`
+      : `<span class="by">ready</span>`;
+
+  const body = missing
+    ? `<div class="ov-missing">
+         Not on this machine, or not on the daemon's PATH.
+         <a href="${esc(o.install)}" target="_blank" rel="noreferrer">${esc(o.install)}</a>
+       </div>`
+    : (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
+
+  // The address, once there is one. This is the thing you came for, so it gets
+  // its own line and a copy button rather than being read out of the log.
+  const addr = o.address ? `
+    <div class="ov-addr">
+      <code>${esc(o.address)}</code>
+      <button onclick='copyText(this, ${JSON.stringify(o.address).replace(/'/g, "&#39;")})'
+        >copy</button>
+    </div>` : "";
+
+  // Whatever it said. A share that refuses explains itself here and nowhere
+  // else, so it is shown rather than summarised.
+  const log = (o.output || []).length ? `
+    <details class="ov-log">
+      <summary>what ${esc(o.label)} said</summary>
+      <pre class="code">${esc(o.output.join("\n"))}</pre>
+    </details>` : "";
+
+  const err = o.err ? `<div class="ov-err">${esc(o.err)}</div>` : "";
+
+  // Said here rather than left to be discovered when `atrium stop` refuses.
+  // A tunneler terminates on this machine, so while a share is up every
+  // request looks like it came from this keyboard, and the shutdown endpoint
+  // stops trusting that.
+  const note = o.running ? `
+    <div class="ov-note">While this is up, <code>atrium stop</code> needs
+      <code>--shutdown-token</code>: a share makes every request look local, so the
+      loopback-only rule no longer means anything.</div>` : "";
+
+  const actions = missing ? "" : `
+    <div class="ov-actions">
+      ${o.running
+        ? `<button class="no" onclick="stopOverlay('${esc(o.kind)}')">stop sharing</button>`
+        : `<button class="go" onclick="startOverlay('${esc(o.kind)}')">start sharing</button>`}
+      <span class="grow"></span>
+      <span class="by">${o.found ? esc(o.found) : ""}</span>
+    </div>`;
+
+  return `<div class="ov ${o.running ? "live" : ""}" data-kind="${esc(o.kind)}">
+    <div class="ov-head">
+      <span class="ov-mark" data-kind="${esc(o.kind)}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${mark}</svg></span>
+      <div class="grow">
+        <b>${esc(o.label)}</b>
+        <span>${esc(o.blurb)}</span>
+      </div>
+      ${state}
+    </div>
+    ${addr}${err}${note}
+    <div class="ov-body">${body}</div>
+    ${actions}${log}
+  </div>`;
+}
+
+function overlayField(o, f) {
+  const v = (o.config || {})[f.key] || "";
+  const id = `ov-${o.kind}-${f.key}`;
+  const input = f.type === "select"
+    ? `<select id="${id}" onchange="saveOverlay('${esc(o.kind)}')">${
+        f.options.map(([val, label]) =>
+          `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(label)}</option>`
+        ).join("")}</select>`
+    // Saved on blur rather than on every keystroke, so a half-typed path is
+    // not stored and read back under the cursor.
+    : `<input type="text" id="${id}" spellcheck="false" value="${esc(v)}"
+        placeholder="${esc(f.placeholder || "")}" onchange="saveOverlay('${esc(o.kind)}')">`;
+  return `<div class="ov-field">
+    <label class="eyebrow" for="${id}">${esc(f.label)}</label>
+    ${input}
+    ${f.hint ? `<span class="hintline">${esc(f.hint)}</span>` : ""}
+  </div>`;
+}
+
+// Reads the whole form back rather than patching one field, so what is stored
+// is always what is on screen.
+async function saveOverlay(kind) {
+  const body = {};
+  (OVERLAY_UI[kind] || []).forEach(f => {
+    const el = document.getElementById(`ov-${kind}-${f.key}`);
+    if (el) body[f.key] = el.value;
+  });
+  try {
+    await api(`/v1/overlays/${kind}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    toast("that did not stick", e.message);
+  }
+}
+
+// Turning on a public share is the one option here that puts a board with no
+// login on the open internet, so it says so before it does it.
+async function startOverlay(kind) {
+  const o = overlays.find(x => x.kind === kind);
+  const publicShare = kind === "zrok" && o && (o.config || {}).mode === "public"
+    && !(o.config || {}).reserved;
+  if (publicShare && !await confirmUser("share this publicly?",
+    "A public zrok share is a link anyone who has it can open, and this board has no login. " +
+    "Whoever opens it can see every card, read every command, and answer permission requests." +
+    "<br><br>A private share needs zrok on the other end and is the safer choice.",
+    "share it publicly")) return;
+
+  await saveOverlay(kind);
+  try {
+    overlays = (await api(`/v1/overlays/${kind}/start`, { method: "POST" })).overlays || overlays;
+  } catch (e) {
+    toast("could not start it", e.message);
+  }
+  paintOverlays();
+  // The address arrives on the share's own output a moment after it starts.
+  setTimeout(loadOverlays, 1500);
+  setTimeout(loadOverlays, 4000);
+}
+
+async function stopOverlay(kind) {
+  try {
+    overlays = (await api(`/v1/overlays/${kind}/stop`, { method: "POST" })).overlays || overlays;
+  } catch (e) {
+    toast("could not stop it", e.message);
+  }
+  paintOverlays();
+}
+
 function setHookNag(on) {
   skipConfirm(HOOK_NAG, on);
   renderHooks();
@@ -4399,6 +4773,10 @@ function paintSettings() {
   document.getElementById("s-cardsize").value = String(uiScale());
   paintGrouping();
   paintSkipped();
+  // Fetched when the gear opens rather than on every poll: a share's state
+  // only changes when something in here changes it, and the event stream
+  // carries the ones that happen elsewhere.
+  loadOverlays();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -4739,6 +5117,7 @@ function permRow(e, p, d) {
 function decidedHow(d) {
   switch (d.by) {
     case "auto": return "auto mode";
+    case "global-auto": return "global auto";
     case "you": case "": case undefined: return "you";
     case "message": return "a message you queued";
     case "shelved": return "the card was shelved";
@@ -4985,6 +5364,16 @@ function connect() {
   // settings.json changed under us, which is `atrium hook install` run in a
   // terminal. Without this the count only moves on the next poll, and only
   // while the runners tab happens to be open.
+  // A share is one thing for the machine, so two tabs must not disagree about
+  // whether it is up.
+  es.addEventListener("overlays", e => {
+    try { overlays = JSON.parse(e.data) || []; } catch (err) { return; }
+    paintOverlays();
+  });
+  es.addEventListener("settings", e => {
+    try { globalAuto = !!JSON.parse(e.data).global_auto; } catch (err) { return; }
+    paintGlobalAuto();
+  });
   es.addEventListener("hooks", async () => {
     await loadHooks();
     if (document.getElementById("hooks").open) renderHooks();
@@ -6253,6 +6642,7 @@ wireFilters("stack-seg", "stack-q", paintStack);
 paintStackSort();
 paintGroupSegs();
 wireSeg("d-ev-seg", paintTimeline);
+loadGlobalAuto();
 rememberOpen("rules-d", "atrium.rules.open");
 rememberOpen("hist-d", "atrium.history.open");
 

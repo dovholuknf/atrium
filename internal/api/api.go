@@ -61,6 +61,16 @@ type Server struct {
 	// Unshelve starts it again from where the conversation left off. Returns
 	// whether it started, and why not when it did not, so the board can say so.
 	Unshelve func(taskID string) (bool, string, error)
+
+	// Overlays reports how the board can be reached from elsewhere, and turns
+	// those ways on and off. Supplied by the daemon, which owns the child
+	// process a share runs as.
+	Overlays func() any
+	// SaveOverlay stores one overlay's configuration.
+	SaveOverlay func(kind string, body []byte) error
+	// StartOverlay opens a share, StopOverlay closes it.
+	StartOverlay func(kind string) error
+	StopOverlay  func(kind string) error
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -99,6 +109,12 @@ func (s *Server) Broadcast(kind string, payload any) { s.bus.publish(kind, paylo
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.health)
+	mux.HandleFunc("GET /v1/settings", s.getSettings)
+	mux.HandleFunc("POST /v1/settings", s.setSettings)
+	mux.HandleFunc("GET /v1/overlays", s.getOverlays)
+	mux.HandleFunc("PUT /v1/overlays/{kind}", s.putOverlay)
+	mux.HandleFunc("POST /v1/overlays/{kind}/start", s.startOverlay)
+	mux.HandleFunc("POST /v1/overlays/{kind}/stop", s.stopOverlay)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)

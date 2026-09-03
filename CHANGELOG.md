@@ -5,6 +5,25 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board can be reached from elsewhere, through an overlay atrium drives.** Atrium listens on loopback and
+  has no login on purpose, and until now "use an overlay" was advice rather than a feature. The gear grows a
+  panel per overlay: zrok publishes the board at a zrok address, OpenZiti hosts whatever services an identity is
+  allowed to bind. Atrium keeps the configuration, starts the process and shows what it printed. It never opens
+  an identity file, never proxies traffic, and has no opinion about who may connect, because that is the
+  overlay's job and moving it here would be inventing the auth layer this project has ruled out twice. A zrok
+  share defaults to private, and turning on a public one says out loud that the link has no login in front of it.
+  Shares end with the daemon, since an address outliving the board it points at reads as the overlay being
+  broken. See `docs/overlays.md`.
+- **Global auto mode.** One switch for every session, including ones that have not started yet. Same slot in the
+  permission chain as the per-session kind, which is last: it stops new questions and does not discard answers
+  already given, so `never` rules, shelved cards and queued messages all still win. Recorded as `global-auto`
+  rather than `auto`, because six hours later "I turned this session loose" and "I turned the whole board loose"
+  are different answers. Kept in the database, so a restart is not consent to start asking again and not consent
+  to keep approving either.
+- **The header stops wrapping.** Nothing in it breaks across two lines any more: the tabs give up their width
+  first and scroll, the actions keep theirs, and below 1150px the new-agent button and the auto-mode switch drop
+  their labels rather than their shape.
+
 - **Hooks can be wired one at a time, from the board or from a terminal.** Each row has its own `wire it`, and
   `atrium hook install [--event x]` makes the same edit from a shell, so the manual route is the same job by
   hand rather than a different one. Wanting the tool events and not the subagent count is a reasonable thing to

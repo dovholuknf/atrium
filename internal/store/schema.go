@@ -359,6 +359,21 @@ var migrations = []struct {
 			`ALTER TABLE harness ADD COLUMN prepare TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// Settings that belong to the daemon rather than to any one card.
+		//
+		// A table rather than a column somewhere, because the first of these
+		// is global auto mode and there will be more. Keys are strings and so
+		// are values: nothing here is worth a schema change to add.
+		name: "0018_setting",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS setting (
+				key        TEXT PRIMARY KEY,
+				value      TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

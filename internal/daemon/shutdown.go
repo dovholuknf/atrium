@@ -68,6 +68,19 @@ func isLoopback(r *http.Request) bool {
 func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	token := d.opts.ShutdownToken
 	if token == "" {
+		// A share makes the loopback rule meaningless. The tunneler runs on
+		// this machine and terminates the connection here, so a request that
+		// arrived from another continent still presents as 127.0.0.1. The
+		// rule was "only someone at this keyboard"; with a share running it
+		// would silently become "anyone the overlay admits", and a kill switch
+		// is the worst thing to hand out by accident.
+		if d.sharing() {
+			http.Error(w,
+				"a share is running, so loopback no longer means this machine. "+
+					"restart with --shutdown-token to allow this, or stop the share.",
+				http.StatusForbidden)
+			return
+		}
 		if !isLoopback(r) {
 			http.Error(w, "shutdown is loopback only unless a token is configured", http.StatusForbidden)
 			return
