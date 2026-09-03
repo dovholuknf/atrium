@@ -77,14 +77,13 @@ func agentName(override string) string {
 
 // hubAddress works out where the daemon is, most explicit first.
 //
-// The recorded address is what makes `atrium hook` work with no flag on a
-// daemon started on a port that is not the default. A flag would have to be
-// baked into every settings.json entry, and would then be wrong the moment the
-// port changed.
+// The recorded address is what lets `atrium hook` reach a daemon on a
+// non-default port with no flag, since a flag would be baked into every
+// settings.json entry and wrong the moment the port changed.
 //
-// A recorded address left behind by a daemon that was killed points at nothing,
-// and the caller gets a connection refused in milliseconds. Every caller of
-// this already treats that as "atrium is down", which it is.
+// One left behind by a daemon that was killed points at nothing, and the
+// caller gets a connection refused in milliseconds. Every caller here already
+// treats that as "atrium is down", which it is.
 func hubAddress(override string) string {
 	addr, _ := hubAddressFrom(override)
 	return addr
@@ -107,9 +106,6 @@ func hubAddressFrom(override string) (addr, source string) {
 
 // recordedAgentAddr reads the address the running daemon wrote down. Any
 // failure returns empty, so the caller falls back to the default.
-//
-// The path comes from the daemon package rather than being spelled again here.
-// Two copies of it would agree until one platform's rule changed.
 func recordedAgentAddr() string {
 	path, err := daemon.LocationPath()
 	if err != nil {

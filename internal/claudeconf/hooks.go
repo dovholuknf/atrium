@@ -11,17 +11,12 @@ import (
 
 // Reading and writing the hook entries in Claude Code's settings.json.
 //
-// Atrium learns what a session is doing from hooks, and the hooks were
-// something the operator had to install by hand from a documentation page.
-// A feature nobody wires up is a feature that does not exist, so the board
-// reports which are missing and writes them.
-//
-// Writing settings.json is the one place atrium edits a file it does not own.
-// Two things make that safe and both have to stay: the whole file is decoded
-// into a generic map so keys atrium knows nothing about survive the round
-// trip, and the previous contents are copied aside before anything is
-// replaced. A malformed settings.json breaks every claude session on the
-// machine, which is a much worse outcome than a hook that never got installed.
+// This is the one place atrium edits a file it does not own. Two things make
+// that safe and both have to stay: the whole file is decoded into a generic
+// map so keys atrium knows nothing about survive the round trip, and the
+// previous contents are copied aside before anything is replaced. A malformed
+// settings.json breaks every claude session on the machine, which is far worse
+// than a hook that never got installed.
 
 // HookEvent is one hook atrium wants registered, and what it buys.
 type HookEvent struct {
@@ -196,11 +191,6 @@ func Inspect(exe string) (*HookReport, error) {
 	return rep, nil
 }
 
-// Install writes the missing hooks and returns the report as it now stands.
-//
-// Already-correct entries are left exactly as they are, including any
-// timeout or matcher the operator set. A stale one is replaced, because two
-// commands reporting the same event would double every count.
 // InstallResult says what an install actually did, so a caller can tell "I
 // changed your settings" from "there was nothing to change". Both are success,
 // and reporting them the same way is how a no-op comes to read as a write.
@@ -219,9 +209,9 @@ func Install(exe string) (*HookReport, InstallResult, error) {
 
 // InstallOnly writes the named events, or all of them when events is empty.
 //
-// One at a time is what the manual route needs: the steps the board prints are
-// commands to run, one per hook, so somebody working through them can stop
-// half way and have exactly the ones they ran.
+// Already-correct entries are left exactly as they are, including any timeout
+// or matcher the operator set. A stale one is replaced, because two commands
+// reporting the same event would double every count.
 func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error) {
 	var none InstallResult
 	path, err := UserSettingsPath()

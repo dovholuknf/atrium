@@ -9,13 +9,9 @@ import (
 	"github.com/dovholuknf/atrium/internal/claudeconf"
 )
 
-// The hook wiring, as something the board can see and fix.
-//
-// Activity, subagent counts and the message channel are all built and all
-// inert until five lines land in settings.json. That was a documentation page,
-// which meant the features existed for whoever read it. Reporting what is
-// missing, and offering to write it, is the difference between a feature and a
-// feature somebody might one day turn on.
+// The hook wiring, as something the board can see and fix. Activity, subagent
+// counts and the message channel stay inert until five lines land in
+// settings.json.
 
 // atriumExe is the absolute path of the running binary, which is what gets
 // written into settings.json.
@@ -53,13 +49,12 @@ func (s *Server) hookStatus(w http.ResponseWriter, r *http.Request) {
 
 // installHooks writes hooks and reports where the old file went.
 //
-// A body naming events writes only those, so a single row's own button wires
-// one hook. An empty body writes all of them. Deciding which of these to
-// report on is the operator's, not atrium's: turning on the tool ones and
-// leaving the subagent count alone is a reasonable thing to want.
+// A body naming events writes only those; an empty body writes all of them.
+// Which to report on is the operator's call: wanting the tool events without
+// the subagent count is reasonable.
 //
-// The board asks for confirmation first and shows what it would write, so this
-// is the second half of a decision the operator already made.
+// The board confirms first and shows what it would write, so this is the
+// second half of a decision already made.
 func (s *Server) installHooks(w http.ResponseWriter, r *http.Request) {
 	exe, err := atriumExe()
 	if err != nil {
@@ -69,19 +64,18 @@ func (s *Server) installHooks(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Events []string `json:"events"`
 	}
-	// A missing or unreadable body means all of them, which is what the
-	// original single button sent.
+	// A missing or unreadable body means all of them.
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body)
 
 	rep, res, err := claudeconf.InstallOnly(exe, body.Events)
 	if err != nil {
-		// A settings file atrium could not parse is the main way this fails,
-		// and it is worth saying plainly that nothing was changed.
+		// 409 because the usual cause is a settings file atrium will not
+		// rewrite, which is the operator's to fix, not a server fault.
 		writeErr(w, http.StatusConflict, err)
 		return
 	}
-	// So a second tab, and the chip on the runner row behind this dialog, do
-	// not wait for their next poll.
+	// So a second tab, and the chip on the row behind this dialog, do not wait
+	// for their next poll.
 	if res.Changed {
 		s.Broadcast("hooks", map[string]any{"missing": rep.Missing})
 	}
