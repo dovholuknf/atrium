@@ -35,8 +35,46 @@ func TestSessionStartRegistersImmediately(t *testing.T) {
 	if got.Worktree != "D:/git/atrium" {
 		t.Errorf("worktree is %q, want forward slashes", got.Worktree)
 	}
-	if got.Status != store.StatusRunning {
-		t.Errorf("status is %q, want running", got.Status)
+	// Ready, not running. SessionStart fires before the session has done
+	// anything, so it is sitting at its prompt, which is what ready means.
+	// Landing in running had every terminal opened all morning claiming to be
+	// working.
+	if got.Status != store.StatusNeedsInput {
+		t.Errorf("status is %q, want a fresh session to be ready", got.Status)
+	}
+}
+
+// And it leaves ready the moment it does something, which is what makes
+// starting there safe. Both halves are needed: a card that started ready and
+// stayed there through a whole turn would be worse than the bug it fixed.
+func TestAFreshSessionLeavesReadyWhenItWorks(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+
+	if err := d.onSession(SessionEvent{
+		Agent: "fresh-work", Event: "start", Cwd: `D:\git\atrium`, PID: 4242,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := d.st.GetByWireName("fresh-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != store.StatusNeedsInput {
+		t.Fatalf("a fresh session is %q, wanted ready", task.Status)
+	}
+
+	// A tool call is work, so it is running from here.
+	d.turnResumed(task.ID)
+	task, err = d.st.GetByWireName("fresh-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != store.StatusRunning {
+		t.Fatalf("status is %q, want running once it did something", task.Status)
 	}
 }
 
@@ -95,8 +133,11 @@ func TestSessionStartRevivesADeadCard(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("resume made a second card: %d", len(tasks))
 	}
-	if tasks[0].Status != store.StatusRunning {
-		t.Fatalf("status is %q, want running after a resume", tasks[0].Status)
+	// Revived, and ready rather than running: a resumed session is sitting at
+	// its prompt exactly like a new one. What matters here is that it left
+	// dead at all.
+	if tasks[0].Status != store.StatusNeedsInput {
+		t.Fatalf("status is %q, want ready after a resume", tasks[0].Status)
 	}
 }
 

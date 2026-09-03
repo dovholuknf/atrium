@@ -26,6 +26,34 @@ func TestASubdirectoryBelongsToItsRepo(t *testing.T) {
 	if got.Branch != "main" {
 		t.Fatalf("branch is %q, wanted main", got.Branch)
 	}
+	// Where inside it, so two sessions in one repository are two names.
+	if got.Sub != "powershell/onpath" {
+		t.Fatalf("sub is %q, wanted powershell/onpath", got.Sub)
+	}
+}
+
+// Two sessions in one repository are two pieces of work. Naming both after the
+// repository made them the same row twice, and the only way to tell which one
+// you had been talking to was to open each and read its path.
+func TestTwoSessionsInOneRepoGetTwoNames(t *testing.T) {
+	repo := t.TempDir()
+	writeGitDir(t, filepath.Join(repo, ".git"), "ref: refs/heads/main\n")
+	sub := filepath.Join(repo, "powershell")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	atRoot := TitleFor(ReadGitInfo(repo), repo, "")
+	inSub := TitleFor(ReadGitInfo(sub), sub, "")
+	if atRoot == inSub {
+		t.Fatalf("both sessions are called %q", atRoot)
+	}
+	if want := "main:" + filepath.Base(repo); atRoot != want {
+		t.Fatalf("the root is %q, wanted %q", atRoot, want)
+	}
+	if want := "main:" + filepath.Base(repo) + "/powershell"; inSub != want {
+		t.Fatalf("the subdirectory is %q, wanted %q", inSub, want)
+	}
 }
 
 // A linked worktree's directory is named for its BRANCH, so naming a card
@@ -74,10 +102,12 @@ func TestTitleMatchesTheLedger(t *testing.T) {
 			GitInfo{Repo: "atrium", Branch: "main"}, "main:atrium"},
 		{"a session inside a subdirectory is still the repository",
 			GitInfo{Repo: "dotfiles", Branch: "main"}, "main:dotfiles"},
-		{"a linked worktree is its branch alone, since its directory is that",
-			GitInfo{Repo: "ziti", Branch: "tunneled-acme", Linked: true}, "tunneled-acme"},
-		{"and so is one whose branch is a date",
-			GitInfo{Repo: "ziti-tv", Branch: "aug-21-2026", Linked: true}, "aug-21-2026"},
+		{"a linked worktree carries its repository, or the branch names nothing",
+			GitInfo{Repo: "ziti", Branch: "tunneled-acme", Linked: true}, "ziti/tunneled-acme"},
+		{"which matters most when the branch is a date",
+			GitInfo{Repo: "ziti-tv", Branch: "aug-21-2026", Linked: true}, "ziti-tv/aug-21-2026"},
+		{"a worktree whose repo is unknown still names the branch",
+			GitInfo{Branch: "orphan-worktree", Linked: true}, "orphan-worktree"},
 		{"a detached head has no branch to name, so the repo stands alone",
 			GitInfo{Repo: "atrium"}, "atrium"},
 	}

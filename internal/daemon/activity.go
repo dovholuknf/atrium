@@ -38,13 +38,43 @@ const (
 const staleAfter = 15 * time.Minute
 
 // Activity is one runner's current state. Zero value means nothing is known.
+// Subagent is one agent running under a session.
+//
+// Held in memory with the rest of the activity and never written down, for the
+// same reason: it is a fact about a process that is running right now, and it
+// would be a lie the moment the daemon restarted.
+type Subagent struct {
+	// ID pairs a stop with its start. Never shown.
+	ID string `json:"id"`
+	// Type is what the runner calls it: `explore`, `general-purpose`, the name
+	// of a custom agent. This is the part worth reading.
+	Type string `json:"type,omitempty"`
+	// Since is when it started, so a subagent that has been going for four
+	// minutes is distinguishable from one that just began.
+	Since time.Time `json:"since"`
+	// Seconds is Since as an age, filled in when the activity is served.
+	Seconds int64 `json:"seconds"`
+}
+
 type Activity struct {
 	// What is one of the Activity constants.
 	What string `json:"what"`
 	// Tool is the tool being run, when What is ActivityTool.
 	Tool string `json:"tool,omitempty"`
 	// Subagents currently running under this session.
+	//
+	// A count, kept because it is what the badge shows and because a hook that
+	// went missing can leave the named list short without making the number
+	// wrong in a way anybody would notice.
 	Subagents int `json:"subagents"`
+	// Running names them, when the runner says who they are. Claude Code's
+	// SubagentStart carries an agent id and a type, so "3 subagents" can be
+	// "explore, review, review" instead. Oldest first, which is the order they
+	// were started in and the order they will mostly finish in.
+	//
+	// May be shorter than Subagents. A runner that reports no id still moves
+	// the count, and the count is the thing that must not lie.
+	Running []Subagent `json:"running,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -78,6 +108,15 @@ func (a *activityTracker) get(taskID string) *Activity {
 	}
 	out := *cur
 	out.Seconds = int64(age.Seconds())
+	// Copied, not shared. The caller serialises this outside the lock, and
+	// handing over the live slice would race a subagent starting.
+	if len(cur.Running) > 0 {
+		out.Running = make([]Subagent, len(cur.Running))
+		for i, s := range cur.Running {
+			s.Seconds = int64(a.now().Sub(s.Since).Seconds())
+			out.Running[i] = s
+		}
+	}
 	return &out
 }
 
@@ -118,6 +157,58 @@ func (a *activityTracker) addSubagents(taskID string, delta int) {
 	}
 }
 
+// subagentStarted records who, as well as how many.
+//
+// The count moves whether or not a name came with it, because the count is the
+// thing that must not lie. A runner that reports no id contributes to the
+// number and not to the list, which reads as "3 subagents: explore, review"
+// and is honest about knowing two of the three.
+func (a *activityTracker) subagentStarted(taskID, id, kind string) {
+	a.addSubagents(taskID, 1)
+	if id == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	if cur == nil {
+		return
+	}
+	// A repeated start is the same subagent, not a second one. Hooks are best
+	// effort and retried, and two rows for one agent is the kind of wrong that
+	// looks like real work happening.
+	for _, s := range cur.Running {
+		if s.ID == id {
+			return
+		}
+	}
+	cur.Running = append(cur.Running, Subagent{ID: id, Type: kind, Since: a.now()})
+}
+
+// subagentStopped drops it from the list and the tally.
+//
+// An unknown id still moves the count. The stop is a fact even when the start
+// that would have named it was lost, and refusing to count it down would leave
+// a session claiming a subagent that finished.
+func (a *activityTracker) subagentStopped(taskID, id string) {
+	a.addSubagents(taskID, -1)
+	if id == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	if cur == nil {
+		return
+	}
+	for i, s := range cur.Running {
+		if s.ID == id {
+			cur.Running = append(cur.Running[:i], cur.Running[i+1:]...)
+			return
+		}
+	}
+}
+
 // forget drops a task's activity, for when a session ends.
 func (a *activityTracker) forget(taskID string) {
 	a.mu.Lock()
@@ -139,6 +230,11 @@ type ActivityEvent struct {
 	Event string `json:"event"`
 	// Tool is the tool name on a tool-start.
 	Tool string `json:"tool,omitempty"`
+	// AgentID and AgentType name a subagent, on subagent-start and
+	// subagent-end. Empty on everything else, and empty from a runner that
+	// does not report them, which costs the name and not the count.
+	AgentID   string `json:"agent_id,omitempty"`
+	AgentType string `json:"agent_type,omitempty"`
 }
 
 // handleActivity records what a session is doing.
@@ -197,9 +293,9 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityThinking, "")
 		d.turnResumed(taskID)
 	case "subagent-start":
-		d.act.addSubagents(taskID, 1)
+		d.act.subagentStarted(taskID, in.AgentID, in.AgentType)
 	case "subagent-end":
-		d.act.addSubagents(taskID, -1)
+		d.act.subagentStopped(taskID, in.AgentID)
 	case "idle", "waiting":
 		// The agent stopped and it is the operator's move. `waiting` is what
 		// the Notification hook reports, which fires when claude has been

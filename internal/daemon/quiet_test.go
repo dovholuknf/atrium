@@ -60,8 +60,13 @@ func TestAnAssumedGoneCardRevives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.StatusRunning {
-		t.Fatalf("card is %s after the session reported in, wanted running", got.Status)
+	// Ready rather than running, because a session that has just started is
+	// sitting at its prompt. What this test is about is that it left dead.
+	if got.Status == store.StatusDead {
+		t.Fatal("a card stayed dead after its session reported in")
+	}
+	if got.Status != store.StatusNeedsInput {
+		t.Fatalf("card is %s after the session reported in, wanted ready", got.Status)
 	}
 }
 

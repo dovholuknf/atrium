@@ -12,7 +12,8 @@ import (
 
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
-	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound`
+	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
+	archived_at`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -24,11 +25,12 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		gated, auto  int
 		tags         string
 		pinned       int
+		archived     string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
-		&tags, &pinned, &t.Theme, &t.Sound); err != nil {
+		&tags, &pinned, &t.Theme, &t.Sound, &archived); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -55,6 +57,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 			return nil, fmt.Errorf("task %s waiting_since: %w", t.ID, err)
 		}
 		t.WaitingSince = &w
+	}
+	if archived != "" {
+		a, err := parseTS(archived)
+		if err != nil {
+			return nil, fmt.Errorf("task %s archived_at: %w", t.ID, err)
+		}
+		t.ArchivedAt = &a
 	}
 	t.WireName = wire.String
 	t.Overrides = map[string]string{}
@@ -164,10 +173,10 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		Tags: []string{},
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", ""); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", "", ""); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -237,10 +246,13 @@ func (s *Store) List(statuses ...string) ([]*Task, error) {
 	var out []*Task
 	err := s.guard(func() error {
 		out = nil
-		q := `SELECT ` + taskColumns + ` FROM task`
+		// Archived cards are off the board. They are still rows, and
+		// ListArchived is how they are read: this is the board's question,
+		// which is "what is here now".
+		q := `SELECT ` + taskColumns + ` FROM task WHERE archived_at = ''`
 		var args []any
 		if len(statuses) > 0 {
-			q += ` WHERE status IN (` + placeholders(len(statuses)) + `)`
+			q += ` AND status IN (` + placeholders(len(statuses)) + `)`
 			for _, st := range statuses {
 				args = append(args, st)
 			}
@@ -277,6 +289,7 @@ func (s *Store) Waiting() ([]*Task, error) {
 		rows, err := s.db.Query(`SELECT ` + taskColumns + ` FROM task
 			WHERE status IN ('needs-input','needs-permission')
 			  AND wire_name IS NOT NULL AND wire_name != ''
+			  AND archived_at = ''
 			ORDER BY waiting_since ASC`)
 		if err != nil {
 			return err
@@ -652,3 +665,82 @@ func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 }
 
 var _ = time.Time{}
+
+// Archive takes cards off the board without forgetting them.
+//
+// The counterpart to Prune. Prune deletes, which is right when a human presses
+// `clear` and says so, and wrong as something that happens on a timer: a card
+// and its audit log are the only account of what a session ran and what it was
+// allowed to do, and a board that discards that a minute after a session ends
+// cannot answer what has been running this week.
+//
+// Same rules as Prune about what may be taken, for the same reason: shelving
+// says the work is coming back.
+func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error) {
+	want := statuses
+	if len(want) == 0 {
+		want = PrunableStatuses
+	}
+	var keep []any
+	for _, st := range want {
+		for _, ok := range PrunableStatuses {
+			if st == ok {
+				keep = append(keep, st)
+			}
+		}
+	}
+	if len(keep) == 0 {
+		return 0, nil
+	}
+	var n int
+	err := s.guard(func() error {
+		args := []any{ts(now())}
+		args = append(args, keep...)
+		args = append(args, ts(now().Add(-olderThan)))
+		res, err := s.db.Exec(
+			`UPDATE task SET archived_at = ?
+			 WHERE archived_at = ''
+			   AND status IN (`+placeholders(len(keep))+`)
+			   AND last_activity_at <= ?`, args...)
+		if err != nil {
+			return err
+		}
+		got, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		n = int(got)
+		return nil
+	})
+	return n, err
+}
+
+// ListArchived is every card that has left the board, newest first.
+//
+// The whole history of what has ever run here, which is a different question
+// from what the board answers and deserves its own way in rather than a filter
+// on the board's.
+func (s *Store) ListArchived(limit int) ([]*Task, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var out []*Task
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT `+taskColumns+` FROM task
+			WHERE archived_at != '' ORDER BY archived_at DESC LIMIT ?`, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			t, err := scanTask(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, t)
+		}
+		return rows.Err()
+	})
+	return out, err
+}

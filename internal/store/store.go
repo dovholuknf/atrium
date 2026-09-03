@@ -120,6 +120,14 @@ type Task struct {
 	// if the answer is the same tomorrow and in another browser. Empty means
 	// the board-wide default for whichever kind of alert fired.
 	Sound string `json:"sound"`
+	// ArchivedAt is when this card left the board, or nil while it is on it.
+	//
+	// Off the board, still on the record. A dead card is swept so the finished
+	// column does not fill up all day, and deleting it would take the only
+	// account of what that session ran and what it was allowed to do. The
+	// board asks what wants attention now; the history asks what has ever run
+	// here. Archiving is what lets those be different questions.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when

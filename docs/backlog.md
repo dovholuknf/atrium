@@ -82,6 +82,51 @@ So the work splits:
 The line stays the same either way: atrium may start the flow and report what came back, and it never holds an
 identity, proxies traffic, or decides who may connect.
 
+### Everything that has ever run here
+
+Cards are archived rather than deleted now: a dead one leaves the board after a minute and the row and its whole
+audit log stay. `ListArchived` reads them and nothing yet shows them, which is the gap.
+
+The view is a list of every session ever started, and the useful cut through it is which ones have a recap and
+which do not. A session that ended with a recap left an account of itself. One that did not is either still
+worth writing up or was never worth starting, and both are worth being able to see.
+
+What is not decided:
+
+- **Where a recap lives.** The `/recap` skill writes markdown into a history root outside atrium, and atrium has
+  never known about it. Options are a path on the card, a scan of that root matched by directory and date, or
+  the recap being posted to atrium when it is written. The last is the only one that cannot silently drift, and
+  it is also the one that needs the skill changed.
+- **Whether an archived card can come back.** Unarchiving is a one-line update and the question is whether it
+  should exist at all: a dead session cannot be resumed by putting its card back.
+- **How far back.** Nothing prunes archived rows today, so this grows forever. That is fine for a long time and
+  not forever, and the answer should be a deliberate age rather than the first number that seems large.
+
+### Actions on a card, written by you
+
+A card can be terminated, shelved, attached to and messaged. All of those are things atrium does. None of them
+is a thing the OPERATOR does repeatedly, which is send the same instruction to whichever agent is in front of
+them: run the tests, write it up, commit what you have.
+
+The shape: a named action holding a prompt, offered on every card, with a choice about what happens after it.
+`and keep running` leaves the session up for whatever comes next. `and exit` sends the prompt and then the
+harness's own exit keys, which is the "write it up and go away" case and the reason this is not just a saved
+snippet.
+
+The delivery path already exists and is the message queue: typed into the terminal when atrium owns one, queued
+for the next hook when it does not. What is new is storing the actions and putting them on the card.
+
+Open questions worth answering before building it:
+
+- **Where they are stored.** Daemon-side, so they are the same on every board, which is the right answer for
+  something that is about the work rather than about the screen. That makes them the first operator-authored
+  content atrium stores and hands back, and the grouping-expression entry above is about what that costs.
+- **Whether an action can be scoped.** "Run the tests" means something different in a Go repo and a docs repo.
+  A tag or a runner condition is the obvious cut, and offering every action on every card is the obvious start.
+- **What `and exit` does when the exit keys do not work.** `exit_keys` is per harness and best effort, and a
+  runner that ignores them leaves a session that was told to wrap up and did not. Terminating instead would be
+  a different promise and probably the wrong one.
+
 ### The settings dialog is one long scroll and needs a spine
 
 Everything is in one column in the order it was added. Three `h3` headings exist (`reach this board from

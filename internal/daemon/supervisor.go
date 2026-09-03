@@ -90,6 +90,17 @@ type runner struct {
 	// started separates "fell over on startup" from "finished". The first gets
 	// its last output put on the card.
 	started time.Time
+	// resumed is set when this was launched with a harness's resume arguments.
+	//
+	// A resume id goes stale: the conversation is archived, or the runner's own
+	// history is cleared, or the id belongs to a directory that has moved. The
+	// runner then exits within a second saying so, which reaches the board as
+	// a dead card and a terminal that never appeared. Knowing the launch asked
+	// for a resume is what lets that be retried as a fresh start.
+	resumed bool
+	// spec is what to run to try again, without the resume. Empty when there
+	// is nothing to fall back to.
+	spec *launchSpec
 
 	mu       sync.Mutex
 	buf      *ringBuffer
@@ -193,8 +204,26 @@ func (s *supervisor) all() []*runner {
 	return out
 }
 
+// launchSpec is enough to start the same runner again without its resume.
+//
+// Held so a stale resume id can be retried as a fresh start rather than
+// reaching the board as a dead card. Only the fields spawnPTY needs.
+type launchSpec struct {
+	cmd  string
+	args []string
+	cwd  string
+	env  []string
+}
+
 // spawnPTY starts a runner under a pseudo terminal and returns its pid.
 func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env []string) (int, error) {
+	return d.spawnPTYResume(taskID, cmdName, args, cwd, env, false, nil)
+}
+
+// spawnPTYResume is spawnPTY, told whether this launch used a resume id and
+// what to run instead if that turns out to be stale.
+func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd string, env []string,
+	resumed bool, fresh *launchSpec) (int, error) {
 	// Resolve on PATH before setting a working directory. go-pty resolves the
 	// command relative to Dir, so a bare `claude` or `cmd.exe` would be looked
 	// for inside the repo being worked in and reported as missing.
@@ -218,6 +247,8 @@ func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
+		resumed:  resumed,
+		spec:     fresh,
 		buf:      newRing(scrollback),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
@@ -288,6 +319,44 @@ func (d *Daemon) awaitExit(r *runner) {
 	if err := d.st.AppendEvent(r.taskID, store.EventExited, payload); err != nil {
 		log.Printf("[atrium] record exit for %s: %v", r.taskID, err)
 	}
+
+	// A resume that died on the way up gets one try as a fresh start.
+	//
+	// A resume id goes stale for ordinary reasons: the conversation was
+	// archived, the runner's history was cleared, the directory moved. The
+	// runner then exits in about a second saying so, and the operator asked
+	// for a terminal and got a dead card. Starting fresh is what they meant:
+	// resume this work IF YOU CAN.
+	//
+	// Bounded to one attempt, and only when the failure looks like startup:
+	// a runner that ran for an hour and exited non-zero is a session that
+	// ended, and restarting that would be a loop that reopens a terminal
+	// somebody deliberately closed.
+	if r.resumed && r.spec != nil && code != 0 && lived < startupFailureWindow {
+		log.Printf("[atrium] %s could not resume, starting it fresh: %s",
+			r.taskID, firstLine(tail))
+		if err := d.st.AppendEvent(r.taskID, store.EventLaunched, map[string]any{
+			"by": "supervisor", "retried": "without the stored resume id",
+			"because": firstLine(tail),
+		}); err != nil {
+			log.Printf("[atrium] record retry for %s: %v", r.taskID, err)
+		}
+		// The stored id is known bad. Left in place it would be tried again on
+		// the next start, which is the same failure tomorrow.
+		if err := d.st.SetResumeID(r.taskID, ""); err != nil {
+			log.Printf("[atrium] clear stale resume for %s: %v", r.taskID, err)
+		}
+		if err := d.st.SetWhy(r.taskID, ""); err != nil {
+			log.Printf("[atrium] clear why for %s: %v", r.taskID, err)
+		}
+		if _, err := d.spawnPTY(r.taskID, r.spec.cmd, r.spec.args, r.spec.cwd, r.spec.env); err != nil {
+			log.Printf("[atrium] fresh start for %s failed too: %v", r.taskID, err)
+		} else {
+			d.publishTask(r.taskID)
+			return
+		}
+	}
+
 	// A card put down by hand stays where it was put.
 	if t, err := d.st.Get(r.taskID); err == nil &&
 		t.Status != store.StatusShelved && t.Status != store.StatusDone {

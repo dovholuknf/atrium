@@ -173,7 +173,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// Atrium owns the process. That is what makes terminate, the liveness
 		// reaper and browser attach work, and it is also why this runner dies
 		// with the daemon rather than outliving it the way window mode does.
-		pid, err := d.spawnPTY(task.ID, h.Cmd, args, cwd, env)
+		// What to run if the resume id turns out to be stale: the same thing
+		// without it. Supplied only when this launch used one, so a plain
+		// start has nothing to fall back to and nothing to retry.
+		var fresh *launchSpec
+		if req.Resume != "" {
+			fresh = &launchSpec{cmd: h.Cmd, args: h.Args, cwd: cwd, env: env}
+		}
+		pid, err := d.spawnPTYResume(task.ID, h.Cmd, args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
 			// The card was created before the process, so a failure to start
 			// has to move it. Left in `running` it describes a process that
