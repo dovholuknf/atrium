@@ -126,6 +126,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.ap.TeardownOverlay = d.teardownOverlay
 	d.ap.InspectToken = d.InspectToken
+	d.ap.ReserveName = d.ReserveZrokName
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }

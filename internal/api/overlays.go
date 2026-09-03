@@ -148,6 +148,31 @@ func (s *Server) afterOverlayChange(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{"overlays": state})
 }
 
+// reserveName holds a zrok name, so the board's address survives a restart.
+//
+// Answers with the name selection to configure rather than with "ok", because
+// the caller's next move is to put that string in the share's config and it
+// should not have to reassemble it from what it sent.
+func (s *Server) reserveName(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	sel, err := s.ReserveName(body.Namespace, body.Name)
+	if err != nil {
+		// Every reason this fails is something the operator has to act on:
+		// not enabled yet, a name somebody else holds, an unreachable api. So
+		// the message goes through rather than being flattened to a status.
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": sel})
+}
+
 type overlayErr string
 
 func (e overlayErr) Error() string { return string(e) }

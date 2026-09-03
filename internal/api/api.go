@@ -85,6 +85,9 @@ type Server struct {
 	// InspectToken reads an enrollment token without acting on it, so the
 	// board can show what it is for before anything is done with it.
 	InspectToken func(token string) (any, error)
+	// ReserveName holds a zrok name so the board's address survives a restart.
+	// Returns the name selection to configure the share with.
+	ReserveName func(namespace, name string) (string, error)
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -137,6 +140,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/overlays/{kind}/setup", s.setupOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/teardown", s.teardownOverlay)
 	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
+	if s.ReserveName != nil {
+		mux.HandleFunc("POST /v1/overlays/zrok/reserve", s.reserveName)
+	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
