@@ -238,12 +238,20 @@ func interactive() bool {
 // hook fired, and that is most of what the board shows.
 func readPayload() hookInput {
 	var in hookInput
-	if interactive() {
-		return in
+	if raw := readStdin(); len(raw) > 0 {
+		_ = json.Unmarshal(raw, &in)
 	}
+	return in
+}
 
-	// Bounded in size as well as in time: a tool result can be large and none
-	// of it is wanted here.
+// readStdin reads a hook payload, or gives up. Empty on anything unusual.
+//
+// Bounded in size as well as in time: a tool result can be large and none of
+// it is wanted by any caller here.
+func readStdin() []byte {
+	if interactive() {
+		return nil
+	}
 	done := make(chan []byte, 1)
 	go func() {
 		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
@@ -255,12 +263,12 @@ func readPayload() hookInput {
 
 	select {
 	case raw := <-done:
-		_ = json.Unmarshal(raw, &in)
+		return raw
 	case <-time.After(hookTimeout):
 		// The goroutine is left reading. The process is about to exit and
 		// take it with it.
+		return nil
 	}
-	return in
 }
 
 // reportActivity posts one event. It returns nothing on purpose: there is no

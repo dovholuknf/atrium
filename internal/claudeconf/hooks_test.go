@@ -60,7 +60,10 @@ func TestInspectReportsEveryHookMissingOnAFreshMachine(t *testing.T) {
 		if h.Installed {
 			t.Fatalf("%s reported installed with no settings file", h.Hook)
 		}
-		if !strings.Contains(h.Want, "--event "+h.Event) {
+		// The command has to be one this binary would recognise as reporting
+		// that event, which is not the same as containing its name: the
+		// session subcommand spells its own argument differently.
+		if !reportsEvent(h.Want, h.Event) {
 			t.Fatalf("%s would write %q, which does not report its event", h.Hook, h.Want)
 		}
 	}
@@ -206,6 +209,69 @@ func TestInstallWritesNothingWhenAlreadyCorrect(t *testing.T) {
 		if strings.Contains(e.Name(), ".bak") {
 			t.Fatalf("a backup was left behind: %s", e.Name())
 		}
+	}
+}
+
+// Session events ride a different subcommand with a different argument, and
+// the round trip has to survive that: what Install writes is what Inspect
+// recognises.
+func TestSessionHooksRoundTrip(t *testing.T) {
+	withHome(t, "")
+
+	rep, _, err := InstallOnly("C:/tools/atrium.exe", []string{"session-start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got HookStatus
+	for _, h := range rep.Hooks {
+		if h.Hook == "SessionStart" {
+			got = h
+		}
+	}
+	if !got.Installed {
+		t.Fatalf("SessionStart did not read back as installed: %+v", got)
+	}
+	if !strings.Contains(got.Want, " session --event start") {
+		t.Fatalf("SessionStart would run %q, not the session subcommand", got.Want)
+	}
+	// And the tool hooks are untouched by it.
+	for _, h := range rep.Hooks {
+		if h.Hook != "SessionStart" && h.Installed {
+			t.Fatalf("%s was installed when only session-start was asked for", h.Hook)
+		}
+	}
+}
+
+// The script the session subcommand replaces reports the same events, so it
+// has to be recognised and replaced rather than left alongside.
+func TestSessionHookReplacesTheOldScript(t *testing.T) {
+	path := withHome(t, `{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -File D:/dotfiles/atrium-session-hook.ps1 -Event start" },
+          { "type": "command", "command": "pwsh -NoProfile -File D:/dotfiles/session-bootstrap.ps1 -Phase start" }
+        ]
+      }
+    ]
+  }
+}`)
+
+	if _, _, err := InstallOnly("C:/tools/atrium.exe", []string{"session-start"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "atrium-session-hook.ps1") {
+		t.Fatal("the old session script is still registered alongside the subcommand")
+	}
+	// Somebody else's SessionStart hook is not atrium's to remove.
+	if !strings.Contains(string(raw), "session-bootstrap.ps1") {
+		t.Fatal("an unrelated SessionStart hook was removed")
 	}
 }
 

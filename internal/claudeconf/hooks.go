@@ -22,8 +22,16 @@ import (
 type HookEvent struct {
 	// Hook is Claude Code's name for the event, the key in settings.json.
 	Hook string `json:"hook"`
-	// Event is what atrium calls it, passed to `atrium hook --event`.
+	// Event names this to atrium, and is what identifies an entry already in
+	// settings.json, so it has to be unique across every subcommand.
 	Event string `json:"event"`
+	// Sub is the atrium subcommand that reports it. Activity rides `hook`; a
+	// session opening or closing rides `session`, which also has to find the
+	// runner's process.
+	Sub string `json:"-"`
+	// Arg is what the subcommand's own --event expects, which is not always
+	// the name above.
+	Arg string `json:"-"`
 	// Why is one line for the board, so the list is readable without the docs.
 	Why string `json:"why"`
 }
@@ -34,11 +42,30 @@ type HookEvent struct {
 // what a session does rather than only reporting, since a Stop hook that
 // blocks tells the model to keep working. It stays a manual decision.
 var WantedHooks = []HookEvent{
-	{Hook: "PreToolUse", Event: "tool-start", Why: "which tool a session is running right now"},
-	{Hook: "PostToolUse", Event: "tool-end", Why: "when that tool finished, so the card stops claiming it"},
-	{Hook: "UserPromptSubmit", Event: "prompt", Why: "you answered, so the card leaves needs-input"},
-	{Hook: "SubagentStart", Event: "subagent-start", Why: "the subagent count going up"},
-	{Hook: "SubagentStop", Event: "subagent-end", Why: "and coming back down"},
+	{Hook: "SessionStart", Event: "session-start", Sub: "session", Arg: "start",
+		Why: "a card appears when a session opens, before it does anything"},
+	{Hook: "SessionEnd", Event: "session-end", Sub: "session", Arg: "end",
+		Why: "the card goes to finished when the session closes"},
+	{Hook: "PreToolUse", Event: "tool-start", Sub: "hook", Arg: "tool-start",
+		Why: "which tool a session is running right now"},
+	{Hook: "PostToolUse", Event: "tool-end", Sub: "hook", Arg: "tool-end",
+		Why: "when that tool finished, so the card stops claiming it"},
+	{Hook: "UserPromptSubmit", Event: "prompt", Sub: "hook", Arg: "prompt",
+		Why: "you answered, so the card leaves needs-input"},
+	{Hook: "SubagentStart", Event: "subagent-start", Sub: "hook", Arg: "subagent-start",
+		Why: "the subagent count going up"},
+	{Hook: "SubagentStop", Event: "subagent-end", Sub: "hook", Arg: "subagent-end",
+		Why: "and coming back down"},
+}
+
+// eventFor finds a wanted hook by its atrium event name.
+func eventFor(event string) (HookEvent, bool) {
+	for _, w := range WantedHooks {
+		if w.Event == event {
+			return w, true
+		}
+	}
+	return HookEvent{}, false
 }
 
 // HookStatus is one wanted hook, and whether it is installed.
@@ -381,15 +408,37 @@ func registeredCommands(doc map[string]json.RawMessage) map[string][]string {
 }
 
 // reportsEvent decides whether a registered command is atrium reporting this
-// event. Matched on the event name rather than on the path, so the old
+// event. Matched on what the command says rather than on the path, so the old
 // PowerShell script counts as installed and gets replaced instead of being
-// added alongside.
+// added alongside it.
+//
+// The subcommand is part of the match. `session` takes `--event start`, which
+// on its own is too short to be sure about: `hook --event start` would be a
+// different thing entirely, and a script called `-Event start` could be
+// anyone's.
 func reportsEvent(command, event string) bool {
 	low := strings.ToLower(command)
 	if !strings.Contains(low, "atrium") {
 		return false
 	}
-	return strings.Contains(low, "-event "+event) || strings.Contains(low, "--event "+event)
+	w, ok := eventFor(event)
+	if !ok {
+		return hasEventArg(low, event)
+	}
+	if w.Sub == "session" {
+		// Ours when it runs the session subcommand, or when it is the script
+		// that subcommand replaced.
+		named := strings.Contains(low, " session ") ||
+			strings.Contains(low, "atrium-session-hook")
+		return named && hasEventArg(low, w.Arg)
+	}
+	// Activity args are unique words, so the subcommand adds nothing and
+	// leaving it out keeps matching the old activity script.
+	return hasEventArg(low, w.Arg)
+}
+
+func hasEventArg(low, arg string) bool {
+	return strings.Contains(low, "-event "+arg) || strings.Contains(low, "--event "+arg)
 }
 
 // sameBinary reports whether a command runs the atrium we are running.
@@ -406,5 +455,9 @@ func HookCommandFor(exe, event string) string {
 	if strings.ContainsAny(p, " \t") {
 		p = `"` + p + `"`
 	}
-	return p + " hook --event " + event
+	w, ok := eventFor(event)
+	if !ok {
+		return p + " hook --event " + event
+	}
+	return p + " " + w.Sub + " --event " + w.Arg
 }

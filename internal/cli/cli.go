@@ -41,7 +41,7 @@ func newRoot() *cobra.Command {
 			"to disk. It exposes the state via a CLI table, a tail-able event stream, and an MCP server.",
 	}
 	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon(),
-		newJoin(), newLeave(), newStop(), newLaunch(), newHook())
+		newJoin(), newLeave(), newStop(), newLaunch(), newHook(), newSession())
 	return root
 }
 
