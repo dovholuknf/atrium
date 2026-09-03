@@ -2255,16 +2255,34 @@ const COLUMNS = [
       "would be no request behind it."
   },
   {
-    id: "needs-input", label: "needs input", statuses: ["needs-input"],
+    // `ready` rather than `needs input`. The status stored underneath is
+    // still `needs-input`, and this is only what it is called.
+    //
+    // The word comes from the gwt session ledger, which has been in daily use
+    // far longer than this board and calls the same moment `done`: the turn
+    // ended and it is your move. `done` was not available here, because a
+    // board also has to say "this work is finished, stop showing it to me",
+    // which is a claim only a human makes and which no ledger tracking
+    // sessions has a word for. Two vocabularies for one event is worse than
+    // either, so this takes the third word that means what both do.
+    id: "needs-input", label: "ready", statuses: ["needs-input"],
     accepts: false,
     why: "The agent finished its turn and is waiting for you to say what is " +
       "next. Nothing is frozen mid-tool, so it sits below permissions.\n\n" +
+      "The gwt session ledger calls this same moment done. It is called ready " +
+      "here because finished already means something else on a board: work " +
+      "you filed away.\n\n" +
       "Cards arrive here when a session's Stop hook fires. You cannot drag " +
       "one in, because that would not make an agent be waiting."
   },
   {
+    // The counterpart to `ready`, and the ledger's `thinking`. Kept as
+    // `running` because a card here may be running a build or a test rather
+    // than a model, and the live activity badge already says `thinking` when
+    // that is what it is actually doing.
     id: "running", label: "running", statuses: ["running"],
-    why: "Working, or believed to be.\n\nWhen atrium knows a session's process " +
+    why: "Working, or believed to be. The gwt session ledger calls this " +
+      "thinking.\n\nWhen atrium knows a session's process " +
       "id it asks the operating system every twenty seconds, so a card here " +
       "with a pid is alive. Idle time then means the session is sitting at a " +
       "prompt, not that it is gone.\n\nWith no process id there is nothing to " +
@@ -2285,6 +2303,19 @@ const COLUMNS = [
       "takes one."
   }
 ];
+
+// What a status is called, as opposed to what it is stored as.
+//
+// The stored names are the schema's and they are not changing: they are in
+// CHECK constraints, in the rules, in the API and in every card's history. This
+// is the one place that decides what a human reads, so the column heading, the
+// stack chip, the terminal switcher and the card dialog cannot drift apart and
+// call one state three things.
+const STATUS_LABEL = {
+  "needs-input": "ready",
+  "needs-permission": "needs permission"
+};
+const statusLabel = (s) => STATUS_LABEL[s] || s;
 
 const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
@@ -3357,7 +3388,8 @@ function stackRow(t) {
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
-      <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}">${esc(t.status)}</span>
+      <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
+        title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
       <span class="chip">${age} ${ago(t.idle_seconds)}</span>
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
@@ -5618,7 +5650,7 @@ async function openTask(id) {
   document.getElementById("d-title").textContent = current.display_title;
   document.getElementById("d-chips").innerHTML = [
     `<span class="chip accent">${esc(current.runner || "?")}</span>`,
-    `<span class="chip">${esc(current.status)}</span>`,
+    `<span class="chip" title="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
     current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
     `<span class="chip">idle ${ago(current.idle_seconds)}</span>`,
@@ -6544,7 +6576,8 @@ async function renderTermList() {
           <span class="chip runner" data-runner="${esc(t.runner || "")}"
             >${esc(t.runner || "?")}</span>
           ${t.supervised
-            ? `<span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
+            ? `<span class="chip ${isWaiting(t) ? "warn" : "accent"}"
+                 title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
                <span class="chip">${ago(t.idle_seconds)}</span>`
             // A pinned card with no terminal is offering to start one, so it
             // says that rather than reporting a status nothing is behind.

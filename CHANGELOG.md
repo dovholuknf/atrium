@@ -13,6 +13,20 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **`needs input` is called `ready`, and an empty column gives its width back.** The gwt session ledger has
+  called the end of a turn `done` for far longer than this board has existed, and the board called the same
+  moment `needs input`, so the two disagreed in vocabulary while agreeing to the second on when it happened.
+  `done` was not available here, because a board also has to say "this work is finished, stop showing it to
+  me", which is a claim only a human makes and which a ledger tracking sessions has no word for. `ready` is
+  the third word that means what both do. The stored status is untouched: it is in CHECK constraints, in the
+  rules and in every card's history, and one table now decides what a human reads so the column heading, the
+  stack chip, the terminal switcher and the card dialog cannot drift into calling one state three things.
+
+  Separately, an empty column was still claiming an equal share of the width. On a normal morning three of the
+  five are empty, which left the two being read with a third of the screen between them. An empty column now
+  shrinks to its heading, which tightens rather than truncating, and keeps the heading because that is also
+  where a card is dropped.
+
 - **The Stop hook, as `atrium turn --event end`.** It existed as a script in somebody's dotfiles, holding a path
   only their machine had, and was never registered, so a message queued for an idle session sat in the queue.
   That is the case the queue exists for: a busy session makes tool calls constantly and a message rides the next
