@@ -17,10 +17,12 @@ go build -o build.claude\ .\...
 
 ## What it gives you
 
-**A board.** Every agent is a card in a kanban column: backlog, running, needs input, needs permission, done,
-shelved, dead. The columns are buckets of your attention, so a card sits in one because you have to act or
-because you decided something. A column can be folded away when it gets tall, and the finished ones can be
-cleared out in one press.
+**A board.** Every agent is a card in a kanban column: needs permission, ready, running, finished, shelved. The
+columns are buckets of your attention, so a card sits in one because you have to act or because you decided
+something. `ready` means the agent finished its turn and it is your move, which is the same moment the gwt
+session ledger calls `done`. Atrium keeps `done` for work you filed away yourself, since that is a claim only
+you can make. A column can be folded away when it gets tall, an empty one gives its width back to the ones you
+are reading, and the finished ones can be cleared out in one press.
 
 **What each one is doing right now.** Each card shows a live badge: thinking, running `Bash`, three subagents,
 and how long it has been at it. This is the difference between "leave it alone" and "go look at it", and

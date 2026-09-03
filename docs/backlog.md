@@ -16,46 +16,45 @@ The gaps below are ordered by what would change day to day.
 
 ## Next
 
-### Grouping the board by an expression, and why that is a security question
+### The grouping expression is safe today for one reason, and that reason is not written down anywhere
 
-Today grouping is by a fixed set: status, tag, repo. The shape that would cover everything is two functions
-supplied by the operator, one deriving a group name from a card and one ordering the groups:
+Grouping already takes two functions from the operator, compiled with `new Function` in `compiled()`:
 
 ```
   group: (task) => string
   order: (a, b) => number
 ```
 
-That is a small feature and a large decision, because it means running text somebody typed as code. The
-worry is right, and it is worth being precise about what the actual risk is, because the obvious framing is
-wrong in both directions.
+This is not a proposal. It exists and it works. The entry is here because the thing keeping it safe is
+incidental rather than decided, and the decision has to be made before anything moves it.
 
-**The board already runs arbitrary code.** It is a single HTML file served from the daemon, and anything with a
-script tag in it executes. Adding an expression box does not cross a line that has not been crossed.
+**What makes it safe is that `groupingPrefs()` reads `localStorage` and nothing else.** The code that runs in a
+browser was typed into that same browser, by whoever was sitting at it, and somebody who can write it can
+already open dev tools. The comment above `compiled()` says exactly this and it is correct as far as it goes.
 
-**The exfiltration risk is not the expression, it is where it is stored.** An expression held in `localStorage`
-is a preference on one machine, and somebody who can write it can already open dev tools. An expression stored
-in the daemon's database and shipped to every board is different: it becomes something one machine typed and
-another machine runs, which is exactly the shape of a stored XSS, and once federation lands it is a stored XSS
-that crosses a trust boundary. The card data those functions read is not innocent either. `why`, tags, worktree
-paths and the audit log all pass through the board, and the daemon's filesystem is browsable through
-`/v1/browse`, so a function with `fetch` in scope can read the disk and post it out.
+**What it does not say is what changes if that storage moves.** Three things would make this dangerous, and two
+of them are already on this list:
 
-Three options, in the order they should be considered:
+- **Storing the expression daemon-side.** It becomes something one machine typed and another machine runs,
+  which is the shape of a stored XSS. Reasonable to want: grouping is a board-wide preference and today it is
+  lost when you open a different browser.
+- **Federation.** `docs/federation-design-v2.md` puts many machines behind one board. A grouping function
+  shipped from a leaf and run in the forum's browser crosses a trust boundary that does not exist today.
+- **What the function can already reach.** These run with full page scope, so `fetch` is in hand. The board can
+  read the daemon's filesystem through `/v1/browse`, and `why`, tags, worktree paths and the audit log all pass
+  through it. A grouping function is a general-purpose exfiltration primitive the moment somebody other than
+  the operator can supply one.
 
-1. **A restricted expression language rather than JavaScript.** No `fetch`, no `import`, no property access on
-   anything but the card. A tiny evaluator over a fixed grammar (field, comparison, and or not, a few string
-   functions) covers nearly every real grouping and cannot express a network call at all. Most work, and the
-   only option that is safe by construction rather than by enumeration.
-2. **JavaScript in a worker with no network.** A `Worker` from a blob URL, a Content-Security-Policy of
-   `connect-src 'none'`, structured-cloned card data in and a string out, with a timeout. Cheaper, and it
-   depends on getting a CSP exactly right, which is a thing that is routinely got wrong.
-3. **A fixed menu of more groupings.** No evaluation at all. Answers most of the need and none of the
-   interesting cases.
+So the rule to hold: **an expression may be stored where it was typed. Anything wider needs a different
+mechanism, not a bigger text box.** If board-wide or federated grouping is wanted, the options in order:
 
-Whichever is chosen, the storage question stands on its own: an expression must not be stored daemon-side and
-executed on another operator's board without that being a deliberate, named decision. Local-only is the default
-and needs no argument. Anything else is a federation trust question rather than a UI preference.
+1. **A restricted expression language.** A small evaluator over a fixed grammar (field, comparison, and or not,
+   a few string functions) covers nearly every real grouping and cannot express a network call at all. Safe by
+   construction rather than by enumeration. Most work.
+2. **A worker with no network.** A `Worker` from a blob URL, `connect-src 'none'`, card data structured-cloned
+   in and a string out, with a timeout. Cheaper, and it rests on getting a CSP exactly right.
+3. **A fixed menu of groupings for the shared case,** with free expressions staying local-only. No evaluation
+   crosses a machine, and the local box keeps working as it does now.
 
 ### Enrolling a ziti identity with OIDC
 
