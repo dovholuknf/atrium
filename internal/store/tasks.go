@@ -342,9 +342,25 @@ func (s *Store) SetStatus(id, status string) error {
 				waiting = ts(n)
 			}
 		}
+		// A card that is alive again comes back onto the board.
+		//
+		// Archiving is for work that is over, and the sweep applies it to dead
+		// cards on a timer. A dead card revives all the time: the session says
+		// something, or a fixture starts it again. Leaving the stamp on made
+		// the card invisible to every board query while it was plainly running,
+		// which showed up as a terminal that had started and was nowhere.
+		//
+		// Cleared here rather than at each caller because this is the one place
+		// a status changes, and the rule is about the status: anything that is
+		// not over is not archived.
+		archived := ""
+		if status == StatusDone || status == StatusDead {
+			archived = tsOrEmpty(prev.ArchivedAt)
+		}
 		if _, err := s.db.Exec(
-			`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ? WHERE id = ?`,
-			status, waiting, ts(n), id); err != nil {
+			`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?
+			 WHERE id = ?`,
+			status, waiting, ts(n), archived, id); err != nil {
 			return err
 		}
 		return s.appendEvent(id, EventStatusChanged, map[string]any{

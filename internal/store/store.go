@@ -342,4 +342,13 @@ var now = func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) 
 
 func ts(t time.Time) string { return t.UTC().Format(TimeFormat) }
 
+// tsOrEmpty formats an optional timestamp, keeping "never" as the empty string
+// the schema stores rather than a zero time that would read as 1970.
+func tsOrEmpty(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return ts(*t)
+}
+
 func parseTS(s string) (time.Time, error) { return time.Parse(TimeFormat, s) }
