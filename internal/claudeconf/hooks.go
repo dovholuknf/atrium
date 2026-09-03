@@ -82,8 +82,10 @@ var WantedHooks = []HookEvent{
 }
 
 // eventFor finds a wanted hook by its atrium event name.
-func eventFor(event string) (HookEvent, bool) {
-	for _, w := range WantedHooks {
+func eventFor(event string) (HookEvent, bool) { return eventForTarget(Claude, event) }
+
+func eventForTarget(t Target, event string) (HookEvent, bool) {
+	for _, w := range t.Wanted {
 		if w.Event == event {
 			return w, true
 		}
@@ -122,6 +124,12 @@ type HookReport struct {
 	// because rewriting a file atrium could not read would lose whatever is
 	// in it.
 	Unreadable string `json:"unreadable,omitempty"`
+	// Runner is which runner's configuration this describes, so a board
+	// showing more than one knows which rows belong together.
+	Runner string `json:"runner,omitempty"`
+	// Trust is what has to happen after the file is written, when writing it
+	// is not enough. Codex refuses to run a hook it has not been shown.
+	Trust string `json:"trust,omitempty"`
 }
 
 // UserSettingsPath is the file atrium reads and writes: the one in the home
@@ -197,12 +205,16 @@ func commandsIn(entry any) []string {
 //
 // exe is the absolute path of the atrium binary, which is what makes a
 // registered command "ours" rather than someone else's.
-func Inspect(exe string) (*HookReport, error) {
-	path, err := UserSettingsPath()
+func Inspect(exe string) (*HookReport, error) { return InspectTarget(Claude, exe) }
+
+// InspectTarget is Inspect for one runner's configuration. See target.go: the
+// file format is shared and only the path and the wanted set differ.
+func InspectTarget(t Target, exe string) (*HookReport, error) {
+	path, err := t.Path()
 	if err != nil {
 		return nil, err
 	}
-	rep := &HookReport{Path: filepath.ToSlash(path)}
+	rep := &HookReport{Path: filepath.ToSlash(path), Runner: t.ID, Trust: t.Trust}
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -222,10 +234,10 @@ func Inspect(exe string) (*HookReport, error) {
 	}
 	installed := registeredCommands(doc)
 
-	for _, w := range WantedHooks {
-		st := HookStatus{HookEvent: w, Want: HookCommandFor(exe, w.Event)}
+	for _, w := range t.Wanted {
+		st := HookStatus{HookEvent: w, Want: hookCommand(t, exe, w)}
 		for _, cmd := range installed[w.Hook] {
-			if !reportsEvent(cmd, w.Event) {
+			if !reportsEventFor(t, cmd, w.Event) {
 				continue
 			}
 			st.Installed = true
@@ -267,8 +279,13 @@ func Install(exe string) (*HookReport, InstallResult, error) {
 // or matcher the operator set. A stale one is replaced, because two commands
 // reporting the same event would double every count.
 func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error) {
+	return InstallOnlyTarget(Claude, exe, events)
+}
+
+// InstallOnlyTarget is InstallOnly for one runner's configuration.
+func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, InstallResult, error) {
 	var none InstallResult
-	path, err := UserSettingsPath()
+	path, err := t.Path()
 	if err != nil {
 		return nil, none, err
 	}
@@ -292,7 +309,7 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 		wanted[e] = true
 	}
 	matched, changed := 0, 0
-	for _, w := range WantedHooks {
+	for _, w := range t.Wanted {
 		if len(wanted) > 0 && !wanted[w.Event] {
 			continue
 		}
@@ -303,7 +320,7 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 			continue
 		}
 		matched++
-		did, err := upsert(doc, w.Hook, exe, w.Event)
+		did, err := upsert(t, doc, w.Hook, exe, w.Event)
 		if err != nil {
 			return nil, none, err
 		}
@@ -319,7 +336,7 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 	// times while working through the list would bury the one backup worth
 	// having.
 	if changed == 0 {
-		rep, err := Inspect(exe)
+		rep, err := InspectTarget(t, exe)
 		return rep, none, err
 	}
 
@@ -355,7 +372,7 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 		return nil, none, err
 	}
 
-	rep, err := Inspect(exe)
+	rep, err := InspectTarget(t, exe)
 	return rep, res, err
 }
 
@@ -363,7 +380,7 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 // leaving everything else in place.
 // changed reports whether anything was actually written, so an install that
 // finds everything already correct writes no file and keeps no backup.
-func upsert(doc map[string]json.RawMessage, hook, exe, event string) (changed bool, err error) {
+func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (changed bool, err error) {
 	all := hooksSection(doc)
 	if raw, ok := doc["hooks"]; ok {
 		var probe map[string]any
@@ -460,12 +477,14 @@ func registeredCommands(doc map[string]json.RawMessage) map[string][]string {
 // on its own is too short to be sure about: `hook --event start` would be a
 // different thing entirely, and a script called `-Event start` could be
 // anyone's.
-func reportsEvent(command, event string) bool {
+func reportsEvent(command, event string) bool { return reportsEventFor(Claude, command, event) }
+
+func reportsEventFor(t Target, command, event string) bool {
 	low := strings.ToLower(command)
 	if !strings.Contains(low, "atrium") {
 		return false
 	}
-	w, ok := eventFor(event)
+	w, ok := eventForTarget(t, event)
 	if !ok {
 		return hasEventArg(low, event)
 	}
@@ -503,13 +522,33 @@ func sameBinary(command, exe string) bool {
 // HookCommandFor is the command line for one event. It has to agree exactly
 // with what `atrium hook` accepts, so both live off the same shape.
 func HookCommandFor(exe, event string) string {
+	return HookCommandForTarget(Claude, exe, event)
+}
+
+// HookCommandForTarget is HookCommandFor for one runner's event set.
+//
+// The COMMAND is the same for both runners, because the atrium subcommand
+// behind an event does not care who called it: a session starting is a session
+// starting. Only which events exist differs.
+func HookCommandForTarget(t Target, exe, event string) string {
+	w, ok := eventForTarget(t, event)
+	if !ok {
+		return quoted(exe) + " hook --event " + event
+	}
+	return hookCommand(t, exe, w)
+}
+
+func hookCommand(t Target, exe string, w HookEvent) string {
+	return quoted(exe) + " " + w.Sub + " --event " + w.Arg
+}
+
+// quoted is the executable's path, quoted when it needs to be. A path with a
+// space in it is one argument, and every configuration file this writes into
+// is read by a shell that would otherwise split it.
+func quoted(exe string) string {
 	p := filepath.ToSlash(exe)
 	if strings.ContainsAny(p, " \t") {
-		p = `"` + p + `"`
+		return `"` + p + `"`
 	}
-	w, ok := eventFor(event)
-	if !ok {
-		return p + " hook --event " + event
-	}
-	return p + " " + w.Sub + " --event " + w.Arg
+	return p
 }

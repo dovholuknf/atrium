@@ -33,13 +33,17 @@ func atriumExe() (string, error) {
 
 // hookStatus reports which hooks are registered. Read only: it never touches
 // the file.
+// hookStatus answers for one runner, defaulting to Claude Code.
+//
+// `?runner=codex` asks about that one instead. The default keeps every caller
+// that predates a second runner working, and the board asks by name.
 func (s *Server) hookStatus(w http.ResponseWriter, r *http.Request) {
 	exe, err := atriumExe()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	rep, err := claudeconf.Inspect(exe)
+	rep, err := claudeconf.InspectTarget(claudeconf.TargetFor(r.URL.Query().Get("runner")), exe)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -63,11 +67,15 @@ func (s *Server) installHooks(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Events []string `json:"events"`
+		// Which runner's configuration. Empty is Claude Code, so a caller that
+		// predates a second runner is unchanged.
+		Runner string `json:"runner"`
 	}
 	// A missing or unreadable body means all of them.
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body)
 
-	rep, res, err := claudeconf.InstallOnly(exe, body.Events)
+	rep, res, err := claudeconf.InstallOnlyTarget(
+		claudeconf.TargetFor(body.Runner), exe, body.Events)
 	if err != nil {
 		// 409 because the usual cause is a settings file atrium will not
 		// rewrite, which is the operator's to fix, not a server fault.

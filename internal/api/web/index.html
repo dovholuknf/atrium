@@ -181,20 +181,34 @@
   /* Takes what the header leaves and scrolls inside itself. min-height:0 is
      what lets it actually shrink: a flex item defaults to its content's
      height, which would push the page taller than the window again. */
+  /* main never scrolls. The view inside it does.
+     A scrollbar on main is drawn inside main's padding, over the right edge of
+     whatever is showing, which put it on top of the terminal. A view that owns
+     its own scrolling keeps the bar inside itself where it belongs, and the
+     terminal, which never needs to scroll, never grows one.
+
+     A column as well as a flex item: the board asked for 100% of main and then
+     sat below the group bar and inside main's padding, so the total was always
+     taller by exactly the bar plus the padding. Percentage heights cannot see
+     their siblings; flex can. */
   main {
     position: relative; z-index: 1; padding: 20px 26px;
-    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
-    /* A column as well as a flex item. The board asked for 100% of main and
-       then sat below the group bar and inside main's padding, so the total was
-       always taller than main by exactly the bar plus the padding. Percentage
-       heights cannot see their siblings; flex can. */
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
     display: flex; flex-direction: column;
   }
   /* The views that fill what is left. Everything else in main keeps its own
-       height and these take the remainder, whichever one is showing. */
+     height and these take the remainder, whichever one is showing. */
   main > .board,
   main > #stack,
+  main > #perms,
+  main > #runners,
   main > #terms { flex: 1 1 auto; min-height: 0; }
+  /* The ones that can be taller than the window scroll themselves. The board
+     scrolls per lane and the terminal never scrolls at all, so neither is
+     here. */
+  main > #stack,
+  main > #perms,
+  main > #runners { overflow-y: auto; overflow-x: hidden; }
   /* A hidden view must not claim its share of the column. */
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }
@@ -7908,6 +7922,15 @@ async function loadHooks() {
   const before = hookReport ? hookReport.missing : null;
   try { hookReport = await api("/v1/hooks"); } catch (e) { return; }
 
+  // Codex keeps its hooks in its own file, in the same format. Loaded
+  // separately and only when codex is a runner this machine uses: asking about
+  // a tool that is not installed would report a whole section missing and
+  // offer to fix something nobody asked for.
+  codexHooks = null;
+  if ((allHarnesses || []).some(h => h.id === "codex" && h.enabled)) {
+    try { codexHooks = await api("/v1/hooks?runner=codex"); } catch (e) { codexHooks = null; }
+  }
+
   // Nothing left to do means the dialog has nothing left to say. Only on the
   // way to zero: opening it when everything is already wired is somebody
   // checking, and closing it under them would be answering a question they
@@ -7924,43 +7947,55 @@ async function loadHooks() {
   }
 }
 
+// One hook, as a row. Shared by both runners because the format is shared and
+// so is every rule about what a row means: wired, pointing elsewhere, off on
+// purpose.
+//
+// `runner` is empty for claude, which keeps the manual-steps dialog pointed at
+// the one report it knows how to read.
+function hookRow(h, runner) {
+  const done = h.installed && !h.stale;
+  const state = h.stale
+    ? `<span class="by missing" title="${esc(h.found || "")}">points elsewhere</span>`
+    : done
+      ? `<span class="by found" title="${esc(h.found || "")}">wired</span>`
+      : `<span class="by missing">not wired</span>`;
+  // Each row decides for itself. Wanting the tool events and not the subagent
+  // count is a reasonable thing to want, and one button for all of them made
+  // that impossible to say.
+  const arg = runner ? `,'${esc(runner)}'` : "";
+  const act = done ? "" : `
+    <button class="go" onclick="installHooks(['${esc(h.event)}']${arg})"
+      title="write this one entry">wire it</button>` +
+    // The manual steps read the claude report, so they are offered only there
+    // rather than showing the wrong command for the other runner.
+    (runner ? "" : `
+    <button onclick="showHookSteps('${esc(h.event)}')"
+      title="the command to run yourself">manually</button>`);
+  // An optional hook is off on purpose rather than missing, so it does not
+  // read as something to fix. What it does is said next to it in full: this is
+  // the one hook whose answer changes what a session does, and nobody should
+  // turn that on from a one-line summary.
+  const state2 = h.optional && !h.installed
+    ? `<span class="by" title="offered, not installed by default">off</span>`
+    : state;
+  const warn = h.warn
+    ? `<div class="row line"><span class="hintline warn">${esc(h.warn)}</span></div>`
+    : "";
+  return `<div class="row line${h.optional ? " optional" : ""}">
+    <span class="tool">${esc(h.hook)}</span>
+    <span class="grow ell" title="${esc(h.why)}">${esc(h.why)}</span>
+    ${state2}
+    ${act}
+  </div>${warn}`;
+}
+
 function renderHooks() {
   const host = document.getElementById("hook-status");
   const rep = hookReport;
   if (!host || !rep) return;
 
-  const rows = (rep.hooks || []).map(h => {
-    const done = h.installed && !h.stale;
-    const state = h.stale
-      ? `<span class="by missing" title="${esc(h.found || "")}">points elsewhere</span>`
-      : done
-        ? `<span class="by found" title="${esc(h.found || "")}">wired</span>`
-        : `<span class="by missing">not wired</span>`;
-    // Each row decides for itself. Wanting the tool events and not the
-    // subagent count is a reasonable thing to want, and one button for all
-    // five made that impossible to say.
-    const act = done ? "" : `
-      <button class="go" onclick="installHooks(['${esc(h.event)}'])"
-        title="write this one entry into settings.json">wire it</button>
-      <button onclick="showHookSteps('${esc(h.event)}')"
-        title="the command to run yourself">manually</button>`;
-    // An optional hook is off on purpose rather than missing, so it does not
-    // read as something to fix. What it does is said next to it in full: this
-    // is the one hook whose answer changes what a session does, and nobody
-    // should turn that on from a one-line summary.
-    const state2 = h.optional && !h.installed
-      ? `<span class="by" title="offered, not installed by default">off</span>`
-      : state;
-    const warn = h.warn
-      ? `<div class="row line"><span class="hintline warn">${esc(h.warn)}</span></div>`
-      : "";
-    return `<div class="row line${h.optional ? " optional" : ""}">
-      <span class="tool">${esc(h.hook)}</span>
-      <span class="grow ell" title="${esc(h.why)}">${esc(h.why)}</span>
-      ${state2}
-      ${act}
-    </div>${warn}`;
-  }).join("");
+  const rows = (rep.hooks || []).map(h => hookRow(h, "")).join("");
 
   // The file itself is worth showing. Atrium picks the one in the home
   // directory, and being told which file was changed is the difference
@@ -7996,39 +8031,82 @@ function renderHooks() {
          title="keep the button, drop the count and the colour">stop reminding me</button>`;
 
   setHTML(host, `<div class="panel">${where}${rows}
-    <div class="row line">${nag}<span class="grow"></span>${action}</div></div>`);
+    <div class="row line">${nag}<span class="grow"></span>${action}</div></div>` +
+    codexPanel());
+}
+
+// Codex's hooks, in codex's own file.
+//
+// Its own panel rather than mixed in, because they are two files and wiring
+// one says nothing about the other. Drawn only when codex is a runner this
+// machine uses: a section reporting eight missing hooks for a tool that is not
+// installed is a problem invented by the board.
+//
+// The rows reuse hookRow, since the format is shared and so is every rule
+// about what a row means.
+function codexPanel() {
+  const rep = codexHooks;
+  if (!rep) return "";
+  const rows = (rep.hooks || []).map(h => hookRow(h, "codex")).join("");
+  const where = `<div class="row line copypath">
+      <code>${esc(rep.path)}</code>
+      <button onclick='copyText(this, ${JSON.stringify(rep.path).replace(/'/g, "&#39;")})'
+        title="copy this path">copy</button>
+      ${rep.exists ? "" : `<span class="by">does not exist yet</span>`}
+    </div>`;
+  // Writing the file is not enough for codex, and saying so is the difference
+  // between a button that worked and a button that appeared to.
+  const trust = rep.trust
+    ? `<div class="row line"><span class="hintline warn">${esc(rep.trust)}</span></div>`
+    : "";
+  const action = rep.missing === 0
+    ? `<span class="by found">all wired.</span>`
+    : `<button class="go" onclick="installHooks(null, 'codex')"
+         >do all ${rep.missing} for me</button>`;
+  return `<h3 class="s-section">codex</h3>
+    <div class="panel">${where}${rows}${trust}
+      <div class="row line"><span class="grow"></span>${action}</div></div>`;
 }
 
 let hookReport = null;
+// Codex's own hooks, in its own file. Null when codex is not a runner this
+// machine uses, which is not the same as none installed.
+let codexHooks = null;
 
 // Claude Code's name for the hook that carries one atrium event, for saying
 // which one a button is about.
-function hookNameFor(event) {
-  const h = (hookReport && hookReport.hooks || []).find(x => x.event === event);
+function hookNameFor(event, rep) {
+  const r = rep || hookReport;
+  const h = (r && r.hooks || []).find(x => x.event === event);
   return h ? h.hook : event;
 }
 
 // The line that would go into settings.json for one event, which is what
 // claude code will actually run.
-function installedCommandFor(event) {
-  const h = (hookReport && hookReport.hooks || []).find(x => x.event === event);
+function installedCommandFor(event, rep) {
+  const r = rep || hookReport;
+  const h = (r && r.hooks || []).find(x => x.event === event);
   return h ? h.want : "";
 }
 
 // Writing it. Confirmed first, and never skippable: this edits a file atrium
 // does not own, and a settings.json that comes back wrong breaks every claude
 // session on the machine.
-async function installHooks(events) {
-  const n = events ? events.length : hookReport.missing;
+async function installHooks(events, runner) {
+  // Which report this is about. Codex keeps its own, in its own file.
+  const rep = runner === "codex" ? codexHooks : hookReport;
+  if (!rep) return;
+  const label = runner === "codex" ? "Codex" : "Claude Code";
+  const n = events ? events.length : rep.missing;
   const which = events
-    ? `the <b>${esc(hookNameFor(events[0]))}</b> entry`
+    ? `the <b>${esc(hookNameFor(events[0], rep))}</b> entry`
     : `${n} entr${n === 1 ? "y" : "ies"}`;
   // No path here: it is already on screen in the dialog behind this one, and
   // `.asktext code` is a block, so an inline one breaks the sentence in half.
-  const hook = events ? hookNameFor(events[0]) : "";
+  const hook = events ? hookNameFor(events[0], rep) : "";
   const body = events
-    ? `Claude Code will run this on every <b>${esc(hook)}</b>:` +
-      `<code>${esc(installedCommandFor(events[0]))}</code>` +
+    ? `${label} will run this on every <b>${esc(hook)}</b>:` +
+      `<code>${esc(installedCommandFor(events[0], rep))}</code>` +
       "It joins anything already registered under that hook rather than replacing it."
     : `Atrium registers ${which}, one per hook, each running this binary with the ` +
       "name of the event. Anything already registered is left alone.";
@@ -8041,11 +8119,16 @@ async function installHooks(events) {
   try {
     const res = await api("/v1/hooks/install", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ events: events || [] })
+      body: JSON.stringify({ events: events || [], runner: runner || "" })
     });
-    toast("hooks wired", res.backup
+    // Codex will not run a hook it has not been shown, so saying "wired" and
+    // stopping would be a button that reports success and changes nothing.
+    const next = runner === "codex" && codexHooks && codexHooks.trust
+      ? " " + codexHooks.trust
+      : "";
+    toast("hooks wired", (res.backup
       ? "the old settings were copied to " + res.backup
-      : "settings.json was created");
+      : "the file was created") + next);
   } catch (e) {
     toast("nothing was changed", e.message);
   }
