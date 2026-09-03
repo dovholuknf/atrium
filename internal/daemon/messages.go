@@ -78,6 +78,12 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Agent string `json:"agent"`
+		// The same two facts the permission and session hooks report. Without
+		// the worktree this would register a card with no directory, and a
+		// card is matched on more than its name: the session would show up
+		// twice on the board under one name.
+		Cwd    string `json:"cwd"`
+		Resume string `json:"resume"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	nothing := func() { _, _ = w.Write([]byte(`{"continue":true}`)) }
@@ -91,10 +97,23 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _, err := d.st.Register(observedFor(in.Agent))
+	obs := observedFor(in.Agent)
+	if in.Cwd != "" {
+		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
+	}
+	task, _, err := d.st.Register(obs)
 	if err != nil {
 		nothing()
 		return
+	}
+	// The id that lets this conversation be resumed later. Recorded here as
+	// well as at session start, because a session atrium did not launch and
+	// that started before the session hook was wired has no other moment where
+	// it says so. Best effort: a turn must not fail over a resume id.
+	if in.Resume != "" {
+		if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+			log.Printf("[atrium] could not record a resume id for %s: %v", task.ID, err)
+		}
 	}
 
 	// The turn ended, so it is the operator's move. This is the signal that

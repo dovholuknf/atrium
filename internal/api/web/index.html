@@ -201,6 +201,25 @@
   .board .col > .cards > .cardgroup { grid-column: 1 / -1; }
   /* A folded column shrinks to its header so the rest get the room. */
   .board .col.folded { flex: 0 0 auto; min-width: 0; }
+  /* So does an empty one. It still has to be wide enough to read its own
+     heading and to be a target you can drop a card onto, so it shrinks to
+     content rather than to nothing. The transition is here because these
+     change while you watch: a column emptying should read as the others
+     growing, not as the board jumping. */
+  .board .col { transition: flex-grow .18s ease, flex-basis .18s ease; }
+  .board .col.vacant { flex: 0 1 auto; min-width: 0; }
+  .board .col.vacant > .cards { min-width: 0; }
+  /* The word `empty` is the whole content of a narrow column, so it must not
+     force the column back open. */
+  .board .col.vacant .empty { white-space: nowrap; font-size: var(--fs-xs); }
+  /* The heading is now the widest thing in an empty column, so it is what
+     decides how much room the column gives back. Tightened rather than
+     truncated: `NEEDS PERM...` would be unreadable, and these five labels are
+     the one piece of text on the board that has to stay scannable. */
+  .board .col.vacant > .col-head {
+    font-size: var(--fs-xs); letter-spacing: .1em; color: var(--dim);
+  }
+  .board .col.vacant > .col-head .help { display: none; }
   .col {
     background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
     border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); padding: 13px 12px 10px;
@@ -692,6 +711,10 @@
   .queued .q .txt {
     color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1;
   }
+  /* A hook that is offered rather than wanted. Quieter, because it being off
+     is a decision rather than a gap. */
+  .row.line.optional .tool { color: var(--label); }
+  .hintline.warn { color: var(--warn); }
   .tagsuggest { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: 8px; }
   .tagsuggest .chip.tag { font-size: var(--fs-xs); padding: 2px 9px; }
   .chip.attach:hover { border-color: var(--teal); }
@@ -2685,6 +2708,13 @@ async function renderBoard() {
   const html = COLUMNS.map(col => {
     const mine = all.filter(t => col.statuses.includes(t.status));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
+    // An empty column gives its width back rather than holding an equal share
+    // for nothing. On a normal morning three of the five are empty, and an
+    // even split means the two columns you are actually reading get a third
+    // of the screen between them. It keeps its header, because a column that
+    // vanished when it emptied would take the place you drop a card onto with
+    // it, and because "nothing needs permission" is worth being able to see.
+    const vacant = mine.length === 0 ? " vacant" : "";
 
     // A column holding one status is a flat list. One holding several splits
     // into groups, each with its own count and its own clear. Project groups
@@ -2694,7 +2724,7 @@ async function renderBoard() {
       : col.statuses.map(s =>
           groupHTML(s, all.filter(t => t.status === s), g)).join("");
 
-    return `<section class="col${folded}" data-column="${col.id}"
+    return `<section class="col${folded}${vacant}" data-column="${col.id}"
       data-status="${esc(col.drop || col.statuses[0])}">
       <div class="col-head" onclick="toggleColumn('${col.id}')">
         <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
@@ -5126,12 +5156,12 @@ const OVERLAY_SETUP = {
   ziti: {
     title: "no identity yet",
     what: "An identity is what proves this machine to your network. It comes from a one-use " +
-          "enrolment token, which your network administrator issues.",
-    label: "enrolment token",
-    placeholder: "paste the enrolment JWT",
+          "enrollment token, which your network administrator issues.",
+    label: "enrollment token",
+    placeholder: "paste the enrollment JWT",
     name: "call this identity",
     namePlaceholder: "atrium",
-    action: "enrol this machine",
+    action: "enroll this machine",
     link: "how to get one"
   }
 };
@@ -5175,7 +5205,7 @@ function overlaySetup(o) {
     </div>`;
 }
 
-// Reads a pasted enrolment token and says what it is for.
+// Reads a pasted enrollment token and says what it is for.
 //
 // Only for ziti: a zrok account token is opaque, and there is nothing to read
 // out of it. Debounced, because this fires on every keystroke of a paste.
@@ -5661,13 +5691,27 @@ async function sayToCurrent() {
     box.value = "";
     how.textContent = res.delivered === "terminal"
       ? "typed into its terminal."
-      : "queued. it arrives on the session's next tool call, or when its turn ends.";
+      : `queued. it arrives on the session's next tool call${turnEndReach()}`;
     await paintQueued();
   } catch (e) {
     how.textContent = `not sent: ${e.message || e}`;
   } finally {
     send.disabled = false;
   }
+}
+
+// Whether the end of a turn is a second way in, said only when it is true.
+//
+// A queued message rides the next tool call, and a session sitting idle makes
+// none. The Stop hook is the only thing that reaches one, and it is off by
+// default. Claiming a message will arrive "when its turn ends" on a machine
+// where that hook is not wired is the box promising something that will not
+// happen, and the message sits in the queue looking ignored.
+function turnEndReach() {
+  const h = (hookReport && hookReport.hooks || []).find(x => x.event === "turn-end");
+  if (h && h.installed && !h.stale) return ", or when its turn ends.";
+  return ". a session sitting idle makes no tool calls, so it will wait there until " +
+    "something happens. wire the Stop hook in the runners tab to reach an idle session.";
 }
 
 // What has been said and has not arrived. Only ever queued messages: one typed
@@ -6997,12 +7041,22 @@ function renderHooks() {
         title="write this one entry into settings.json">wire it</button>
       <button onclick="showHookSteps('${esc(h.event)}')"
         title="the command to run yourself">manually</button>`;
-    return `<div class="row line">
+    // An optional hook is off on purpose rather than missing, so it does not
+    // read as something to fix. What it does is said next to it in full: this
+    // is the one hook whose answer changes what a session does, and nobody
+    // should turn that on from a one-line summary.
+    const state2 = h.optional && !h.installed
+      ? `<span class="by" title="offered, not installed by default">off</span>`
+      : state;
+    const warn = h.warn
+      ? `<div class="row line"><span class="hintline warn">${esc(h.warn)}</span></div>`
+      : "";
+    return `<div class="row line${h.optional ? " optional" : ""}">
       <span class="tool">${esc(h.hook)}</span>
       <span class="grow ell" title="${esc(h.why)}">${esc(h.why)}</span>
-      ${state}
+      ${state2}
       ${act}
-    </div>`;
+    </div>${warn}`;
   }).join("");
 
   // The file itself is worth showing. Atrium picks the one in the home

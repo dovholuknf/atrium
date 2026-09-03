@@ -34,13 +34,28 @@ type HookEvent struct {
 	Arg string `json:"-"`
 	// Why is one line for the board, so the list is readable without the docs.
 	Why string `json:"why"`
+	// Optional keeps a hook out of "install everything". It is offered, its
+	// state is reported, and it is never written unless it was asked for by
+	// name. Only the Stop hook is optional, and see the note on it below.
+	Optional bool `json:"optional,omitempty"`
+	// Warn is what has to be understood before installing an optional hook.
+	// Shown by the board next to the switch rather than buried in the docs.
+	Warn string `json:"warn,omitempty"`
 }
 
-// WantedHooks are the activity hooks, in the order they read best.
+// WantedHooks are the hooks atrium can register, in the order they read best.
 //
-// The Stop hook is deliberately absent. It is the one hook that can change
-// what a session does rather than only reporting, since a Stop hook that
-// blocks tells the model to keep working. It stays a manual decision.
+// All but one of these only REPORT. They post a fact and exit, nothing
+// downstream reads the result, and the worst a broken one can do is leave the
+// board out of date.
+//
+// Stop is the exception, and it is why it is `Optional`. A Stop hook is the
+// only one whose output changes what the session does: answering it with a
+// block tells the model to keep working. That is exactly what makes it
+// valuable, because it is the only way to reach a session sitting idle, and a
+// session sitting idle is when you most want to reach it. It is also the only
+// way to hang every session on the machine. So it is offered by name, with
+// what it does said out loud, and it is never swept in by "install all".
 var WantedHooks = []HookEvent{
 	{Hook: "SessionStart", Event: "session-start", Sub: "session", Arg: "start",
 		Why: "a card appears when a session opens, before it does anything"},
@@ -56,6 +71,14 @@ var WantedHooks = []HookEvent{
 		Why: "the subagent count going up"},
 	{Hook: "SubagentStop", Event: "subagent-end", Sub: "hook", Arg: "subagent-end",
 		Why: "and coming back down"},
+	{Hook: "Stop", Event: "turn-end", Sub: "turn", Arg: "end",
+		Why:      "a message reaches a session that is sitting idle, and the card moves to needs-input",
+		Optional: true,
+		Warn: "this is the only hook that can change what a session does. it answers the end of a " +
+			"turn, and answering with a message makes the session keep working on it. that is how an " +
+			"idle session is reached at all, and it is also the one hook a bug in could stop a session " +
+			"ending. it refuses to block twice in a row and it keeps going whenever atrium is not " +
+			"reachable."},
 }
 
 // eventFor finds a wanted hook by its atrium event name.
@@ -210,7 +233,11 @@ func Inspect(exe string) (*HookReport, error) {
 			st.Stale = !sameBinary(cmd, exe)
 			break
 		}
-		if !st.Installed || st.Stale {
+		// An optional hook that is not installed is not missing. It was never
+		// promised, and counting it would leave the board permanently offering
+		// to fix something that is off on purpose. A stale one still counts:
+		// somebody installed it, and it is now pointing at the wrong binary.
+		if (!st.Installed && !w.Optional) || st.Stale {
 			rep.Missing++
 		}
 		rep.Hooks = append(rep.Hooks, st)
@@ -269,6 +296,12 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 		if len(wanted) > 0 && !wanted[w.Event] {
 			continue
 		}
+		// An empty list means "everything atrium normally wants", and an
+		// optional hook is by definition not that. It is written only when
+		// named, so nobody installs a Stop hook by pressing install all.
+		if len(wanted) == 0 && w.Optional {
+			continue
+		}
 		matched++
 		did, err := upsert(doc, w.Hook, exe, w.Event)
 		if err != nil {
@@ -307,7 +340,18 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, none, err
 	}
-	if err := os.WriteFile(path, out, 0o600); err != nil {
+	// Written through a symlink rather than over it. `settings.json` is
+	// commonly a link into a dotfiles repo, and replacing the link with a
+	// plain file silently detaches the repo: every later edit on either side
+	// goes somewhere the other cannot see, and the divergence is only noticed
+	// much later. Resolved explicitly rather than relying on the write
+	// following the link, since that is platform behaviour and this is a
+	// promise.
+	target := path
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		target = real
+	}
+	if err := os.WriteFile(target, out, 0o600); err != nil {
 		return nil, none, err
 	}
 
@@ -431,6 +475,14 @@ func reportsEvent(command, event string) bool {
 		named := strings.Contains(low, " session ") ||
 			strings.Contains(low, "atrium-session-hook")
 		return named && hasEventArg(low, w.Arg)
+	}
+	if w.Sub == "turn" {
+		// `end` is not a unique word: `session --event end` ends the same way.
+		// They live in different hook arrays, so nothing collides today, but
+		// that is the settings file's shape rather than a fact about the
+		// commands, and a misfiled entry would be rewritten into the wrong
+		// subcommand.
+		return strings.Contains(low, " turn ") && hasEventArg(low, w.Arg)
 	}
 	// Activity args are unique words, so the subcommand adds nothing and
 	// leaving it out keeps matching the old activity script.

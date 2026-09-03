@@ -233,7 +233,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	id := strings.TrimSpace(cfg.Identity)
 	if id == "" {
-		return fmt.Errorf("no identity: enrol one, or point atrium at an identity file")
+		return fmt.Errorf("no identity: enroll one, or point atrium at an identity file")
 	}
 	service := strings.TrimSpace(cfg.Service)
 	if service == "" {

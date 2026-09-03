@@ -27,7 +27,7 @@ func makeJWT(t *testing.T, iss, sub string, exp time.Time) string {
 	return enc([]byte(`{"alg":"none"}`)) + "." + enc(body) + ".not-a-signature"
 }
 
-// An enrolment token is one use. Reading which network it is for, before it is
+// An enrollment token is one use. Reading which network it is for, before it is
 // spent, is the difference between a useful form and one that fails at a
 // controller.
 func TestReadJWT(t *testing.T) {
@@ -64,7 +64,7 @@ func TestReadJWTNoticesAnExpiredToken(t *testing.T) {
 func TestReadJWTRefusesSomethingElse(t *testing.T) {
 	for _, in := range []string{"", "not-a-token", "one.two", "abc.!!!.def"} {
 		if _, err := readJWT(in); err == nil {
-			t.Fatalf("%q was accepted as an enrolment token", in)
+			t.Fatalf("%q was accepted as an enrollment token", in)
 		}
 	}
 }

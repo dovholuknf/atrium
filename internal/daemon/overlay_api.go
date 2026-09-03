@@ -96,7 +96,7 @@ func (d *Daemon) overlayViews() any {
 
 // SetupRequest is what the board sends to get this machine ready.
 type SetupRequest struct {
-	// Token is a zrok account token or a ziti enrolment JWT.
+	// Token is a zrok account token or a ziti enrollment JWT.
 	Token string `json:"token"`
 	// Name describes this machine to zrok, or names the identity for ziti.
 	Name string `json:"name"`
@@ -148,7 +148,7 @@ func (d *Daemon) teardownOverlay(kind string) (string, error) {
 	return "", fmt.Errorf("no overlay called %q", kind)
 }
 
-// InspectToken reads an enrolment token so the board can show which network it
+// InspectToken reads an enrollment token so the board can show which network it
 // is for, and whether it has already expired, before anything is done with it.
 func (d *Daemon) InspectToken(token string) (any, error) {
 	return readJWT(token)
