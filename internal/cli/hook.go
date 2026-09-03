@@ -48,6 +48,15 @@ type hookInput struct {
 	ToolName  string `json:"tool_name"`
 	CWD       string `json:"cwd"`
 	SessionID string `json:"session_id"`
+	// AgentID and AgentType identify a subagent. Claude Code sends both on
+	// SubagentStart and SubagentStop, and they are what turns "3 subagents"
+	// into three named things: the id to pair a stop with its start, the type
+	// to say what it is.
+	AgentID   string `json:"agent_id"`
+	AgentType string `json:"agent_type"`
+	// ToolUseID identifies one tool-use ATTEMPT, which is what a dedup key
+	// wants and what a hash of the command can never be.
+	ToolUseID string `json:"tool_use_id"`
 }
 
 func newHook() *cobra.Command {
@@ -306,6 +315,10 @@ func reportActivity(hubURL, event, name string) {
 		"agent": agent,
 		"event": kind,
 		"tool":  in.ToolName,
+		// Who the subagent is. Empty on every other event, which is fine: the
+		// daemon reads these only for subagent-start and subagent-end.
+		"agent_id":   in.AgentID,
+		"agent_type": in.AgentType,
 	})
 	if err != nil {
 		return

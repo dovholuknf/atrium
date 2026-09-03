@@ -201,9 +201,25 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}); err != nil {
 			return err
 		}
-		// Starting revives a card marked dead, which is how a resume arrives.
-		if task.Status == store.StatusDead || task.Status == store.StatusBacklog {
-			if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		// A session that has just started is READY, not running.
+		//
+		// SessionStart fires before the session has done anything: it is
+		// sitting at its prompt with the cursor blinking, which is the
+		// definition of the ready column and the opposite of running. Landing
+		// in running meant every terminal opened all morning claimed to be
+		// working, and the one column that says "these want you" was missing
+		// exactly the sessions that most obviously did.
+		//
+		// Nothing has to undo this. The first prompt or the first tool call
+		// both call turnResumed, so the card moves to running the moment the
+		// session actually does something. See activity.go.
+		//
+		// A card put down by hand stays put: shelving is an answer, and a
+		// session starting inside a shelved worktree does not overrule it.
+		switch task.Status {
+		case store.StatusShelved:
+		default:
+			if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
 				return err
 			}
 		}

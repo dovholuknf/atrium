@@ -113,6 +113,12 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.reapOrphans(); err != nil {
 			log.Printf("[atrium] orphan check: %v", err)
 		}
+		// Dead cards go on their own. Same ticker as the reaper, because it is
+		// the same question at the same rate and a second ticker is a second
+		// thing to get wrong at shutdown.
+		if err := d.sweepDead(); err != nil {
+			log.Printf("[atrium] sweeping dead cards: %v", err)
+		}
 		if err := d.reapOnce(); err != nil {
 			if msg := err.Error(); msg != lastErr {
 				log.Printf("[atrium] liveness check: %v", err)

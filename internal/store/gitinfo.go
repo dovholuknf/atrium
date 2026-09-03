@@ -34,6 +34,14 @@ type GitInfo struct {
 	// Branch is the checked-out branch. Empty on a detached head, which is a
 	// real state and not an error: the card falls back to naming the repo.
 	Branch string
+	// Sub is where inside the repository the session is working, relative to
+	// the repository root, with forward slashes. Empty at the root.
+	//
+	// It is part of the name because two sessions in one repository are two
+	// pieces of work. Naming both after the repository made them identical on
+	// the board, so the only way to tell which one you had been talking to was
+	// to open each and read its path.
+	Sub string
 	// Linked marks a worktree rather than the repository's own checkout.
 	//
 	// It changes the name. A linked worktree is created for one branch and its
@@ -61,23 +69,25 @@ func ReadGitInfo(dir string) GitInfo {
 		return GitInfo{}
 	}
 	dir = filepath.FromSlash(dir)
+	start := dir
 
 	for i := 0; i < gitWalkLimit; i++ {
 		dotgit := filepath.Join(dir, ".git")
 		fi, err := os.Lstat(dotgit)
 		if err == nil {
+			var out GitInfo
 			if fi.IsDir() {
 				// An ordinary checkout. The repository is this directory.
-				return GitInfo{
-					Repo:   filepath.Base(dir),
-					Branch: headBranch(dotgit),
-				}
+				out = GitInfo{Repo: filepath.Base(dir), Branch: headBranch(dotgit)}
+			} else {
+				// A linked worktree. `.git` is a file naming the real git
+				// directory, which lives inside the main repository, so the
+				// repository's name is recoverable from that path and the
+				// branch is in the HEAD beside it.
+				out = worktreeInfo(dotgit)
 			}
-			// A linked worktree. `.git` is a file naming the real git
-			// directory, which lives inside the main repository, so the
-			// repository's name is recoverable from that path and the branch
-			// is in the HEAD beside it.
-			return worktreeInfo(dotgit)
+			out.Sub = relativeTo(dir, start)
+			return out
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -86,6 +96,16 @@ func ReadGitInfo(dir string) GitInfo {
 		dir = parent
 	}
 	return GitInfo{}
+}
+
+// relativeTo returns where `start` sits below `root`, with forward slashes.
+// Empty when they are the same place or when the answer would climb out.
+func relativeTo(root, start string) string {
+	rel, err := filepath.Rel(root, start)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // worktreeInfo reads a `.git` FILE, which is how a linked worktree points at
@@ -154,27 +174,38 @@ func headBranch(gitdir string) string {
 	return name
 }
 
-// TitleFor names a card the way the gwt session ledger names a session.
+// TitleFor names a card so it says which project and which piece of work.
 //
-// Two shapes, because the ledger has two:
+// Two shapes, because a worktree and a checkout are named differently:
 //
-//   - A linked worktree is `tunneled-acme`. It exists for one branch and its
-//     directory is named after it, so the branch already says which work this
-//     is and adding the repository only makes the name longer.
-//   - Anything else is `main:atrium`. A repository's own checkout is not named
-//     for what is being done in it, so the branch is the part that says.
+//   - A linked worktree is `ziti-sdk-csharp/bump-vcpkg-dep`. The branch alone
+//     was tried and is not enough: `bump-vcpkg-dep`, `idp-auth` and
+//     `nightly-failures` say nothing about which repository they are in, and a
+//     board with worktrees from six projects is a list of branch names with no
+//     way to tell whose they are.
+//   - A repository's own checkout is `main:atrium`. It is not named for what
+//     is being done in it, so the branch is the part that says.
 //
 // Falls back through what is actually known. A directory outside any
 // repository has only its own name, which is where atrium started and is still
 // the right answer when there is nothing better.
 func TitleFor(g GitInfo, worktree, fallback string) string {
+	// Where in the repository, when it is not the root. Two sessions in one
+	// repository are two pieces of work, and naming both after the repository
+	// made them the same row twice with no way to tell which was which.
+	sub := ""
+	if g.Sub != "" {
+		sub = "/" + g.Sub
+	}
 	switch {
+	case g.Linked && g.Branch != "" && g.Repo != "":
+		return g.Repo + "/" + g.Branch + sub
 	case g.Linked && g.Branch != "":
-		return g.Branch
+		return g.Branch + sub
 	case g.Repo != "" && g.Branch != "":
-		return g.Branch + ":" + g.Repo
+		return g.Branch + ":" + g.Repo + sub
 	case g.Repo != "":
-		return g.Repo
+		return g.Repo + sub
 	case fallback != "":
 		return fallback
 	case worktree != "":

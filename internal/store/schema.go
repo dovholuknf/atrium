@@ -434,6 +434,28 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN sound TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// Off the board, still on the record.
+		//
+		// A dead card is swept so the finished column does not fill up all
+		// day. Deleting it is the obvious way to do that and the wrong one:
+		// the card and its whole audit log are the only account of what that
+		// session ran and what it was allowed to do, and a board that throws
+		// that away a minute after a session ends cannot answer "what have I
+		// had running this week".
+		//
+		// Archiving separates the two questions. The board asks "what wants my
+		// attention", and archived cards are not that. The history asks "what
+		// has ever run here", and nothing has been lost to answer it.
+		//
+		// Indexed because every list query now excludes archived rows, which
+		// on a machine that has been running for months is most of them.
+		name: "0023_task_archived",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_task_archived ON task(archived_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -52,12 +52,24 @@
        Padding is NOT on this ladder. A chip's 1px 8px and a dialog's 20px 22px
        are tuned to their own content, and bucketing them would move hit areas
        and break alignment to buy nothing. */
-    --sp-1: calc(4px * var(--uiscale));
-    --sp-2: calc(6px * var(--uiscale));
-    --sp-3: calc(9px * var(--uiscale));
-    --sp-4: calc(13px * var(--uiscale));
-    --sp-5: calc(17px * var(--uiscale));
-    --sp-6: calc(24px * var(--uiscale));
+    /* Space, separately from size.
+       --uiscale moves the text and the space together, which is the right
+       answer for "I cannot read this" and the wrong one for "I want more rows
+       on screen". Shrinking the type to fit more work in view makes the work
+       harder to read, which is backwards: the names stay legible and the room
+       between them goes. So spacing carries a second multiplier that nothing
+       in the type ladder above uses. */
+    --density: 1;
+    --sp-1: calc(4px * var(--uiscale) * var(--density));
+    --sp-2: calc(6px * var(--uiscale) * var(--density));
+    --sp-3: calc(9px * var(--uiscale) * var(--density));
+    --sp-4: calc(13px * var(--uiscale) * var(--density));
+    --sp-5: calc(17px * var(--uiscale) * var(--density));
+    --sp-6: calc(24px * var(--uiscale) * var(--density));
+    /* A row's own padding, which is most of the height of a stack row and was
+       the one number not on the ladder. */
+    --row-y: calc(15px * var(--uiscale) * var(--density));
+    --row-x: calc(20px * var(--uiscale));
 
     /* Corners. Fixed, not scaled: a corner is a style, and a 12px radius on a
        panel reads the same whatever size the text inside it is. */
@@ -74,8 +86,19 @@
      tab. This has to win. */
   [hidden] { display: none !important; }
   html, body { height: 100%; }
+  /* The page fills the window and never scrolls as a whole. The views that
+     need to scroll do it inside themselves.
+
+     This replaces measuring the header and subtracting it from 100dvh. That
+     arithmetic was always a few pixels out in one direction or the other,
+     because the thing being measured changes height after the measurement:
+     fonts settle, a badge appears, the nav wraps. Being over by two pixels is
+     a page scrollbar on every screen, which is what this was. A flex column
+     has nothing to be wrong about. */
+  html { height: 100%; }
   body {
     margin: 0; color: var(--body);
+    height: 100%; display: flex; flex-direction: column; overflow: hidden;
     font: var(--fs-xl)/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background:
       linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
@@ -155,7 +178,26 @@
      an uncapped row puts the actions a foot away from what they act on. */
   /* Full width. A cap here left a third of a wide screen empty while a diff
      was scrolling inside a box, which is the wrong trade. */
-  main { position: relative; z-index: 1; padding: 20px 26px; }
+  /* Takes what the header leaves and scrolls inside itself. min-height:0 is
+     what lets it actually shrink: a flex item defaults to its content's
+     height, which would push the page taller than the window again. */
+  main {
+    position: relative; z-index: 1; padding: 20px 26px;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    /* A column as well as a flex item. The board asked for 100% of main and
+       then sat below the group bar and inside main's padding, so the total was
+       always taller than main by exactly the bar plus the padding. Percentage
+       heights cannot see their siblings; flex can. */
+    display: flex; flex-direction: column;
+  }
+  /* The views that fill what is left. Everything else in main keeps its own
+       height and these take the remainder, whichever one is showing. */
+  main > .board,
+  main > #stack,
+  main > #terms { flex: 1 1 auto; min-height: 0; }
+  /* A hidden view must not claim its share of the column. */
+  main > [hidden] { display: none !important; }
+  main > #terms { display: flex; flex-direction: column; }
 
   /* ── board ──────────────────────────────────────────── */
   /* One row, always. Seven columns wrapped onto a second row under the width
@@ -167,9 +209,11 @@
     display: flex; gap: var(--sp-5); align-items: stretch;
     /* Clear of the header rule above it, which the headings were touching. */
     overflow-x: auto; padding: 10px 0 8px;
-    /* The lanes scroll, not the page, so the board never grows past the window
-       and the page never gains a scrollbar of its own. */
-    height: calc(100dvh - var(--shell, 96px));
+    /* The lanes scroll, not the board. Sized by main's flex column rather than
+       by a percentage or by subtracting a measured header from the viewport:
+       a percentage cannot account for the group bar sitting above it, and the
+       measurement was always a couple of pixels out. */
+    min-height: 0;
   }
   /* Each lane scrolls its own cards, with its heading outside the scroll area.
      Scrolling the whole page instead took the headings off screen, and a
@@ -319,7 +363,8 @@
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-radius: var(--r-md);
-    padding: 8px 12px; margin-bottom: 7px; cursor: pointer;
+    padding: calc(8px * var(--density)) 12px;
+    margin-bottom: calc(7px * var(--density)); cursor: pointer;
     box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
   }
@@ -731,6 +776,35 @@
   /* In the terminal switcher, matched to the entry's own title. */
   .term-entry .pin { font-size: var(--fs-2xl); width: 24px; }
 
+  /* Work you started and left. Drawn back, not hidden: findable is the point
+     of the bucket, and not competing with what you are doing now is the point
+     of greying it. Restored on hover, since reading it is why you opened it. */
+  .cardgroup.dormant { opacity: .55; filter: saturate(.35); }
+  .cardgroup.dormant:hover { opacity: 1; filter: none; }
+  .cardgroup.dormant > summary .gname { font-style: italic; }
+
+  /* The subagent chip opens a list, so it has to look like something to press.
+     Everything else on a card is a label. */
+  .chip.sub { cursor: pointer; }
+  .chip.sub:hover { border-color: var(--teal); color: var(--head); }
+  .chip.sub.open { border-color: var(--teal); color: var(--head); }
+  /* The subagents themselves, under the card that spawned them. Indented to
+     the runner mark, so they read as belonging to the row above rather than as
+     rows in their own right: a subagent is not a card and must not look like
+     one. */
+  .subagents {
+    margin-top: 6px; padding-left: 26px;
+    border-left: 2px solid var(--stroke-dim); margin-left: 6px;
+  }
+  .stackrow .subagents { margin-left: 100px; }
+  .subagents .sub-row {
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    font-size: var(--fs-xs); color: var(--body); padding: 2px 0;
+  }
+  .subagents .sub-row.quiet { color: var(--dimmest); font-style: italic; }
+  .subagents .sub-kind { font-family: var(--mono); color: var(--chip-accent-text); }
+  .subagents .sub-age { color: var(--dimmest); font-family: var(--mono); margin-left: auto; }
+
   /* A tag, coloured from its own name by the hash the groups use, so the same
      tag looks the same wherever it appears. */
   .chip.tag {
@@ -800,7 +874,8 @@
     border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
   }
   .row {
-    display: flex; align-items: center; gap: var(--sp-5); padding: 15px 20px;
+    display: flex; align-items: center; gap: var(--sp-5);
+    padding: var(--row-y) var(--row-x);
     border-bottom: 1px solid rgba(37,80,111,.5); cursor: pointer;
     transition: background .14s;
   }
@@ -1053,7 +1128,7 @@
      terminal reaches the bottom of the window at any zoom or bar wrap. */
   .term-layout {
     display: flex; gap: var(--sp-4); align-items: stretch; min-width: 0;
-    height: calc(100dvh - var(--shell, 96px));
+    flex: 1 1 auto; min-height: 0;
     /* Nothing here may make the page itself scroll. A page scrollbar sits over
        the terminal, which is the overlap that keeps coming back. */
     overflow: hidden;
@@ -1219,6 +1294,14 @@
   }
   .seg button.on {
     background: var(--chip); color: var(--head); border-color: var(--stroke);
+  }
+  /* A multi-select segment. Its pills add up rather than replacing each other,
+     so an on one is marked more strongly: with an exclusive segment the single
+     highlight is unambiguous, and with several on at once it has to read as
+     chosen rather than merely last clicked. */
+  .seg.multi button.on {
+    border-color: var(--teal); color: var(--head);
+    box-shadow: inset 0 0 0 1px rgba(0,227,176,.25);
   }
   /* How many a pill would give you. Dimmer than its label, since it is the
      answer to a question you did not have to click to ask. */
@@ -1603,17 +1686,15 @@
       <span class="barlabel">show</span>
       <!-- Counts are filled in by paintStack. A filter you can see is empty
            before clicking it is one you do not click. -->
-      <div class="seg" id="stack-seg">
-        <button class="on" data-v="live">live <i class="pillcount"></i></button>
-        <!-- Two, because they are two different asks. `ready` finished its
-             turn and will wait all day. `wants me` includes an agent frozen
-             mid-tool that cannot do anything until you answer. One filter
-             holding both meant the urgent case was invisible inside a list of
-             the patient one. -->
-        <button data-v="ready">ready <i class="pillcount"></i></button>
-        <button data-v="wants">wants me <i class="pillcount"></i></button>
-        <button data-v="">everything <i class="pillcount"></i></button>
-      </div>
+      <!-- One pill per column, and they add up rather than replacing each
+           other. The board's columns already are the set of answers to "what
+           kind of attention does this want", so a second vocabulary here was
+           two names for one idea and neither of them the board's.
+
+           Ready alone by default. That is the list this view exists for: work
+           that has stopped and is waiting on you. Everything else is here when
+           you ask for it. Filled in by paintStackShow. -->
+      <div class="seg multi" id="stack-seg"></div>
       <input type="search" id="stack-q"
         placeholder="filter by name, path, runner or tag. #tag for that tag only"
         spellcheck="false">
@@ -1976,6 +2057,23 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
       </div>
       <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
         size in the page comes off one scale, so none of it is left behind.</span>
+    </div>
+    <!-- Separate from text size on purpose. Shrinking the type to fit more
+         rows on screen makes the rows harder to read, which is the wrong
+         trade: the names should stay legible and the room between them should
+         go. -->
+    <div class="field">
+      <label class="eyebrow" for="s-density">whitespace</label>
+      <div class="picker">
+        <select id="s-density">
+          <option value="1.35">roomy</option>
+          <option value="1">normal</option>
+          <option value="0.72">tight</option>
+          <option value="0.5">tighter</option>
+        </select>
+      </div>
+      <span class="hintline">How much room around things, without changing how big anything reads.
+        Tight fits about a third more rows on a screen.</span>
     </div>
 
     <!-- Grouping. The rule is the operator's, because their worktree layout
@@ -2534,9 +2632,62 @@ function activityChip(t) {
   // "Running Bash for 40 minutes" says something the tool name alone does not.
   const age = a.seconds > 5 ? ` ${ago(a.seconds)}` : "";
   const sub = a.subagents > 0
-    ? `<span class="chip sub" title="subagents running under this session">&#8618; ${a.subagents}</span>`
+    ? `<span class="chip sub" title="${esc(subagentTitle(a))}"
+         onclick="event.stopPropagation();toggleSubagents(this)"
+         >&#8618; ${a.subagents}</span>`
     : "";
   return `<span class="chip live ${esc(a.what)}">${label}${age}</span>${sub}`;
+}
+
+// What the count is made of, for the chip's tooltip. Named where the runner
+// says who they are, and honest when it does not: a runner that reports no id
+// moves the count and contributes no name, so this can be shorter than the
+// number beside it.
+function subagentTitle(a) {
+  const running = a.running || [];
+  if (!running.length) {
+    return `${a.subagents} subagent${a.subagents === 1 ? "" : "s"} running. ` +
+      "this runner does not say which. click to expand.";
+  }
+  const named = running.map(s => s.type || "unnamed").join(", ");
+  const missing = a.subagents - running.length;
+  return missing > 0
+    ? `${named}, and ${missing} this runner did not name. click to expand.`
+    : `${named}. click to expand.`;
+}
+
+// The subagents themselves, under the card that spawned them.
+//
+// Built on demand rather than always, because most cards have none and a card
+// is a row you scan past. Toggled on the chip, since the chip is the thing
+// that says there is something to open.
+function subagentList(a) {
+  const running = a.running || [];
+  const rows = running.map(s =>
+    `<div class="sub-row">
+       <span class="sub-kind">${esc(s.type || "unnamed")}</span>
+       <span class="sub-age">${ago(s.seconds)}</span>
+     </div>`).join("");
+  const missing = a.subagents - running.length;
+  // Said rather than hidden. A count that does not match the list is the kind
+  // of thing that reads as a bug, and the reason is worth one line.
+  const rest = missing > 0
+    ? `<div class="sub-row quiet">${missing} more, which this runner did not name</div>`
+    : "";
+  return `<div class="subagents">${rows}${rest}</div>`;
+}
+
+// Opens or closes the list under the card the chip belongs to.
+function toggleSubagents(chip) {
+  const card = chip.closest(".card, .stackrow");
+  if (!card) return;
+  const open = card.querySelector(":scope > .subagents");
+  if (open) { open.remove(); chip.classList.remove("open"); return; }
+  const id = card.dataset.id;
+  const t = (lastTasks || []).find(x => x.id === id);
+  if (!t || !t.activity) return;
+  card.insertAdjacentHTML("beforeend", subagentList(t.activity));
+  chip.classList.add("open");
 }
 
 // A card atrium cannot vouch for: nothing heard from the session, and no
@@ -2692,10 +2843,72 @@ function compiled(body, fallback, ...args) {
 
 // Builds the grouper and the sorter for one render, each already wrapped so a
 // throw on one card cannot stop the board drawing the rest.
+// The buckets, newest first. Dormant last, which is where it belongs both in
+// order and in how much of your attention it deserves.
+const RECENCY_ORDER = ["today", "yesterday", "this week", "this month", "dormant"];
+
+// Which bucket a card falls in, from when it was last active.
+//
+// Calendar boundaries, not rolling windows. Midnight is what makes something
+// "yesterday's work", and a rolling 24 hours would put this morning and last
+// night in the same bucket at 2am and different ones at 2pm.
+//
+// The buckets nest: "this week" means earlier this week and not today or
+// yesterday, since those have their own. That is what the operator asked for
+// and it is also the only way a card lands in exactly one place.
+function recencyBucket(t) {
+  const at = new Date(t.last_activity_at);
+  if (isNaN(at)) return "dormant";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (at >= startOfToday) return "today";
+
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  if (at >= startOfYesterday) return "yesterday";
+
+  // Seven days back from the start of today, which is what "this week" means
+  // in conversation. Not the week containing Monday: on a Monday morning that
+  // bucket would be empty and everything from the week just worked would read
+  // as older than it is.
+  const weekAgo = new Date(startOfToday);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  if (at >= weekAgo) return "this week";
+
+  const monthAgo = new Date(startOfToday);
+  monthAgo.setMonth(monthAgo.getMonth() - 1);
+  if (at >= monthAgo) return "this month";
+
+  return "dormant";
+}
+
 function grouper() {
   const p = groupingPrefs();
   if (!p.on) return null;
   groupingFault = "";
+
+  // When you last touched it, in buckets rather than as a duration.
+  //
+  // "2h15m" answers how stale something is and does not answer the question
+  // actually being asked, which is whether this is work from today or work you
+  // walked away from. Calendar days rather than rolling hours, because that is
+  // what a person means: something from 11pm last night is yesterday's at 1am,
+  // not "two hours ago".
+  //
+  // Everything past a month is dormant and drawn greyed. That bucket is the
+  // point of the whole grouping: work you started and left, which is invisible
+  // in a list ordered by anything else.
+  if (p.mode === "recency" && !String(p.by || "").trim()) {
+    return {
+      // A LIST of one. Every caller iterates this, because grouping by tag
+      // puts a card under several names, and a bare string iterates as its
+      // characters: "today" became five groups called t, o, d, a and y, each
+      // holding every card.
+      of: t => [recencyBucket(t)],
+      cmp: (a, b) => RECENCY_ORDER.indexOf(a) - RECENCY_ORDER.indexOf(b)
+    };
+  }
 
   // Grouping by tag needs no compiled function. A card can carry several, so
   // this is the one grouper that puts a card in more than one place, and the
@@ -2818,7 +3031,11 @@ function cardsHTML(cards, g, keyPrefix) {
     if (!name) return mine.map(cardHTML).join("");
     const key = keyPrefix + ":" + name;
     const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
-    return `<details class="cardgroup project"${shut}
+    // Work you started and left. Drawn back rather than hidden: the point of
+    // the bucket is that it is findable, and the point of greying it is that
+    // it does not compete with what you are doing now.
+    const cold = name === "dormant" ? " dormant" : "";
+    return `<details class="cardgroup project${cold}"${shut}
       style="--ghue:${groupHue(name)}">
       <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
         oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
@@ -2839,9 +3056,15 @@ function rememberProject(e, key) {
   localStorage.setItem("atrium.folded", JSON.stringify(folded));
 }
 
+// The last set of cards either view drew, so something built on demand can
+// find the card it belongs to without re-fetching. Written by both, because
+// only one of them runs at a time and both need the same answer.
+let lastTasks = [];
+
 async function renderBoard() {
   const { tasks } = await api("/v1/tasks");
   const all = tasks || [];
+  lastTasks = all;
   const g = grouper();
 
   const html = COLUMNS.map(col => {
@@ -2863,7 +3086,14 @@ async function renderBoard() {
     const shown = col.statuses.length === 1
       ? mine.length
       : col.statuses.filter(s => !foldedColumns().includes("group:" + s)).length;
-    const vacant = shown === 0 ? " vacant" : "";
+    // Approving everything means nothing can arrive here, so an empty
+    // permissions column is not "nothing is blocked right now", it is a column
+    // that cannot fill. It still shows if something IS in it: a shelved card
+    // or a never rule still blocks, and one of those sitting there while the
+    // header says everything is approved is the single most confusing thing
+    // the board could hide.
+    const moot = col.id === "needs-permission" && globalAuto && mine.length === 0;
+    const vacant = (shown === 0 || moot) ? " vacant" : "";
 
     // A column holding one status is a flat list. One holding several splits
     // into groups, each with its own count and its own clear. Project groups
@@ -3301,24 +3531,31 @@ function toggleColumn(id) {
 // Each entry is one axis, not one direction. Pressing the active pill reverses
 // it, so "newest activity" and "quietest" were the same pill twice, and
 // "needs me" was the `wants me` filter with extra steps.
+// The two clocks are named for what each measures rather than for the order it
+// puts them in. They are close enough to be confused: on a card that is ready,
+// the turn ended and the activity stopped at the same moment, so both read the
+// same number. They come apart on everything else. A card that is running has
+// been active recently and is waiting for nobody, and one frozen on a
+// permission for an hour was last active an hour ago and has wanted you for
+// that whole hour.
+//
+// `first` and `last` say which end of the axis is at the top, in words. The
+// label alone cannot: "last active" reads as most recent first, and reversed
+// it is the exact opposite under an unchanged label.
 const STACK_SORTS = {
-  // The two clocks, named for what each measures rather than for the order it
-  // puts them in. They are close enough to be confused: on a card that is
-  // ready, the turn ended and the activity stopped at the same moment, so both
-  // read the same number. They come apart on everything else. A card that is
-  // running has been active recently and is waiting for nobody, and a card
-  // that has been frozen on a permission for an hour was last active an hour
-  // ago and has wanted you for that whole hour.
   activity: {
     label: "last active",
+    first: "most recently active first", last: "quietest first",
     cmp: (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0)
   },
   waited: {
     label: "waiting on you",
+    first: "waiting longest first", last: "newest first",
     cmp: (a, b) => (b.wait_seconds || 0) - (a.wait_seconds || 0)
   },
   status: {
     label: "status",
+    first: "blocked, then ready, then working", last: "over and put down first",
     cmp: (a, b) => {
       const rank = t => t.status === "needs-permission" ? 0
         : t.status === "needs-input" ? 1
@@ -3327,16 +3564,22 @@ const STACK_SORTS = {
       return rank(a) - rank(b) || (a.idle_seconds || 0) - (b.idle_seconds || 0);
     }
   },
-  name: { label: "name", cmp: (a, b) => a.display_title.localeCompare(b.display_title) },
+  name: {
+    label: "name", first: "a to z", last: "z to a",
+    cmp: (a, b) => a.display_title.localeCompare(b.display_title)
+  },
   project: {
-    label: "project",
+    label: "project", first: "a to z", last: "z to a",
     cmp: (a, b) => (a.worktree || "").localeCompare(b.worktree || "")
   },
-  runner: { label: "runner", cmp: (a, b) => (a.runner || "").localeCompare(b.runner || "") },
+  runner: {
+    label: "runner", first: "a to z", last: "z to a",
+    cmp: (a, b) => (a.runner || "").localeCompare(b.runner || "")
+  },
   // Untagged last, so sorting by tag surfaces what you have filed rather than
   // what you have not.
   tag: {
-    label: "tag",
+    label: "tag", first: "a to z, untagged last", last: "untagged first, then z to a",
     cmp: (a, b) => {
       const at = (a.tags || []).join(" "), bt = (b.tags || []).join(" ");
       if (!at && !bt) return 0;
@@ -3346,6 +3589,55 @@ const STACK_SORTS = {
     }
   }
 };
+// Which columns the stack is showing, as column ids from COLUMNS.
+//
+// Ready alone by default. The stack exists to answer "what has stopped and is
+// waiting on me", and showing everything by default buried that in a list of
+// things that need nothing. Everything else is one click away.
+//
+// Additive rather than exclusive: the columns are already the set of answers
+// to "what kind of attention does this want", so wanting two of them at once
+// is ordinary and used to need a separate word invented for each combination.
+const STACK_SHOW_KEY = "atrium.stack.show";
+
+function stackShow() {
+  try {
+    const v = JSON.parse(localStorage.getItem(STACK_SHOW_KEY) || "null");
+    if (Array.isArray(v)) return new Set(v);
+  } catch (e) {}
+  return new Set(["needs-input"]);
+}
+
+function setStackShow(next) {
+  localStorage.setItem(STACK_SHOW_KEY, JSON.stringify([...next]));
+  paintStackShow();
+  paintStack();
+}
+
+// Clicking a pill adds or removes that column. Turning the last one off shows
+// everything rather than nothing: an empty list with no explanation reads as
+// broken, and "none of them" is not a thing anybody wants to look at.
+function toggleStackShow(id) {
+  const on = stackShow();
+  if (on.has(id)) on.delete(id); else on.add(id);
+  setStackShow(on);
+}
+
+function paintStackShow() {
+  const on = stackShow();
+  const all = on.size === 0;
+  document.getElementById("stack-seg").innerHTML =
+    COLUMNS.map(c =>
+      `<button class="${on.has(c.id) ? "on" : ""}" data-v="${esc(c.id)}"
+        onclick="toggleStackShow('${esc(c.id)}')"
+        title="${esc(c.label)}: click to add or remove"
+        >${esc(c.label)} <i class="pillcount"></i></button>`).join("") +
+    `<button class="${all ? "on" : ""}" data-v=""
+       onclick="setStackShow(new Set())"
+       title="every card, whatever state it is in"
+       >everything <i class="pillcount"></i></button>`;
+}
+
 // Activity by default. This is the "what has been going on" view, and the
 // board is where you go to see what is where.
 let stackSort = "activity";
@@ -3359,14 +3651,25 @@ function setStackSort(key) {
   paintStack();
 }
 
+// The arrows were the wrong way round: reversing put the largest value first
+// and drew an up arrow. That is the reading everybody has, so it made a
+// correctly sorted list look broken, which is worse than no arrow at all.
+//
+// Each sort also says which end it is showing, because the quantity alone does
+// not. "last active" reads as most recent first, and reversed it is the exact
+// opposite while the label is unchanged.
 function paintStackSort() {
   document.getElementById("stack-sort").innerHTML =
-    Object.entries(STACK_SORTS).map(([k, s]) =>
-      `<button class="${k === stackSort ? "on" : ""}" data-sort="${k}"
+    Object.entries(STACK_SORTS).map(([k, s]) => {
+      const on = k === stackSort;
+      // The cmp puts the first-listed end first, so reversing shows the other.
+      const end = on ? (stackDesc ? s.last : s.first) : "";
+      return `<button class="${on ? "on" : ""}" data-sort="${k}"
         onclick="setStackSort('${k}')"
-        title="sort by ${s.label}${k === stackSort ? ", again to reverse" : ""}"
-        >${s.label}${k === stackSort ? (stackDesc ? " ↑" : " ↓") : ""}
-         <i class="pillcount"></i></button>`).join("");
+        title="${on ? end + ". click again to reverse" : "sort by " + s.label}"
+        >${s.label}${on ? (stackDesc ? " &#8595;" : " &#8593;") : ""}
+         <i class="pillcount"></i></button>`;
+    }).join("");
 }
 
 // Writes a count into the pills of one segment, keyed by the pill's value.
@@ -3388,13 +3691,17 @@ function pillCounts(segID, counts) {
 
 async function renderStack() {
   try { allStack = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  lastTasks = allStack;
   paintStack();
 }
 
 function paintStack() {
   const q = (document.getElementById("stack-q").value || "").toLowerCase();
-  const only = document.querySelector("#stack-seg .on").dataset.v;
-  const over = t => ["done", "dead"].includes(t.status);
+  const show = stackShow();
+  // Which statuses the chosen columns hold, resolved from COLUMNS so the two
+  // views cannot disagree about what a column contains.
+  const wanted = new Set();
+  COLUMNS.forEach(c => { if (show.has(c.id)) c.statuses.forEach(s => wanted.add(s)); });
 
   // `#tag` means that tag exactly, so filtering to `#prs` does not also drag
   // in a card whose path happens to contain the letters. Anything else is a
@@ -3410,22 +3717,21 @@ function paintStack() {
   };
 
   const list = allStack.filter(t => {
-    if (only === "live" && over(t)) return false;
-    if (only === "ready" && t.status !== "needs-input") return false;
-    if (only === "wants" && !isWaiting(t)) return false;
+    // No column chosen means every card, which is what the `everything` pill
+    // sets. See toggleStackShow: an empty list with no explanation reads as
+    // broken.
+    if (wanted.size && !wanted.has(t.status)) return false;
     return matchesText(t);
   });
 
-  // What each filter would give you, counted against the same search text, so
-  // the numbers answer "is there anything over there" rather than describing
-  // some other list.
+  // What each pill would ADD, counted against the same search text. A count
+  // that described the current list would be the same number on every pill.
   const searched = allStack.filter(matchesText);
-  pillCounts("stack-seg", {
-    live: searched.filter(t => !over(t)).length,
-    ready: searched.filter(t => t.status === "needs-input").length,
-    wants: searched.filter(isWaiting).length,
-    "": searched.length
+  const counts = { "": searched.length };
+  COLUMNS.forEach(c => {
+    counts[c.id] = searched.filter(t => c.statuses.includes(t.status)).length;
   });
+  pillCounts("stack-seg", counts);
   // Only on the sort that has an empty state worth knowing about. A count on
   // name or runner would be the same total written four more times.
   pillCounts("stack-sort", { waited: searched.filter(isWaiting).length });
@@ -3494,6 +3800,36 @@ function stackGroupsHTML(list, g) {
   }).join("");
 }
 
+// The big number follows the sort.
+//
+// It used to show how long a card had been waiting when it was waiting, and
+// how long it had been quiet otherwise. Two quantities in one column, which
+// meant a list sorted correctly by one of them could still read as out of
+// order, because half the rows were showing the other. On a ready card the two
+// track each other closely enough to hide it most of the time, which is worse
+// than obvious: the list looks wrong occasionally and for no visible reason.
+//
+// Sorting by a quantity now shows that quantity, so the column is always
+// monotonic under the active sort. Sorting by something that is not a duration
+// falls back to the old rule, since there is no sorted quantity to agree with.
+function bigNumber(t) {
+  if (stackSort === "activity") return t.idle_seconds;
+  if (stackSort === "waited") return t.wait_seconds;
+  return isWaiting(t) ? t.wait_seconds : t.idle_seconds;
+}
+
+function bigNumberMeans(t) {
+  if (stackSort === "activity") return "how long since it last did anything";
+  if (stackSort === "waited") {
+    return isWaiting(t)
+      ? "how long it has been waiting for you"
+      : "not waiting for anything";
+  }
+  return isWaiting(t)
+    ? "how long it has been waiting for you"
+    : "how long since it last did anything";
+}
+
 // One card as a row. The same facts the board shows, in an order rather than a
 // column, with the age reading as what it is for the status it is in.
 //
@@ -3506,13 +3842,13 @@ function stackRow(t) {
   const dark = isOutOfContact(t);
   return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
       t.pinned ? " pinned" : ""}"
+    data-id="${t.id}"
     onclick="openTask('${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${pinStar(t)}
     ${runnerMark(t.runner)}
-    <div class="wait ${w ? "" : "quiet"}"
-      title="${w ? "how long it has been waiting for you" : "how long since it last did anything"}"
-      >${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</div>
+    <div class="wait ${w ? "" : "quiet"}" title="${esc(bigNumberMeans(t))}"
+      >${ago(bigNumber(t))}</div>
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}<i class="since"
         title="when atrium first saw this card. not when the session started: a session
@@ -5122,9 +5458,30 @@ function applyUiScale() {
 }
 applyUiScale();
 
+// How much room around things, separately from how big they are.
+//
+// Held in the browser rather than on the daemon, like the text scale and for
+// the same reason: it is about the screen being looked at, and two people on
+// two screens want different answers to it.
+const DENSITY_KEY = "atrium.density";
+
+function density() {
+  const v = Number(localStorage.getItem(DENSITY_KEY));
+  return v > 0 ? v : 1;
+}
+
+function applyDensity() {
+  document.documentElement.style.setProperty("--density", String(density()));
+}
+applyDensity();
+
 document.getElementById("s-cardsize").addEventListener("change", e => {
   localStorage.setItem(UI_SCALE_KEY, e.target.value);
   applyUiScale();
+});
+document.getElementById("s-density").addEventListener("change", e => {
+  localStorage.setItem(DENSITY_KEY, e.target.value);
+  applyDensity();
 });
 
 // The grouping controls. Blank code means the defaults, so the boxes are
@@ -5162,6 +5519,8 @@ function paintGroupSegs() {
   const opts = [
     ["project", "by project", "cut the cards into projects, read from the worktree path"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
+    ["recency", "by when",
+      "today, yesterday, this week, this month, and everything older, which is dormant"],
     ["off", "off", "one flat list"]
   ];
   const html = opts.map(([v, label, title]) =>
@@ -5882,6 +6241,7 @@ function paintSettings() {
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-cardsize").value = String(uiScale());
+  document.getElementById("s-density").value = String(density());
   paintGrouping();
   paintSkipped();
   // Fetched when the gear opens rather than on every poll: a share's state
@@ -7090,7 +7450,7 @@ function connectTerm(taskID) {
   };
 
   term.onData(d => send({ t: "in", d }));
-  // Resize is handled once, globally, by the observers near measureShell.
+  // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.
 }
 
@@ -7404,8 +7764,9 @@ async function saveFixture() {
     // the next start would open a second one beside it.
     task_id: known ? known.task_id : ""
   };
+  let saved;
   try {
-    await api(id ? `/v1/fixtures/${id}` : "/v1/fixtures", {
+    saved = await api(id ? `/v1/fixtures/${id}` : "/v1/fixtures", {
       method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
@@ -7415,6 +7776,23 @@ async function saveFixture() {
   }
   dlg.close();
   renderFixtures();
+
+  // A fixture is a terminal that comes up with the daemon, which means a new
+  // one does nothing until the next restart. Nobody sets one up in order to
+  // wait for that: they set it up because they want the terminal. So it offers
+  // to start it, once, at the moment it was asked for.
+  //
+  // Only on create, and only when enabled. Editing an existing fixture is
+  // usually changing a detail on something already running, and asking then
+  // would be offering a second copy.
+  if (id || !body.enabled) return;
+  const newID = (saved && saved.id) || "";
+  if (!newID) return;
+  if (!await confirmUser("start it now?",
+    "It comes up with atrium from now on. Starting it now means you do not have to " +
+    "restart the daemon to get the terminal you just asked for.",
+    "start it", "fixture-start-now")) return;
+  startFixtureNow(newID);
 }
 
 async function deleteFixture() {
@@ -7976,31 +8354,17 @@ async function doLaunch() {
   switchView("board");
 }
 
-// Publishes the real height of everything above the view, as --shell.
-//
-// The terminal has to reach the bottom of the window, and the header is not a
-// fixed height: the nav wraps to a second row on a narrow window and the font
-// scales with zoom. A hardcoded calc() leaves a gap at one size and overflows
-// at another.
-function measureShell() {
-  const main = document.querySelector("main");
-  if (!main) return;
-  // Where the content actually starts, plus what sits below it. Summing the
-  // header's height and a padding assumed to be symmetric was off by whatever
-  // else the page put in between, and being a few pixels over is a page
-  // scrollbar that then overlaps the terminal.
-  const top = main.getBoundingClientRect().top + window.scrollY;
-  const below = parseFloat(getComputedStyle(main).paddingBottom) || 0;
-  document.documentElement.style.setProperty("--shell", Math.ceil(top + below) + "px");
-}
-measureShell();
-addEventListener("resize", () => { measureShell(); onTermResize(); });
+// The page is a flex column that fills the window, so nothing measures the
+// header any more. What is left is telling the terminal to re-fit, since
+// xterm.js sizes itself in characters and only finds out its box changed if
+// something says so.
+addEventListener("resize", onTermResize);
 // The header changes height when a badge appears or the nav wraps, neither of
-// which fires a resize.
+// which fires a window resize, and both of which change the terminal's box.
 if (window.ResizeObserver) {
   const header = document.querySelector("header");
   if (header) {
-    new ResizeObserver(() => { measureShell(); onTermResize(); }).observe(header);
+    new ResizeObserver(() => onTermResize()).observe(header);
   }
   // The pane itself, so switching views or opening a permission strip inside
   // it re-fits without waiting for a window resize that will never come.
@@ -8288,7 +8652,10 @@ paintCopyMode();
 
 wireFilters("rules-seg", "rules-q", paintRules);
 wireFilters("hist-seg", "hist-q", paintHistory);
-wireFilters("stack-seg", "stack-q", paintStack);
+// The show pills are built and wired by paintStackShow, since each is a
+// toggle rather than one of a set. Only the search box needs wiring here.
+paintStackShow();
+document.getElementById("stack-q").addEventListener("input", paintStack);
 paintStackSort();
 paintGroupSegs();
 wireSeg("d-ev-seg", paintTimeline);
