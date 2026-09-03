@@ -1,10 +1,18 @@
 package daemon
 
 import (
+	"errors"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 )
+
+// asExitError unwraps to an *exec.ExitError, whose Stderr is the only useful
+// half of a failed command's error.
+func asExitError(err error, target **exec.ExitError) bool {
+	return errors.As(err, target)
+}
 
 // Proving a launched runner is actually running.
 //

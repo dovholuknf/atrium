@@ -39,6 +39,9 @@ type candidate struct {
 	// atrium is broken, so unknown is left empty and said out loud.
 	Args       []string `json:"args"`
 	ResumeArgs []string `json:"resume_args"`
+	// ExitKeys is how this runner is asked to quit. Known for the ones here,
+	// since it is the same everywhere the tool runs.
+	ExitKeys []string `json:"exit_keys"`
 	// Confirm is what still needs a human, or "" when nothing does.
 	Confirm string `json:"confirm"`
 }
@@ -51,24 +54,28 @@ var knownRunners = []candidate{
 	{
 		ID: "claude", Label: "claude code", Cmd: "claude",
 		ResumeArgs: []string{"--resume", "{resume}"},
+		ExitKeys:   []string{"ctrl-d", "ctrl-d"},
 	},
 	{
 		ID: "codex", Label: "codex", Cmd: "codex",
+		ExitKeys: []string{"ctrl-d"},
 		Confirm: "codex takes no arguments to open interactively. its resume flag is not " +
 			"known here, so picking a conversation back up needs that filled in.",
 	},
 	{
 		ID: "ollama", Label: "ollama", Cmd: "ollama",
-		Args: []string{"run"},
+		Args: []string{"run"}, ExitKeys: []string{"ctrl-d"},
 		Confirm: "ollama needs a model after run, and has no concept of resuming a " +
 			"conversation, so a shelved ollama card starts fresh.",
 	},
 	{
 		ID: "aider", Label: "aider", Cmd: "aider",
-		Confirm: "aider's arguments depend on how you use it, so nothing is assumed.",
+		Confirm: "aider's arguments depend on how you use it, so nothing is assumed, " +
+			"including how it wants to be asked to exit.",
 	},
 	{
 		ID: "shell", Label: "a shell", Cmd: shellName(),
+		ExitKeys: []string{"exit"},
 		Confirm: "a bare shell reports nothing about itself, so its card shows the " +
 			"terminal and nothing else.",
 	},

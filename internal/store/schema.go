@@ -347,6 +347,18 @@ var migrations = []struct {
 			`UPDATE harness SET exit_keys = '["exit","enter"]' WHERE id = 'shell'`,
 		},
 	},
+	{
+		// A command to run before the runner, whose environment the runner
+		// inherits.
+		//
+		// The habit this replaces: open a terminal, run a shell function that
+		// puts some toolchain on PATH, then start an agent from that shell so
+		// it can see them. That works and cannot be done from a board.
+		name: "0017_harness_prepare",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN prepare TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

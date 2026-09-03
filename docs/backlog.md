@@ -12,17 +12,9 @@ with a directory picker, a message channel into a running session, and a wind-do
 
 `atrium hub` and `atrium serve` are untouched and still work.
 
-The gaps below are ordered by what would change day to day. The two that block existing features from working at
-all are first: neither is code, both are wiring.
+The gaps below are ordered by what would change day to day.
 
 ## Next
-
-### Wire the activity hooks into settings.json
-
-`atrium-activity-hook.ps1` exists and `/activity` is tested end to end, but nothing calls it yet, so every
-`running` card looks the same whether its session is working or sitting at a prompt.
-
-Four entries. See `docs/hooks.md` for what goes where and why.
 
 ### Small interface debts
 
@@ -52,25 +44,6 @@ through the Stop hook, and a supervised one by being typed straight into its ter
 /v1/tasks/{id}/message` is the only way to send one, so in practice it means curl.
 
 A box on the card is the whole job.
-
-### Group cards by project, however the operator wants
-
-A card shows its leaf directory, so `dotfiles` and `targetted-releases` sit next to each other with nothing
-saying which repo either belongs to. With several worktrees per repo, the column is a list of names that only
-mean something if you already know them.
-
-Grouping by project is the fix, and the grouping rule should not be atrium's to decide: the operator already has
-a worktree layout with its own conventions. Two hooks, both plain JavaScript held in the browser:
-
-- **group a card**, `(task) => string`
-- **order the groups**, `(a, b) => number`
-
-With defaults that derive a project from the worktree path, so it works before anyone writes anything. A colour
-per group from a hash of its name, so it is stable without configuration.
-
-Running operator-supplied JavaScript in the operator's own browser on their own machine is not a security
-question, but a broken function must never take the board down: wrap it, fall back to the default, and show the
-error.
 
 ### A runner atrium can ask for help
 
@@ -118,8 +91,13 @@ Worth doing last, and worth keeping manual status override as the escape hatch.
 `atrium-stop-hook.ps1` exists and the `/stop` endpoint it talks to is tested. It is not registered in
 `settings.json`, so a message queued for an idle session sits in the queue.
 
-Left off on purpose until the behaviour is understood well enough to want it. A Stop hook that blocks makes a
-session keep working, so getting it wrong means sessions that will not stop.
+Deliberately the one hook the board does not offer to install. A Stop hook that blocks makes a session keep
+working, so getting it wrong means sessions that will not stop. Turning that into a button would be handing out
+a way to hang every session on the machine.
+
+Making it a subcommand the way the activity hooks now are is the smaller half of the job, and worth doing
+whenever the behaviour is wanted: the script holds a machine-specific path, which is exactly what the
+subcommand removes.
 
 ## Parked
 
@@ -160,8 +138,9 @@ and already gated, which is what joining was for.
 
 ## Waiting on something external
 
-- **Codex and ollama are configured but disabled.** Their command lines were never confirmed on this machine, and
-  guessing at an invocation would produce a runner that fails on first use.
+- **Codex and ollama ship disabled.** Both have now been launched on this machine, so the invocations are known,
+  but the seeded rows stay off: a fresh database should not offer a runner that is not installed. Discovery
+  reports what is actually on PATH at startup, which is the signal to turn one on.
 - **Rule import for anything but Claude Code.** Claude Code's `settings.json` is understood. No other harness has
   a permission config whose location and shape are known, so the generic path is atrium's own JSON export.
 - **Notification buttons cap at two.** Chrome on Windows renders at most two actions, so it is approve and block.
@@ -198,7 +177,19 @@ Kept short, because the point of the list is what is left. Recorded so the same 
 - Stopping the daemon without killing it, and a launch that proves the runner started.
 - A narrow layout, and the board served with no-store so a rebuild is always what is on screen.
 - Every browser alert, confirm and prompt replaced with the app's own dialog, and no dialog that follows another
-  dialog.
+  dialog. The repeatable ones carry "do not ask me again", and the gear lists what that turned off and turns it
+  back on. The ones that throw something away have no such tick.
+- Grouping cards by project, on rules the operator writes: a function that names a card's group and one that
+  orders the groups, both plain JavaScript in the browser, both defaulted so it works with nothing configured.
+  A colour per group, hashed from its name, overridable. On the board and on the stack, off one setting, with an
+  on/off control on both screens rather than only in the gear.
+- The stack as the first tab: every card as one ordered list, sorted by activity, waiting, status, name, project
+  or runner, with one axis per pill.
+- Per-runner exit keys, so asking a runner to quit sends what that runner actually quits on.
+- A prepare command per harness, so a shell function that puts a toolchain on PATH can reach a launched agent.
+- Runner discovery against the daemon's own PATH at startup, reported in the log.
+- The activity hooks as `atrium hook --event <name>`, and a board that reports which are registered and writes
+  the missing ones into `settings.json`. What used to be a documentation page is a button.
 
 ## Review
 

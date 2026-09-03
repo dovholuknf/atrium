@@ -457,6 +457,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/stop", d.handleStop)
 	agentMux.HandleFunc("/activity", d.handleActivity)
+	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
@@ -478,6 +479,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	log.Printf("[atrium] agents  -> http://localhost%s", d.opts.AgentAddr)
 	log.Printf("[atrium] board   -> http://localhost%s", d.opts.HumanAddr)
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
+
+	// Written once both listeners are bound, so the file never advertises an
+	// address that failed to open.
+	d.writeLocation()
+	defer d.clearLocation()
 
 	// A new database is indistinguishable from every card and every rule having
 	// vanished. WORKTREE_ROOT unset once sent the path to the home directory,

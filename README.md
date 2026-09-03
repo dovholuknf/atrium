@@ -159,6 +159,8 @@ carrying that token instead of refusing everything but loopback.
 | `atrium stop` | Ask a running daemon to wind down. Not the same as killing it. |
 | `atrium join` | Put the session you are in on the board and start gating it, without a restart. |
 | `atrium leave` | Stop gating it and mark its card done. |
+| `atrium launch` | Put a directory on the board and start a runner in it, for scripts that make worktrees. |
+| `atrium hook` | Report one activity event. Run by Claude Code, wired for you from the runners tab. |
 | `atrium hub` | The v1 terminal broker. Still works, untouched. |
 | `atrium agent` | The v1 MCP client side of that loop. |
 | `atrium serve` / `status` / `watch` | Read-only views over an external worktree ledger. |

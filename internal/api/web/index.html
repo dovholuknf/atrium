@@ -150,11 +150,38 @@
      em against it, so a column header, a group name and a card title move
      together instead of drifting apart at any scale but one. */
   .board {
-    display: flex; gap: var(--sp-5); align-items: flex-start;
-    overflow-x: auto; padding-bottom: 8px;
-
+    display: flex; gap: var(--sp-5); align-items: stretch;
+    /* Clear of the header rule above it, which the headings were touching. */
+    overflow-x: auto; padding: 10px 0 8px;
+    /* The lanes scroll, not the page, so the board never grows past the window
+       and the page never gains a scrollbar of its own. */
+    height: calc(100dvh - var(--shell, 96px));
   }
-  .board .col { flex: 1 1 0; min-width: 230px; }
+  /* Each lane scrolls its own cards, with its heading outside the scroll area.
+     Scrolling the whole page instead took the headings off screen, and a
+     column of cards with nothing saying which lane they are in has lost the
+     one thing the lane is for. Sticky was not an option: .board scrolls
+     sideways, which makes it a scroll container and stops sticky working
+     against the window.
+
+     Bounded height also ends the tall-column problem, since a lane with thirty
+     cards is now a lane with a scrollbar. */
+  /* Height from the board, which already accounts for its own padding, rather
+     than recomputing it and being taller than the box it sits in. */
+  .board .col {
+    flex: 1 1 0; min-width: 230px;
+    display: flex; flex-direction: column; max-height: 100%;
+  }
+  .board .col > .cards {
+    overflow-y: auto; overflow-x: hidden; min-height: 0;
+    padding-right: 4px; margin-right: -4px;
+    scrollbar-color: var(--stroke-dim) transparent;
+  }
+  /* Cards side by side once a lane is wide enough, rather than one tall
+     ribbon. A lane holding most of the work gets most of the width. */
+  .board .col > .cards { display: grid; gap: 0 var(--sp-3); align-content: start;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .board .col > .cards > .cardgroup { grid-column: 1 / -1; }
   /* A folded column shrinks to its header so the rest get the room. */
   .board .col.folded { flex: 0 0 auto; min-width: 0; }
   .col {
@@ -499,6 +526,9 @@
   .row.line code { font: var(--fs-base)/1.5 var(--mono); color: var(--body); }
   .row.line .grow { flex: 1; min-width: 0; }
   .row.line .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Actions keep their size. Left to shrink they lose their labels before the
+     text column gives up any of its width. */
+  .row.line button { flex: none; }
   .row.line .by { color: var(--dimmest); font-size: var(--fs-base); flex: none; }
   /* Whether a runner's command is really there. */
   .row.line .by.found { color: var(--chip-accent-text); }
@@ -512,6 +542,39 @@
     letter-spacing: .01em;
   }
   .row.line .asker { flex: none; max-width: 150px; }
+  /* The stack: one row per card, the same facts the board shows. */
+  .stackrow { cursor: pointer; align-items: center; }
+  .stackrow:hover { background: var(--lift); }
+  .stackrow.attn { border-left: 3px solid var(--warn); }
+  .stackrow .wait { flex: none; min-width: 62px; font-family: var(--mono); color: var(--warn); }
+  .stackrow .wait.quiet { color: var(--dimmest); }
+  .stackrow .who { flex: 1 1 320px; min-width: 0; }
+  .stackrow .who b { display: flex; align-items: center; gap: var(--sp-2); color: var(--head); }
+  .stackrow .who span {
+    display: block; font: var(--fs-xs) var(--mono); color: var(--dimmest);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .stackrow .who .why { font-family: var(--sans); color: var(--dim); font-style: italic; }
+
+  /* A project group in the stack. Its panel carries the colour down the left
+     edge, the same as a group on the board. */
+  .stackgroup { margin-bottom: var(--sp-4); }
+  .stackgroup > summary {
+    display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
+    list-style: none; padding: var(--sp-2) 3px; user-select: none;
+  }
+  .stackgroup > summary::-webkit-details-marker { display: none; }
+  .stackgroup > summary::before {
+    content: "\25B8"; color: hsl(var(--ghue) 65% 60%); width: 11px;
+    display: inline-block; transition: transform .15s;
+  }
+  .stackgroup[open] > summary::before { transform: rotate(90deg); }
+  .stackgroup > summary .gname {
+    color: hsl(var(--ghue) 70% 72%); font: 600 var(--fs-base) var(--mono);
+  }
+  .stackgroup > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
+  .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
+  .stackgroup > .panel { border-left: 3px solid hsl(var(--ghue) 65% 55% / .75); }
   /* A decision nobody saw. Marked apart from a rule, which somebody wrote. */
   .by .auto { color: var(--warn); font-weight: 600; }
   .row.line button { padding: 4px 12px; font-size: var(--fs-base); flex: none; }
@@ -637,6 +700,9 @@
   .term-layout {
     display: flex; gap: var(--sp-4); align-items: stretch; min-width: 0;
     height: calc(100dvh - var(--shell, 96px));
+    /* Nothing here may make the page itself scroll. A page scrollbar sits over
+       the terminal, which is the overlap that keeps coming back. */
+    overflow: hidden;
   }
   .term-list {
     flex: 0 0 260px; display: flex; flex-direction: column; gap: var(--sp-3);
@@ -745,7 +811,7 @@
   details > summary.col-head .help { margin-left: 2px; }
   /* The bubble sits against its label. The panel itself is positioned in JS,
      because CSS alone cannot know whether it would fall off the window. */
-  dialog#ask { width: min(560px, 94vw); }
+  dialog#ask { width: min(700px, 94vw); }
   dialog#ask .dlg-head { border-bottom: none; padding-bottom: 0; }
   .asktext {
     font-size: var(--fs-md); line-height: 1.6; color: var(--body);
@@ -754,7 +820,10 @@
   .asktext code {
     display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
     background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
-    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); word-break: break-all;
+    /* Breaks at the spaces first and only splits a token that would overflow
+       on its own. break-all cut `--event` in half with room to spare. */
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    word-break: normal; overflow-wrap: anywhere;
   }
   .asktext b { color: var(--head); font-weight: 600; }
   dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
@@ -786,6 +855,9 @@
     text-transform: uppercase; color: var(--dimmest); flex: none;
     min-width: 52px;
   }
+  /* A second labelled bank on the same row needs a bigger gap than the one
+     between pills, or "group" reads as another sort pill. */
+  .filters .barlabel:not(:first-child) { margin-left: var(--sp-4); min-width: 0; }
   .seg { display: flex; gap: var(--sp-1); }
   .seg button {
     padding: 6px 12px; font-size: var(--fs-sm); background: transparent;
@@ -810,15 +882,24 @@
   #held.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
   #held:hover { border-color: var(--teal); }
 
-  /* Anchored bottom right rather than centred, and click-through everywhere
-     except the toasts themselves, so a dialog underneath stays usable. */
+  /* Bottom right, and click-through everywhere except the toasts themselves,
+     so a dialog underneath stays usable.
+     column-reverse so the newest is nearest the corner and the older ones
+     rise away from it, rather than the stack shifting under the pointer as
+     one arrives. */
+  /* Every one of these fights a default the popover UA stylesheet sets:
+     inset 0, auto margins, a border, padding, and fit-content sizing that
+     would centre the host in the viewport with a box around it. */
   #toasts {
-    position: fixed; right: 20px; bottom: 20px; left: auto; top: auto;
+    position: fixed; right: 20px; bottom: 20px;
+    left: auto; top: auto; width: auto; height: auto; z-index: 200;
     margin: 0; padding: 0; border: none; background: none; overflow: visible;
-    max-width: min(420px, 88vw); max-height: none; pointer-events: none;
+    max-width: min(420px, 88vw); pointer-events: none;
     display: flex; flex-direction: column-reverse; gap: var(--sp-3);
   }
-  #toasts:not([open]) { display: none; }
+  /* The host is shown for the life of the page, so empty is the usual state
+     and has to take no space and catch no clicks. */
+  #toasts:empty { display: none; }
   #toasts .toast { pointer-events: auto; }
   .toast {
     display: flex; align-items: flex-start; gap: var(--sp-4); cursor: pointer;
@@ -900,7 +981,31 @@
     border: 1px solid var(--stroke); border-radius: var(--r-lg);
     box-shadow: var(--shadow-dialog);
   }
+  /* For a dialog whose rows are meant to be read down as a table, or whose
+     content is commands. A wrapped command has to be reassembled before it
+     can be trusted, so the width buys correctness. Grows with the screen
+     rather than stopping at a fixed size, since the whole point is fitting a
+     line that would otherwise wrap. */
+  dialog.wide { width: min(1280px, 96vw); }
   dialog::backdrop { background: rgba(4,11,20,.74); backdrop-filter: blur(3px); }
+  /* One command, with its own heading and its own copy button. Separated
+     rather than run together, because they are pasted one at a time into
+     different places. */
+  .step { margin-bottom: var(--sp-4); }
+  .steptop {
+    display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: 6px;
+  }
+  .steptop b { font-size: var(--fs-md); color: var(--head); }
+  pre.code {
+    margin: 0; padding: 12px 14px; overflow-x: auto;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-md); white-space: pre;
+  }
+  /* A path is there to be pasted somewhere else, so it carries its own copy
+     button rather than being selected by hand. */
+  .copypath { display: inline-flex; align-items: center; gap: 6px; }
+  .copypath button { padding: 2px 8px; font-size: var(--fs-xxs); }
   .dlg-head {
     padding: 18px 22px 15px; border-bottom: 1px solid var(--stroke-dim);
     display: flex; align-items: flex-start; gap: var(--sp-4);
@@ -1057,8 +1162,11 @@
   <div class="bar">
     <h1 class="wordmark accent-text">Atrium</h1>
     <nav>
-      <div class="tab on" data-view="board">board</div>
-      <div class="tab" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
+      <!-- Stack first and open by default. One ordered list answers "what
+           should I look at next"; the board answers "what is where", which is
+           the second question. -->
+      <div class="tab on" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
+      <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
       <div class="tab" data-view="runners">runners</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"></span></div>
@@ -1074,8 +1182,38 @@
 <div id="halted"><strong>halted</strong><span id="halt-t"></span></div>
 
 <main>
-  <div id="board" class="board"></div>
-  <div id="stack" hidden></div>
+  <!-- The board has no sort: a column IS the order. Grouping is the one thing
+       here worth reaching without opening the gear. -->
+  <div class="filters" id="board-bar" hidden>
+    <span class="barlabel">group</span>
+    <div class="seg groupseg" id="board-group"></div>
+  </div>
+  <div id="board" class="board" hidden></div>
+  <!-- Every card as one list. The board answers "what is where"; this answers
+       "what should I look at next", which is the question with an order. -->
+  <div id="stack">
+    <div class="filters">
+      <span class="barlabel">show</span>
+      <div class="seg" id="stack-seg">
+        <button class="on" data-v="live">live</button>
+        <button data-v="wants">wants me</button>
+        <button data-v="">everything</button>
+      </div>
+      <input type="search" id="stack-q" placeholder="filter by name, path or runner" spellcheck="false">
+      <span class="matchcount" id="stack-match"></span>
+    </div>
+    <!-- Sort and group are two different questions, so two controls. Sorting
+         orders the rows; grouping decides whether they are cut into projects
+         first. Folding grouping into the sort pills would make picking a group
+         rule mean giving up the sort. -->
+    <div class="filters">
+      <span class="barlabel">sort by</span>
+      <div class="seg" id="stack-sort"></div>
+      <span class="barlabel">group</span>
+      <div class="seg groupseg" id="stack-group"></div>
+    </div>
+    <div id="stack-list"></div>
+  </div>
   <!-- Built once. Only the list bodies are refreshed, so a filter you are
        typing into never gets rebuilt out from under you. -->
   <div id="perms" hidden>
@@ -1212,8 +1350,56 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <!-- Runners found on PATH that have no row yet. Offered, never added on
          their own: what to run is a decision. -->
     <div id="discovered"></div>
+
   </div>
 </main>
+
+<!-- The hooks, reached from the claude row rather than sitting under it.
+     They belong WITH claude and not TO that row: they apply to every claude
+     on this machine, including ones atrium never started, and they survive
+     the row being disabled or deleted. A chip that opens this says the first
+     part; a section nested under the row would have claimed the second. -->
+<!-- Wide, because a row is a hook name, what it buys, its state and two
+     buttons. Wrapped onto two lines that stops being a table you can read
+     down and becomes five paragraphs. -->
+<dialog id="hooks" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><h2>claude code hooks</h2></div>
+    <button onclick="document.getElementById('hooks').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline" style="margin:0 0 12px">
+      What atrium knows about a session it learns from these. Without them a card says
+      <b>running</b> whether the session is grinding through a build or sitting at a prompt.
+      They cover every claude on this machine, not only the ones atrium starts.
+    </p>
+    <div id="hook-status"></div>
+  </div>
+</dialog>
+
+<!-- Doing it by hand. Wide, because every line here is a command to be copied
+     into another editor, and a command that wraps is a command you have to
+     reassemble before you can trust it. -->
+<dialog id="steps" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><h2>wire these yourself</h2></div>
+    <button onclick="document.getElementById('steps').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline" style="margin:0 0 4px">
+      Run these. Each one writes its entry into
+      <span class="copypath"><code id="steps-path"></code><button id="steps-copy"
+        title="copy this path">copy</button></span>
+    </p>
+    <p class="hintline" style="margin:0 0 16px">
+      Same edit the buttons make, and the same care: a copy of the old file is kept first, anything
+      already registered under that hook is left alone, and a settings file that will not parse is
+      refused rather than rewritten. The board re-reads that file every few seconds, so the count
+      drops on its own as you go. Sessions already running keep their old settings until restarted.
+    </p>
+    <div id="steps-list"></div>
+  </div>
+</dialog>
 
 <dialog id="ask">
   <div class="dlg-head">
@@ -1223,6 +1409,14 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <div id="ask-body" class="asktext"></div>
     <div class="field" id="ask-field" hidden>
       <input type="text" id="ask-input" spellcheck="false">
+    </div>
+    <!-- Only shown for a confirmation that can be turned off. Ticking it and
+         confirming means this question never appears again. -->
+    <div class="field" id="ask-remember" hidden>
+      <label class="check">
+        <input type="checkbox" id="ask-remember-on">
+        <span>do not ask me again</span>
+      </label>
     </div>
     <div class="toolbar" id="ask-actions"></div>
   </div>
@@ -1234,11 +1428,19 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   title="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
   &#8635;&nbsp; paused while you type, click to catch up</button>
 
-<!-- A dialog, not a div, so toasts sit in the top layer.
-     A modal <dialog> renders above everything regardless of z-index, so a
-     toast raised while settings was open was drawn underneath it and never
-     seen. Only another top-layer element can beat one. -->
-<dialog id="toasts"></dialog>
+<!-- Moved into whatever modal dialog is open, and back out again.
+     A modal <dialog> renders in the browser's top layer, above everything at
+     any z-index, so a toast raised while settings was open was drawn
+     underneath it. Only another top-layer element beats one, and a dialog
+     opened with show() rather than showModal() is NOT in the top layer, which
+     is why making this a <dialog> did not fix it either. Being a child of the
+     open dialog is what puts it above. -->
+<!-- popover=manual puts this in the browser's top layer and leaves it there:
+     above any modal dialog, no backdrop, no focus stolen, and it never closes
+     on its own. Moving the host between dialogs was the previous answer and it
+     could not be made to hold, because a modal's stacking order is not
+     readable from the DOM. -->
+<div id="toasts" popover="manual"></div>
 
 <dialog id="settings">
   <div class="dlg-head">
@@ -1284,6 +1486,15 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
     </div>
 
+    <div class="field" id="s-skipped-field" hidden>
+      <label class="eyebrow">questions you turned off</label>
+      <div class="picker">
+        <span class="chip" id="s-skipped"></span>
+        <button onclick="resetConfirms()">ask me again</button>
+      </div>
+      <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
+    </div>
+
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
       <div class="picker">
@@ -1327,7 +1538,10 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   </div>
 </dialog>
 
-<dialog id="harness">
+<!-- data-guard: this holds edits that are only kept when you press save, so
+     something navigating away has to ask first. The settings and detail
+     dialogs need no guard, since both write on change. -->
+<dialog id="harness" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="h-heading">runner</h2></div>
     <button onclick="document.getElementById('harness').close()">close</button>
@@ -1361,11 +1575,29 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
         put <code>{resume}</code> where the session id goes.</span>
     </div>
     <div class="field">
+      <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
+      <textarea id="h-exit" rows="2" spellcheck="false"
+        placeholder="ctrl-d&#10;ctrl-d"></textarea>
+      <span class="hintline">Sent in order when you press <b>exit</b> on its terminal, or when the
+        card is shelved. <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>,
+        <code>esc</code>, <code>enter</code>, or any text to type. claude wants
+        <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
+    </div>
+    <div class="field">
       <label class="eyebrow" for="h-cwd">default working directory</label>
       <div class="picker">
         <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
         <button onclick="browseInto('h-cwd')">browse</button>
       </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-prepare">prepare</label>
+      <textarea id="h-prepare" rows="2" spellcheck="false"
+        placeholder="add-clion_tools"></textarea>
+      <span class="hintline">A shell command run before this runner starts, in the same directory.
+        Whatever it leaves in the environment, the runner gets. This is how a shell function that
+        puts a toolchain on <code>PATH</code> reaches an agent started from here. Your profile is
+        loaded, so your own functions are available.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
@@ -1401,7 +1633,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   </div>
 </dialog>
 
-<dialog id="launch">
+<dialog id="launch" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="l-heading">start</h2></div>
     <button onclick="document.getElementById('launch').close()">close</button>
@@ -1605,6 +1837,19 @@ const api = async (path, opts) => {
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// Writes only when the markup actually changed.
+//
+// The board polls every five seconds whether or not anything happened, because
+// ages tick with no server event behind them and the event stream can drop.
+// Rewriting a list that came back identical throws away selection, scroll
+// position inside it, and any open native menu, and shows up as constant churn
+// in dev tools.
+function setHTML(el, html) {
+  if (!el || el.innerHTML === html) return false;
+  el.innerHTML = html;
+  return true;
+}
+
 function ago(secs) {
   if (secs == null) return "";
   secs = Math.floor(secs);
@@ -1624,6 +1869,9 @@ const VIEWS = ["board", "stack", "perms", "runners", "terms"];
 function switchView(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
   VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
+  // The board's toolbar is a sibling of the board rather than a child, so that
+  // redrawing the columns does not take the control you just clicked with it.
+  document.getElementById("board-bar").hidden = name !== "board";
   refresh();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
@@ -1680,7 +1928,14 @@ function cardHTML(t) {
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
-      <span class="chip">idle ${ago(t.idle_seconds)}</span>
+      <!-- On a finished card the age is time since it ended, so calling it
+           idle is wrong. A dead card that has been dead an hour is telling you
+           something the word idle hides. -->
+      <span class="chip" title="${t.status === "dead" ? "how long since this stopped"
+        : t.status === "done" ? "how long since you marked it done"
+        : "how long since anything was heard from it"}"
+        >${t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle"} ${
+        ago(t.idle_seconds)}</span>
       ${w ? `<span class="chip warn">waiting ${ago(t.wait_seconds)}</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto"
         title="auto mode: requests from this session are approved without asking, and recorded"
@@ -1898,7 +2153,7 @@ async function renderBoard() {
   const all = tasks || [];
   const g = grouper();
 
-  document.getElementById("board").innerHTML = COLUMNS.map(col => {
+  const html = COLUMNS.map(col => {
     const mine = all.filter(t => col.statuses.includes(t.status));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
 
@@ -1924,7 +2179,8 @@ async function renderBoard() {
       <div class="cards">${body}</div>
     </section>`;
   }).join("");
-  wireDragging();
+  // Re-wired only when the markup was replaced, since the listeners go with it.
+  if (setHTML(document.getElementById("board"), html)) wireDragging();
 
   // Reported after the render, so a broken function shows an error and a board
   // drawn with the defaults rather than a blank page.
@@ -2267,7 +2523,7 @@ async function killById(id) {
   const t = await api(`/v1/tasks/${id}`);
   if (!await confirmUser(`terminate ${t.display_title}?`,
     `Stops pid ${t.pid}. Anything it was part way through is lost. ` +
-    `The card and its history stay, in <b>dead</b>.`, "terminate")) return;
+    `The card and its history stay, in <b>dead</b>.`, "terminate", "kill-runner")) return;
   // A failure is a toast. A second dialog after the one you just answered is
   // two dialogs for one decision.
   try { await api(`/v1/tasks/${id}/kill`, { method: "POST" }); }
@@ -2321,21 +2577,166 @@ function toggleColumn(id) {
   if (el) el.classList.toggle("folded", i < 0);
 }
 
-async function renderStack() {
-  const { tasks } = await api("/v1/waiting");
-  const list = tasks || [];
-  document.getElementById("stack").innerHTML = list.length
-    ? `<div class="panel">` + list.map(t => `
-        <div class="row" onclick="openTask('${t.id}')">
-          <div class="wait">${ago(t.wait_seconds)}</div>
-          <div class="who">
-            <b>${esc(t.display_title)}</b>
-            <span>${esc(t.why || t.worktree || "no note yet")}</span>
-          </div>
-          <span class="chip ${t.status === "needs-permission" ? "warn" : ""}">${t.status}</span>
-        </div>`).join("") + `</div>`
-    : `<div class="panel"><div class="empty">nothing is waiting on you</div></div>`;
+// ── the stack ───────────────────────────────────────────
+// One list of every card, ordered. The board says what is where, which is
+// worth having, but a column of thirty cards is not a reading order and a
+// waiting agent in one lane says nothing about a waiting agent in another.
+//
+// Waiting first by default, then by how long since anything happened, which is
+// the order you would work through them in.
+// Each entry is one axis, not one direction. Pressing the active pill reverses
+// it, so "newest activity" and "quietest" were the same pill twice, and
+// "needs me" was the `wants me` filter with extra steps.
+const STACK_SORTS = {
+  activity: {
+    label: "activity",
+    cmp: (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0)
+  },
+  waited: {
+    label: "waiting",
+    cmp: (a, b) => (b.wait_seconds || 0) - (a.wait_seconds || 0)
+  },
+  status: {
+    label: "status",
+    cmp: (a, b) => {
+      const rank = t => t.status === "needs-permission" ? 0
+        : t.status === "needs-input" ? 1
+        : t.status === "running" ? 2
+        : t.status === "shelved" ? 3 : 4;
+      return rank(a) - rank(b) || (a.idle_seconds || 0) - (b.idle_seconds || 0);
+    }
+  },
+  name: { label: "name", cmp: (a, b) => a.display_title.localeCompare(b.display_title) },
+  project: {
+    label: "project",
+    cmp: (a, b) => (a.worktree || "").localeCompare(b.worktree || "")
+  },
+  runner: { label: "runner", cmp: (a, b) => (a.runner || "").localeCompare(b.runner || "") }
+};
+// Activity by default. This is the "what has been going on" view, and the
+// board is where you go to see what is where.
+let stackSort = "activity";
+let stackDesc = false;
+let allStack = [];
+
+function setStackSort(key) {
+  if (stackSort === key) stackDesc = !stackDesc;
+  else { stackSort = key; stackDesc = false; }
+  paintStackSort();
+  paintStack();
 }
+
+function paintStackSort() {
+  document.getElementById("stack-sort").innerHTML =
+    Object.entries(STACK_SORTS).map(([k, s]) =>
+      `<button class="${k === stackSort ? "on" : ""}" onclick="setStackSort('${k}')"
+        title="sort by ${s.label}${k === stackSort ? ", again to reverse" : ""}"
+        >${s.label}${k === stackSort ? (stackDesc ? " ↑" : " ↓") : ""}</button>`).join("");
+}
+
+async function renderStack() {
+  try { allStack = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  paintStack();
+}
+
+function paintStack() {
+  const q = (document.getElementById("stack-q").value || "").toLowerCase();
+  const only = document.querySelector("#stack-seg .on").dataset.v;
+  const over = t => ["done", "dead"].includes(t.status);
+
+  const list = allStack.filter(t => {
+    if (only === "live" && over(t)) return false;
+    if (only === "wants" && !isWaiting(t)) return false;
+    return !q || (t.display_title + " " + (t.worktree || "") + " " +
+      (t.runner || "") + " " + (t.why || "")).toLowerCase().includes(q);
+  });
+
+  document.getElementById("stack-match").textContent =
+    list.length === allStack.length ? "" : `${list.length} of ${allStack.length}`;
+
+  const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
+  list.sort(s.cmp);
+  if (stackDesc) list.reverse();
+
+  if (!list.length) {
+    setHTML(document.getElementById("stack-list"),
+      `<div class="panel"><div class="empty">${allStack.length
+        ? "nothing matches that filter" : "no agents yet"}</div></div>`);
+    return;
+  }
+
+  // The same grouping the board uses, from the same setting, so turning it on
+  // in one place turns it on everywhere. The chosen sort still orders the rows
+  // inside each group.
+  const g = grouper();
+  setHTML(document.getElementById("stack-list"), g
+    ? stackGroupsHTML(list, g)
+    : `<div class="panel">` + list.map(stackRow).join("") + `</div>`);
+
+  if (groupingFault) {
+    toast("grouping code", groupingFault);
+    groupingFault = "";
+  }
+}
+
+// The stack split into project groups, each its own panel so the colour reads
+// down the edge the way it does on the board.
+function stackGroupsHTML(list, g) {
+  const byName = new Map();
+  for (const t of list) {
+    const name = g.of(t);
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(t);
+  }
+  if (byName.size < 2 && byName.has("")) {
+    return `<div class="panel">` + list.map(stackRow).join("") + `</div>`;
+  }
+
+  return [...byName.keys()].sort(g.cmp).map(name => {
+    const mine = byName.get(name);
+    if (!name) {
+      return `<div class="panel">` + mine.map(stackRow).join("") + `</div>`;
+    }
+    const key = "stack:" + name;
+    const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+    return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}">
+      <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
+        oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
+        <span class="gname" title="${esc(name)} &mdash; right click to recolour">${esc(name)}</span>
+        <span class="gn">${mine.length}</span>
+      </summary>
+      <div class="panel">${mine.map(stackRow).join("")}</div>
+    </details>`;
+  }).join("");
+}
+
+// One card as a row. The same facts the board shows, in an order rather than a
+// column, with the age reading as what it is for the status it is in.
+function stackRow(t) {
+  const w = isWaiting(t);
+  const dark = isOutOfContact(t);
+  const age = t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle";
+  return `<div class="row stackrow ${w ? "attn" : ""}" onclick="openTask('${t.id}')"
+    oncontextmenu="cardMenu(event, '${t.id}')">
+    <div class="wait ${w ? "" : "quiet"}">${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</div>
+    <div class="who">
+      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
+      <span>${esc(t.worktree || "no directory")}</span>
+      ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
+    </div>
+    <span class="chip runner" data-runner="${esc(t.runner || "")}">${esc(t.runner || "?")}</span>
+    ${activityChip(t)}
+    ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
+    ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
+    <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}">${esc(t.status)}</span>
+    <span class="chip">${age} ${ago(t.idle_seconds)}</span>
+    ${t.supervised ? `<span class="chip attach"
+      onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+  </div>`;
+}
+
+// Shared with paintStack's filter, and used by stackRow.
+function over(t) { return ["done", "dead"].includes(t.status); }
 
 // Pending cards are built once and then left alone. Rebuilding markup on a
 // poll is what silently reverted a typed pattern and applied the wrong rule,
@@ -2540,7 +2941,7 @@ function paintHistory() {
   // A rule name is a link to the rule. Reading "a rule allowed this" and then
   // scrolling a list of a hundred and thirty to find which one is the work
   // this saves.
-  document.getElementById("history-list").innerHTML = list.length
+  setHTML(document.getElementById("history-list"), list.length
     ? `<div class="panel">` + list.map(p => `
         <div class="row line">
           <span class="chip ${p.decision === "approve" ? "accent" : "warn"}">${p.decision}</span>
@@ -2557,7 +2958,7 @@ function paintHistory() {
                 : "you"}</span>
         </div>`).join("") + `</div>`
     : `<div class="panel"><div class="empty">${allHistory.length
-        ? "nothing matches that filter" : "nothing decided yet"}</div></div>`;
+        ? "nothing matches that filter" : "nothing decided yet"}</div></div>`);
 }
 
 // A rule pattern rendered as a link to the rule itself.
@@ -2920,7 +3321,7 @@ function paintRules() {
 
   sortRules(list);
 
-  document.getElementById("rules-list").innerHTML = list.length
+  setHTML(document.getElementById("rules-list"), list.length
     ? `<div class="panel">` + list.map(r => `
         <div class="row line">
           <span class="chip ${r.decision === "approve" ? "accent" : "warn"}">${r.decision}</span>
@@ -2935,7 +3336,7 @@ function paintRules() {
         </div>`).join("") + `</div>`
     : `<div class="panel"><div class="empty">${allRules.length
         ? "nothing matches that filter"
-        : "no rules yet. import from claude to start with the ones you already trust."}</div></div>`;
+        : "no rules yet. import from claude to start with the ones you already trust."}</div></div>`);
 }
 
 // Keeps a collapsible's open state across reloads.
@@ -3423,7 +3824,13 @@ if ("serviceWorker" in navigator) {
     .catch(e => console.warn("no service worker, notifications lose their buttons:", e));
   // The worker asks the page to switch tabs when a notification is clicked.
   navigator.serviceWorker.addEventListener("message", e => {
-    if (e.data && e.data.type === "goTo") { switchView(e.data.view); refresh(); }
+    if (e.data && e.data.type === "goTo") {
+      closeOpenDialogs().then(ok => {
+        if (!ok) return;
+        switchView(e.data.view);
+        refresh();
+      });
+    }
   });
 }
 
@@ -3458,8 +3865,11 @@ function showNotification(title, body, goTo, permId) {
     // We play our own tone, and Windows adding a second one is jarring.
     silent: true
   });
-  n.onclick = () => {
+  n.onclick = async () => {
     window.focus();
+    // Same reason as the toast: arriving at a tab that is hidden behind a
+    // dialog you opened before the notification fired is not arriving.
+    if (!await closeOpenDialogs()) return;
     if (goTo) switchView(goTo);
     n.close();
   };
@@ -3479,6 +3889,90 @@ async function attachIfSupervised(taskID) {
   } catch (e) { return false; }
 }
 
+// Keeps the toast host in the browser's top layer.
+//
+// A modal dialog is in that layer, above everything at any z-index, so nothing
+// outside it can be drawn over one. The old answer was to move the host into
+// whichever dialog was open, and it kept failing: modals stack by the order
+// showModal was called, that order is not readable from the DOM, and a host
+// moved into a dialog goes down with it when it closes.
+//
+// popover="manual" puts the host in the same layer and leaves it there. No
+// backdrop, no focus taken, and it never closes on its own, so a toast is
+// above every dialog whatever order they opened in and there is nothing to
+// keep in sync.
+//
+// The top layer is ordered by when something entered it, and a dialog opened
+// later goes above a popover shown earlier. Showing this once at startup put
+// it under every dialog, which is the same failure as before by a different
+// route.
+//
+// So it is hidden and shown again on every toast. Leaving and re-entering puts
+// it back on top of whatever is there now, including a dialog that opened in
+// between. Re-showing without the hide is a no-op and would not move it.
+function raiseToasts() {
+  const host = document.getElementById("toasts");
+  if (!host || !host.showPopover) return;
+  try { host.hidePopover(); } catch (e) {}
+  try { host.showPopover(); } catch (e) {}
+}
+
+// Typing in a guarded dialog marks it as holding something not yet saved.
+//
+// A flag rather than a comparison against the opening values: the point is
+// only to tell "you have been editing this" from "you opened it and read it",
+// and typing a character then deleting it is close enough to editing.
+document.addEventListener("input", e => {
+  const dlg = e.target.closest && e.target.closest("dialog[data-guard]");
+  if (dlg) dlg.dataset.dirty = "1";
+}, true);
+
+// Opening one starts it clean, so edits abandoned last time are not still
+// being guarded against this time.
+if (window.MutationObserver) {
+  new MutationObserver(records => {
+    records.forEach(r => {
+      const d = r.target;
+      if (d.matches && d.matches("dialog[data-guard]") && d.open) delete d.dataset.dirty;
+    });
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+}
+
+// Saving needs no counterpart to the above. The flag is only ever read while
+// a dialog is open, and saving closes it, so a saved form is never asked
+// about. Opening it again starts clean.
+
+// Closes every open dialog, for a click that is leaving whatever is on screen.
+//
+// Asks first when one of them is holding edits nobody has saved. Throwing away
+// a half-filled runner form because a toast arrived is worse than the toast
+// being ignored.
+//
+// The open dialogs are captured before the question is asked, so the dialog
+// doing the asking is not in the list and closing it is left to itself.
+async function closeOpenDialogs() {
+  const open = [...document.querySelectorAll("dialog[open]")]
+    .filter(d => d.id !== "ask");
+  if (!open.length) return true;
+
+  const dirty = open.filter(d => d.dataset.dirty === "1");
+  if (dirty.length) {
+    const what = dirty.map(d => d.id).join(" and ");
+    if (!await confirmUser("leave without saving?",
+      `The <b>${esc(what)}</b> form has changes that have not been saved. ` +
+      "Going where you clicked closes it and those changes go with it.",
+      "discard them")) {
+      return false;
+    }
+  }
+
+  open.forEach(d => {
+    try { d.close(); } catch (e) {}
+  });
+  return true;
+}
+
+
 function toast(title, body, goTo, key, taskFor) {
   const host = document.getElementById("toasts");
   const el = document.createElement("div");
@@ -3493,11 +3987,7 @@ function toast(title, body, goTo, key, taskFor) {
   el.querySelector("span").textContent = body || "";
   const dismiss = () => {
     el.classList.add("leaving");
-    setTimeout(() => {
-      el.remove();
-      // A dialog left open with nothing in it still swallows Escape.
-      if (!host.children.length && host.open) host.close();
-    }, 200);
+    setTimeout(() => el.remove(), 200);
   };
   el.addEventListener("click", async e => {
     if (e.target.classList.contains("x")) { dismiss(); return; }
@@ -3516,6 +4006,15 @@ function toast(title, body, goTo, key, taskFor) {
       return;
     }
     window.focus();
+    // A toast on top of an open dialog lives INSIDE that dialog, because the
+    // top layer is the only place anything can draw over one. So a click that
+    // navigates has to take the dialog with it: without this the view changes
+    // underneath and the dialog stays put, covering the thing you clicked to
+    // go and look at.
+    //
+    // Refused means unsaved edits are being kept, so the toast stays too.
+    // Dismissing it would leave nothing to click a second time.
+    if (!await closeOpenDialogs()) return;
     dismiss();
     // If atrium owns the runner, the terminal is where the work is. Landing
     // in the perms tab would mean answering and then going to find it.
@@ -3527,13 +4026,9 @@ function toast(title, body, goTo, key, taskFor) {
   });
   el.dismiss = dismiss;
   host.appendChild(el);
-  // Re-shown on every toast, not just the first. Top-layer order follows the
-  // order things were added to it, so a toast raised while a dialog is open
-  // has to be put back on top of that dialog.
-  try {
-    if (host.open) host.close();
-    host.show();
-  } catch (e) {}
+  // After the content is in, so the host is put back on top of whatever is
+  // open at the moment there is something to show.
+  raiseToasts();
   // Everything clears itself. A permission gets longer since it blocks an
   // agent. The pending count in the tab is the durable signal, not the toasts.
   setTimeout(dismiss, goTo === "perms" ? 30000 : 9000);
@@ -3632,6 +4127,39 @@ function toggleGrouping() {
   const g = groupingPrefs();
   setGrouping({ on: !g.on });
   paintGrouping();
+  paintGroupSegs();
+}
+
+// The same on/off, on the board and on the stack, where you are actually
+// looking when you decide you want it.
+//
+// One setting behind both, so turning grouping off on the stack turns it off
+// on the board too. Grouping is a way of reading the same cards, not a
+// property of one screen.
+function paintGroupSegs() {
+  const on = groupingPrefs().on;
+  const html =
+    `<button class="${on ? "on" : ""}" onclick="setGroupOn(true)"
+       title="cut the cards into projects">by project</button>` +
+    `<button class="${on ? "" : "on"}" onclick="setGroupOn(false)"
+       title="one flat list, no projects">off</button>`;
+  ["stack-group", "board-group"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) setHTML(el, html);
+  });
+}
+
+function setHookNag(on) {
+  skipConfirm(HOOK_NAG, on);
+  renderHooks();
+  renderRunners();
+}
+
+function setGroupOn(on) {
+  if (groupingPrefs().on === on) return;
+  setGrouping({ on });
+  paintGrouping();
+  paintGroupSegs();
 }
 
 function resetGrouping() {
@@ -3657,6 +4185,7 @@ function paintSettings() {
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-cardsize").value = String(uiScale());
   paintGrouping();
+  paintSkipped();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -3999,7 +4528,7 @@ async function move(status) {
         `<b>${esc(current.display_title)}</b> has an agent waiting on it. ` +
         `Moving it to <b>${esc(status)}</b> answers ${pending.length === 1 ? "it" : "them"} ` +
         `with block, so the agent is released and told why rather than waiting forever.${extra}`,
-        `move it to ${status}`)) {
+        `move it to ${status}`, "move-while-pending")) {
         return;
       }
     }
@@ -4024,7 +4553,7 @@ async function killTask() {
   if (!current) return;
   if (!await confirmUser("stop this runner?",
     `<b>${esc(current.display_title)}</b> is killed. The card and its history stay.`,
-    "stop it")) return;
+    "stop it", "kill-runner")) return;
   try { await api(`/v1/tasks/${current.id}/kill`, { method: "POST" }); }
   catch (e) { toast("could not terminate", e.message); return; }
   detail.close();
@@ -4135,6 +4664,14 @@ function connect() {
   es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "halted"].forEach(k => es.addEventListener(k, refresh));
+  // settings.json changed under us, which is `atrium hook install` run in a
+  // terminal. Without this the count only moves on the next poll, and only
+  // while the runners tab happens to be open.
+  es.addEventListener("hooks", async () => {
+    await loadHooks();
+    if (document.getElementById("hooks").open) renderHooks();
+    if (document.querySelector(".tab.on").dataset.view === "runners") renderRunners();
+  });
 }
 
 // ── terminal ────────────────────────────────────────────
@@ -4307,6 +4844,16 @@ async function renderTermList() {
   try { tasks = ((await api("/v1/tasks")).tasks || []).filter(t => t.supervised); } catch (e) { return; }
   badge("c-term", tasks.length);
 
+  // The attached session is gone, so the pane showing it is stale.
+  //
+  // Driven off the poll rather than off the socket closing. A socket close is
+  // one event that can be missed: a tab in the background, a daemon that went
+  // away, a close the browser never delivered. This asks the daemon what is
+  // actually running, which is the same question the list is already asking.
+  // clearTermPane rather than closeTerm, since closeTerm refreshes and this is
+  // running inside a refresh.
+  if (termTask && !tasks.some(t => t.id === termTask.id)) clearTermPane();
+
   if (sortByActivity) {
     // Anything waiting on a human first, then by how recently it moved.
     tasks.sort((a, b) => {
@@ -4321,7 +4868,7 @@ async function renderTermList() {
       title="newest activity first, and anything waiting on you above that">
       ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>`;
 
-  host.innerHTML = tasks.length
+  setHTML(host, tasks.length
     ? toggle + tasks.map(t => `
         <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""} ${
           isWaiting(t) ? "attn" : ""}"
@@ -4335,8 +4882,8 @@ async function renderTermList() {
           <span class="chip">${ago(t.idle_seconds)}</span>
         </div>`).join("")
     : `<div class="panel"><div class="empty">
-         nothing to attach to. only a runner started in pty mode has a terminal atrium owns.
-       </div></div>`;
+         no agents running
+       </div></div>`);
 }
 
 function connectTerm(taskID) {
@@ -4356,9 +4903,11 @@ function connectTerm(taskID) {
     if (term) term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
     // The socket also closes when the runner exits, leaving a live-looking
     // header over a dead terminal, with the session list saying there is
-    // nothing to attach to. The scrollback is kept, since it holds the exit
-    // and the resume id, but it stops claiming to be a session.
-    markTermDead();
+    // nothing to attach to. Keeping the scrollback around left a dead terminal
+    // on screen next to a list saying there was nothing there, which reads as
+    // stale rather than as history. The resume id lives on the card, so
+    // clearing costs nothing.
+    setTimeout(() => closeTerm(), 900);
   };
   termSock.onerror = () => {
     if (term) term.write("\r\n\x1b[38;5;203m[atrium] connection failed\x1b[0m\r\n");
@@ -4397,7 +4946,8 @@ async function exitTerm() {
   if (!await confirmUser(`ask ${t.display_title} to exit?`,
     "Sends whatever this runner is configured to quit on, then waits. " +
     "If it ignores that, its terminal is closed and the process is stopped." +
-    "<br><br>Its card and history stay, in <b>finished</b>.", "ask it to exit")) return;
+    "<br><br>Its card and history stay, in <b>finished</b>.",
+    "ask it to exit", "exit-terminal")) return;
   try { await api(`/v1/tasks/${t.id}/exit`, { method: "POST" }); }
   catch (e) { toast("could not exit", e.message); return; }
   toast("asked to exit", t.display_title);
@@ -4439,6 +4989,12 @@ function markTermDead() {
 }
 
 function closeTerm(switching) {
+  clearTermPane(switching);
+  if (!switching) refresh();
+}
+
+// Tears the pane down without refreshing, so it can be called from inside one.
+function clearTermPane(switching) {
   if (termSock) { termSock.close(); termSock = null; }
   if (term) { term.dispose(); term = null; }
   termFit = null;
@@ -4458,7 +5014,6 @@ function closeTerm(switching) {
   document.getElementById("t-chips").innerHTML = "";
   document.getElementById("t-screen").innerHTML = "";
   document.getElementById("term-perm").hidden = true;
-  refresh();
 }
 
 // A permission request while attached: the runner is blocked and its terminal
@@ -4514,6 +5069,8 @@ let launchTarget = null;
 
 async function renderRunners() {
   try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) { return; }
+  // Before the list is drawn: the claude row carries the count.
+  await loadHooks();
 
   const on = allHarnesses.filter(h => h.enabled);
   document.getElementById("launchers").innerHTML = on.length
@@ -4538,12 +5095,15 @@ async function renderRunners() {
         ? `<span class="by found" title="${esc(h.found)}">on PATH</span>`
         : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
+      ${hooksChip(h)}
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
         onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
       <button onclick="editHarness('${esc(h.id)}')">edit</button>
     </div>`).join("") + `</div>`;
 
   renderDiscovered();
+  // Only paints when the dialog is open. Nothing to draw otherwise.
+  if (document.getElementById("hooks").open) renderHooks();
 }
 
 // Runners this machine has that atrium is not set up to use. Offered rather
@@ -4568,6 +5128,294 @@ async function renderDiscovered() {
     </div>`).join("") + `</div>`;
 }
 
+// Whether a runner row is claude code, which is the only one with hooks
+// atrium understands. Matched on the command rather than the row id, since the
+// id is whatever you typed when you made the row.
+function isClaudeRunner(h) {
+  const cmd = (h.cmd || "").toLowerCase().replace(/\\/g, "/");
+  const leaf = cmd.split("/").pop().replace(/\.(exe|cmd|bat|ps1)$/, "");
+  return leaf === "claude";
+}
+
+// Not wiring the hooks is a legitimate choice, so the reminder can be turned
+// off. It goes through the same store as every other "do not ask me again", so
+// the gear lists it and the one button there brings all of them back.
+const HOOK_NAG = "hooks-nag";
+
+// The way in, on the row it belongs with. Counts rather than a bare link,
+// because "3 hooks missing" is the whole reason to open it.
+//
+// Turned off, the button stays and only the count and the colour go. Removing
+// it would take away the way back to the dialog that turns the reminder on
+// again.
+function hooksChip(h) {
+  if (!isClaudeRunner(h)) return "";
+  if (!hookReport) return "";
+  const n = skippedConfirms()[HOOK_NAG] ? 0 : hookReport.missing;
+  return `<button class="${n ? "go" : ""}" onclick="openHooks()"
+    title="${n ? "atrium cannot see what these sessions are doing" : "claude code hooks"}"
+    >hooks${n ? `: ${n} missing` : ""}</button>`;
+}
+
+async function openHooks() {
+  document.getElementById("hooks").showModal();
+  await loadHooks();
+  renderHooks();
+}
+
+// Which hooks are wired, and the offer to wire them.
+//
+// A feature nobody installs is a feature that does not exist. Activity,
+// subagent counts and reaching an idle session are all built and all inert
+// until these land in settings.json, and the only place that was written down
+// was a documentation page.
+// Fetched separately from painting, because the claude row's chip needs the
+// count and that row is drawn first.
+async function loadHooks() {
+  const before = hookReport ? hookReport.missing : null;
+  try { hookReport = await api("/v1/hooks"); } catch (e) { return; }
+
+  // Nothing left to do means the dialog has nothing left to say. Only on the
+  // way to zero: opening it when everything is already wired is somebody
+  // checking, and closing it under them would be answering a question they
+  // did not ask.
+  // The steps dialog drops what has been done and closes when it empties, so
+  // opening it for one hook and running that command puts you straight back on
+  // the list with the row now reading wired.
+  paintHookSteps();
+
+  if (before !== null && before > 0 && hookReport.missing === 0) {
+    const dlg = document.getElementById("hooks");
+    if (dlg.open) dlg.close();
+    toast("all hooks wired", "sessions started from now on report what they are doing");
+  }
+}
+
+function renderHooks() {
+  const host = document.getElementById("hook-status");
+  const rep = hookReport;
+  if (!host || !rep) return;
+
+  const rows = (rep.hooks || []).map(h => {
+    const done = h.installed && !h.stale;
+    const state = h.stale
+      ? `<span class="by missing" title="${esc(h.found || "")}">points elsewhere</span>`
+      : done
+        ? `<span class="by found" title="${esc(h.found || "")}">wired</span>`
+        : `<span class="by missing">not wired</span>`;
+    // Each row decides for itself. Wanting the tool events and not the
+    // subagent count is a reasonable thing to want, and one button for all
+    // five made that impossible to say.
+    const act = done ? "" : `
+      <button class="go" onclick="installHooks(['${esc(h.event)}'])"
+        title="write this one entry into settings.json">wire it</button>
+      <button onclick="showHookSteps('${esc(h.event)}')"
+        title="the command to run yourself">manually</button>`;
+    return `<div class="row line">
+      <span class="tool">${esc(h.hook)}</span>
+      <span class="grow ell" title="${esc(h.why)}">${esc(h.why)}</span>
+      ${state}
+      ${act}
+    </div>`;
+  }).join("");
+
+  // The file itself is worth showing. Atrium picks the one in the home
+  // directory, and being told which file was changed is the difference
+  // between trusting the button and going to look.
+  const where = `<div class="row line copypath">
+      <code>${esc(rep.path)}</code>
+      <button onclick='copyText(this, ${JSON.stringify(rep.path).replace(/'/g, "&#39;")})'
+        title="copy this path">copy</button>
+      ${rep.exists ? "" : `<span class="by">does not exist yet</span>`}
+    </div>`;
+
+  if (rep.unreadable) {
+    setHTML(host, `<div class="panel">${where}${rows}
+      <div class="row line"><span class="by missing">that file is not valid json, so atrium
+      will not write to it. fix it and reload.</span></div></div>`);
+    return;
+  }
+
+  const quiet = !!skippedConfirms()[HOOK_NAG];
+  // The rows do them one at a time. These do the lot, which is what you want
+  // the first time and never again.
+  const action = rep.missing === 0
+    ? `<span class="by found">all wired. sessions started from now on report what they are doing.</span>`
+    : `<button class="go" onclick="installHooks()">do all ${rep.missing} for me</button>
+       <button onclick="showHookSteps()">let me do them all manually</button>`;
+
+  // The reminder is separate from the wiring, and stays offerable once it is
+  // off: not wiring these is a choice, and so is changing your mind.
+  const nag = rep.missing === 0 ? "" : quiet
+    ? `<button onclick="setHookNag(false)"
+         title="show the count on the claude row again">remind me again</button>`
+    : `<button onclick="setHookNag(true)"
+         title="keep the button, drop the count and the colour">stop reminding me</button>`;
+
+  setHTML(host, `<div class="panel">${where}${rows}
+    <div class="row line">${nag}<span class="grow"></span>${action}</div></div>`);
+}
+
+let hookReport = null;
+
+// Claude Code's name for the hook that carries one atrium event, for saying
+// which one a button is about.
+function hookNameFor(event) {
+  const h = (hookReport && hookReport.hooks || []).find(x => x.event === event);
+  return h ? h.hook : event;
+}
+
+// The line that would go into settings.json for one event, which is what
+// claude code will actually run.
+function installedCommandFor(event) {
+  const h = (hookReport && hookReport.hooks || []).find(x => x.event === event);
+  return h ? h.want : "";
+}
+
+// Writing it. Confirmed first, and never skippable: this edits a file atrium
+// does not own, and a settings.json that comes back wrong breaks every claude
+// session on the machine.
+async function installHooks(events) {
+  const n = events ? events.length : hookReport.missing;
+  const which = events
+    ? `the <b>${esc(hookNameFor(events[0]))}</b> entry`
+    : `${n} entr${n === 1 ? "y" : "ies"}`;
+  // What it does, not where it does it. The path is already on screen in the
+  // dialog behind this one, and as a block it broke the sentence in half. The
+  // command is the part worth reading, since that is what claude will run.
+  const hook = events ? hookNameFor(events[0]) : "";
+  const body = events
+    ? `Claude Code will run this on every <b>${esc(hook)}</b>:` +
+      `<code>${esc(installedCommandFor(events[0]))}</code>` +
+      "It joins anything already registered under that hook rather than replacing it."
+    : `Atrium registers ${which}, one per hook, each running this binary with the ` +
+      "name of the event. Anything already registered is left alone.";
+
+  if (!await confirmUser(events ? `wire ${hook}?` : "wire these hooks?",
+    body +
+    "<br><br>A copy of your settings is kept first. Sessions already running keep their old " +
+    "settings until they are restarted.",
+    n === 1 ? "wire it" : "wire them")) return;
+  try {
+    const res = await api("/v1/hooks/install", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: events || [] })
+    });
+    toast("hooks wired", res.backup
+      ? "the old settings were copied to " + res.backup
+      : "settings.json was created");
+  } catch (e) {
+    toast("nothing was changed", e.message);
+  }
+  // The dialog and the chip behind it both read the same report.
+  await loadHooks();
+  renderHooks();
+  renderRunners();
+}
+
+// The manual route: commands to RUN, not JSON to paste.
+//
+// It used to print the hook command itself, which is the string that belongs
+// inside settings.json. Shown in a block with a copy button next to it, that
+// reads as something to run, and running it just posts one activity event.
+// `hook install` does what the button does, so the manual route is the same
+// job by hand rather than a different job.
+//
+// One event named shows only that step, for a row's own "manually".
+function showHookSteps(only) {
+  stepsFilter = only || "";
+  document.getElementById("steps").showModal();
+  paintHookSteps();
+}
+
+// Which hook the open steps dialog is about, empty for all of them. Kept so
+// the dialog can be redrawn when settings.json changes underneath it.
+let stepsFilter = "";
+
+// Redraws the steps, dropping the ones already done.
+//
+// A command you have run is not a step any more. Leaving it on the list means
+// working out for yourself which of five you still owe, which is the job the
+// list was supposed to be doing. When the last one goes the dialog has nothing
+// left to say, so it closes.
+function paintHookSteps() {
+  const dlg = document.getElementById("steps");
+  const rep = hookReport;
+  if (!dlg.open || !rep) return;
+
+  const wanted = (rep.hooks || [])
+    .filter(h => !stepsFilter || h.event === stepsFilter)
+    .filter(h => !h.installed || h.stale);
+
+  if (!wanted.length) {
+    dlg.close();
+    return;
+  }
+  renderHookSteps(rep, wanted);
+}
+
+function renderHookSteps(rep, wanted) {
+  const only = stepsFilter;
+
+  const steps = wanted.map(h => {
+    const cmd = installCommand(rep, h.event);
+    return `
+    <div class="step">
+      <div class="steptop">
+        <b>${esc(h.hook)}</b>
+        <span class="by">${esc(h.why)}</span>
+        <span class="grow"></span>
+        <button onclick='copyText(this, ${JSON.stringify(cmd).replace(/'/g, "&#39;")})'
+          title="copy this command">copy</button>
+      </div>
+      <pre class="code">${esc(cmd)}</pre>
+    </div>`;
+  }).join("");
+
+  // All of them at once, for anyone who would rather run one line.
+  const all = only ? "" : `
+    <div class="step">
+      <div class="steptop">
+        <b>all of them</b>
+        <span class="by">one command, same result as the button</span>
+        <span class="grow"></span>
+        <button onclick='copyText(this, ${JSON.stringify(installCommand(rep, "")).replace(/'/g, "&#39;")})'
+          title="copy this command">copy</button>
+      </div>
+      <pre class="code">${esc(installCommand(rep, ""))}</pre>
+    </div>`;
+
+  document.getElementById("steps-path").textContent = rep.path;
+  document.getElementById("steps-copy").onclick = e => copyText(e.target, rep.path);
+  setHTML(document.getElementById("steps-list"), all + steps);
+}
+
+// The command that installs one hook, or all of them when event is empty.
+//
+// Built from the same absolute path the entries themselves carry, which is the
+// binary this daemon is running. Typing `atrium` would depend on a PATH atrium
+// has no say over, and the whole point of the path being absolute is that it
+// works wherever it is pasted.
+function installCommand(rep, event) {
+  const h = (rep.hooks || [])[0];
+  // `want` is `<exe> hook --event x`, so everything before " hook " is the
+  // binary, quotes and all.
+  const exe = h ? h.want.split(" hook ")[0] : "atrium";
+  return exe + " hook install" + (event ? " --event " + event : "");
+}
+
+// Copies one command and says so on the button that was pressed. A toast for
+// this would be a notification about a click you just made.
+async function copyText(btn, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "copied";
+  } catch (e) {
+    btn.textContent = "could not copy";
+  }
+  setTimeout(() => { btn.textContent = "copy"; }, 1400);
+}
+
 // Opens the runner form pre-filled from what was found. The command and the
 // path are known; anything that was not is left empty with the reason shown,
 // since a guessed flag produces a runner that fails on first use.
@@ -4579,6 +5427,8 @@ function addDiscovered(c) {
   document.getElementById("h-cmd").value = c.cmd;
   document.getElementById("h-args").value = (c.args || []).join("\n");
   document.getElementById("h-resume").value = (c.resume_args || []).join("\n");
+  document.getElementById("h-exit").value = (c.exit_keys || []).join("\n");
+  document.getElementById("h-prepare").value = "";
   document.getElementById("h-notes").value = c.confirm || "";
   if (c.confirm) toast("needs confirming", c.confirm);
 }
@@ -4599,6 +5449,8 @@ function editHarness(id) {
   document.getElementById("h-cmd").value = h.cmd || "";
   document.getElementById("h-args").value = (h.args || []).join("\n");
   document.getElementById("h-resume").value = (h.resume_args || []).join("\n");
+  document.getElementById("h-exit").value = (h.exit_keys || []).join("\n");
+  document.getElementById("h-prepare").value = h.prepare || "";
   document.getElementById("h-cwd").value = h.cwd || "";
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
@@ -4630,6 +5482,8 @@ function harnessFromForm() {
     cmd: document.getElementById("h-cmd").value.trim(),
     args: linesToList(document.getElementById("h-args").value),
     resume_args: linesToList(document.getElementById("h-resume").value),
+    exit_keys: linesToList(document.getElementById("h-exit").value),
+    prepare: document.getElementById("h-prepare").value.trim(),
     cwd: document.getElementById("h-cwd").value.trim(),
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,
@@ -4786,12 +5640,15 @@ async function doLaunch() {
 // scales with zoom. A hardcoded calc() leaves a gap at one size and overflows
 // at another.
 function measureShell() {
-  const header = document.querySelector("header");
   const main = document.querySelector("main");
-  if (!header || !main) return;
-  const pad = parseFloat(getComputedStyle(main).paddingTop) || 0;
-  document.documentElement.style.setProperty(
-    "--shell", (header.offsetHeight + pad * 2) + "px");
+  if (!main) return;
+  // Where the content actually starts, plus what sits below it. Summing the
+  // header's height and a padding assumed to be symmetric was off by whatever
+  // else the page put in between, and being a few pixels over is a page
+  // scrollbar that then overlaps the terminal.
+  const top = main.getBoundingClientRect().top + window.scrollY;
+  const below = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+  document.documentElement.style.setProperty("--shell", Math.ceil(top + below) + "px");
 }
 measureShell();
 addEventListener("resize", () => { measureShell(); onTermResize(); });
@@ -4904,6 +5761,14 @@ function askUser(opts) {
       input.placeholder = opts.placeholder || "";
     }
 
+    // A confirmation that can be turned off. Only recorded on the affirmative
+    // button: ticking the box and then cancelling means "no, and stop asking",
+    // which would silently turn a refusal into a standing yes.
+    const remember = document.getElementById("ask-remember");
+    const rememberOn = document.getElementById("ask-remember-on");
+    remember.hidden = !opts.rememberKey;
+    rememberOn.checked = false;
+
     const actions = document.getElementById("ask-actions");
     actions.innerHTML = "";
     const buttons = opts.buttons || [
@@ -4914,7 +5779,12 @@ function askUser(opts) {
       const el = document.createElement("button");
       el.textContent = b.label;
       if (b.style) el.className = b.style;
-      el.onclick = () => askClose(resolve, opts.input && b.value !== null ? input.value : b.value);
+      el.onclick = () => {
+        if (opts.rememberKey && rememberOn.checked && b.value !== null) {
+          skipConfirm(opts.rememberKey, true);
+        }
+        askClose(resolve, opts.input && b.value !== null ? input.value : b.value);
+      };
       actions.appendChild(el);
     });
 
@@ -4934,10 +5804,70 @@ function askUser(opts) {
 }
 
 // Drop-in shapes for the three things the native dialogs did.
-const confirmUser = (title, body, okLabel) => askUser({
-  title, body,
-  buttons: [{ label: "cancel", value: null }, { label: okLabel || "ok", value: true, style: "go" }]
-}).then(v => v === true);
+// Confirmations the operator has turned off.
+//
+// Kept by name rather than by wording, so rephrasing a question does not start
+// asking it again. Every one can be turned back on from the gear, or none of
+// them could be, and a dialog you dismissed once would be gone for good.
+const SKIP_KEY = "atrium.skipconfirm";
+
+function skippedConfirms() {
+  try { return JSON.parse(localStorage.getItem(SKIP_KEY) || "{}"); }
+  catch (e) { return {}; }
+}
+
+function skipConfirm(key, on) {
+  const all = skippedConfirms();
+  if (on) all[key] = true; else delete all[key];
+  localStorage.setItem(SKIP_KEY, JSON.stringify(all));
+  paintSkipped();
+}
+
+// What a turned-off question is called in the gear. A key names the question,
+// not its wording, so it needs a phrase here to be recognisable. A key with no
+// entry still shows, under its own name, rather than disappearing from the one
+// screen that can turn it back on.
+const SKIP_LABELS = {
+  "exit-terminal": "ask a runner to exit",
+  "kill-runner": "terminate a runner",
+  "move-while-pending": "move a card an agent is waiting on",
+  "hooks-nag": "tell me when claude hooks are not wired"
+};
+
+// The turned-off list, and the button that empties it.
+//
+// Whole list at once rather than one at a time: there is rarely more than one,
+// and the reason to come here is "something stopped asking me and I want it
+// back", which is answered by turning all of them back on.
+function paintSkipped() {
+  const field = document.getElementById("s-skipped-field");
+  const chip = document.getElementById("s-skipped");
+  if (!field || !chip) return;
+  const keys = Object.keys(skippedConfirms());
+  field.hidden = keys.length === 0;
+  chip.textContent = keys.map(k => SKIP_LABELS[k] || k).join(", ");
+}
+
+function resetConfirms() {
+  localStorage.removeItem(SKIP_KEY);
+  paintSkipped();
+  toast("those questions will be asked again");
+}
+
+// `rememberKey` makes the question skippable. Without one it always asks.
+//
+// The line is what a wrong answer costs. Stopping a runner is skippable
+// because you do it all day and the card and its history stay. Forgetting a
+// card, clearing a column, deleting a runner and turning a session loose
+// unattended have no key: each throws away something there is no way back to,
+// so each one asks every time.
+const confirmUser = (title, body, okLabel, rememberKey) => {
+  if (rememberKey && skippedConfirms()[rememberKey]) return Promise.resolve(true);
+  return askUser({
+    title, body, rememberKey,
+    buttons: [{ label: "cancel", value: null }, { label: okLabel || "ok", value: true, style: "go" }]
+  }).then(v => v === true);
+};
 
 const tellUser = (title, body) => askUser({
   title, body, buttons: [{ label: "ok", value: true, style: "go" }]
@@ -5005,6 +5935,9 @@ paintCopyMode();
 
 wireFilters("rules-seg", "rules-q", paintRules);
 wireFilters("hist-seg", "hist-q", paintHistory);
+wireFilters("stack-seg", "stack-q", paintStack);
+paintStackSort();
+paintGroupSegs();
 rememberOpen("rules-d", "atrium.rules.open");
 rememberOpen("hist-d", "atrium.history.open");
 
