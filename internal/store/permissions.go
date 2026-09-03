@@ -3,13 +3,36 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"time"
 )
+
+// ReplayWindow is how long a decided request stays replayable.
+//
+// A dedup key exists for one failure: the daemon dies between recording a
+// decision and answering, the agent reconnects and re-posts, and the operator
+// must not be asked twice. That gap is seconds.
+//
+// It is bounded because a key cannot be trusted to identify one ATTEMPT. The
+// obvious way to build one, and the way the permission hook does build one, is
+// to hash the session, the tool and the command, which is stable across a
+// retry and also stable across running the same command again tomorrow.
+// Without a window, one `block` answered once would replay against every
+// identical command in that session for the life of the card, and replays
+// write no audit event, so the refusals would be silent.
+//
+// Two minutes: far longer than a crash and reconnect, far shorter than the gap
+// between deliberately running the same command twice.
+const ReplayWindow = 2 * time.Minute
 
 // RecordPermission stores a pending permission request. dedupKey makes the
 // call idempotent: if the daemon dies between a decision and its write, the
 // agent reconnects and re-posts the same request, and the operator must not be
 // asked the same question twice. A repeated key returns the existing row, along
 // with whether it has already been decided.
+//
+// A decided row older than ReplayWindow is not replayed. It is a fresh
+// question that happens to look identical, and answering it from history would
+// be answering against a situation that has moved on.
 func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string) (*Permission, bool, error) {
 	var (
 		p       *Permission
@@ -25,8 +48,23 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 				return err
 			}
 			if existing != nil {
-				p, decided = existing, existing.DecidedAt != nil
-				return nil
+				switch {
+				case existing.DecidedAt == nil:
+					// Still pending is always the same question: the agent is
+					// blocked on it right now and nothing can have gone stale.
+					p = existing
+					return nil
+				case now().Sub(*existing.DecidedAt) <= ReplayWindow:
+					p, decided = existing, true
+					return nil
+				default:
+					// Decided and stale. The old row keeps the key, and
+					// UNIQUE is on (task_id, dedup_key), so this request
+					// cannot carry it. Losing it costs nothing: this attempt
+					// is the one being asked about now, and it is about to be
+					// asked properly.
+					dedupKey = ""
+				}
 			}
 		}
 		n := now()

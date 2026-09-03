@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A replayed decision is bounded, and recorded.** A dedup key makes a request idempotent so a daemon that
+  died between recording a decision and answering it does not ask twice. The key cannot be trusted to identify
+  one ATTEMPT, though: the permission hook builds it by hashing the session, the tool and the command, which is
+  stable across a retry and equally stable across running the same command tomorrow. So one `block` answered
+  once would have replayed against every identical command for the life of that card. Decided requests are now
+  replayable for two minutes, far longer than a crash and reconnect and far shorter than the gap between two
+  deliberate runs. A still-pending request is exempt, since the agent is blocked on it right now and nothing
+  can have gone stale.
+
+  Replays also write an audit event now, marked `replayed an earlier answer`. A replay reaches an agent as a
+  real answer, and it was the one path that returned a refusal with nothing anywhere saying it happened.
+
 - **`atrium name` makes wire names unique across machines.** `wire_name` is UNIQUE on the task table and is the
   first thing registration matches, so a collision does not error: it silently hands one session another's
   card, its history and its permission rules. On one machine that cannot happen, because directory names

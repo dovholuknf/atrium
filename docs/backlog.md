@@ -150,18 +150,27 @@ Three things found while planning it that are worth knowing before anyone starts
   silently swallow a second machine's request on a collision, and nothing appearing is exactly what a working
   board looks like. Every key has to become peer plus id.
 
-### An unexplained block, with no audit trail
+### The unexplained block was not a bug. Closed.
 
-A tool call was refused with the shelved reason on a card that was never shelved, and nothing was written to the
-decision log. Verified after the fact: no `status-changed` to `shelved` in that card's whole history, no card
-shelved at the time, and zero blocks recorded across 1193 decisions on it.
+Kept because the wrong conclusion is instructive.
 
-The one path that returns a block without writing an event is a decision replayed onto an already-decided
-request, since `DecidePermissionBy` returns the existing answer and appends nothing. That fits, and it is not
-proof. It matters because it means an agent can be refused and the audit log will not say it happened, which is
-the one thing that log exists to prevent.
+A tool call was refused with the shelved reason, and the first investigation reported that the card had never
+been shelved, that nothing was in the decision log, and that zero blocks existed across 1193 decisions. All
+three were wrong, and all three came from the same mistake: querying the events endpoint with a limit smaller
+than the card's history and reading an empty result as an absence.
 
-Worth doing regardless of the cause: make the replay path record that it replayed.
+Queried properly, the permission table has three blocks with `decided_by = shelved` and the card has two
+`status-changed` events into `shelved`. The gate worked, the block was correct, and it was recorded.
+
+Two things came out of chasing it, and both were real:
+
+- The replay path returned a decision without writing an event. Fixed, and it now records `replay` as what
+  answered.
+- The dedup key identifies a COMMAND rather than an ATTEMPT, so a decision could replay indefinitely. Bounded
+  to a two minute window. See the changelog entry.
+
+The lesson worth keeping: on a board where a card can carry thousands of events, an absence proves nothing
+until the query is known to have covered the range.
 
 ### Small interface debts
 
@@ -289,10 +298,15 @@ and already gated, which is what joining was for.
   and its gaps are invisible.
 - **The board is a plain page**, not the React app the decisions table names. It speaks the same JSON and SSE
   contract, so this is a client side swap whenever it is worth doing.
-- **Permission requests carry no dedup key.** The store supports it, the replay path is tested and the key is now
-  scoped per task, but the hook does not send one, so a crash between a decision and its write could ask twice.
+- **The dedup key names a command, not an attempt.** The permission hook hashes the session, the tool and the
+  command, which is all it has: Claude Code's `PreToolUse` payload carries no per-call identifier the hook
+  reads today. A two minute replay window makes that safe, but the window is a bound on a wrong key rather
+  than a right one. If the payload does carry a tool use id, using it would make the key exact and the window
+  unnecessary. Unverified, and worth checking next time the hook events are looked at.
 - **A session that dies without warning can hang.** `SessionEnd` covers a clean exit and the reaper covers a
-  known pid. A session that is killed outright, with no pid recorded, sits in `running` forever.
+  known pid. A session that is killed outright, with no pid recorded, sits in `running` forever. No steps to
+  reproduce yet: it has been seen once, and what killed the session was not established. Needs a repro before
+  it is worth fixing, since the fix is a guess about which signal was missed.
 - **Postgres portability is asserted, not tested.** The schema is written for it. Nothing runs the migrations
   against it. A CI job would settle it.
 - **`docs/test-plan.md` predates v2.** It covers the hub and the agent loop, not the daemon, the board, rules,
