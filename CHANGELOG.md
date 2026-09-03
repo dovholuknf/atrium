@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium name` makes wire names unique across machines.** `wire_name` is UNIQUE on the task table and is the
+  first thing registration matches, so a collision does not error: it silently hands one session another's
+  card, its history and its permission rules. On one machine that cannot happen, because directory names
+  cannot collide. Across machines it happens the first time two containers run the same image in the same
+  working directory, which is the normal case rather than an unlucky one. Naming an atrium prefixes every
+  session it registers, so `atrium` on `sg4` is stored as `sg4/atrium`.
+
+  Immutable once set, and it refuses a change rather than accepting one: accepting would orphan every card
+  already registered under the old name. A subcommand rather than a flag on `daemon`, because a flag has to be
+  passed on every start and a start that forgot it would register a whole board under the wrong names.
+  Qualifying happens inside `Register` and the wire-name lookups rather than at the eight call sites, since
+  that is the one boundary where a name off the wire becomes a name in the database. Idempotent, so a session
+  that reconnects does not become `sg4/sg4/atrium`. An unnamed atrium is untouched: one machine has nothing to
+  collide with, and renaming every card on a board that will never federate is a migration for no benefit. The
+  card title drops the prefix, since on a board with one atrium it is the same on every row.
+
 - **Fixtures: terminals that come up with the daemon.** The habit this replaces is opening a terminal, changing
   directory and resuming the same agent every morning. A fixture names a runner, a directory and whether to
   resume, and they start in the order you put them in, so "the dotfiles one is always first" is a thing you can

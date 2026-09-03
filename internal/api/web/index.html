@@ -645,9 +645,12 @@
   .chip.theme:hover { border-color: var(--teal); color: var(--head); }
   /* The star. Faint until it is on, since an unpinned card carries one too
      and a row of bright stars says nothing. */
+  /* Sized against the runner mark beside it, not against the body text. It
+     sits in a row of 39px tiles and at label size read as a stray character. */
   .pin {
-    flex: none; cursor: pointer; color: var(--stroke); font-size: var(--fs-lg);
-    line-height: 1; align-self: center; padding: 0 2px; transition: color .14s;
+    flex: none; cursor: pointer; color: var(--stroke); font-size: var(--fs-3xl);
+    line-height: 1; align-self: center; padding: 0 4px; transition: color .14s;
+    width: 30px; text-align: center;
   }
   .pin:hover { color: var(--warn); }
   .pin.on, .pinned > .pin { color: var(--warn); }
@@ -660,7 +663,13 @@
      pretending there is something to attach to. */
   .term-entry.cold b, .term-entry.cold span { opacity: .72; }
   .term-entry.cold:hover { opacity: 1; }
-  .card .title .pin { font-size: var(--fs-md); margin-right: 5px; }
+  /* On a card title it sits inline with the text, so it takes the title's
+     size rather than the row's. */
+  .card .title .pin {
+    font-size: var(--fs-xl); width: auto; padding: 0; margin-right: 5px;
+  }
+  /* In the terminal switcher, matched to the entry's own title. */
+  .term-entry .pin { font-size: var(--fs-2xl); width: 24px; }
 
   /* A tag, coloured from its own name by the hash the groups use, so the same
      tag looks the same wherever it appears. */
