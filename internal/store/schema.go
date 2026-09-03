@@ -423,6 +423,17 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN theme TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// Which tone this card rings with. Stored on the card rather than in
+		// the browser for the same reason its theme is: a session you know by
+		// its sound has to sound the same in another browser and after a
+		// restart, and the whole point is telling agents apart without
+		// looking. Empty means the board-wide default for that kind of alert.
+		name: "0022_task_sound",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN sound TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -13,6 +13,21 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **Every card can have its own bell, and alerts can be held briefly so a burst is one alert.** A tone is
+  chosen on the card and stored there, like its theme and for the same reason: knowing which agent wants you
+  without looking only works if the answer is the same tomorrow and in another browser. It rings for both
+  kinds of alert that card raises, which trades away telling a permission from a ready by ear. That is the
+  right way round, because which agent is the fact you cannot recover with your back turned. Picked and heard
+  in the same place, since choosing a bell you will not hear until the next time that agent wants you is
+  choosing blind. A permission carries the asking card's tone from the server, which was already joining that
+  row for the agent's name.
+
+  The hold is off by default. A delay between something needing you and being told is a real cost, and it is
+  only worth paying once the pile-up is worse than the wait. When it is on, a later arrival extends the window
+  rather than opening a second one, capped at three times the setting so a steady trickle still gets
+  announced rather than postponed forever. Permissions and ready cards are never merged into one alert, and a
+  held pile names who rather than only counting them.
+
 - **A board card is one line, and its chips say the state they are in.** The runner is the mark the stack
   already uses rather than the word `claude`, which was the widest chip on the card and said nothing in a
   column of claude sessions. Two rows became one, so a column of eight fits on screen and seeing what a column

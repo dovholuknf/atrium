@@ -1902,6 +1902,20 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
       </div>
       <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
     </div>
+    <div class="field">
+      <label class="eyebrow" for="s-debounce">wait before alerting</label>
+      <div class="picker">
+        <select id="s-debounce">
+          <option value="0">do not wait, alert immediately</option>
+          <option value="2">2 seconds</option>
+          <option value="5">5 seconds</option>
+          <option value="10">10 seconds</option>
+        </select>
+      </div>
+      <span class="hintline">Anything that happens inside the wait is one alert instead of several. A later
+        arrival extends the wait rather than starting a second one, up to three times the setting, so a steady
+        trickle still gets announced.</span>
+    </div>
 
     <div class="field" id="s-skipped-field" hidden>
       <label class="eyebrow">questions you turned off</label>
@@ -2206,6 +2220,19 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
       <span class="hintline" id="d-auto-note"></span>
+    </div>
+    <!-- The tone this card rings with. Stored on the card, like its theme and
+         for the same reason: knowing which agent it was without looking only
+         works if the answer is the same tomorrow and in another browser. -->
+    <div class="field">
+      <label class="eyebrow" for="d-sound">its bell</label>
+      <div class="picker">
+        <select id="d-sound"></select>
+        <button onclick="previewCardSound()" title="hear it">play</button>
+      </div>
+      <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
+        that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
+        back turned, so it wins over telling the two kinds apart.</span>
     </div>
     <!-- Saying something to a session that is already running. There is no
          channel into a claude process from outside, so this goes one of two
@@ -4387,9 +4414,13 @@ const SOUNDS = {
 
 // expiry is how many seconds a desktop notification stays on screen. 0 keeps it
 // until it is answered or clicked, which on Windows is what made them pile up.
+// debounce holds an alert for a moment so several agents finishing together
+// are one alert rather than a burst. Off by default: a delay between something
+// needing you and being told is a real cost, and it is only worth paying once
+// the pile-up is worse than the wait.
 const DEFAULT_PREFS = {
   muted: false, volume: 0.35, input: "chime", perm: "alarm",
-  desktop: true, expiry: 30
+  desktop: true, expiry: 30, debounce: 0
 };
 
 function loadPrefs() {
@@ -4485,9 +4516,16 @@ const alerting = (() => {
     s.notes.forEach(n => note(n[0], n[1], n[2], n[3], n[4]));
   }
 
-  function play(kind) {
+  // `sound` is the card's own tone when it has one.
+  //
+  // The point of giving a session its own tone is knowing which one it was
+  // without looking, so the card's choice wins over the board default for
+  // both kinds of alert. Losing the ability to tell a permission from a ready
+  // by ear is the trade, and it is the right way round: which agent is the
+  // fact you cannot get any other way while your back is turned.
+  function play(kind, sound) {
     if (prefs.muted) return;
-    preview(kind === "permission" ? prefs.perm : prefs.input);
+    preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
   }
 
   function notify(title, body, goTo, permId, subject) {
@@ -4537,7 +4575,7 @@ const alerting = (() => {
       if (nagged[p.id] === slot) return;
       nagged[p.id] = slot;
 
-      play("permission");
+      play("permission", soundForAlert(p));
       const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
       const who = p.agent || "an agent";
       notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id);
@@ -4572,27 +4610,80 @@ const alerting = (() => {
     const fresh = items.filter(i => !prev.has(i.id));
     if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
     if (!fresh.length) return;
-    play(kind);
+
+    // Held briefly, so several agents finishing together are one alert rather
+    // than a burst. Zero means announce now, which is the default: a delay
+    // between something needing you and being told is a real cost, and it is
+    // only worth paying when the pile-up is worse.
+    const holdMs = Math.round((Number(prefs.debounce) || 0) * 1000);
+    if (holdMs <= 0) {
+      announce(kind, fresh, describe);
+      return;
+    }
+    // A later arrival extends the window rather than starting a second one,
+    // which is what makes three finishing over four seconds one alert. Capped
+    // at three windows, or a steady trickle would postpone the alert forever
+    // and the setting would read as "never tell me".
+    const p = pending[kind] || (pending[kind] = { items: [], describe, since: Date.now(), timer: 0 });
+    p.items = p.items.concat(fresh);
+    p.describe = describe;
+    clearTimeout(p.timer);
+    const waited = Date.now() - p.since;
+    p.timer = setTimeout(() => {
+      pending[kind] = null;
+      announce(kind, p.items, p.describe);
+    }, Math.max(0, Math.min(holdMs, holdMs * 3 - waited)));
+  }
+
+  // Held alerts, one bucket per kind. Permissions and ready cards are never
+  // merged into one alert: they say different things and want different
+  // amounts of hurry.
+  const pending = {};
+
+  // Says one thing about a set of items that all arrived together.
+  function announce(kind, fresh, describe) {
+    if (!fresh.length) return;
     const d = describe(fresh[0]);
+    // One card's own tone when there is exactly one. A pile has no single
+    // agent to sound like, so it falls back to the board default.
+    play(kind, fresh.length === 1 ? soundForAlert(fresh[0]) : "");
     // Several at once still says what they are. "3 things need you" made an
     // agent blocked mid-tool and one that just finished its turn read the
     // same, and those want different amounts of hurry.
     const title = fresh.length > 1
       ? `${fresh.length} ${kind === "permission" ? "agents need permission" : "agents are ready"}`
       : d.title;
+    // A pile names who, since the count alone does not, and the names are the
+    // reason to look now rather than in a minute.
+    const body = fresh.length > 1 ? whoseNames(fresh) : d.body;
     // Buttons only make sense for a single named permission, not a pile.
     const actionable = kind === "permission" && fresh.length === 1 ? fresh[0].id : "";
     // One at a time gets its own notification. A summary of several replaces
     // whatever summary was there, which is what you want from a count.
     const subject = fresh.length === 1 ? fresh[0].id : "";
-    notify(title, d.body, kind === "permission" ? "perms" : "stack", actionable, subject);
-    // A desktop notification is suppressed while the tab is visible, so the
+    notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject);
+    // A desktop notification is suppressed while the board is in front, so the
     // toast covers exactly that case. Clicking it goes where the work is.
-    toast(title, d.body, kind === "permission" ? "perms" : "stack",
+    toast(title, body, kind === "permission" ? "perms" : "stack",
       fresh.length === 1 ? fresh[0].id : null,
       fresh.length === 1 ? fresh[0].task_id || fresh[0].id : null);
   }
 })();
+
+// The names behind a count, trimmed so a notification stays one line.
+function whoseNames(items) {
+  const names = items.map(i => i.agent || i.display_title || "an agent");
+  if (names.length <= 3) return names.join(", ");
+  return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+}
+
+// A card's own tone, for an alert that is about exactly one card.
+//
+// Both shapes carry it: a task has its own sound, and a permission is given
+// the asking card's by the server, which is already joining that row for the
+// agent name. Empty means the board default, which is what every card has
+// until it is given one.
+function soundForAlert(item) { return item.sound || ""; }
 
 // ── desktop notifications ───────────────────────────────
 // Windows renders these itself, so the only things we control are the icon,
@@ -5528,6 +5619,7 @@ function paintSettings() {
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
   document.getElementById("s-perm").innerHTML = soundOptions(p.perm);
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
+  document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-cardsize").value = String(uiScale());
   paintGrouping();
   paintSkipped();
@@ -5573,6 +5665,9 @@ function paintSettings() {
 
 document.getElementById("s-expiry").addEventListener("change", e => {
   alerting.set({ expiry: Number(e.target.value) });
+});
+document.getElementById("s-debounce").addEventListener("change", e => {
+  alerting.set({ debounce: Number(e.target.value) });
 });
 document.getElementById("s-vol").addEventListener("input", e => {
   alerting.set({ volume: Number(e.target.value) / 100 });
@@ -5767,6 +5862,11 @@ async function openTask(id) {
       "and never rules and shelving still block."
     : "";
 
+  // "the board's tone" rather than an empty row, because empty reads as
+  // broken where the default is a real choice.
+  document.getElementById("d-sound").innerHTML =
+    `<option value=""${current.sound ? "" : " selected"}>the board's tone</option>` +
+    soundOptions(current.sound);
   document.getElementById("d-say").value = "";
   // A message rides a hook, and a session that has ended fires no more of
   // them. Said rather than prevented: a card can be wrong about being dead,
@@ -6099,6 +6199,19 @@ async function killTask() {
 
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
 document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
+
+// Picked and heard in one place. Choosing a bell you cannot hear until the
+// next time that agent wants you is choosing blind, and by then it is too late
+// to be the one you meant.
+document.getElementById("d-sound").addEventListener("change", e => {
+  const name = e.target.value;
+  patch({ sound: name });
+  if (name) alerting.preview(name);
+});
+function previewCardSound() {
+  const name = document.getElementById("d-sound").value;
+  alerting.preview(name || alerting.get().input);
+}
 
 // Enter sends, shift-enter is a newline. The chat convention, because this is
 // one: short things said to somebody, in a row. Escape would close the dialog

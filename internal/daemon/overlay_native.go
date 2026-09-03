@@ -87,6 +87,18 @@ type native struct {
 	// shareToken is what zrok gave back, kept so the share can be deleted on
 	// the way out rather than left behind on the account.
 	shareToken string
+	// reserved marks a share whose address was chosen rather than handed out,
+	// which is the only reason a token or a name is configured at all.
+	//
+	// A reserved share must SURVIVE being stopped. That is the whole point of
+	// reserving one: the address stays yours across restarts, so the link you
+	// gave somebody still works tomorrow. Deleting it on the way out gave back
+	// exactly the thing that was being paid for, and the next start would ask
+	// for a token the account no longer had.
+	//
+	// An unreserved share is the opposite: nobody has its address written
+	// down, and leaving it behind accumulates dead shares on the account.
+	reserved bool
 }
 
 // serveOn takes ownership of a listener and answers the board on it.
@@ -94,12 +106,13 @@ type native struct {
 // The server is the same handler the local board uses. It is a second
 // http.Server rather than a second handler, because a listener is what these
 // SDKs return and http.Serve wants one.
-func (n *native) serveOn(ln net.Listener, handler http.Handler, address, shareToken string) {
+func (n *native) serveOn(ln net.Listener, handler http.Handler, address, shareToken string, reserved bool) {
 	srv := &http.Server{Handler: handler}
 
 	n.mu.Lock()
 	n.ln, n.srv, n.since = ln, srv, time.Now()
 	n.address, n.shareToken, n.err, n.stopping = address, shareToken, "", false
+	n.reserved = reserved
 	n.mu.Unlock()
 
 	go func() {
@@ -146,17 +159,23 @@ func (n *native) state(found string) OverlayState {
 // opened twice into a list of dead shares they have to clean up by hand.
 func (n *native) stop(root env_core.Root) {
 	n.mu.Lock()
-	srv, token := n.srv, n.shareToken
+	srv, token, keep := n.srv, n.shareToken, n.reserved
 	n.stopping = true
 	// What it published died with it, and the error belonged to a listener
 	// that is over.
-	n.address, n.err, n.shareToken = "", "", ""
+	n.address, n.err, n.shareToken, n.reserved = "", "", "", false
 	n.mu.Unlock()
 
 	if srv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+	}
+	// A reserved address is kept. Somebody has that link, and handing it back
+	// to the pool is the one thing reserving it was meant to prevent.
+	if keep {
+		log.Printf("[atrium] the zrok share %s is reserved, so it was left in place", token)
+		return
 	}
 	if token != "" && root != nil {
 		if err := zroksdk.DeleteShare(root, &zroksdk.Share{Token: token}); err != nil {
@@ -221,7 +240,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 	}
 
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
-	d.nat(OverlayZrok).serveOn(ln, d.ap.Handler(), address, shr.Token)
+	d.nat(OverlayZrok).serveOn(ln, d.ap.Handler(), address, shr.Token, req.Reserved)
 	return nil
 }
 
@@ -256,6 +275,8 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	log.Printf("[atrium] serving the board on the ziti service %q", service)
 	// A ziti service has no address. Who may reach it is a policy on the
 	// network, and the service name is the whole identifier.
-	d.nat(OverlayZiti).serveOn(ln, d.ap.Handler(), "ziti service "+service, "")
+	// A ziti service is administered on the network and atrium never created
+	// it, so there is nothing here to release or to keep.
+	d.nat(OverlayZiti).serveOn(ln, d.ap.Handler(), "ziti service "+service, "", false)
 	return nil
 }

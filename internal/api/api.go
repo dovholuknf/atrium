@@ -330,6 +330,10 @@ type patchBody struct {
 	// the project, so clearing it is a meaningful value rather than an
 	// omission.
 	Theme *string `json:"theme"`
+	// Sound names the tone this card rings with. Empty means the board-wide
+	// default for whichever kind of alert fired, so clearing it is a
+	// meaningful value rather than an omission.
+	Sound *string `json:"sound"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +422,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Theme != nil {
 		if err := s.st.SetTheme(id, *body.Theme); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Sound != nil {
+		if err := s.st.SetSound(id, *body.Sound); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -551,6 +561,10 @@ type permView struct {
 	*store.Permission
 	Agent    string `json:"agent"`
 	Worktree string `json:"worktree,omitempty"`
+	// Sound is the asking card's own tone, so an alert about one request can
+	// ring as that agent without the board having to hold every task in memory
+	// to look it up. The join is already being done here for the name.
+	Sound string `json:"sound,omitempty"`
 }
 
 // namePermissions attaches the asking session to each request.
@@ -573,6 +587,7 @@ func (s *Server) namePermissions(perms []*store.Permission) []permView {
 		if t := byID[p.TaskID]; t != nil {
 			v.Agent = t.DisplayTitle()
 			v.Worktree = t.Worktree
+			v.Sound = t.Sound
 		}
 		out = append(out, v)
 	}
