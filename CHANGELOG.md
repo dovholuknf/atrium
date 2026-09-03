@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A question asked for a session that has gone is closed out.** The reaper judges liveness two ways: ask the
+  operating system about a pid, or fall back to how long a card has been silent. Neither reaches a card waiting
+  on a human with no pid recorded, because waiting is supposed to be silent and marking it dead would discard
+  the question. So it sat there, offering a request nobody could answer: the reply channel lives in the daemon
+  process and died with the agent's connection.
+
+  Only the hub can settle it, since it is the only thing that knows which pending requests still have somebody
+  parked on them. A request the store calls pending and the hub has never heard of is an orphan. It is answered
+  with a block so the queue stops offering it, recorded as `the session went away`, and the card moves to dead
+  when nothing else is holding it. Three minutes of grace, because the two facts are read at different moments
+  and a daemon that just restarted has a store full of pending requests and an empty map until every agent
+  reconnects on its own backoff. A card with a pid is left alone: the pid check is a fact where this is an
+  inference.
+
 - **A replayed decision is bounded, and recorded.** A dedup key makes a request idempotent so a daemon that
   died between recording a decision and answering it does not ask twice. The key cannot be trusted to identify
   one ATTEMPT, though: the permission hook builds it by hashing the session, the tool and the command, which is
