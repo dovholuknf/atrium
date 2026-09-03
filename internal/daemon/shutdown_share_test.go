@@ -20,12 +20,12 @@ func probeShutdown(t *testing.T, d *Daemon, from, token string) *httptest.Respon
 }
 
 // startSharing puts an overlay into the state the shutdown rule cares about,
-// without needing zrok installed to do it.
+// without needing a zrok environment to do it.
 func startSharing(d *Daemon) {
-	v := d.ovl.get(OverlayZrok)
-	v.mu.Lock()
-	v.starting = true
-	v.mu.Unlock()
+	n := d.nat(OverlayZrok)
+	n.mu.Lock()
+	n.srv = &http.Server{}
+	n.mu.Unlock()
 }
 
 // The rule being protected: at this keyboard, no share, no token, allowed.

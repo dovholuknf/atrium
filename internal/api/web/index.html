@@ -269,9 +269,16 @@
     border-radius: var(--r-xs) 9px 9px 3px;
     padding-left: 9px; margin-bottom: 12px;
   }
-  .cardgroup.project > summary { text-transform: none; letter-spacing: .02em; }
+  .cardgroup.project > summary {
+    text-transform: none; letter-spacing: .02em; padding: 7px 3px 9px;
+  }
+  .cardgroup.project > summary::before { font-size: var(--fs-lg); width: 13px; }
+  .cardgroup.project > summary .gn { font-size: var(--fs-md); }
+  /* Sized against the card titles under it rather than against the pills
+     above. A group name is a heading for what follows, and at the pill size it
+     read as another filter that had drifted down the page. */
   .cardgroup.project > summary .gname {
-    color: hsl(var(--ghue) 70% 72%); font-family: var(--mono); font-size: var(--fs-base);
+    color: hsl(var(--ghue) 70% 72%); font-family: var(--mono); font-size: var(--fs-lg);
     font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .cardgroup.project > summary::before { color: hsl(var(--ghue) 65% 60%); }
@@ -533,6 +540,14 @@
   /* One panel per way out, each carrying its own mark, its own colour and its
      own state. They sit in the gear next to each other, so they have to be
      told apart at a glance rather than by reading the heading. */
+  /* Section headings in the settings dialog. It grew from one thing into six,
+     and an unbroken column of fields makes the last of them unfindable. */
+  .s-section {
+    margin: 26px 0 14px; padding-bottom: 8px; font: 600 var(--fs-sm)/1 var(--sans);
+    letter-spacing: .16em; text-transform: uppercase; color: var(--teal);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .s-section:first-child { margin-top: 0; }
   .ov {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
     background: rgba(4,11,20,.35); padding: 14px 15px; margin-bottom: 12px;
@@ -548,10 +563,11 @@
     flex: none; width: 40px; height: 40px; display: grid; place-items: center;
     border-radius: var(--r-md);
   }
-  .ov-mark svg { width: 25px; height: 25px; display: block; }
-  /* Each project's own colour, so the panel is recognised before it is read. */
-  .ov-mark[data-kind="zrok"] { color: #9BE8C8; background: rgba(155,232,200,.12); }
-  .ov-mark[data-kind="ziti"] { color: #8CC7FF; background: rgba(140,199,255,.12); }
+  /* The marks carry their own colours, so the tile behind each one is tinted
+     to match rather than recolouring the logo. */
+  .ov-mark svg { width: 27px; height: 27px; display: block; }
+  .ov-mark[data-kind="zrok"] { background: rgba(155,243,22,.12); }
+  .ov-mark[data-kind="ziti"] { background: rgba(140,199,255,.12); }
   /* Sharing right now. Green and steady rather than pulsing: unlike auto mode
      this is a thing you went and turned on, and it is not a hazard. */
   .ov-live {
@@ -588,6 +604,29 @@
   .ov-note code { font-family: var(--mono); color: var(--label); }
   .ov-missing { margin-top: 10px; color: var(--dim); font-size: var(--fs-sm); }
   .ov-missing a { color: var(--teal); }
+  /* What is already done. Quiet: the point of this line is that there is
+     nothing left to do in here. */
+  .ov-ready {
+    margin-top: 10px; font-size: var(--fs-xs); color: var(--chip-accent-text);
+  }
+  .ov-ready::before { content: "\2713"; margin-right: 6px; }
+  /* The step that stands between a tool being installed and it being usable.
+     Set apart, because it is a form with a verb rather than settings. */
+  .ov-setup {
+    margin-top: 12px; padding: 13px 14px; border-radius: var(--r-md);
+    background: rgba(4,11,20,.45); border: 1px solid var(--stroke-dim);
+  }
+  .ov-setup > b { display: block; color: var(--head); font-size: var(--fs-md); }
+  .ov-setup > p {
+    margin: 5px 0 14px; color: var(--dim); font-size: var(--fs-sm); line-height: 1.55;
+  }
+  .ov-setup textarea {
+    font: var(--fs-sm)/1.5 var(--mono); resize: vertical; min-height: 62px;
+  }
+  .ov-link { color: var(--teal); font-size: var(--fs-sm); align-self: center; }
+  /* A token that reads as good, and one that does not. */
+  .hintline.ok { color: var(--chip-accent-text); }
+  .hintline.bad { color: var(--warn); }
   .ov-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
   .ov-actions .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ov-log { margin-top: 10px; }
@@ -693,8 +732,17 @@
   .stackrow { cursor: pointer; align-items: center; }
   .stackrow:hover { background: var(--lift); }
   .stackrow.attn { border-left: 3px solid var(--warn); }
-  .stackrow .wait { flex: none; min-width: 62px; font-family: var(--mono); color: var(--warn); }
+  .stackrow .wait {
+    flex: none; min-width: 78px; font-family: var(--mono); color: var(--warn);
+    text-align: right; line-height: 1.25;
+  }
   .stackrow .wait.quiet { color: var(--dimmest); }
+  /* The day it started, under how long ago that was. Two different questions,
+     and a duration alone cannot answer which day a card carried over from. */
+  .stackrow .wait .since {
+    display: block; font-style: normal; font-size: var(--fs-xxs);
+    color: var(--dimmest); font-weight: 400; letter-spacing: 0;
+  }
   .stackrow .who { flex: 1 1 320px; min-width: 0; }
   .stackrow .who b { display: flex; align-items: center; gap: var(--sp-2); color: var(--head); }
   .stackrow .who span {
@@ -1663,12 +1711,29 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
      makes everything outside itself inert. -->
 <div id="toasts"></div>
 
-<dialog id="settings">
+<!-- Wide, and titled for what it holds. It was called "sound", which is what
+     it held first, and everything added since read as an afterthought below
+     the volume slider. -->
+<dialog id="settings" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2>sound</h2></div>
+    <div class="grow"><h2>settings</h2></div>
     <button onclick="document.getElementById('settings').close()">close</button>
   </div>
   <div class="dlg-body">
+    <!-- Reaching the board from elsewhere, first, because it is the only thing
+         in here that changes who can see the board.
+         Atrium listens on loopback and has no login, on purpose: an auth layer
+         invented here would be a worse one than the overlays that already
+         exist. This is atrium driving one of those rather than becoming one.
+         It never handles an identity and never proxies traffic. -->
+    <h3 class="s-section">reach this board from elsewhere</h3>
+    <div class="field">
+      <div id="overlays"></div>
+      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
+        publish it through something that already knows who is allowed to see it.</span>
+    </div>
+
+    <h3 class="s-section">sound</h3>
     <div class="field">
       <label class="eyebrow">volume</label>
       <input type="range" id="s-vol" min="0" max="100" step="5">
@@ -1716,6 +1781,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
     </div>
 
+    <h3 class="s-section">the board</h3>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
       <div class="picker">
@@ -1757,17 +1823,6 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
         to the default and says so rather than blanking the board.</span>
     </div>
 
-    <!-- Reaching the board from elsewhere.
-         Atrium listens on loopback and has no login, on purpose: an auth layer
-         invented here would be a worse one than the overlays that already
-         exist. This is atrium driving one of those rather than becoming one.
-         It never handles an identity and never proxies traffic. -->
-    <div class="field">
-      <label class="eyebrow">reach this board from elsewhere</label>
-      <div id="overlays"></div>
-      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
-        publish it through something that already knows who is allowed to see it.</span>
-    </div>
   </div>
 </dialog>
 
@@ -2097,7 +2152,40 @@ function ago(secs) {
   const d = Math.floor(secs / 86400);
   const h = Math.floor((secs % 86400) / 3600);
   const m = Math.floor((secs % 3600) / 60);
-  return (d ? d + "d" : "") + (h ? h + "h" : "") + (m ? m + "m" : "");
+  // Past a day the minutes are noise: nothing is decided differently by
+  // "1d3h17m" than by "1d3h", and the extra digits make a column of ages
+  // harder to compare down.
+  if (d) return d + "d" + (h ? h + "h" : "");
+  return (h ? h + "h" : "") + (m ? m + "m" : "");
+}
+
+// When a session was first seen, as a date rather than a duration.
+//
+// "20h4m ago" answers how stale something is. It does not answer which day it
+// started, and after a night that is the question: a card carried over from
+// yesterday is a different thing from one opened this morning.
+function firstSeen(iso) {
+  if (!iso) return "";
+  const t = new Date(iso);
+  if (isNaN(t)) return "";
+  const now = new Date();
+  const sameDay = t.toDateString() === now.toDateString();
+  const pad = n => String(n).padStart(2, "0");
+  const clock = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  if (sameDay) return `today ${clock}`;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (t.toDateString() === yesterday.toDateString()) return `yesterday ${clock}`;
+
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun",
+                  "jul", "aug", "sep", "oct", "nov", "dec"];
+  const date = `${MONTHS[t.getMonth()]} ${t.getDate()}`;
+  // The year only when it is not this one, since it is noise the rest of the
+  // time and this board is mostly looking at the last few days.
+  return t.getFullYear() === now.getFullYear()
+    ? `${date} ${clock}`
+    : `${date} ${t.getFullYear()}`;
 }
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
@@ -2993,7 +3081,10 @@ function stackRow(t) {
     onclick="openTask('${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${runnerMark(t.runner)}
-    <div class="wait ${w ? "" : "quiet"}">${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</div>
+    <div class="wait ${w ? "" : "quiet"}"
+      title="first seen ${esc(firstSeen(t.created_at))}"
+      >${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}
+      <i class="since">${esc(firstSeen(t.created_at))}</i></div>
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
       <span>${esc(t.worktree || "no directory")}</span>
@@ -4544,43 +4635,52 @@ async function toggleGlobalAuto() {
 
 let overlays = [];
 
-// Marks, in each project's own colour. Abstract rather than a copy of a
-// trademark: a bad reproduction of somebody's logo is worse than a shape that
-// is merely distinct.
+// The projects' own marks, traced from their published SVGs: the zrok rocket
+// and the OpenZiti ziggurat. Each keeps its own colours rather than taking
+// the board's, since a logo recoloured is a logo somebody has to look twice at.
+//
+// Both carry their own viewBox, so they are held in an <svg> of their own
+// rather than being pasted into a shared one.
 const OVERLAY_MARKS = {
-  // A ring pierced by a line: a tunnel through a boundary.
-  zrok: `<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/>
-    <path d="M3 12h18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
-  // Two nodes and the path between them.
-  ziti: `<circle cx="5.5" cy="18.5" r="2.6" fill="currentColor"/>
-    <circle cx="18.5" cy="5.5" r="2.6" fill="currentColor"/>
-    <path d="M7.5 16.5C10 14 9 9 14 7.5" fill="none" stroke="currentColor"
-      stroke-width="2.2" stroke-linecap="round"/>`
+  zrok: `<svg viewBox="41.62 64.03 125.8 166.27" aria-hidden="true">
+    <path fill="#9BF316" d="m 104.52059,64.027974 c 0,0 -12.300998,16.684095 -17.163248,24.964306 -4.8623,8.28022 -7.86765,12.84754 -10.59501,26.3339 -2.72736,13.48636 -1.27406,42.21319 -1.27406,42.21319 l -18.58752,20.04004 -15.280273,49.9615 40.422833,-6.79427 a 22.714797,11.567473 0 0 0 22.320548,9.54731 22.714797,11.567473 0 0 0 22.32712,-9.55945 l 40.72649,6.84277 -15.28027,-49.95979 -18.58916,-20.04001 c 0,0 1.45496,-28.72857 -1.2724,-42.21493 -2.72736,-13.48636 -5.73437,-18.05368 -10.59667,-26.3339 -4.8608,-8.277646 -17.14905,-24.947062 -17.15668,-24.957378 z m -0.0151,14.741718 c 0.52421,0.860497 14.76063,18.300498 18.34492,32.586238 3.65093,14.55125 3.25036,30.16797 2.29067,46.75483 -0.68395,11.82081 -5.48912,37.13724 -8.2384,50.97445 a 22.714797,11.567473 0 0 0 -12.54073,-1.9254 22.714797,11.567473 0 0 0 -12.237098,1.84921 c -2.75047,-13.84452 -7.55003,-39.12307 -8.23343,-50.93462 -0.95969,-16.58687 -1.36026,-32.20531 2.29067,-46.75656 3.57561,-14.25109 17.733538,-31.579359 18.323398,-32.548148 z m -27.999198,95.069708 6.36686,35.53319 -30.30472,9.08328 10.94985,-35.7998 z m 56.021568,0.0351 12.988,8.81667 10.9482,35.80155 -30.30311,-9.08504 z"/>
+  </svg>`,
+  ziti: `<svg viewBox="0 0 201.4 201.4" aria-hidden="true">
+    <defs><linearGradient id="zitiGrad" gradientUnits="userSpaceOnUse"
+      x1="154.4149" y1="206.1329" x2="43.0052" y2="-12.521">
+      <stop offset="0.004" stop-color="#FC0147"/>
+      <stop offset="0.039" stop-color="#F4044D"/>
+      <stop offset="0.9" stop-color="#0068F9"/>
+    </linearGradient></defs>
+    <circle fill="url(#zitiGrad)" cx="100.7" cy="100.7" r="100.7"/>
+    <path fill="#FFFFFF" d="M101.1,10.6L44.7,96.4l32,20.9l5.3-8.1L98.7,189l55.5-86.3l-31.1-20.4l-5.3,8.2L101.1,10.6z M126.4,96.7 l13.7,9.2l-36.5,55.9L86.8,82l-13.6,20.8L59.8,94l36.7-56.1l16.6,79.2L126.4,96.7z"/>
+  </svg>`
 };
 
 // The fields each overlay takes. Rendered from this, so the form and what the
 // daemon stores cannot drift apart in one place and not the other.
 const OVERLAY_UI = {
+  // A stable address is a different flag per mode in zrok v2, so both fields
+  // are here and each says which mode it belongs to.
   zrok: [
     { key: "mode", label: "share", type: "select",
       options: [["private", "private — needs zrok on the other end"],
                 ["public", "public — anyone with the link"]],
       hint: "A public share is a link with no login in front of it." },
-    { key: "backend", label: "what to publish", type: "text",
-      hint: "The board's own address. Change it only if you mean to share something else." },
-    { key: "reserved", label: "reserved token", type: "text",
-      placeholder: "from zrok reserve, optional",
-      hint: "Keeps the same address across restarts. Empty means a new one each time." },
-    { key: "extra", label: "extra options", type: "text", placeholder: "optional" }
+    { key: "share_token", label: "share token (private)", type: "text",
+      placeholder: "optional",
+      hint: "Reuses a reserved private share so the address survives a restart." },
+    { key: "name", label: "reserved name (public)", type: "text",
+      placeholder: "optional",
+      hint: "Keeps one address for a public share. Empty means a new one each time." }
   ],
-  // One field, because one field is all `ziti tunnel host` takes. Which
-  // services this hosts and where each points are configured on the network,
-  // not here.
   ziti: [
     { key: "identity", label: "identity file", type: "text",
       placeholder: "C:/path/to/identity.json",
-      hint: "Passed to the tunneler. Atrium never opens it: the key inside is not its business." },
-    { key: "extra", label: "extra options", type: "text", placeholder: "optional" }
+      hint: "Filled in by enrolling. The SDK opens it and owns the key inside." },
+    { key: "service", label: "service", type: "text", placeholder: "atrium-board",
+      hint: "The service this board answers. It has to already exist, with a bind policy " +
+            "this identity satisfies." }
   ]
 };
 
@@ -4604,14 +4704,21 @@ function overlayCard(o) {
     ? `<span class="by missing">not installed</span>`
     : o.running
       ? `<span class="ov-live">sharing</span>`
-      : `<span class="by">ready</span>`;
+      : o.ready
+        ? `<span class="by">ready</span>`
+        : `<span class="by missing">needs setting up</span>`;
 
+  // Three states, in the order somebody hits them: no tool, tool but nothing
+  // set up, ready to share. Showing the share form to somebody with no zrok
+  // environment is showing them a button that cannot work.
   const body = missing
     ? `<div class="ov-missing">
          Not on this machine, or not on the daemon's PATH.
          <a href="${esc(o.install)}" target="_blank" rel="noreferrer">${esc(o.install)}</a>
        </div>`
-    : (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
+    : !o.ready
+      ? overlaySetup(o)
+      : (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
 
   // The address, once there is one. This is the thing you came for, so it gets
   // its own line and a copy button rather than being read out of the log.
@@ -4641,29 +4748,223 @@ function overlayCard(o) {
       <code>--shutdown-token</code>: a share makes every request look local, so the
       loopback-only rule no longer means anything.</div>` : "";
 
-  const actions = missing ? "" : `
+  // Only once sharing is possible. Before that the setup block carries its
+  // own button and a second one would be two things to press.
+  const actions = (missing || !o.ready) ? "" : `
     <div class="ov-actions">
       ${o.running
         ? `<button class="no" onclick="stopOverlay('${esc(o.kind)}')">stop sharing</button>`
         : `<button class="go" onclick="startOverlay('${esc(o.kind)}')">start sharing</button>`}
+      <button onclick="teardownOverlay('${esc(o.kind)}')"
+        title="${o.kind === "zrok"
+          ? "remove the zrok environment from this machine"
+          : "stop using this identity"}">${
+        o.kind === "zrok" ? "disable" : "forget identity"}</button>
       <span class="grow"></span>
-      <span class="by">${o.found ? esc(o.found) : ""}</span>
+      <span class="by" title="${esc(o.found || "")}">${esc(o.found || "")}</span>
     </div>`;
+
+  // What is set up, once it is. One line, because the point is that there is
+  // nothing left to do here.
+  const ready = (!missing && o.ready) ? `<div class="ov-ready">${esc(readyLine(o))}</div>` : "";
 
   return `<div class="ov ${o.running ? "live" : ""}" data-kind="${esc(o.kind)}">
     <div class="ov-head">
-      <span class="ov-mark" data-kind="${esc(o.kind)}">
-        <svg viewBox="0 0 24 24" aria-hidden="true">${mark}</svg></span>
+      <span class="ov-mark" data-kind="${esc(o.kind)}">${mark}</span>
       <div class="grow">
         <b>${esc(o.label)}</b>
         <span>${esc(o.blurb)}</span>
       </div>
       ${state}
     </div>
-    ${addr}${err}${note}
+    ${addr}${err}${note}${ready}
     <div class="ov-body">${body}</div>
     ${actions}${log}
   </div>`;
+}
+
+// What is already set up, in one line.
+//
+// Which zrok instance, or which network, because a token from one does not
+// work on another and that is otherwise only discovered by failing.
+function readyLine(o) {
+  const s = o.setup || {};
+  if (o.kind === "zrok") {
+    return s.api_endpoint ? `enabled against ${s.api_endpoint}` : "enabled on this machine";
+  }
+  return s.controller ? `identity enrolled with ${s.controller}` : "identity ready";
+}
+
+// The step before sharing is possible at all.
+//
+// zrok needs an environment, which comes from an account token. OpenZiti needs
+// an enrolled identity, which comes from a one-use JWT. Different words, same
+// shape: paste the thing you were given, press the button.
+const OVERLAY_SETUP = {
+  zrok: {
+    title: "this machine is not enabled yet",
+    what: "zrok needs an environment before it can share anything. That comes from your " +
+          "account token, which you get once and reuse on every machine.",
+    label: "account token",
+    placeholder: "paste your zrok account token",
+    name: "what to call this machine",
+    namePlaceholder: "left to zrok's default when empty",
+    action: "enable this machine",
+    link: "get a token"
+  },
+  ziti: {
+    title: "no identity yet",
+    what: "An identity is what proves this machine to your network. It comes from a one-use " +
+          "enrolment token, which your network administrator issues.",
+    label: "enrolment token",
+    placeholder: "paste the enrolment JWT",
+    name: "call this identity",
+    namePlaceholder: "atrium",
+    action: "enrol this machine",
+    link: "how to get one"
+  }
+};
+
+function overlaySetup(o) {
+  const s = OVERLAY_SETUP[o.kind];
+  if (!s) return "";
+  const setup = o.setup || {};
+
+  // A path that points at nothing is worth saying out loud. Configured and
+  // missing looks identical to never configured otherwise, and the fix is
+  // different.
+  const gone = setup.path && !setup.present
+    ? `<div class="ov-err">The identity atrium was pointed at is not there any more:
+         <code>${esc(setup.path)}</code></div>`
+    : "";
+  const bad = setup.err ? `<div class="ov-err">${esc(setup.err)}</div>` : "";
+
+  return `${gone}${bad}
+    <div class="ov-setup">
+      <b>${esc(s.title)}</b>
+      <p>${esc(s.what)}</p>
+      <div class="ov-field">
+        <label class="eyebrow" for="ovs-${esc(o.kind)}-token">${esc(s.label)}</label>
+        <textarea id="ovs-${esc(o.kind)}-token" rows="3" spellcheck="false"
+          placeholder="${esc(s.placeholder)}"
+          oninput="tokenTyped('${esc(o.kind)}')"></textarea>
+        <span class="hintline" id="ovs-${esc(o.kind)}-claims"></span>
+      </div>
+      <div class="ov-field">
+        <label class="eyebrow" for="ovs-${esc(o.kind)}-name">${esc(s.name)}</label>
+        <input type="text" id="ovs-${esc(o.kind)}-name" spellcheck="false"
+          placeholder="${esc(s.namePlaceholder)}">
+      </div>
+      <div class="ov-actions">
+        <button class="go" onclick="setupOverlay('${esc(o.kind)}')">${esc(s.action)}</button>
+        <a class="ov-link" href="${esc(o.signup || o.install)}"
+          target="_blank" rel="noreferrer">${esc(s.link)}</a>
+        <span class="grow"></span>
+      </div>
+    </div>`;
+}
+
+// Reads a pasted enrolment token and says what it is for.
+//
+// Only for ziti: a zrok account token is opaque, and there is nothing to read
+// out of it. Debounced, because this fires on every keystroke of a paste.
+let tokenTimer = null;
+function tokenTyped(kind) {
+  if (kind !== "ziti") return;
+  clearTimeout(tokenTimer);
+  tokenTimer = setTimeout(() => inspectToken(kind), 350);
+}
+
+async function inspectToken(kind) {
+  const el = document.getElementById(`ovs-${kind}-token`);
+  const out = document.getElementById(`ovs-${kind}-claims`);
+  if (!el || !out) return;
+  const token = el.value.trim();
+  if (!token) { out.textContent = ""; out.className = "hintline"; return; }
+
+  let c;
+  try {
+    c = await api("/v1/overlays/inspect-token", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token })
+    });
+  } catch (e) {
+    out.textContent = e.message;
+    out.className = "hintline bad";
+    return;
+  }
+  // Said before the token is spent, since it is one use and a controller
+  // refusing an expired one is a worse way to find out.
+  if (c.expired) {
+    out.textContent = `this token expired at ${c.expires}. ask for a new one.`;
+    out.className = "hintline bad";
+    return;
+  }
+  const parts = [];
+  if (c.issuer) parts.push(`for ${c.issuer}`);
+  if (c.expires) parts.push(`good until ${c.expires}`);
+  out.textContent = parts.join(", ") || "readable, but it says nothing about itself";
+  out.className = "hintline ok";
+}
+
+// Runs the setup step and shows what the tool said, either way.
+async function setupOverlay(kind) {
+  const token = (document.getElementById(`ovs-${kind}-token`) || {}).value || "";
+  const name = (document.getElementById(`ovs-${kind}-name`) || {}).value || "";
+  if (!token.trim()) {
+    toast("nothing to use", "paste the token first");
+    return;
+  }
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = "working..."; }
+
+  let res;
+  try {
+    res = await api(`/v1/overlays/${kind}/setup`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: token.trim(), name: name.trim() })
+    });
+  } catch (e) {
+    // A refusal comes back as a body, not a throw, so this is the transport
+    // having failed rather than the command.
+    toast("could not run it", e.message);
+    if (btn) { btn.disabled = false; }
+    loadOverlays();
+    return;
+  }
+
+  overlays = res.overlays || overlays;
+  paintOverlays();
+  if (res.ok) {
+    toast(kind === "zrok" ? "this machine is enabled" : "enrolled",
+      res.output ? String(res.output).split("\n").slice(-2).join(" ") : "");
+  } else {
+    // Its own words, in full. The summary is what fits in a toast, and the
+    // detail belongs where it can be read.
+    tellUser("that did not work", `<pre class="code">${esc(res.error || "")}${
+      res.output ? "\n\n" + esc(res.output) : ""}</pre>`);
+  }
+}
+
+// Undoing setup. Confirmed, because for zrok this asks the account side to
+// forget this machine and there is no undo that does not need the token again.
+async function teardownOverlay(kind) {
+  const what = kind === "zrok"
+    ? "This removes the zrok environment from this machine. Enabling it again needs your " +
+      "account token, and any reserved share belonging to it goes."
+    : "Atrium forgets which identity to use. The file stays on disk, so nothing is lost, " +
+      "but you will have to point atrium at it again.";
+  if (!await confirmUser(kind === "zrok" ? "disable zrok here?" : "forget this identity?",
+    what, kind === "zrok" ? "disable it" : "forget it")) return;
+
+  try {
+    const res = await api(`/v1/overlays/${kind}/teardown`, { method: "POST" });
+    overlays = res.overlays || overlays;
+    paintOverlays();
+    toast(res.ok ? "done" : "that did not work", res.error || res.output || "");
+  } catch (e) {
+    toast("could not run it", e.message);
+  }
 }
 
 function overlayField(o, f) {
@@ -4707,8 +5008,7 @@ async function saveOverlay(kind) {
 // login on the open internet, so it says so before it does it.
 async function startOverlay(kind) {
   const o = overlays.find(x => x.kind === kind);
-  const publicShare = kind === "zrok" && o && (o.config || {}).mode === "public"
-    && !(o.config || {}).reserved;
+  const publicShare = kind === "zrok" && o && (o.config || {}).mode === "public";
   if (publicShare && !await confirmUser("share this publicly?",
     "A public zrok share is a link anyone who has it can open, and this board has no login. " +
     "Whoever opens it can see every card, read every command, and answer permission requests." +
@@ -4978,7 +5278,11 @@ async function openTask(id) {
     `<span class="chip">${esc(current.status)}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
     current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
-    `<span class="chip">idle ${ago(current.idle_seconds)}</span>`
+    `<span class="chip">idle ${ago(current.idle_seconds)}</span>`,
+    current.created_at
+      ? `<span class="chip" title="${esc(current.created_at)}">first seen ${
+          esc(firstSeen(current.created_at))}</span>`
+      : ""
   ].join("");
   document.getElementById("d-why").value = current.why || "";
 

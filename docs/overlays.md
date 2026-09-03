@@ -18,36 +18,70 @@ Atrium keeps the configuration, starts the process, and shows what it printed. T
 The share is a child process. It ends when the daemon does, because an address that outlives the board it points
 at answers with a connection refused, which reads as the overlay being broken.
 
+## Getting set up
+
+Neither tool can share anything until this machine has been given something first, and that step is the one
+people are actually stuck on. Atrium shows the state and offers the next thing, in three stages: not installed,
+installed but not set up, ready.
+
+**zrok needs an environment.** That comes from an account token, which you get once and reuse on every machine.
+Paste it and press enable. Atrium runs `zrok enable <token> --headless`, and the description you give is what
+the zrok console lists this machine as.
+
+Whether an environment exists is read off disk, from `~/.zrok2/environment.json`, which is the same file the
+zrok CLI itself checks. It is NOT read out of `zrok status`, which prints boxed tables for a person to look at:
+parsing those would tie atrium to somebody else's column widths. The older `~/.zrok` is recognised too, newest
+first.
+
+The account token inside that file never leaves the daemon. Atrium reports THAT one is present, never what it
+is, because the board has no use for a credential.
+
+**OpenZiti needs an identity.** That comes from a one-use enrolment token your network administrator issues.
+Paste it and press enrol. Atrium runs `ziti enroll identity --jwt <file> --out <file>` and then points itself at
+what came out, so there is no path to copy back.
+
+Two things happen before the token is spent. Its claims are read, so the board can say which network it is for
+and refuse an expired one here with a date rather than at a controller. And it is written to a file rather than
+passed as an argument, because an argument is visible to anything on this machine that can list processes. The
+file is deleted either way.
+
+Atrium never creates a service, writes a policy, or talks to a controller. A network you administer is not one a
+board should be editing.
+
 ## zrok
 
 | Field | What it is |
 | --- | --- |
 | share | `private` or `public`. |
 | what to publish | The board's own address, `localhost:7778` unless you changed it. |
-| reserved token | From `zrok reserve`. Keeps the same address across restarts. |
+| share token | From `zrok create share`. Reuses a private share so its address survives a restart. |
+| reserved name | From `zrok create name`. Keeps one address for a public share. |
 | extra options | Anything atrium has never heard of, split on spaces. |
 
 **Private is the default.** A private share needs zrok on the other end, and the safe default for something with
 no login is the one that needs an account. Turning on a public share asks first, and says plainly that whoever
 opens the link can read every command and answer permission requests.
 
-A reserved token carries its own mode and its own address, so when one is set the mode field is not sent: the
-token is the whole instruction.
+Keeping one address is a different flag per mode, and neither exists on the other subcommand, so each is only
+sent with the mode it belongs to. `zrok share reserved` is gone in v2 and is not what atrium runs.
 
 `--headless` is always passed. Atrium runs this as a child and reads its output, and without that flag zrok
 paints a full-screen interface into a pipe and nothing readable comes back.
+
+A private share prints no URL, because there is nothing to open. It prints the command the other end runs, and
+that is what the board shows: `zrok access private <token>`.
 
 ## OpenZiti
 
 | Field | What it is |
 | --- | --- |
-| identity file | An enrolled identity JSON. Passed through as given. |
-| service | The service this hosts. It has to already exist, with a bind policy this identity satisfies. |
-| what to publish | The board's own address. |
+| identity file | An enrolled identity JSON. Filled in by enrolling, or point it at your own. |
 | extra options | As above. |
 
-This runs `ziti tunnel host`. Atrium does not create the service, write a policy, or enrol anything: a network
-you administer is not one a board should be editing.
+This runs `ziti tunnel host`, which binds every service the identity is allowed to bind and forwards each to
+whatever its own configuration says. There is no service or backend field here because that command takes
+neither: those live on the network. There were two, and they were removed, because a form that collects
+something and then drops it is one you stop trusting.
 
 ## A share makes loopback stop meaning anything
 

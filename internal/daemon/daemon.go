@@ -51,9 +51,10 @@ type Daemon struct {
 	// docs/activity-design.md.
 	act *activityTracker
 
-	// ovl holds any share atrium is running to make the board reachable from
-	// somewhere else. See overlay.go.
-	ovl *overlays
+	// nats holds any overlay listener the board is being served on, so it can
+	// be reached from somewhere else. See overlay_native.go.
+	nats   map[overlayKind]*native
+	natsMu sync.Mutex
 
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
@@ -96,7 +97,7 @@ func New(opts Options) (*Daemon, error) {
 	d := &Daemon{
 		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		ovl: newOverlays(),
+		nats: map[overlayKind]*native{},
 	}
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
@@ -115,6 +116,15 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SaveOverlay = d.saveOverlay
 	d.ap.StartOverlay = d.startOverlay
 	d.ap.StopOverlay = d.stopOverlay
+	d.ap.SetupOverlay = func(kind string, body []byte) (string, error) {
+		var req SetupRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return "", err
+		}
+		return d.setupOverlay(kind, req)
+	}
+	d.ap.TeardownOverlay = d.teardownOverlay
+	d.ap.InspectToken = d.InspectToken
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 )
@@ -61,6 +62,78 @@ func (s *Server) stopOverlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.afterOverlayChange(w)
+}
+
+// setupOverlay gets this machine ready to share.
+//
+// The tool's own output comes back either way. On failure it is the only thing
+// that says what went wrong, and a red box with no next step is how somebody
+// gives up.
+func (s *Server) setupOverlay(w http.ResponseWriter, r *http.Request) {
+	if s.SetupOverlay == nil {
+		writeErr(w, http.StatusNotImplemented, errNoOverlays)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := s.SetupOverlay(r.PathValue("kind"), body)
+	s.answerSetup(w, out, err)
+}
+
+func (s *Server) teardownOverlay(w http.ResponseWriter, r *http.Request) {
+	if s.TeardownOverlay == nil {
+		writeErr(w, http.StatusNotImplemented, errNoOverlays)
+		return
+	}
+	out, err := s.TeardownOverlay(r.PathValue("kind"))
+	s.answerSetup(w, out, err)
+}
+
+// answerSetup returns the new state and what the tool said, and broadcasts
+// either way: a setup that failed still changes what the panel should show.
+func (s *Server) answerSetup(w http.ResponseWriter, out string, err error) {
+	var state any = []any{}
+	if s.Overlays != nil {
+		state = s.Overlays()
+	}
+	s.Broadcast("overlays", state)
+
+	msg := ""
+	code := http.StatusOK
+	if err != nil {
+		msg = err.Error()
+		// The operator's to fix, not a server fault: a spent token, a machine
+		// that is already enabled, a tool that is not installed.
+		code = http.StatusBadRequest
+	}
+	writeJSON(w, code, map[string]any{
+		"overlays": state, "output": out, "error": msg, "ok": err == nil,
+	})
+}
+
+// inspectToken reads a token without acting on it, so somebody can see which
+// network it belongs to and whether it is still good before spending it.
+func (s *Server) inspectToken(w http.ResponseWriter, r *http.Request) {
+	if s.InspectToken == nil {
+		writeErr(w, http.StatusNotImplemented, errNoOverlays)
+		return
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	claims, err := s.InspectToken(body.Token)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, claims)
 }
 
 // afterOverlayChange answers with the new state and tells every open board.

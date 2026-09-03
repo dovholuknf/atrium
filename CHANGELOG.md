@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Getting set up is part of the feature now.** Driving a share you had already configured was the easy half.
+  The gear reports which of three states each overlay is in, and offers the next thing rather than a button that
+  cannot work: not installed, installed but nothing set up, ready. zrok gets an enable button that takes an
+  account token, and whether an environment exists is read from `~/.zrok2/environment.json`, the same file the
+  CLI checks, rather than parsed out of `zrok status` and its boxed tables. OpenZiti gets an enrol button that
+  takes a one-use JWT, reads its claims to refuse an expired one here with a date instead of at a controller,
+  passes the token through a file rather than an argument where anything listing processes could read it, and
+  points atrium at the identity that comes out so there is no path to copy back. The zrok account token and the
+  ziti private key never leave the daemon: the board is told one is present, never what it is.
+- **The zrok commands match zrok v2, checked against the binary.** `zrok share reserved` no longer exists. A
+  stable address is `--share-token` on a private share or `--name-selection` on a public one, and neither flag
+  exists on the other subcommand. A private share prints no URL at all, so the board shows the access command it
+  does print. Pressing stop is no longer reported as a failure, and the address it published is cleared with it.
 - **The board can be reached from elsewhere, through an overlay atrium drives.** Atrium listens on loopback and
   has no login on purpose, and until now "use an overlay" was advice rather than a feature. The gear grows a
   panel per overlay: zrok publishes the board at a zrok address, OpenZiti hosts whatever services an identity is
