@@ -5217,9 +5217,15 @@ const OVERLAY_UI = {
     { key: "share_token", label: "share token (private)", type: "text",
       placeholder: "optional",
       hint: "Reuses a reserved private share so the address survives a restart." },
+    // Reserving is two facts, not one. Asking for the name when the share
+    // starts is what this field does. The name also has to BE reserved on
+    // your account, or zrok deletes it the moment the share stops and the
+    // address you handed out is gone. The button does that half.
     { key: "name", label: "reserved name (public)", type: "text",
-      placeholder: "optional",
-      hint: "Keeps one address for a public share. Empty means a new one each time." }
+      placeholder: "optional, or namespace/name",
+      action: { label: "reserve it", fn: "reserveZrokName" },
+      hint: "Keeps one address for a public share. Empty means a new one each time. " +
+            "Reserve it once, or zrok takes the name back when the share stops." }
   ],
   ziti: [
     { key: "identity", label: "identity file", type: "text",
@@ -5526,11 +5532,56 @@ function overlayField(o, f) {
     // not stored and read back under the cursor.
     : `<input type="text" id="${id}" spellcheck="false" value="${esc(v)}"
         placeholder="${esc(f.placeholder || "")}" onchange="saveOverlay('${esc(o.kind)}')">`;
+  // A field can carry one action that acts on what is typed in it. The button
+  // sits beside the input rather than under the section, because what it does
+  // is about that one value and a button further away would be about the
+  // overlay.
+  const act = f.action
+    ? `<button onclick="${esc(f.action.fn)}('${esc(o.kind)}','${esc(f.key)}')"
+         >${esc(f.action.label)}</button>`
+    : "";
   return `<div class="ov-field">
     <label class="eyebrow" for="${id}">${esc(f.label)}</label>
-    ${input}
+    ${act ? `<div class="picker">${input}${act}</div>` : input}
     ${f.hint ? `<span class="hintline">${esc(f.hint)}</span>` : ""}
+    <span class="hintline" id="${id}-said"></span>
   </div>`;
+}
+
+// Reserves the name typed in the field, then puts back what zrok agreed to.
+//
+// Two calls behind one button: the name has to exist and then be marked
+// reserved, and a name that exists but is ephemeral is deleted the moment the
+// share stops, which looks exactly like never having reserved it. The daemon
+// does both every time for that reason.
+async function reserveZrokName(kind, key) {
+  const el = document.getElementById(`ov-${kind}-${key}`);
+  const said = document.getElementById(`ov-${kind}-${key}-said`);
+  const raw = (el.value || "").trim();
+  if (!raw) {
+    said.textContent = "type a name first. it is the address people will use.";
+    return;
+  }
+  // `namespace/name` or a bare name, matching what the field accepts when the
+  // share starts, so one string works in both places.
+  const cut = raw.lastIndexOf("/");
+  const namespace = cut > 0 ? raw.slice(0, cut) : "";
+  const name = cut > 0 ? raw.slice(cut + 1) : raw;
+  said.textContent = "reserving...";
+  try {
+    const res = await api(`/v1/overlays/${kind}/reserve`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace, name })
+    });
+    // Written back fully qualified, since the daemon resolved the namespace
+    // and leaving the short form would make the next start depend on that
+    // default not changing.
+    el.value = res.name;
+    said.textContent = `reserved. ${res.name} stays yours when the share stops.`;
+    saveOverlay(kind);
+  } catch (e) {
+    said.textContent = e.message || String(e);
+  }
 }
 
 // Reads the whole form back rather than patching one field, so what is stored
