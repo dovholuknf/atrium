@@ -51,6 +51,10 @@ type Daemon struct {
 	// docs/activity-design.md.
 	act *activityTracker
 
+	// ovl holds any share atrium is running to make the board reachable from
+	// somewhere else. See overlay.go.
+	ovl *overlays
+
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
@@ -92,6 +96,7 @@ func New(opts Options) (*Daemon, error) {
 	d := &Daemon{
 		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
+		ovl: newOverlays(),
 	}
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
@@ -106,6 +111,10 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Unshelve = d.Unshelve
+	d.ap.Overlays = d.overlayViews
+	d.ap.SaveOverlay = d.saveOverlay
+	d.ap.StartOverlay = d.startOverlay
+	d.ap.StopOverlay = d.stopOverlay
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
@@ -372,12 +381,21 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// questions; it does not discard answers already given, so a never rule and
 	// a shelved card both still block. What it lets through goes to the same
 	// audit log as every other decision, marked auto, and the review reads it.
-	if task.AutoApprove {
-		if _, err := d.st.DecidePermissionBy(p.ID, "approve", autoReason, "auto"); err != nil {
+	//
+	// Global auto is the same thing for every session at once, including ones
+	// that do not exist yet. It is recorded under its own name rather than as
+	// `auto`, because "I turned this session loose" and "I turned the whole
+	// board loose" are different answers to give six hours later.
+	if global := d.st.GlobalAuto(); task.AutoApprove || global {
+		by, reason := "auto", autoReason
+		if global && !task.AutoApprove {
+			by, reason = "global-auto", globalAutoReason
+		}
+		if _, err := d.st.DecidePermissionBy(p.ID, "approve", reason, by); err != nil {
 			return "", nil, err
 		}
 		d.ap.Broadcast("permission", p)
-		return p.ID, &hub.AutoDecision{Decision: "approve", Reason: autoReason}, nil
+		return p.ID, &hub.AutoDecision{Decision: "approve", Reason: reason}, nil
 	}
 
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
@@ -391,6 +409,10 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 // autoReason is recorded against every request auto mode lets through, so the
 // audit log separates "a human said yes" from "nobody was asked".
 const autoReason = "auto mode: approved without asking, and recorded"
+
+// globalAutoReason names the board-wide switch rather than the per-session one,
+// so an agent told why it was let through says which of the two answered.
+const globalAutoReason = "global auto mode: every session is approved without asking, and recorded"
 
 // shelvedReason is handed back to an agent whose request was refused because
 // its card is shelved, so the agent is told why rather than left waiting.
@@ -540,6 +562,11 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Shutdown waits for in-flight requests, so leaving them open is what made
 	// the board listener sit out the whole grace period.
 	d.ap.Close()
+
+	// Any share goes with the board it publishes. An address that outlives
+	// what it points at answers with a connection refused, which reads as the
+	// overlay being broken.
+	d.closeOverlays()
 
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be

@@ -57,7 +57,7 @@ type Review struct {
 // unattendedBy are the answers that reached an agent without a person seeing
 // them. A rule is absent: it was a decision made once, and surfacing it every
 // time it fires buries the requests nobody considered.
-var unattendedBy = map[string]bool{"auto": true}
+var unattendedBy = map[string]bool{"auto": true, "global-auto": true}
 
 // ReviewTask gathers every decided request for a task, grouped by tool, with
 // identical commands folded together.
