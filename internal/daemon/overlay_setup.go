@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/openziti/zrok/v2/environment"
+	"github.com/openziti/zrok/v2/environment/env_core"
 )
 
 // The setup half: getting to the point where a share can start.
@@ -60,6 +63,54 @@ func firstLines(s string, n int) string {
 		lines = lines[:n]
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// SetZrokApiEndpoint points this machine at a zrok instance.
+//
+// Written before enabling, not after, because enabling talks to whichever API
+// this names: doing it the other way round would enable against the public
+// service and then claim to be pointed somewhere else.
+//
+// Empty clears it, which puts the machine back on zrok's own default. That is
+// a real choice rather than an omission, so it is not treated as "no change".
+func (d *Daemon) SetZrokApiEndpoint(endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	root, err := environment.LoadRoot()
+	if err != nil {
+		return fmt.Errorf("could not read the zrok environment: %w", err)
+	}
+	if root.IsEnabled() && endpoint != "" {
+		// Changing where an enabled environment points leaves an account token
+		// issued by one instance being sent to another, which fails in a way
+		// that reads as a broken token rather than a wrong address.
+		return fmt.Errorf("this machine is already enabled against a zrok instance. " +
+			"disable it first, then set the endpoint, then enable again")
+	}
+	cfg := root.Config()
+	if cfg == nil {
+		cfg = &env_core.Config{}
+	}
+	cfg.ApiEndpoint = endpoint
+	if err := root.SetConfig(cfg); err != nil {
+		return fmt.Errorf("could not save that endpoint: %w", err)
+	}
+	if endpoint == "" {
+		log.Printf("[atrium] zrok is back on its default api endpoint")
+	} else {
+		log.Printf("[atrium] zrok will talk to %s", endpoint)
+	}
+	return nil
+}
+
+// ZrokApiEndpoint is where this machine talks to zrok, and where that came
+// from. The second value is zrok's own account of it: a config file, an
+// environment variable, or the built-in default.
+func (d *Daemon) ZrokApiEndpoint() (string, string) {
+	root, err := environment.LoadRoot()
+	if err != nil {
+		return "", ""
+	}
+	return root.ApiEndpoint()
 }
 
 // EnableZrok turns an account token into a zrok environment on this machine.

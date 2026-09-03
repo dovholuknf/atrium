@@ -8,15 +8,20 @@ The gap that left is that "use an overlay" was advice rather than a feature. Atr
 
 ## What atrium does, and what it does not
 
-Atrium keeps the configuration, starts the process, and shows what it printed. That is all.
+Atrium keeps the configuration, opens the listener, and shows what came back. That is all.
 
-- It **never handles an identity.** The path to a ziti identity is passed to the tunneler, which owns the key
-  inside it. Atrium does not open the file.
-- It **never proxies traffic.** Nothing goes through the daemon that would not have gone through it anyway.
-- It **has no opinion about who may connect.** That is a policy on the overlay, and it stays there.
+- It **never decides who may connect.** That is a policy on the overlay, and it stays there. Atrium can report
+  what the network says it may do and never changes it.
+- It **never proxies traffic.** The board answers the overlay listener directly, with the same handler the local
+  board uses. Nothing goes through an extra hop that would not have gone through it anyway.
+- It **never issues an identity.** An identity comes from enrolling against a network somebody else administers.
+  Atrium passes a token to the tool that turns it into one, and stores the path.
 
-The share is a child process. It ends when the daemon does, because an address that outlives the board it points
-at answers with a connection refused, which reads as the overlay being broken.
+The listener ends when the daemon does. An address that outlives the board it points at answers with a
+connection refused, which reads as the overlay being broken.
+
+Both overlays are embedded SDKs rather than child processes. The one thing atrium still shells out for is
+setting an account up in the first place: see "What runs, and what does not" below.
 
 ## Getting set up
 
@@ -52,45 +57,83 @@ board should be editing.
 
 | Field | What it is |
 | --- | --- |
+| zrok instance | Which zrok to talk to. Shown on the setup block, because enabling talks to whatever it names. |
 | share | `private` or `public`. |
-| what to publish | The board's own address, `localhost:7778` unless you changed it. |
-| share token | From `zrok create share`. Reuses a private share so its address survives a restart. |
-| reserved name | From `zrok create name`. Keeps one address for a public share. |
-| extra options | Anything atrium has never heard of, split on spaces. |
+| share token | Reuses a private share so its address survives a restart. |
+| reserved name | Keeps one address for a public share. The **reserve it** button holds it on your account. |
 
 **Private is the default.** A private share needs zrok on the other end, and the safe default for something with
 no login is the one that needs an account. Turning on a public share asks first, and says plainly that whoever
 opens the link can read every command and answer permission requests.
 
-Keeping one address is a different flag per mode, and neither exists on the other subcommand, so each is only
-sent with the mode it belongs to. `zrok share reserved` is gone in v2 and is not what atrium runs.
+A private share prints no URL, because there is nothing to open. What the board shows is the command the other
+end runs: `zrok access private <token>`.
 
-`--headless` is always passed. Atrium runs this as a child and reads its output, and without that flag zrok
-paints a full-screen interface into a pipe and nothing readable comes back.
+### Keeping an address
 
-A private share prints no URL, because there is nothing to open. It prints the command the other end runs, and
-that is what the board shows: `zrok access private <token>`.
+An address that survives a restart is not one flag. It is two facts for a public share and one mechanism for a
+private one, and getting this wrong is silent: everything works until the first stop, and then the link you
+handed out is gone.
+
+**`sdk.ShareRequest.Reserved` is read by nothing in zrok.** The field is on the struct and no code consumes it.
+Atrium used to set it, which did nothing. Do not set it.
+
+**For a public share**, reserving is a property of the NAME, not the share:
+
+1. The name exists (`zrok2 create name`).
+2. The name is marked reserved rather than ephemeral (`zrok2 modify name --reserved`).
+3. The share asks for that name when it starts, which is the `NameSelections` atrium sends.
+
+Without step 2 the controller deletes the name when the share is unshared. `cleanupShareNameMappings` in
+`controller/unshare.go` is where that happens, and it keeps reserved names and drops the rest. The **reserve it**
+button beside the name field does steps 1 and 2, both of them every time, because a name that exists but is
+ephemeral fails exactly like one that was never created.
+
+**For a private share**, the token is requested rather than owned. Releasing the share puts it back, so the next
+start asks for the same token and gets it as long as nobody took it in between.
+
+Either way the share is released when atrium stops. That is what frees the ziti resources underneath it, and
+keeping it alive instead would leave a share nothing answers and an address the next start could not claim.
+
+### What runs, and what does not
+
+Sharing is the embedded SDK. Atrium holds the listener and answers it with the same handler the local board
+uses, so there is no child process and nothing is proxied.
+
+The `zrok` executable is used by exactly two things, `enable` and `disable`, which are one-time account
+operations. A machine that is already enabled shares with no executable anywhere. The board says so, and
+disables only the button that really needs it.
 
 ## OpenZiti
 
 | Field | What it is |
 | --- | --- |
 | identity file | An enrolled identity JSON. Filled in by enrolling, or point it at your own. |
-| extra options | As above. |
+| service | The service this board answers. **what can I host?** asks the network which ones are possible. |
 
-This runs `ziti tunnel host`, which binds every service the identity is allowed to bind and forwards each to
-whatever its own configuration says. There is no service or backend field here because that command takes
-neither: those live on the network. There were two, and they were removed, because a form that collects
-something and then drops it is one you stop trusting.
+The SDK opens the identity, authenticates, and binds the named service. Atrium answers that listener itself,
+so nothing is forwarded and there is no backend to configure. The service has to already exist with a bind
+policy this identity satisfies, both of which are administered on the network.
+
+### Asking what an identity may do
+
+A service that does not exist and a service this identity may only dial fail the same way: the listener
+refuses. **what can I host?** puts the difference on screen. It authenticates, lists what the controller
+returns, and marks each one bindable or dial-only. Bindable ones are clickable, because the next thing anybody
+does with that list is type one of those names into the box above it.
+
+Read-only on purpose. Creating services, configs and policies stays out of scope: a network somebody
+administers is not one a board should be editing. Reporting what that network already says is the other side of
+the same line.
 
 ## A share makes loopback stop meaning anything
 
 `atrium stop` is loopback only unless `--shutdown-token` is set. That rule reads the source address of the
 request, and it was written when the only way to reach the daemon was to be at this keyboard.
 
-A tunneler breaks that. It runs on this machine and terminates the connection here, so a request that arrived from
-another continent presents as `127.0.0.1`. "Only someone at this keyboard" would silently become "anyone the
-overlay admits", and a kill switch is the worst thing to hand out by accident.
+An overlay breaks that. The connection terminates on this machine, so a request that arrived from another
+continent presents as `127.0.0.1`. "Only someone at this keyboard" would silently become "anyone the overlay
+admits", and a kill switch is the worst thing to hand out by accident.
 
 So while any share is running, the shutdown endpoint stops trusting a loopback address and requires the token.
 Start the daemon with `--shutdown-token` if you want to stop it remotely, or stop the share first.

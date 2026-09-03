@@ -13,6 +13,42 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **Reserving a zrok address, and a correction that took reading zrok's source to find.**
+  `sdk.ShareRequest.Reserved` is read by nothing in zrok. The field is on the struct, no code consumes it, and
+  atrium had been setting it to no effect. In v2 reserving moved off the share and onto the NAME: it is
+  `create name` followed by `modify name --reserved`, and `controller/unshare.go` consults it, keeping a
+  reserved name when a share is unshared and deleting an ephemeral one.
+
+  That means the share must still be released on stop, which is what frees the ziti resources, and the name is
+  what survives. A private share reaches the same place by a different route: its token is requested rather
+  than owned, so releasing it puts the token back for the next start to ask for again.
+
+  The board reserves a name in one press, doing both steps every time, because a name that exists but is
+  ephemeral fails exactly like one that was never created. It takes `name` or `namespace/name` and writes back
+  the fully qualified answer, so the next start does not depend on a default namespace staying put.
+
+- **A ziti identity can be asked what it may host.** Configuring the overlay means typing a service name into a
+  box, and whether that service exists and whether this identity may BIND rather than only dial it are both
+  facts on the controller. Both failures reach the board identically, as the listener refusing, so "is this
+  going to work" was only answerable by pressing start. The service field now asks, lists what came back with
+  the bindable ones first and clickable, and marks a dial-only service as such rather than hiding it, since
+  that is the mistake that reads as "no such service". Read-only, deliberately: creating services and policies
+  stays out of scope, and reporting what a network already says is the other side of that line.
+
+- **A missing executable no longer hides an overlay that works.** Neither overlay shares through a child
+  process: both are embedded SDKs answering their own listener. The executable is used by `zrok enable` and
+  `zrok disable` and nothing else. Treating it as absent-means-unusable meant a machine that was already
+  enabled saw "not installed" and a download link instead of a start button. It now says what is true, and
+  disables only the one button that really does need the executable.
+
+- **zrok can be pointed at another instance,** written before enabling rather than after, since enabling talks
+  to whatever it names. Changing it on an already-enabled machine is refused with the order to do it in, rather
+  than leaving a token from one instance being sent to another and failing as though the token were bad.
+
+- **The overlay configuration is an accordion,** open while there is something to do in it and folded once the
+  overlay is ready, at which point it is settings rather than steps. Held per overlay, so opening one to change
+  a field and coming back does not fold it mid-edit.
+
 - **Every card can have its own bell, and alerts can be held briefly so a burst is one alert.** A tone is
   chosen on the card and stored there, like its theme and for the same reason: knowing which agent wants you
   without looking only works if the answer is the same tomorrow and in another browser. It rings for both

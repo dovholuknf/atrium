@@ -173,6 +173,35 @@ func (s *Server) reserveName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"name": sel})
 }
 
+// setApiEndpoint points this machine at a zrok instance.
+//
+// Sent as a field that may be empty rather than as a delete, because clearing
+// it is a real instruction: go back to zrok's own default.
+func (s *Server) setApiEndpoint(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.SetApiEndpoint(body.Endpoint); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// zitiServices reports what this identity may bind on its network.
+//
+// Always 200, including when the answer is "the controller would not talk to
+// me". The reason belongs beside the service box as something to act on, and a
+// failing status would make the board show a generic error instead of the one
+// sentence that says what to fix.
+func (s *Server) zitiServices(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Capabilities())
+}
+
 type overlayErr string
 
 func (e overlayErr) Error() string { return string(e) }
