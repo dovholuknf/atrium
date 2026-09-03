@@ -635,6 +635,25 @@
   }
   .ov-log > summary:hover { color: var(--label); }
   .ov-log pre.code { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  /* The star. Faint until it is on, since an unpinned card carries one too
+     and a row of bright stars says nothing. */
+  .pin {
+    flex: none; cursor: pointer; color: var(--stroke); font-size: var(--fs-lg);
+    line-height: 1; align-self: center; padding: 0 2px; transition: color .14s;
+  }
+  .pin:hover { color: var(--warn); }
+  .pin.on, .pinned > .pin { color: var(--warn); }
+  /* A pinned row, marked down its edge the way a waiting one is, so the top
+     of the list is obviously deliberate rather than a sort you do not
+     recognise. */
+  .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
+  .term-entry.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
+  /* Pinned but with no terminal behind it. Offering to start one rather than
+     pretending there is something to attach to. */
+  .term-entry.cold b, .term-entry.cold span { opacity: .72; }
+  .term-entry.cold:hover { opacity: 1; }
+  .card .title .pin { font-size: var(--fs-md); margin-right: 5px; }
+
   /* A tag, coloured from its own name by the hash the groups use, so the same
      tag looks the same wherever it appears. */
   .chip.tag {
@@ -2273,7 +2292,9 @@ function cardHTML(t) {
     onclick="openTask('${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
-    <div class="title">${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</div>
+    <div class="title">${w ? '<span class="pulse"></span>' : ""}${
+      t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
+      esc(t.display_title)}</div>
     <div class="chips">
       <span class="chip runner" data-runner="${esc(t.runner || "")}"
         >${esc(t.runner || "?")}</span>
@@ -2825,6 +2846,7 @@ async function cardMenu(e, id) {
   const items = [
     { label: "details…", act: () => openTask(id) },
     t.supervised ? { label: "attach terminal", act: () => attachTask(id) } : null,
+    { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     { sep: true },
     // A card already in a lane is not offered the move into it.
     //
@@ -3095,6 +3117,10 @@ function paintStack() {
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
   list.sort(s.cmp);
   if (stackDesc) list.reverse();
+  // Pinned to the top, after the reverse so it stays there in either
+  // direction. Sorted is what the pills asked for; pinned is what you asked
+  // for once and meant permanently.
+  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   if (!list.length) {
     setHTML(document.getElementById("stack-list"),
@@ -3155,9 +3181,11 @@ function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
   const age = t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle";
-  return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}"
+  return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
+      t.pinned ? " pinned" : ""}"
     onclick="openTask('${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">
+    ${pinStar(t)}
     ${runnerMark(t.runner)}
     <div class="wait ${w ? "" : "quiet"}"
       title="first seen ${esc(firstSeen(t.created_at))}"
@@ -3183,6 +3211,42 @@ function stackRow(t) {
 
 // Shared with paintStack's filter, and used by stackRow.
 function over(t) { return ["done", "dead"].includes(t.status); }
+
+// Keeping a card where it can be found.
+//
+// A pinned card sorts above everything on the stack and stays in the terminal
+// switcher whether or not it has a terminal right now. Some sessions are
+// permanent fixtures, and hunting for one in activity order is the wrong
+// shape for something you reach for every day.
+async function togglePin(id, on) {
+  try {
+    await patchTask(id, { pinned: on });
+  } catch (e) {
+    toast("that did not stick", e.message);
+    return;
+  }
+  refresh();
+}
+
+// The star on a card, wherever cards are drawn.
+function pinStar(t) {
+  return `<span class="pin ${t.pinned ? "on" : ""}"
+    title="${t.pinned ? "pinned. click to unpin" : "pin this to the top and to terminals"}"
+    onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
+    >${t.pinned ? "&#9733;" : "&#9734;"}</span>`;
+}
+
+// A pinned card with no terminal, clicked. There is nothing to attach to, so
+// this offers to start one the same way the detail dialog does.
+async function resumePinned(id) {
+  let t;
+  try { t = await api(`/v1/tasks/${id}`); } catch (e) { return; }
+  current = t;
+  // Onto the same card. A fixture that came back as a second card with the
+  // same name would defeat the pin, since the pinned one would stay cold
+  // forever while its replacement did the work.
+  openLaunch(t.runner || "claude", t.resume_id || "", t.worktree || "", t.id);
+}
 
 // What the operator called this card. Coloured from the tag's own name by the
 // same hash the groups use, so a tag looks the same wherever it appears and
@@ -5997,9 +6061,19 @@ async function renameTask(id, currentName) {
 }
 
 async function renderTermList() {
-  let tasks = [];
-  try { tasks = ((await api("/v1/tasks")).tasks || []).filter(t => t.supervised); } catch (e) { return; }
-  badge("c-term", tasks.length);
+  let all = [];
+  try { all = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+
+  // A pinned card stays in the switcher whether or not it has a terminal
+  // right now. Some sessions are fixtures, and a fixture that vanishes from
+  // the list the moment it stops is the opposite of one.
+  //
+  // Only cards that could have a terminal again: a pinned card that has been
+  // swept or forgotten is not a fixture, it is gone.
+  const tasks = all.filter(t => t.supervised || (t.pinned && t.status !== "dead"));
+  // The badge counts what is actually attachable, since it is a count of live
+  // terminals rather than of rows.
+  badge("c-term", tasks.filter(t => t.supervised).length);
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -6019,6 +6093,9 @@ async function renderTermList() {
       return (a.idle_seconds || 0) - (b.idle_seconds || 0);
     });
   }
+  // Pinned above everything, in either sort. A fixture you have to hunt for
+  // is not one, and this is the whole point of pinning it.
+  tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   const host = document.getElementById("term-list");
   const toggle = `<button class="termsort" onclick="toggleTermSort()"
@@ -6028,18 +6105,28 @@ async function renderTermList() {
   setHTML(host, tasks.length
     ? toggle + tasks.map(t => `
         <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""} ${
-          isWaiting(t) ? "attn" : ""}"
-             onclick="attachTask('${t.id}')"
+          isWaiting(t) ? "attn" : ""} ${t.pinned ? "pinned" : ""} ${
+          t.supervised ? "" : "cold"}"
+             onclick="${t.supervised
+               ? `attachTask('${t.id}')`
+               : `resumePinned('${t.id}')`}"
              oncontextmenu="termMenu(event, '${t.id}')">
+          <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+            onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>
           <b>${esc(t.display_title)}</b>
           <span>${esc(t.worktree || "")}</span>
           <span class="chip runner" data-runner="${esc(t.runner || "")}"
             >${esc(t.runner || "?")}</span>
-          <span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
-          <span class="chip">${ago(t.idle_seconds)}</span>
+          ${t.supervised
+            ? `<span class="chip ${isWaiting(t) ? "warn" : "accent"}">${esc(t.status)}</span>
+               <span class="chip">${ago(t.idle_seconds)}</span>`
+            // A pinned card with no terminal is offering to start one, so it
+            // says that rather than reporting a status nothing is behind.
+            : `<span class="chip">${t.resume_id ? "resume" : "start"}</span>`}
         </div>`).join("")
     : `<div class="panel"><div class="empty">
-         no agents running
+         no agents running. pin one on the stack to keep it here.
        </div></div>`);
 }
 

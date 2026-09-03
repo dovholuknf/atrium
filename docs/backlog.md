@@ -42,6 +42,34 @@ Missing for OpenZiti:
 The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
 runner discovery already does this and is the model.
 
+### What Charon does that atrium does not
+
+`github.com/Lomchat/charon`, Apache 2.0, single user and self hosted. Six months of one person's daily use, and
+its author says so plainly along with the rough edges. Worth reading rather than dismissing: the overlap is
+large and the differences are the interesting part.
+
+Where it is ahead:
+
+- **Many machines already, over SSH.** No exposed ports on the remote side. Atrium reaches one machine and the
+  forum is still a document. Its transport choice is worth weighing against the dialled-connection plan in
+  `docs/forum-implementation.md`, since SSH solves the same NAT problem with nothing to build.
+- **Approvals reachable from a phone.** A Telegram bot carries the request out and the answer back. Atrium has
+  desktop notifications, which need the browser, and the board, which needs the network. This is the gap that
+  matters most: a gate you cannot answer from away is a gate you turn off.
+- **Sessions talk to each other over MCP.** One session finds another live one and asks it to review, or asks
+  whether it is done with a file. Atrium's `submit` is one agent talking to one human.
+- **A small IDE.** Browse and edit remote files, review diffs, drag and drop uploads.
+
+Where atrium is ahead, and should stay:
+
+- **Standing rules and a durable audit log.** Charon's approvals are per request. Atrium answers once and
+  remembers, and every decision is recorded with what answered it. That is the whole reason atrium exists.
+- **A card outlives its process.** Charon is session-shaped. Atrium's cards carry history across restarts.
+- **Pending approvals do not expire.** Charon times out at 10 minutes for Claude and 30 for Codex, then denies.
+  Atrium blocks until answered, which is the correct default for something whose answer is a decision.
+
+The one to steal first is the out-of-band approval channel. Everything else here is already on this list.
+
 ### An editor in the board
 
 Charon (`github.com/Lomchat/charon`) puts a VS Code editor next to its agents, and that is a better idea than

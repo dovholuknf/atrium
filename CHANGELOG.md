@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Pinning, on the stack and in the terminal switcher.** Some sessions are permanent fixtures and hunting for
+  one in activity order is the wrong shape. A pinned card sorts above everything in either direction, since the
+  sort pills are what you asked for now and the pin is what you asked for once and meant permanently. In the
+  terminal switcher it stays whether or not it has a terminal: a fixture that vanishes the moment it stops is
+  the opposite of one. A pinned card with no terminal offers to resume onto the SAME card rather than starting
+  a second one beside it, which would leave the pinned one cold forever while its replacement did the work.
+  Dead cards are excluded, because a pinned card that has been swept is not a fixture, it is gone.
+
 - **Tags, and grouping by them.** Grouping read a project out of the worktree path, which answers "what repo"
   and nothing else. A card is also a support case, a tangent, a pull request or a lab, and none of that is in
   the path. Tags are free text, because a fixed list would be atrium deciding what kinds of work exist. Lower
