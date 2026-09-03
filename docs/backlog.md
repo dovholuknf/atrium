@@ -220,14 +220,6 @@ out afterwards means reading each one.
 
 This is the largest remaining hole in the thing atrium exists to do.
 
-### No way to send a message from the board
-
-The back channel works end to end: a message reaches a busy session through its next tool call, an idle one
-through the Stop hook, and a supervised one by being typed straight into its terminal. `POST
-/v1/tasks/{id}/message` is the only way to send one, so in practice it means curl.
-
-A box on the card is the whole job.
-
 ### Hooks for runners that are not Claude Code
 
 The hook wiring is Claude Code's shape: `settings.json`, and the event names in
@@ -305,6 +297,46 @@ a way to hang every session on the machine.
 Making it a subcommand the way the activity hooks now are is the smaller half of the job, and worth doing
 whenever the behaviour is wanted: the script holds a machine-specific path, which is exactly what the
 subcommand removes.
+
+### Starting a card from a ticket, an issue or a pull request
+
+Researched and written up in `docs/intake-design.md`. Nothing built.
+
+The ask was source control and ticketing integration, so a card can be started from GitHub, GitLab, Zendesk, Jira
+or Discourse. The `gwt` script already does this and has seven verbs for it: `issue`, `pr`, `advisory`, `ghsa`,
+`backport`, `discourse` and `zendesk`, each turning an identifier into a worktree, a branch and a seeded claude
+session. It has no atrium integration at all, so the ledger it writes and the board are two trackers of the same
+sessions that never meet.
+
+The thing worth copying from it is how little it knows about each system. GitHub is read through `gh`, best
+effort, and a failed fetch costs a nicer prompt and nothing else. Zendesk is not read at all: the verb builds a
+URL, puts it in the prompt, and the agent's own MCP tools do the reading four seconds later.
+
+Four layers, cheapest first:
+
+- **Finish the hand-off.** `--tags`, `--prompt` and `--external` on `atrium launch`, then a `-WithAtrium` switch
+  on the gwt verbs. A day, and every layer below needs it anyway. It adds no new entry point, which is the honest
+  argument against it.
+- **An inbox atrium owns and does not fill.** `POST /v1/intake` taking a normalized item, an `offered` status for
+  a card with no runner, and a start button. Atrium never learns what `source` means. Two days.
+- **A source is a command on a timer.** Shaped like the `harness` table: argv, an interval, stdout parsed as
+  intake items. `gh` keeps the token, atrium keeps the argv. Three to four days.
+- **mcp-gateway as the reader.** It has Zendesk and Discourse wired already. Solves fetching, which was never the
+  hard part. Better used as a source command than as a Go dependency.
+
+Named and refused, each against something already written down: no provider credential in the database, no
+inbound webhook (it needs a public address and the share already broke what loopback means), no OAuth client, no
+`ticket` table. Atrium may hold the name of a command that has a credential, and never the credential.
+
+The reverse direction splits three ways. A link on the card is free and worth having. Ticket state on the board is
+polling backwards and would sit next to the status column disagreeing with it. Posting back belongs to the agent,
+which has the tools and the context, and the message channel already reaches it. The useful half depends on "an
+agent cannot say it finished" above.
+
+Also in this category and not named in the ask: CI failures (highest value, and gwt explicitly refuses an Actions
+URL today), PR review requests, advisories and backports, a TODO scan, unanswered Discourse topics, alerting
+(a trap: a page on an hourly board is a missed page), calendar and email (worst, because neither yields a
+worktree), and `gwt sessions audit` pointed at the board, which needs no external system and is an afternoon.
 
 ## Parked
 
@@ -395,7 +427,10 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   is the launch spec: `runner` is the harness, `worktree` is the directory. When it cannot resume it says which
   piece is missing rather than doing nothing.
 - Live activity per card, held in memory and never written down.
-- Auto mode, and the review that pays for it.
+- Auto mode, and the review that pays for it. Turning it on drains the queue it was turned on because of, since
+  the chain only runs when a request arrives and anything already waiting had asked before the switch existed.
+- Saying something to a session from the card, reporting which of the two routes it took and listing anything
+  queued that has not arrived. The two are different promises and the box has to say which one it made.
 - Folder rules, covering work inside a directory rather than a command shape.
 - Stopping the daemon without killing it, and a launch that proves the runner started.
 - A narrow layout, and the board served with no-store so a rebuild is always what is on screen.

@@ -5,6 +5,34 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Saying something to a session, from the board.** The endpoint has existed for a while and only curl could
+  reach it. There is now a box on the card, and it reports which of the two routes the message took, because
+  they are different promises: typed into the terminal means it has already landed, and queued means it has not
+  and will not until the session makes its next tool call or ends its turn. That can be minutes, so anything
+  still waiting is listed under the box with its age. One button doing two very different things in silence is
+  how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
+  this is one.
+
+- **A message delivery is never replayed.** A queued message rides the next tool call by refusing it, and the
+  banner tells the model the call was interrupted rather than judged, and to retry. The retry is the same
+  command with the same dedup key, so it landed on the replay path and was handed back the identical
+  already-delivered message, carrying the identical instruction to retry. The model cannot get out of that, and
+  the message it kept being shown had been delivered once and marked delivered. A block recorded as `message`
+  is now excluded from replay: it was a courier and not an answer, so the retry is asked properly.
+
+- **Turning auto mode on empties the queue it was turned on because of.** The permission chain runs once per
+  request, when the request arrives, so anything already waiting had asked before the switch existed and sat
+  there under a header saying nothing would stop to ask. Turning global auto on now approves what is already
+  queued, through the same decide path the buttons use rather than by writing to the store, since each of those
+  agents is parked on an in-memory reply channel and a decision it never sees leaves it blocked forever. The
+  chain's order is kept: a shelved card and a never rule both still hold, because those are answers already
+  given and auto mode does not discard answers. The count is reported and said out loud in the toast.
+
+- **The board re-reads settings when the event stream reconnects.** A reconnect means the daemon went and came
+  back, and everything the tab was holding had been decided by a daemon that is no longer running. The header
+  badge claiming to be approving everything while the daemon is in fact asking is the worst way for it to be
+  wrong, because the operator stops watching the queue.
+
 - **A question asked for a session that has gone is closed out.** The reaper judges liveness two ways: ask the
   operating system about a pid, or fall back to how long a card has been silent. Neither reaches a card waiting
   on a human with no pid recorded, because waiting is supposed to be silent and marking it dead would discard

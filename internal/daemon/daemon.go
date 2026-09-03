@@ -106,6 +106,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
 	d.ap.CancelPending = d.CancelPending
+	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
 	d.ap.Message = d.handleMessage
 	d.ap.Shutdown = d.handleShutdown
@@ -363,7 +364,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// as a judgement on its command.
 	if msgs, err := d.takeMessages(task.ID, "permission"); err == nil && len(msgs) > 0 {
 		reason := messageBanner(msgs, true)
-		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, "message"); err != nil {
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
 			return "", nil, err
 		}
 		d.publishTask(task.ID)

@@ -24,6 +24,11 @@ import (
 // between deliberately running the same command twice.
 const ReplayWindow = 2 * time.Minute
 
+// DecidedByMessage marks a block that exists to carry a message rather than to
+// judge the command. Named here because the store has to recognise it: it is
+// the one decision that must never be replayed.
+const DecidedByMessage = "message"
+
 // RecordPermission stores a pending permission request. dedupKey makes the
 // call idempotent: if the daemon dies between a decision and its write, the
 // agent reconnects and re-posts the same request, and the operator must not be
@@ -54,6 +59,17 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 					// blocked on it right now and nothing can have gone stale.
 					p = existing
 					return nil
+				case existing.DecidedBy == DecidedByMessage:
+					// A message delivery is never replayed. That block was not
+					// a judgement on the command, it was a courier, and its
+					// text tells the model to retry. Replaying it hands back
+					// the same already-delivered message and tells it to retry
+					// again, which is a loop the model cannot get out of and
+					// which fires for a message that has already landed.
+					//
+					// Falls through to a fresh question, which is what the
+					// retry is: this command has still never been answered.
+					dedupKey = ""
 				case now().Sub(*existing.DecidedAt) <= ReplayWindow:
 					p, decided = existing, true
 					return nil
