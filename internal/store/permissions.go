@@ -154,8 +154,12 @@ func (s *Store) DecidePermissionBy(id, decision, reason, by string) (*Permission
 		}
 		existing.DecidedAt, existing.Decision, existing.Reason = &n, decision, reason
 		existing.DecidedBy = by
+		// The command and the tool are copied onto the event, not left to be
+		// looked up. An audit line has to say what was allowed without a join
+		// against a table that prune can empty.
 		if err := s.appendEvent(existing.TaskID, EventPermDecided, map[string]any{
-			"id": id, "decision": decision, "reason": reason,
+			"id": id, "decision": decision, "reason": reason, "by": by,
+			"tool": existing.Tool, "command": existing.Command,
 		}); err != nil {
 			return err
 		}

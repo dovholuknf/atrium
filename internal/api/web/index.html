@@ -177,10 +177,13 @@
     padding-right: 4px; margin-right: -4px;
     scrollbar-color: var(--stroke-dim) transparent;
   }
-  /* Cards side by side once a lane is wide enough, rather than one tall
-     ribbon. A lane holding most of the work gets most of the width. */
-  .board .col > .cards { display: grid; gap: 0 var(--sp-3); align-content: start;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  /* One card per row, filling the lane.
+     Packing them side by side once a lane was wide made that lane read
+     differently from every other one, and made each card narrower the more
+     work it held, which is backwards. Every lane takes an equal share of the
+     width above, so a card is as wide as its lane and they all match. */
+  .board .col > .cards { display: grid; gap: 0; align-content: start;
+    grid-template-columns: 1fr; }
   .board .col > .cards > .cardgroup { grid-column: 1 / -1; }
   /* A folded column shrinks to its header so the rest get the room. */
   .board .col.folded { flex: 0 0 auto; min-width: 0; }
@@ -440,23 +443,58 @@
   .rev-group[open] > summary::before { content: "\25BE"; }
   .rev-group > summary .tool { color: var(--head); font-weight: 600; }
   .rev-group > summary .n { color: var(--dimmest); font: var(--fs-base) var(--mono); }
+  /* The same table the card's own history uses: verdict, count, command,
+     what answered it. Two lists of the same decisions read as two different
+     things when only one of them is a table. */
+  .rev-rows {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(4,11,20,.35); overflow: hidden; margin-top: 6px;
+  }
   .rev-row {
-    display: flex; align-items: center; gap: var(--sp-3); padding: 5px 2px 5px 20px;
-    font-size: var(--fs-base); border-top: 1px solid var(--hairline);
+    display: grid; align-items: baseline; gap: var(--sp-3);
+    grid-template-columns: 74px 44px minmax(0, 1fr) minmax(0, 150px);
+    padding: 5px 13px; font-size: var(--fs-sm);
+    border-bottom: 1px solid rgba(37,80,111,.28);
   }
-  .rev-row code {
-    font: var(--fs-sm)/1.5 var(--mono); color: var(--label);
-    white-space: pre-wrap; word-break: break-all; min-width: 0;
-  }
+  .rev-row:last-child { border-bottom: none; }
+  .rev-row:hover { background: rgba(23,58,87,.4); }
+  .rev-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rev-row .verdict { font-weight: 600; color: var(--chip-accent-text); }
+  .rev-row .verdict.no { color: var(--warn); }
+  .rev-row code { font: var(--fs-xs)/1.5 var(--mono); color: var(--dim); min-width: 0; }
   /* The rows nobody saw, brought forward. */
   .rev-row.unseen code { color: var(--head); }
-  .rev-row .rep { font: var(--fs-sm) var(--mono); color: var(--dimmest); flex: none; min-width: 34px; }
-  .rev-row .by { flex: none; color: var(--dimmest); font-size: var(--fs-sm); }
+  .rev-row .rep { font: var(--fs-xs) var(--mono); color: var(--dimmest); }
+  .rev-row .by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
+  .rev-row .by .auto { color: var(--warn); }
   /* Auto mode, warn coloured: nothing is asking you, and the card says so
-     rather than leaving it in settings. */
+     rather than leaving it in settings.
+     It breathes. A session running unattended is the one state where a card
+     that looks like every other card is a problem, so this is the only thing
+     on the board that moves without something happening. */
   .chip.auto {
     background: var(--warn-bg); color: var(--warn);
     border: 1px solid var(--warn-stroke); font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    animation: autopulse 2s ease-in-out infinite;
+  }
+  .chip.auto::before {
+    content: "\25CF"; margin-right: 5px; font-size: .8em; vertical-align: 1px;
+  }
+  @keyframes autopulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--warn-stroke); }
+    50%      { box-shadow: 0 0 10px 2px var(--warn-stroke); }
+  }
+  /* And the whole card, so it is visible from across the board rather than
+     only once you are reading the chips. */
+  .card.autoon, .stackrow.autoon {
+    border-color: var(--warn-stroke);
+    background: linear-gradient(180deg, var(--warn-bg), transparent 60%);
+  }
+  .stackrow.autoon { border-left: 3px solid var(--warn); }
+  /* Anyone who does not want the movement keeps the colour. */
+  @media (prefers-reduced-motion: reduce) {
+    .chip.auto { animation: none; }
   }
   .chip.attach:hover { border-color: var(--teal); }
   /* Sits in a column header, so it stays quiet until reached for. */
@@ -468,6 +506,15 @@
   .why {
     font-size: var(--fs-sm); color: var(--dim); margin-top: 9px; padding-top: 8px;
     border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
+    /* A note is free text, so it can be one long unbroken run. Without this it
+       sets its own minimum width and pushes the card wider than its lane. */
+    min-width: 0; overflow-wrap: anywhere;
+  }
+  /* On a stack row it shares the line with everything else, so it gets one
+     line and an ellipsis rather than growing the row. */
+  .stackrow .who .why {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 4px; padding-top: 4px;
   }
   /* Inside the board these follow its scale rather than a fixed size. */
 
@@ -555,6 +602,30 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .stackrow .who .why { font-family: var(--sans); color: var(--dim); font-style: italic; }
+  /* One block rather than loose flex items. As siblings of a three-line who
+     column their vertical placement followed whatever that column did, which
+     put them across the row's bottom border. As one centred group they sit
+     against the middle of the row whatever height it is. */
+  .stackrow .chips {
+    display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+    gap: var(--sp-2); flex: none; align-self: center; max-width: 55%;
+  }
+  .stackrow .chip { flex: none; white-space: nowrap; }
+  /* The harness, on the left where the eye starts, instead of a word among the
+     chips on the right. Same colours as the runner chip so the two agree. */
+  .rmark {
+    flex: none; width: 39px; height: 39px; display: grid; place-items: center;
+    border-radius: var(--r-sm); align-self: center;
+    /* The fallback, first, so the per-runner rules below win. */
+    color: var(--label); background: var(--chip);
+  }
+  .rmark svg { width: 26px; height: 26px; display: block; }
+  /* Claude's own colour, not the board's accent. A mark that means "which
+     harness" has to look like the harness. */
+  .rmark[data-runner="claude"] { color: #E8825A; background: rgba(232,130,90,.14); }
+  .rmark[data-runner="codex"]  { color: #A8BEFF; background: rgba(140,170,255,.14); }
+  .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
+  .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(255,198,77,.10); }
 
   /* A project group in the stack. Its panel carries the colour down the left
      edge, the same as a group on the board. */
@@ -1069,7 +1140,13 @@
   .statuses button.on {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  .timeline { border-left: 1px solid var(--stroke-dim); margin-left: 5px; padding-left: 0; }
+  /* A bordered panel, like every other list on the board. The left rule and
+     the dots it used to carry belonged to a vertical timeline, and a table
+     does not need a spine drawn down the side of it. */
+  .timeline {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(4,11,20,.35); overflow: hidden;
+  }
   .ev { position: relative; padding: 7px 0 7px 22px; font-size: var(--fs-sm); }
   .ev::before {
     content: ""; position: absolute; left: -4px; top: 14px;
@@ -1079,6 +1156,38 @@
   .ev .k { color: var(--head); font-weight: 600; margin-right: 9px; }
   .ev .t { font-family: var(--mono); color: var(--dimmest); font-size: var(--fs-xs); }
   .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
+  .ev .d b { color: var(--head); font-weight: 600; }
+
+  /* The audit log as a table. One row per event, columns that line up all the
+     way down, so a screenful is read by scanning one column rather than by
+     reading every entry. Three stacked lines per event fit six on a screen and
+     said nothing a row of five cells does not. */
+  .evtable { display: table; width: 100%; }
+  .evr {
+    display: grid; align-items: baseline; gap: var(--sp-3);
+    grid-template-columns: 74px 62px 46px minmax(0, 1fr) minmax(0, 190px);
+    padding: 5px 13px; border-bottom: 1px solid rgba(37,80,111,.28);
+    font-size: var(--fs-sm);
+  }
+  .evr:last-child { border-bottom: none; }
+  .evr:hover { background: rgba(23,58,87,.4); }
+  .evr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The verdict, coloured, because scanning an audit log is looking for what
+     got through. */
+  .c-verdict { font-weight: 600; color: var(--label); }
+  .c-verdict.ok { color: var(--chip-accent-text); }
+  .c-verdict.no { color: var(--warn); }
+  .c-verdict.pending { color: var(--label); }
+  .c-at { font-family: var(--mono); font-size: var(--fs-xs); color: var(--dimmest); }
+  .c-tool { color: var(--head); font-weight: 600; font-size: var(--fs-xs); }
+  .c-cmd { font-family: var(--mono); font-size: var(--fs-xs); color: var(--dim); }
+  .c-by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
+  /* Narrow: the command is what matters, so the columns either side of it go
+     first and it keeps the width. */
+  @media (max-width: 900px) {
+    .evr { grid-template-columns: 66px 56px minmax(0, 1fr); }
+    .evr .c-tool, .evr .c-by { display: none; }
+  }
   .scroll-x { overflow-x: auto; }
 
   /* ── narrow ─────────────────────────────────────────────
@@ -1702,7 +1811,9 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
   </div>
 </dialog>
 
-<dialog id="detail">
+<!-- Wide: the history in here is commands, and a command that wraps three
+     times is not one you can scan down. -->
+<dialog id="detail" class="wide">
   <div class="dlg-head">
     <div class="grow">
       <h2 id="d-title"></h2>
@@ -1715,10 +1826,9 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <label class="eyebrow" for="d-why">why am I doing this</label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
     </div>
-    <div class="field">
-      <label class="eyebrow">move to</label>
-      <div class="statuses" id="d-statuses"></div>
-    </div>
+    <!-- No "move to" here. A column is a bucket of human attention and the
+         board is where attention gets moved, by dragging. A second way to do
+         it from a dialog was a row of six buttons nobody pressed. -->
     <div class="field">
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
@@ -1726,6 +1836,16 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     </div>
     <div class="field">
       <label class="eyebrow">history</label>
+      <!-- Decisions by default. A card that has been open for a day carries
+           hundreds of status changes, and none of them says anything the
+           decision beside it does not. -->
+      <div class="filters">
+        <div class="seg" id="d-ev-seg">
+          <button class="on" data-v="decisions">what it was allowed</button>
+          <button data-v="all">everything</button>
+        </div>
+        <span class="matchcount" id="d-ev-count"></span>
+      </div>
       <div class="timeline" id="d-events"></div>
     </div>
   </div>
@@ -1734,7 +1854,8 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
 <!-- The counterpart to auto mode. Trading interruption for review only works
      if the review is worth opening, so it gets its own screen rather than a
      line in the history. -->
-<dialog id="review">
+<!-- Wide for the same reason as the card's history: these rows are commands. -->
+<dialog id="review" class="wide">
   <div class="dlg-head">
     <div class="grow"><h2 id="rev-title">what it did</h2></div>
     <button onclick="document.getElementById('review').close()">close</button>
@@ -1800,13 +1921,6 @@ const COLUMNS = [
       "session are refused until you unshelve it, and clearing a column never " +
       "takes one."
   }
-];
-
-// Every status a card can be moved to by hand, for the detail dialog.
-const MOVE_TO = [
-  ["running", "running"], ["needs-input", "needs input"],
-  ["needs-permission", "needs permission"], ["done", "done"],
-  ["shelved", "shelved"], ["dead", "dead"]
 ];
 
 const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
@@ -1918,7 +2032,8 @@ function cardHTML(t) {
   // Draggable for reordering, right-clickable for the actions done most. Both
   // exist because the alternative was opening the detail dialog for every
   // shelve and every attach.
-  return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}"
+  return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
+      t.auto_approve ? " autoon" : ""}"
     onclick="openTask('${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
@@ -2752,27 +2867,66 @@ function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
   const age = t.status === "dead" ? "dead" : t.status === "done" ? "done" : "idle";
-  return `<div class="row stackrow ${w ? "attn" : ""}" onclick="openTask('${t.id}')"
+  return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}"
+    onclick="openTask('${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">
+    ${runnerMark(t.runner)}
     <div class="wait ${w ? "" : "quiet"}">${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</div>
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
       <span>${esc(t.worktree || "no directory")}</span>
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
-    <span class="chip runner" data-runner="${esc(t.runner || "")}">${esc(t.runner || "?")}</span>
-    ${activityChip(t)}
-    ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
-    ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
-    <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}">${esc(t.status)}</span>
-    <span class="chip">${age} ${ago(t.idle_seconds)}</span>
-    ${t.supervised ? `<span class="chip attach"
-      onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+    <div class="chips">
+      ${activityChip(t)}
+      ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
+      ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
+      <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}">${esc(t.status)}</span>
+      <span class="chip">${age} ${ago(t.idle_seconds)}</span>
+      ${t.supervised ? `<span class="chip attach"
+        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+    </div>
   </div>`;
 }
 
 // Shared with paintStack's filter, and used by stackRow.
 function over(t) { return ["done", "dead"].includes(t.status); }
+
+// Which harness a row is, as a mark rather than a word.
+//
+// Abstract shapes, not the vendors' logos: a bad copy of somebody's trademark
+// is worse than a shape that is merely consistent. The colours are the ones
+// the runner chip already uses, so the two agree wherever both appear.
+const RUNNER_MARKS = {
+  // A seven-spoke burst.
+  claude: `<path d="M12 3v18M4.5 6.5l15 11M19.5 6.5l-15 11M3 12h18"
+    stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>`,
+  // A ring, for the loop a codex session runs in.
+  codex: `<circle cx="12" cy="12" r="7.5" fill="none"
+    stroke="currentColor" stroke-width="2.4"/>
+    <circle cx="12" cy="12" r="2.4" fill="currentColor"/>`,
+  // A head and two ears, read as a llama at this size.
+  ollama: `<rect x="8" y="9" width="8" height="12" rx="3" fill="currentColor"/>
+    <rect x="8" y="3" width="2.6" height="5" rx="1.3" fill="currentColor"/>
+    <rect x="13.4" y="3" width="2.6" height="5" rx="1.3" fill="currentColor"/>`,
+  // A prompt.
+  shell: `<path d="M5 7l5 5-5 5M12.5 17H19"
+    stroke="currentColor" stroke-width="2.4" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"/>`
+};
+
+function runnerMark(runner) {
+  const key = (runner || "").toLowerCase();
+  const body = RUNNER_MARKS[key];
+  // An unknown harness gets its first letter. Adding a shape for it would be
+  // inventing a meaning atrium does not have.
+  const inner = body
+    || `<text x="12" y="16.5" text-anchor="middle" font-size="13"
+         font-family="var(--sans)" font-weight="700"
+         fill="currentColor">${esc((runner || "?").slice(0, 1).toUpperCase())}</text>`;
+  return `<span class="rmark" data-runner="${esc(key)}" title="${esc(runner || "unknown runner")}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg></span>`;
+}
 
 // Pending cards are built once and then left alone. Rebuilding markup on a
 // poll is what silently reverted a typed pattern and applied the wrong rule,
@@ -3386,11 +3540,16 @@ function rememberOpen(id, key) {
 // Wire the filter controls once. They live in the static shell, so they keep
 // focus and content across every refresh.
 function wireFilters(seg, input, repaint) {
+  wireSeg(seg, repaint);
+  if (input) document.getElementById(input).addEventListener("input", repaint);
+}
+
+// A segment with no search box beside it.
+function wireSeg(seg, repaint) {
   document.querySelectorAll(`#${seg} button`).forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(`#${seg} button`).forEach(x => x.classList.toggle("on", x === b));
     repaint();
   }));
-  document.getElementById(input).addEventListener("input", repaint);
 }
 
 // "Let it work in here, stop asking."
@@ -4444,8 +4603,6 @@ async function openTask(id) {
     `<span class="chip">idle ${ago(current.idle_seconds)}</span>`
   ].join("");
   document.getElementById("d-why").value = current.why || "";
-  document.getElementById("d-statuses").innerHTML = MOVE_TO.map(([s, label]) =>
-    `<button class="${s === current.status ? "on" : ""}" onclick="move('${s}')">${label}</button>`).join("");
 
   // Terminate is only offered when atrium knows the process. A window-mode
   // launch owns itself, so saying so beats a button that cannot work.
@@ -4468,19 +4625,125 @@ async function openTask(id) {
       "and never rules and shelving still block."
     : "";
 
-  const { events } = await api(`/v1/tasks/${id}/events?limit=200`);
-  document.getElementById("d-events").innerHTML = (events || []).length
-    ? (events || []).reverse().map(e => {
-        const p = e.payload || {};
-        const detailText = p.text || p.content || p.command
-          || (p.from ? `${p.from} to ${p.to}` : "") || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");
-        return `<div class="ev ${KEY_EVENTS.includes(e.kind) ? "key" : ""}">
-          <span class="k">${esc(e.kind)}</span><span class="t">${esc((e.at || "").slice(11, 19))}</span>
-          ${detailText ? `<span class="d">${esc(String(detailText).slice(0, 400))}</span>` : ""}
-        </div>`;
-      }).join("")
-    : '<div class="empty">nothing has happened yet</div>';
+  const { events } = await api(`/v1/tasks/${id}/events?limit=400`);
+  detailEvents = events || [];
+  paintTimeline();
   detail.showModal();
+}
+
+let detailEvents = [];
+
+// The house-keeping kinds. Real, worth keeping, and not what anyone opens a
+// card to read.
+const NOISE_EVENTS = ["status-changed", "prompted", "submitted"];
+
+function paintTimeline() {
+  const seg = document.querySelector("#d-ev-seg .on");
+  const all = seg && seg.dataset.v === "all";
+  const shown = all
+    ? detailEvents
+    : detailEvents.filter(e => !NOISE_EVENTS.includes(e.kind));
+  const hidden = detailEvents.length - shown.length;
+  document.getElementById("d-ev-count").textContent =
+    hidden > 0 ? `${hidden} housekeeping events hidden` : "";
+  setHTML(document.getElementById("d-events"), timelineHTML(shown));
+}
+
+// One line per thing that happened, newest first.
+//
+// A permission used to take three lines: the request, a status change into
+// needs-permission, and the decision, with the command on the first and the
+// outcome on the third. Reading what was allowed meant pairing them by eye.
+// They are one line here, and the status changes those requests caused are
+// dropped, since the request line already says the session was waiting.
+function timelineHTML(events) {
+  if (!events.length) return '<div class="empty">nothing has happened yet</div>';
+
+  const decisions = {};
+  events.forEach(e => {
+    if (e.kind === "perm-decided" && e.payload && e.payload.id) {
+      decisions[e.payload.id] = e.payload;
+    }
+  });
+
+  const rows = [];
+  events.slice().reverse().forEach(e => {
+    const p = e.payload || {};
+    // Folded into its request below.
+    if (e.kind === "perm-decided" && decisions[p.id]) return;
+    // Churn between running and waiting is what a permission IS, so it says
+    // nothing the request line does not.
+    if (e.kind === "status-changed" && isPermChurn(p)) return;
+
+    if (e.kind === "perm-requested") {
+      rows.push(permRow(e, p, decisions[p.id]));
+      return;
+    }
+    const detail = p.text || p.content || p.command
+      || (p.from ? `${p.from} to ${p.to}` : "")
+      || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");
+    rows.push(evRow({
+      cls: KEY_EVENTS.includes(e.kind) ? "key" : "",
+      verdict: esc(e.kind), at: evTime(e),
+      text: esc(String(detail).slice(0, 400))
+    }));
+  });
+  return `<div class="evtable">${rows.join("")}</div>`;
+}
+
+// One event, one row, five columns. Anything with nothing to put in a column
+// leaves it empty rather than pushing the rest along, so the columns line up
+// down the whole list and can be read as one.
+function evRow(r) {
+  return `<div class="evr ${r.cls || ""}">
+    <span class="c-verdict ${r.vcls || ""}">${r.verdict}</span>
+    <span class="c-at">${esc(r.at)}</span>
+    <span class="c-tool">${r.tool || ""}</span>
+    <span class="c-cmd" title="${r.title || ""}">${r.text || ""}</span>
+    <span class="c-by">${r.by || ""}</span>
+  </div>`;
+}
+
+const isPermChurn = p =>
+  (p.from === "running" && p.to === "needs-permission") ||
+  (p.from === "needs-permission" && p.to === "running");
+
+const evTime = e => (e.at || "").slice(11, 19);
+
+// A request and what answered it, on one line.
+//
+// The verdict leads, because scanning an audit log is looking for the ones that
+// were allowed. What answered it matters as much as the answer: approved by a
+// standing rule, by auto mode, or by you are three different things.
+function permRow(e, p, d) {
+  const raw = String(p.command || p.text || "");
+  const row = {
+    cls: "key", at: evTime(e),
+    tool: esc(p.tool || ""), text: esc(raw.slice(0, 400)), title: esc(raw)
+  };
+  if (!d) {
+    return evRow(Object.assign(row, { verdict: "asked", vcls: "pending" }));
+  }
+  const ok = d.decision === "approve";
+  return evRow(Object.assign(row, {
+    verdict: ok ? "approved" : "blocked",
+    vcls: ok ? "ok" : "no",
+    // A block's reason is the useful half, so it takes the column that would
+    // otherwise say what refused it.
+    by: esc(!ok && d.reason ? d.reason : decidedHow(d))
+  }));
+}
+
+// Who or what answered. `by` carries the rule's own pattern when a rule
+// matched, so anything that is not one of the known words IS the rule.
+function decidedHow(d) {
+  switch (d.by) {
+    case "auto": return "auto mode";
+    case "you": case "": case undefined: return "you";
+    case "message": return "a message you queued";
+    case "shelved": return "the card was shelved";
+    default: return `rule ${d.by}`;
+  }
 }
 
 // Reads its arguments off `current` rather than carrying a worktree path
@@ -4540,14 +4803,15 @@ async function openReview() {
         ${g.unattended ? `<span class="chip auto">${g.unattended} unseen</span>` : ""}
         ${g.blocked ? `<span class="chip warn">${g.blocked} blocked</span>` : ""}
       </summary>
-      ${g.entries.map(e => `
+      <div class="rev-rows">${g.entries.map(e => `
         <div class="rev-row ${e.unattended ? "unseen" : ""}">
-          <span class="chip ${e.decision === "approve" ? "accent" : "warn"}">${e.decision}</span>
-          ${e.repeats > 1 ? `<span class="rep" title="identical calls folded together"
-            >&times;${e.repeats}</span>` : `<span class="rep"></span>`}
-          <code class="grow" title="${esc(e.command)}">${esc(e.command)}</code>
+          <span class="verdict ${e.decision === "approve" ? "" : "no"}">${
+            e.decision === "approve" ? "approved" : "blocked"}</span>
+          <span class="rep" ${e.repeats > 1 ? `title="identical calls folded together"` : ""}>${
+            e.repeats > 1 ? "&times;" + e.repeats : ""}</span>
+          <code title="${esc(e.command)}">${esc(e.command)}</code>
           <span class="by">${e.unattended ? `<span class="auto">auto</span>` : esc(e.by || "you")}</span>
-        </div>`).join("")}
+        </div>`).join("")}</div>
     </details>`).join("");
 
   reviewDlg.querySelector("#rev-title").textContent = `what ${title} did`;
@@ -5988,6 +6252,7 @@ wireFilters("hist-seg", "hist-q", paintHistory);
 wireFilters("stack-seg", "stack-q", paintStack);
 paintStackSort();
 paintGroupSegs();
+wireSeg("d-ev-seg", paintTimeline);
 rememberOpen("rules-d", "atrium.rules.open");
 rememberOpen("hist-d", "atrium.history.open");
 

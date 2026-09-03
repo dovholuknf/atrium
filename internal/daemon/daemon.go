@@ -357,12 +357,10 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return "", nil, err
 	}
 	if rule != nil {
+		// DecidePermissionBy writes the audit event, carrying what answered
+		// this in `by`. A second one here would show every rule decision
+		// twice.
 		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, rule.Prefix); err != nil {
-			return "", nil, err
-		}
-		if err := d.st.AppendEvent(task.ID, store.EventPermDecided, map[string]any{
-			"id": p.ID, "decision": rule.Decision, "rule": rule.Prefix, "auto": true,
-		}); err != nil {
 			return "", nil, err
 		}
 		return p.ID, &hub.AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
@@ -376,11 +374,6 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// audit log as every other decision, marked auto, and the review reads it.
 	if task.AutoApprove {
 		if _, err := d.st.DecidePermissionBy(p.ID, "approve", autoReason, "auto"); err != nil {
-			return "", nil, err
-		}
-		if err := d.st.AppendEvent(task.ID, store.EventPermDecided, map[string]any{
-			"id": p.ID, "decision": "approve", "by": "auto", "auto": true,
-		}); err != nil {
 			return "", nil, err
 		}
 		d.ap.Broadcast("permission", p)
