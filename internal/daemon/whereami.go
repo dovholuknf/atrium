@@ -13,20 +13,16 @@ import (
 // Where atrium is, written down for anything that needs to reach it.
 //
 // A hook runs in a session atrium did not start, in a shell atrium did not
-// configure, and it has to find the daemon without being told. Defaulting to
-// localhost:7777 covers the common case and nothing else: a second daemon, a
-// port already taken, or anyone who passed --agent-addr is invisible to every
-// caller that was not also given the same flag.
-//
-// A file in a known place is what makes the flag unnecessary. The daemon knows
-// its own address, so it writes it, and the callers read it.
+// configure, and has to find the daemon without being told. Defaulting to
+// localhost:7777 covers that and nothing else: a second daemon, a port already
+// taken, or anyone who passed --agent-addr is invisible to every caller not
+// given the same flag.
 //
 // Staleness is not guarded against, on purpose. A daemon killed outright
 // leaves the file behind, a hook posts to a port nobody is listening on, and
-// the connection is refused in milliseconds. That is the same fail-open path
-// as atrium simply being down, which every hook already handles. Locking or
-// heartbeating this would add a way for it to go wrong that the current
-// version does not have.
+// the connection is refused in milliseconds, which is the fail-open path every
+// hook already handles. Locking or heartbeating would add a failure mode this
+// does not have.
 
 // Location is what a caller needs to reach a running daemon.
 type Location struct {

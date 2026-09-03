@@ -820,8 +820,8 @@
   .asktext code {
     display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
     background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
-    /* Breaks at the spaces first and only splits a token that would overflow
-       on its own. break-all cut `--event` in half with room to spare. */
+    /* Not break-all: a command has to break at its spaces, so a flag is never
+       cut in half. anywhere covers the path, which has none. */
     font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: normal; overflow-wrap: anywhere;
   }
@@ -866,6 +866,16 @@
   .seg button.on {
     background: var(--chip); color: var(--head); border-color: var(--stroke);
   }
+  /* How many a pill would give you. Dimmer than its label, since it is the
+     answer to a question you did not have to click to ask. */
+  .pillcount {
+    font-style: normal; font-family: var(--mono); font-size: var(--fs-xs);
+    color: var(--teal); margin-left: 3px;
+  }
+  .seg button.on .pillcount { color: var(--head); }
+  /* Nothing there. Shown rather than blanked, because a missing number reads
+     as "not counted" and this one means "none". */
+  .pillcount.zero { color: var(--dimmest); }
   .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
   button.big { font-size: var(--fs-base); padding: 10px 18px; }
   button.go.big { box-shadow: 0 0 18px rgba(0,227,176,.14); }
@@ -976,11 +986,8 @@
     border: 1px solid var(--stroke); border-radius: var(--r-lg);
     box-shadow: var(--shadow-dialog);
   }
-  /* For a dialog whose rows are meant to be read down as a table, or whose
-     content is commands. A wrapped command has to be reassembled before it
-     can be trusted, so the width buys correctness. Grows with the screen
-     rather than stopping at a fixed size, since the whole point is fitting a
-     line that would otherwise wrap. */
+  /* For rows read down as a table, or content that is commands. A wrapped
+     command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
   dialog::backdrop { background: rgba(4,11,20,.74); backdrop-filter: blur(3px); }
   /* One command, with its own heading and its own copy button. Separated
@@ -1189,10 +1196,12 @@
   <div id="stack">
     <div class="filters">
       <span class="barlabel">show</span>
+      <!-- Counts are filled in by paintStack. A filter you can see is empty
+           before clicking it is one you do not click. -->
       <div class="seg" id="stack-seg">
-        <button class="on" data-v="live">live</button>
-        <button data-v="wants">wants me</button>
-        <button data-v="">everything</button>
+        <button class="on" data-v="live">live <i class="pillcount"></i></button>
+        <button data-v="wants">wants me <i class="pillcount"></i></button>
+        <button data-v="">everything <i class="pillcount"></i></button>
       </div>
       <input type="search" id="stack-q" placeholder="filter by name, path or runner" spellcheck="false">
       <span class="matchcount" id="stack-match"></span>
@@ -2622,9 +2631,28 @@ function setStackSort(key) {
 function paintStackSort() {
   document.getElementById("stack-sort").innerHTML =
     Object.entries(STACK_SORTS).map(([k, s]) =>
-      `<button class="${k === stackSort ? "on" : ""}" onclick="setStackSort('${k}')"
+      `<button class="${k === stackSort ? "on" : ""}" data-sort="${k}"
+        onclick="setStackSort('${k}')"
         title="sort by ${s.label}${k === stackSort ? ", again to reverse" : ""}"
-        >${s.label}${k === stackSort ? (stackDesc ? " ↑" : " ↓") : ""}</button>`).join("");
+        >${s.label}${k === stackSort ? (stackDesc ? " ↑" : " ↓") : ""}
+         <i class="pillcount"></i></button>`).join("");
+}
+
+// Writes a count into the pills of one segment, keyed by the pill's value.
+//
+// Set on the element rather than rebuilt into the markup, so the pill the
+// pointer is on does not get replaced under it every poll.
+function pillCounts(segID, counts) {
+  const seg = document.getElementById(segID);
+  if (!seg) return;
+  seg.querySelectorAll("button").forEach(b => {
+    const slot = b.querySelector(".pillcount");
+    if (!slot) return;
+    const key = b.dataset.v !== undefined ? b.dataset.v : b.dataset.sort;
+    const n = counts[key];
+    slot.textContent = n === undefined ? "" : String(n);
+    slot.classList.toggle("zero", n === 0);
+  });
 }
 
 async function renderStack() {
@@ -2637,12 +2665,27 @@ function paintStack() {
   const only = document.querySelector("#stack-seg .on").dataset.v;
   const over = t => ["done", "dead"].includes(t.status);
 
+  const matchesText = t => !q || (t.display_title + " " + (t.worktree || "") + " " +
+    (t.runner || "") + " " + (t.why || "")).toLowerCase().includes(q);
+
   const list = allStack.filter(t => {
     if (only === "live" && over(t)) return false;
     if (only === "wants" && !isWaiting(t)) return false;
-    return !q || (t.display_title + " " + (t.worktree || "") + " " +
-      (t.runner || "") + " " + (t.why || "")).toLowerCase().includes(q);
+    return matchesText(t);
   });
+
+  // What each filter would give you, counted against the same search text, so
+  // the numbers answer "is there anything over there" rather than describing
+  // some other list.
+  const searched = allStack.filter(matchesText);
+  pillCounts("stack-seg", {
+    live: searched.filter(t => !over(t)).length,
+    wants: searched.filter(isWaiting).length,
+    "": searched.length
+  });
+  // Only on the sort that has an empty state worth knowing about. A count on
+  // name or runner would be the same total written four more times.
+  pillCounts("stack-sort", { waited: searched.filter(isWaiting).length });
 
   document.getElementById("stack-match").textContent =
     list.length === allStack.length ? "" : `${list.length} of ${allStack.length}`;
@@ -3882,25 +3925,10 @@ async function attachIfSupervised(taskID) {
   } catch (e) { return false; }
 }
 
-// Keeps the toast host in the browser's top layer.
-//
-// A modal dialog is in that layer, above everything at any z-index, so nothing
-// outside it can be drawn over one. The old answer was to move the host into
-// whichever dialog was open, and it kept failing: modals stack by the order
-// showModal was called, that order is not readable from the DOM, and a host
-// moved into a dialog goes down with it when it closes.
-//
-// popover="manual" puts the host in the same layer and leaves it there. No
-// backdrop, no focus taken, and it never closes on its own, so a toast is
-// above every dialog whatever order they opened in and there is nothing to
-// keep in sync.
-//
-// Which modal is on top, in the order the browser stacks them.
-//
-// Modals stack by the order showModal was called, NOT by their order in the
-// document, and that order cannot be read back. Recording it as it happens is
-// the only way to know. Two open at once is normal here: a confirmation over a
-// list, or the steps over the hooks they came from.
+// Which modal is on top. Modals stack by the order showModal was called, and
+// that order cannot be read back from the DOM, so it is recorded here. Two open
+// at once is normal: a confirmation over a list, or the steps over the hooks
+// they came from.
 const modalStack = [];
 (function trackModals() {
   const proto = window.HTMLDialogElement && HTMLDialogElement.prototype;
@@ -3925,16 +3953,13 @@ const modalStack = [];
 
 // Puts the toast host where it will be both seen AND clickable.
 //
-// A modal dialog is in the browser's top layer, above everything at any
-// z-index, so nothing outside it can be drawn over one. It also makes
-// everything outside itself inert. Those two together rule out the obvious
-// answers: a high z-index is drawn under it, and a popover is drawn over it
-// but takes no clicks, which is worse than being hidden because the buttons
-// look live.
+// A modal dialog is in the browser's top layer, so nothing outside it draws
+// over it at any z-index, and it makes everything outside itself inert. Those
+// two rule out both shortcuts: z-index draws under it, and a popover draws
+// over it but takes no clicks, which is worse than hidden because the buttons
+// look live. Inside the topmost modal is the only place that works.
 //
-// So the host moves inside whichever modal is on top, and back to the body
-// when none is. Position is fixed either way, so moving does not change where
-// the toasts appear.
+// Position is fixed either way, so moving does not change where they appear.
 function raiseToasts() {
   const host = document.getElementById("toasts");
   if (!host) return;
@@ -5309,9 +5334,8 @@ async function installHooks(events) {
   const which = events
     ? `the <b>${esc(hookNameFor(events[0]))}</b> entry`
     : `${n} entr${n === 1 ? "y" : "ies"}`;
-  // What it does, not where it does it. The path is already on screen in the
-  // dialog behind this one, and as a block it broke the sentence in half. The
-  // command is the part worth reading, since that is what claude will run.
+  // No path here: it is already on screen in the dialog behind this one, and
+  // `.asktext code` is a block, so an inline one breaks the sentence in half.
   const hook = events ? hookNameFor(events[0]) : "";
   const body = events
     ? `Claude Code will run this on every <b>${esc(hook)}</b>:` +
@@ -5342,13 +5366,10 @@ async function installHooks(events) {
   renderRunners();
 }
 
-// The manual route: commands to RUN, not JSON to paste.
-//
-// It used to print the hook command itself, which is the string that belongs
-// inside settings.json. Shown in a block with a copy button next to it, that
-// reads as something to run, and running it just posts one activity event.
-// `hook install` does what the button does, so the manual route is the same
-// job by hand rather than a different job.
+// The manual route: `hook install` commands to run, NOT the hook command that
+// belongs inside settings.json. In a block with a copy button, the two look
+// alike, and running the wrong one posts a single activity event and changes
+// nothing.
 //
 // One event named shows only that step, for a row's own "manually".
 function showHookSteps(only) {

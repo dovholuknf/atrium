@@ -15,13 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The activity hook, as a subcommand rather than a script.
-//
-// It was a PowerShell script in the operator's dotfiles, which meant the
-// command written into settings.json held a path only that machine had. Atrium
-// could describe the wiring but never write it. As a subcommand the command is
-// this binary's own path, which atrium knows, so the board can install the
-// hooks itself and they are correct on any machine.
+// The activity hook, as a subcommand rather than a script, so the command
+// written into settings.json is this binary's own path. Atrium knows that and
+// can install the entries itself; a script in somebody's dotfiles holds a path
+// only their machine has.
 //
 // Everything in `docs/hooks.md` under "rules every atrium hook follows" is
 // enforced here: exit 0 whatever happens, one attempt, one second, and silence
@@ -95,13 +92,9 @@ func newHook() *cobra.Command {
 
 // newHookInstall registers hooks in settings.json from a terminal.
 //
-// The same edit the board's button makes, as a command, because working
-// through them one at a time by hand is a legitimate way to do this and
-// pasting JSON into a config file is not the interesting part of it.
-//
-// Nothing here talks to the daemon. The board reads settings.json on every
-// poll, so a hook installed from a terminal shows up on its own within a few
-// seconds, with no notification to send and no address to know.
+// The same edit the board's button makes. Correctness needs no daemon: the
+// board re-reads settings.json on every poll and would find this anyway. The
+// ping afterwards only removes the wait.
 func newHookInstall() *cobra.Command {
 	var event string
 	c := &cobra.Command{
@@ -235,9 +228,9 @@ func interactive() bool {
 // readPayload reads Claude Code's hook payload from stdin, and gives up rather
 // than waiting.
 //
-// Two ways this blocks forever, and both have to be closed. Run by hand,
-// stdin is the terminal, so a read waits for someone to type EOF. Run with a
-// pipe nobody writes to, the read waits on the writer. Either one would hang a
+// Two ways this blocks forever. Run by hand, stdin is the terminal, so a read
+// waits for someone to type EOF. Run with a pipe nobody writes to, the read
+// waits on the writer. Either one would hang a
 // tool call, which is the one thing a hook must never do, so an interactive
 // stdin is not read at all and a pipe gets the same one second the post gets.
 //
@@ -320,4 +313,3 @@ func reportActivity(hubURL, event, name string) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 	resp.Body.Close()
 }
-
