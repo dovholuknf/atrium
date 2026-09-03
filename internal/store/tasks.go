@@ -141,22 +141,23 @@ func (s *Store) refreshObserved(t *Task, obs Observed) error {
 
 func (s *Store) create(obs Observed) (*Task, error) {
 	n := now()
-	// The name without the machine's prefix. On a board with one atrium the
-	// prefix is the same on every row and says nothing, and the title is the
-	// operator's to override anyway.
-	title := LocalName(obs.WireName)
-	if title == "" {
-		title = obs.Worktree
+	// What repository this is, asked of the directory rather than guessed from
+	// its name. See gitinfo.go: the wire name is the last path segment, which
+	// is the subdirectory for a session started inside one and the branch for
+	// a worktree.
+	git := ReadGitInfo(obs.Worktree)
+	repo := obs.Repo
+	if repo == "" {
+		repo = git.Repo
 	}
-	if title == "" {
-		title = "untitled"
-	}
+	title := TitleFor(repo, git.Branch, obs.Worktree, LocalName(obs.WireName))
+
 	rank, err := s.topRank(StatusRunning)
 	if err != nil {
 		return nil, err
 	}
 	t := &Task{
-		ID: newID(), Title: title, Repo: obs.Repo, Worktree: obs.Worktree,
+		ID: newID(), Title: title, Repo: repo, Branch: git.Branch, Worktree: obs.Worktree,
 		Runner: obs.Runner, Hostname: obs.Hostname, PID: obs.PID,
 		Status: StatusRunning, CreatedAt: n, LastActivityAt: n,
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,

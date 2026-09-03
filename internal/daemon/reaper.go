@@ -29,10 +29,18 @@ const ReapEvery = 20 * time.Second
 // QuietAfter is how long a card with no known process id may go without a word
 // before it is treated as gone.
 //
-// Generous, because it is a guess where the pid check is a fact. Anything a
-// session does revives the card, so the cost of being early is a card that
-// flips back to running the moment it speaks.
-const QuietAfter = 3 * time.Hour
+// It was three hours, which is far too generous for what it is measuring. A
+// card with no pid never reported one, so its session hook never ran, which
+// makes it the kind of session atrium knows least about rather than the kind
+// to give the most benefit of the doubt to. Meanwhile the board showed it as
+// `running` for the rest of the afternoon, in the column that is supposed to
+// mean something is working.
+//
+// The cost of being early is a card that flips back to running the moment the
+// session says anything, because any activity revives it. The cost of being
+// late is a running column that cannot be trusted. Forty five minutes: longer
+// than any single turn, short enough that the column stays honest.
+const QuietAfter = 45 * time.Minute
 
 func (d *Daemon) reapOnce() error {
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)

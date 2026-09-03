@@ -546,6 +546,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// that is slow to start cannot delay the board answering: a board that is
 	// not up yet looks like a hang, a terminal that is not open yet does not.
 	go d.startFixtures()
+	// Cards named before atrium asked git. Once, at startup, rather than on
+	// registration: registration runs on every hook of every session, and a
+	// directory in no repository would re-answer that question forever.
+	if n, err := d.st.BackfillGitInfo(); err != nil {
+		log.Printf("[atrium] could not name cards from their repositories: %v", err)
+	} else if n > 0 {
+		log.Printf("[atrium] named %d card(s) from their repository and branch", n)
+	}
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
 	errCh := make(chan error, 2)
