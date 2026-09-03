@@ -34,6 +34,14 @@ type GitInfo struct {
 	// Branch is the checked-out branch. Empty on a detached head, which is a
 	// real state and not an error: the card falls back to naming the repo.
 	Branch string
+	// Linked marks a worktree rather than the repository's own checkout.
+	//
+	// It changes the name. A linked worktree is created for one branch and its
+	// directory is named after it, so the branch alone already identifies the
+	// work: `tunneled-acme`. The repository's own checkout has no such name
+	// and needs both: `main:atrium`. That is the rule the gwt ledger has used
+	// all along, and matching it is the whole point of reading any of this.
+	Linked bool
 }
 
 // gitWalkLimit bounds how far up the tree to look for a repository.
@@ -105,7 +113,7 @@ func worktreeInfo(dotgitFile string) GitInfo {
 		gitdir = filepath.Join(filepath.Dir(dotgitFile), gitdir)
 	}
 
-	out := GitInfo{Branch: headBranch(gitdir)}
+	out := GitInfo{Branch: headBranch(gitdir), Linked: true}
 
 	// .../<repo>/.git/worktrees/<name> -> <repo>. Walked by name rather than
 	// by counting segments, since a git directory can be somewhere else
@@ -148,20 +156,25 @@ func headBranch(gitdir string) string {
 
 // TitleFor names a card the way the gwt session ledger names a session.
 //
-// `branch:repo`, so the board and the ledger call the same session the same
-// thing. The alternative was a name that is right most of the time and wrong
-// on exactly the two directories somebody works in most: a subdirectory of a
-// repository, and a worktree.
+// Two shapes, because the ledger has two:
+//
+//   - A linked worktree is `tunneled-acme`. It exists for one branch and its
+//     directory is named after it, so the branch already says which work this
+//     is and adding the repository only makes the name longer.
+//   - Anything else is `main:atrium`. A repository's own checkout is not named
+//     for what is being done in it, so the branch is the part that says.
 //
 // Falls back through what is actually known. A directory outside any
-// repository has only its own name, which is where atrium started and is
-// still the right answer when there is nothing better.
-func TitleFor(repo, branch, worktree, fallback string) string {
+// repository has only its own name, which is where atrium started and is still
+// the right answer when there is nothing better.
+func TitleFor(g GitInfo, worktree, fallback string) string {
 	switch {
-	case repo != "" && branch != "":
-		return branch + ":" + repo
-	case repo != "":
-		return repo
+	case g.Linked && g.Branch != "":
+		return g.Branch
+	case g.Repo != "" && g.Branch != "":
+		return g.Branch + ":" + g.Repo
+	case g.Repo != "":
+		return g.Repo
 	case fallback != "":
 		return fallback
 	case worktree != "":

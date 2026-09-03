@@ -322,6 +322,11 @@
     padding: 8px 12px; margin-bottom: 7px; cursor: pointer;
     box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
+  }
+  /* The name and its chips share a row. `why` is not on that row: it is a
+     sentence, and putting it in a flex line with the chips made it a third
+     item squeezed against the right edge with nowhere to wrap. */
+  .card .card-line {
     display: flex; align-items: center; gap: var(--sp-3);
   }
   /* A card hovers in its group's colour. A single blue for every card meant
@@ -356,13 +361,13 @@
     flex: none; width: 21px; height: 21px; border-radius: var(--r-sm);
   }
   .card .title .rmark svg { width: 15px; height: 15px; }
-  .card > .chips {
+  .card .card-line > .chips {
     margin-left: auto; flex: 0 1 auto; min-width: 0;
     flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
     scrollbar-width: none;
   }
-  .card > .chips::-webkit-scrollbar { display: none; }
-  .card > .chips .chip { flex: none; }
+  .card .card-line > .chips::-webkit-scrollbar { display: none; }
+  .card .card-line > .chips .chip { flex: none; }
   .pulse {
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
     animation: pulse 1.9s ease-in-out infinite;
@@ -766,6 +771,13 @@
     /* A note is free text, so it can be one long unbroken run. Without this it
        sets its own minimum width and pushes the card wider than its lane. */
     min-width: 0; overflow-wrap: anywhere;
+  }
+  /* On a card it is a sentence under the name, so it wraps and stays quiet.
+     Tighter than the default spacing above, since the card is now one line and
+     a full separator under it made the note look like a second card. */
+  .card .why {
+    margin-top: 7px; padding-top: 6px; font-size: var(--fs-xs);
+    white-space: normal;
   }
   /* On a stack row it shares the line with everything else, so it gets one
      line and an ellipsis rather than growing the row. */
@@ -2556,10 +2568,11 @@ function cardHTML(t) {
     onclick="openTask('${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
-    <div class="title">${w ? '<span class="pulse"></span>' : ""}${
-      t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
-      runnerMark(t.runner)}${esc(t.display_title)}</div>
-    <div class="chips">
+    <div class="card-line">
+      <div class="title">${w ? '<span class="pulse"></span>' : ""}${
+        t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
+        runnerMark(t.runner)}${esc(t.display_title)}</div>
+      <div class="chips">
       ${tagChips(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact"
@@ -2586,6 +2599,7 @@ function cardHTML(t) {
         >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+      </div>
     </div>
     ${t.why ? `<div class="why">${esc(t.why)}</div>` : ""}
   </div>`;

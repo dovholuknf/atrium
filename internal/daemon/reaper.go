@@ -38,9 +38,10 @@ const ReapEvery = 20 * time.Second
 //
 // The cost of being early is a card that flips back to running the moment the
 // session says anything, because any activity revives it. The cost of being
-// late is a running column that cannot be trusted. Forty five minutes: longer
-// than any single turn, short enough that the column stays honest.
-const QuietAfter = 45 * time.Minute
+// late is a running column that cannot be trusted. Fifteen minutes: a session
+// silent that long with nothing to check is not something to keep claiming is
+// working, and if it was, it says so and comes straight back.
+const QuietAfter = 15 * time.Minute
 
 func (d *Daemon) reapOnce() error {
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)

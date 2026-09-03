@@ -21,16 +21,26 @@ func (s *Store) BackfillGitInfo() (int, error) {
 	}
 	fixed := 0
 	for _, t := range tasks {
-		if t.Worktree == "" || t.Repo != "" {
+		if t.Worktree == "" {
 			continue
 		}
 		git := ReadGitInfo(t.Worktree)
+		// Not in a repository, or the directory has gone. Either way there is
+		// nothing better to call it than whatever it is called now.
 		if git.Repo == "" {
 			continue
 		}
 		title := t.Title
 		if _, override := t.Overrides["title"]; !override {
-			title = TitleFor(git.Repo, git.Branch, t.Worktree, t.Title)
+			title = TitleFor(git, t.Worktree, t.Title)
+		}
+		// Recomputed rather than filled in once. The naming rule itself gets
+		// corrected, and a card fixed by an earlier version would otherwise
+		// keep a name that version chose and this one would not. Deterministic
+		// from the directory, so doing it every startup costs two file reads
+		// per card and changes nothing when nothing changed.
+		if t.Repo == git.Repo && t.Branch == git.Branch && t.Title == title {
+			continue
 		}
 		err := s.guard(func() error {
 			_, err := s.db.Exec(

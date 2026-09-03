@@ -56,6 +56,52 @@ func TestAWorktreeKnowsItsRepo(t *testing.T) {
 	if got.Branch != "aug-21-2026" {
 		t.Fatalf("branch is %q, wanted aug-21-2026", got.Branch)
 	}
+	if !got.Linked {
+		t.Fatal("a linked worktree was not marked as one, so it will be named like a checkout")
+	}
+}
+
+// The two name shapes, which is the whole reason any of this is read. Matched
+// against what the gwt session ledger has always printed, since the complaint
+// that started this was the two disagreeing.
+func TestTitleMatchesTheLedger(t *testing.T) {
+	cases := []struct {
+		name string
+		git  GitInfo
+		want string
+	}{
+		{"a repository's own checkout carries the branch and the repo",
+			GitInfo{Repo: "atrium", Branch: "main"}, "main:atrium"},
+		{"a session inside a subdirectory is still the repository",
+			GitInfo{Repo: "dotfiles", Branch: "main"}, "main:dotfiles"},
+		{"a linked worktree is its branch alone, since its directory is that",
+			GitInfo{Repo: "ziti", Branch: "tunneled-acme", Linked: true}, "tunneled-acme"},
+		{"and so is one whose branch is a date",
+			GitInfo{Repo: "ziti-tv", Branch: "aug-21-2026", Linked: true}, "aug-21-2026"},
+		{"a detached head has no branch to name, so the repo stands alone",
+			GitInfo{Repo: "atrium"}, "atrium"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := TitleFor(c.git, "/w/whatever", "fallback"); got != c.want {
+				t.Fatalf("got %q, wanted %q", got, c.want)
+			}
+		})
+	}
+}
+
+// Outside a repository there is nothing to read, and the wire name is what
+// atrium always used. That path has to keep working.
+func TestTitleFallsBackToTheWireName(t *testing.T) {
+	if got := TitleFor(GitInfo{}, "/w/some-dir", "some-agent"); got != "some-agent" {
+		t.Fatalf("got %q, wanted the wire name", got)
+	}
+	if got := TitleFor(GitInfo{}, "/w/some-dir", ""); got != "some-dir" {
+		t.Fatalf("got %q, wanted the directory name", got)
+	}
+	if got := TitleFor(GitInfo{}, "", ""); got != "untitled" {
+		t.Fatalf("got %q, wanted untitled", got)
+	}
 }
 
 // A branch with a slash in it is one branch, not a path.
