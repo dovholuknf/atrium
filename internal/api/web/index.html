@@ -5690,6 +5690,8 @@ function decidedHow(d) {
     // An answer given earlier and handed back to a retry. Said out loud,
     // because a refusal nobody remembers giving is the confusing one.
     case "replay": return "replayed an earlier answer";
+    // Nobody answered this: the session that asked it went away first.
+    case "orphaned": return "the session went away";
     case "you": case "": case undefined: return "you";
     case "message": return "a message you queued";
     case "shelved": return "the card was shelved";

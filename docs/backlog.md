@@ -77,43 +77,70 @@ there rather than inventing a second idea of what a safe path is.
 its author says so plainly along with the rough edges. Worth reading rather than dismissing: the overlap is
 large and the differences are the interesting part.
 
-Where it is ahead:
+**The source has now been read. `docs/charon.md` is the standing reference and it corrects nine claims this
+section originally made from the author's public post.** The two that change what to build: Charon is a Python
+agent driving the Claude Agent SDK in process rather than a supervisor of an interactive CLI, which is why its
+peer messaging can inject text as though it were typed and atrium's cannot. And its editor is CodeMirror 6, not
+Monaco.
 
-- **Many machines already, over SSH.** No exposed ports on the remote side. Atrium reaches one machine and the
-  forum is still a document. Its transport choice is worth weighing against the dialled-connection plan in
-  `docs/forum-implementation.md`, since SSH solves the same NAT problem with nothing to build.
-- **Approvals reachable from a phone.** A Telegram bot carries the request out and the answer back. Atrium has
-  desktop notifications, which need the browser, and the board, which needs the network. This is the gap that
-  matters most: a gate you cannot answer from away is a gate you turn off.
-- **Sessions talk to each other over MCP.** One session finds another live one and asks it to review, or asks
-  whether it is done with a file. Atrium's `submit` is one agent talking to one human.
-- **A small IDE.** Browse and edit remote files, review diffs, drag and drop uploads.
+Ranked by what is worth building here, with the mechanism and the file references in `docs/charon.md`:
+
+1. **A peer bus: sessions that can address each other.** A stable handle, a `list` tool as mandatory discovery,
+   a `send` that returns acceptance rather than an answer, and status tools so a model asks instead of guessing.
+   Atrium already has the handle (`wire_name`), the transport (the agent listener), and the delivery mechanism
+   (the `message` table drained by the permission and Stop hooks). This is the one thing `CLAUDE.md` says atrium
+   has no answer for at all.
+2. **Approvals reachable from a phone.** Still the gap that matters most: a gate you cannot answer from away is
+   a gate you turn off. Charon's version is small because it is one more client of the same call the browser
+   makes, and atrium's `/v1/permissions` endpoints already have that shape. Atrium's own notifications need the
+   board open, since the board registers a service worker but never subscribes to push.
+3. **A detached process holding the pty, so a runner outlives the daemon.** Answers open question 2 in
+   `docs/supervision-design.md` for POSIX hosts. It does not close the Windows gap, which stays on resume ids.
+4. **A precondition on any write endpoint.** An expected content hash treated as a precondition rather than a
+   hint, so a save cannot silently clobber an agent mid-turn. Worth adding to whatever write path appears first,
+   with or without an editor.
+5. **One upload pipeline for drag, paste and picker,** splicing the resulting path into the prompt. See "Moving
+   files, and pasting into a session" above, which this answers.
+6. **A dedup key on `POST /v1/tasks/{id}/prompt`.** `permission.dedup_key` exists for the same reason and the
+   prompt path does not have one.
 
 Where atrium is ahead, and should stay:
 
 - **It drives an overlay natively.** zrok and OpenZiti are embedded SDKs, and the board answers on the overlay
   listener itself rather than being proxied to. Charon reaches its machines over SSH, which works and needs no
-  exposed ports, but it is a tunnel to a box rather than a service on a network with a policy in front of it.
-  `docs/overlays.md`.
+  new ports, but it needs an `sshd` already accepting connections, so it is a tunnel to a box rather than a
+  service on a network with a policy in front of it. `docs/overlays.md`.
+- **Standing rules and a durable audit log.** Charon has one rule mechanism, a per-session list of bare tool
+  names, so one "Always" on a `Bash` card approves every later `Bash` command in that session. Atrium matches by
+  prefix, glob or folder, most specific wins, and records what answered each decision. Their own comment says
+  they moved that list onto disk for the same reason `perm_rule` exists.
+- **A card outlives its process.** Not durability, which Charon has: atrium has a unit above a session and a
+  status a human curates.
+- **Pending approvals do not expire.** Charon has three timeouts, 10 minutes for a Claude tool permission and
+  30 for Claude's `AskUserQuestion` and for Codex, and each expiry returns a deny the model cannot tell from a
+  human's. Atrium blocks until answered, which is the correct default for something whose answer is a decision.
+- **Auto mode is not a bypass.** Charon's `auto` skips the hook entirely, and the model can put itself there by
+  exiting plan mode. Atrium's sits last in the chain and pays for itself with a review. `docs/auto-mode.md`.
 
-- **Standing rules and a durable audit log.** Charon's approvals are per request. Atrium answers once and
-  remembers, and every decision is recorded with what answered it. That is the whole reason atrium exists.
-- **A card outlives its process.** Charon is session-shaped. Atrium's cards carry history across restarts.
-- **Pending approvals do not expire.** Charon times out at 10 minutes for Claude and 30 for Codex, then denies.
-  Atrium blocks until answered, which is the correct default for something whose answer is a decision.
-
-The one to steal first is the out-of-band approval channel. Everything else here is already on this list.
+Refused outright, with the reasons in `docs/charon.md` section 6: approval timeouts, the hub-dials-out
+federation transport, a second durable event store on the agent side, holding provider credentials, and any of
+the authentication.
 
 ### An editor in the board
 
-Charon (`github.com/Lomchat/charon`) puts a VS Code editor next to its agents, and that is a better idea than
-it first sounds here. Atrium already streams a terminal for a runner it owns, and the gap between watching an
-agent edit a file and reading that file is a context switch to another window.
+Charon (`github.com/Lomchat/charon`) puts an editor next to its agents, and that is a better idea than it first
+sounds here. Atrium already streams a terminal for a runner it owns, and the gap between watching an agent edit
+a file and reading that file is a context switch to another window.
 
-Not evaluated. The obvious candidate is the Monaco editor, which is what VS Code is built on and which vendors
-as static assets, so it would fit the "vendored rather than from a CDN, because the board has to work offline"
-rule the terminal already follows. Open questions before it is worth planning: what writes back, whether a save
-races the agent editing the same file, and whether a read-only view answers most of the want.
+Not evaluated. This section used to guess Monaco. Charon shipped **CodeMirror 6**, which is lighter, loads its
+language modes lazily per file, and vendors as static assets the same way xterm.js already does, so it is the
+thing to evaluate first. `docs/charon.md`.
+
+Two of the three open questions here now have answers worth starting from. What writes back: an endpoint with an
+expected-content-hash precondition, which is worth having whether or not an editor follows. Whether a save races
+the agent editing the same file: yes, and optimistic concurrency answers it without a lock, refusing the write
+and handing back the current hash rather than arbitrating who owns the file. Still open: whether a read-only
+view answers most of the want.
 
 ### Every node needs its own configuration
 
@@ -303,10 +330,13 @@ and already gated, which is what joining was for.
   reads today. A two minute replay window makes that safe, but the window is a bound on a wrong key rather
   than a right one. If the payload does carry a tool use id, using it would make the key exact and the window
   unnecessary. Unverified, and worth checking next time the hook events are looked at.
-- **A session that dies without warning can hang.** `SessionEnd` covers a clean exit and the reaper covers a
-  known pid. A session that is killed outright, with no pid recorded, sits in `running` forever. No steps to
-  reproduce yet: it has been seen once, and what killed the session was not established. Needs a repro before
-  it is worth fixing, since the fix is a guess about which signal was missed.
+- **A session that dies without warning is now handled three ways, and one gap is left.** A known pid gets the
+  liveness check. No pid and three hours of silence gets the quiet check. No pid while waiting to be answered
+  gets the orphan check, which asks the hub whether anybody is still parked on the request. What is left: a
+  card in `needs-input` with no pid and no pending request. Nothing is waiting on an answer there, so there is
+  no third fact to consult, and silence cannot be the signal because needing input IS silence. It would take a
+  session-level heartbeat, which is a cost on every session to catch a rare case, so it is not obviously worth
+  paying.
 - **Postgres portability is asserted, not tested.** The schema is written for it. Nothing runs the migrations
   against it. A CI job would settle it.
 - **`docs/test-plan.md` predates v2.** It covers the hub and the agent loop, not the daemon, the board, rules,

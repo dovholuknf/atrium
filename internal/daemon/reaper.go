@@ -97,6 +97,13 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			return
 		case <-tick.C:
 		}
+		// Questions asked for sessions that have gone. Same tick, because it
+		// is the same job: deciding what is still there. Its own error is
+		// logged rather than skipping the liveness check, since the two are
+		// independent and one failing is no reason to stop the other.
+		if err := d.reapOrphans(); err != nil {
+			log.Printf("[atrium] orphan check: %v", err)
+		}
 		if err := d.reapOnce(); err != nil {
 			if msg := err.Error(); msg != lastErr {
 				log.Printf("[atrium] liveness check: %v", err)
