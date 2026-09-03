@@ -681,6 +681,17 @@
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
+  /* Messages said and not yet arrived. Dimmed, because the interesting state
+     is how many are stacked up, not what each one said. */
+  .queued { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .queued .q {
+    display: flex; gap: var(--sp-2); align-items: baseline;
+    font-size: var(--fs-xs); color: var(--dim);
+    border-left: 2px solid var(--warn); padding: 3px 0 3px 8px;
+  }
+  .queued .q .txt {
+    color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1;
+  }
   .tagsuggest { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: 8px; }
   .tagsuggest .chip.tag { font-size: var(--fs-xs); padding: 2px 9px; }
   .chip.attach:hover { border-color: var(--teal); }
@@ -2147,6 +2158,22 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
       <div class="toolbar" id="d-runner"></div>
       <span class="hintline" id="d-auto-note"></span>
     </div>
+    <!-- Saying something to a session that is already running. There is no
+         channel into a claude process from outside, so this goes one of two
+         ways: typed straight into the terminal when atrium owns one, or
+         queued to ride the next hook when it does not. The dialog says which
+         happened, because the second one can take minutes and would otherwise
+         read as nothing happening. -->
+    <div class="field">
+      <label class="eyebrow" for="d-say">say something to it</label>
+      <textarea id="d-say" rows="2" spellcheck="false"
+        placeholder="stop what you are doing and run the tests first"></textarea>
+      <div class="toolbar">
+        <button class="go" id="d-say-send" onclick="sayToCurrent()">send</button>
+        <span class="hintline" id="d-say-how"></span>
+      </div>
+      <div class="queued" id="d-say-queue"></div>
+    </div>
     <div class="field">
       <label class="eyebrow">history</label>
       <!-- Decisions by default. A card that has been open for a day carries
@@ -2293,6 +2320,14 @@ function ago(secs) {
   // harder to compare down.
   if (d) return d + "d" + (h ? h + "h" : "");
   return (h ? h + "h" : "") + (m ? m + "m" : "");
+}
+
+// Seconds since a timestamp the server sent, for the ages the server did not
+// pre-compute into a field.
+function sinceSecs(iso) {
+  const t = new Date(iso);
+  if (isNaN(t)) return null;
+  return Math.max(0, (Date.now() - t.getTime()) / 1000);
 }
 
 // When a session was first seen, as a date rather than a duration.
@@ -4872,8 +4907,9 @@ async function toggleGlobalAuto() {
     "<br><br>Everything is still recorded, and <b>never</b> rules and shelved cards still " +
     "block. Read what any session did with <b>what did it do?</b>",
     "approve everything")) return;
+  let s;
   try {
-    const s = await api("/v1/settings", {
+    s = await api("/v1/settings", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ global_auto: on })
     });
@@ -4883,8 +4919,22 @@ async function toggleGlobalAuto() {
     return;
   }
   paintGlobalAuto();
+  // Immediately, not on the next poll. The drain has already answered
+  // everything that was queued, and refresh is what retires the toasts and OS
+  // notifications those requests raised. Five seconds of growlers shouting
+  // about requests that have just been approved is the switch looking broken
+  // at exactly the moment it worked.
+  refresh();
+  // The drained count is said out loud. Those requests were sitting in front
+  // of you a second ago and they have just been answered on your behalf, which
+  // you should hear about from the thing that did it.
+  const drained = on && s.drained
+    ? ` ${s.drained} request${s.drained === 1 ? "" : "s"} that ${
+        s.drained === 1 ? "was" : "were"} already waiting ${
+        s.drained === 1 ? "was" : "were"} approved.`
+    : "";
   toast(on ? "approving everything" : "asking again",
-    on ? "nothing on this machine will stop to ask you"
+    on ? "nothing on this machine will stop to ask you." + drained
        : "requests are gated again");
 }
 
@@ -5572,10 +5622,67 @@ async function openTask(id) {
       "and never rules and shelving still block."
     : "";
 
+  document.getElementById("d-say").value = "";
+  // A message rides a hook, and a session that has ended fires no more of
+  // them. Said rather than prevented: a card can be wrong about being dead,
+  // and queueing something for a session you are about to resume is fair.
+  document.getElementById("d-say-how").textContent =
+    ["dead", "done"].includes(current.status)
+      ? "this session has ended, so anything queued waits until something resumes it."
+      : "";
+  paintQueued();
+
   const { events } = await api(`/v1/tasks/${id}/events?limit=400`);
   detailEvents = events || [];
   paintTimeline();
   detail.showModal();
+}
+
+// Says something to the open card.
+//
+// The reply names which of the two routes it took, and that is the whole point
+// of reporting it: a message typed into a terminal has already landed, and a
+// queued one has not and might not for minutes. One button doing two very
+// different things in silence is how you end up sending it four times.
+async function sayToCurrent() {
+  if (!current) return;
+  const box = document.getElementById("d-say");
+  const text = box.value.trim();
+  if (!text) return;
+  const send = document.getElementById("d-say-send");
+  const how = document.getElementById("d-say-how");
+  send.disabled = true;
+  how.textContent = "";
+  try {
+    const res = await api(`/v1/tasks/${current.id}/message`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    box.value = "";
+    how.textContent = res.delivered === "terminal"
+      ? "typed into its terminal."
+      : "queued. it arrives on the session's next tool call, or when its turn ends.";
+    await paintQueued();
+  } catch (e) {
+    how.textContent = `not sent: ${e.message || e}`;
+  } finally {
+    send.disabled = false;
+  }
+}
+
+// What has been said and has not arrived. Only ever queued messages: one typed
+// into a terminal is already gone and has nothing to wait for.
+async function paintQueued() {
+  const host = document.getElementById("d-say-queue");
+  if (!current) return;
+  let msgs = [];
+  try {
+    ({ messages: msgs } = await api(`/v1/tasks/${current.id}/messages`));
+  } catch { return; }
+  setHTML(host, (msgs || []).map(m =>
+    `<div class="q"><span>waiting</span><span class="txt">${esc(m.text)}</span>
+     <span title="${esc(m.created_at)}">${esc(ago(sinceSecs(m.created_at)))} ago</span></div>`
+  ).join(""));
 }
 
 let detailEvents = [];
@@ -5834,6 +5941,20 @@ async function killTask() {
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
 document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
 
+// Enter sends, shift-enter is a newline. The chat convention, because this is
+// one: short things said to somebody, in a row. Escape would close the dialog
+// out from under a half-typed message, so it is caught and only clears the box.
+document.getElementById("d-say").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sayToCurrent();
+  } else if (e.key === "Escape" && e.target.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.target.value = "";
+  }
+});
+
 // Saved on change rather than on every keystroke, so a half-typed tag is not
 // stored and read straight back under the cursor. The daemon lower cases and
 // dedupes, so what comes back may differ from what was typed.
@@ -5968,7 +6089,16 @@ function connect() {
   const es = new EventSource("/v1/events");
   const conn = document.getElementById("conn");
   const label = document.getElementById("conn-t");
-  es.onopen = () => { conn.classList.add("live"); label.textContent = "live"; };
+  // A reconnect means the daemon went and came back, and everything held in
+  // this tab was decided by a daemon that is no longer running. Settings are
+  // re-read rather than kept: the header badge claiming to be approving
+  // everything while the daemon asks is the worst possible way to be wrong,
+  // because the operator stops watching the queue.
+  es.onopen = () => {
+    conn.classList.add("live");
+    label.textContent = "live";
+    loadGlobalAuto();
+  };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "halted"].forEach(k => es.addEventListener(k, refresh));
   // settings.json changed under us, which is `atrium hook install` run in a

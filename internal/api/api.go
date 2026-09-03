@@ -49,6 +49,11 @@ type Server struct {
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
+	// DrainAuto approves everything already waiting, when auto mode is turned
+	// on with a full queue. Supplied by the daemon for the same reason Decide
+	// is: each waiting agent is parked on an in-memory reply channel, and a
+	// decision written straight to the store never reaches it.
+	DrainAuto func() (int, error)
 	// Shutdown winds the daemon down. Supplied by the daemon, which is the only
 	// thing that can stop itself and owns the access rules for doing so.
 	Shutdown http.HandlerFunc
@@ -171,6 +176,11 @@ func (s *Server) Handler() http.Handler {
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
 	}
+	// What has been said and not yet arrived. A queued message waits for the
+	// session's next tool call or its Stop hook, which can be a while, and a
+	// board that does not show the queue makes that look like nothing
+	// happened.
+	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.pendingMessages)
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.Handle("/", webHandler())
 	return mux
@@ -1017,4 +1027,18 @@ func (b *bus) publish(kind string, payload any) {
 		default:
 		}
 	}
+}
+
+// pendingMessages lists what has been said to a card and has not arrived yet.
+//
+// A queued message waits for the session's next tool call or its Stop hook,
+// which can be minutes. Without this the board has nothing to show between
+// sending and delivery, and the send looks like it did nothing.
+func (s *Server) pendingMessages(w http.ResponseWriter, r *http.Request) {
+	msgs, err := s.st.PendingMessages(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
 }

@@ -57,10 +57,36 @@ decision made once, and re-surfacing it every time would bury the requests nobod
 
 Pending requests are not part of a review. Something still waiting has not happened yet.
 
+## The board-wide switch
+
+The same thing for every session at once, including ones that have not started yet. It lives in the header,
+turning it on takes a confirmation that cannot be skipped, and the setting is held by the daemon rather than the
+browser, so it is one answer for the machine and two tabs cannot disagree about it.
+
+It is recorded as `global-auto` rather than `auto`. "I turned this session loose" and "I turned the whole board
+loose" are different answers to be reading back six hours later.
+
+### Turning it on empties the queue
+
+The permission chain runs once per request, when that request arrives. Anything already waiting had asked before
+the switch existed, so without this it would sit there under a header saying nothing will stop to ask, which is
+the switch visibly failing to do the thing it says it does. Nobody turns auto mode on in the abstract. They turn
+it on because something is waiting.
+
+So the switch approves what is already queued. Three things about how:
+
+- **Through the same decide path the buttons use**, not by writing approvals to the store. Each waiting agent is
+  parked on an in-memory reply channel, and a decision it never sees leaves it blocked forever.
+- **The chain's order is kept.** Shelving and standing rules sit ahead of auto mode, so a shelved card and a
+  never rule both still hold. Auto mode stops new questions and does not discard answers already given. A card
+  can be shelved after its request was recorded and a rule can be written while a request waits, so both are
+  checked rather than assumed impossible.
+- **The count is said out loud.** Those requests were in front of you a second ago and have just been answered
+  on your behalf. The board also refreshes at once, so the toasts and notifications they raised are retired on
+  the same click rather than shouting for another five seconds about requests that are already approved.
+
 ## What is not built
 
-- **A global auto mode.** Per session covers the case that prompted this. A global switch is one keystroke from
-  turning the whole tool off.
 - **A time limit.** "Auto mode for the next hour" is the shape this should have. Today it stays on until
   switched off, with only the card's `auto` badge as a reminder.
 - **Anything reading the review other than a person.** Feeding it to a model to summarise what changed is
