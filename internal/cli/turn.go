@@ -58,9 +58,18 @@ type turnInput struct {
 	StopHookActive bool `json:"stop_hook_active"`
 }
 
-// keepGoing is what a Stop hook says when it has nothing to say. Written on
-// every path that is not a deliberate block, including every error path.
-const keepGoing = `{"continue":true}`
+// keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
+//
+// Empty output with exit 0 is the documented way to let a turn end. This used
+// to print `{"continue":true}`, which is not documented for a Stop hook and
+// was inferred from the shape of the other hooks. It appeared to work, which
+// is the problem with inferring: the failure mode of a Stop hook getting this
+// wrong is a session that will not stop, and that is not a thing to be
+// approximately right about.
+//
+// Written on every path that is not a deliberate block, including every error
+// path.
+const keepGoing = ``
 
 func newTurn() *cobra.Command {
 	var event, name, hubURL string

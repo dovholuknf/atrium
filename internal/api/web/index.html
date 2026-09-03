@@ -869,9 +869,14 @@
   .stackrow .wait.quiet { color: var(--dimmest); }
   /* The day it started, under how long ago that was. Two different questions,
      and a duration alone cannot answer which day a card carried over from. */
-  .stackrow .wait .since {
-    display: block; font-style: normal; font-size: var(--fs-xxs);
-    color: var(--dimmest); font-weight: 400; letter-spacing: 0;
+  /* When atrium first saw this card, beside the name rather than under the
+     age. Two durations stacked in one column read as one measurement in two
+     units, and they are different questions: how stale this is, and which day
+     it started. Quiet, and first to go when the row is narrow. */
+  .stackrow .who .since {
+    font-style: normal; font-size: var(--fs-xxs); font-weight: 400;
+    color: var(--dimmest); letter-spacing: 0; white-space: nowrap;
+    margin-left: auto; padding-left: var(--sp-3);
   }
   .stackrow .who { flex: 1 1 320px; min-width: 0; }
   .stackrow .who b { display: flex; align-items: center; gap: var(--sp-2); color: var(--head); }
@@ -1600,6 +1605,12 @@
            before clicking it is one you do not click. -->
       <div class="seg" id="stack-seg">
         <button class="on" data-v="live">live <i class="pillcount"></i></button>
+        <!-- Two, because they are two different asks. `ready` finished its
+             turn and will wait all day. `wants me` includes an agent frozen
+             mid-tool that cannot do anything until you answer. One filter
+             holding both meant the urgent case was invisible inside a list of
+             the patient one. -->
+        <button data-v="ready">ready <i class="pillcount"></i></button>
         <button data-v="wants">wants me <i class="pillcount"></i></button>
         <button data-v="">everything <i class="pillcount"></i></button>
       </div>
@@ -3291,15 +3302,19 @@ function toggleColumn(id) {
 // it, so "newest activity" and "quietest" were the same pill twice, and
 // "needs me" was the `wants me` filter with extra steps.
 const STACK_SORTS = {
+  // The two clocks, named for what each measures rather than for the order it
+  // puts them in. They are close enough to be confused: on a card that is
+  // ready, the turn ended and the activity stopped at the same moment, so both
+  // read the same number. They come apart on everything else. A card that is
+  // running has been active recently and is waiting for nobody, and a card
+  // that has been frozen on a permission for an hour was last active an hour
+  // ago and has wanted you for that whole hour.
   activity: {
-    label: "activity",
+    label: "last active",
     cmp: (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0)
   },
-  // Longest wait first. Called `waiting` until the column it sorts by was
-  // renamed, at which point the board said ready and the sort said waiting for
-  // the same number.
   waited: {
-    label: "waited longest",
+    label: "waiting on you",
     cmp: (a, b) => (b.wait_seconds || 0) - (a.wait_seconds || 0)
   },
   status: {
@@ -3396,6 +3411,7 @@ function paintStack() {
 
   const list = allStack.filter(t => {
     if (only === "live" && over(t)) return false;
+    if (only === "ready" && t.status !== "needs-input") return false;
     if (only === "wants" && !isWaiting(t)) return false;
     return matchesText(t);
   });
@@ -3406,6 +3422,7 @@ function paintStack() {
   const searched = allStack.filter(matchesText);
   pillCounts("stack-seg", {
     live: searched.filter(t => !over(t)).length,
+    ready: searched.filter(t => t.status === "needs-input").length,
     wants: searched.filter(isWaiting).length,
     "": searched.length
   });
@@ -3494,11 +3511,13 @@ function stackRow(t) {
     ${pinStar(t)}
     ${runnerMark(t.runner)}
     <div class="wait ${w ? "" : "quiet"}"
-      title="first seen ${esc(firstSeen(t.created_at))}"
-      >${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}
-      <i class="since">${esc(firstSeen(t.created_at))}</i></div>
+      title="${w ? "how long it has been waiting for you" : "how long since it last did anything"}"
+      >${w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</div>
     <div class="who">
-      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
+      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}<i class="since"
+        title="when atrium first saw this card. not when the session started: a session
+               that ran before atrium did is first seen when it says something."
+        >${esc(firstSeen(t.created_at))}</i></b>
       <span>${esc(t.worktree || "no directory")}</span>
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>

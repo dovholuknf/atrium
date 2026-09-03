@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,27 @@ import (
 // Two minutes: far longer than a crash and reconnect, far shorter than the gap
 // between deliberately running the same command twice.
 const ReplayWindow = 2 * time.Minute
+
+// ExactKeyPrefix marks a dedup key that identifies one ATTEMPT rather than one
+// command, and is therefore not subject to the window above.
+//
+// The window exists for one reason: a key built by hashing session, tool and
+// command cannot tell a retry from the same command run again tomorrow, so a
+// decision has to stop being replayable before tomorrow arrives. A runner's
+// own `tool_use_id` has neither problem. It is issued per attempt, so a key
+// carrying one means exactly what a dedup key is supposed to mean, and letting
+// it replay forever is correct: that attempt has one answer.
+//
+// Prefixed rather than flagged, because the key is the only thing carried
+// through to the row. A prefix travels with it and cannot be lost between the
+// request and the lookup.
+const ExactKeyPrefix = "tu:"
+
+// ExactKey wraps a runner's tool-use id as a dedup key that never goes stale.
+func ExactKey(toolUseID string) string { return ExactKeyPrefix + toolUseID }
+
+// exactKey reports whether a stored key identifies one attempt.
+func exactKey(k string) bool { return strings.HasPrefix(k, ExactKeyPrefix) }
 
 // DecidedByMessage marks a block that exists to carry a message rather than to
 // judge the command. Named here because the store has to recognise it: it is
@@ -70,6 +92,12 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 					// Falls through to a fresh question, which is what the
 					// retry is: this command has still never been answered.
 					dedupKey = ""
+				case exactKey(existing.DedupKey):
+					// One attempt, one answer, for as long as the row lives.
+					// The window guards against a key that cannot tell two
+					// runs apart, and this one can.
+					p, decided = existing, true
+					return nil
 				case now().Sub(*existing.DecidedAt) <= ReplayWindow:
 					p, decided = existing, true
 					return nil
