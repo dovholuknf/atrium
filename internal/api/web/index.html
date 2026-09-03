@@ -887,18 +887,13 @@
      column-reverse so the newest is nearest the corner and the older ones
      rise away from it, rather than the stack shifting under the pointer as
      one arrives. */
-  /* Every one of these fights a default the popover UA stylesheet sets:
-     inset 0, auto margins, a border, padding, and fit-content sizing that
-     would centre the host in the viewport with a box around it. */
   #toasts {
     position: fixed; right: 20px; bottom: 20px;
-    left: auto; top: auto; width: auto; height: auto; z-index: 200;
+    left: auto; top: auto; z-index: 200;
     margin: 0; padding: 0; border: none; background: none; overflow: visible;
     max-width: min(420px, 88vw); pointer-events: none;
     display: flex; flex-direction: column-reverse; gap: var(--sp-3);
   }
-  /* The host is shown for the life of the page, so empty is the usual state
-     and has to take no space and catch no clicks. */
   #toasts:empty { display: none; }
   #toasts .toast { pointer-events: auto; }
   .toast {
@@ -1435,12 +1430,10 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
      opened with show() rather than showModal() is NOT in the top layer, which
      is why making this a <dialog> did not fix it either. Being a child of the
      open dialog is what puts it above. -->
-<!-- popover=manual puts this in the browser's top layer and leaves it there:
-     above any modal dialog, no backdrop, no focus stolen, and it never closes
-     on its own. Moving the host between dialogs was the previous answer and it
-     could not be made to hold, because a modal's stacking order is not
-     readable from the DOM. -->
-<div id="toasts" popover="manual"></div>
+<!-- Moved into whichever modal is on top while one is open. See raiseToasts:
+     a popover renders above a modal but cannot be clicked, because a modal
+     makes everything outside itself inert. -->
+<div id="toasts"></div>
 
 <dialog id="settings">
   <div class="dlg-head">
@@ -3902,19 +3895,55 @@ async function attachIfSupervised(taskID) {
 // above every dialog whatever order they opened in and there is nothing to
 // keep in sync.
 //
-// The top layer is ordered by when something entered it, and a dialog opened
-// later goes above a popover shown earlier. Showing this once at startup put
-// it under every dialog, which is the same failure as before by a different
-// route.
+// Which modal is on top, in the order the browser stacks them.
 //
-// So it is hidden and shown again on every toast. Leaving and re-entering puts
-// it back on top of whatever is there now, including a dialog that opened in
-// between. Re-showing without the hide is a no-op and would not move it.
+// Modals stack by the order showModal was called, NOT by their order in the
+// document, and that order cannot be read back. Recording it as it happens is
+// the only way to know. Two open at once is normal here: a confirmation over a
+// list, or the steps over the hooks they came from.
+const modalStack = [];
+(function trackModals() {
+  const proto = window.HTMLDialogElement && HTMLDialogElement.prototype;
+  if (!proto || !proto.showModal) return;
+  const show = proto.showModal;
+  proto.showModal = function () {
+    const i = modalStack.indexOf(this);
+    if (i >= 0) modalStack.splice(i, 1);
+    modalStack.push(this);
+    const r = show.apply(this, arguments);
+    raiseToasts();
+    return r;
+  };
+  // Capture, because `close` does not bubble. A dialog underneath can be
+  // closed out of order, so it is removed wherever it sits.
+  document.addEventListener("close", e => {
+    const i = modalStack.indexOf(e.target);
+    if (i >= 0) modalStack.splice(i, 1);
+    raiseToasts();
+  }, true);
+})();
+
+// Puts the toast host where it will be both seen AND clickable.
+//
+// A modal dialog is in the browser's top layer, above everything at any
+// z-index, so nothing outside it can be drawn over one. It also makes
+// everything outside itself inert. Those two together rule out the obvious
+// answers: a high z-index is drawn under it, and a popover is drawn over it
+// but takes no clicks, which is worse than being hidden because the buttons
+// look live.
+//
+// So the host moves inside whichever modal is on top, and back to the body
+// when none is. Position is fixed either way, so moving does not change where
+// the toasts appear.
 function raiseToasts() {
   const host = document.getElementById("toasts");
-  if (!host || !host.showPopover) return;
-  try { host.hidePopover(); } catch (e) {}
-  try { host.showPopover(); } catch (e) {}
+  if (!host) return;
+  let top = null;
+  for (let i = modalStack.length - 1; i >= 0; i--) {
+    if (modalStack[i].open) { top = modalStack[i]; break; }
+  }
+  const parent = top || document.body;
+  if (host.parentElement !== parent) parent.appendChild(host);
 }
 
 // Typing in a guarded dialog marks it as holding something not yet saved.

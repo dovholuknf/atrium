@@ -24,6 +24,12 @@ section heading is just "what landed in this iteration."
 - **`atrium hook` cannot hang.** It read stdin to end of file, so run at a prompt it waited forever for someone
   to type EOF. An interactive stdin is not read at all now, and a pipe gets the same one second the post gets. A
   hook that can block indefinitely breaks the one rule that matters most: it must never fail a session.
+- **A toast over a dialog is on top and clickable.** Two browser rules together rule out the easy answers: a
+  modal is in the top layer, so nothing outside it can be drawn over it at any z-index, and a modal makes
+  everything outside itself inert, so a popover drawn over one takes no clicks. Visible with dead buttons is
+  worse than hidden. The host moves inside whichever modal is on top, and the stack it consults is recorded as
+  `showModal` is called, because that order is not readable from the DOM: picking by document order put the
+  toast in the dialog underneath the one on screen.
 - **Clicking a toast or a notification closes whatever dialog is in the way.** A toast drawn over an open dialog
   lives inside it, since the top layer is the only place anything can draw over one. The click registered and
   the view changed, but the dialog stayed put over the thing you clicked to go and look at. A dialog holding
