@@ -320,7 +320,12 @@ func (s *Store) guard(op func() error) error {
 
 func newID() string { return uuid.Must(uuid.NewV7()).String() }
 
-func now() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+// now is a variable so a test can move time forward.
+//
+// Everything time-dependent in here is a window measured against a stored
+// timestamp, and the only honest way to test a two minute window is to be on
+// the other side of it. Sleeping for two minutes is not a test anybody runs.
+var now = func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
 func ts(t time.Time) string { return t.UTC().Format(TimeFormat) }
 

@@ -344,6 +344,16 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		return "", nil, err
 	}
 	if decided {
+		// Recorded, because a replay reaches an agent as a real answer and
+		// the log is what the gate is justified by. Without this a refusal
+		// arrives with nothing anywhere saying it happened, which is the one
+		// thing that log exists to prevent.
+		if err := d.st.AppendEvent(task.ID, store.EventPermDecided, map[string]any{
+			"id": p.ID, "decision": p.Decision, "reason": p.Reason,
+			"by": "replay", "tool": tool, "command": command,
+		}); err != nil {
+			log.Printf("[atrium] could not record a replayed decision: %v", err)
+		}
 		return p.ID, &hub.AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
 	}
 
