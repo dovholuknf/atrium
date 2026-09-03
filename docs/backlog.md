@@ -42,6 +42,35 @@ Missing for OpenZiti:
 The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
 runner discovery already does this and is the model.
 
+### Notes on a card, and sending one to the agent when you are ready
+
+Two things that look like one. A note is for you: a place to write down what you want next while the agent is
+still working, so it is not held in your head or in a scratch file. Sending it is the second, separate act.
+
+The reason to split them is that the queue already exists and does something else. `POST
+/v1/tasks/{id}/message` reaches a session through its next tool call or its Stop hook, and it fires as soon as
+there is something to deliver. A note is the opposite: written now, sent when you say.
+
+Claude Code takes input while it is thinking, so the send is less urgent than it once was. What it buys is the
+ordering: three notes queued during a long turn, sent as one instruction at the end, rather than three
+interruptions in the middle.
+
+### Moving files, and pasting into a session
+
+Reaching a board from another machine makes this obvious. Once atrium is not on the machine you are sitting at,
+getting a file to or from the session is a second tool.
+
+Two halves, and the second is the one worth having first:
+
+- **Upload and download.** A file into the working directory, or out of it. Bounded, because a board that will
+  serve any path is a file server with no login in front of it.
+- **Paste from the clipboard into the stream.** Screenshot into a session, which is the common case and the one
+  that has no workaround at all over an overlay. Claude Code accepts images, so this is a paste handler on the
+  terminal pane plus whatever the runner expects on the way in.
+
+Neither is designed. The path question is the same one `browse.go` already answers for launching, so start
+there rather than inventing a second idea of what a safe path is.
+
 ### What Charon does that atrium does not
 
 `github.com/Lomchat/charon`, Apache 2.0, single user and self hosted. Six months of one person's daily use, and
@@ -61,6 +90,11 @@ Where it is ahead:
 - **A small IDE.** Browse and edit remote files, review diffs, drag and drop uploads.
 
 Where atrium is ahead, and should stay:
+
+- **It drives an overlay natively.** zrok and OpenZiti are embedded SDKs, and the board answers on the overlay
+  listener itself rather than being proxied to. Charon reaches its machines over SSH, which works and needs no
+  exposed ports, but it is a tunnel to a box rather than a service on a network with a policy in front of it.
+  `docs/overlays.md`.
 
 - **Standing rules and a durable audit log.** Charon's approvals are per request. Atrium answers once and
   remembers, and every decision is recorded with what answered it. That is the whole reason atrium exists.

@@ -5,6 +5,21 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Fixtures: terminals that come up with the daemon.** The habit this replaces is opening a terminal, changing
+  directory and resuming the same agent every morning. A fixture names a runner, a directory and whether to
+  resume, and they start in the order you put them in, so "the dotfiles one is always first" is a thing you can
+  say. A plain shell is a runner like any other, which is how "always give me a terminal on this machine" is
+  expressed with no special case. Each lands back on the card it used last time, and on its first run it adopts
+  a live card already in that directory rather than opening a second one with the same name beside it. A
+  fixture's card is pinned without being asked, since a fixture is by definition something worth keeping in
+  front of you. Started in the background, because a board that is not answering yet looks like a hang while a
+  terminal that is not open yet does not.
+- **Terminal themes, ported from the operator's own.** All fifty two Windows Terminal themes, converted rather
+  than transcribed, so the colours are the ones already in daily use and a session looks the same in the board
+  as it does in a terminal window. The repo-to-theme map came across too, so a session picks up the colour
+  already associated with its project. Choosing one on a card overrides that and is stored on the card, not in
+  the browser, so it survives a restart and follows the session into another browser.
+
 - **Pinning, on the stack and in the terminal switcher.** Some sessions are permanent fixtures and hunting for
   one in activity order is the wrong shape. A pinned card sorts above everything in either direction, since the
   sort pills are what you asked for now and the pin is what you asked for once and meant permanently. In the

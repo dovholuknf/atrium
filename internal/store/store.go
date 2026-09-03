@@ -110,6 +110,11 @@ type Task struct {
 	// switcher. Some sessions are permanent fixtures and hunting for them in
 	// activity order is the wrong shape.
 	Pinned bool `json:"pinned"`
+	// Theme names the terminal palette this session uses. Held on the card so
+	// it survives a restart and follows the session into another browser,
+	// which is the point of colouring terminals: telling them apart at a
+	// glance, permanently. Empty means the board picks from the project name.
+	Theme string `json:"theme"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when

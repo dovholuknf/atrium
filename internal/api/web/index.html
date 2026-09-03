@@ -635,6 +635,14 @@
   }
   .ov-log > summary:hover { color: var(--label); }
   .ov-log pre.code { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  /* The start order of a fixture. Its whole job is to say which is first. */
+  .row.line .ord {
+    flex: none; min-width: 20px; text-align: right; font-family: var(--mono);
+    font-size: var(--fs-xs); color: var(--dimmest);
+  }
+  /* The theme a terminal is using, clickable to change it. */
+  .chip.theme { cursor: pointer; }
+  .chip.theme:hover { border-color: var(--teal); color: var(--head); }
   /* The star. Faint until it is on, since an unpinned card carries one too
      and a row of bright stars says nothing. */
   .pin {
@@ -1655,6 +1663,24 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
          their own: what to run is a decision. -->
     <div id="discovered"></div>
 
+    <!-- Terminals that come up with the daemon.
+         Here rather than in the gear because a fixture names a runner, and
+         the runners are the thing on this page. -->
+    <div class="col-head" style="margin:26px 0 10px">
+      <span>fixtures</span>
+      <span class="help" tabindex="0" data-tip="Terminals that start when atrium does.
+
+The habit this replaces: open a terminal, cd somewhere, resume the same agent, every morning.
+
+They start in order, so the first one in the list is the first one up. Each lands back on the card it used last time, so the same conversation continues rather than a new card appearing beside it.
+
+A fixture's card is pinned automatically, since a fixture is by definition something worth keeping in front of you.">?</span>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editFixture(null)">add a fixture</button>
+    </div>
+    <div id="fixture-list"></div>
+
   </div>
 </main>
 
@@ -1713,6 +1739,9 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <div id="ask-body" class="asktext"></div>
     <div class="field" id="ask-field" hidden>
       <input type="text" id="ask-input" spellcheck="false">
+      <!-- Filled in when the caller has a known set to offer. Typing
+           something not on it stays possible. -->
+      <datalist id="ask-list"></datalist>
     </div>
     <!-- Only shown for a confirmation that can be turned off. Ticking it and
          confirming means this question never appears again. -->
@@ -1862,6 +1891,59 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
 <!-- data-guard: this holds edits that are only kept when you press save, so
      something navigating away has to ask first. The settings and detail
      dialogs need no guard, since both write on change. -->
+<!-- One terminal that comes up with the daemon. Guarded like the runner form:
+     it keeps edits only on save. -->
+<dialog id="fixture" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="f-heading">fixture</h2></div>
+    <button onclick="document.getElementById('fixture').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="f-label">what to call it</label>
+      <input type="text" id="f-label" spellcheck="false" placeholder="dotfiles">
+      <span class="hintline">Shown on the card. Empty uses the directory name.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="f-harness">runner</label>
+      <div class="picker"><select id="f-harness"></select></div>
+      <span class="hintline">A plain shell is a runner like any other, which is how
+        &ldquo;always give me a terminal on this machine&rdquo; is said without a special case.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="f-cwd">working directory</label>
+      <div class="picker">
+        <input type="text" id="f-cwd" spellcheck="false" placeholder="D:/git/github/you/repo">
+        <button onclick="browseInto('f-cwd')">browse</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="f-theme">theme</label>
+      <div class="picker">
+        <input type="text" id="f-theme" spellcheck="false" list="f-theme-list"
+          placeholder="empty picks one from the project">
+        <datalist id="f-theme-list"></datalist>
+      </div>
+      <span class="hintline">What the terminal looks like. Empty lets the project choose.</span>
+    </div>
+    <div class="field">
+      <div class="picker">
+        <label class="check"><input type="checkbox" id="f-resume"> resume the conversation</label>
+        <label class="check"><input type="checkbox" id="f-enabled"> starts with atrium</label>
+      </div>
+      <span class="hintline">Resuming picks up where it left off. Off starts fresh every time,
+        which is what a plain shell wants. Turning off &ldquo;starts with atrium&rdquo; keeps the
+        definition without the behaviour.</span>
+    </div>
+  </div>
+  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+    <button class="go" onclick="saveFixture()">save</button>
+    <button class="no" id="f-delete" onclick="deleteFixture()">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('fixture').close()">cancel</button>
+  </div>
+</dialog>
+
 <dialog id="harness" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="h-heading">runner</h2></div>
@@ -5895,6 +5977,161 @@ function connect() {
   });
 }
 
+// ── terminal themes ─────────────────────────────────────
+//
+// Ported from the operator's own Windows Terminal themes, which are applied
+// over OSC escapes from a PowerShell profile and have been in daily use far
+// longer than this board has existed. Same names, same colours, so a session
+// looks the same in here as it does in a terminal window.
+//
+// Converted rather than transcribed: the source is a table of `bg`, `fg`,
+// `cursor`, `sel_bg`, `sel_fg` and a positional 16 colour ansi array, and the
+// array order is the one xterm has used since forever. Doing that by hand
+// fifty two times is how one colour ends up in the wrong slot.
+const TERM_THEMES = {
+  // The board's own palette, for a terminal that should not look pasted in.
+  "atrium": {
+    background: "#040B14", foreground: "#D7DBE3", cursor: "#00E3B0",
+    selectionBackground: "#173A57"
+  },
+  "active-light": {background: "#1c5a2b", foreground: "#edf8ed", cursor: "#9affa6", selectionBackground: "#3f8250", selectionForeground: "#f4fbec", black: "#123a1e", red: "#ff9a92", green: "#90ec90", yellow: "#f2d888", blue: "#94aef2", magenta: "#ec9ce0", cyan: "#7ce4d2", white: "#e4f2e4", brightBlack: "#8aac8a", brightRed: "#ffaba2", brightGreen: "#b8f8b8", brightYellow: "#ffe6a0", brightBlue: "#b0ccff", brightMagenta: "#f4bcec", brightCyan: "#a6f8e8", brightWhite: "#f4fbec"},
+  "active-work": {background: "#0f3d1a", foreground: "#e0f0e0", cursor: "#80ff90", selectionBackground: "#2a6a38", selectionForeground: "#f0f8e8", black: "#0a2010", red: "#e06868", green: "#78d878", yellow: "#e0c070", blue: "#7098e0", magenta: "#d088c8", cyan: "#68d0c0", white: "#d0e0d0", brightBlack: "#6a906a", brightRed: "#ff8888", brightGreen: "#a8f0a8", brightYellow: "#f0d890", brightBlue: "#98b8f0", brightMagenta: "#e0a8d8", brightCyan: "#90f0e0", brightWhite: "#f0f8e8"},
+  "ad-hoc": {background: "#2e3440", foreground: "#d8dee9", cursor: "#88c0d0", selectionBackground: "#434c5e", selectionForeground: "#eceff4", black: "#3b4252", red: "#bf616a", green: "#a3be8c", yellow: "#ebcb8b", blue: "#81a1c1", magenta: "#b48ead", cyan: "#88c0d0", white: "#e5e9f0", brightBlack: null, brightRed: "#bf616a", brightGreen: "#a3be8c", brightYellow: "#ebcb8b", brightBlue: "#81a1c1", brightMagenta: "#b48ead", brightCyan: "#8fbcbb", brightWhite: null},
+  "admin-caution": {background: "#3d2e0f", foreground: "#fff4d0", cursor: "#ffcc00", selectionBackground: "#705618", selectionForeground: "#fffae0", black: "#2a1f08", red: "#ff6b6b", green: "#cad669", yellow: "#ffaa00", blue: "#7fa9c8", magenta: "#d29be8", cyan: "#7ed4c2", white: "#fff4d0", brightBlack: null, brightRed: "#ff8a8a", brightGreen: "#dde888", brightYellow: "#ffcc44", brightBlue: "#9cc5dc", brightMagenta: "#e0b5f0", brightCyan: "#a3f0e0", brightWhite: null},
+  "admin-danger": {background: "#3a1b08", foreground: "#ffe8c4", cursor: "#ff9933", selectionBackground: "#6b3514", selectionForeground: "#fff4d6", black: "#2a1206", red: "#ff5c3c", green: "#d4c46a", yellow: "#ffaa33", blue: "#88b6c2", magenta: "#d18df0", cyan: "#7bd6c4", white: "#ffe8c4", brightBlack: null, brightRed: "#ff8866", brightGreen: "#e6dd80", brightYellow: "#ffcc55", brightBlue: "#a5d0dd", brightMagenta: "#e5b0ff", brightCyan: "#a8f0e0", brightWhite: null},
+  "amber-dusk": {background: "#201505", foreground: "#f5ddb8", cursor: "#e07030", selectionBackground: "#3c2808", selectionForeground: "#ffedd0", black: "#140e02", red: "#f05038", green: "#80c470", yellow: "#eaac30", blue: "#6690c8", magenta: "#bc78bc", cyan: "#70beb0", white: "#f5ddb8", brightBlack: null, brightRed: "#f07858", brightGreen: "#98d488", brightYellow: "#f0c850", brightBlue: "#86b0e0", brightMagenta: "#d494d4", brightCyan: "#8ed0c4", brightWhite: null},
+  "arctic-blue": {background: "#062838", foreground: "#c0ecf8", cursor: "#40d0f0", selectionBackground: "#0e3e52", selectionForeground: "#dcf8ff", black: "#041820", red: "#ff5c6e", green: "#58d888", yellow: "#f0d050", blue: "#40d0f0", magenta: "#c070e0", cyan: "#38d4c8", white: "#c0ecf8", brightBlack: null, brightRed: "#ff88a0", brightGreen: "#80ecaa", brightYellow: "#f8e070", brightBlue: "#70e4ff", brightMagenta: "#d898f0", brightCyan: "#60e8e0", brightWhite: null},
+  "blood-moon": {background: "#1c0606", foreground: "#f8d8d0", cursor: "#ff5060", selectionBackground: "#380e0e", selectionForeground: "#ffe8e0", black: "#110303", red: "#ff4444", green: "#7abf72", yellow: "#e8b860", blue: "#7098d0", magenta: "#c878c0", cyan: "#72c0b8", white: "#f8d8d0", brightBlack: null, brightRed: "#ff7070", brightGreen: "#94d48c", brightYellow: "#f0cc80", brightBlue: "#8ab0e0", brightMagenta: "#da98d8", brightCyan: "#90d4cc", brightWhite: null},
+  "cocoa": {background: "#2b1e16", foreground: "#e8d8c4", cursor: "#d8a373", selectionBackground: "#46322a", selectionForeground: "#f5e9d6", black: "#1f150f", red: "#cf5560", green: "#9bbf63", yellow: "#d8a373", blue: "#6c92ab", magenta: "#b986b5", cyan: "#76b8a8", white: "#e8d8c4", brightBlack: null, brightRed: "#e87580", brightGreen: "#b2d480", brightYellow: "#e6b88a", brightBlue: "#8baac0", brightMagenta: "#d09acb", brightCyan: "#92cdbd", brightWhite: null},
+  "crimson-cave": {background: "#260a0a", foreground: "#f5d5d0", cursor: "#e85050", selectionBackground: "#441414", selectionForeground: "#ffe4dc", black: "#180606", red: "#e84040", green: "#78bc70", yellow: "#e8b460", blue: "#6890c8", magenta: "#c070b8", cyan: "#70bbb0", white: "#f5d5d0", brightBlack: null, brightRed: "#f07070", brightGreen: "#92d088", brightYellow: "#f0c878", brightBlue: "#88acd8", brightMagenta: "#d890d0", brightCyan: "#8ed0c8", brightWhite: null},
+  "deep-amethyst": {background: "#100520", foreground: "#e0c8f8", cursor: "#9050d8", selectionBackground: "#200e40", selectionForeground: "#f0e0ff", black: "#0a0314", red: "#ff5878", green: "#7eca6e", yellow: "#e8bc50", blue: "#6e7eee", magenta: "#be5ee4", cyan: "#5ec4cc", white: "#e0c8f8", brightBlack: null, brightRed: "#ff80a0", brightGreen: "#9adc8a", brightYellow: "#f0cc68", brightBlue: "#8ea0ff", brightMagenta: "#d484f0", brightCyan: "#82d8e0", brightWhite: null},
+  "deep-fern": {background: "#0c1e0c", foreground: "#d0e8c8", cursor: "#68c060", selectionBackground: "#183018", selectionForeground: "#e8f8e4", black: "#081208", red: "#f06868", green: "#68c060", yellow: "#d8b840", blue: "#6098d0", magenta: "#c282c8", cyan: "#62c0b8", white: "#d0e8c8", brightBlack: null, brightRed: "#f08c8c", brightGreen: "#88d080", brightYellow: "#e8cc68", brightBlue: "#82b4e4", brightMagenta: "#d4a4d8", brightCyan: "#88d0cc", brightWhite: null},
+  "deep-ocean": {background: "#081828", foreground: "#c0d8f5", cursor: "#4898e0", selectionBackground: "#102840", selectionForeground: "#dceeff", black: "#050f18", red: "#ff6070", green: "#76ca76", yellow: "#e8bc50", blue: "#4898e0", magenta: "#bc78d8", cyan: "#5ec4c4", white: "#c0d8f5", brightBlack: null, brightRed: "#ff8898", brightGreen: "#94da94", brightYellow: "#f0cc68", brightBlue: "#78b4ec", brightMagenta: "#d498e8", brightCyan: "#82d8dc", brightWhite: null},
+  "discourse": {background: "#3b1e15", foreground: "#f0d8c4", cursor: "#e07845", selectionBackground: "#5f3225", selectionForeground: "#ffe8d4", black: "#28140d", red: "#e8516a", green: "#b9c270", yellow: "#e07845", blue: "#8fa9bd", magenta: "#cf8fc4", cyan: "#7ec4b3", white: "#f0d8c4", brightBlack: null, brightRed: "#ff7589", brightGreen: "#c8cf85", brightYellow: "#f08e62", brightBlue: "#a8c0d2", brightMagenta: "#dca6cf", brightCyan: "#9bd2c0", brightWhite: null},
+  "dracula": {background: "#282a36", foreground: "#f8f8f2", cursor: "#f8f8f2", selectionBackground: "#44475a", selectionForeground: "#f8f8f2", black: "#21222c", red: "#ff5555", green: "#50fa7b", yellow: "#f1fa8c", blue: "#bd93f9", magenta: "#ff79c6", cyan: "#8be9fd", white: "#f8f8f2", brightBlack: null, brightRed: "#ff6e6e", brightGreen: "#69ff94", brightYellow: "#ffffa5", brightBlue: "#d6acff", brightMagenta: "#ff92df", brightCyan: "#a4ffff", brightWhite: null},
+  "dusk-blue": {background: "#100870", foreground: "#d0c8ff", cursor: "#8870ff", selectionBackground: "#1c1298", selectionForeground: "#e8e0ff", black: "#0a0648", red: "#ff5078", green: "#5ecc6e", yellow: "#f0c840", blue: "#8870ff", magenta: "#d060e0", cyan: "#50c8d4", white: "#d0c8ff", brightBlack: null, brightRed: "#ff80a8", brightGreen: "#86dc8c", brightYellow: "#f8d860", brightBlue: "#a898ff", brightMagenta: "#e080f4", brightCyan: "#78dce4", brightWhite: null},
+  "electric-purple": {background: "#1e0060", foreground: "#e8d8ff", cursor: "#b060ff", selectionBackground: "#300090", selectionForeground: "#f4ecff", black: "#140040", red: "#ff5080", green: "#70d070", yellow: "#f0d050", blue: "#7060ff", magenta: "#e040d0", cyan: "#50d0e0", white: "#e8d8ff", brightBlack: null, brightRed: "#ff80a8", brightGreen: "#90e090", brightYellow: "#f8e068", brightBlue: "#9898ff", brightMagenta: "#f068e8", brightCyan: "#78e8f0", brightWhite: null},
+  "forest-night": {background: "#0a1f12", foreground: "#d4e3d4", cursor: "#7fb069", selectionBackground: "#1f3a26", selectionForeground: "#e8f0e0", black: "#0a1610", red: "#c46b6b", green: "#7fb069", yellow: "#d4a373", blue: "#5b8a72", magenta: "#a3779e", cyan: "#76a89c", white: "#c8d4c0", brightBlack: null, brightRed: "#e08585", brightGreen: "#9bcc83", brightYellow: "#e8c087", brightBlue: "#7aa890", brightMagenta: "#bf95b8", brightCyan: "#94c4b8", brightWhite: null},
+  "garnet": {background: "#1e0810", foreground: "#f0d5e0", cursor: "#d06070", selectionBackground: "#381020", selectionForeground: "#ffe4ec", black: "#130408", red: "#e84060", green: "#7abf78", yellow: "#e8b860", blue: "#7098c8", magenta: "#c878c0", cyan: "#72c0b8", white: "#f0d5e0", brightBlack: null, brightRed: "#f07085", brightGreen: "#94d48e", brightYellow: "#f0cc80", brightBlue: "#8ab0d8", brightMagenta: "#d898d8", brightCyan: "#90d0c8", brightWhite: null},
+  "gruvbox-dark": {background: "#282828", foreground: "#ebdbb2", cursor: "#fe8019", selectionBackground: "#504945", selectionForeground: "#ebdbb2", black: "#1d2021", red: "#e05c4f", green: "#98971a", yellow: "#d79921", blue: "#458588", magenta: "#b16286", cyan: "#689d6a", white: "#a89984", brightBlack: null, brightRed: "#fb4934", brightGreen: "#b8bb26", brightYellow: "#fabd2f", brightBlue: "#83a598", brightMagenta: "#d3869b", brightCyan: "#8ec07c", brightWhite: null},
+  "imperial-purple": {background: "#180050", foreground: "#dcd0ff", cursor: "#9070ff", selectionBackground: "#280880", selectionForeground: "#ede8ff", black: "#100038", red: "#ff5878", green: "#68cc68", yellow: "#eec850", blue: "#9070ff", magenta: "#c858e0", cyan: "#50ccd8", white: "#dcd0ff", brightBlack: null, brightRed: "#ff80a0", brightGreen: "#88dc88", brightYellow: "#f8d868", brightBlue: "#a8a0ff", brightMagenta: "#e07af0", brightCyan: "#78dce8", brightWhite: null},
+  "ink-dark": {background: "#06080f", foreground: "#c8d0f0", cursor: "#6878d0", selectionBackground: "#101828", selectionForeground: "#dce4ff", black: "#040508", red: "#ff5c70", green: "#74c874", yellow: "#e6ba50", blue: "#6878d0", magenta: "#b876d0", cyan: "#5cc0c0", white: "#c8d0f0", brightBlack: null, brightRed: "#ff8090", brightGreen: "#92d892", brightYellow: "#f0ca68", brightBlue: "#8898e0", brightMagenta: "#d898e0", brightCyan: "#80d4d8", brightWhite: null},
+  "jade-shadow": {background: "#081808", foreground: "#cce0cc", cursor: "#5ab860", selectionBackground: "#142814", selectionForeground: "#e4f4e0", black: "#050f05", red: "#ee6868", green: "#5ab860", yellow: "#d8b440", blue: "#5e96d0", magenta: "#c080c8", cyan: "#60beb8", white: "#cce0cc", brightBlack: null, brightRed: "#f08888", brightGreen: "#82cc80", brightYellow: "#e8c860", brightBlue: "#80b2e4", brightMagenta: "#d4a0d8", brightCyan: "#86ceca", brightWhite: null},
+  "khaki-night": {background: "#181a04", foreground: "#eaecb0", cursor: "#a0a840", selectionBackground: "#2e3008", selectionForeground: "#f8fadc", black: "#0e1002", red: "#e05848", green: "#7ec870", yellow: "#c0a830", blue: "#6092cc", magenta: "#b878c4", cyan: "#6cbab2", white: "#eaecb0", brightBlack: null, brightRed: "#ee7868", brightGreen: "#98d88a", brightYellow: "#dac450", brightBlue: "#80aee0", brightMagenta: "#d098d8", brightCyan: "#8cccc4", brightWhite: null},
+  "matrix": {background: "#020a02", foreground: "#a4ffa4", cursor: "#00ff66", selectionBackground: "#0c280c", selectionForeground: "#e8ffe8", black: "#031003", red: "#ff5c5c", green: "#00cc44", yellow: "#cccc44", blue: "#5dbbd6", magenta: "#a05fb0", cyan: "#3fbfaa", white: "#a4ffa4", brightBlack: null, brightRed: "#ff8080", brightGreen: "#33ff66", brightYellow: "#e8e858", brightBlue: "#88d4e6", brightMagenta: "#c089d2", brightCyan: "#65d8c3", brightWhite: null},
+  "mauve-purple": {background: "#280038", foreground: "#f0d0f0", cursor: "#d060d0", selectionBackground: "#420060", selectionForeground: "#fce8ff", black: "#1a0026", red: "#ff5070", green: "#70cc70", yellow: "#f0cc50", blue: "#8870f0", magenta: "#d060d0", cyan: "#58ccd8", white: "#f0d0f0", brightBlack: null, brightRed: "#ff80a0", brightGreen: "#90dc90", brightYellow: "#f8dc68", brightBlue: "#a898ff", brightMagenta: "#e880e8", brightCyan: "#80dce8", brightWhite: null},
+  "midnight-blue": {background: "#050820", foreground: "#c8d5f8", cursor: "#5580f0", selectionBackground: "#0e1640", selectionForeground: "#e0eaff", black: "#030510", red: "#ff6070", green: "#78cc78", yellow: "#e8c050", blue: "#5580f0", magenta: "#c07ae0", cyan: "#60c8c8", white: "#c8d5f8", brightBlack: null, brightRed: "#ff8898", brightGreen: "#96dc96", brightYellow: "#f0d068", brightBlue: "#80a8ff", brightMagenta: "#d89cf0", brightCyan: "#84dce0", brightWhite: null},
+  "midnight-plum": {background: "#140520", foreground: "#e8c8f0", cursor: "#a060d0", selectionBackground: "#240e40", selectionForeground: "#f4e0ff", black: "#0e0314", red: "#ff587c", green: "#7ecc70", yellow: "#e8bc50", blue: "#7080ec", magenta: "#c060d8", cyan: "#60c4cc", white: "#e8c8f0", brightBlack: null, brightRed: "#ff82a8", brightGreen: "#9cdc8c", brightYellow: "#f0cc68", brightBlue: "#90a0ff", brightMagenta: "#d888ec", brightCyan: "#82d8e0", brightWhite: null},
+  "mint": {background: "#9ad4a8", foreground: "#12301e", cursor: "#0d5a2a", selectionBackground: "#5fb277", selectionForeground: "#0a2413", black: "#12301e", red: "#a52828", green: "#1e7a33", yellow: "#8a6410", blue: "#1f50aa", magenta: "#8f2f82", cyan: "#0e746c", white: "#2a4634", brightBlack: "#4d6a55", brightRed: "#c03434", brightGreen: "#2a9440", brightYellow: "#a5760f", brightBlue: "#2660c6", brightMagenta: "#a83a98", brightCyan: "#118a80", brightWhite: "#0a2413"},
+  "molten": {background: "#1e1005", foreground: "#f8e0c0", cursor: "#ff8040", selectionBackground: "#3a2008", selectionForeground: "#fff0d8", black: "#130a02", red: "#ff5040", green: "#82c870", yellow: "#f0b030", blue: "#6898d0", magenta: "#c07abe", cyan: "#72c0b0", white: "#f8e0c0", brightBlack: null, brightRed: "#ff8060", brightGreen: "#9cd888", brightYellow: "#f8cc58", brightBlue: "#88b4e0", brightMagenta: "#d898d4", brightCyan: "#90d4c4", brightWhite: null},
+  "monokai": {background: "#272822", foreground: "#f8f8f2", cursor: "#f92672", selectionBackground: "#49483e", selectionForeground: "#f8f8f2", black: "#272822", red: "#f92672", green: "#a6e22e", yellow: "#f4bf75", blue: "#66d9ef", magenta: "#ae81ff", cyan: "#a1efe4", white: "#f8f8f2", brightBlack: null, brightRed: "#f92672", brightGreen: "#a6e22e", brightYellow: "#f4bf75", brightBlue: "#66d9ef", brightMagenta: "#ae81ff", brightCyan: "#a1efe4", brightWhite: null},
+  "neon-grape": {background: "#1a0d2e", foreground: "#f3e8ff", cursor: "#c084fc", selectionBackground: "#2e1655", selectionForeground: "#faf5ff", black: "#100620", red: "#ff4d8d", green: "#a3e635", yellow: "#fbbf24", blue: "#60a5fa", magenta: "#c084fc", cyan: "#22d3ee", white: "#f3e8ff", brightBlack: null, brightRed: "#ff6ba1", brightGreen: "#bef264", brightYellow: "#fcd34d", brightBlue: "#7eb5fc", brightMagenta: "#d4a9ff", brightCyan: "#5ee6f5", brightWhite: null},
+  "nord": {background: "#2e3440", foreground: "#d8dee9", cursor: "#88c0d0", selectionBackground: "#434c5e", selectionForeground: "#eceff4", black: "#3b4252", red: "#bf616a", green: "#a3be8c", yellow: "#ebcb8b", blue: "#81a1c1", magenta: "#b48ead", cyan: "#88c0d0", white: "#e5e9f0", brightBlack: null, brightRed: "#bf616a", brightGreen: "#a3be8c", brightYellow: "#ebcb8b", brightBlue: "#81a1c1", brightMagenta: "#b48ead", brightCyan: "#8fbcbb", brightWhite: null},
+  "obsidian-grove": {background: "#051505", foreground: "#c8e8c0", cursor: "#50d050", selectionBackground: "#0e280e", selectionForeground: "#e4fae0", black: "#030e03", red: "#f06060", green: "#50d050", yellow: "#d8b840", blue: "#5898d0", magenta: "#c080c8", cyan: "#5cc0b8", white: "#c8e8c0", brightBlack: null, brightRed: "#f08888", brightGreen: "#80e478", brightYellow: "#e8cc60", brightBlue: "#80b4e4", brightMagenta: "#d8a0d8", brightCyan: "#84d4ce", brightWhite: null},
+  "ocean-deep": {background: "#0d2440", foreground: "#cfe1f5", cursor: "#5cc4ff", selectionBackground: "#1e3a5f", selectionForeground: "#eaf3ff", black: "#091a30", red: "#ff6b7a", green: "#8ad48a", yellow: "#ffd166", blue: "#5cc4ff", magenta: "#c890ff", cyan: "#5fd1c1", white: "#cfe1f5", brightBlack: null, brightRed: "#ff8b95", brightGreen: "#a4dfa4", brightYellow: "#ffe188", brightBlue: "#7fd4ff", brightMagenta: "#dbb0ff", brightCyan: "#82e0d3", brightWhite: null},
+  "old-gold": {background: "#1a1600", foreground: "#f5f0b8", cursor: "#d4aa20", selectionBackground: "#322c00", selectionForeground: "#fffff0", black: "#100e00", red: "#e85848", green: "#82c470", yellow: "#d4aa20", blue: "#6698d0", magenta: "#c080c8", cyan: "#70bfb8", white: "#f5f0b8", brightBlack: null, brightRed: "#f08070", brightGreen: "#9cd48a", brightYellow: "#e8cc50", brightBlue: "#86b2e0", brightMagenta: "#d4a0d8", brightCyan: "#8ed4cc", brightWhite: null},
+  "orange-coral": {background: "#6b2a1b", foreground: "#f0d8c4", cursor: "#e07845", selectionBackground: "#5f3225", selectionForeground: "#ffe8d4", black: "#28140d", red: "#e8516a", green: "#b9c270", yellow: "#e07845", blue: "#8fa9bd", magenta: "#cf8fc4", cyan: "#7ec4b3", white: "#f0d8c4", brightBlack: null, brightRed: "#ff7589", brightGreen: "#c8cf85", brightYellow: "#f08e62", brightBlue: "#a8c0d2", brightMagenta: "#dca6cf", brightCyan: "#9bd2c0", brightWhite: null},
+  "orange-marigold": {background: "#c47a14", foreground: "#3a2400", cursor: "#3a2400", selectionBackground: "#ffcf7a", selectionForeground: "#3a2400", black: "#200e02", red: "#6e0000", green: "#0f4415", yellow: "#3f3000", blue: "#082f66", magenta: "#4a1160", cyan: "#003b42", white: "#281505", brightBlack: null, brightRed: "#820000", brightGreen: "#0f4415", brightYellow: "#4a3800", brightBlue: "#0a3a7a", brightMagenta: "#571571", brightCyan: "#00474f", brightWhite: null},
+  "orange-tangerine": {background: "#74310e", foreground: "#ffe2b8", cursor: "#ff8c1a", selectionBackground: "#7a3812", selectionForeground: "#fff1d6", black: "#321204", red: "#ff5a3a", green: "#c8c768", yellow: "#ff9933", blue: "#7fb2c4", magenta: "#d68fe8", cyan: "#7ad1bb", white: "#ffe2b8", brightBlack: null, brightRed: "#ff8866", brightGreen: "#dde088", brightYellow: "#ffb15a", brightBlue: "#a3cedc", brightMagenta: "#e6b3ee", brightCyan: "#a6e8d6", brightWhite: null},
+  "pull-requests": {background: "#0a2a6a", foreground: "#e0e8f8", cursor: "#90b8ff", selectionBackground: "#3a5098", selectionForeground: "#f0f4f8", black: "#081a40", red: "#e07080", green: "#80d088", yellow: "#e0c070", blue: "#80a8ff", magenta: "#c080d0", cyan: "#70c8e0", white: "#c8d0e0", brightBlack: "#6888b8", brightRed: "#ff8898", brightGreen: "#a0e0a8", brightYellow: "#f0d890", brightBlue: "#a0c0ff", brightMagenta: "#e0a0e0", brightCyan: "#90e0f0", brightWhite: "#f0f4f8"},
+  "pumpkin": {background: "#4a1f08", foreground: "#ffe2b8", cursor: "#ff8c1a", selectionBackground: "#7a3812", selectionForeground: "#fff1d6", black: "#321204", red: "#ff5a3a", green: "#c8c768", yellow: "#ff9933", blue: "#7fb2c4", magenta: "#d68fe8", cyan: "#7ad1bb", white: "#ffe2b8", brightBlack: null, brightRed: "#ff8866", brightGreen: "#dde088", brightYellow: "#ffb15a", brightBlue: "#a3cedc", brightMagenta: "#e6b3ee", brightCyan: "#a6e8d6", brightWhite: null},
+  "pure-blue": {background: "#080890", foreground: "#c8d4ff", cursor: "#6888ff", selectionBackground: "#1010b8", selectionForeground: "#e0e8ff", black: "#060660", red: "#ff5070", green: "#60cc70", yellow: "#f0c840", blue: "#6888ff", magenta: "#c060e8", cyan: "#50c8d8", white: "#c8d4ff", brightBlack: null, brightRed: "#ff80a0", brightGreen: "#88dc90", brightYellow: "#f8d860", brightBlue: "#90b0ff", brightMagenta: "#d888f4", brightCyan: "#78dce8", brightWhite: null},
+  "rosewood": {background: "#2c1216", foreground: "#f0d8d8", cursor: "#ff8d8d", selectionBackground: "#4b1f25", selectionForeground: "#ffe6e6", black: "#1a0a0c", red: "#ff5a6e", green: "#a8c285", yellow: "#e8b66e", blue: "#7fa3c2", magenta: "#c790c8", cyan: "#7dbfb5", white: "#f0d8d8", brightBlack: null, brightRed: "#ff7a8d", brightGreen: "#bbd09a", brightYellow: "#f0c987", brightBlue: "#9cb9d2", brightMagenta: "#d8a9d8", brightCyan: "#9ed3c9", brightWhite: null},
+  "shadow-realm": {background: "#0c0520", foreground: "#ddc8f8", cursor: "#9060f0", selectionBackground: "#1c1040", selectionForeground: "#eedfff", black: "#070314", red: "#ff5070", green: "#80cc70", yellow: "#e8c050", blue: "#7080f0", magenta: "#c060e8", cyan: "#60c8d0", white: "#ddc8f8", brightBlack: null, brightRed: "#ff7898", brightGreen: "#9cdc8c", brightYellow: "#f0d068", brightBlue: "#9098ff", brightMagenta: "#d888f4", brightCyan: "#80dce4", brightWhite: null},
+  "solarized-dark": {background: "#002b36", foreground: "#93a1a1", cursor: "#93a1a1", selectionBackground: "#073642", selectionForeground: "#eee8d5", black: "#073642", red: "#dc322f", green: "#859900", yellow: "#b58900", blue: "#268bd2", magenta: "#d33682", cyan: "#2aa198", white: "#eee8d5", brightBlack: null, brightRed: "#cb4b16", brightGreen: "#586e75", brightYellow: "#657b83", brightBlue: "#839496", brightMagenta: "#6c71c4", brightCyan: "#93a1a1", brightWhite: null},
+  "synthwave": {background: "#241b2f", foreground: "#ffffff", cursor: "#ff7edb", selectionBackground: "#3d2c4e", selectionForeground: "#ffffff", black: "#1a1027", red: "#fe4450", green: "#72f1b8", yellow: "#fede5d", blue: "#36f9f6", magenta: "#ff7edb", cyan: "#03edf9", white: "#ffffff", brightBlack: null, brightRed: "#ff5874", brightGreen: "#94f3c5", brightYellow: "#fff35c", brightBlue: "#52f6f4", brightMagenta: "#ff8eda", brightCyan: "#41e9f5", brightWhite: null},
+  "tangent": {background: "#5a0f1a", foreground: "#f8e0e0", cursor: "#ff90a0", selectionBackground: "#8a2a38", selectionForeground: "#f8e8e8", black: "#300810", red: "#ff7888", green: "#a8c878", yellow: "#e8b858", blue: "#80a0e8", magenta: "#e090c0", cyan: "#60c8c0", white: "#e8c8c8", brightBlack: "#b07880", brightRed: "#ff98a8", brightGreen: "#c0e080", brightYellow: "#f8d080", brightBlue: "#a0b8ff", brightMagenta: "#f0a0d0", brightCyan: "#80e0e0", brightWhite: "#f8e8e8"},
+  "tarnished": {background: "#1c1808", foreground: "#f0eab8", cursor: "#c8a030", selectionBackground: "#342e10", selectionForeground: "#fffce0", black: "#100e04", red: "#e45848", green: "#80c070", yellow: "#c8a030", blue: "#6494cc", magenta: "#bc7cc4", cyan: "#6ebcb4", white: "#f0eab8", brightBlack: null, brightRed: "#f07868", brightGreen: "#98d08a", brightYellow: "#e0c050", brightBlue: "#84b0e0", brightMagenta: "#d09cd8", brightCyan: "#8cd0c8", brightWhite: null},
+  "teal-dusk": {background: "#102e35", foreground: "#d9eaea", cursor: "#5fd7b8", selectionBackground: "#1f4a55", selectionForeground: "#ecf6f6", black: "#0a1f24", red: "#ff6e6e", green: "#5fd7b8", yellow: "#e6c466", blue: "#6fb5d6", magenta: "#c694e8", cyan: "#7fc6c0", white: "#d9eaea", brightBlack: null, brightRed: "#ff8e8e", brightGreen: "#86e3c8", brightYellow: "#f0d488", brightBlue: "#8fc8e3", brightMagenta: "#d6abef", brightCyan: "#9bd4cf", brightWhite: null},
+  "terracotta": {background: "#3b1e15", foreground: "#f0d8c4", cursor: "#e07845", selectionBackground: "#5f3225", selectionForeground: "#ffe8d4", black: "#28140d", red: "#e8516a", green: "#b9c270", yellow: "#e07845", blue: "#8fa9bd", magenta: "#cf8fc4", cyan: "#7ec4b3", white: "#f0d8c4", brightBlack: null, brightRed: "#ff7589", brightGreen: "#c8cf85", brightYellow: "#f08e62", brightBlue: "#a8c0d2", brightMagenta: "#dca6cf", brightCyan: "#9bd2c0", brightWhite: null},
+  "worktrees": {background: "#141414", foreground: "#e8e8e8", cursor: "#d0d0d0", selectionBackground: "#404060", selectionForeground: "#f8f8f8", black: "#1a1a1a", red: "#e05050", green: "#80c080", yellow: "#e0b070", blue: "#7090d0", magenta: "#c080c0", cyan: "#60c0c0", white: "#c8c8c8", brightBlack: "#505050", brightRed: "#ff7080", brightGreen: "#a0e0a0", brightYellow: "#f0c890", brightBlue: "#90b0f0", brightMagenta: "#e0a0e0", brightCyan: "#90e0e0", brightWhite: "#f8f8f8"},
+  "wrought-iron": {background: "#1a0e08", foreground: "#f0d5b8", cursor: "#c06040", selectionBackground: "#341c10", selectionForeground: "#ffe8d0", black: "#100804", red: "#e84838", green: "#7cc070", yellow: "#e8a830", blue: "#6490c8", magenta: "#ba76ba", cyan: "#6ebcac", white: "#f0d5b8", brightBlack: null, brightRed: "#f07060", brightGreen: "#94d088", brightYellow: "#f0c050", brightBlue: "#84ace0", brightMagenta: "#d092d2", brightCyan: "#8cccc0", brightWhite: null}
+};
+
+// The operator's own repo to theme map, carried over so a session in a repo
+// gets the colour they already associate with it. A starting point, not a
+// rule: choosing a theme on a card overrides this and is remembered.
+const REPO_THEMES = {
+  "appetizer": "active-work",
+  "atrium": "active-light",
+  "desktop-edge-win": "dracula",
+  "docusaurus-shared": "matrix",
+  "dotfiles": "tangent",
+  "sdk-golang": "terracotta",
+  "sterling": "orange-coral",
+  "ziti": "teal-dusk",
+  "ziti-console": "deep-amethyst",
+  "ziti-doc": "imperial-purple",
+  "ziti-openwrt": "ocean-deep",
+  "ziti-sdk-c": "neon-grape",
+  "ziti-sdk-csharp": "nord",
+  "ziti-sdk-py": "deep-ocean",
+  "ziti-tunnel-sdk-c": "gruvbox-dark",
+  "ziti-tv": "mauve-purple",
+  "zrok": "electric-purple"
+};
+
+// Which theme a session uses.
+//
+// The card wins, since that is what was chosen for it. Failing that the
+// project name picks one, so two worktrees of the same repo look alike and a
+// different repo does not, which is the whole reason to colour them.
+function themeFor(t) {
+  if (!t) return TERM_THEMES.atrium;
+  const named = TERM_THEMES[t.theme];
+  if (named) return named;
+
+  const g = grouper();
+  const project = g ? (g.of(t)[0] || "") : "";
+  return TERM_THEMES[REPO_THEMES[repoLeaf(project)]] || TERM_THEMES.atrium;
+}
+
+// The last path segment of a project name, which is what the repo map is
+// keyed by. `dovholuknf/dotfiles` is `dotfiles`.
+function repoLeaf(name) {
+  const parts = String(name || "").split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+// Choosing what a terminal looks like.
+//
+// Applied to the live terminal immediately as well as stored, so the choice
+// is judged by looking at it rather than by reading a name. xterm takes a new
+// theme on the running instance, so nothing has to be torn down.
+async function pickTheme() {
+  if (!termTask) return;
+  const names = ["", ...Object.keys(TERM_THEMES).sort()];
+  const pick = await askUser({
+    title: "terminal theme",
+    body: "Applied now and remembered on this card, so it survives a restart and " +
+          "follows the session into another browser.",
+    input: true,
+    value: termTask.theme || "",
+    placeholder: "empty means pick from the project",
+    // A datalist rather than a select: fifty two of them is a long list to
+    // scroll and a short list to type into.
+    list: names,
+    buttons: [{ label: "cancel", value: null }, { label: "use it", value: true, style: "go" }]
+  });
+  if (pick === null) return;
+
+  const name = String(pick).trim();
+  if (name && !TERM_THEMES[name]) {
+    toast("no theme called that", name);
+    return;
+  }
+  try {
+    await patchTask(termTask.id, { theme: name });
+  } catch (e) {
+    toast("that did not stick", e.message);
+    return;
+  }
+  termTask.theme = name;
+  if (term) term.options.theme = themeFor(termTask);
+  const chip = document.querySelector("#t-chips .chip.theme");
+  if (chip) chip.textContent = name || "auto";
+}
+
 // ── terminal ────────────────────────────────────────────
 // Attaching to a runner atrium owns. Bytes arrive as binary frames and go
 // straight to xterm. Everything sent back is a JSON control frame, so a
@@ -5933,7 +6170,9 @@ function openTerm(task) {
   document.getElementById("t-chips").innerHTML =
     `<span class="chip accent">${esc(task.runner || "?")}</span>` +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
-    `<span class="chip">${esc(task.worktree || "")}</span>`;
+    `<span class="chip">${esc(task.worktree || "")}</span>` +
+    `<span class="chip theme" onclick="pickTheme()"
+       title="what this terminal looks like">${esc(task.theme || "auto")}</span>`;
   paintCopyMode();
 
   const screen = document.getElementById("t-screen");
@@ -5951,11 +6190,9 @@ function openTerm(task) {
     // Enough that scrolling back through a long build is useful, without
     // holding a whole session in memory.
     scrollback: 5000,
-    // Matching the board, so an attached terminal does not look pasted in.
-    theme: {
-      background: "#040B14", foreground: "#D7DBE3", cursor: "#00E3B0",
-      selectionBackground: "#173A57"
-    }
+    // The session's own theme, so a terminal looks the same here as it does
+    // in a terminal window, and two sessions are tellable apart by colour.
+    theme: themeFor(termTask)
   });
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
@@ -6346,8 +6583,169 @@ async function renderRunners() {
     </div>`).join("") + `</div>`;
 
   renderDiscovered();
+  renderFixtures();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
+}
+
+// ── fixtures ────────────────────────────────────────────
+//
+// Terminals that come up with the daemon. Rows in a table, like runners,
+// because that is what they are: a definition of what to start, edited one at
+// a time and ordered.
+
+let allFixtures = [];
+
+async function renderFixtures() {
+  const host = document.getElementById("fixture-list");
+  if (!host) return;
+  try { allFixtures = (await api("/v1/fixtures")).fixtures || []; } catch (e) { return; }
+
+  if (!allFixtures.length) {
+    setHTML(host, `<div class="panel"><div class="empty">
+      nothing starts on its own yet. add one for the session you open every morning.
+    </div></div>`);
+    return;
+  }
+
+  setHTML(host, `<div class="panel">` + allFixtures.map((f, i) => `
+    <div class="row line">
+      <span class="chip ${f.enabled ? "accent" : ""}">${f.enabled ? "on" : "off"}</span>
+      <span class="ord">${i + 1}</span>
+      <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
+      <code class="grow ell" title="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
+      <span class="by">${esc(f.harness)}</span>
+      ${f.resume ? `<span class="by">resumes</span>` : `<span class="by">fresh</span>`}
+      ${f.theme ? `<span class="chip">${esc(f.theme)}</span>` : ""}
+      <button onclick="moveFixture('${esc(f.id)}', -1)" ${i === 0 ? "disabled" : ""}
+        title="start this one earlier">&#9650;</button>
+      <button onclick="moveFixture('${esc(f.id)}', 1)"
+        ${i === allFixtures.length - 1 ? "disabled" : ""}
+        title="start this one later">&#9660;</button>
+      <button onclick="startFixtureNow('${esc(f.id)}')"
+        title="start it now, without restarting atrium">start</button>
+      <button onclick="editFixture('${esc(f.id)}')">edit</button>
+    </div>`).join("") + `</div>`);
+}
+
+// Reordering by swapping sort values with the neighbour.
+//
+// The list is short and hand written, so this is two writes rather than a
+// fractional rank scheme. Midpoint insertion earns its keep on a board with
+// hundreds of cards, not on a list of five.
+async function moveFixture(id, delta) {
+  const i = allFixtures.findIndex(f => f.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= allFixtures.length) return;
+
+  const a = allFixtures[i], b = allFixtures[j];
+  const at = a.sort, bt = b.sort;
+  // Equal sorts fall back to creation order, which makes a swap a no-op. Give
+  // them distinct ones based on position instead.
+  a.sort = (at === bt) ? j : bt;
+  b.sort = (at === bt) ? i : at;
+  try {
+    await api(`/v1/fixtures/${a.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(a)
+    });
+    await api(`/v1/fixtures/${b.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b)
+    });
+  } catch (e) {
+    toast("could not reorder", e.message);
+  }
+  renderFixtures();
+}
+
+// Opens the form. A null id is a new one.
+function editFixture(id) {
+  const f = allFixtures.find(x => x.id === id) || {
+    id: "", label: "", harness: "", cwd: "", theme: "",
+    // A new fixture resumes and starts, because that is what somebody adding
+    // one means. Anyone who wants otherwise is one click away from it.
+    resume: true, enabled: true,
+    sort: allFixtures.length
+  };
+  const dlg = document.getElementById("fixture");
+  dlg.dataset.editing = f.id;
+  document.getElementById("f-heading").textContent = f.id ? "fixture" : "new fixture";
+
+  const enabled = allHarnesses.filter(h => h.enabled);
+  document.getElementById("f-harness").innerHTML = enabled.map(h =>
+    `<option value="${esc(h.id)}"${h.id === f.harness ? " selected" : ""}>${esc(h.label)}</option>`
+  ).join("");
+  document.getElementById("f-theme-list").innerHTML =
+    Object.keys(TERM_THEMES).sort().map(n => `<option value="${esc(n)}"></option>`).join("");
+
+  document.getElementById("f-label").value = f.label || "";
+  document.getElementById("f-cwd").value = f.cwd || "";
+  document.getElementById("f-theme").value = f.theme || "";
+  document.getElementById("f-resume").checked = !!f.resume;
+  document.getElementById("f-enabled").checked = !!f.enabled;
+  document.getElementById("f-delete").hidden = !f.id;
+
+  if (!enabled.length) {
+    tellUser("atrium", "no runner is enabled yet. turn one on above first.");
+    return;
+  }
+  dlg.showModal();
+}
+
+async function saveFixture() {
+  const dlg = document.getElementById("fixture");
+  const id = dlg.dataset.editing || "";
+  const known = allFixtures.find(x => x.id === id);
+  const body = {
+    id,
+    label: document.getElementById("f-label").value.trim(),
+    harness: document.getElementById("f-harness").value,
+    cwd: document.getElementById("f-cwd").value.trim(),
+    theme: document.getElementById("f-theme").value.trim(),
+    resume: document.getElementById("f-resume").checked,
+    enabled: document.getElementById("f-enabled").checked,
+    // Keeps its place in the order, or goes last when it is new.
+    sort: known ? known.sort : allFixtures.length,
+    // Carried through, or saving would forget which card this starts onto and
+    // the next start would open a second one beside it.
+    task_id: known ? known.task_id : ""
+  };
+  try {
+    await api(id ? `/v1/fixtures/${id}` : "/v1/fixtures", {
+      method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    tellUser("atrium", e.message);
+    return;
+  }
+  dlg.close();
+  renderFixtures();
+}
+
+async function deleteFixture() {
+  const id = document.getElementById("fixture").dataset.editing;
+  if (!id) return;
+  if (!await confirmUser("delete this fixture?",
+    "It stops coming up with atrium. The card it started and anything running on it are " +
+    "left alone.", "delete it")) return;
+  try {
+    await api(`/v1/fixtures/${id}`, { method: "DELETE" });
+  } catch (e) {
+    tellUser("atrium", e.message);
+    return;
+  }
+  document.getElementById("fixture").close();
+  renderFixtures();
+}
+
+async function startFixtureNow(id) {
+  try {
+    await api(`/v1/fixtures/${id}/start`, { method: "POST" });
+    toast("starting", "it will appear in terminals");
+  } catch (e) {
+    toast("could not start it", e.message);
+  }
+  refresh();
 }
 
 // Runners this machine has that atrium is not set up to use. Offered rather
@@ -6999,6 +7397,16 @@ function askUser(opts) {
     if (opts.input) {
       input.value = opts.value || "";
       input.placeholder = opts.placeholder || "";
+    }
+    // Suggestions, when there is a known set. A datalist rather than a select
+    // because these lists are long to scroll and short to type into, and
+    // typing something not on the list stays possible.
+    const list = document.getElementById("ask-list");
+    if (list) {
+      setHTML(list, (opts.list || [])
+        .filter(Boolean)
+        .map(v => `<option value="${esc(v)}"></option>`).join(""));
+      input.setAttribute("list", (opts.list && opts.list.length) ? "ask-list" : "");
     }
 
     // A confirmation that can be turned off. Only recorded on the affirmative

@@ -120,6 +120,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/health", s.health)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)
+	mux.HandleFunc("GET /v1/fixtures", s.getFixtures)
+	mux.HandleFunc("PUT /v1/fixtures/{id}", s.putFixture)
+	mux.HandleFunc("POST /v1/fixtures", s.putFixture)
+	mux.HandleFunc("DELETE /v1/fixtures/{id}", s.deleteFixture)
+	mux.HandleFunc("POST /v1/fixtures/{id}/start", s.startFixture)
 	mux.HandleFunc("GET /v1/overlays", s.getOverlays)
 	mux.HandleFunc("PUT /v1/overlays/{kind}", s.putOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/start", s.startOverlay)
@@ -311,6 +316,10 @@ type patchBody struct {
 	// Pinned keeps a card at the top of every list and in the terminal
 	// switcher whether it is running or not.
 	Pinned *bool `json:"pinned"`
+	// Theme names the terminal palette. Empty means the board picks one from
+	// the project, so clearing it is a meaningful value rather than an
+	// omission.
+	Theme *string `json:"theme"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -393,6 +402,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Pinned != nil {
 		if err := s.st.SetPinned(id, *body.Pinned); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Theme != nil {
+		if err := s.st.SetTheme(id, *body.Theme); err != nil {
 			s.fail(w, err)
 			return
 		}

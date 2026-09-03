@@ -130,6 +130,8 @@ func New(opts Options) (*Daemon, error) {
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
 	// What a runner is doing right now. Held in the daemon, never written down.
 	api.ActivityOf = d.activityFor
+	// Starting a fixture is spawning a process, which the daemon owns.
+	api.StartFixture = d.StartFixtureNow
 	return d, nil
 }
 
@@ -526,6 +528,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// Terminals that come up with the daemon. In the background, so a runner
+	// that is slow to start cannot delay the board answering: a board that is
+	// not up yet looks like a hang, a terminal that is not open yet does not.
+	go d.startFixtures()
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
 	errCh := make(chan error, 2)
