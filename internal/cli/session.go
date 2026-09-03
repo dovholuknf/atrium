@@ -38,6 +38,14 @@ type sessionInput struct {
 	CWD       string `json:"cwd"`
 	SessionID string `json:"session_id"`
 	Source    string `json:"source"`
+	// TranscriptPath is where the runner is writing this conversation.
+	//
+	// It is what makes a session id worth storing. An id is only resumable
+	// once there is a conversation behind it, and a session that opened and
+	// was never typed into has none: `--resume` on that id answers "no
+	// conversation found". Sent so the daemon can tell the two apart instead
+	// of storing every id it is offered and losing the real one.
+	TranscriptPath string `json:"transcript_path"`
 }
 
 func newSession() *cobra.Command {
@@ -124,6 +132,10 @@ func reportSession(hubURL, event, name string) sessionReport {
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
 		"resume":  in.SessionID,
 		"source":  in.Source,
+		// Whether there is a conversation behind that id yet. Answered here
+		// rather than in the daemon, because the file is on this machine and
+		// the daemon may not be.
+		"resumable": hasTranscript(in.TranscriptPath),
 	})
 	if err != nil {
 		return out
@@ -136,4 +148,27 @@ func reportSession(hubURL, event, name string) sessionReport {
 	}
 	resp.Body.Close()
 	return out
+}
+
+// hasTranscript reports whether a conversation has actually been written.
+//
+// A session id is only resumable once there is something behind it. A session
+// that opened and was never typed into has no transcript, and resuming its id
+// answers "no conversation found". Storing such an id replaces a real
+// conversation with one that can never work, and the thread is lost on the
+// next restart.
+//
+// Unknown answers true. A runner that reports no transcript path is not making
+// a claim either way, and storing whatever was offered is the right fallback
+// there: a resume that might fail beats never recording one at all.
+func hasTranscript(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return true
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return fi.Size() > 0
 }

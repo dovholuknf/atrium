@@ -84,6 +84,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// twice on the board under one name.
 		Cwd    string `json:"cwd"`
 		Resume string `json:"resume"`
+		// Whether there is a conversation behind that id yet. See the note on
+		// SessionEvent.Resumable: an id with nothing written cannot be
+		// resumed, and storing it loses the one that could.
+		Resumable *bool `json:"resumable,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -113,9 +117,14 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// well as at session start, because a session atrium did not launch and
 	// that started before the session hook was wired has no other moment where
 	// it says so. Best effort: a turn must not fail over a resume id.
-	if in.Resume != "" {
-		if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
-			log.Printf("[atrium] could not record a resume id for %s: %v", task.ID, err)
+	// Same rule as the session hook: replaced only by an id known to name a
+	// written conversation, or when there is nothing stored. See session.go.
+	if in.Resume != "" && in.Resume != task.ResumeID {
+		written := in.Resumable != nil && *in.Resumable
+		if written || task.ResumeID == "" {
+			if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+				log.Printf("[atrium] could not record a resume id for %s: %v", task.ID, err)
+			}
 		}
 	}
 
