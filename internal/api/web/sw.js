@@ -59,6 +59,11 @@ self.addEventListener("message", event => {
     silent: true,
     data: {
       permId: m.permId || "", goTo: m.goTo || "",
+      // What this notification is about: a request, or the card that went
+      // ready. Carried so an open page can take it down once that has been
+      // answered, which permId alone could not do for anything but a
+      // permission.
+      subject: m.subject || m.permId || "",
       origin: m.origin || self.location.origin, icon: m.icon,
       // Wall clock, not a duration, so a sweep can decide correctly no matter
       // how long the worker was dead in between.

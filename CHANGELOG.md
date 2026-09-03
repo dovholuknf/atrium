@@ -13,6 +13,27 @@ section heading is just "what landed in this iteration."
   how a message ends up sent four times. Enter sends and shift-enter is a newline, the chat convention, since
   this is one.
 
+- **An alert says who and what, and the operating system is only used when you are not looking.** Three things
+  were wrong with "atrium is waiting on you". It named a card and then said the one thing true of everything in
+  that list, so an agent frozen mid-tool and one that had simply finished its turn read identically. And the
+  desktop notification never arrived, because the rule for suppressing it was `visibilityState === "visible"`,
+  which only means the tab is the active tab of a window that is not minimised. That stays true with the browser
+  buried three windows deep, which is exactly when a notification is the entire point. Foreground now means
+  visible AND focused, and the split is the obvious one: looking at the board gets a toast, not looking at it
+  gets the notification.
+
+  An alert now reads `dotfiles is ready` or `zendesk-16116 needs permission`, with the tool and command
+  underneath, and several at once say which kind rather than "3 things need you". Two further things fell out
+  of naming them. A blocked agent was ringing twice, because the waiting list contains permission cards and the
+  permission check alerts on the same event with more to say, so the waiting alert now leaves those alone, and
+  the tab title stops counting them twice. And every notification shared one tag, which replaces rather than
+  stacks, so two agents finishing within a few seconds of each other showed one name and the other went by
+  unseen. One tag per subject now, carried into the service worker so an alert can be taken down once its
+  subject is answered rather than only when it was a permission.
+
+  Nothing alerts for a session that is working. It never did: `/v1/waiting` only ever returns `needs-input` and
+  `needs-permission`.
+
 - **`needs input` is called `ready`, and an empty column gives its width back.** The gwt session ledger has
   called the end of a turn `done` for far longer than this board has existed, and the board called the same
   moment `needs input`, so the two disagreed in vocabulary while agreeing to the second on when it happened.
