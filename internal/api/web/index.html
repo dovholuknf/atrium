@@ -4353,6 +4353,21 @@ function loadPrefs() {
   } catch (e) { return Object.assign({}, DEFAULT_PREFS); }
 }
 
+// Whether the board is the thing you are looking at right now.
+//
+// `visibilityState` alone is not that, and believing it was is why a
+// notification never arrived while the browser sat behind an editor. It only
+// says the tab is the active tab of a window that is not minimised, which
+// stays true when the whole browser is buried three windows deep. Focus is the
+// missing half: `hasFocus()` is false as soon as any other application has the
+// keyboard.
+//
+// Both are needed. Focus alone would call a background tab of a focused
+// browser the foreground.
+function inForeground() {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
@@ -4430,13 +4445,13 @@ const alerting = (() => {
     preview(kind === "permission" ? prefs.perm : prefs.input);
   }
 
-  function notify(title, body, goTo, permId) {
+  function notify(title, body, goTo, permId, subject) {
     if (prefs.muted || prefs.desktop === false) return;
-    // A permission blocks an agent, so it is worth a desktop notification even
-    // when this tab is in front: the tab is rarely the window you are looking
-    // at. Everything else stays background-only.
-    if (goTo !== "perms" && document.visibilityState === "visible") return;
-    showNotification(title, body, goTo, permId);
+    // Looking at the board or not. That is the whole rule: if you can see it,
+    // the toast has already told you and a second copy from the operating
+    // system is noise.
+    if (inForeground()) return;
+    showNotification(title, body, goTo, permId, subject);
   }
 
   btn.onclick = () => {
@@ -4479,8 +4494,9 @@ const alerting = (() => {
 
       play("permission");
       const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
-      notify(`still waiting, ${mins}m: an agent is frozen`, body, "perms", p.id);
-      toast(`waiting ${mins}m`, body, "perms", p.id);
+      const who = p.agent || "an agent";
+      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id);
+      toast(`${who} has waited ${mins}m`, body, "perms", p.id);
     });
     // Forget anything answered, so a later request with a fresh id starts over.
     const live = new Set(perms.map(p => p.id));
@@ -4502,8 +4518,9 @@ const alerting = (() => {
       if (kind === "permission" && items.length) {
         play(kind);
         const d = describe(items[0]);
-        notify(items.length > 1 ? `${items.length} permissions waiting` : d.title,
-          d.body, "perms", items.length === 1 ? items[0].id : "");
+        notify(items.length > 1 ? `${items.length} agents need permission` : d.title,
+          d.body, "perms", items.length === 1 ? items[0].id : "",
+          items.length === 1 ? items[0].id : "");
       }
       return;
     }
@@ -4512,10 +4529,18 @@ const alerting = (() => {
     if (!fresh.length) return;
     play(kind);
     const d = describe(fresh[0]);
-    const title = fresh.length > 1 ? `${fresh.length} things need you` : d.title;
+    // Several at once still says what they are. "3 things need you" made an
+    // agent blocked mid-tool and one that just finished its turn read the
+    // same, and those want different amounts of hurry.
+    const title = fresh.length > 1
+      ? `${fresh.length} ${kind === "permission" ? "agents need permission" : "agents are ready"}`
+      : d.title;
     // Buttons only make sense for a single named permission, not a pile.
     const actionable = kind === "permission" && fresh.length === 1 ? fresh[0].id : "";
-    notify(title, d.body, kind === "permission" ? "perms" : "stack", actionable);
+    // One at a time gets its own notification. A summary of several replaces
+    // whatever summary was there, which is what you want from a count.
+    const subject = fresh.length === 1 ? fresh[0].id : "";
+    notify(title, d.body, kind === "permission" ? "perms" : "stack", actionable, subject);
     // A desktop notification is suppressed while the tab is visible, so the
     // toast covers exactly that case. Clicking it goes where the work is.
     toast(title, d.body, kind === "permission" ? "perms" : "stack",
@@ -4596,12 +4621,19 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-function showNotification(title, body, goTo, permId) {
+function showNotification(title, body, goTo, permId, subject) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
   const expiry = Number(alerting.get().expiry) || 0;
   // Sticky means Windows never takes it down by itself. That is right for a
   // blocked agent and wrong forever, so an expiry overrides it.
   const sticky = goTo === "perms" && expiry === 0;
+
+  // One tag per subject. A shared tag replaces the notification already on
+  // screen, so two agents finishing within a few seconds of each other showed
+  // one name and the other went by unseen. The subject is the card or the
+  // request, and a summary of several has none, which is correct: those are
+  // meant to replace each other.
+  const tag = (goTo === "perms" ? "atrium-perm" : "atrium") + (subject ? ":" + subject : "");
 
   // With a worker, the notification gets approve and block buttons and can
   // outlive the page. Without one, fall back to a plain notification.
@@ -4609,8 +4641,12 @@ function showNotification(title, body, goTo, permId) {
     swReg.active.postMessage({
       type: "notify", title, body: body || "",
       icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
-      tag: goTo === "perms" ? "atrium-perm" : "atrium",
+      tag,
       sticky, expireMs: expiry * 1000, goTo, permId: permId || "",
+      // What this is about, so it can be taken down once that is answered.
+      // permId only exists for a permission, and a card that has gone ready
+      // and then been replied to had nothing to retire it by.
+      subject: subject || permId || "",
       origin: location.origin
     });
     return null;
@@ -4620,7 +4656,7 @@ function showNotification(title, body, goTo, permId) {
     body: body || "",
     icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
     badge: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
-    tag: goTo === "perms" ? "atrium-perm" : "atrium",
+    tag,
     renotify: true,
     // A blocked agent is not something to miss, so that one stays on screen.
     requireInteraction: sticky,
@@ -4852,8 +4888,10 @@ function reapNotifications(liveKeys) {
       // browser can kill it at any time. This runs every poll while a page is
       // open.
       if (d.expireAt && now >= d.expireAt) { n.close(); return; }
-      // Untagged notifications and anything still pending are left alone.
-      if (d.permId && !liveKeys.has(d.permId)) n.close();
+      // Anything still pending is left alone, and so is a summary of several,
+      // which names no one subject and so cannot be said to be answered.
+      const subject = d.subject || d.permId;
+      if (subject && !liveKeys.has(subject)) n.close();
     });
   }).catch(() => {});
 }
@@ -6133,14 +6171,27 @@ async function refresh() {
   ]).then(([waiting, perms]) => {
     if (waiting) {
       badge("c-wait", waiting.length);
-      alerting.check("waiting", waiting, t => ({
-        title: t.display_title, body: "is waiting on you"
+      // Who, and what they want. "is waiting on you" was neither: it named a
+      // card and then said the one thing true of everything in this list, so
+      // it never distinguished an agent that finished its turn from one frozen
+      // mid-tool waiting to be let through.
+      //
+      // Permissions are dropped here rather than described, because the block
+      // below alerts on the same event with the tool and the command in hand.
+      // Both firing meant one blocked agent rang twice and put up two toasts.
+      alerting.check("waiting", waiting.filter(t => t.status !== "needs-permission"), t => ({
+        title: `${t.display_title} is ${statusLabel(t.status)}`,
+        body: "finished its turn and wants your next instruction"
       }));
     }
     if (perms) {
       badge("c-perm", perms.length);
+      // Named too. "permission needed" told you something needed answering and
+      // not which of eight agents was frozen, which is the one fact that
+      // decides whether it can wait.
       alerting.check("permission", perms, p => ({
-        title: "permission needed", body: `${p.tool}: ${(p.command || "").slice(0, 120)}`
+        title: `${p.agent || "an agent"} needs permission`,
+        body: `${p.tool}: ${(p.command || "").slice(0, 120)}`
       }));
       alerting.nag(perms);
     }
@@ -6148,7 +6199,11 @@ async function refresh() {
     if (waiting && perms) {
       reapToasts(new Set([...waiting.map(t => t.id), ...perms.map(p => p.id)]));
     }
-    retitle(waiting && waiting.length, perms && perms.length);
+    // Cards that are ready, plus requests waiting to be answered. The waiting
+    // list holds both kinds, so counting it whole alongside the requests
+    // reported a blocked agent twice.
+    retitle(waiting && waiting.filter(t => t.status !== "needs-permission").length,
+      perms && perms.length);
   });
 
   api("/v1/health").then(h => {
