@@ -150,7 +150,7 @@ func (s *Store) create(obs Observed) (*Task, error) {
 	if repo == "" {
 		repo = git.Repo
 	}
-	title := TitleFor(repo, git.Branch, obs.Worktree, LocalName(obs.WireName))
+	title := TitleFor(git, obs.Worktree, LocalName(obs.WireName))
 
 	rank, err := s.topRank(StatusRunning)
 	if err != nil {
