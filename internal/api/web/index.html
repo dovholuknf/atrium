@@ -635,6 +635,18 @@
   }
   .ov-log > summary:hover { color: var(--label); }
   .ov-log pre.code { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  /* A tag, coloured from its own name by the hash the groups use, so the same
+     tag looks the same wherever it appears. */
+  .chip.tag {
+    background: hsl(var(--ghue) 60% 50% / .16);
+    border: 1px solid hsl(var(--ghue) 60% 55% / .38);
+    color: hsl(var(--ghue) 70% 76%); cursor: pointer;
+  }
+  .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
+  /* Tags already in use, offered so the second card spells one the same way
+     as the first. */
+  .tagsuggest { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: 8px; }
+  .tagsuggest .chip.tag { font-size: var(--fs-xs); padding: 2px 9px; }
   .chip.attach:hover { border-color: var(--teal); }
   /* Sits in a column header, so it stays quiet until reached for. */
   .chip.sweep {
@@ -1470,7 +1482,9 @@
         <button data-v="wants">wants me <i class="pillcount"></i></button>
         <button data-v="">everything <i class="pillcount"></i></button>
       </div>
-      <input type="search" id="stack-q" placeholder="filter by name, path or runner" spellcheck="false">
+      <input type="search" id="stack-q"
+        placeholder="filter by name, path, runner or tag. #tag for that tag only"
+        spellcheck="false">
       <span class="matchcount" id="stack-match"></span>
     </div>
     <!-- Sort and group are two different questions, so two controls. Sorting
@@ -2003,6 +2017,18 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <label class="eyebrow" for="d-why">why am I doing this</label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
     </div>
+    <!-- What you call this, as opposed to what atrium worked out from the
+         path. Free text: a fixed list would be atrium deciding what kinds of
+         work exist. -->
+    <div class="field">
+      <label class="eyebrow" for="d-tags">tags</label>
+      <input type="text" id="d-tags" spellcheck="false"
+        placeholder="lab, discourse, prs, tangent">
+      <span class="hintline">Comma separated. Group and sort by these, and click one on a
+        card to see only that. Lower cased, so <code>Lab</code> and <code>lab</code> stay one
+        tag.</span>
+      <div id="d-tag-known" class="tagsuggest"></div>
+    </div>
     <!-- No "move to" here. A column is a bucket of human attention and the
          board is where attention gets moved, by dragging. A second way to do
          it from a dialog was a row of six buttons nobody pressed. -->
@@ -2251,6 +2277,7 @@ function cardHTML(t) {
     <div class="chips">
       <span class="chip runner" data-runner="${esc(t.runner || "")}"
         >${esc(t.runner || "?")}</span>
+      ${tagChips(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
@@ -2316,7 +2343,14 @@ return a.localeCompare(b);`;
 
 // On by default. A board of leaf directory names says nothing about which
 // repo any of them belong to, and the default rule works with no setup.
-const GROUPING_DEFAULTS = { on: true, by: "", order: "", hues: {} };
+// `mode` is what a group IS: a project read out of the path, or a tag you
+// applied. `by` and `order` stay the escape hatch for anyone who wants
+// something neither of those describes.
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", hues: {} };
+
+// A card with no tags still has to land somewhere when grouping by tag, and
+// "" would sort it in with a group whose name is empty.
+const UNTAGGED = "untagged";
 
 function groupingPrefs() {
   try {
@@ -2354,6 +2388,22 @@ function grouper() {
   if (!p.on) return null;
   groupingFault = "";
 
+  // Grouping by tag needs no compiled function. A card can carry several, so
+  // this is the one grouper that puts a card in more than one place, and the
+  // callers have to handle a list rather than a name.
+  if (p.mode === "tag" && !String(p.by || "").trim()) {
+    return {
+      many: true,
+      of: t => (t.tags && t.tags.length ? t.tags : [UNTAGGED]),
+      // Untagged last, since it is the absence of an answer rather than one.
+      cmp: (a, b) => {
+        if (a === UNTAGGED) return 1;
+        if (b === UNTAGGED) return -1;
+        return a.localeCompare(b);
+      }
+    };
+  }
+
   const by = compiled(p.by, DEFAULT_GROUP_BY, "task");
   const order = compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b");
   if (!by) return null;
@@ -2373,7 +2423,9 @@ function grouper() {
       return a.localeCompare(b);
     }
   };
-  return { of: safeBy, cmp: safeOrder };
+  // One group per card, wrapped as a list so every caller reads the same
+  // shape whichever mode is on.
+  return { many: false, of: t => [safeBy(t)], cmp: safeOrder };
 }
 
 // A colour per group.
@@ -2440,11 +2492,14 @@ function cardsHTML(cards, g, keyPrefix) {
   if (!cards.length) return '<div class="empty">empty</div>';
   if (!g) return cards.map(cardHTML).join("");
 
+  // A card can belong to several groups when grouping by tag, so it appears
+  // under each. Anything else returns one name and this reads the same.
   const byName = new Map();
   for (const t of cards) {
-    const name = g.of(t);
-    if (!byName.has(name)) byName.set(name, []);
-    byName.get(name).push(t);
+    for (const name of g.of(t)) {
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(t);
+    }
   }
   // One group holding everything is not a grouping, so it is not drawn as one.
   if (byName.size < 2 && byName.has("")) return cards.map(cardHTML).join("");
@@ -2938,7 +2993,19 @@ const STACK_SORTS = {
     label: "project",
     cmp: (a, b) => (a.worktree || "").localeCompare(b.worktree || "")
   },
-  runner: { label: "runner", cmp: (a, b) => (a.runner || "").localeCompare(b.runner || "") }
+  runner: { label: "runner", cmp: (a, b) => (a.runner || "").localeCompare(b.runner || "") },
+  // Untagged last, so sorting by tag surfaces what you have filed rather than
+  // what you have not.
+  tag: {
+    label: "tag",
+    cmp: (a, b) => {
+      const at = (a.tags || []).join(" "), bt = (b.tags || []).join(" ");
+      if (!at && !bt) return 0;
+      if (!at) return 1;
+      if (!bt) return -1;
+      return at.localeCompare(bt);
+    }
+  }
 };
 // Activity by default. This is the "what has been going on" view, and the
 // board is where you go to see what is where.
@@ -2990,8 +3057,18 @@ function paintStack() {
   const only = document.querySelector("#stack-seg .on").dataset.v;
   const over = t => ["done", "dead"].includes(t.status);
 
-  const matchesText = t => !q || (t.display_title + " " + (t.worktree || "") + " " +
-    (t.runner || "") + " " + (t.why || "")).toLowerCase().includes(q);
+  // `#tag` means that tag exactly, so filtering to `#prs` does not also drag
+  // in a card whose path happens to contain the letters. Anything else is a
+  // plain substring across everything a card carries, tags included.
+  const matchesText = t => {
+    if (!q) return true;
+    if (q.startsWith("#")) {
+      const want = q.slice(1).trim();
+      return want ? (t.tags || []).includes(want) : true;
+    }
+    return (t.display_title + " " + (t.worktree || "") + " " + (t.runner || "") + " " +
+      (t.why || "") + " " + (t.tags || []).join(" ")).toLowerCase().includes(q);
+  };
 
   const list = allStack.filter(t => {
     if (only === "live" && over(t)) return false;
@@ -3045,9 +3122,10 @@ function paintStack() {
 function stackGroupsHTML(list, g) {
   const byName = new Map();
   for (const t of list) {
-    const name = g.of(t);
-    if (!byName.has(name)) byName.set(name, []);
-    byName.get(name).push(t);
+    for (const name of g.of(t)) {
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(t);
+    }
   }
   if (byName.size < 2 && byName.has("")) {
     return `<div class="panel">` + list.map(stackRow).join("") + `</div>`;
@@ -3091,6 +3169,7 @@ function stackRow(t) {
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
     <div class="chips">
+      ${tagChips(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
@@ -3104,6 +3183,29 @@ function stackRow(t) {
 
 // Shared with paintStack's filter, and used by stackRow.
 function over(t) { return ["done", "dead"].includes(t.status); }
+
+// What the operator called this card. Coloured from the tag's own name by the
+// same hash the groups use, so a tag looks the same wherever it appears and
+// picks up its group colour for free.
+//
+// Clicking one filters to it, since seeing a tag and wanting only that is the
+// same motion.
+function tagChips(t) {
+  return (t.tags || []).map(tag =>
+    `<span class="chip tag" style="--ghue:${groupHue(tag)}"
+       title="show only ${esc(tag)}"
+       onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"
+       >${esc(tag)}</span>`).join("");
+}
+
+// Types a tag into the stack's search box, which already filters on it.
+function filterByTag(tag) {
+  switchView("stack");
+  const q = document.getElementById("stack-q");
+  if (!q) return;
+  q.value = "#" + tag;
+  paintStack();
+}
 
 // Which harness a row is, as a mark rather than a word.
 //
@@ -4563,12 +4665,16 @@ function toggleGrouping() {
 // on the board too. Grouping is a way of reading the same cards, not a
 // property of one screen.
 function paintGroupSegs() {
-  const on = groupingPrefs().on;
-  const html =
-    `<button class="${on ? "on" : ""}" onclick="setGroupOn(true)"
-       title="cut the cards into projects">by project</button>` +
-    `<button class="${on ? "" : "on"}" onclick="setGroupOn(false)"
-       title="one flat list, no projects">off</button>`;
+  const p = groupingPrefs();
+  const mode = p.on ? (p.mode || "project") : "off";
+  const opts = [
+    ["project", "by project", "cut the cards into projects, read from the worktree path"],
+    ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
+    ["off", "off", "one flat list"]
+  ];
+  const html = opts.map(([v, label, title]) =>
+    `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
+       title="${esc(title)}">${esc(label)}</button>`).join("");
   ["stack-group", "board-group"].forEach(id => {
     const el = document.getElementById(id);
     if (el) setHTML(el, html);
@@ -5042,9 +5148,11 @@ function setHookNag(on) {
   renderRunners();
 }
 
-function setGroupOn(on) {
-  if (groupingPrefs().on === on) return;
-  setGrouping({ on });
+function setGroupMode(mode) {
+  const p = groupingPrefs();
+  const now = p.on ? (p.mode || "project") : "off";
+  if (now === mode) return;
+  setGrouping(mode === "off" ? { on: false } : { on: true, mode });
   paintGrouping();
   paintGroupSegs();
 }
@@ -5285,6 +5393,8 @@ async function openTask(id) {
       : ""
   ].join("");
   document.getElementById("d-why").value = current.why || "";
+  document.getElementById("d-tags").value = (current.tags || []).join(", ");
+  paintKnownTags();
 
   // Terminate is only offered when atrium knows the process. A window-mode
   // launch owns itself, so saying so beats a button that cannot work.
@@ -5563,6 +5673,42 @@ async function killTask() {
 
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
 document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
+
+// Saved on change rather than on every keystroke, so a half-typed tag is not
+// stored and read straight back under the cursor. The daemon lower cases and
+// dedupes, so what comes back may differ from what was typed.
+document.getElementById("d-tags").addEventListener("change", e => {
+  patch({ tags: e.target.value.split(",").map(s => s.trim()).filter(Boolean) });
+});
+
+// Every tag already in use, so the second card gets the same spelling as the
+// first. Free text with no memory is how "discourse" and "discource" both end
+// up being groups.
+function knownTags() {
+  const seen = new Set();
+  (allStack || []).forEach(t => (t.tags || []).forEach(x => seen.add(x)));
+  return [...seen].sort();
+}
+
+function paintKnownTags() {
+  const host = document.getElementById("d-tag-known");
+  if (!host) return;
+  const mine = new Set(current && current.tags || []);
+  const rest = knownTags().filter(t => !mine.has(t));
+  setHTML(host, rest.map(t =>
+    `<button class="chip tag" style="--ghue:${groupHue(t)}"
+       onclick="addTag('${esc(t).replace(/'/g, "&#39;")}')">+ ${esc(t)}</button>`).join(""));
+}
+
+function addTag(tag) {
+  const el = document.getElementById("d-tags");
+  const have = el.value.split(",").map(s => s.trim()).filter(Boolean);
+  if (have.includes(tag)) return;
+  have.push(tag);
+  el.value = have.join(", ");
+  patch({ tags: have });
+  paintKnownTags();
+}
 
 // Holding the repaint while you type is TURNED OFF.
 //

@@ -97,6 +97,19 @@ type Task struct {
 	// It does not override a standing never rule or a shelved card: auto mode
 	// stops new questions, it does not discard answers already given.
 	AutoApprove bool `json:"auto_approve"`
+	// Tags are what the operator calls this card, as opposed to what atrium
+	// worked out from its path. Grouping already derives a project from the
+	// worktree, which answers "what repo" and nothing else. A card is also a
+	// support case, a tangent, a pull request, a lab, and none of that is in
+	// the path.
+	//
+	// Free text on purpose. A fixed list would be atrium deciding what kinds
+	// of work exist.
+	Tags []string `json:"tags"`
+	// Pinned keeps a card at the top of every list and always in the terminal
+	// switcher. Some sessions are permanent fixtures and hunting for them in
+	// activity order is the wrong shape.
+	Pinned bool `json:"pinned"`
 }
 
 // Display resolves the observed-versus-overrides rule: an override wins when

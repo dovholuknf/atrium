@@ -374,6 +374,19 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// What the operator calls a card, and whether it is a fixture.
+		//
+		// Tags are a JSON array in a text column rather than a table. The
+		// board already holds every card in memory to group and sort them, so
+		// a join would buy nothing, and this keeps the shape Postgres portable
+		// the same way `overrides` already is.
+		name: "0019_task_tags_pinned",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE task ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

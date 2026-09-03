@@ -305,6 +305,12 @@ type patchBody struct {
 	Overrides map[string]string `json:"overrides"`
 	// AutoApprove turns auto mode on or off for this session.
 	AutoApprove *bool `json:"auto_approve"`
+	// Tags is the whole set, not an addition. A pointer to a slice so that
+	// clearing every tag is distinguishable from not mentioning them.
+	Tags *[]string `json:"tags"`
+	// Pinned keeps a card at the top of every list and in the terminal
+	// switcher whether it is running or not.
+	Pinned *bool `json:"pinned"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -375,6 +381,18 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Rank != nil {
 		if err := s.st.SetRank(id, *body.Rank); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Tags != nil {
+		if err := s.st.SetTags(id, *body.Tags); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Pinned != nil {
+		if err := s.st.SetPinned(id, *body.Pinned); err != nil {
 			s.fail(w, err)
 			return
 		}
