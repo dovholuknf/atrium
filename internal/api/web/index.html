@@ -671,6 +671,14 @@
   .hintline.bad { color: var(--warn); }
   .ov-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
   .ov-actions .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The configuration, folded. Matches the log's summary so the two rows at
+     the bottom of an overlay read as the same kind of thing. */
+  .ov-fold > summary {
+    cursor: pointer; color: var(--label); font-size: var(--fs-xs); user-select: none;
+    letter-spacing: .04em; padding: 4px 0;
+  }
+  .ov-fold > summary:hover { color: var(--head); }
+  .ov-fold[open] > summary { color: var(--head); margin-bottom: 4px; }
   .ov-log { margin-top: 10px; }
   .ov-log > summary {
     cursor: pointer; color: var(--dimmest); font-size: var(--fs-xs); user-select: none;
@@ -2514,6 +2522,24 @@ const NO_CONTACT_AFTER_SECONDS = 20 * 60;
 const isOutOfContact = (t) =>
   t.status === "running" && !t.pid && (t.idle_seconds || 0) > NO_CONTACT_AFTER_SECONDS;
 
+// The runner is a mark rather than the word. "claude" on every card in a
+// column of claude sessions spent the widest chip there saying nothing.
+//
+// One chip carries the state and how long it has been that way. Three things
+// were wrong with two. A ready card read "idle 30m" beside "waiting 31m", the
+// same minute off two clocks that start together, with a word the column had
+// stopped using. A dead card read "dead" beside "dead 1h". And a card in the
+// running column read "idle", the one column where that is a different claim
+// from the column it is sitting in. A waiting card times how long it has
+// waited. Everything else has only idle to time, and says so in its own
+// state's words: a dead card that has been dead an hour is telling you
+// something the word idle hides.
+//
+// NOTE: everything below is inside a template literal, so it must contain no
+// backtick. An HTML comment does not protect one: a backtick anywhere in here
+// ends the string, and the page then fails to parse with an error pointing at
+// whatever word came next rather than at the quote. Prose comments about this
+// markup belong out here, where they can use whatever punctuation they like.
 function cardHTML(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
@@ -2525,9 +2551,6 @@ function cardHTML(t) {
     onclick="openTask('${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
-    <!-- The runner as a mark rather than a word, the same one the stack uses.
-         `claude` on every card in a column of claude sessions spent a chip
-         saying nothing, and it is the widest chip there. -->
     <div class="title">${w ? '<span class="pulse"></span>' : ""}${
       t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
       runnerMark(t.runner)}${esc(t.display_title)}</div>
@@ -2537,18 +2560,6 @@ function cardHTML(t) {
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
-      <!-- One chip: what state this is in, and how long it has been in it.
-           Three separate things were wrong with two. A ready card read
-           `idle 30m` beside `waiting 31m`, the same minute off two clocks
-           that start together, with a word the column had stopped using. A
-           dead card read `dead` beside `dead 1h`. And a card in the running
-           column read `idle`, which is the one column where that is a
-           different claim from the column it is sitting in.
-
-           A waiting card times how long it has been waiting. Everything else
-           has only idle to time, and says so in its own state's words: a dead
-           card that has been dead an hour is telling you something the word
-           idle hides. -->
       ${w
         ? `<span class="chip warn" title="${t.status === "needs-permission"
               ? "how long this agent has been frozen waiting to be answered"
@@ -3431,6 +3442,11 @@ function stackGroupsHTML(list, g) {
 
 // One card as a row. The same facts the board shows, in an order rather than a
 // column, with the age reading as what it is for the status it is in.
+//
+// The state and its duration are one chip, matching the board. Two chips said
+// it twice and sometimes disagreed with themselves: a ready card read
+// "idle 30m" beside "waiting 31m", two clocks that start together, and a dead
+// one read "dead" beside "dead 1h".
 function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
@@ -3454,12 +3470,6 @@ function stackRow(t) {
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
-      <!-- The state and how long it has been that way, as one chip, matching
-           the board. Two chips said it twice and sometimes disagreed with
-           themselves: a ready card read `idle 30m` beside `waiting 31m`, two
-           clocks that start together, and a dead one read `dead` beside
-           `dead 1h`. A waiting card times how long it has been waiting.
-           Everything else has nothing but idle to time. -->
       <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
         title="${esc(t.status)}">${esc(statusLabel(t.status))} ${
         w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</span>
@@ -5231,7 +5241,12 @@ const OVERLAY_UI = {
     { key: "identity", label: "identity file", type: "text",
       placeholder: "C:/path/to/identity.json",
       hint: "Filled in by enrolling. The SDK opens it and owns the key inside." },
+    // Whether a service exists and whether this identity may BIND it are both
+    // facts on the controller, and both failures look the same from here: the
+    // listener refuses. Asking is the only way to tell them apart without
+    // pressing start.
     { key: "service", label: "service", type: "text", placeholder: "atrium-board",
+      action: { label: "what can I host?", fn: "zitiServices" },
       hint: "The service this board answers. It has to already exist, with a bind policy " +
             "this identity satisfies." }
   ]
@@ -5250,23 +5265,35 @@ function paintOverlays() {
 
 function overlayCard(o) {
   const mark = OVERLAY_MARKS[o.kind] || "";
+  // The executable is NOT what shares. Both overlays are driven by an embedded
+  // SDK, and the board answers the overlay listener itself rather than being
+  // proxied to by a child process. The binary is needed for setup and for
+  // nothing else: `zrok enable` and `ziti edge enroll` are one-time account
+  // operations with no SDK equivalent atrium uses.
+  //
+  // So a machine that is already set up shares perfectly well with no
+  // executable anywhere. Treating a missing binary as "not installed" hid the
+  // whole overlay from exactly that machine and offered a download instead of
+  // a start button.
   const missing = !o.found;
+  const stuck = missing && !o.ready;
 
   // What it is doing, in the one place somebody looks to find out.
-  const state = missing
-    ? `<span class="by missing">not installed</span>`
-    : o.running
-      ? `<span class="ov-live">sharing</span>`
-      : o.ready
-        ? `<span class="by">ready</span>`
+  const state = o.running
+    ? `<span class="ov-live">sharing</span>`
+    : o.ready
+      ? `<span class="by">ready</span>`
+      : stuck
+        ? `<span class="by missing">not installed</span>`
         : `<span class="by missing">needs setting up</span>`;
 
-  // Three states, in the order somebody hits them: no tool, tool but nothing
-  // set up, ready to share. Showing the share form to somebody with no zrok
-  // environment is showing them a button that cannot work.
-  const body = missing
+  // Three states, in the order somebody hits them: nothing set up and no tool
+  // to set it up with, tool but nothing set up, ready to share.
+  const body = stuck
     ? `<div class="ov-missing">
-         Not on this machine, or not on the daemon's PATH.
+         Nothing is set up here, and the executable that would set it up is not on this
+         machine or not on the daemon's PATH. Sharing itself needs no executable: it is
+         the embedded SDK. This is only needed once, to enable the account.
          <a href="${esc(o.install)}" target="_blank" rel="noreferrer">${esc(o.install)}</a>
        </div>`
     : !o.ready
@@ -5303,23 +5330,37 @@ function overlayCard(o) {
 
   // Only once sharing is possible. Before that the setup block carries its
   // own button and a second one would be two things to press.
-  const actions = (missing || !o.ready) ? "" : `
+  // Ready is the whole condition. A missing executable does not stop a share,
+  // only the disable button below, which says so for itself.
+  const actions = !o.ready ? "" : `
     <div class="ov-actions">
       ${o.running
         ? `<button class="no" onclick="stopOverlay('${esc(o.kind)}')">stop sharing</button>`
         : `<button class="go" onclick="startOverlay('${esc(o.kind)}')">start sharing</button>`}
-      <button onclick="teardownOverlay('${esc(o.kind)}')"
-        title="${o.kind === "zrok"
-          ? "remove the zrok environment from this machine"
-          : "stop using this identity"}">${
-        o.kind === "zrok" ? "disable" : "forget identity"}</button>
+      <!-- Disabling zrok runs its own command, which cleans up the account
+           side too. With no executable there is nothing to run, and offering
+           a button that cannot work is worse than saying why. Forgetting a
+           ziti identity is atrium's own bookkeeping and always works. -->
+      ${(o.kind === "zrok" && missing)
+        ? `<button disabled title="disabling removes the environment from your zrok
+             account as well as this machine, which only zrok's own command can do.
+             it is not on this machine's PATH.">disable</button>`
+        : `<button onclick="teardownOverlay('${esc(o.kind)}')"
+             title="${o.kind === "zrok"
+               ? "remove the zrok environment from this machine"
+               : "stop using this identity"}">${
+             o.kind === "zrok" ? "disable" : "forget identity"}</button>`}
       <span class="grow"></span>
-      <span class="by" title="${esc(o.found || "")}">${esc(o.found || "")}</span>
+      <!-- Where the executable is, when there is one, and what shares when
+           there is not. The SDK is the answer in both cases. -->
+      <span class="by" title="${missing
+        ? "sharing is the embedded SDK, so no executable is needed for it"
+        : esc(o.found)}">${missing ? "embedded SDK" : esc(o.found)}</span>
     </div>`;
 
   // What is set up, once it is. One line, because the point is that there is
   // nothing left to do here.
-  const ready = (!missing && o.ready) ? `<div class="ov-ready">${esc(readyLine(o))}</div>` : "";
+  const ready = o.ready ? `<div class="ov-ready">${esc(readyLine(o))}</div>` : "";
 
   return `<div class="ov ${o.running ? "live" : ""}" data-kind="${esc(o.kind)}">
     <div class="ov-head">
@@ -5331,9 +5372,40 @@ function overlayCard(o) {
       ${state}
     </div>
     ${addr}${err}${note}${ready}
-    <div class="ov-body">${body}</div>
+    ${overlayBody(o, body)}
     ${actions}${log}
   </div>`;
+}
+
+// The configuration, folded away once there is nothing to do in it.
+//
+// Two overlays with every field showing is most of a screen spent on values
+// nobody is changing, and it gets worse with each option added. What has to
+// stay visible is the state and the address, and those live above this.
+//
+// Open when there IS something to do: no tool, or nothing set up yet. Closed
+// once it is ready, because at that point the section is settings rather than
+// steps. Held per overlay in localStorage so opening one to change a field and
+// coming back does not fold it again mid-edit.
+function overlayBody(o, body) {
+  const open = !o.found || !o.ready || overlayOpen(o.kind);
+  return `<details class="ov-fold"${open ? " open" : ""}
+      ontoggle="setOverlayOpen('${esc(o.kind)}', this.open)">
+    <summary>configure ${esc(o.label)}</summary>
+    <div class="ov-body">${body}</div>
+  </details>`;
+}
+
+const OV_OPEN_KEY = "atrium.overlays.open";
+function overlayOpen(kind) {
+  try { return !!JSON.parse(localStorage.getItem(OV_OPEN_KEY) || "{}")[kind]; }
+  catch (e) { return false; }
+}
+function setOverlayOpen(kind, open) {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(OV_OPEN_KEY) || "{}"); } catch (e) {}
+  all[kind] = open;
+  localStorage.setItem(OV_OPEN_KEY, JSON.stringify(all));
 }
 
 // What is already set up, in one line.
@@ -5392,10 +5464,29 @@ function overlaySetup(o) {
     : "";
   const bad = setup.err ? `<div class="ov-err">${esc(setup.err)}</div>` : "";
 
+  // Which zrok you are talking to, above the token that only works on one of
+  // them. It has to be set BEFORE enabling, because enabling talks to whatever
+  // this names, so it is here rather than in the settings below: those are for
+  // a machine that is already set up.
+  const where = o.kind === "zrok" ? `
+      <div class="ov-field">
+        <label class="eyebrow" for="ovs-zrok-api">zrok instance</label>
+        <div class="picker">
+          <input type="text" id="ovs-zrok-api" spellcheck="false"
+            value="${esc(setup.api_endpoint || "")}"
+            placeholder="https://api.zrok.io">
+          <button onclick="saveZrokEndpoint()">use this one</button>
+        </div>
+        <span class="hintline" id="ovs-zrok-api-said">${esc(setup.api_endpoint_from
+          ? "from " + setup.api_endpoint_from
+          : "leave it alone for the public zrok. change it to run against your own.")}</span>
+      </div>` : "";
+
   return `${gone}${bad}
     <div class="ov-setup">
       <b>${esc(s.title)}</b>
       <p>${esc(s.what)}</p>
+      ${where}
       <div class="ov-field">
         <label class="eyebrow" for="ovs-${esc(o.kind)}-token">${esc(s.label)}</label>
         <textarea id="ovs-${esc(o.kind)}-token" rows="3" spellcheck="false"
@@ -5546,6 +5637,69 @@ function overlayField(o, f) {
     ${f.hint ? `<span class="hintline">${esc(f.hint)}</span>` : ""}
     <span class="hintline" id="${id}-said"></span>
   </div>`;
+}
+
+// Points this machine at a zrok instance, before it is enabled against one.
+async function saveZrokEndpoint() {
+  const el = document.getElementById("ovs-zrok-api");
+  const said = document.getElementById("ovs-zrok-api-said");
+  try {
+    await api("/v1/overlays/zrok/endpoint", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: (el.value || "").trim() })
+    });
+    said.textContent = el.value.trim()
+      ? "saved. enabling will talk to that one."
+      : "cleared. back on zrok's own default.";
+    loadOverlays();
+  } catch (e) {
+    said.textContent = e.message || String(e);
+  }
+}
+
+// Asks the network what this identity may host, and offers the answers.
+//
+// The bindable ones are clickable, because the next thing anybody does with
+// this list is type one of those names into the box above it, and a list you
+// have to transcribe from is a list with a typo in it.
+async function zitiServices(kind, key) {
+  const said = document.getElementById(`ov-${kind}-${key}-said`);
+  said.textContent = "asking the network...";
+  let cap;
+  try {
+    cap = await api(`/v1/overlays/${kind}/services`);
+  } catch (e) {
+    said.textContent = e.message || String(e);
+    return;
+  }
+  if (cap.err) { said.textContent = cap.err; return; }
+
+  const svcs = cap.services || [];
+  if (!svcs.length) {
+    said.textContent = cap.identity
+      ? `${cap.identity} can see no services at all. that is a policy on the network.`
+      : "this identity can see no services.";
+    return;
+  }
+  const who = cap.identity ? `${esc(cap.identity)}: ` : "";
+  // A service this identity can only dial is the common mistake and reads as
+  // "no such service" from the listener, so it is listed and marked rather
+  // than filtered out.
+  const rows = svcs.map(s => s.bind
+    ? `<span class="chip attach" title="click to use this one"
+         onclick="useZitiService('${esc(kind)}','${esc(key)}','${esc(s.name)}')"
+         >${esc(s.name)}</span>`
+    : `<span class="chip" title="this identity can reach this service but not host it"
+         >${esc(s.name)} (dial only)</span>`).join(" ");
+  said.innerHTML = `${who}${cap.bindable} of ${svcs.length} can be hosted.<br>${rows}`;
+}
+
+function useZitiService(kind, key, name) {
+  const el = document.getElementById(`ov-${kind}-${key}`);
+  el.value = name;
+  saveOverlay(kind);
+  document.getElementById(`ov-${kind}-${key}-said`).textContent =
+    `using ${name}.`;
 }
 
 // Reserves the name typed in the field, then puts back what zrok agreed to.

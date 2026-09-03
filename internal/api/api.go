@@ -88,6 +88,12 @@ type Server struct {
 	// ReserveName holds a zrok name so the board's address survives a restart.
 	// Returns the name selection to configure the share with.
 	ReserveName func(namespace, name string) (string, error)
+	// Capabilities asks a ziti network what this identity may bind, so
+	// "is this going to work" is answerable without pressing start.
+	Capabilities func() any
+	// SetApiEndpoint points this machine at a zrok instance other than the
+	// public one. Empty puts it back on zrok's default.
+	SetApiEndpoint func(endpoint string) error
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -142,6 +148,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
 	if s.ReserveName != nil {
 		mux.HandleFunc("POST /v1/overlays/zrok/reserve", s.reserveName)
+	}
+	if s.SetApiEndpoint != nil {
+		mux.HandleFunc("POST /v1/overlays/zrok/endpoint", s.setApiEndpoint)
+	}
+	if s.Capabilities != nil {
+		// A GET that talks to a controller. Slow enough to be worth its own
+		// press rather than riding the overlay poll, which runs every time the
+		// gear opens.
+		mux.HandleFunc("GET /v1/overlays/ziti/services", s.zitiServices)
 	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)

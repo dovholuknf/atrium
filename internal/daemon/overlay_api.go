@@ -60,6 +60,13 @@ func (d *Daemon) overlayViews() any {
 	zrokCfg := d.zrokConfig()
 	zitiCfg := d.zitiConfig()
 	env := zrokEnv()
+	// An enabled environment records the instance it was enabled against. A
+	// machine that is not enabled yet has none, and that is exactly when
+	// somebody needs to see and change where enabling will point, so the
+	// configured endpoint is filled in from zrok's own resolution instead.
+	if env.ApiEndpoint == "" {
+		env.ApiEndpoint, env.ApiEndpointFrom = d.ZrokApiEndpoint()
+	}
 	id := zitiEnrolment(zitiCfg.Identity)
 
 	return []OverlayView{

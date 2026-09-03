@@ -36,6 +36,11 @@ type ZrokEnv struct {
 	// because a token from one instance does not work on another, and that is
 	// otherwise an opaque failure.
 	ApiEndpoint string `json:"api_endpoint,omitempty"`
+	// ApiEndpointFrom is where that value came from when this machine is not
+	// enabled: a config file, an environment variable, or zrok's built-in
+	// default. Worth showing, because "the public service, because nobody said
+	// otherwise" and "the instance you configured" look identical otherwise.
+	ApiEndpointFrom string `json:"api_endpoint_from,omitempty"`
 	// HasAccountToken reports that a token is present WITHOUT reading it out.
 	// The value is a credential and the board has no reason to hold one.
 	HasAccountToken bool `json:"has_account_token"`

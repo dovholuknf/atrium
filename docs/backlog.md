@@ -82,46 +82,52 @@ So the work splits:
 The line stays the same either way: atrium may start the flow and report what came back, and it never holds an
 identity, proxies traffic, or decides who may connect.
 
-### The overlay settings pages need reorganising, and zrok needs three more things
+### NetFoundry front door as a third overlay
 
-Four separate items that landed together because they are all the same screen.
+Named as a want alongside the zrok and OpenZiti work and not specified. It needs its own entry once the shape
+is known: whether it is a distinct overlay beside the other two, or a way of configuring one of them.
 
-- **Accordions rather than everything at once.** Both overlays show every field all the time, and most of them
-  are not being changed. Collapsed by default, expanded to configure, with the state that matters (running,
-  the address) visible while collapsed. This gets worse with every option added, and there are several below.
-- **SDK or binary, as a toggle.** zrok is driven through the embedded SDK, and the binary path is still shown as
-  though it were the primary answer. It should be a switch that says the SDK is the usual answer and the
-  executable is the fallback, rather than a path field with no explanation of when it is used.
-- **Pointing zrok at another instance.** The API endpoint is assumed to be the public one. Somebody running
-  their own zrok needs to point at it, and there is nowhere to say so.
-- **A link to where you sign up.** The public zrok infrastructure needs an account, and the board asks for a
-  token without saying where a token comes from.
+Everything around it is now in place to make that cheap. `OVERLAY_UI` is a table of fields per overlay, the
+card renders from it, and a field can carry an action button, so a third entry is an entry rather than a branch
+through the rendering.
 
-NetFoundry front door is named as a related want and is not specified here. It needs its own entry once the
-shape is known.
+The four items that used to sit here are done: the configuration is an accordion, zrok can be pointed at
+another instance, the sign-up link is on the setup block, and the "SDK or binary as a toggle" item turned out
+to be the wrong shape. There is no toggle to build, because there is no choice: sharing is ALWAYS the embedded
+SDK for both overlays, and the executable is used only by `zrok enable` and `zrok disable`. What that item was
+really pointing at was a lie in the interface, which is fixed: a machine that is already enabled now shares
+with no executable anywhere instead of reporting the whole overlay as "not installed".
 
 ### The overlay lifecycle stops short of setting anything up
 
 Atrium can drive a zrok share or a ziti tunneler you already configured. It cannot get you to that point, and
 that is the half a human actually needs. See `docs/overlays.md` for what exists.
 
-Missing for zrok, roughly in the order somebody hits them:
+Most of this is now built. What remains:
 
-- No environment check. `zrok status` says whether this machine is enabled, and atrium never asks. Starting a
-  share on an unenabled environment fails with zrok's own message rather than "you are not enabled yet".
-- No path to getting enabled. The answer is `zrok invite`, then an emailed token, then `zrok enable <token>`.
-  Atrium should recognise the state and walk it, rather than leaving somebody to find the docs.
-- No `zrok reserve`. A reserved token is how an address survives a restart, and today it has to be created at a
-  terminal and pasted in.
+- **No service, config or policy creation for OpenZiti.** This one is correct to leave out: a network somebody
+  administers is not one a board should be editing. Listed so nobody adds it thinking it was an oversight.
+- **Enabling zrok still runs the executable.** `zrok enable` and `zrok disable` are shelled out, and they are
+  the only two things that are. Sharing is entirely the embedded SDK. Whether enabling has an SDK equivalent
+  worth using has not been checked, and until it is, a machine with no zrok on its PATH can share but cannot
+  be set up or torn down from the board. The board says so rather than hiding the overlay.
 
-Missing for OpenZiti:
+What got built, and one thing that was wrong for a long time:
 
-- No enrollment. An identity comes from a JWT, and `ziti edge enroll` turns one into the identity file the
-  tunneler wants. Atrium takes the file and has nothing to say about where it comes from.
-- No view of what an identity can bind. The tunneler hosts whatever the network's policies allow, and atrium
-  shows none of it, so "is this going to work" is only answerable by starting it.
-- No service, config or policy creation. This one is probably correct to leave out: a network somebody
-  administers is not one a board should be editing.
+- **`sdk.ShareRequest.Reserved` is read by nothing in zrok.** Atrium set it and it did nothing. Reserving in v2
+  moved onto the NAME: `create name`, then `modify name --reserved`, and `controller/unshare.go` keeps a
+  reserved name when the share is unshared and deletes an ephemeral one. So the share must still be released on
+  stop, which is what frees the ziti resources, and the name is what survives. A private share reaches the same
+  place differently: its token is requested rather than owned, so releasing it puts the token back on the shelf
+  for the next start to ask for again.
+- Reserving a name from the board, both steps behind one button, since a name that exists but is ephemeral
+  fails identically to one that was never created.
+- What a ziti identity may bind, asked of the controller. A service that does not exist and one this identity
+  may only dial both come back from the listener as a refusal, and this is the only way to tell them apart
+  without pressing start. Bindable services are clickable.
+- Pointing zrok at another instance, written before enabling rather than after, because enabling talks to
+  whatever it names.
+- The configuration folded into an accordion, open while there is something to do in it.
 
 The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
 runner discovery already does this and is the model.
