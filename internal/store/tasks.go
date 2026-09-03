@@ -5,30 +5,43 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
 
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
-	external_id, resume_id, branch, window_name, gated, auto_approve`
+	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
-		t            Task
-		waiting      sql.NullString
-		wire         sql.NullString
-		created, act string
-		overrides    string
-		gated, auto  int
+		t             Task
+		waiting       sql.NullString
+		wire          sql.NullString
+		created, act  string
+		overrides     string
+		gated, auto   int
+		tags          string
+		pinned        int
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
-		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto); err != nil {
+		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
+		&tags, &pinned); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
 	t.AutoApprove = auto != 0
+	t.Pinned = pinned != 0
+	// Always a list, never nil, so the board can filter without a guard and
+	// the JSON carries `[]` rather than `null`.
+	t.Tags = []string{}
+	if tags != "" {
+		if err := json.Unmarshal([]byte(tags), &t.Tags); err != nil {
+			return nil, fmt.Errorf("task %s tags: %w", t.ID, err)
+		}
+	}
 	var err error
 	if t.CreatedAt, err = parseTS(created); err != nil {
 		return nil, fmt.Errorf("task %s created_at: %w", t.ID, err)
@@ -138,12 +151,13 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		Runner: obs.Runner, Hostname: obs.Hostname, PID: obs.PID,
 		Status: StatusRunning, CreatedAt: n, LastActivityAt: n,
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,
+		Tags: []string{},
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -467,6 +481,66 @@ func (s *Store) SetAutoApprove(id string, on bool) error {
 			v, ts(now()), id)
 		return err
 	})
+}
+
+// SetTags replaces a card's tags.
+//
+// Replaced rather than merged, because the board sends the whole set and a
+// merge would make removing one impossible.
+//
+// last_activity_at is deliberately NOT touched. Tagging is the operator
+// filing a card, not the session doing anything, and bumping it would move a
+// silent card to the top of an activity-sorted list.
+func (s *Store) SetTags(id string, tags []string) error {
+	clean := NormalizeTags(tags)
+	body, err := json.Marshal(clean)
+	if err != nil {
+		return err
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET tags = ? WHERE id = ?`, string(body), id)
+		return err
+	})
+}
+
+// SetPinned marks a card as a fixture, or stops.
+func (s *Store) SetPinned(id string, on bool) error {
+	return s.guard(func() error {
+		v := 0
+		if on {
+			v = 1
+		}
+		_, err := s.db.Exec(`UPDATE task SET pinned = ? WHERE id = ?`, v, id)
+		return err
+	})
+}
+
+// NormalizeTags puts a set of tags into the one form everything else can rely
+// on: lower case, trimmed, no blanks, no duplicates, in order.
+//
+// Case folding matters more than it looks. "Lab" and "lab" as two groups is
+// the failure this feature would be judged on, and free text means both will
+// be typed.
+func NormalizeTags(in []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, raw := range in {
+		t := strings.ToLower(strings.TrimSpace(raw))
+		// Commas separate tags everywhere else, so one inside a tag would
+		// come back as two after a round trip through any text box.
+		t = strings.ReplaceAll(t, ",", " ")
+		t = strings.Join(strings.Fields(t), " ")
+		if t == "" || seen[t] {
+			continue
+		}
+		if len(t) > 40 {
+			t = t[:40]
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // GatedByWireName reports whether the session calling itself name has joined.

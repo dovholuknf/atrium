@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Tags, and grouping by them.** Grouping read a project out of the worktree path, which answers "what repo"
+  and nothing else. A card is also a support case, a tangent, a pull request or a lab, and none of that is in
+  the path. Tags are free text, because a fixed list would be atrium deciding what kinds of work exist. Lower
+  cased and deduped on the way in, so `Lab` and `lab` cannot become two groups, and the tags already in use are
+  offered when editing so the second card spells one the same way as the first. The group control is now
+  `by project` / `by tag` / `off`. A card with several tags appears under each, which is the one case where a
+  card is in more than one group. `#tag` in the filter means that tag exactly, and clicking a tag on a card
+  filters to it.
+
 - **Getting set up is part of the feature now.** Driving a share you had already configured was the easy half.
   The gear reports which of three states each overlay is in, and offers the next thing rather than a button that
   cannot work: not installed, installed but nothing set up, ready. zrok gets an enable button that takes an

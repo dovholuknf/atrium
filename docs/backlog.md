@@ -42,6 +42,27 @@ Missing for OpenZiti:
 The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
 runner discovery already does this and is the model.
 
+### An editor in the board
+
+Charon (`github.com/Lomchat/charon`) puts a VS Code editor next to its agents, and that is a better idea than
+it first sounds here. Atrium already streams a terminal for a runner it owns, and the gap between watching an
+agent edit a file and reading that file is a context switch to another window.
+
+Not evaluated. The obvious candidate is the Monaco editor, which is what VS Code is built on and which vendors
+as static assets, so it would fit the "vendored rather than from a CDN, because the board has to work offline"
+rule the terminal already follows. Open questions before it is worth planning: what writes back, whether a save
+races the agent editing the same file, and whether a read-only view answers most of the want.
+
+### Every node needs its own configuration
+
+Found while answering how a tenant id gets set. Once there is more than one atrium, the gear stops being
+"settings" and becomes "settings for which node". Hooks, rules, runners and overlays are all per machine, and
+a satellite is exactly the machine somebody is least likely to have a terminal open on.
+
+So the forum needs an inventory view, not just a card list: which nodes exist, which are reachable, and the
+existing configuration screens reachable per node. That is a bigger claim on the board's shape than the routing
+is, and it belongs in the forum work rather than bolted on afterwards.
+
 ### The forum: one board, many machines
 
 Designed and planned, not started. `docs/federation-design-v2.md` for why it is shaped the way it is, and
