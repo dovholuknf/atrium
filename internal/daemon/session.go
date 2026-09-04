@@ -349,6 +349,17 @@ func (d *Daemon) onSession(in SessionEvent) error {
 
 // endedAs is where a card goes when its session is over.
 //
+// ONLY FOR A REAL SESSION END, which means the SessionEnd hook fired and the
+// session said so itself. The reaper must keep using `dead` and does.
+//
+// Tried the other way for an hour and it was wrong twice over. The reaper is a
+// GUESS: no contact, or a pid that has gone, neither of which proves the work
+// is finished. `done` is a claim only a person makes, and `done` is never
+// swept, so a wrong guess files a card permanently and nothing takes it back.
+// Worse, `turnResumed` only revives a card from a waiting state, so a session
+// the reaper was wrong about kept working under a card marked done, showing a
+// live `thinking` badge in the finished column.
+//
 // The difference between `done` and `dead` is whether there is anything left to
 // come back to, and the directory is the evidence:
 //

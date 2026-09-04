@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520"
+     role="img" aria-labelledby="t d">
+  <title id="t">Atrium</title>
+  <desc id="d">A central open hall with an opening in its roof. Rooms around it hold agents,
+    each with a door onto the hall. A person stands in the hall and can see into every room at
+    once. Nothing passes between rooms except through the hall.</desc>
+
+  <!-- Presentation attributes rather than a stylesheet: GitHub sanitizes SVG it
+       serves, and a <style> block is the part most likely to be dropped. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1B2E"/>
+      <stop offset="1" stop-color="#040B14"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E2537"/>
+      <stop offset="1" stop-color="#081726"/>
+    </linearGradient>
+    <linearGradient id="light" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#28C2FF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#00E3B0" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="520" fill="url(#sky)"/>
+
+  <!-- The compluvium: the opening in the roof of a Roman atrium, and the reason
+       the hall is lit at all. Everything below is arranged around it. -->
+  <rect x="330" y="18" width="240" height="10" rx="5" fill="#28C2FF" opacity="0.55"/>
+  <polygon points="330,28 570,28 660,300 240,300" fill="url(#light)"/>
+
+  <!-- The hall. One room, open, that every other room opens onto. -->
+  <rect x="240" y="150" width="420" height="270" rx="14"
+        fill="url(#floor)" stroke="#1C6B5A" stroke-width="2"/>
+  <text x="450" y="196" text-anchor="middle" fill="#8FE8D5"
+        font-family="ui-monospace, Consolas, monospace" font-size="19" letter-spacing="5">ATRIUM</text>
+  <text x="450" y="222" text-anchor="middle" fill="#7C93AC"
+        font-family="ui-monospace, Consolas, monospace" font-size="12">one daemon. one board.</text>
+  <text x="450" y="240" text-anchor="middle" fill="#7C93AC"
+        font-family="ui-monospace, Consolas, monospace" font-size="12">no accounts, no cloud.</text>
+
+  <!-- The person, in the hall rather than in any of the rooms. This is the
+       claim the whole design rests on: you stand in one place and can see into
+       all of them. -->
+  <circle cx="450" cy="322" r="13" fill="#00E3B0"/>
+  <path d="M450 340 L450 380 M450 350 L430 368 M450 350 L470 368 M450 380 L434 404 M450 380 L466 404"
+        stroke="#00E3B0" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+
+  <!-- Four rooms. Each has a door ONTO the hall and no door to any other room:
+       a session reaches another only by way of the hall, which is why the peer
+       bus queues rather than types. -->
+  <g stroke="#1F4E6E" stroke-width="1.6" fill="#0A1B2B">
+    <rect x="40"  y="70"  width="170" height="110" rx="10"/>
+    <rect x="40"  y="300" width="170" height="110" rx="10"/>
+    <rect x="690" y="70"  width="170" height="110" rx="10"/>
+    <rect x="690" y="300" width="170" height="110" rx="10"/>
+  </g>
+
+  <g font-family="ui-monospace, Consolas, monospace" font-size="13" fill="#D7DBE3">
+    <text x="60" y="100">claude</text>
+    <text x="60" y="330">codex</text>
+    <text x="710" y="100">claude</text>
+    <text x="710" y="330">a shell</text>
+  </g>
+  <g font-family="ui-monospace, Consolas, monospace" font-size="11">
+    <text x="60"  y="122" fill="#FFC64D">needs permission</text>
+    <text x="60"  y="352" fill="#8FE8D5">running</text>
+    <text x="710" y="122" fill="#FFC64D">ready</text>
+    <text x="710" y="352" fill="#7C93AC">shelved</text>
+  </g>
+  <g font-family="ui-monospace, Consolas, monospace" font-size="10" fill="#5A6B7D">
+    <text x="60"  y="145">frozen until you answer</text>
+    <text x="60"  y="375">running Bash, 40m</text>
+    <text x="710" y="145">asked you a question</text>
+    <text x="710" y="375">put down on purpose</text>
+  </g>
+
+  <!-- The doorways. Every one of them faces the hall. -->
+  <g stroke="#1C6B5A" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M210 125 L240 125 L240 190"/>
+    <path d="M210 355 L240 355 L240 300"/>
+    <path d="M690 125 L660 125 L660 190"/>
+    <path d="M690 355 L660 355 L660 300"/>
+  </g>
+  <g fill="#00E3B0">
+    <circle cx="240" cy="125" r="4"/>
+    <circle cx="240" cy="355" r="4"/>
+    <circle cx="660" cy="125" r="4"/>
+    <circle cx="660" cy="355" r="4"/>
+  </g>
+
+  <text x="450" y="470" text-anchor="middle" fill="#5A6B7D"
+        font-family="ui-monospace, Consolas, monospace" font-size="12">
+    every agent passes through the same open hall
+  </text>
+  <text x="450" y="494" text-anchor="middle" fill="#3E5165"
+        font-family="ui-monospace, Consolas, monospace" font-size="10.5">
+    a card outlives the process it describes
+  </text>
+</svg>

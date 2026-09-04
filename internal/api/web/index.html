@@ -3607,7 +3607,12 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.da
 // runner with no hooks.
 function activityChip(t) {
   const a = t.activity;
-  if (!a || !a.what || isWaiting(t)) return "";
+  // Nothing a finished card is doing is worth drawing, and drawing it is how a
+  // `thinking` badge ends up in the done column. Activity lives in memory and
+  // outlasts the status change that filed the card, so this is a second line
+  // of defence rather than the fix: whatever put a live session in `done` is
+  // the bug, and this stops it looking like a feature.
+  if (!a || !a.what || isWaiting(t) || over(t) || t.status === "shelved") return "";
   const label = a.what === "tool"
     ? (a.tool ? `running ${esc(a.tool)}` : "running a tool")
     : esc(a.what);
