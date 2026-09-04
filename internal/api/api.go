@@ -178,6 +178,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/intake", s.intake)
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
 	mux.HandleFunc("GET /v1/history", s.history)
+	// Bytes into and out of a card's own directory, and nowhere else. See
+	// docs/file-transfer-design.md.
+	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
+	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)

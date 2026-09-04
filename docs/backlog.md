@@ -249,26 +249,23 @@ that gets used once.
 Related: the detached pty holder in `docs/charon.md` answers the reattach half on POSIX and does nothing for
 Windows, which is the machine this matters on.
 
-### Moving files, and pasting into a session
+### Moving files, and pasting into a session. Built.
 
-Designed in `docs/file-transfer-design.md`. Nothing built.
+`docs/file-transfer-design.md`, steps 1 to 4. Paste and drop on the terminal pane, upload with a computed
+destination, download bounded by `internal/safepath`, which is the containment primitive that did not exist
+and which the design was mostly about discovering the absence of.
 
-Two halves, and the second is the one worth having first:
+What is left:
 
-- **Upload and download.** A file into the working directory, or out of it. Bounded, because a board that will
-  serve any path is a file server with no login in front of it.
-- **Paste from the clipboard into the stream.** Screenshot into a session, which is the common case and the one
-  that has no workaround at all over an overlay. Claude Code accepts images, so this is a paste handler on the
-  terminal pane plus whatever the runner expects on the way in.
-
-**The obvious shortcut is closed, and finding that out is most of what the design bought.** This entry used to
-say the path question was the one `browse.go` already answers. It is not. `browse.go` applies `filepath.Clean`
-to caller input and nothing else: no root, no allow list, no containment, no symlink resolution. There is no
-answer in there to reuse, so the first piece of work is the containment primitive that does not exist yet, and
-everything else waits on it.
-
-The same reading turned up something worth knowing on its own, recorded under "Known gaps" below: a share
-publishes that unbounded listing.
+- **The write precondition.** Step 5. There is no endpoint yet that writes to a caller-named path, so it has
+  nothing to guard. It goes in with the first one, and the design records the one correction to make to
+  Charon's version: an absent hash should be an error, not consent.
+- **`browse.go` is still unbounded.** The primitive exists now and `browse.go` does not use it. That was
+  deliberate: tightening a picker people already use is its own argument with its own answer, and doing it in
+  the same change as a new feature would have hidden it. See "Known gaps".
+- **Nothing outside a card.** Upload and download are per card and rooted at that card's worktree. There is no
+  way to ask atrium for a path that is not below a card, and adding one would build the thing `browse.go`
+  accidentally is.
 
 ### What Charon does that atrium does not
 

@@ -5,6 +5,34 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Paste a screenshot into a session.** The half of file transfer with no workaround at all: the clipboard is
+  on the machine with the browser and the session is on the machine with the daemon, so over an overlay there
+  was simply no way to get an image to an agent. Paste, drop and picker are one pipeline, because whatever
+  gesture produced the bytes, the bytes go to the same place and what comes back is a path the runner opens with
+  its own file tool. No image-specific branch and no base64 inlining, which is why one pipeline covers files of
+  any kind.
+
+  **The path is spliced into the stream and enter is not pressed.** Saying something to a session appends a
+  newline because a message is a complete instruction. A pasted path is a fragment of an instruction somebody is
+  still writing, and submitting it for them is the difference between a helpful paste and a runner that starts
+  working on half a sentence.
+
+  Upload takes **no destination**. The caller names a card and nothing else, and atrium computes where the bytes
+  land, under `.atrium/incoming` in the card's own directory. That is the whole security argument for the first
+  version: a caller-supplied destination needs containment to be right, and a computed one is correct even if
+  containment is wrong, because there is no caller input in the path at all. Download does take a path, and is
+  the first thing in atrium that actually needed the containment primitive.
+
+  **That primitive did not exist**, which is most of what the design bought. `internal/safepath` resolves
+  symlinks on both sides, compares on a separator boundary so `worktree-evil` is not inside `worktree`, folds
+  case on Windows and nowhere else, and resolves a path that does not exist yet as far as it does exist. Each of
+  those is a hole if it is missed and each has a test that is the way it gets missed.
+
+  Two things the tests turned up. The right-to-left override is not a control character, so stripping everything
+  below `0x20` left the oldest trick there is for making an executable look like an image; the whole `Cf`
+  category goes now. And "outside this card" and "no such file" both answer `403`, because two different answers
+  make the endpoint an oracle for what is on the machine.
+
 - **Everything that has ever run here, as its own tab.** `ListArchived` had existed for a while and nothing
   showed it. Cards were being archived off the board and going nowhere anybody could look.
 
