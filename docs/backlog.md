@@ -82,25 +82,26 @@ So the work splits:
 The line stays the same either way: atrium may start the flow and report what came back, and it never holds an
 identity, proxies traffic, or decides who may connect.
 
-### Everything that has ever run here
+### Everything that has ever run here. Done, with one thing still open.
 
-Cards are archived rather than deleted now: a dead one leaves the board after a minute and the row and its whole
-audit log stay. `ListArchived` reads them and nothing yet shows them, which is the gap.
+A `history` tab: every card ever created, on the board or not, searchable, cut by whether it was written up. The
+recap cut is real now that `atrium finish` exists; before that it would have been an empty column.
 
-The view is a list of every session ever started, and the useful cut through it is which ones have a recap and
-which do not. A session that ended with a recap left an account of itself. One that did not is either still
-worth writing up or was never worth starting, and both are worth being able to see.
+Of the three open questions, two have answers:
 
-What is not decided:
+- **How far back** is now a setting, under `housekeeping`. What to put in it is still a judgement nobody has
+  made, and the entry above says why it should not be a default.
+- **Whether an archived card can come back** turned out not to need deciding. The view shows archived and live
+  cards together, so there is nothing an unarchive would let you see that you cannot see already.
 
-- **Where a recap lives.** The `/recap` skill writes markdown into a history root outside atrium, and atrium has
-  never known about it. Options are a path on the card, a scan of that root matched by directory and date, or
-  the recap being posted to atrium when it is written. The last is the only one that cannot silently drift, and
-  it is also the one that needs the skill changed.
-- **Whether an archived card can come back.** Unarchiving is a one-line update and the question is whether it
-  should exist at all: a dead session cannot be resumed by putting its card back.
-- **How far back.** Nothing prunes archived rows today, so this grows forever. That is fine for a long time and
-  not forever, and the answer should be a deliberate age rather than the first number that seems large.
+Still open, and it is the interesting one:
+
+- **Where a recap lives.** There are now two things called a recap. The `/recap` skill writes markdown into a
+  history root outside atrium, and `atrium finish` writes two or three sentences onto a card. Those are
+  different artifacts serving different purposes, and whether one should feed the other is not decided. The
+  options are unchanged: a path on the card, a scan of that root matched by directory and date, or the skill
+  posting to atrium when it writes. The last is still the only one that cannot silently drift, and still the one
+  that needs the skill changed.
 
 ### Actions on a card, written by you. Done.
 

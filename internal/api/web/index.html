@@ -1699,6 +1699,9 @@
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
       <div class="tab" data-view="runners">runners</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"></span></div>
+      <!-- Last, because it answers a question you go looking for rather than
+           one that interrupts you. -->
+      <div class="tab" data-view="history">history</div>
     </nav>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
@@ -1870,6 +1873,35 @@ Exports honour whatever filter is applied.">?</span>
         </div>
       </section>
     </div>
+  </div>
+
+  <!-- Everything that has ever run here.
+       The board answers "what wants me now". This answers "what have I had
+       running", which is a different question and was unanswerable: archived
+       cards were read by nothing, and every list query excludes them on
+       purpose. -->
+  <div id="history" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>everything that has ever run here</span>
+      <span class="help" tabindex="0" data-tip="Every card ever created, newest first, whether it is on the board or not.
+
+A dead card leaves the board after a minute and its whole audit log stays. This is where those went.
+
+The useful cut is which ones left an account of themselves. A session that finished with a recap said what it did. One that did not is either still worth writing up or was never worth starting, and those are worth telling apart.">?</span>
+      <span class="grow"></span>
+      <span class="by" id="h-count"></span>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <input type="text" id="h-q" spellcheck="false" placeholder="search titles, reasons, tags, recaps"
+        style="min-width:22ch;flex:1">
+      <select id="h-recap">
+        <option value="">everything</option>
+        <option value="with">written up</option>
+        <option value="without">never written up</option>
+      </select>
+      <button id="h-more" onclick="moreHistory()" hidden>show more</button>
+    </div>
+    <div id="history-list"></div>
   </div>
 
   <div id="runners" hidden>
@@ -2886,7 +2918,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history"];
 
 function switchView(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
@@ -2894,6 +2926,10 @@ function switchView(name) {
   // The board's toolbar is a sibling of the board rather than a child, so that
   // redrawing the columns does not take the control you just clicked with it.
   document.getElementById("board-bar").hidden = name !== "board";
+  // Fetched when you go there rather than on every poll. It is a question you
+  // go looking for, and a query against a table that only grows has no
+  // business running every few seconds while you are reading something else.
+  if (name === "history") renderHistory(false);
   refresh();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
@@ -8217,6 +8253,81 @@ async function renderRunners() {
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
 }
+
+// ── everything that has ever run here ───────────────────
+//
+// Paged from the start rather than after the first machine that has been
+// running for a year finds out the hard way. Nothing prunes this unless
+// somebody turns pruning on, so it grows forever by design.
+
+let historyShown = 0;
+const HISTORY_PAGE = 100;
+
+async function renderHistory(more) {
+  const host = document.getElementById("history-list");
+  if (!host) return;
+  if (!more) historyShown = 0;
+
+  const q = document.getElementById("h-q").value.trim();
+  const recap = document.getElementById("h-recap").value;
+  let res;
+  try {
+    res = await api(`/v1/history?limit=${HISTORY_PAGE}&offset=${historyShown}` +
+      `&recap=${encodeURIComponent(recap)}&q=${encodeURIComponent(q)}`);
+  } catch (e) { return; }
+
+  const rows = res.tasks || [];
+  historyShown += rows.length;
+  document.getElementById("h-count").textContent = res.total
+    ? `${historyShown} of ${res.total}`
+    : "nothing yet";
+  document.getElementById("h-more").hidden = historyShown >= (res.total || 0);
+
+  const html = rows.map(historyRow).join("");
+  if (more) {
+    host.querySelector(".panel").insertAdjacentHTML("beforeend", html);
+    return;
+  }
+  setHTML(host, rows.length
+    ? `<div class="panel">` + html + `</div>`
+    : `<div class="panel"><div class="empty">nothing matches.</div></div>`);
+}
+
+function historyRow(t) {
+  // Archived is a fact about the card, not a judgement, so it is a quiet mark
+  // rather than a status. A card can be archived and done, or archived and
+  // dead, and the status column already says which.
+  const gone = t.archived_at
+    ? `<span class="by" title="off the board since ${esc(t.archived_at)}">archived</span>` : "";
+  return `<div class="row line" onclick="openTask('${t.id}')" style="cursor:pointer">
+    ${runnerMark(t.runner)}
+    <span class="tool">${esc(t.display_title)}</span>
+    <span class="grow ell" title="${esc(t.recap || t.why || t.worktree || "")}">${
+      esc(t.recap || t.why || t.worktree || "")}</span>
+    ${originChip(t)}
+    ${t.recap
+      ? `<span class="chip recap" title="${esc(t.recap)}">recap</span>`
+      : `<span class="by" title="no account of what this session did">&mdash;</span>`}
+    <span class="chip" title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
+    ${gone}
+    <span class="by" title="${esc(t.created_at)}">${esc(firstSeen(t.created_at))}</span>
+  </div>`;
+}
+
+function moreHistory() { renderHistory(true); }
+
+// Typing searches, with a pause, because every keystroke is a query against a
+// table that only grows.
+let historyTimer = null;
+["h-q", "h-recap"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(() => renderHistory(false), 220);
+  });
+  el.addEventListener("change", () => renderHistory(false));
+});
 
 // ── the actions editor ──────────────────────────────────
 
