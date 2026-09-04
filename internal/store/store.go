@@ -57,6 +57,17 @@ const (
 	EventNotified      = "notified"
 	EventLaunched      = "launched"
 	EventExited        = "exited"
+	// EventCompacted is a session forgetting: Claude Code's PreCompact hook,
+	// which fires as a conversation is about to be summarised into a shorter
+	// one.
+	//
+	// A moment rather than a state, so there is no status and no lane. What it
+	// answers is why an agent stopped knowing something it clearly knew an
+	// hour ago, which is a question that comes up on its own.
+	//
+	// What is deliberately NOT recorded is what was lost. That would mean
+	// reading the transcript, and a per-agent transcript is out of scope.
+	EventCompacted = "compacted"
 )
 
 // ErrHalted is returned by every store call once the store has halted.

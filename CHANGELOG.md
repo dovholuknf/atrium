@@ -5,6 +5,39 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Four more hooks, and a subagent count that was being counted twice.** `docs/hook-coverage-spike.md` listed
+  what was unwired. Three of the four are now wired and the fourth is deliberately left alone.
+
+  `PostToolUseFailure` reports the same thing as `PostToolUse`, because a failed tool and a finished tool mean
+  the same thing to a badge that only says what is running now. It gets its own argument and not its own state:
+  a distinct `tool-failed` would put the tool's problems on a board that answers "what needs me", and a failing
+  tool does not need you until the model gives up and stops.
+
+  `PreCompact` records the moment a session forgot something. A timeline event, not a status, because compaction
+  is a moment and there is nothing for a card to sit in. It answers a question that comes up on its own: why did
+  this agent stop knowing something it clearly knew an hour ago.
+
+  `Notification` is wired filtered, and it filters itself rather than relying on a matcher expression in
+  somebody's settings file. It fires for around a dozen kinds of thing and most of them are not a card wanting a
+  human. An unrecognised kind stays silent on purpose, so a new notification type in a future release does not
+  turn into noise on upgrade. `permission_prompt` is excluded even though it plainly wants a human, because
+  atrium's own gate is what put it on screen.
+
+  `SessionEnd` now reads `reason`. `clear` and `resume` are followed immediately by another start in the same
+  place, so the card no longer dies and comes back a second later. Checked in the hook AND in the daemon, since
+  the daemon cannot assume which version of the hook binary is installed.
+
+  **The bug this turned up:** a `Task` tool call was counted as a subagent starting, which was right when no
+  hook said so. `SubagentStart` is wired now, so a gated session counted every subagent twice. It also leaked,
+  because the count went up when the call was REQUESTED, including when it was then refused, and only
+  `SubagentStop` brings one down. A denied `Task` left a subagent on the card that never existed and would never
+  end. The inference is gone.
+
+  Not wired, and this is the interesting refusal: **the permission gate stays on `PreToolUse`.** The spike
+  recommends moving it to `PermissionRequest` and then says, in as many words, not to write that hook from the
+  document, because two readings of the reference gave two different output shapes and the right one has to be
+  found by dumping a live hook's stdin. That is the one item on the list that cannot be settled by reading.
+
 - **Running the tests no longer deletes the running daemon's address.** Found by noticing the file was gone.
 
   `Run` writes `daemon.json` on start and deletes it on stop, and the delete is guarded on the pid so a daemon

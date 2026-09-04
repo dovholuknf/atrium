@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/daemon"
 )
 
 // A session opening and closing, reported to the board.
@@ -46,7 +48,17 @@ type sessionInput struct {
 	// conversation found". Sent so the daemon can tell the two apart instead
 	// of storing every id it is offered and losing the real one.
 	TranscriptPath string `json:"transcript_path"`
+	// Reason says why a session ended. `clear` and `resume` both mean another
+	// session is starting immediately in the same place, so a card that went
+	// to finished on those would die and be resurrected a second later, which
+	// on the board is a card flickering out of the column you were reading.
+	Reason string `json:"reason"`
+	// Trigger says what caused a compaction: `auto` when the context filled up
+	// on its own, `manual` when somebody asked for it. Recorded and not acted
+	// on, because the interesting part is that it happened.
+	Trigger string `json:"trigger"`
 }
+
 
 func newSession() *cobra.Command {
 	var event, name, hubURL string
@@ -69,7 +81,7 @@ func newSession() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&event, "event", "start", "start or end")
+	c.Flags().StringVar(&event, "event", "start", "start, end or compact")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
 	return c
@@ -94,6 +106,8 @@ func reportSession(hubURL, event, name string) sessionReport {
 		event = "start"
 	case "end", "session-end":
 		event = "end"
+	case "compact", "pre-compact":
+		event = "compact"
 	default:
 		return out
 	}
@@ -101,6 +115,14 @@ func reportSession(hubURL, event, name string) sessionReport {
 	var in sessionInput
 	if raw := readStdin(); len(raw) > 0 {
 		_ = json.Unmarshal(raw, &in)
+	}
+
+	// A clear or a resume is followed immediately by another start in the same
+	// place. Reporting it as an ending makes the card go to finished and come
+	// straight back, which on the board is a card flickering out of the column
+	// you were reading.
+	if event == "end" && !daemon.EndsTheSession(in.Reason) {
+		return out
 	}
 
 	cwd := in.CWD
@@ -132,6 +154,8 @@ func reportSession(hubURL, event, name string) sessionReport {
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
 		"resume":  in.SessionID,
 		"source":  in.Source,
+		"reason":  in.Reason,
+		"trigger": in.Trigger,
 		// Whether there is a conversation behind that id yet. Answered here
 		// rather than in the daemon, because the file is on this machine and
 		// the daemon may not be.

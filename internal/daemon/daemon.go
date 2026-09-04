@@ -349,9 +349,20 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// report. A gated session therefore shows live activity with no activity
 	// hook wired up, at no cost: this call is already being made.
 	d.act.set(task.ID, ActivityTool, tool)
-	if strings.EqualFold(tool, "Task") {
-		d.act.addSubagents(task.ID, 1)
-	}
+	// A `Task` call used to be counted here as a subagent starting. It is not
+	// any more, and removing it fixes two things rather than one.
+	//
+	// It DOUBLE COUNTED. `SubagentStart` is wired now and reports the same
+	// subagent through the activity path, so a gated session with both showed
+	// two for every one.
+	//
+	// It also LEAKED. Nothing decremented it: the count went up when the tool
+	// call was requested, including when the request was then refused, and
+	// only `SubagentStop` ever brings a count down. A denied Task call left a
+	// subagent on the card that had never existed and would never end.
+	//
+	// Inferring a subagent from a tool name was the right thing to do when
+	// there was no hook that said so. There is one now.
 	// The key makes a retry the same question rather than a new one. A daemon
 	// that crashed between recording a decision and answering would otherwise
 	// ask twice, and the second answer would be given against a situation that

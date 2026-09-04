@@ -42,10 +42,51 @@ type SessionEvent struct {
 	// Source is the harness's own word for why the session started, such as
 	// startup, resume or clear. Recorded, not interpreted.
 	Source string `json:"source,omitempty"`
+	// Reason is the harness's word for why a session ENDED. `clear` and
+	// `resume` both mean another session is starting immediately in the same
+	// place, so the card should not die and come back a second later.
+	//
+	// The hook already declines to post those, and this is checked again here
+	// anyway: the daemon cannot assume which version of the hook binary is
+	// installed, and an old one posting an end for a clear would flicker a
+	// card out of the column somebody was reading.
+	Reason string `json:"reason,omitempty"`
+	// Trigger is why a compaction happened: `auto` or `manual`. Recorded and
+	// not acted on. The interesting part is that it happened at all.
+	Trigger string `json:"trigger,omitempty"`
 	// Title and Why are supplied when a session joins by hand, since that is
 	// the one moment someone can say what the session is for.
 	Title string `json:"title,omitempty"`
 	Why   string `json:"why,omitempty"`
+}
+
+// EndsTheSession reports whether a SessionEnd reason is really the end.
+//
+// `clear` and `resume` are both followed immediately by a SessionStart in the
+// same directory, so treating either as a death makes the card go to finished
+// and come straight back, which on the board is a card flickering out of the
+// column you were reading.
+//
+// Everything else, including an unset reason, IS an ending. A runner that says
+// nothing has not claimed the session is continuing, and a card left in
+// running forever is the worse mistake of the two.
+//
+// Exported and used by the hook as well as by the daemon, so the two cannot
+// disagree about what an ending is.
+func EndsTheSession(reason string) bool {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "clear", "resume":
+		return false
+	}
+	return true
+}
+
+// orWord is a fallback for a word a runner did not supply.
+func orWord(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	return s
 }
 
 // handleGate answers the permission hook's question: should this session be
@@ -226,12 +267,36 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 		log.Printf("[atrium] %s left", in.Agent)
 
+	case "compact":
+		// A moment, not a state. The card records that this session forgot
+		// something and stays exactly where it was: nothing about compacting
+		// changes whether it wants a human, and moving it would take a card
+		// out of the column somebody is reading for a reason that is not about
+		// them.
+		if err := d.st.AppendEvent(task.ID, store.EventCompacted, map[string]any{
+			"trigger": in.Trigger,
+		}); err != nil {
+			return err
+		}
+		log.Printf("[atrium] %s compacted its context (%s)", in.Agent, orWord(in.Trigger, "unsaid"))
+
 	case "end":
+		// A clear or a resume is not an ending. Another session starts in the
+		// same place immediately, so treating it as a death makes the card go
+		// to finished and come straight back.
+		//
+		// Checked here as well as in the hook because the daemon cannot assume
+		// which version of the hook binary is installed.
+		if !EndsTheSession(in.Reason) {
+			log.Printf("[atrium] %s is %sing rather than ending, so its card stays",
+				in.Agent, in.Reason)
+			break
+		}
 		// Left behind, the last activity would have the card claiming to run a
 		// tool inside a process that has exited.
 		d.act.forget(task.ID)
 		if err := d.st.AppendEvent(task.ID, store.EventExited, map[string]any{
-			"by": "session hook", "source": in.Source,
+			"by": "session hook", "source": in.Source, "reason": in.Reason,
 		}); err != nil {
 			return err
 		}
