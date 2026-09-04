@@ -444,9 +444,29 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// that do not exist yet. It is recorded under its own name rather than as
 	// `auto`, because "I turned this session loose" and "I turned the whole
 	// board loose" are different answers to give six hours later.
-	if global := d.st.GlobalAuto(); task.AutoApprove || global {
+	//
+	// A deadline is read here rather than enforced by a timer. This is the
+	// only moment auto mode means anything, so it is the only moment worth
+	// asking the clock, and a check made here cannot be missed by a restart.
+	//
+	// A card whose deadline has passed has its flag turned off on the way
+	// through, so the badge on the board stops claiming something that stopped
+	// being true. Lazy on purpose: the state that matters is the answer this
+	// request gets, and the write is bookkeeping that follows it.
+	at := time.Now().UTC()
+	if task.AutoExpired(at) {
+		if err := d.st.SetAutoApprove(task.ID, false); err != nil {
+			log.Printf("[atrium] clearing expired auto mode on %s: %v", task.ID, err)
+		} else {
+			log.Printf("[atrium] auto mode on %s ran out, so it is asking again",
+				task.DisplayTitle())
+			task.AutoApprove, task.AutoUntil = false, nil
+			d.publishTask(task.ID)
+		}
+	}
+	if global := d.st.GlobalAuto(); task.AutoOn(at) || global {
 		by, reason := "auto", autoReason
-		if global && !task.AutoApprove {
+		if global && !task.AutoOn(at) {
 			by, reason = "global-auto", globalAutoReason
 		}
 		if _, err := d.st.DecidePermissionBy(p.ID, "approve", reason, by); err != nil {

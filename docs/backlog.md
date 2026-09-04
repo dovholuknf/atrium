@@ -408,8 +408,9 @@ until the query is known to have covered the range.
   is approved when the session sits inside an allowed folder. A literal `cd /elsewhere && rm x` IS caught,
   because `/elsewhere` is visible in the text. Closing the rest means expanding shell syntax, which is its own
   project and a source of new mistakes. Worth knowing before allowing a folder that matters.
-- **Auto mode has no time limit.** "For the next hour" is the right shape for something meant to be temporary.
-  Today it stays on until switched off, with only the card's `auto` badge as a reminder.
+- ~~**Auto mode has no time limit.**~~ Done. Both switches take one, the button asks how long, and the time left
+  is on the switch. Nothing enforces it: the deadline is read when the chain runs, because a timer that has to
+  fire is a timer that does not fire across a restart. `docs/auto-mode.md`.
 
 ### An agent cannot say it finished
 
