@@ -42,7 +42,7 @@ func newRoot() *cobra.Command {
 	}
 	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon(),
 		newJoin(), newLeave(), newStop(), newLaunch(), newHook(), newSession(), newTurn(),
-		newName(), newFinish(), newPeers(), newTell())
+		newName(), newFinish(), newPeers(), newTell(), newControl())
 	return root
 }
 

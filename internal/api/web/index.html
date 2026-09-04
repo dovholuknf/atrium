@@ -327,7 +327,12 @@
   /* Height from the board, which already accounts for its own padding, rather
      than recomputing it and being taller than the box it sits in. */
   .board .col {
-    flex: 1 1 0; min-width: 268px;
+    /* A basis of 268, not 0. Every column starts at a width a card is
+       readable in, and the weight then divides only the SURPLUS. With a basis
+       of zero the weight divided the whole board, so two against one was two
+       thirds against one third whatever the numbers meant, and the quiet
+       column was squeezed below what its own cards need. */
+    flex: 1 1 268px; min-width: 268px;
     display: flex; flex-direction: column; max-height: 100%;
   }
   .board .col > .cards {
