@@ -19,11 +19,14 @@ func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, co
 	log.SetOutput(logs)
 	t.Cleanup(func() { log.SetOutput(old) })
 
+	dir := t.TempDir()
 	opts := Options{
 		AgentAddr: freePort(t),
 		HumanAddr: freePort(t),
-		DBPath:    filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db")),
+		DBPath:    filepath.ToSlash(filepath.Join(dir, "atrium.db")),
 		LongPoll:  2 * time.Second,
+		// Never the machine's real one. See Options.LocationFile.
+		LocationFile: filepath.Join(dir, "daemon.json"),
 	}
 	if mutate != nil {
 		mutate(&opts)
