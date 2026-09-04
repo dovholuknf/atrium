@@ -119,6 +119,12 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.sweepDead(); err != nil {
 			log.Printf("[atrium] sweeping dead cards: %v", err)
 		}
+		// And deleting the ones old enough that nobody is going to read them.
+		// Off unless configured, because this one destroys the record rather
+		// than moving it off a screen.
+		if err := d.pruneOld(); err != nil {
+			log.Printf("[atrium] pruning old cards: %v", err)
+		}
 		if err := d.reapOnce(); err != nil {
 			if msg := err.Error(); msg != lastErr {
 				log.Printf("[atrium] liveness check: %v", err)

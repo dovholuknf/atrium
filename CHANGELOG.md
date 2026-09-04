@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Pruning on a timer, and the two timers put next to each other.** Sweeping finished columns was a button, so
+  cards accumulated between presses, and archived rows accumulated forever because nothing had ever removed one.
+
+  There are now two settings in the gear under `housekeeping`, deliberately side by side, because they are easy
+  to confuse and the difference is the whole point. **Sweeping archives:** a dead card leaves the board and every
+  word of its audit log stays, which is what answers "what have I had running this week". **Pruning deletes:** the
+  card and its history go, and there is no other copy.
+
+  So sweeping is on by default and pruning is off unless you turn it on, turning it on is confirmed with what it
+  destroys spelled out, and it has an hour floor so a mistyped value cannot become "delete everything that
+  finished". It takes `done` and `dead`. Shelved is refused by the store whatever it is asked, because shelving
+  says the work is coming back. The inbox is left alone too: an offered item nobody started is still work
+  somebody found, and deleting it on a schedule would make the inbox quietly lossy.
+
 - **Auto mode for the next hour.** Both switches take a deadline, and the button asks how long rather than
   whether. Until you turn it off is still there and still means it: a switch that could only be temporary would
   just be a shorter lie about the same thing.

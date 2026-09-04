@@ -18,6 +18,24 @@ import (
 // without asking.
 const SettingGlobalAuto = "global_auto"
 
+// SettingSweepDead is how long a dead card stays on the board before it is
+// ARCHIVED, in seconds. `off` means never, and unset means the default.
+//
+// SettingPruneAfter is how old a finished card has to be before it is DELETED,
+// in seconds. `off`, which is also what unset means, is never.
+//
+// The two are different operations and the difference is the point. Sweeping
+// takes a card off a screen and keeps every word of its history. Pruning
+// destroys that history. One is on by default and the other is off by default
+// for exactly that reason.
+//
+// The keys live here rather than next to the code that reads them, because the
+// HTTP layer has to name them too and it cannot import the daemon.
+const (
+	SettingSweepDead  = "sweep_dead_after"
+	SettingPruneAfter = "prune_after"
+)
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {

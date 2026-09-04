@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Settings that belong to the board rather than to any one card.
@@ -37,7 +41,39 @@ func globalAutoView(s *Server) map[string]any {
 			out["global_auto_seconds"] = int64(left.Seconds())
 		}
 	}
+	// The two housekeeping timers, as whatever is stored. Read as strings
+	// rather than parsed, because `off` is a value and so is a number of
+	// seconds, and the board has to be able to show which one it is.
+	for key, field := range map[string]string{
+		store.SettingSweepDead:  "sweep_dead_after",
+		store.SettingPruneAfter: "prune_after",
+	} {
+		v, err := s.st.Setting(key)
+		if err != nil {
+			continue
+		}
+		out[field] = v
+	}
 	return out
+}
+
+// housekeeping writes one of the two timers.
+//
+// Validated here rather than trusted, because one of them deletes things. A
+// value that is neither `off`, empty, nor a positive number of seconds is
+// refused rather than stored and quietly ignored by the reader, which is how a
+// setting ends up looking on and doing nothing.
+func housekeeping(s *Server, key, value string) error {
+	value = strings.TrimSpace(value)
+	switch value {
+	case "", "off":
+		return s.st.SetSetting(key, "off")
+	}
+	secs, err := strconv.Atoi(value)
+	if err != nil || secs <= 0 {
+		return fmt.Errorf("%s takes a number of seconds or `off`, not %q", key, value)
+	}
+	return s.st.SetSetting(key, value)
 }
 
 // setSettings takes whichever settings are present in the body and leaves the
@@ -49,6 +85,11 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// deadline, which is what this switch did before and still the right
 		// answer for somebody who means it.
 		Minutes int `json:"global_auto_minutes"`
+		// The two housekeeping timers, as strings so that `off` and a number
+		// of seconds are the same field. Pointers, because not mentioning one
+		// and setting it to `off` are different requests.
+		SweepDead  *string `json:"sweep_dead_after"`
+		PruneAfter *string `json:"prune_after"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -89,6 +130,19 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// off in another.
 		s.Broadcast("settings", globalAutoView(s))
 	}
+	for key, value := range map[string]*string{
+		store.SettingSweepDead:  body.SweepDead,
+		store.SettingPruneAfter: body.PruneAfter,
+	} {
+		if value == nil {
+			continue
+		}
+		if err := housekeeping(s, key, *value); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+
 	out := globalAutoView(s)
 	out["drained"] = drained
 	writeJSON(w, http.StatusOK, out)
