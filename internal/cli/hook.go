@@ -32,14 +32,30 @@ const hookTimeout = time.Second
 // them. Named here rather than passed through, so a typo in settings.json is
 // caught by this command instead of being posted and ignored.
 var hookEvents = map[string]string{
-	"tool-start":     "tool-start",
-	"tool-end":       "tool-end",
+	"tool-start": "tool-start",
+	"tool-end":   "tool-end",
+	// A tool that failed also stopped running, and a badge that only says what
+	// is running now cannot tell the difference. Its own argument so that a
+	// registered command can be matched back to the hook that wrote it, and
+	// the same activity event because the card means the same thing.
+	"tool-failed":    "tool-end",
 	"prompt":         "prompt",
 	"subagent-start": "subagent-start",
 	"subagent-end":   "subagent-end",
 	"idle":           "idle",
 	"waiting":        "waiting",
+	// Notification, filtered. Most of what it carries is not a card wanting a
+	// human, so this one decides for itself whether to post at all. See
+	// wantsAHuman.
+	"notification": "waiting",
 }
+
+// notifying names the events whose payload decides whether to post at all.
+//
+// Everything else on the activity path posts unconditionally, which is what
+// makes it cheap. This one cannot: Notification fires for twelve kinds of
+// thing and nine of them would put a card in front of you for no reason.
+const notifying = "notification"
 
 // hookInput is the part of Claude Code's hook payload atrium reads. Everything
 // else in it is ignored, and a payload that will not parse is not an error:
@@ -57,6 +73,46 @@ type hookInput struct {
 	// ToolUseID identifies one tool-use ATTEMPT, which is what a dedup key
 	// wants and what a hash of the command can never be.
 	ToolUseID string `json:"tool_use_id"`
+	// NotificationType says which kind of notification fired. Only the few
+	// that mean a card wants a human are worth a badge. See wantsAHuman.
+	//
+	// Two spellings because the reference and the payload have disagreed
+	// about this field's name, and reading both costs nothing while guessing
+	// wrong costs the whole hook.
+	NotificationType string `json:"notification_type"`
+	Type             string `json:"type"`
+	// Reason says why a session ended. `clear` and `resume` both mean another
+	// one is starting immediately, so the card should not die and come back a
+	// second later.
+	Reason string `json:"reason"`
+}
+
+// wantsAHuman reports whether a notification means a card is waiting on you.
+//
+// Claude Code's Notification hook fires for around a dozen kinds of thing and
+// most of them are not that. Wiring it unfiltered would put a badge on a card
+// for a background message nobody has to answer, and a badge that appears when
+// nothing is wanted is a badge you learn to ignore, which costs the ones that
+// do matter.
+//
+// `permission_prompt` is excluded even though it plainly wants a human,
+// because atrium's own gate is what put that prompt on screen: reporting it
+// back would be the card telling itself something it already knows.
+//
+// An unrecognised type does NOT count. This is a filter whose whole purpose is
+// to be quiet, and a new notification kind arriving in a future release should
+// stay silent until somebody decides it is worth a badge, rather than turning
+// into noise on upgrade.
+func wantsAHuman(in hookInput) bool {
+	kind := strings.ToLower(strings.TrimSpace(in.NotificationType))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(in.Type))
+	}
+	switch kind {
+	case "idle_prompt", "agent_needs_input", "elicitation_dialog":
+		return true
+	}
+	return false
 }
 
 func newHook() *cobra.Command {
@@ -289,12 +345,19 @@ func reportActivity(hubURL, event, name string) {
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
 		return
 	}
-	kind, ok := hookEvents[strings.ToLower(strings.TrimSpace(event))]
+	arg := strings.ToLower(strings.TrimSpace(event))
+	kind, ok := hookEvents[arg]
 	if !ok {
 		return
 	}
 
 	in := readPayload()
+
+	// The one event that decides for itself whether to say anything. Silence
+	// here is the normal case, not a failure.
+	if arg == notifying && !wantsAHuman(in) {
+		return
+	}
 
 	cwd := in.CWD
 	if cwd == "" {

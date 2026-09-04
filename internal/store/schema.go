@@ -573,6 +573,45 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// A session compacting is a thing that happened to it.
+		//
+		// Compaction is the moment a session forgets, and nothing on a card
+		// recorded it. It answers a question that comes up by itself: why did
+		// this agent stop knowing something it clearly knew an hour ago.
+		//
+		// A timeline event and not a status. It is a moment rather than a
+		// state, so there is nothing for a card to sit in and nothing for a
+		// lane to hold.
+		//
+		// This means rebuilding `event` to widen a CHECK, which SQLite cannot
+		// alter in place. Safe here in a way it would not be on `task`:
+		// `event` is a CHILD, nothing references it, so DROP TABLE cascades to
+		// nothing. Same pattern and same reasoning as 0010.
+		//
+		// Worth knowing before adding the next kind: this constraint guards
+		// against a typo in atrium's own code, since no caller ever supplies a
+		// kind, and extending it costs a rebuild of the largest table in the
+		// database. That is a fair price once and a bad habit.
+		name: "0027_event_compacted",
+		stmts: []string{
+			`CREATE TABLE event_rebuilt (
+				id      TEXT PRIMARY KEY,
+				task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+				at      TEXT NOT NULL,
+				kind    TEXT NOT NULL
+				          CHECK (kind IN ('created','submitted','prompted','perm-requested','perm-decided',
+				                          'status-changed','output','notified','launched','exited',
+				                          'compacted')),
+				payload TEXT NOT NULL DEFAULT '{}'
+			)`,
+			`INSERT INTO event_rebuilt (id, task_id, at, kind, payload)
+			 SELECT id, task_id, at, kind, payload FROM event`,
+			`DROP TABLE event`,
+			`ALTER TABLE event_rebuilt RENAME TO event`,
+			`CREATE INDEX IF NOT EXISTS event_task_at ON event (task_id, at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

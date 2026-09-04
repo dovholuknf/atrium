@@ -65,12 +65,34 @@ var WantedHooks = []HookEvent{
 		Why: "which tool a session is running right now"},
 	{Hook: "PostToolUse", Event: "tool-end", Sub: "hook", Arg: "tool-end",
 		Why: "when that tool finished, so the card stops claiming it"},
+	// The same thing to a badge that only says what is running now. A distinct
+	// `tool-failed` state would put the tool's problems on a board that
+	// answers "what needs me", and a failing tool does not need you until the
+	// model gives up and stops, at which point the Stop hook says so.
+	//
+	// Its own Arg rather than reusing `tool-end`, because a registered command
+	// is matched back to a wanted hook by that word and two entries sharing
+	// one would each report the other as installed. The CLI maps it onto the
+	// same activity event, which is where the "they mean the same thing"
+	// decision belongs.
+	{Hook: "PostToolUseFailure", Event: "tool-failed", Sub: "hook", Arg: "tool-failed",
+		Why: "a tool that failed also stops running, so the card stops claiming it"},
 	{Hook: "UserPromptSubmit", Event: "prompt", Sub: "hook", Arg: "prompt",
 		Why: "you answered, so the card leaves needs-input"},
 	{Hook: "SubagentStart", Event: "subagent-start", Sub: "hook", Arg: "subagent-start",
 		Why: "the subagent count going up"},
 	{Hook: "SubagentStop", Event: "subagent-end", Sub: "hook", Arg: "subagent-end",
 		Why: "and coming back down"},
+	// Notification carries twelve kinds of thing and nine of them are board
+	// noise. The filtering is in the CLI rather than in a matcher here,
+	// because what counts as "wants a human" is a judgement atrium makes and a
+	// matcher expression in someone's settings.json is a worse place to keep
+	// one than a switch statement with a comment.
+	{Hook: "Notification", Event: "waiting", Sub: "hook", Arg: "notification",
+		Why: "the session put a question on screen and is waiting on it"},
+	// A moment, not a state. See store.EventCompacted.
+	{Hook: "PreCompact", Event: "compacting", Sub: "session", Arg: "compact",
+		Why: "the card records the moment this session forgot something"},
 	{Hook: "Stop", Event: "turn-end", Sub: "turn", Arg: "end",
 		Why:      "a message reaches a session that is sitting idle, and the card moves to needs-input",
 		Optional: true,

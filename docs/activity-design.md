@@ -30,6 +30,13 @@ So status stays a column and activity becomes a badge on the card.
 
 Alongside it, a count of live subagents. `SubagentStart` takes the count up and `SubagentStop` takes it down.
 
+**A `Task` tool call used to take it up as well, and no longer does.** That was the right thing when no hook
+said so, and it was wrong in two ways once one did. It double counted, because `SubagentStart` reports the same
+subagent through the activity path, so a gated session with both wired showed two for every one. And it leaked:
+the count went up when the tool call was REQUESTED, including when the request was then refused, and only
+`SubagentStop` ever brings a count down, so a denied `Task` left a subagent on the card that never existed and
+would never end.
+
 ## Never stored
 
 Activity lives in a map in the daemon and dies with the process.
@@ -54,7 +61,8 @@ instead of looking the same as any other running card.
 `POST /activity` on the agent-facing listener, from the hooks:
 
 ```json
-{ "agent": "string", "task_id": "string", "event": "tool-start|tool-end|prompt|subagent-end|idle", "tool": "Bash" }
+{ "agent": "string", "task_id": "string",
+  "event": "tool-start|tool-end|prompt|subagent-start|subagent-end|idle|waiting", "tool": "Bash" }
 ```
 
 Answered immediately with `{"ok":true}`. The daemon writes the response before it does any bookkeeping, so a

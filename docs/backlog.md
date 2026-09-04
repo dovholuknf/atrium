@@ -430,9 +430,27 @@ The hook wiring is Claude Code's shape: `settings.json`, and the event names in
 Nothing about the daemon side is claude-specific. `/activity` and `/session` take an agent name and an event, so
 a second harness needs a writer next to `claudeconf` and its own entry in the wanted list, not a new endpoint.
 
-Also unverified and worth checking before building against it: Claude Code's hook list has reportedly grown to
-include `Setup`, `UserPromptExpansion`, `PermissionDenied` and `PostToolBatch`. None of those are wired, and none
-have been confirmed from the docs rather than from a summary of them.
+**The Claude Code side is now as wired as it can be without a live probe.** `PostToolUseFailure`, `PreCompact`
+and `Notification` are in, the last one filtering itself. `SessionEnd` reads its reason. What is left is one
+item and it is a real blocker rather than a gap:
+
+- **Moving the gate from `PreToolUse` to `PermissionRequest`.** `docs/hook-coverage-spike.md` recommends it and
+  the argument is strong: it fires only when a decision is actually needed, which retires the hardcoded skip
+  list and the 134 imported rules that exist to buy back the silence the harness already provides. It also
+  carries `tool_use_id`, and the payload keeps `tool_input`, so the diff survives.
+
+  It is not built because the spike says not to build it from the document. Two readings of the reference gave
+  two different output shapes for what the hook prints, flat and nested, and the correct one has to be found by
+  emitting a probe hook that dumps its stdin against a live session. That is a thing to do at a keyboard, not
+  from a summary. The staging the spike proposes is right: wire it alongside the existing gate and log both for
+  a day, confirm the diff still renders for `Edit`, `Write` and `MultiEdit`, then decide edit-then-approve
+  explicitly, since `PermissionRequest` has no `updatedInput` and leaving a dead field on the board is the one
+  dishonest option.
+
+Also unverified and named for completeness: `Setup`, `UserPromptExpansion`, `PermissionDenied`, `PostToolBatch`
+and `StopFailure`. The spike argues against `PermissionDenied` and `MessageDisplay` outright, is undecided on
+`PostToolBatch` until somebody finds out whether it replaces or supplements the per-call events, and thinks
+`StopFailure` is worth its own look because `error_type` separates "wants you" from "wants time".
 
 ### Governed calls from sterling
 
