@@ -105,6 +105,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
+	d.ap.RunSource = d.RunSourceNow
 	d.ap.CancelPending = d.CancelPending
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
@@ -550,6 +551,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// The commands that find work. Its own loop rather than the reap ticker,
+	// because a source runs on the interval its own row names and the reaper
+	// asks one question at one rate. Nothing here can halt anything: intake is
+	// a suggestion, and a source that fails says so on its row.
+	go d.sourceLoop(ctx)
 	// Terminals that come up with the daemon. In the background, so a runner
 	// that is slow to start cannot delay the board answering: a board that is
 	// not up yet looks like a hang, a terminal that is not open yet does not.

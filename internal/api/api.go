@@ -38,6 +38,14 @@ type Server struct {
 	Launch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
+	// RunSource runs one intake source now rather than on its interval, and
+	// reports how many new items it produced. Owned by the daemon, which owns
+	// process spawning.
+	//
+	// The error it returns is the source's, not the request's: a source that
+	// failed to start is a 200 saying so, because the request worked and the
+	// answer is the failure.
+	RunSource func(id string) (int, error)
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -165,6 +173,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
 	mux.HandleFunc("POST /v1/intake", s.intake)
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
+	mux.HandleFunc("GET /v1/sources", s.listSources)
+	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
+	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)
+	mux.HandleFunc("POST /v1/sources/{id}/run", s.runSourceNow)
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)

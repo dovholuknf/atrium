@@ -535,6 +535,44 @@ var migrations = []struct {
 			   ON task(intake_key) WHERE intake_key <> ''`,
 		},
 	},
+	{
+		// A source is a command on a timer whose stdout is intake items.
+		//
+		// Shaped like `harness` on purpose, and for the same reason. A harness
+		// row says how to start a runner without atrium knowing what claude
+		// is. A source row says how to find work without atrium knowing what
+		// GitHub is. Atrium holds an argv and an interval; `gh` holds the
+		// token, in the keyring it already uses.
+		//
+		// That is the rule docs/intake-design.md states and this is what
+		// enforces it: there is nowhere in this table to put a credential.
+		//
+		// The failure bookkeeping is three columns rather than a log, because
+		// what the operator needs is on the row: when it last ran, what it
+		// said when it broke, and how many times in a row. A source that has
+		// failed three times running is switched off with the reason still
+		// attached, since a source retrying forever against a script somebody
+		// deleted is a daemon spawning a process every fifteen minutes to
+		// produce the same error nobody is reading.
+		name: "0026_source",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS source (
+				id            TEXT PRIMARY KEY,
+				label         TEXT NOT NULL DEFAULT '',
+				enabled       INTEGER NOT NULL DEFAULT 0,
+				cmd           TEXT NOT NULL,
+				args          TEXT NOT NULL DEFAULT '[]',
+				cwd           TEXT NOT NULL DEFAULT '',
+				interval_secs INTEGER NOT NULL DEFAULT 900,
+				last_run_at   TEXT NOT NULL DEFAULT '',
+				last_error    TEXT NOT NULL DEFAULT '',
+				last_count    INTEGER NOT NULL DEFAULT 0,
+				failures      INTEGER NOT NULL DEFAULT 0,
+				notes         TEXT NOT NULL DEFAULT '',
+				created_at    TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

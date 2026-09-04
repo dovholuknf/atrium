@@ -111,3 +111,81 @@ func (s *Server) listOffered(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": toViews(tasks)})
 }
+
+// The sources: commands atrium runs on a timer to find work.
+//
+// Configuration and reporting only. Atrium holds an argv and an interval, and
+// the settings screen has to say what that means: a source is a command run as
+// the daemon's user with the daemon's environment, which is exactly as trusted
+// as a harness and no more.
+
+func (s *Server) listSources(w http.ResponseWriter, r *http.Request) {
+	sources, err := s.st.Sources()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if sources == nil {
+		sources = []*store.Source{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
+}
+
+func (s *Server) saveSource(w http.ResponseWriter, r *http.Request) {
+	var src store.Source
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&src); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	src.ID = r.PathValue("id")
+	saved, err := s.st.SaveSource(src)
+	if err != nil {
+		if halted, _ := s.st.Halted(); halted {
+			s.fail(w, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	s.Broadcast("sources", saved)
+	writeJSON(w, http.StatusOK, saved)
+}
+
+// deleteSource removes a source. The cards it raised stay, because they are
+// work, and deleting the thing that found it does not make it not work.
+func (s *Server) deleteSource(w http.ResponseWriter, r *http.Request) {
+	if err := s.st.DeleteSource(r.PathValue("id")); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.Broadcast("sources", map[string]string{"removed": r.PathValue("id")})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// runSource runs one now, without waiting for its interval.
+//
+// The reason this exists is that a source is a script somebody just wrote, and
+// the question they have is whether it works. Waiting fifteen minutes to find
+// out that a path was wrong is how a feature goes unused.
+//
+// It answers with what happened rather than just accepting, because "it ran
+// and found nothing" and "it ran and could not start" are the two answers and
+// they need telling apart.
+func (s *Server) runSourceNow(w http.ResponseWriter, r *http.Request) {
+	if s.RunSource == nil {
+		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no scheduler wired"))
+		return
+	}
+	created, runErr := s.RunSource(r.PathValue("id"))
+	src, err := s.st.SourceByID(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.Broadcast("sources", src)
+	out := map[string]any{"created": created, "source": src}
+	if runErr != nil {
+		out["error"] = runErr.Error()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
