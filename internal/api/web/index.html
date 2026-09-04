@@ -4311,11 +4311,43 @@ function originChip(t) {
   if (!t.source && !t.external_id && !t.url) return "";
   const label = t.external_id || t.source || "link";
   const title = [t.source, t.external_id, t.url].filter(Boolean).join(" ");
-  if (!t.url) {
+  const href = inertURL(t.url);
+  if (!href) {
+    // Either there is no url, or there is one that is not safe to make
+    // clickable. Both render as text: the identifier is still worth showing
+    // and the value is still visible on hover.
     return `<span class="chip origin" title="${esc(title)}">${esc(label)}</span>`;
   }
-  return `<a class="chip origin" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer"
+  return `<a class="chip origin" href="${esc(href)}" target="_blank" rel="noopener noreferrer"
       title="${esc(title)}" onclick="event.stopPropagation()">${esc(label)}</a>`;
+}
+
+// A url that is safe to put in an href, or empty.
+//
+// Escaping protects the ATTRIBUTE and does nothing about the SCHEME.
+// `javascript:alert(1)` survives HTML escaping intact, and clicking it runs in
+// the board's own context, where the settings, the grouping expression and
+// every card live.
+//
+// This matters here specifically because intake data comes from outside. A
+// source is a script reading GitHub or Zendesk, and its output becomes a link
+// on a card. That is data from an external system rendered as something
+// clickable, which is the stored-XSS shape however single-user the board is.
+//
+// An allow list, not a deny list. `javascript:` and `data:` are the two
+// everybody thinks of and neither is the point: the point is that the set of
+// schemes a browser will execute is not a set this code gets to enumerate.
+function inertURL(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  try {
+    // Resolved against the page, so `/x` and `./x` work and a bare word does
+    // not silently become a scheme.
+    const u = new URL(value, location.href);
+    return (u.protocol === "http:" || u.protocol === "https:") ? u.href : "";
+  } catch (e) {
+    return "";
+  }
 }
 
 // Types a tag into the stack's search box, which already filters on it.

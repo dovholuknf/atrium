@@ -64,10 +64,30 @@ func uploadTarget(t *store.Task) (string, error) {
 		return "", fmt.Errorf("%s is not a directory on this machine", t.Worktree)
 	}
 	dir := filepath.Join(root, filepath.FromSlash(incomingDir))
+
+	// Checked BEFORE it is created, not after.
+	//
+	// The path is computed and has no caller input in it, which is what makes
+	// the rest of this safe, and that is not enough on its own: if `.atrium`
+	// already exists as a symlink or a junction pointing somewhere else, then
+	// creating `incoming` under it makes a directory outside the card before
+	// anything has refused anything. Resolving first and creating second is
+	// the whole difference, and getting it backwards would undercut the
+	// containment primitive on the first endpoint built around it.
+	if _, err := safepath.Contained(root, dir); err != nil {
+		return "", fmt.Errorf("%s does not resolve inside this card's directory, "+
+			"so nothing will be written there: %w", incomingDir, err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	return dir, nil
+	// And again once it exists, because MkdirAll resolves symlinks it did not
+	// create and the answer before and after are not guaranteed to agree.
+	real, err := safepath.Contained(root, dir)
+	if err != nil {
+		return "", err
+	}
+	return real, nil
 }
 
 // uploadFiles takes bytes and puts them where the card can reach them.
@@ -193,13 +213,18 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 
 	real, err := safepath.Contained(filepath.FromSlash(task.Worktree), want)
 	if err != nil {
-		// One status for "outside" and for "does not exist", so this cannot be
-		// used to find out what is on the machine outside the card.
+		// Everything OUTSIDE the card answers the same, whether or not it is
+		// there, so this cannot be used to find out what is on the machine.
+		// The error is the constant rather than the one that came back, since
+		// a resolution failure and a refusal must not read differently.
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
 		return
 	}
 	fi, err := os.Stat(real)
 	if err != nil {
+		// Inside the card and not there. A different answer on purpose, and it
+		// leaks nothing: anyone who can ask this can already see that
+		// directory.
 		writeErr(w, http.StatusNotFound, errors.New("no such file"))
 		return
 	}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"strings"
 )
 
@@ -51,6 +52,36 @@ type IntakeItem struct {
 	Runner string `json:"runner"`
 }
 
+// SafeURL keeps a link that a browser can be given, and drops one it cannot.
+//
+// Only `http` and `https`. Anything else comes back empty, and the card shows
+// the identifier as text instead.
+//
+// This is here rather than only in the board because of where the data comes
+// from. A source is a script reading GitHub or Zendesk, and whatever it prints
+// becomes a link on a card. HTML escaping protects the ATTRIBUTE and does
+// nothing about the SCHEME: `javascript:alert(1)` survives escaping intact and
+// runs in the board's own context, where the settings, the grouping expression
+// and every card live. The board checks too, and both checks are cheap.
+//
+// An allow list rather than a deny list, because the set of schemes a browser
+// will act on is not a set this code gets to enumerate.
+func SafeURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	u, err := neturl.Parse(value)
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return value
+	}
+	return ""
+}
+
 // IntakeKey is the canonical deduplication key for an item.
 //
 // Canonicalized here and nowhere else, so that two scripts spelling it
@@ -80,7 +111,7 @@ func IntakeKey(source, externalID string) string {
 func (it *IntakeItem) Normalize() error {
 	it.Source = strings.ToLower(strings.TrimSpace(it.Source))
 	it.ExternalID = strings.TrimSpace(it.ExternalID)
-	it.URL = strings.TrimSpace(it.URL)
+	it.URL = SafeURL(it.URL)
 	it.Title = strings.TrimSpace(it.Title)
 	it.Why = strings.TrimSpace(it.Why)
 	it.SuggestedCwd = strings.TrimSpace(it.SuggestedCwd)
