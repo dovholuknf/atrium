@@ -253,7 +253,18 @@ Claude Code takes input while it is thinking, so the send is less urgent than it
 ordering: three notes queued during a long turn, sent as one instruction at the end, rather than three
 interruptions in the middle.
 
-### Popping a terminal out, and putting it back
+### Popping a terminal out, and putting it back. Built.
+
+**Shipped.** A terminal opens in its own window as the same page in terminal-only mode, addressed by
+`#term=<id>`. The title bar carries the whole address and an alert mark, which is the point: alt-tab is what
+this competes with and a title bar is what alt-tab shows. The window subscribes to its own card only, claims it
+over a `BroadcastChannel` so the board holds back the duplicate desktop notification, remembers its size per
+card, and closes itself when its runner exits. `switchView` refuses anything but the terminal while popped out.
+
+What is still open from the original ask: **putting it back.** Closing the window detaches; there is no gesture
+that moves a session from a window into the board's pane without going through the terminals tab.
+
+Handing the session to Windows Terminal remains out of reach for the reason below, and that has not changed.
 
 Every supervised terminal lives inside the board's terminal view, which means finding a session is a click into
 an app and then a click onto a tab. The habit it competes with is alt-tab, which is faster and which nothing
@@ -358,6 +369,15 @@ federation transport, a second durable event store on the agent side, holding pr
 the authentication.
 
 ### An editor in the board
+
+**Half of this is answered, and not by an editor.** `POST /v1/tasks/{id}/files/open` runs a configured command
+on the machine the daemon is on, which is the machine the agent is editing. Off until configured, never handed
+to a shell, path resolved through `internal/safepath` first. So "read the file the agent just changed" is one
+press from the terminal bar, in the editor already installed, with no editor to build or vendor.
+
+What that does NOT answer: reading a file when the board is somewhere else. Over an overlay the editor opens on
+the far machine, where nobody is sitting. That case still wants a view in the browser, and the open question
+below stands: whether read-only answers most of the want.
 
 Charon (`github.com/Lomchat/charon`) puts an editor next to its agents, and that is a better idea than it first
 sounds here. Atrium already streams a terminal for a runner it owns, and the gap between watching an agent edit

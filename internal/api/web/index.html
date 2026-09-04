@@ -220,54 +220,76 @@
   }
   #stack > .filters { flex: 0 0 auto; }
   #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
-  /* The board's own scrollbar, on the four boxes that scroll.
-     Each arrived as the operating system's grey strip, which on a dark board is
-     the one part of it that is not the board.
+  /* ── scrollbars ─────────────────────────────────────── */
+  /* EVERY scrollbar on the board, in one rule, with one carve-out.
+     Written universally on purpose. This page has twenty-odd boxes that can
+     scroll: the stack, the perms list, the runners page, each board lane, the
+     file lists, the session switcher, every dialog body, the overlay log,
+     every wide code block, the nav on a narrow window. Styling them by name
+     meant styling the five somebody had noticed, and the sixteenth arrived as
+     the operating system's grey strip, which on a dark board is the one part
+     of it that is not the board. A new scrolling box should inherit this
+     without anybody remembering to come back here.
 
-     NOT the terminal. `#t-screen` and everything under it are off limits: the
-     xterm fit addon measures its own viewport's scrollbar to decide how many
-     columns fit, so any rule that changes that measurement makes it draw rows
-     wider than the box and the text runs under the bar. That is written up at
-     `.xterm-viewport` below and it is the reason these selectors name their
-     four targets rather than saying "anything that scrolls".
+     THE CARVE-OUT IS THE WHOLE TERMINAL, AND IT IS `#t-screen *`, NOT
+     `.xterm-viewport`. Read this before narrowing it.
 
-     `padding-right` reserves room for the bar, which is drawn INSIDE the
-     padding box: without it a row's right border sits under the bar and the
-     two mush together. No negative margin to claim the space back, because
-     `main` clips, so a box wider than main loses exactly the strip the bar is
-     in and the last of the content with it.
+     Two separate reasons, and getting one right is not enough:
 
-     Firefox takes the two `scrollbar-*` properties and nothing else; Chromium
-     takes the pseudo elements. Both are set, neither is a fallback. */
-  #stack-list,
-  main > #perms,
-  main > #runners,
-  .board .col > .cards {
-    scrollbar-width: thin;
-    scrollbar-color: var(--stroke-dim) transparent;
-    padding-right: 12px;
-  }
-  #stack-list::-webkit-scrollbar,
-  main > #perms::-webkit-scrollbar,
-  main > #runners::-webkit-scrollbar,
-  .board .col > .cards::-webkit-scrollbar { width: 10px; }
-  #stack-list::-webkit-scrollbar-track,
-  main > #perms::-webkit-scrollbar-track,
-  main > #runners::-webkit-scrollbar-track,
-  .board .col > .cards::-webkit-scrollbar-track { background: transparent; }
-  #stack-list::-webkit-scrollbar-thumb,
-  main > #perms::-webkit-scrollbar-thumb,
-  main > #runners::-webkit-scrollbar-thumb,
-  .board .col > .cards::-webkit-scrollbar-thumb {
+       1. The fit addon works out how many columns fit by MEASURING its
+          viewport's scrollbar. Anything that changes that width makes xterm
+          draw rows wider than the box and the text runs underneath the bar.
+       2. xterm renders five elements, not one. `.xterm`, `.xterm-viewport`,
+          `.xterm-screen`, the canvases, and `textarea.xterm-helper-textarea`,
+          which is a 20x20 box parked at the cursor. Excluding the viewport by
+          name left the other four inside a universal rule, and one of them
+          answered it with a second scrollbar down the right of the terminal,
+          beside xterm's own.
+
+     So the exclusion is the SUBTREE. Nothing under `#t-screen` gets a
+     scrollbar from this board; xterm owns its own geometry completely, and the
+     only thing set on it is at `.xterm-viewport` further down.
+
+     `scrollbar-color` only paints and cannot move anything, so it is set on
+     `html` and inherits everywhere, the terminal included, which is what the
+     terminal already asked for.
+
+     Firefox reads the two `scrollbar-*` properties and ignores the pseudo
+     elements; Chromium is the other way round. Both are set. Neither is a
+     fallback for the other.
+
+     `:where()` rather than a bare `:not()`, and that is load-bearing. A
+     universal rule is a DEFAULT, so it has to lose every argument: three
+     places hide their bar on purpose with `scrollbar-width: none`, and a plain
+     `*:not(.xterm-viewport)` carries the specificity of the class inside it
+     and would have out-ranked all of them. `:where()` scores zero, so anything
+     with an opinion still wins. */
+  html { scrollbar-color: var(--stroke-dim) transparent; }
+  *:where(:not(#t-screen, #t-screen *)) { scrollbar-width: thin; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar { width: 10px; height: 10px; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-track { background: transparent; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb {
     background: var(--stroke-dim); border-radius: var(--r-pill);
     /* Inset by a transparent border, so the thumb reads as a slim pill in a
        gutter rather than as a block filling the channel. */
     border: 2px solid transparent; background-clip: padding-box;
   }
-  #stack-list:hover::-webkit-scrollbar-thumb,
-  main > #perms:hover::-webkit-scrollbar-thumb,
-  main > #runners:hover::-webkit-scrollbar-thumb,
-  .board .col > .cards:hover::-webkit-scrollbar-thumb { background-color: var(--stroke); }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb:hover {
+    background-color: var(--stroke);
+  }
+  /* Both bars meet in the corner on a box that scrolls two ways. Left alone it
+     is a light square that belongs to no theme. */
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Room for the bar on the boxes whose content reaches their right edge.
+     A scrollbar is drawn INSIDE the padding box, so without this a row's
+     border sits under it and the two mush together. Not a negative margin to
+     claim the space back: `main` clips, so a box wider than main loses exactly
+     the strip the bar is in, and the last of the content with it. */
+  #stack-list,
+  main > #perms,
+  main > #runners,
+  .board .col > .cards { padding-right: 12px; }
   /* A hidden view must not claim its share of the column. */
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }
@@ -1065,22 +1087,80 @@
   .foldy { cursor: pointer; user-select: none; }
   .foldy::before { content: "\25B8 "; display: inline-block; transition: transform .12s; }
   .foldy.open::before { transform: rotate(90deg); }
-  .filebar { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: 6px; }
+  /* ── the file browser ───────────────────────────────── */
+  /* Shaped like a repository listing rather than like a file manager: one
+     directory at a time, a breadcrumb across the top, folders first, and the
+     facts about a row right-aligned in their own tracks so the eye can run
+     down them. Miller columns and a tree both want horizontal room, and the
+     place this matters most is a popped-out window at 900px. */
+  .filebar {
+    display: flex; gap: var(--sp-2); align-items: center; margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
   .filebar code { font-size: var(--fs-xs); color: var(--dim); }
+  /* The path as steps you can press, not a string with an `up` button beside
+     it. Walking three deep and back was three presses of a control that says
+     nothing about where it goes. */
+  .crumbs {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+    font: var(--fs-xs) var(--mono); min-width: 0; flex: 1 1 auto;
+  }
+  .crumbs .crumb {
+    padding: 2px 6px; border-radius: var(--r-sm); color: var(--dim); cursor: pointer;
+    white-space: nowrap;
+  }
+  .crumbs .crumb:hover { background: var(--lift); color: var(--head); }
+  /* Where you are. Not pressable, because pressing it reloads what is already
+     on screen. */
+  .crumbs .crumb.here { color: var(--head); cursor: default; }
+  .crumbs .crumb.here:hover { background: none; }
+  .crumbs .sep { color: var(--dimmest); }
   .filelist {
     max-height: 240px; overflow-y: auto;
-    border: 1px solid var(--stroke-dim); border-radius: 4px;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
   }
+  /* A grid, not a flex row, so the size, the time and the actions line up down
+     the list however long a name is. The name takes what is left; the other
+     three are as wide as their widest content and no wider. */
   .filelist .frow {
-    display: flex; gap: var(--sp-2); align-items: center;
-    padding: 4px 8px; font-size: var(--fs-xs);
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    gap: var(--sp-3); align-items: center;
+    padding: 5px 10px; font-size: var(--fs-xs);
     border-bottom: 1px solid var(--stroke-dim);
   }
   .filelist .frow:last-child { border-bottom: none; }
-  .filelist .frow.dir { cursor: pointer; color: var(--teal); }
-  .filelist .frow.dir:hover { background: var(--stroke-dim); }
-  .filelist .fname { flex: 1; overflow-wrap: anywhere; }
-  .filelist .fsize { color: var(--dimmest); font-family: var(--mono); }
+  .filelist .frow:hover { background: var(--lift); }
+  .filelist .frow.dir { cursor: pointer; }
+  .filelist .fname {
+    display: flex; align-items: center; gap: var(--sp-3); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .filelist .frow.dir .fname { color: var(--teal); }
+  /* The glyph. Coloured by what the file is, so a directory of Go and a
+     directory of markdown are tellable apart before reading a word. */
+  .filelist .ficon { flex: none; display: block; color: var(--dimmest); }
+  .filelist .frow.dir .ficon { color: var(--teal); }
+  .filelist .ficon.go { color: var(--blue); }
+  .filelist .ficon.doc { color: var(--dim); }
+  .filelist .ficon.web { color: var(--warn); }
+  .filelist .ficon.img { color: var(--teal); }
+  .filelist .ficon.cfg { color: var(--dimmest); }
+  .filelist .fsize {
+    color: var(--dimmest); font-family: var(--mono); text-align: right;
+    white-space: nowrap;
+  }
+  .filelist .fwhen {
+    color: var(--dimmest); font-family: var(--mono); white-space: nowrap;
+    /* Room for the widest form this ever prints, so the column does not jog
+       between `today 08:06` and `sep 4`. */
+    min-width: 15ch; text-align: right;
+  }
+  /* The two actions, on the row that the pointer is over. Always present in
+     the layout, so nothing shifts when they appear: a row whose contents move
+     under the cursor is a row you click the wrong part of. */
+  .filelist .facts { display: flex; gap: var(--sp-2); visibility: hidden; }
+  .filelist .frow:hover .facts, .filelist .frow:focus-within .facts { visibility: visible; }
+  .filelist .facts .chip { text-decoration: none; cursor: pointer; }
   .filelist .chip { text-decoration: none; }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
@@ -1236,7 +1316,7 @@
   .stackrow .since {
     font-style: normal; font-size: var(--fs-xxs); font-weight: 400;
     font-family: var(--mono); color: var(--dimmest); letter-spacing: 0;
-    white-space: nowrap; flex: 0 0 auto; width: 16ch; text-align: right;
+    white-space: nowrap; flex: 0 0 auto; width: 19ch; text-align: right;
     align-self: center; padding-left: var(--sp-3); overflow: hidden;
   }
   .stackrow .who { flex: 1 1 320px; min-width: 0; }
@@ -1282,19 +1362,9 @@
   .term-files[hidden] { display: none; }
   .term-files .filebar { display: flex; align-items: center; gap: var(--sp-3); }
   .term-files .filelist { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  /* Its own bar, painted like the rest of the board's. Not the terminal's:
-     this is an ordinary scrolling list that happens to live in the pane, and
-     nothing here goes near the xterm viewport. */
-  .term-files .filelist {
-    scrollbar-width: thin; scrollbar-color: var(--stroke-dim) transparent;
-    padding-right: 12px;
-  }
-  .term-files .filelist::-webkit-scrollbar { width: 10px; }
-  .term-files .filelist::-webkit-scrollbar-track { background: transparent; }
-  .term-files .filelist::-webkit-scrollbar-thumb {
-    background: var(--stroke-dim); border-radius: var(--r-pill);
-    border: 2px solid transparent; background-clip: padding-box;
-  }
+  /* Room for the bar. The bar itself is painted by the universal rule near the
+     top of this stylesheet, along with every other one on the board. */
+  .term-files .filelist { padding-right: 12px; }
   /* The drawer takes the pane, so the terminal must give it up rather than
      both claiming the same room. */
   .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
@@ -1542,9 +1612,20 @@
   .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
   /* No height of its own. The bar and the help line take what they need and
      this takes the rest, so nothing has to guess how tall they are. */
+  /* THE HORIZONTAL GAP IS A MARGIN, NOT PADDING. Do not put it back.
+     Found in devtools against a live popped-out terminal, which is the only
+     way anything about xterm's geometry gets settled.
+     xterm fits to this element's CONTENT box and draws its viewport, with its
+     scrollbar, across the full width of it. Horizontal PADDING sits inside
+     that box, so the bar landed on top of the last column of text and the
+     right-hand characters read as running underneath it. A MARGIN is outside
+     the box entirely: xterm gets a narrower element, fits to it exactly, and
+     the gap is still there.
+     Vertical padding is harmless and stays, because nothing measures height in
+     characters the way the width is measured in columns. */
   #t-screen {
     flex: 1 1 auto; min-height: 0; min-width: 0;
-    padding: 10px 12px; overflow: hidden;
+    padding: 10px 0; margin: 10px 5px; overflow: hidden;
   }
   #t-screen .xterm { height: 100%; width: 100%; }
   .term-entry .chip { white-space: nowrap; }
@@ -1558,7 +1639,16 @@
      the browser.
 
      `scrollbar-width` is the same mistake in Firefox's spelling, so it is gone
-     too. `scrollbar-color` only paints, so that one stays. */
+     too. `scrollbar-color` only paints, so that one stays.
+
+     THE OTHER HALF OF THIS RULE IS AT THE TOP OF THE STYLESHEET, under
+     "scrollbars", and both halves have to hold. The board paints every
+     scrollbar on the page from one universal rule, and that rule excludes
+     `#t-screen *` as a subtree. Excluding `.xterm-viewport` alone is not
+     enough and was tried: xterm renders five elements, and one of the other
+     four answered the universal rule with a second scrollbar down the right of
+     the terminal, beside xterm's own. If a terminal ever grows a bar it should
+     not have, that exclusion is where to look, not here. */
   #t-screen .xterm-viewport {
     background: transparent !important;
     scrollbar-color: var(--stroke-dim) var(--bg-2);
@@ -1870,16 +1960,10 @@
   .dlg-body select:focus { outline: none; border-color: var(--blue); }
   input[type=text]::placeholder,
   .dlg-body textarea::placeholder { color: var(--dimmest); }
-  /* A dialog's own scrollbar, so it does not arrive as a grey OS strip in the
-     middle of a dark panel. */
-  .dlg-body { scrollbar-width: thin; scrollbar-color: var(--stroke) transparent; }
-  .dlg-body::-webkit-scrollbar { width: 10px; }
-  .dlg-body::-webkit-scrollbar-track { background: transparent; }
-  .dlg-body::-webkit-scrollbar-thumb {
-    background: var(--stroke-dim); border-radius: var(--r-sm);
-    border: 3px solid transparent; background-clip: content-box;
-  }
-  .dlg-body::-webkit-scrollbar-thumb:hover { background-clip: padding-box; }
+  /* A dialog took its own copy of the scrollbar rules before there was a
+     universal one, with a different radius and a different inset, so a dialog
+     and the list behind it disagreed about what a scrollbar looks like. It
+     inherits now. */
   .statuses { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .statuses button.on {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
@@ -1996,8 +2080,18 @@
     .term-entry { flex: 0 0 auto; min-width: 190px; }
     .term-entry span { display: none; }
     .term-bar { gap: var(--sp-3); padding: 8px 10px; }
-    .term-bar strong { width: 100%; }
-    #t-screen { padding: 6px; }
+    /* The name TRUNCATES, it does not take a row of its own.
+       `width: 100%` here was written for a phone, where a bar is a stack and
+       an extra row costs nothing. A popped-out window is 894px, which lands
+       inside this breakpoint and is not a phone: the rule pushed every button
+       onto a second row, and a bar that grows a row changes the terminal's
+       height under a grid xterm has already measured in characters.
+       `.term-who` already ellipsises, so there is nothing to add here. */
+    /* HORIZONTAL GAP IS MARGIN. Same rule as the base `#t-screen`, and for the
+       same reason, which is written out in full there. `padding: 6px` was the
+       shorthand, so it set the horizontal padding too and quietly undid the
+       fix for every window narrower than 900px. */
+    #t-screen { padding: 6px 0; margin: 6px 4px; }
     .term-help { display: none; }
 
     dialog { width: 96vw; }
@@ -2255,8 +2349,8 @@ Exports honour whatever filter is applied.">?</span>
              what may be reached. -->
         <div class="term-files" id="t-files-panel" hidden>
           <div class="filebar">
-            <button id="t-files-up" onclick="termFilesUp()" title="up one directory">up</button>
-            <code class="grow ell" id="t-files-where"></code>
+            <button id="t-files-up" onclick="termFilesUp()" title="up one directory">&#8593;</button>
+            <span class="crumbs" id="t-files-where"></span>
             <button onclick="openTermFiles()" title="close this">close</button>
           </div>
           <div class="filelist" id="t-files-list"></div>
@@ -3085,8 +3179,8 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       </label>
       <div id="d-files" hidden>
         <div class="filebar">
-          <button id="d-files-up" onclick="filesUp()" title="up one directory">up</button>
-          <code class="grow ell" id="d-files-where"></code>
+          <button id="d-files-up" onclick="filesUp()" title="up one directory">&#8593;</button>
+          <span class="crumbs" id="d-files-where"></span>
         </div>
         <div class="filelist" id="d-files-list"></div>
         <span class="hintline" id="d-files-note"></span>
@@ -3362,12 +3456,19 @@ function firstSeen(iso) {
   const now = new Date();
   const sameDay = t.toDateString() === now.toDateString();
   const pad = n => String(n).padStart(2, "0");
-  const clock = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  // Seconds, because this column is what the stack is ORDERED by and the order
+  // resolves to the second. Two rows a few seconds apart both reading `10:23`
+  // looked like the sort had given up, when the sort was right and the clock
+  // was rounding. Dropped for anything older than yesterday, where the second
+  // something happened is not a fact anybody wants.
+  const clock = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
   if (sameDay) return `today ${clock}`;
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (t.toDateString() === yesterday.toDateString()) return `yesterday ${clock}`;
+
+  const short = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
 
   const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun",
                   "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -3375,7 +3476,7 @@ function firstSeen(iso) {
   // The year only when it is not this one, since it is noise the rest of the
   // time and this board is mostly looking at the last few days.
   return t.getFullYear() === now.getFullYear()
-    ? `${date} ${clock}`
+    ? `${date} ${short}`
     : `${date} ${t.getFullYear()}`;
 }
 
@@ -4791,6 +4892,27 @@ function bigNumberMeans(t) {
     : "how long since it last did anything";
 }
 
+// The MOMENT the big number is counting from.
+//
+// The date column used to be `created_at`, when atrium first saw the card, and
+// it was the only column on the row measuring something the list was not
+// ordered by. Sorted by last active, it read `today, today, yesterday, today`,
+// which is correct about two different facts and looks like a broken sort.
+//
+// So it follows the same rule `bigNumber` does, and the two always agree: one
+// says how long ago, the other says when, and the order is by that same
+// moment. Nothing on the row is measuring something else.
+function bigNumberAt(t) {
+  if (stackSort === "activity") return t.last_activity_at;
+  if (stackSort === "waited") return t.waiting_since || t.last_activity_at;
+  return isWaiting(t) ? (t.waiting_since || t.last_activity_at) : t.last_activity_at;
+}
+
+function bigNumberAtMeans(t) {
+  if (stackSort === "waited" && !isWaiting(t)) return "not waiting for anything";
+  return "when: " + bigNumberMeans(t).replace(/^how long (since|it has been) /, "");
+}
+
 // One card as a row. The same facts the board shows, in an order rather than a
 // column, with the age reading as what it is for the status it is in.
 //
@@ -4832,10 +4954,8 @@ function stackRow(t) {
         title="open this terminal in its own window"
         onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
     </div>
-    <i class="since"
-      title="when atrium first saw this card. not when the session started: a session
-             that ran before atrium did is first seen when it says something."
-      >${esc(firstSeen(t.created_at))}</i>
+    <i class="since" title="${esc(bigNumberAtMeans(t))}"
+      >${esc(firstSeen(bigNumberAt(t)))}</i>
   </div>`;
 }
 
@@ -7683,11 +7803,12 @@ async function loadFiles(path, ctx) {
   // Kept for the dialog's own callers, which still read the old names.
   if (ctx.at === "dialog") { filesAt = res.path; filesParent = pos.parent; }
 
-  document.getElementById(ctx.where).textContent = res.path;
-  document.getElementById(ctx.where).title = res.path;
+  paintCrumbs(ctx, res);
   // Disabled rather than hidden at the top, so the control does not move
-  // under the cursor as you walk up.
-  document.getElementById(ctx.up).disabled = !pos.parent;
+  // under the cursor as you walk up. Kept alongside the breadcrumb: one step
+  // back is the commonest move and it should not need aiming at a word.
+  const up = document.getElementById(ctx.up);
+  if (up) up.disabled = !pos.parent;
   document.getElementById(ctx.note).textContent = res.truncated
     ? `showing the first ${(res.entries || []).length}. this directory has more.`
     : "";
@@ -7698,18 +7819,19 @@ async function loadFiles(path, ctx) {
       `<div class="empty">nothing here.</div>`);
     return;
   }
-  setHTML(document.getElementById(ctx.list), rows.map(e => e.dir
-    ? `<div class="frow dir" data-dir="${esc(e.path)}">
-         <span class="fname">${esc(e.name)}/</span>
-       </div>`
-    : `<div class="frow">
-         <span class="fname">${esc(e.name)}</span>
-         <span class="fsize">${esc(bytes(e.size))}</span>
-         <span class="chip open" data-open="${esc(e.path)}"
-           title="open it in the editor, on the machine this session runs on">open</span>
-         <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
-            encodeURIComponent(e.path)}">get</a>
-       </div>`).join(""));
+  // Sorted by the daemon, folders first then by name, so the board does not
+  // hold a second opinion about the order.
+  setHTML(document.getElementById(ctx.list), rows.map(e => `
+    <div class="frow${e.dir ? " dir" : ""}"${e.dir ? ` data-dir="${esc(e.path)}"` : ""}>
+      <span class="fname">${fileIcon(e)}${esc(e.name)}${e.dir ? "/" : ""}</span>
+      <span class="fsize">${e.dir ? "" : esc(bytes(e.size))}</span>
+      <span class="fwhen">${esc(firstSeen(e.mtime))}</span>
+      <span class="facts">${e.dir ? "" : `
+        <span class="chip open" data-open="${esc(e.path)}"
+          title="open it in the editor, on the machine this session runs on">open</span>
+        <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
+           encodeURIComponent(e.path)}">get</a>`}</span>
+    </div>`).join(""));
 
   // Wired rather than inlined: a filename with an apostrophe in it breaks an
   // onclick attribute, and HTML escaping does nothing about that.
@@ -7720,6 +7842,84 @@ async function loadFiles(path, ctx) {
   host.querySelectorAll(".chip.open").forEach(el => {
     el.onclick = ev => { ev.stopPropagation(); openOnDaemon(ctx.id, el.dataset.open); };
   });
+}
+
+// The path as steps you can press.
+//
+// An `up` button says nothing about where it goes, and getting back from three
+// deep was three presses of it. A breadcrumb is the same information already
+// on screen, made pressable.
+//
+// Trimmed to the card's own directory. Everything above the worktree is a path
+// this browser refuses to serve anyway, and drawing `C:` as a step you could
+// press would offer a walk that always ends in `403`.
+function paintCrumbs(ctx, res) {
+  const host = document.getElementById(ctx.where);
+  if (!host) return;
+  const root = String(res.root || "").replace(/\/+$/, "");
+  const at = String(res.path || "").replace(/\/+$/, "");
+  host.title = at;
+
+  const rest = at.startsWith(root) ? at.slice(root.length).replace(/^\//, "") : "";
+  const steps = rest ? rest.split("/") : [];
+  // The card's own directory is named by its leaf rather than by its whole
+  // path, which is already on the card and would be most of the width here.
+  const parts = [{ label: root.split("/").filter(Boolean).pop() || root, path: root }];
+  let walk = root;
+  for (const s of steps) {
+    walk += "/" + s;
+    parts.push({ label: s, path: walk });
+  }
+  setHTML(host, parts.map((p, i) => {
+    const last = i === parts.length - 1;
+    return (i ? `<span class="sep">/</span>` : "") +
+      `<span class="crumb${last ? " here" : ""}"${
+        last ? "" : ` data-go="${esc(p.path)}"`}>${esc(p.label)}</span>`;
+  }).join(""));
+  host.querySelectorAll(".crumb[data-go]").forEach(el => {
+    el.onclick = () => loadFiles(el.dataset.go, ctx);
+  });
+}
+
+// What kind of thing a row is, as a mark.
+//
+// Drawn here rather than vendored. A file icon theme is several hundred SVGs
+// for a set of extensions this board will never see, and the board has to work
+// offline, which is the same reason xterm is vendored rather than fetched.
+//
+// Six shapes, not sixty. The question a glyph answers in a directory listing is
+// "which of these is the code and which is the readme", and the colour carries
+// most of that: distinguishing `.ts` from `.tsx` at 11px is not something an
+// icon can do anyway.
+const FILE_KINDS = [
+  { kind: "go", ext: ["go", "mod", "sum", "rs", "c", "h", "cs", "java", "py", "rb", "sh", "ps1", "js", "ts"] },
+  { kind: "web", ext: ["html", "htm", "css", "svg", "jsx", "tsx", "vue"] },
+  { kind: "doc", ext: ["md", "txt", "rst", "adoc", "log"] },
+  { kind: "cfg", ext: ["json", "yaml", "yml", "toml", "ini", "conf", "env", "gitignore", "editorconfig"] },
+  { kind: "img", ext: ["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp"] }
+];
+
+function fileIcon(e) {
+  if (e.dir) {
+    return `<svg class="ficon" viewBox="0 0 16 16" width="13" height="13" fill="none"
+      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+      <path d="M1.8 12.8V3.6a.8.8 0 0 1 .8-.8h3.1l1.5 1.8h6a.8.8 0 0 1 .8.8v7.4a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8Z"/>
+    </svg>`;
+  }
+  // The last dot, and a leading dot does not count: `.gitignore` is named
+  // gitignore, not an empty name with an extension.
+  const name = String(e.name || "");
+  const bare = name.replace(/^\./, "");
+  const ext = bare.includes(".") ? bare.split(".").pop().toLowerCase() : bare.toLowerCase();
+  const found = FILE_KINDS.find(k => k.ext.includes(ext));
+  const kind = found ? found.kind : "";
+  // A page with a folded corner. The fold is what makes it read as a file at
+  // this size rather than as a rectangle.
+  return `<svg class="ficon ${kind}" viewBox="0 0 16 16" width="13" height="13" fill="none"
+    stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+    <path d="M9.2 1.9H4a.8.8 0 0 0-.8.8v10.6a.8.8 0 0 0 .8.8h8a.8.8 0 0 0 .8-.8V5.5Z"/>
+    <path d="M9.2 1.9v3.6h3.6"/>
+  </svg>`;
 }
 
 // Opens a file in the editor, ON THE MACHINE THE SESSION RUNS ON.
