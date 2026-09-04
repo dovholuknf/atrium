@@ -492,6 +492,49 @@ var migrations = []struct {
 			   WHERE id IN ('claude','codex') AND (prompt_args = '[]' OR prompt_args = '')`,
 		},
 	},
+	{
+		// An inbox: work that is real and has no session yet.
+		//
+		// No new status. `backlog` has been in the CHECK since 0001, has a
+		// constant, and nothing has ever created a card in it, which is what
+		// the board says in the comment above COLUMNS. An offered item is
+		// exactly what that status was named for: on the board, not started.
+		//
+		// docs/intake-design.md argued for a new `offered` status and
+		// enumerated the six it was not, skipping this one. Following that
+		// would have meant rebuilding `task` to change a CHECK constraint, and
+		// `task` is the parent of four ON DELETE CASCADE relationships. With
+		// foreign keys on, DROP TABLE performs the implicit delete and fires
+		// those cascades, so the rebuild pattern 0010 and 0014 use on child
+		// tables would have taken every event, permission, message and launch
+		// spec in the database with it. An unused status that already exists
+		// is a better answer than a correct-looking migration with that in it.
+		//
+		// `prompt` is the instruction the card was raised with, held until
+		// somebody presses start, because an offered card has no runner to
+		// hand it to yet. Kept after the start rather than cleared: it is what
+		// this card is for, and a start that failed should be repeatable.
+		// `worktree` carries the suggested directory, which may not exist yet.
+		//
+		// `intake_key` is the deduplication key, and it is a separate column
+		// rather than a unique index over (source, external_id) so that
+		// uniqueness applies to intake and not to launching. Two deliberate
+		// launches naming the same ticket are two pieces of work a human asked
+		// for twice; two poll ticks reporting the same ticket are one. Only
+		// intake writes this. Same shape and same reason as
+		// permission.dedup_key, which 0001 already has.
+		//
+		// Partial so that everything not raised by intake shares the empty
+		// string without colliding. SQLite and Postgres both take a partial
+		// unique index, which the header of this file asks of every migration.
+		name: "0025_intake",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN prompt TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN intake_key TEXT NOT NULL DEFAULT ''`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_intake_key
+			   ON task(intake_key) WHERE intake_key <> ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -13,7 +13,7 @@ import (
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
-	archived_at, source, url`
+	archived_at, source, url, prompt, intake_key`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -30,7 +30,8 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
-		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL); err != nil {
+		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
+		&t.Prompt, &t.IntakeKey); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -172,12 +173,7 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,
 		Tags: []string{},
 	}
-	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
-		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", "", "",
-		t.Source, t.URL); err != nil {
+	if err := s.insertTask(t); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -189,6 +185,38 @@ func (s *Store) create(obs Observed) (*Task, error) {
 // topRank returns a rank that sorts above everything currently in a column.
 // New cards land at the top. Midpoint insertion handles everything after that,
 // so reordering never renumbers a column.
+// insertTask writes one new row. Shared by the two ways a card comes into
+// existence: a runner registering itself, and an item offered by a source.
+//
+// One place, because the column list and its placeholders have to agree and
+// counting question marks twice is how a migration goes in and one of the two
+// insert sites silently keeps writing the old shape.
+func (s *Store) insertTask(t *Task) error {
+	overrides := "{}"
+	if len(t.Overrides) > 0 {
+		raw, err := json.Marshal(t.Overrides)
+		if err != nil {
+			return err
+		}
+		overrides = string(raw)
+	}
+	tags := "[]"
+	if len(t.Tags) > 0 {
+		raw, err := json.Marshal(t.Tags)
+		if err != nil {
+			return err
+		}
+		tags = string(raw)
+	}
+	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
+		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
+		t.Source, t.URL, t.Prompt, t.IntakeKey)
+	return err
+}
+
 func (s *Store) topRank(status string) (float64, error) {
 	var min sql.NullFloat64
 	if err := s.db.QueryRow(`SELECT MIN(rank) FROM task WHERE status = ?`, status).Scan(&min); err != nil {

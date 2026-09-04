@@ -5,6 +5,35 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **An inbox atrium owns and does not fill.** `POST /v1/intake` takes a normalized work item and makes a card
+  with no runner. It takes one item or an array of them, because a shell script producing one thing should not
+  have to wrap it in brackets and `gh issue list --json` produces an array. One malformed entry in a batch of
+  forty does not discard the other thirty nine, since the source that produced it will send the same forty again
+  next tick and the operator would never see any of them.
+
+  Atrium does not know what a source is. `github`, `zendesk` and `ci` are strings it renders as a badge. Whoever
+  posted the item did the reading, which is the whole reason this can serve a system nobody has thought of yet.
+
+  Deduplication is a key column of its own rather than a constraint over source and identifier, so that
+  uniqueness applies to a poller and not to a person: two ticks reporting one ticket are one card, and two
+  deliberate launches naming one ticket are two pieces of work somebody asked for twice. The source is lowercased
+  and both halves are required, so two scripts spelling it `github` and `GitHub` raise one card. An archived item
+  still counts, because a card raised, worked and swept coming back on the next tick is the one failure mode a
+  poller has.
+
+  **No new status.** `backlog` has been in the schema since the first migration with nothing ever creating a card
+  in it, and an offered item is exactly what that word means. `docs/intake-design.md` had argued for a new
+  `offered` status and had enumerated six of the seven that already exist while skipping this one. That would
+  have been cosmetic if a status were cheap. It is not: changing a `CHECK` means rebuilding the table, `task` is
+  the parent of four `ON DELETE CASCADE` relationships, and `DROP TABLE` fires them. A migration written by
+  faithfully following the pattern in `0010` would have deleted every event, permission, message and launch spec
+  in the database and would have looked exactly like the two migrations it was copied from. The doc now records
+  that, because the near miss is worth more than the entry it replaces.
+
+  Starting an offered card claims the card that already exists rather than making a second one. `Register` cannot
+  do it, having no wire name to match and no pid to fall back on, so it would have found nothing, made a new card,
+  and left the item sitting in the inbox with its session on a card that had no link to what it was for.
+
 - **A launch can say what the work is and where it came from.** `atrium launch` took a directory, a title and a
   reason. It now also takes `--tags`, `--prompt`, `--source`, `--external` and `--item-url`, which is intake
   layer 0 from `docs/intake-design.md` and the thing every other layer needs first.
