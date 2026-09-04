@@ -612,6 +612,25 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS event_task_at ON event (task_id, at)`,
 		},
 	},
+	{
+		// Auto mode until a time, rather than until somebody remembers.
+		//
+		// "For the next hour" is the shape a temporary switch wants, and the
+		// only reminder it had was a badge on a card.
+		//
+		// The deadline is checked when the permission chain runs and not by a
+		// timer that turns it off. A timer that has to fire is a timer that
+		// does not fire across a restart, and auto mode surviving a restart it
+		// should not have survived is the failure that matters here. Reading
+		// the clock at the moment of the decision cannot get that wrong.
+		//
+		// Empty means the switch has no deadline, which is what it did before
+		// and still the default for turning it on by hand.
+		name: "0028_auto_until",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN auto_until TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

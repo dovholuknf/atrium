@@ -5738,42 +5738,87 @@ function paintGroupSegs() {
 // again, and it is not consent to keep approving either: it is whatever it
 // was when you left.
 let globalAuto = false;
+// Seconds left on a deadline, sent by the daemon rather than worked out from a
+// timestamp here. A clock a few minutes out between the browser and the
+// machine is ordinary, and it would show as a switch that expired in the
+// future.
+let globalAutoLeft = 0;
 
 function paintGlobalAuto() {
   const b = document.getElementById("gauto");
   if (!b) return;
   b.className = globalAuto ? "gauto on" : "gauto";
-  b.textContent = globalAuto ? "approving everything" : "asking";
+  // How long is left goes ON the switch, not behind it. The whole reason a
+  // deadline exists is that "approving everything" is easy to leave on, and a
+  // reminder you have to hover over is not a reminder.
+  b.textContent = globalAuto
+    ? (globalAutoLeft ? "approving everything, " + leftLabel(globalAutoLeft) : "approving everything")
+    : "asking";
   b.title = globalAuto
-    ? "every session is approved without asking. click to start asking again."
+    ? (globalAutoLeft
+        ? "every session is approved without asking, until this runs out. click to start asking again."
+        : "every session is approved without asking, with no deadline. click to start asking again.")
     : "requests are gated. click to approve everything from every session.";
+}
+
+// Time left, rounded the way a person reads it. Rounded UP for minutes, so
+// something with fifty seconds on it does not read as being over.
+function leftLabel(secs) {
+  secs = Number(secs) || 0;
+  if (secs <= 0) return "";
+  if (secs < 3600) return Math.ceil(secs / 60) + "m left";
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  return m ? h + "h " + m + "m left" : h + "h left";
 }
 
 async function loadGlobalAuto() {
   try {
     const s = await api("/v1/settings");
     globalAuto = !!s.global_auto;
+    globalAutoLeft = s.global_auto_seconds || 0;
   } catch (e) { return; }
   paintGlobalAuto();
 }
 
 // Turning it ON asks; turning it off never does. The confirmation is not
 // skippable, since this is the widest thing on the board.
+//
+// It asks HOW LONG rather than whether, because the honest answer is nearly
+// always "while I do this one thing" and the only reminder it used to have was
+// a badge. "Until I turn it off" is still there and still means it: a switch
+// that could only be temporary would just be a shorter lie.
+//
+// Enter takes the last button, so an hour is what a reflex gets.
 async function toggleGlobalAuto() {
   const on = !globalAuto;
-  if (on && !await confirmUser("approve everything, from every session?",
-    "Every request from every session on this machine is approved without asking, " +
-    "including sessions that have not started yet." +
-    "<br><br>Everything is still recorded, and <b>never</b> rules and shelved cards still " +
-    "block. Read what any session did with <b>what did it do?</b>",
-    "approve everything")) return;
+  let minutes = 0;
+  if (on) {
+    const choice = await askUser({
+      title: "approve everything, from every session?",
+      body: "Every request from every session on this machine is approved without asking, " +
+        "including sessions that have not started yet." +
+        "<br><br>Everything is still recorded, and <b>never</b> rules and shelved cards still " +
+        "block. Read what any session did with <b>what did it do?</b>" +
+        "<br><br>How long for?",
+      buttons: [
+        { label: "cancel", value: null },
+        { label: "until I turn it off", value: 0 },
+        { label: "for four hours", value: 240 },
+        { label: "for an hour", value: 60, style: "go" }
+      ]
+    });
+    if (choice === null || choice === undefined) return;
+    minutes = Number(choice) || 0;
+  }
   let s;
   try {
     s = await api("/v1/settings", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ global_auto: on })
+      body: JSON.stringify({ global_auto: on, global_auto_minutes: minutes })
     });
     globalAuto = !!s.global_auto;
+    globalAutoLeft = s.global_auto_seconds || 0;
   } catch (e) {
     toast("that did not stick", e.message);
     return;
@@ -7130,6 +7175,12 @@ function repaintLists() {
 }
 
 async function refresh() {
+  // A deadline that is running is re-read from the daemon rather than counted
+  // down here. It costs one small request while a switch is temporary and
+  // nothing at all the rest of the time, and it means the label cannot drift
+  // away from the thing that actually decides.
+  if (globalAuto && globalAutoLeft > 0) loadGlobalAuto();
+
   if (isEditing()) {
     // Hold the repaint, but keep the counters, sounds and toasts live: those
     // are what tell you something arrived.
@@ -7220,7 +7271,11 @@ function connect() {
     paintOverlays();
   });
   es.addEventListener("settings", e => {
-    try { globalAuto = !!JSON.parse(e.data).global_auto; } catch (err) { return; }
+    try {
+      const s = JSON.parse(e.data);
+      globalAuto = !!s.global_auto;
+      globalAutoLeft = s.global_auto_seconds || 0;
+    } catch (err) { return; }
     paintGlobalAuto();
   });
   es.addEventListener("hooks", async () => {

@@ -132,6 +132,13 @@ type Task struct {
 	// It does not override a standing never rule or a shelved card: auto mode
 	// stops new questions, it does not discard answers already given.
 	AutoApprove bool `json:"auto_approve"`
+	// AutoUntil is when auto mode stops for this card, or nil for no deadline.
+	//
+	// Read at the moment a decision is made rather than enforced by a timer. A
+	// timer that has to fire is a timer that does not fire across a restart,
+	// and auto mode surviving a restart it should not have survived is the
+	// failure worth designing against.
+	AutoUntil *time.Time `json:"auto_until,omitempty"`
 	// Tags are what the operator calls this card, as opposed to what atrium
 	// worked out from its path. Grouping already derives a project from the
 	// worktree, which answers "what repo" and nothing else. A card is also a
@@ -178,6 +185,25 @@ func (t *Task) Display(field, observed string) string {
 
 // DisplayTitle is the title a client should render.
 func (t *Task) DisplayTitle() string { return t.Display("title", t.Title) }
+
+// AutoOn reports whether auto mode is in force for this card right now.
+//
+// The flag and the deadline together, so no caller has to remember that the
+// two exist. A flag that is on with a deadline that has passed is off, and it
+// stays that way whether or not anything has got round to writing it down.
+func (t *Task) AutoOn(at time.Time) bool {
+	if !t.AutoApprove {
+		return false
+	}
+	return t.AutoUntil == nil || at.Before(*t.AutoUntil)
+}
+
+// AutoExpired reports a card whose auto mode has run out but still says it is
+// on. The permission chain uses it to turn the flag off when it notices, so
+// the badge on the board stops claiming something that stopped being true.
+func (t *Task) AutoExpired(at time.Time) bool {
+	return t.AutoApprove && t.AutoUntil != nil && !at.Before(*t.AutoUntil)
+}
 
 // Observed reports a session atrium can see but cannot talk to: adopted from
 // an external source, with no agent connected. These are watchable, and can be

@@ -5,6 +5,25 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Auto mode for the next hour.** Both switches take a deadline, and the button asks how long rather than
+  whether. Until you turn it off is still there and still means it: a switch that could only be temporary would
+  just be a shorter lie about the same thing.
+
+  **Nothing enforces the deadline, and that is the design.** There is no timer and no goroutine watching the
+  clock. The permission chain is the only moment auto mode means anything, so it is the only moment worth asking,
+  and a check made there cannot be missed by a restart. A timer that has to fire is a timer that does not fire
+  across a restart, and auto mode surviving one it should not have survived is the failure worth designing
+  against.
+
+  A card whose deadline has passed gets its flag cleared on the way through, so the badge stops claiming
+  something that stopped being true, but that write is bookkeeping following the answer rather than the thing
+  that makes the answer correct. Turning it off always clears the deadline, because "off until Tuesday" is not a
+  thing anybody means and a leftover deadline would turn itself back on the next time somebody flipped the
+  switch.
+
+  How long is left is on the switch, not behind it. The whole reason a deadline exists is that "approving
+  everything" is easy to leave on, and a reminder you have to hover over is not a reminder.
+
 - **Four more hooks, and a subagent count that was being counted twice.** `docs/hook-coverage-spike.md` listed
   what was unwired. Three of the four are now wired and the fourth is deliberately left alone.
 

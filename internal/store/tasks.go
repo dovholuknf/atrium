@@ -13,7 +13,7 @@ import (
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
-	archived_at, source, url, prompt, intake_key`
+	archived_at, source, url, prompt, intake_key, auto_until`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -26,12 +26,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		tags         string
 		pinned       int
 		archived     string
+		autoUntil    string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
-		&t.Prompt, &t.IntakeKey); err != nil {
+		&t.Prompt, &t.IntakeKey, &autoUntil); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -65,6 +66,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 			return nil, fmt.Errorf("task %s archived_at: %w", t.ID, err)
 		}
 		t.ArchivedAt = &a
+	}
+	if autoUntil != "" {
+		u, err := parseTS(autoUntil)
+		if err != nil {
+			return nil, fmt.Errorf("task %s auto_until: %w", t.ID, err)
+		}
+		t.AutoUntil = &u
 	}
 	t.WireName = wire.String
 	t.Overrides = map[string]string{}
@@ -209,11 +217,11 @@ func (s *Store) insertTask(t *Task) error {
 		tags = string(raw)
 	}
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
-		t.Source, t.URL, t.Prompt, t.IntakeKey)
+		t.Source, t.URL, t.Prompt, t.IntakeKey, "")
 	return err
 }
 
@@ -596,13 +604,28 @@ func (s *Store) SetGated(id string, on bool) error {
 // asking. Stored rather than held in memory: losing it on a restart would start
 // interrupting again with no sign of why.
 func (s *Store) SetAutoApprove(id string, on bool) error {
+	return s.SetAutoApproveUntil(id, on, nil)
+}
+
+// SetAutoApproveUntil turns auto mode on for a while, or on with no deadline
+// when until is nil.
+//
+// Turning it OFF always clears the deadline. "Off until Tuesday" is not a
+// thing anybody means, and a deadline left behind by an off switch would turn
+// itself back on the next time somebody flipped it.
+func (s *Store) SetAutoApproveUntil(id string, on bool, until *time.Time) error {
 	return s.guard(func() error {
 		v := 0
 		if on {
 			v = 1
 		}
-		_, err := s.db.Exec(`UPDATE task SET auto_approve = ?, last_activity_at = ? WHERE id = ?`,
-			v, ts(now()), id)
+		deadline := ""
+		if on && until != nil {
+			deadline = ts(*until)
+		}
+		_, err := s.db.Exec(
+			`UPDATE task SET auto_approve = ?, auto_until = ?, last_activity_at = ? WHERE id = ?`,
+			v, deadline, ts(now()), id)
 		return err
 	})
 }

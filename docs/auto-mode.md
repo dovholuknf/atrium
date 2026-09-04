@@ -24,6 +24,31 @@ command, its timestamp and `auto` as the answerer, which lets the review separat
 Stored on the card rather than held in memory. Losing it on a restart would start interrupting again with no sign
 of why.
 
+## For the next hour
+
+Both switches, the per-card one and the board-wide one, can be turned on for a while instead of until somebody
+remembers. That is what the honest answer usually is: while I do this one thing.
+
+Turning it on with no deadline is still there and still means it. A switch that could only ever be temporary
+would just be a shorter lie about the same thing.
+
+**The deadline is read when a decision is made, and nothing enforces it.** There is no timer that turns auto mode
+off, and there is deliberately no goroutine watching the clock. A timer that has to fire is a timer that does not
+fire across a restart, and auto mode surviving a restart it should not have survived is the failure worth
+designing against. The permission chain is the only moment auto mode means anything, so it is the only moment
+worth asking the clock, and a check made there cannot be missed.
+
+Two consequences worth knowing:
+
+- **A card whose deadline has passed has its flag cleared on the way through the chain**, so the badge stops
+  claiming something that stopped being true. That write is bookkeeping following the answer, not the thing that
+  makes the answer correct. A card nobody asks about keeps a stale-looking flag and would still be refused.
+- **Turning it off always clears the deadline.** "Off until Tuesday" is not a thing anybody means, and a deadline
+  left behind by an off switch would turn itself back on the next time somebody flipped it.
+
+How long is left is shown ON the switch rather than behind it. The whole reason a deadline exists is that
+"approving everything" is easy to leave on, and a reminder you have to hover over is not a reminder.
+
 ## What it does NOT override
 
 Auto mode stops new questions. It does not discard answers already given, so it sits last in the chain, after

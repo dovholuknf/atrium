@@ -355,6 +355,9 @@ type patchBody struct {
 	Overrides map[string]string `json:"overrides"`
 	// AutoApprove turns auto mode on or off for this session.
 	AutoApprove *bool `json:"auto_approve"`
+	// AutoMinutes is how long to leave it on. Zero or absent means no
+	// deadline, which is what this did before deadlines existed.
+	AutoMinutes int `json:"auto_minutes"`
 	// Tags is the whole set, not an addition. A pointer to a slice so that
 	// clearing every tag is distinguishable from not mentioning them.
 	Tags *[]string `json:"tags"`
@@ -490,7 +493,18 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if body.AutoApprove != nil {
-		if err := s.st.SetAutoApprove(id, *body.AutoApprove); err != nil {
+		if body.AutoMinutes < 0 || body.AutoMinutes > maxAutoMinutes {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"auto mode can be left on for up to %d minutes, or with no deadline at all",
+				maxAutoMinutes))
+			return
+		}
+		var until *time.Time
+		if *body.AutoApprove && body.AutoMinutes > 0 {
+			t := time.Now().UTC().Add(time.Duration(body.AutoMinutes) * time.Minute)
+			until = &t
+		}
+		if err := s.st.SetAutoApproveUntil(id, *body.AutoApprove, until); err != nil {
 			s.fail(w, err)
 			return
 		}
