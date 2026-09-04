@@ -428,7 +428,7 @@ endpoint refuses a loopback claim while a share is running (`internal/daemon/shu
 `internal/daemon/overlay_api.go:136`). A forum link has the identical property and is not counted. Two rules:
 
 - **A leaf with an open forum link counts as sharing.** The shutdown endpoint then demands its token, which is the
-  correct and already-implemented behaviour.
+  correct and already-implemented behavior.
 - **The forum never fans out a stop.** A stop button on the board names one peer and forwards to that peer only.
   There is no "stop everything" and there should not be one.
 

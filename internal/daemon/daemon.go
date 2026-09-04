@@ -549,7 +549,7 @@ func (d *Daemon) publishTask(id string) {
 	d.ap.Broadcast("task", t)
 }
 
-// Run serves both listeners until ctx is cancelled or a listener fails.
+// Run serves both listeners until ctx is canceled or a listener fails.
 func (d *Daemon) Run(ctx context.Context) error {
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)

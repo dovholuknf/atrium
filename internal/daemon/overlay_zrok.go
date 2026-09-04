@@ -20,7 +20,7 @@ import (
 // zrokRootNames are the directories a zrok environment lives in, newest first.
 //
 // v2 moved from `.zrok` to `.zrok2` and both can be on one machine, so the
-// newer wins and the older is still recognised rather than reported as
+// newer wins and the older is still recognized rather than reported as
 // nothing being set up.
 var zrokRootNames = []string{".zrok2", ".zrok"}
 

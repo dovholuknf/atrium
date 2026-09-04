@@ -405,6 +405,20 @@ func (s *Store) SetStatusBecause(id, status, reason string) error {
 				waiting = ts(n)
 			}
 			why = reason
+			// A question already asked survives the turn ending.
+			//
+			// The two facts arrive in the wrong order: the model calls the
+			// asking tool WHILE it is still running, and the Stop hook lands
+			// afterwards with nothing to say about it. That hook goes through
+			// SetStatus, so its reason is empty, and writing it would erase
+			// the more specific thing already recorded a moment earlier.
+			//
+			// Only an empty reason defers. A caller with something to say says
+			// it: a session starting is `started` and means it, even if the
+			// card was mid-question when the runner was replaced.
+			if why == "" && prev.WaitingReason == WaitingAsked {
+				why = WaitingAsked
+			}
 		}
 		// A card that is alive again comes back onto the board.
 		//
@@ -598,7 +612,7 @@ func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) 
 }
 
 // SetRank places a task at an explicit position within its column. Callers
-// compute the midpoint of the two neighbours a card was dropped between, so an
+// compute the midpoint of the two neighbors a card was dropped between, so an
 // insert never renumbers the cards around it.
 func (s *Store) SetRank(id string, rank float64) error {
 	return s.guard(func() error {

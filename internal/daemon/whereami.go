@@ -31,7 +31,7 @@ type Location struct {
 	// Board is the human side, for anything printing a link.
 	Board string `json:"board"`
 	PID   int    `json:"pid"`
-	// Since dates the file, so a stale one can be recognised by a human
+	// Since dates the file, so a stale one can be recognized by a human
 	// reading it even though nothing acts on it.
 	Since string `json:"since"`
 	// DB is which database this daemon opened. Two daemons on one machine is

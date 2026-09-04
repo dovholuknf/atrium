@@ -57,7 +57,7 @@ func newTell() *cobra.Command {
 		Long: "Queues a message for another session. It arrives on that session's next tool " +
 			"call or at the end of its turn, so this is not a conversation and there is no " +
 			"reply to wait for.\n\n" +
-			"The message is labelled with who sent it, and the receiving session is told it " +
+			"The message is labeled with who sent it, and the receiving session is told it " +
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
 			"not know the handle.",
 		Args: cobra.MinimumNArgs(1),

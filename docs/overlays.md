@@ -56,7 +56,7 @@ the zrok console lists this machine as.
 
 Whether an environment exists is read off disk, from `~/.zrok2/environment.json`, which is the same file the
 zrok CLI itself checks. It is NOT read out of `zrok status`, which prints boxed tables for a person to look at:
-parsing those would tie atrium to somebody else's column widths. The older `~/.zrok` is recognised too, newest
+parsing those would tie atrium to somebody else's column widths. The older `~/.zrok` is recognized too, newest
 first.
 
 The account token inside that file never leaves the daemon. Atrium reports THAT one is present, never what it

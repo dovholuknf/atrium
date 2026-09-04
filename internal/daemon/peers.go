@@ -59,7 +59,7 @@ const (
 // In memory, and it dies with the daemon. That is right: the thing being
 // bounded is a runaway session, and a session does not survive the daemon
 // either. Charon's equivalent leaks across restarts because it was persisted,
-// which is the failure `docs/charon.md` catalogues at length.
+// which is the failure `docs/charon.md` catalogs at length.
 type peerLimiter struct {
 	mu   sync.Mutex
 	sent map[string][]time.Time

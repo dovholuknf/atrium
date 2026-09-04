@@ -35,7 +35,7 @@ func TestCancelPendingReleasesTheAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("cancelled %d requests, want 1", n)
+		t.Fatalf("canceled %d requests, want 1", n)
 	}
 
 	after, err := st.GetPermission(p.ID)
@@ -106,7 +106,7 @@ func TestShelvedTaskBlocksNewRequests(t *testing.T) {
 	}
 }
 
-// Unshelving restores normal behaviour, or shelving would be a trap.
+// Unshelving restores normal behavior, or shelving would be a trap.
 func TestUnshelvedTaskAsksAgain(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {

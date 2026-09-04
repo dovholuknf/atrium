@@ -250,7 +250,7 @@ builds `$details` needs no change at all.
 command. It identifies the exact call rather than a call that looks the same. The known gap in `docs/backlog.md`
 that says the hook sends no dedup key closes here, with a field the harness supplies.
 
-`agent_id` and `agent_type` are new and mean a permission request from a subagent can be labelled as one. Today
+`agent_id` and `agent_type` are new and mean a permission request from a subagent can be labeled as one. Today
 a subagent's Bash call and its parent's are indistinguishable on the board.
 
 ### What does not survive

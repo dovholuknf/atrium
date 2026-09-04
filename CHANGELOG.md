@@ -5,6 +5,45 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board can tell a session that ASKED you something from one that merely finished.** Both landed in
+  `ready` and read identically, so a question put to you two minutes ago sorted below twenty sessions that had
+  run out of things to do overnight.
+
+  The signal was already arriving and was being thrown away. Two hooks reach the same handler: `Stop` fires when
+  a turn ends, and `Notification` fires when Claude Code is blocked on you. The code flattened them with a
+  comment saying they were the same thing to a board. They are not: one is an agent that stopped and will sit
+  there costing nothing, the other is work that cannot continue until you answer.
+
+  A second, independent signal for the same fact: asking is a TOOL CALL, so `PreToolUse` sees `AskUserQuestion`
+  and `ExitPlanMode` by name before the turn ends, and the mark is recorded at the moment the question is asked.
+  `SetStatus` carries it forward, because the two facts arrive in the wrong order: the tool call happens while
+  the card is still running, and the hook that causes the wait lands afterwards with nothing to say about it.
+
+  The card says `asked you` instead of `ready`, the notification says so, and `waiting on you` sorts questions
+  above duration. Leaving a waiting state clears it, so an answered question stops being reported.
+
+- **Groups are blocks, not headings with a bar.** A tint of the group's own hue plus an outline, from two
+  variables in `:root` so the strength is one decision made in one place: `--group-fill`, `--group-edge`, and
+  `--card-tint` for the much weaker trace carried by the cards inside, which must not compete with the left edge
+  that carries status. The stack uses the same treatment; it had only the bar, so the two views coloured one
+  grouping differently.
+
+- **Durations pad to two digits** on every unit but the leading one, so `6h09m` and `21h04m` put their `h` and
+  `m` in the same place down a column. Chips and the stack's age column ask for tabular figures for the same
+  reason: a proportional `1` made every pill breathe as the minutes ticked.
+
+- **The terminal switcher shows a session's whole address**, the same one the bar and the popped-out window
+  show. It said `main:dotfiles` beside a terminal headed `github/dovholuknf/dotfiles:main`, which reads as two
+  sessions. The star, the runner mark and the name are one row rather than three, and hovering no longer lifts
+  the entry: a card that moves as you reach for it is one you click the wrong part of.
+
+- **Column tooltips rewritten.** Shorter, no references to the `gwt` session ledger, and two stale facts gone:
+  `running` claimed cards move to finished after three hours, and `finished` described `dead` as any process
+  that is gone rather than one whose directory has gone too.
+
+- **British spellings out of authored prose**, across 41 files. `centre` and `grey` deliberately left: both
+  appear inside CSS keywords and identifiers where a blind rewrite renames a variable.
+
 - **The terminal's horizontal gap is a margin, not padding.** xterm fits to `#t-screen`'s content box and draws
   its viewport, scrollbar included, across the full width of it. Horizontal padding sits inside that box, so
   the bar landed on the last column of text and the right-hand characters read as running underneath it. A
@@ -53,7 +92,7 @@ section heading is just "what landed in this iteration."
   Six file glyphs, drawn here rather than vendored. An icon theme is several hundred SVGs for extensions this
   board will never see, and the board has to work offline, which is the same reason xterm is vendored rather
   than fetched. The question a glyph answers in a listing is "which of these is the code and which is the
-  readme", and colour carries most of that: telling `.ts` from `.tsx` at 11px is not something an icon can do.
+  readme", and color carries most of that: telling `.ts` from `.tsx` at 11px is not something an icon can do.
 
   The two actions appear on hover but hold their place in the layout, so a row's contents never move under the
   pointer.
@@ -629,7 +668,7 @@ section heading is just "what landed in this iteration."
 
   `Notification` is wired filtered, and it filters itself rather than relying on a matcher expression in
   somebody's settings file. It fires for around a dozen kinds of thing and most of them are not a card wanting a
-  human. An unrecognised kind stays silent on purpose, so a new notification type in a future release does not
+  human. An unrecognized kind stays silent on purpose, so a new notification type in a future release does not
   turn into noise on upgrade. `permission_prompt` is excluded even though it plainly wants a human, because
   atrium's own gate is what put it on screen.
 
@@ -869,7 +908,7 @@ section heading is just "what landed in this iteration."
   optional: offered by name, with what it does said next to the switch, and never written by "install all". A
   hook that is off on purpose no longer counts as missing, though a stale one still does, since somebody asked
   for that and it is now pointing at the wrong binary. Three things hold the line, and there is a test for each:
-  every failure path prints a plain continue and exits 0, `stop_hook_active` is honoured so it cannot block
+  every failure path prints a plain continue and exits 0, `stop_hook_active` is honored so it cannot block
   twice in a row, and the daemon's answer is passed through only when it parses as a block with something to
   say.
 
@@ -948,8 +987,8 @@ section heading is just "what landed in this iteration."
   front of you. Started in the background, because a board that is not answering yet looks like a hang while a
   terminal that is not open yet does not.
 - **Terminal themes, ported from the operator's own.** All fifty two Windows Terminal themes, converted rather
-  than transcribed, so the colours are the ones already in daily use and a session looks the same in the board
-  as it does in a terminal window. The repo-to-theme map came across too, so a session picks up the colour
+  than transcribed, so the colors are the ones already in daily use and a session looks the same in the board
+  as it does in a terminal window. The repo-to-theme map came across too, so a session picks up the color
   already associated with its project. Choosing one on a card overrides that and is stored on the card, not in
   the browser, so it survives a restart and follows the session into another browser.
 
@@ -1097,7 +1136,7 @@ section heading is just "what landed in this iteration."
   resume checkbox that defaults to on, and enter to start.
 - **Notifications take themselves down.** Permission notifications were sticky so a blocked agent could not
   scroll away unnoticed, and sticky on Windows means they never leave. There is now an expiry, default 30
-  seconds, set under the gear. Choosing "never, until answered" restores the old behaviour on purpose. The
+  seconds, set under the gear. Choosing "never, until answered" restores the old behavior on purpose. The
   service worker holds its own timer and the board sweeps expired ones whenever it is open, because a browser
   is free to shut a worker down before its timer fires.
 - **Finished columns can be cleared.** `POST /v1/tasks/prune` deletes done and dead cards, optionally narrowed
@@ -1123,7 +1162,7 @@ section heading is just "what landed in this iteration."
   vanished, and `WORKTREE_ROOT` unset once made a hundred and twenty five rules appear to be gone. The daemon
   now says loudly when it created a database rather than found one.
 - **Permission requests carry a dedup key.** The hook sends one built from the session and the exact request, so
-  a retry after a daemon crash is recognised as the same question instead of being asked again.
+  a retry after a daemon crash is recognized as the same question instead of being asked again.
 
 ## 2026-09-01 -- v2 prototype: durable state, a human-facing API, and a board
 
@@ -1155,7 +1194,7 @@ First working slice of `docs/architecture-v2.md`. New subcommand `atrium daemon`
   queue with approve and block-with-guidance. Served from the binary via `go:embed`. This is a plain page for
   now rather than the agreed React SPA: it exercises the same JSON plus SSE contract, so the server does not
   care which one is talking to it.
-- **`rank`** orders cards within a column, with midpoint insertion so reordering never renumbers neighbours.
+- **`rank`** orders cards within a column, with midpoint insertion so reordering never renumbers neighbors.
   The board sorts by rank, the stack sorts by wait time, on purpose.
 - **First tests in the repo.** Ten in `internal/store` covering reconnect identity, override survival, waiting
   order, the permission dedup replay, rank placement, and the halt refusing further work.

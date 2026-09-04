@@ -149,7 +149,7 @@ func resolve(path string) (string, error) {
 //
 // This is belt and braces. The upload path computes its own destination and
 // never joins caller input as a path, so nothing here is load-bearing on its
-// own. It exists so that the file lands under a name a person recognises
+// own. It exists so that the file lands under a name a person recognizes
 // without that name being able to mean anything.
 func SafeName(name string) string {
 	// Take the last segment under either separator, so `a\b\c.png` and

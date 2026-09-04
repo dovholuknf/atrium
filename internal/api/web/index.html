@@ -74,6 +74,11 @@
     /* Corners. Fixed, not scaled: a corner is a style, and a 12px radius on a
        panel reads the same whatever size the text inside it is. */
     --r-xs: 3px; --r-sm: 6px; --r-md: 9px; --r-lg: 12px; --r-pill: 999px;
+    /* How strongly a project group tints itself. Two numbers rather than four
+       colors: the HUE comes from the group's own name, so only the strength is
+       a decision, and it is one decision made in one place. Turn these up to
+       make the blocks louder, down to make them a hint. */
+    --group-fill: .22; --group-edge: .37; --card-tint: .07;
     --shadow-card: 0 10px 22px rgba(2,6,9,.45);
     --shadow-lift: 0 16px 30px rgba(2,6,9,.62);
     --shadow-pop: 0 14px 34px rgba(2,6,9,.75);
@@ -322,7 +327,7 @@
   /* Height from the board, which already accounts for its own padding, rather
      than recomputing it and being taller than the box it sits in. */
   .board .col {
-    flex: 1 1 0; min-width: 230px;
+    flex: 1 1 0; min-width: 268px;
     display: flex; flex-direction: column; max-height: 100%;
   }
   .board .col > .cards {
@@ -426,16 +431,45 @@
   .cardgroup > summary .gn { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
   .cardgroup > summary .chip.sweep { margin-left: auto; margin-right: 0; }
 
-  /* A project group. Coloured from a hash of its name, so a project keeps the
-     same colour without anyone configuring one, and the bar down the left is
+  /* A project group. Colored from a hash of its name, so a project keeps the
+     same color without anyone configuring one, and the bar down the left is
      what makes two groups in a column tell apart at a glance. */
+  /* A tinted block, not just a bar down the left.
+     The bar alone made the cards read as a list that happened to start below a
+     heading. A wash of the group's own hue at low alpha, with an outline in
+     the same hue, makes the block itself the thing the eye groups, so which
+     cards belong to which project is answered before any of it is read.
+     Low enough not to compete with a card. The cards inside carry their own
+     background and their own left edge for status, and a tint that fought
+     those would cost the more urgent signal to win the less urgent one. */
   .cardgroup.project {
+    border: 1px solid hsl(var(--ghue) 60% 55% / var(--group-edge));
     border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);
+    background: hsl(var(--ghue) 60% 45% / var(--group-fill));
     border-radius: var(--r-xs) 9px 9px 3px;
-    padding-left: 9px; margin-bottom: 12px;
+    /* Now that the block has a fill and an outline, the cards inside need to
+       sit off both. They were flush against the right edge and the bottom one
+       was flush against the border, which reads as clipped rather than as
+       contained. Small on the right: horizontal room is what a card title
+       needs and a column is already the narrowest thing on the board. */
+    padding: 0 5px 6px 9px; margin-bottom: 12px;
+  }
+  /* A trace of the group's hue on the cards inside it, so a card that has been
+     scrolled away from its heading still says which project it belongs to.
+     Much weaker than the block, and its own variable, because the two are
+     answering different questions: the block says "these belong together" and
+     wants to be seen, the card says "and so does this one" and must not
+     compete with the left edge, which is carrying status and is the more
+     urgent signal. Set `--card-tint` to 0 to turn it off entirely. */
+  .cardgroup.project .card {
+    background:
+      linear-gradient(hsl(var(--ghue) 60% 45% / var(--card-tint)),
+                      hsl(var(--ghue) 60% 45% / var(--card-tint))),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+    border-color: hsl(var(--ghue) 55% 50% / .3);
   }
   .cardgroup.project > summary {
-    text-transform: none; letter-spacing: .02em; padding: 7px 3px 9px;
+    text-transform: none; letter-spacing: .02em; padding: 10px 3px 10px;
   }
   .cardgroup.project > summary::before { font-size: var(--fs-lg); width: 13px; }
   .cardgroup.project > summary .gn { font-size: var(--fs-md); }
@@ -459,6 +493,7 @@
   .card {
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    /* No group hue here. See the rule under `.cardgroup.project .card`. */
     border: 1px solid var(--stroke); border-radius: var(--r-md);
     padding: calc(8px * var(--density)) 12px;
     margin-bottom: calc(7px * var(--density)); cursor: pointer;
@@ -471,7 +506,7 @@
   .card .card-line {
     display: flex; align-items: center; gap: var(--sp-3);
   }
-  /* A card hovers in its group's colour. A single blue for every card meant
+  /* A card hovers in its group's color. A single blue for every card meant
      the one thing you were pointing at stopped saying which project it was in,
      which is the moment that answer matters most. --ghue is inherited from the
      group, so a card outside one falls back to blue. */
@@ -522,13 +557,16 @@
   .chip {
     font: 500 var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border-radius: var(--r-sm);
     background: var(--chip); color: var(--label); border: 1px solid transparent;
+    /* Most chips carry a duration that ticks, and a proportional `1` makes the
+       whole pill breathe in and out as the minutes pass. */
+    font-variant-numeric: tabular-nums;
   }
   .chip.accent {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  /* A colour per runner, so which harness a session is takes no reading. The
+  /* A color per runner, so which harness a session is takes no reading. The
      four are the seeded ones; anything else falls back to the neutral chip
-     rather than being given a colour that means nothing. */
+     rather than being given a color that means nothing. */
   .chip.runner { background: var(--chip); color: var(--label); font-weight: 600; }
   .chip.runner[data-runner="claude"] {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke);
@@ -563,7 +601,7 @@
   @media (prefers-reduced-motion: reduce) {
     .chip.live.tool { animation: none; opacity: 1; }
   }
-  /* Dragging a card. The insertion line is drawn on the neighbour rather than
+  /* Dragging a card. The insertion line is drawn on the neighbor rather than
      as a floating element, so it cannot end up in the wrong place. */
   .card.dragging { opacity: .4; }
   .col.drop-into { background: rgba(0,227,176,.05); border-radius: var(--r-md); }
@@ -651,8 +689,8 @@
   #cardmenu.flip .sub { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
   #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
 
-  /* Recolouring a group. Hues only, at the lightness the board draws them at,
-     so every swatch is a colour a group can actually be. */
+  /* Recoloring a group. Hues only, at the lightness the board draws them at,
+     so every swatch is a color a group can actually be. */
   .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: 4px; }
   .swatch {
     width: 34px; height: 34px; border-radius: var(--r-md); cursor: pointer; padding: 0;
@@ -739,7 +777,7 @@
   .rev-row .rep { font: var(--fs-xs) var(--mono); color: var(--dimmest); }
   .rev-row .by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
   .rev-row .by .auto { color: var(--warn); }
-  /* Auto mode, warn coloured: nothing is asking you, and the card says so
+  /* Auto mode, warn colored: nothing is asking you, and the card says so
      rather than leaving it in settings.
      It breathes. A session running unattended is the one state where a card
      that looks like every other card is a problem, so this is the only thing
@@ -764,7 +802,7 @@
     background: linear-gradient(180deg, var(--warn-bg), transparent 60%);
   }
   .stackrow.autoon { border-left: 3px solid var(--warn); }
-  /* Anyone who does not want the movement keeps the colour. */
+  /* Anyone who does not want the movement keeps the color. */
   @media (prefers-reduced-motion: reduce) {
     .chip.auto { animation: none; }
   }
@@ -777,8 +815,8 @@
     color: var(--dimmest); border-color: var(--stroke-dim); background: transparent;
   }
   .gauto::before { content: "\25CF"; margin-right: 6px; font-size: .9em; }
-  /* Narrow: the label goes, the dot and its colour stay. What matters is
-     whether it is on, and the colour says that on its own. */
+  /* Narrow: the label goes, the dot and its color stay. What matters is
+     whether it is on, and the color says that on its own. */
   @media (max-width: 1150px) {
     .gauto { font-size: 0; padding: 8px 10px; }
     .gauto::before { margin-right: 0; font-size: var(--fs-md); }
@@ -788,7 +826,7 @@
     animation: autopulse 2s ease-in-out infinite;
   }
   /* ── overlays ────────────────────────────────────────── */
-  /* One panel per way out, each carrying its own mark, its own colour and its
+  /* One panel per way out, each carrying its own mark, its own color and its
      own state. They sit in the gear next to each other, so they have to be
      told apart at a glance rather than by reading the heading. */
   /* Section headings in the settings dialog. It grew from one thing into six,
@@ -848,8 +886,8 @@
     flex: none; width: 40px; height: 40px; display: grid; place-items: center;
     border-radius: var(--r-md);
   }
-  /* The marks carry their own colours, so the tile behind each one is tinted
-     to match rather than recolouring the logo. */
+  /* The marks carry their own colors, so the tile behind each one is tinted
+     to match rather than recoloring the logo. */
   .ov-mark svg { width: 27px; height: 27px; display: block; }
   .ov-mark[data-kind="zrok"] { background: rgba(155,243,22,.12); }
   .ov-mark[data-kind="ziti"] { background: rgba(140,199,255,.12); }
@@ -949,7 +987,7 @@
   .pin.on, .pinned > .pin { color: var(--warn); }
   /* A pinned row, marked down its edge the way a waiting one is, so the top
      of the list is obviously deliberate rather than a sort you do not
-     recognise. */
+     recognize. */
   .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
   .term-entry.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
   /* Pinned but with no terminal behind it. Offering to start one rather than
@@ -993,7 +1031,7 @@
   .subagents .sub-kind { font-family: var(--mono); color: var(--chip-accent-text); }
   .subagents .sub-age { color: var(--dimmest); font-family: var(--mono); margin-left: auto; }
 
-  /* A tag, coloured from its own name by the hash the groups use, so the same
+  /* A tag, colored from its own name by the hash the groups use, so the same
      tag looks the same wherever it appears. */
   .chip.tag {
     background: hsl(var(--ghue) 60% 50% / .16);
@@ -1001,7 +1039,7 @@
     color: hsl(var(--ghue) 70% 76%); cursor: pointer;
   }
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
-  /* Where the work came from. Deliberately not coloured per source: atrium
+  /* Where the work came from. Deliberately not colored per source: atrium
      does not know what a source is, and a palette per system would be atrium
      claiming to. One quiet chip that happens to be a link. */
   .chip.origin {
@@ -1136,7 +1174,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .filelist .frow.dir .fname { color: var(--teal); }
-  /* The glyph. Coloured by what the file is, so a directory of Go and a
+  /* The glyph. Colored by what the file is, so a directory of Go and a
      directory of markdown are tellable apart before reading a word. */
   .filelist .ficon { flex: none; display: block; color: var(--dimmest); }
   .filelist .frow.dir .ficon { color: var(--teal); }
@@ -1289,6 +1327,10 @@
   .stackrow .wait {
     flex: none; min-width: 78px; font-family: var(--mono); color: var(--warn);
     text-align: right; line-height: 1.25;
+    /* Every digit the same width, so `1` and `4` occupy the same room and the
+       column stops shifting as the ages tick over. Mono already does this;
+       stated anyway because the fallbacks in the stack may not. */
+    font-variant-numeric: tabular-nums;
   }
   .stackrow .wait.quiet { color: var(--dimmest); }
   /* The day it started, under how long ago that was. Two different questions,
@@ -1372,7 +1414,7 @@
   /* A fixture whose last start failed, and the reason under it. Two rows
      rather than one, because the reason is a command line or a path and
      truncating it into the row would hide the half that identifies it.
-     The pair is bracketed by the same warn colour so they read as one entry
+     The pair is bracketed by the same warn color so they read as one entry
      rather than as a row and an unrelated row. */
   .row.line.broke { border-bottom: none; }
   .row.line.why-broke {
@@ -1389,7 +1431,7 @@
   }
   .chip.icon svg { display: block; }
   /* The harness, on the left where the eye starts, instead of a word among the
-     chips on the right. Same colours as the runner chip so the two agree. */
+     chips on the right. Same colors as the runner chip so the two agree. */
   .rmark {
     flex: none; width: 39px; height: 39px; display: grid; place-items: center;
     border-radius: var(--r-sm); align-self: center;
@@ -1397,14 +1439,14 @@
     color: var(--label); background: var(--chip);
   }
   .rmark svg { width: 26px; height: 26px; display: block; }
-  /* Claude's own colour, not the board's accent. A mark that means "which
+  /* Claude's own color, not the board's accent. A mark that means "which
      harness" has to look like the harness. */
   .rmark[data-runner="claude"] { color: #E8825A; background: rgba(232,130,90,.14); }
   .rmark[data-runner="codex"]  { color: #A8BEFF; background: rgba(140,170,255,.14); }
   .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
   .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(255,198,77,.10); }
 
-  /* A project group in the stack. Its panel carries the colour down the left
+  /* A project group in the stack. Its panel carries the color down the left
      edge, the same as a group on the board. */
   .stackgroup { margin-bottom: var(--sp-4); }
   .stackgroup > summary {
@@ -1422,7 +1464,16 @@
   }
   .stackgroup > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
   .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
-  .stackgroup > .panel { border-left: 3px solid hsl(var(--ghue) 65% 55% / .75); }
+  /* The same block treatment the board's groups get, from the same two
+     variables. It had only the bar down the left, so the two views coloured
+     the same grouping differently and the stack read as a flat list with
+     coloured headings in it. */
+  .stackgroup > .panel {
+    border: 1px solid hsl(var(--ghue) 60% 55% / var(--group-edge));
+    border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);
+    background: hsl(var(--ghue) 60% 45% / var(--group-fill));
+    padding: 0 5px 6px 0;
+  }
   /* A decision nobody saw. Marked apart from a rule, which somebody wrote. */
   .by .auto { color: var(--warn); font-weight: 600; }
   .row.line button { padding: 4px 12px; font-size: var(--fs-base); flex: none; }
@@ -1567,15 +1618,41 @@
     border-radius: var(--r-md); padding: 10px 12px; cursor: pointer;
     transition: border-color .14s, transform .14s, background .14s;
   }
-  .term-entry:hover {
-    transform: translateY(-1px); border-color: var(--blue); border-left-color: var(--blue);
-  }
+  /* No lift. A card that moves under the pointer as you reach for it is a
+     card you click the wrong part of, and in a list this dense the shift
+     reads as the whole column twitching. Colour alone says the same thing and
+     nothing moves. */
+  .term-entry:hover { border-color: var(--blue); border-left-color: var(--blue); }
   .term-entry.on {
     border-left-color: var(--teal); border-color: var(--stroke); background: var(--shell-0);
   }
   .term-entry.attn { border-left-color: var(--warn); }
-  .term-entry b { display: block; color: var(--head); font-size: var(--fs-md); font-weight: 600; }
-  .term-entry span { font: var(--fs-xs)/1.5 var(--mono); color: var(--dimmest); word-break: break-all; }
+  .term-entry b {
+    display: flex; align-items: center; gap: var(--sp-2);
+    color: var(--head); font-size: var(--fs-md); font-weight: 600; min-width: 0;
+  }
+  /* The runner's mark, in front of the name, the way a card and the terminal
+     bar carry it. The `claude` pill said the same thing lower down and read as
+     one more fact rather than as whose session this is. */
+  .term-entry b .rmark { width: 22px; height: 22px; flex: none; border-radius: var(--r-sm); }
+  .term-entry b .rmark svg { width: 14px; height: 14px; }
+  .term-entry b .tname {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Sized to the row it is in rather than to a heading. At 2xl the star was
+     taller than the line and pushed everything beside it out of the way. */
+  .term-entry b .pin { font-size: var(--fs-lg); width: auto; flex: none; }
+  .term-entry span { font: var(--fs-xs)/1.5 var(--mono); color: var(--dimmest); }
+  /* One line, cut at the FRONT. The last segments of a path identify it; the
+     drive letter and `worktrees` are the same on every entry in this list.
+     `direction: rtl` is what puts the browser's ellipsis at the left end, and
+     the `bdi` inside keeps the text itself reading left to right. */
+  .term-entry .path {
+    display: block; direction: rtl; text-align: left; unicode-bidi: plaintext;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer; margin: 2px 0;
+  }
+  .term-entry .path:hover { color: var(--label); }
   .term-entry .chip { margin-top: 6px; margin-right: 5px; }
   button.termsort {
     align-self: flex-start; font-size: var(--fs-sm); padding: 5px 11px;
@@ -1630,7 +1707,7 @@
   #t-screen .xterm { height: 100%; width: 100%; }
   .term-entry .chip { white-space: nowrap; }
 
-  /* NEVER set a width here. Colour only.
+  /* NEVER set a width here. Color only.
      The fit addon works out how many columns fit by measuring the viewport's
      scrollbar, and a declared width changes that measurement out from under it,
      so xterm draws rows a couple of characters too wide and the text runs
@@ -1731,14 +1808,14 @@
     border-radius: var(--r-sm); padding: 7px 11px;
   }
   .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
-  /* Names what a row of pills does. Two unlabelled rows read as one bank, and
+  /* Names what a row of pills does. Two unlabeled rows read as one bank, and
      the sort row looked like more filters. */
   .barlabel {
     font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .14em;
     text-transform: uppercase; color: var(--dimmest); flex: none;
     min-width: 52px;
   }
-  /* A second labelled bank on the same row needs a bigger gap than the one
+  /* A second labeled bank on the same row needs a bigger gap than the one
      between pills, or "group" reads as another sort pill. */
   .filters .barlabel:not(:first-child) { margin-left: var(--sp-4); min-width: 0; }
   .seg { display: flex; gap: var(--sp-1); }
@@ -1943,7 +2020,7 @@
     font-family: var(--mono); font-size: var(--fs-base); min-height: 84px;
     resize: vertical; display: block;
   }
-  /* Native select arrows are drawn by the OS and cannot be recoloured, so the
+  /* Native select arrows are drawn by the OS and cannot be recolored, so the
      control draws its own and hides the original. */
   .dlg-body select {
     appearance: none; cursor: pointer; padding-right: 34px;
@@ -2000,7 +2077,7 @@
   .evr:last-child { border-bottom: none; }
   .evr:hover { background: rgba(23,58,87,.4); }
   .evr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* The verdict, coloured, because scanning an audit log is looking for what
+  /* The verdict, colored, because scanning an audit log is looking for what
      got through. */
   .c-verdict { font-weight: 600; color: var(--label); }
   .c-verdict.ok { color: var(--chip-accent-text); }
@@ -2281,10 +2358,10 @@ by you — you clicked it
 by rule — a standing rule answered it and you never saw it
 you, made rule — you clicked always or never, creating that rule
 
-Exports honour whatever filter is applied.">?</span>
+Exports honor whatever filter is applied.">?</span>
         <span class="n" id="hist-count"></span>
       </summary>
-      <!-- Two rows, each labelled. Unlabelled they looked like one bank of
+      <!-- Two rows, each labeled. Unlabeled they looked like one bank of
            pills and the sort row read as more filters. -->
       <div class="filters">
         <span class="barlabel">show</span>
@@ -2331,12 +2408,17 @@ Exports honour whatever filter is applied.">?</span>
             title="open this terminal in its own window, so alt-tab reaches it">pop out</button>
           <button id="t-files" onclick="openTermFiles()"
             title="the files in this session's directory, on the machine running it">&#128193;</button>
-          <button id="t-cog" onclick="termSettings(event)"
-            title="how this terminal looks and behaves">&#9881;</button>
           <button class="no" onclick="exitTerm()"
             title="ask this runner to quit, the way its own harness says to">exit</button>
-          <button class="no" onclick="closeTerm()"
-            title="leave the terminal running and stop watching it">detach</button>
+          <!-- No detach. Stopping watching is not a thing you decide, it is
+               what happens when you look at something else: attaching to
+               another session, leaving the tab, or closing a popped-out
+               window all release it, and the runner never noticed either way.
+               A button for it was a decision offered where there was none.
+               The cog is LAST because it is the only control here that opens
+               something rather than doing something. -->
+          <button id="t-cog" onclick="termSettings(event)"
+            title="how this terminal looks and behaves">&#9881;</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
         <!-- This session's directory, in the pane rather than in a dialog.
@@ -2351,6 +2433,7 @@ Exports honour whatever filter is applied.">?</span>
           <div class="filebar">
             <button id="t-files-up" onclick="termFilesUp()" title="up one directory">&#8593;</button>
             <span class="crumbs" id="t-files-where"></span>
+            <a class="chip" id="t-files-zip" download>get all</a>
             <button onclick="openTermFiles()" title="close this">close</button>
           </div>
           <div class="filelist" id="t-files-list"></div>
@@ -2861,7 +2944,7 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     </div>
     <div class="field">
       <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer</label>
-      <span class="hintline">Off keeps the definition without the behaviour. You can still run
+      <span class="hintline">Off keeps the definition without the behavior. You can still run
         it by hand, which is how to test one before turning it on.</span>
     </div>
     <div class="field" id="s-status-field" hidden>
@@ -2918,7 +3001,7 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       </div>
       <span class="hintline">Resuming picks up where it left off. Off starts fresh every time,
         which is what a plain shell wants. Turning off &ldquo;starts with atrium&rdquo; keeps the
-        definition without the behaviour.</span>
+        definition without the behavior.</span>
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
@@ -3181,6 +3264,7 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         <div class="filebar">
           <button id="d-files-up" onclick="filesUp()" title="up one directory">&#8593;</button>
           <span class="crumbs" id="d-files-where"></span>
+          <a class="chip" id="d-files-zip" download>get all</a>
         </div>
         <div class="filelist" id="d-files-list"></div>
         <span class="hintline" id="d-files-note"></span>
@@ -3287,14 +3371,10 @@ const COLUMNS = [
     // session it already had would still be running.
     id: "backlog", label: "inbox", statuses: ["backlog"],
     accepts: false, hideWhenEmpty: true,
-    why: "Work something found and nobody has started.\n\n" +
-      "A source posts an item, atrium makes a card with no runner, and it " +
-      "waits here until you press start. Atrium never learns what the source " +
-      "is: github, zendesk and ci are words on a badge.\n\n" +
-      "Nothing here is costing an agent anything, which is why it sits above " +
-      "the columns that are and below nothing else: it is the only column " +
-      "that answers what to do next rather than what is happening now.\n\n" +
-      "Empty until you wire up a source, and hidden while it is."
+    why: "Work a source found that nobody has started.\n\n" +
+      "There is no runner behind these, so nothing here is costing an agent " +
+      "anything. Press start to give one a runner.\n\n" +
+      "Hidden until you wire up a source."
   },
   // `accepts: false` refuses a card dragged in. These two columns are reports,
   // not buckets: a card is in them because an agent said so. Dropping one into
@@ -3303,11 +3383,9 @@ const COLUMNS = [
   {
     id: "needs-permission", label: "needs permission", statuses: ["needs-permission"],
     accepts: false,
-    why: "An agent asked to run something and is frozen until you answer.\n\n" +
-      "Nothing else will answer for it, and it has no timeout. First column " +
-      "because this is the one costing an agent time right now.\n\n" +
-      "Cards arrive here on their own. You cannot drag one in, because there " +
-      "would be no request behind it."
+    why: "An agent is frozen waiting for your answer.\n\n" +
+      "There is no timeout and nothing else will answer for it. First column " +
+      "because it is the one costing time right now."
   },
   {
     // `ready` rather than `needs input`. The status stored underneath is
@@ -3322,13 +3400,9 @@ const COLUMNS = [
     // either, so this takes the third word that means what both do.
     id: "needs-input", label: "ready", statuses: ["needs-input"],
     accepts: false,
-    why: "The agent finished its turn and is waiting for you to say what is " +
-      "next. Nothing is frozen mid-tool, so it sits below permissions.\n\n" +
-      "The gwt session ledger calls this same moment done. It is called ready " +
-      "here because finished already means something else on a board: work " +
-      "you filed away.\n\n" +
-      "Cards arrive here when a session's Stop hook fires. You cannot drag " +
-      "one in, because that would not make an agent be waiting."
+    why: "The turn ended and it is your move.\n\n" +
+      "Nothing here is frozen mid-tool, which is why it sits below " +
+      "permissions."
   },
   {
     // The counterpart to `ready`, and the ledger's `thinking`. Kept as
@@ -3336,26 +3410,28 @@ const COLUMNS = [
     // than a model, and the live activity badge already says `thinking` when
     // that is what it is actually doing.
     id: "running", label: "running", statuses: ["running"],
-    why: "Working, or believed to be. The gwt session ledger calls this " +
-      "thinking.\n\nWhen atrium knows a session's process " +
-      "id it asks the operating system every twenty seconds, so a card here " +
-      "with a pid is alive. Idle time then means the session is sitting at a " +
-      "prompt, not that it is gone.\n\nWith no process id there is nothing to " +
-      "ask. Those cards are marked NO CONTACT after twenty minutes of silence " +
-      "and moved to finished after three hours, and come back the moment the " +
-      "session says anything."
+    why: "Working, or believed to be.\n\n" +
+      "With a known process id, atrium asks the operating system every twenty " +
+      "seconds, so a card here is alive and its idle time only means it is " +
+      "sitting at a prompt.\n\n" +
+      "Without one there is nothing to ask, so silence is the only signal. " +
+      "Those are marked NO CONTACT and eventually treated as gone, and come " +
+      "back the moment the session says anything."
   },
   {
     id: "finished", label: "finished", statuses: ["done", "dead"], drop: "done",
-    why: "Over, and split into two groups.\n\ndone is work that finished.\n" +
-      "dead is a process that is gone, whether it succeeded or not.\n\n" +
+    why: "Over, in two kinds.\n\n" +
+      "done: the session ended and its directory is still there, so the " +
+      "conversation can be picked back up.\n" +
+      "dead: the process AND the directory are gone, so there is nothing to " +
+      "come back to.\n\n" +
       "Clear deletes a group and its history."
   },
   {
     id: "shelved", label: "shelved", statuses: ["shelved"], drop: "shelved",
-    why: "Put down on purpose, to come back to.\n\nRequests from a shelved " +
-      "session are refused until you unshelve it, and clearing a column never " +
-      "takes one."
+    why: "Put down on purpose, to come back to.\n\n" +
+      "Requests from a shelved session are refused until you unshelve it, and " +
+      "clear never takes one."
   }
 ];
 
@@ -3432,8 +3508,17 @@ function ago(secs) {
   // Past a day the minutes are noise: nothing is decided differently by
   // "1d3h17m" than by "1d3h", and the extra digits make a column of ages
   // harder to compare down.
-  if (d) return d + "d" + (h ? h + "h" : "");
-  return (h ? h + "h" : "") + (m ? m + "m" : "");
+  // Two digits on everything but the leading unit, so a column of these lines
+  // up down the page. `6h9m` and `21h4m` differ by a character in the middle,
+  // which is exactly where the eye is trying to compare them: `6h09m` and
+  // `21h04m` put the h and the m in the same place on every row.
+  //
+  // Not on the FIRST unit, which would read as a clock rather than a duration
+  // and pad every short age with a zero nobody asked for.
+  const pad = n => String(n).padStart(2, "0");
+  if (d) return d + "d" + (h ? pad(h) + "h" : "");
+  if (h) return h + "h" + pad(m) + "m";
+  return m + "m";
 }
 
 // Seconds since a timestamp the server sent, for the ages the server did not
@@ -3851,10 +3936,10 @@ function grouper() {
   return { many: false, of: t => [safeBy(t)], cmp: safeOrder };
 }
 
-// A colour per group.
+// A color per group.
 //
-// Hashed from the name by default, so a project is coloured the moment it
-// appears and keeps that colour with nothing configured. A hash cannot know
+// Hashed from the name by default, so a project is colored the moment it
+// appears and keeps that color with nothing configured. A hash cannot know
 // that two projects you care about landed on similar hues, so an override
 // wins when there is one.
 function groupHue(name) {
@@ -3865,11 +3950,11 @@ function groupHue(name) {
   return h;
 }
 
-// The palette offered when recolouring. Spread around the wheel so two picks
-// are always tellable apart, which is the whole job of the colour.
+// The palette offered when recoloring. Spread around the wheel so two picks
+// are always tellable apart, which is the whole job of the color.
 const GROUP_HUES = [0, 25, 45, 65, 95, 140, 170, 195, 215, 250, 285, 320];
 
-// Right click a group heading to recolour it.
+// Right click a group heading to recolor it.
 function groupMenu(e, name) {
   e.preventDefault();
   e.stopPropagation();
@@ -3877,9 +3962,9 @@ function groupMenu(e, name) {
   showMenu(e, [
     { label: name, act: () => {} },
     { sep: true },
-    { label: "recolour…", act: () => pickGroupHue(name) },
+    { label: "recolor…", act: () => pickGroupHue(name) },
     set[name] !== undefined
-      ? { label: "back to the automatic colour", act: () => setGroupHue(name, null) }
+      ? { label: "back to the automatic color", act: () => setGroupHue(name, null) }
       : null
   ]);
 }
@@ -3890,14 +3975,14 @@ function setGroupHue(name, hue) {
   setGrouping({ hues });
 }
 
-// Swatches rather than a colour input, because the colour is a hue on a fixed
+// Swatches rather than a color input, because the color is a hue on a fixed
 // lightness: a full picker would offer combinations the board cannot draw.
 function pickGroupHue(name) {
   const body = `<div class="swatches">` + GROUP_HUES.map(h =>
     `<button class="swatch" style="--ghue:${h}" data-hue="${h}"
       title="hue ${h}"></button>`).join("") + `</div>`;
   askUser({
-    title: "colour for " + name,
+    title: "color for " + name,
     body,
     buttons: [{ label: "cancel", value: null }]
   });
@@ -3940,7 +4025,7 @@ function cardsHTML(cards, g, keyPrefix) {
       style="--ghue:${groupHue(name)}">
       <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
         oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
-        <span class="gname" title="${esc(name)} &mdash; right click to recolour">${esc(name)}</span>
+        <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
       ${mine.map(cardHTML).join("")}
@@ -4002,18 +4087,62 @@ async function renderBoard() {
     // or a never rule still blocks, and one of those sitting there while the
     // header says everything is approved is the single most confusing thing
     // the board could hide.
+    // Approving everything means nothing can arrive here, so the column is not
+    // reporting "nothing is blocked", it is a column that cannot fill. Gone
+    // entirely rather than narrowed: a strip saying `empty` under a header
+    // saying APPROVING EVERYTHING is a place for your eye to go for no reason.
+    //
+    // Only while it is empty. A shelved card or a never rule still blocks, and
+    // one of those sitting here while the header says everything is approved is
+    // the single most confusing thing the board could hide, so `mine.length`
+    // is part of the test and not an afterthought.
     const moot = col.id === "needs-permission" && globalAuto && mine.length === 0;
-    const vacant = (shown === 0 || moot) ? " vacant" : "";
+    if (moot) return "";
+    // Nothing in it, which is not the same question `shown` answers.
+    //
+    // `shown` counts the groups that are OPEN, so a column holding several
+    // statuses read as occupied whenever one of its groups was expanded, even
+    // with nothing in either. `finished` kept a full column's width to say
+    // DONE 0 and DEAD 0 and then `empty` underneath, three ways of saying the
+    // same nothing.
+    const bare = mine.length === 0;
+    // `moot` is not here: that column has already returned above.
+    const vacant = (bare || shown === 0) ? " vacant" : "";
 
     // A column holding one status is a flat list. One holding several splits
     // into groups, each with its own count and its own clear. Project groups
     // nest inside either.
-    const body = col.statuses.length === 1
-      ? cardsHTML(mine, g, col.id)
-      : col.statuses.map(s =>
-          groupHTML(s, all.filter(t => t.status === s), g)).join("");
+    // An empty column holding several statuses drops its group headings too.
+    // Keyed on `bare` rather than on `vacant`, because a column can be narrow
+    // for two other reasons and both of those still have cards to show.
+    const body = (bare && col.statuses.length > 1)
+      ? `<div class="empty">empty</div>`
+      : col.statuses.length === 1
+        ? cardsHTML(mine, g, col.id)
+        : col.statuses.map(s =>
+            groupHTML(s, all.filter(t => t.status === s), g)).join("");
+
+    // Width follows how much is in it.
+    //
+    // Every column was `flex: 1 1 0`, so one card and nineteen got the same
+    // share and `running` sat as a mostly empty half of the board next to a
+    // `ready` that had to scroll.
+    //
+    // The square root, not the count. A column with four times the cards is
+    // not worth four times the width: a card is a fixed height, so the extra
+    // width buys nothing but a longer title, and a straight ratio would give
+    // one busy column the whole board.
+    //
+    // Capped at TWO, not four. The columns have a flex basis of zero, so the
+    // weight divides the whole width rather than the leftover: four against
+    // one gave `ready` four fifths of the board and clipped the chips off the
+    // one card in `running`. Two against one is the widest spread that leaves
+    // the quiet column able to show a card whole, which is the entire reason
+    // it is on screen.
+    const weight = Math.min(2, Math.max(1, Math.round(Math.sqrt(mine.length))));
 
     return `<section class="col${folded}${vacant}" data-column="${col.id}"
+      ${vacant ? "" : `style="flex-grow:${weight}"`}
       data-status="${esc(col.drop || col.statuses[0])}">
       <div class="col-head" onclick="toggleColumn('${col.id}')">
         <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
@@ -4154,16 +4283,16 @@ function acceptsDrop(col) {
   return !def || def.accepts !== false;
 }
 
-// Places a card relative to a neighbour, moving it between columns if needed.
-async function dropCard(id, neighbour, after) {
-  if (!id || !neighbour) return;
+// Places a card relative to a neighbor, moving it between columns if needed.
+async function dropCard(id, neighbor, after) {
+  if (!id || !neighbor) return;
   // The group when the column holds several, so dropping next to a dead card
   // lands on dead rather than on whatever the column's default is. Rank is
   // computed within the same scope, since that is what was dropped between.
-  const scope = neighbour.closest(".cardgroup") || neighbour.closest(".col");
-  const col = neighbour.closest(".col");
+  const scope = neighbor.closest(".cardgroup") || neighbor.closest(".col");
+  const col = neighbor.closest(".col");
   const cards = [...scope.querySelectorAll(".card")];
-  const at = cards.indexOf(neighbour);
+  const at = cards.indexOf(neighbor);
   const idx = after ? at + 1 : at;
 
   // Ranks come off the cards on screen rather than a fetch, so the midpoint is
@@ -4258,7 +4387,17 @@ const canResume = (t) => !!t.resume_id && !t.supervised;
 // for an hour and then stopped.
 const justStarted = (t) => t.waiting_reason === "started";
 
+// A session that put a QUESTION to you, as opposed to one that ran out of
+// things to do. Knowable because asking is a tool call, so the permission hook
+// sees it by name before the turn ends.
+//
+// This is the distinction the board could not make: everything landed in
+// `ready` and read the same, whether somebody was blocked on your answer or an
+// agent had simply finished.
+const wasAsked = (t) => t.waiting_reason === "asked";
+
 function readyBecause(t) {
+  if (wasAsked(t)) return "asked you a question and is waiting on the answer";
   return justStarted(t)
     ? "just came online and is waiting for its first instruction"
     : "finished its turn and wants your next instruction";
@@ -4281,10 +4420,46 @@ async function unshelveCard(id) {
 // The launch form rather than a silent relaunch, because resuming asks the same
 // questions launching does: which runner, in which directory. It arrives
 // pre-filled from the card and with the resume box already ticked.
-function resumeCard(id, t) {
+function resumeCard(id, t, where) {
   const why = cannotResume(t);
   if (why) { toast("cannot resume", why); return; }
-  openLaunch(t.runner || "claude", t.resume_id, t.worktree || "", id);
+  return resumeNow(id, t, where);
+}
+
+// Resuming, without asking anything.
+//
+// The launch form used to open pre-filled, which meant every resume was a
+// dialog whose every field was already correct and whose only useful control
+// was the button at the bottom. Resuming is not a decision: the runner, the
+// directory and the conversation all come off the card, and `cannotResume`
+// has already established that all three are known.
+//
+// The form is still there for starting something, where those three ARE the
+// decision.
+async function resumeNow(id, t, where) {
+  let task;
+  try {
+    task = await api("/v1/launch", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness: t.runner || "claude",
+        cwd: t.worktree || "",
+        resume: t.resume_id,
+        task_id: id,
+        // Onto the same card, so the title and everything else on it stay put.
+        // Sending them again would let a stale copy of the row overwrite what
+        // the card says now.
+        title: "", why: "", prompt: ""
+      })
+    });
+  } catch (e) {
+    tellUser("could not resume it", e.message);
+    return;
+  }
+  if (!task || !task.supervised) { refresh(); return; }
+  if (where === "window") { popOutTask(task.id); return; }
+  switchView("terms");
+  openTerm(task);
 }
 
 function unshelveItem(id, t) {
@@ -4305,6 +4480,9 @@ async function cardMenu(e, id) {
   e.preventDefault();
   e.stopPropagation();
   const t = await api(`/v1/tasks/${id}`);
+  // Once, and then held. The menu is drawn on a click and a round trip here
+  // would open it a beat late every time.
+  if (!allActions.length) await loadActions();
 
   // A card that is finished has nothing to terminate, and offering it produced
   // a dialog that failed and changed nothing. Auto mode and shelving are the
@@ -4379,11 +4557,12 @@ async function cardMenu(e, id) {
     t.worktree && canResume(t) && !cannotResume(t) ? {
       label: "resume the conversation here",
       help: "Starts a runner in this card's directory, picking the recorded " +
-        "conversation back up where it stopped.",
-      sub: openIn(where => openLaunch(t.runner || "claude", t.resume_id,
-        t.worktree || "", id, null, where))
+        "conversation back up where it stopped. Nothing to fill in: the " +
+        "runner, the directory and the conversation all come off the card.",
+      sub: openIn(where => resumeCard(id, t, where))
     } : null,
     { sep: true },
+    actionItems(t),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
@@ -4612,8 +4791,16 @@ const STACK_SORTS = {
   },
   waited: {
     label: "waiting on you",
-    first: "waiting longest first", last: "newest first",
-    cmp: (a, b) => (b.wait_seconds || 0) - (a.wait_seconds || 0)
+    first: "questions first, then waiting longest", last: "newest first",
+    // A question outranks any amount of waiting.
+    //
+    // Sorting by duration alone put a card that asked you something two
+    // minutes ago below twenty that had merely stopped overnight, which is the
+    // wrong way round for a list called "waiting on you": those twenty are not
+    // waiting on anything, they ran out of things to do. The clock only
+    // decides between cards of the same kind.
+    cmp: (a, b) => (wasAsked(b) ? 1 : 0) - (wasAsked(a) ? 1 : 0) ||
+      (b.wait_seconds || 0) - (a.wait_seconds || 0)
   },
   status: {
     label: "status",
@@ -4830,7 +5017,7 @@ function paintStack() {
   }
 }
 
-// The stack split into project groups, each its own panel so the colour reads
+// The stack split into project groups, each its own panel so the color reads
 // down the edge the way it does on the board.
 function stackGroupsHTML(list, g) {
   const byName = new Map();
@@ -4854,7 +5041,7 @@ function stackGroupsHTML(list, g) {
     return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}">
       <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
         oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
-        <span class="gname" title="${esc(name)} &mdash; right click to recolour">${esc(name)}</span>
+        <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
       <div class="panel">${mine.map(stackRow).join("")}</div>
@@ -4974,8 +5161,14 @@ function stackRow(t) {
 function stateChip(t, w) {
   const dur = w ? t.wait_seconds : t.idle_seconds;
   const said = bigNumber(t) === dur;
-  return `<span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
-    title="${esc(t.status)}">${esc(statusLabel(t.status))}${said ? "" : " " + ago(dur)}</span>`;
+  // A question asked says so, in place of the status. `ready` is true of both
+  // kinds and is the less useful half: an agent that stopped will wait
+  // forever without costing anything, and a question has somebody's work
+  // behind it.
+  const label = wasAsked(t) ? "asked you" : statusLabel(t.status);
+  return `<span class="chip ${wasAsked(t) ? "warn asked" : w ? "warn" : over(t) ? "" : "accent"}"
+    title="${esc(wasAsked(t) ? "it put a question to you and is waiting" : t.status)}"
+    >${esc(label)}${said ? "" : " " + ago(dur)}</span>`;
 }
 
 // The conventional "opens in a new window" mark: a box with an arrow leaving
@@ -5031,9 +5224,9 @@ async function resumePinned(id) {
   openLaunch(t.runner || "claude", t.resume_id || "", t.worktree || "", t.id);
 }
 
-// What the operator called this card. Coloured from the tag's own name by the
+// What the operator called this card. Colored from the tag's own name by the
 // same hash the groups use, so a tag looks the same wherever it appears and
-// picks up its group colour for free.
+// picks up its group color for free.
 //
 // Clicking one filters to it, since seeing a tag and wanting only that is the
 // same motion.
@@ -5137,7 +5330,7 @@ function filterByTag(tag) {
 // Which harness a row is, as a mark rather than a word.
 //
 // Abstract shapes, not the vendors' logos: a bad copy of somebody's trademark
-// is worse than a shape that is merely consistent. The colours are the ones
+// is worse than a shape that is merely consistent. The colors are the ones
 // the runner chip already uses, so the two agree wherever both appear.
 const RUNNER_MARKS = {
   // A seven-spoke burst.
@@ -5479,7 +5672,7 @@ function paintHistSort() {
 
 // hintsFor offers a few ready-made patterns per request, so widening a rule to
 // a whole repo is one click instead of typing a path by hand.
-// Colours the change block. The hook marks removals and additions with the
+// Colors the change block. The hook marks removals and additions with the
 // same --- and +++ a diff uses, so the lines under each marker are tinted
 // accordingly and a change is readable at a glance.
 // The hook sends the whole before and after text. Tinting both wholesale makes
@@ -6380,7 +6573,7 @@ function iconDataURL(kind, mark) {
   //
   // Same trade the tone already makes: which agent is the fact you cannot get
   // any other way while your back is turned, so it wins the picture, and the
-  // kind falls back to the colour.
+  // kind falls back to the color.
   mark = String(mark || "").trim();
   const key = kind + ":" + mark;
   if (notifIcons[key]) return notifIcons[key];
@@ -6998,8 +7191,8 @@ async function toggleGlobalAuto() {
 let overlays = [];
 
 // The projects' own marks, traced from their published SVGs: the zrok rocket
-// and the OpenZiti ziggurat. Each keeps its own colours rather than taking
-// the board's, since a logo recoloured is a logo somebody has to look twice at.
+// and the OpenZiti ziggurat. Each keeps its own colors rather than taking
+// the board's, since a logo recolored is a logo somebody has to look twice at.
 //
 // Both carry their own viewBox, so they are held in an <svg> of their own
 // rather than being pasted into a shared one.
@@ -7748,12 +7941,25 @@ function toggleFiles() {
 // worse than one that swaps. The terminal keeps running underneath and its
 // scrollback is untouched, so closing the drawer puts you back where you were.
 function openTermFiles() {
-  if (!termTask) return;
   const box = document.getElementById("t-files-panel");
-  const open = box.hidden;
+  if (!box) return;
+  // CLOSING never needs a card. It used to share the `!termTask` guard with
+  // opening, so a drawer left open while the terminal went away could not be
+  // shut: the close button called a function that returned before touching
+  // anything. Opening still needs one, since there is nothing to list without
+  // a card.
+  if (!box.hidden) { setTermFiles(false); return; }
+  if (!termTask) return;
+  setTermFiles(true);
+  loadFiles("", termFilesCtx());
+}
+
+function setTermFiles(open) {
+  const box = document.getElementById("t-files-panel");
+  if (!box) return;
   box.hidden = !open;
-  document.getElementById("t-files").classList.toggle("go", open);
-  if (open) loadFiles("", termFilesCtx());
+  const btn = document.getElementById("t-files");
+  if (btn) btn.classList.toggle("go", open);
   // The terminal's box changed, and xterm measures in characters, so it has to
   // be told. Without this the pane comes back with rows sized for the drawer.
   onTermResize();
@@ -7768,14 +7974,14 @@ function openTermFiles() {
 function termFilesCtx() {
   return {
     id: termTask && termTask.id, at: "term",
-    where: "t-files-where", up: "t-files-up",
+    where: "t-files-where", up: "t-files-up", zip: "t-files-zip",
     list: "t-files-list", note: "t-files-note"
   };
 }
 function dialogFilesCtx() {
   return {
     id: current && current.id, at: "dialog",
-    where: "d-files-where", up: "d-files-up",
+    where: "d-files-where", up: "d-files-up", zip: "d-files-zip",
     list: "d-files-list", note: "d-files-note"
   };
 }
@@ -7812,6 +8018,15 @@ async function loadFiles(path, ctx) {
   document.getElementById(ctx.note).textContent = res.truncated
     ? `showing the first ${(res.entries || []).length}. this directory has more.`
     : "";
+  // The whole directory, as one download. Getting a build output or a set of
+  // screenshots one file at a time is the shape that made this worth adding.
+  // A link rather than a fetch, so the browser saves it as a stream and a
+  // large directory never has to exist in the page.
+  const zip = document.getElementById(ctx.zip);
+  if (zip) {
+    zip.href = `/v1/tasks/${ctx.id}/files/zip?path=${encodeURIComponent(res.path)}`;
+    zip.title = "download everything under " + res.path + " as a zip";
+  }
 
   const rows = res.entries || [];
   if (!rows.length) {
@@ -7888,7 +8103,7 @@ function paintCrumbs(ctx, res) {
 // offline, which is the same reason xterm is vendored rather than fetched.
 //
 // Six shapes, not sixty. The question a glyph answers in a directory listing is
-// "which of these is the code and which is the readme", and the colour carries
+// "which of these is the code and which is the readme", and the color carries
 // most of that: distinguishing `.ts` from `.tsx` at 11px is not something an
 // icon can do anyway.
 const FILE_KINDS = [
@@ -8005,8 +8220,34 @@ async function paintCardActions() {
   });
 }
 
-async function runCardAction(id) {
-  if (!current) return;
+// Actions as menu entries, so they are reachable from a card or from the
+// terminal rather than only from inside the card dialog.
+//
+// The thing an action is for is saying something to a session you are looking
+// at. Having to open that session's dialog to reach one put a room between you
+// and the sentence.
+//
+// Loaded lazily and offered as a flyout, so the menu stays the same shape
+// whether you have written two of these or twenty.
+function actionItems(t) {
+  const mine = actionsFor(t);
+  if (!mine.length) return null;
+  return {
+    label: "say something",
+    help: "Prompts you wrote, sent to this session. Typed into its terminal " +
+      "when atrium owns one, and queued for its next tool call otherwise.",
+    sub: mine.map(a => ({
+      label: a.label + (a.after === "exit" ? " and exit" : ""),
+      act: () => runCardAction(a.id, t)
+    }))
+  };
+}
+
+async function runCardAction(id, task) {
+  // The card dialog passes nothing and means `current`, which is what every
+  // call did before actions appeared in menus.
+  const on = task || current;
+  if (!on) return;
   const action = allActions.find(a => a.id === id);
   if (!action) return;
   // Confirmed only when it ends the session. Sending a prompt is undoable by
@@ -8019,7 +8260,7 @@ async function runCardAction(id) {
 
   let res;
   try {
-    res = await api(`/v1/tasks/${current.id}/action`, {
+    res = await api(`/v1/tasks/${on.id}/action`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: id })
     });
@@ -8878,7 +9119,46 @@ const HOLD_WHILE_TYPING = false;
 
 let heldUpdate = false;
 
+// Stops the board rewriting itself, on purpose, until you say otherwise.
+//
+// The five second poll replaces the card markup, because every card carries an
+// age and every age has changed. That is right for a board you are watching
+// and impossible for a board you are INSPECTING: the node selected in devtools
+// is detached a moment later, the styles pane empties, and an edit typed into
+// it is gone before it can be read. Working out why anything looks wrong was
+// the one thing the board actively prevented.
+//
+// Shift-P, and it says so in the header, because a board that has silently
+// stopped updating is worse than one that never did. The poll keeps running:
+// counts, sounds and notifications are unaffected, since those are what tell
+// you something arrived. Only the repaint is held, which is the same machinery
+// `isEditing` already uses to avoid rewriting a form under your hands.
+let paintPaused = false;
+// The banner's own words, kept so unpausing puts them back. It is shared with
+// the hold-while-typing case, which says something different and is the one
+// that appears on its own.
+const HELD_TYPING = "&#8635;&nbsp; paused while you type, click to catch up";
+function togglePaintPause(on) {
+  paintPaused = (on === undefined) ? !paintPaused : !!on;
+  const el = document.getElementById("held");
+  if (el) el.innerHTML = paintPaused
+    ? "&#10073;&#10073;&nbsp; frozen for inspection. shift-P or click to resume"
+    : HELD_TYPING;
+  showHeld(paintPaused);
+  if (!paintPaused) refresh();
+}
+document.addEventListener("keydown", e => {
+  // Shift and P, and not while anything is taking text: a capital P belongs in
+  // whatever is being typed.
+  if (e.key !== "P" || e.ctrlKey || e.altKey || e.metaKey) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable)) return;
+  e.preventDefault();
+  togglePaintPause();
+});
+
 function isEditing() {
+  if (paintPaused) return true;
   if (!HOLD_WHILE_TYPING) return false;
   const el = document.activeElement;
   if (el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && el.type !== "range"))
@@ -8896,6 +9176,10 @@ function showHeld(show) {
 }
 
 function applyHeld() {
+  // The banner is one button for two reasons to be paused, so pressing it has
+  // to answer both. Freezing for inspection and then finding the only way out
+  // was a keystroke nothing on screen mentioned would be its own small trap.
+  if (paintPaused) { togglePaintPause(false); return; }
   heldUpdate = false;
   showHeld(false);
   repaintLists();
@@ -8962,7 +9246,9 @@ async function refresh() {
       // window's title bar. Only the interruption is dropped.
       alerting.check("waiting", waiting.filter(t =>
         t.status !== "needs-permission" && !justStarted(t)), t => ({
-        title: `${t.display_title} is ${statusLabel(t.status)}`,
+        title: wasAsked(t)
+          ? `${t.display_title} asked you something`
+          : `${t.display_title} is ${statusLabel(t.status)}`,
         body: readyBecause(t)
       }));
     }
@@ -9070,13 +9356,13 @@ function connect() {
 //
 // Ported from the operator's own Windows Terminal themes, which are applied
 // over OSC escapes from a PowerShell profile and have been in daily use far
-// longer than this board has existed. Same names, same colours, so a session
+// longer than this board has existed. Same names, same colors, so a session
 // looks the same in here as it does in a terminal window.
 //
 // Converted rather than transcribed: the source is a table of `bg`, `fg`,
-// `cursor`, `sel_bg`, `sel_fg` and a positional 16 colour ansi array, and the
+// `cursor`, `sel_bg`, `sel_fg` and a positional 16 color ansi array, and the
 // array order is the one xterm has used since forever. Doing that by hand
-// fifty two times is how one colour ends up in the wrong slot.
+// fifty two times is how one color ends up in the wrong slot.
 const TERM_THEMES = {
   // The board's own palette, for a terminal that should not look pasted in.
   "atrium": {
@@ -9138,7 +9424,7 @@ const TERM_THEMES = {
 };
 
 // The operator's own repo to theme map, carried over so a session in a repo
-// gets the colour they already associate with it. A starting point, not a
+// gets the color they already associate with it. A starting point, not a
 // rule: choosing a theme on a card overrides this and is remembered.
 const REPO_THEMES = {
   "appetizer": "active-work",
@@ -9164,7 +9450,7 @@ const REPO_THEMES = {
 //
 // The card wins, since that is what was chosen for it. Failing that the
 // project name picks one, so two worktrees of the same repo look alike and a
-// different repo does not, which is the whole reason to colour them.
+// different repo does not, which is the whole reason to color them.
 function themeFor(t) {
   if (!t) return TERM_THEMES.atrium;
   const named = TERM_THEMES[t.theme];
@@ -9302,10 +9588,21 @@ function toggleCopyOnSelect() {
 // window silently became the size every card opened at, which is a preference
 // nobody expressed.
 function termSettings(e) {
+  // Without this the menu opens and closes in the same event: `showMenu` draws
+  // it, the click keeps bubbling to the document listener that dismisses any
+  // open menu, and the cog reads as a dead button. `cardMenu` stops the same
+  // event for the same reason.
+  e.preventDefault();
+  e.stopPropagation();
   const t = termTask;
   if (!t) return;
+  if (!allActions.length) loadActions().then(() => {});
   const own = readSize("atrium.popout." + t.id);
   const items = [
+    // Reachable from the terminal you are looking at, which is where saying
+    // something to a session is a thing you want to do.
+    actionItems(t),
+    actionsFor(t).length ? { sep: true } : null,
     { label: "terminal theme…", note: t.theme || "from the project",
       tip: "The palette this session uses, remembered on the card.",
       act: () => pickTheme() },
@@ -9389,7 +9686,7 @@ function openTerm(task) {
     // holding a whole session in memory.
     scrollback: 5000,
     // The session's own theme, so a terminal looks the same here as it does
-    // in a terminal window, and two sessions are tellable apart by colour.
+    // in a terminal window, and two sessions are tellable apart by color.
     theme: themeFor(termTask)
   });
   termFit = new FitAddon.FitAddon();
@@ -9543,6 +9840,24 @@ function wireTerminalDrops(screen) {
   });
 }
 
+// A path, onto the clipboard.
+//
+// Reading a truncated path off a screen to retype it is the worst way to spend
+// a minute, and this list truncates on purpose. The full value is on the
+// element, not the text, so what gets copied is what the card says rather than
+// whatever fitted.
+async function copyPath(el) {
+  const path = el && el.dataset ? el.dataset.path : "";
+  if (!path) return;
+  try {
+    await navigator.clipboard.writeText(path);
+  } catch (e) {
+    toast("could not copy it", e.message);
+    return;
+  }
+  toast("copied", path);
+}
+
 // Sorting by most recent activity, so whichever agent just asked for something
 // or just finished rises to the top. On by default: with several running, the
 // one that moved is the one you want.
@@ -9635,13 +9950,19 @@ async function renderTermList() {
                ? `attachTask('${t.id}')`
                : `resumePinned('${t.id}')`}"
              oncontextmenu="termMenu(event, '${t.id}')">
-          <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
-            onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>
-          <b>${esc(t.display_title)}</b>
-          <span>${esc(t.worktree || "")}</span>
-          <span class="chip runner" data-runner="${esc(t.runner || "")}"
-            >${esc(t.runner || "?")}</span>
+          <!-- The star, the mark and the name are one row. As siblings of the
+               name each took a line of its own, so a pinned session spent
+               three rows saying what one says. -->
+          <b>
+            <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+              onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
+              >${t.pinned ? "&#9733;" : "&#9734;"}</span>
+            ${runnerMark(t.runner)}
+            <span class="tname">${esc(terminalLabel(t) || t.display_title)}</span>
+          </b>
+          <span class="path" title="click to copy"
+            onclick="event.stopPropagation();copyPath(this)"
+            data-path="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
           ${t.supervised
             ? `<span class="chip ${isWaiting(t) ? "warn" : "accent"}"
                  title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
@@ -9655,12 +9976,33 @@ async function renderTermList() {
        </div></div>`);
 }
 
+// How long to keep trying to attach to a runner that is not there YET.
+//
+// Launching into its own window opens the window as soon as `/v1/launch`
+// answers, and the runner is registered with the supervisor a moment later. The
+// attach in between is refused, the socket closes without ever opening, and the
+// close handler below tore the pane down: a window whose whole purpose is one
+// terminal, showing "nothing attached".
+//
+// A socket that NEVER OPENED and one that closed after being open are different
+// events and now take different paths. The first is a race and is retried; the
+// second is the runner going away and still tears down.
+const attachRetryFor = 10000;
+const attachRetryEvery = 400;
+let attachSince = 0;
+
 function connectTerm(taskID) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach`);
   termSock.binaryType = "arraybuffer";
+  // Per socket, not per pane: a reconnect that succeeds must not leave the
+  // next disconnect thinking it never opened.
+  let opened = false;
+  if (!attachSince) attachSince = Date.now();
 
   termSock.onopen = () => {
+    opened = true;
+    attachSince = 0;
     sendResize();
     term.focus();
   };
@@ -9669,6 +10011,15 @@ function connectTerm(taskID) {
     term.write(new Uint8Array(e.data));
   };
   termSock.onclose = () => {
+    // Never opened, and not for long. The runner is still being registered, so
+    // try again rather than deciding there is nothing here. Nothing is written
+    // to the terminal in this case: a window that says "connection failed"
+    // twice a second while it is in fact starting is worse than a blank one.
+    if (!opened && term && Date.now() - attachSince < attachRetryFor) {
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      return;
+    }
+    attachSince = 0;
     if (term) term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
     // The socket also closes when the runner exits, leaving a live-looking
     // header over a dead terminal, with the session list saying there is
@@ -10320,7 +10671,7 @@ async function renderFixtures() {
     </div>` : "")).join("") + `</div>`);
 }
 
-// Reordering by swapping sort values with the neighbour.
+// Reordering by swapping sort values with the neighbor.
 //
 // The list is short and hand written, so this is two writes rather than a
 // fractional rank scheme. Midpoint insertion earns its keep on a board with
@@ -10497,7 +10848,7 @@ const HOOK_NAG = "hooks-nag";
 // The way in, on the row it belongs with. Counts rather than a bare link,
 // because "3 hooks missing" is the whole reason to open it.
 //
-// Turned off, the button stays and only the count and the colour go. Removing
+// Turned off, the button stays and only the count and the color go. Removing
 // it would take away the way back to the dialog that turns the reminder on
 // again.
 function hooksChip(h) {
@@ -10633,7 +10984,7 @@ function renderHooks() {
     ? `<button onclick="setHookNag(false)"
          title="show the count on the claude row again">remind me again</button>`
     : `<button onclick="setHookNag(true)"
-         title="keep the button, drop the count and the colour">stop reminding me</button>`;
+         title="keep the button, drop the count and the color">stop reminding me</button>`;
 
   setHTML(host, `<div class="panel">${where}${rows}
     <div class="row line">${nag}<span class="grow"></span>${action}</div></div>` +

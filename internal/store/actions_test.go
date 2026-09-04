@@ -70,7 +70,7 @@ func TestAnActionNeedsANameAndSomethingToSay(t *testing.T) {
 	}
 }
 
-// An unrecognised `after` is `keep`, which is the harmless one. Guessing exit
+// An unrecognized `after` is `keep`, which is the harmless one. Guessing exit
 // would quit a session because a value was mistyped.
 func TestAnUnknownAfterIsKeep(t *testing.T) {
 	s := open(t)

@@ -99,7 +99,7 @@ type hookInput struct {
 // because atrium's own gate is what put that prompt on screen: reporting it
 // back would be the card telling itself something it already knows.
 //
-// An unrecognised type does NOT count. This is a filter whose whole purpose is
+// An unrecognized type does NOT count. This is a filter whose whole purpose is
 // to be quiet, and a new notification kind arriving in a future release should
 // stay silent until somebody decides it is worth a badge, rather than turning
 // into noise on upgrade.

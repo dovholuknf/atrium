@@ -117,7 +117,7 @@ opt out of them.
    released and told why rather than left waiting.
 2. **A shelved card is a standing no.** While a task is shelved, a new request from it is blocked immediately
    with the same explanation, and never reaches the queue. Otherwise an agent asks, gets nothing, and freezes
-   behind a card that has been nobody is looking at any more. Unshelving restores normal behaviour, or
+   behind a card that has been nobody is looking at any more. Unshelving restores normal behavior, or
    shelving would be a trap.
 3. **A request nobody answers keeps asking.** One alert on arrival is not enough, because the alert is easy to
    miss and the cost of missing it is an agent idle for an hour. After a minute the board nags: every minute for
@@ -216,7 +216,7 @@ real, that column is the one worth migrating.
 ### Ordering
 
 `rank` is the operator's manual order within a board column. Dragging a card writes it. To place a card between
-two neighbours, take the midpoint of their two ranks, which is why the column is a float rather than an integer:
+two neighbors, take the midpoint of their two ranks, which is why the column is a float rather than an integer:
 inserting never renumbers the cards around it. A column can be renormalized on demand if a long run of midpoint
 inserts ever exhausts precision.
 
@@ -624,7 +624,7 @@ These were not in the original plan and are worth recording, because two of them
 
 - **Adopting sessions from the gwt ledger.** Implemented, then removed. It turned every session the ledger had
   ever seen into a card, and the ones it could see were ones it could not talk to, so the board filled with
-  hundreds of entries labelled as waiting on a human who had no way to answer them. Hooks bring a session in the
+  hundreds of entries labeled as waiting on a human who had no way to answer them. Hooks bring a session in the
   moment it does anything, which is both accurate and free. The `external_id` and `resume_id` columns survive for
   whatever reports a session id next. `resume_id` is populated now, by the session hooks.
 

@@ -36,7 +36,7 @@ import (
 //     daemon, timeout, garbage response, unparseable stdin: all of them end
 //     the turn normally. Silence or a non-zero exit is the failure mode that
 //     hangs a session.
-//   - `stop_hook_active` is honoured. Claude Code sets it when the turn is
+//   - `stop_hook_active` is honored. Claude Code sets it when the turn is
 //     already running because a Stop hook blocked it. Blocking again on that
 //     pass is an infinite loop, so this refuses to.
 //   - The daemon's answer is passed through only when it parses and only when

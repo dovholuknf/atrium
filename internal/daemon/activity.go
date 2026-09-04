@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // What a runner is doing right now, as opposed to what it needs from a human.
@@ -36,6 +38,27 @@ const (
 // Long enough not to write off a slow tool, short enough that a dead session
 // stops claiming to be busy.
 const staleAfter = 15 * time.Minute
+
+// Tools whose whole purpose is to put a question to the operator.
+//
+// Matched by name and case-insensitively, because a harness names its own
+// tools and atrium is not going to be told when one is renamed. A name that
+// stops matching costs the badge and nothing else, which is the right way for
+// this to fail.
+//
+// Deliberately short. Every entry here is a claim that the tool BLOCKS on a
+// person, and a tool that merely produces output a person might read is not
+// that. Guessing from a name like `confirm` would mark cards that are not
+// waiting on anybody.
+var askingTools = map[string]bool{
+	"askuserquestion": true,
+	"exitplanmode":    true,
+}
+
+// IsAskingTool reports whether a tool call is the model asking you something.
+func IsAskingTool(tool string) bool {
+	return askingTools[strings.ToLower(strings.TrimSpace(tool))]
+}
 
 // Activity is one runner's current state. Zero value means nothing is known.
 // Subagent is one agent running under a session.
@@ -283,6 +306,26 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityTool, in.Tool)
 		// A tool call is work, so a card that was waiting is not any more.
 		d.turnResumed(taskID)
+		// ASKING is a tool, which is the whole reason this is knowable.
+		//
+		// Until now a card in `ready` could not say whether the model had put
+		// a question to you or had simply run out of things to do, and those
+		// want very different amounts of hurry: one is a person blocking an
+		// agent, the other is an agent that finished. There was no signal for
+		// it, because "the turn ended" is all the Stop hook says.
+		//
+		// But Claude Code asks by CALLING A TOOL, and PreToolUse fires for it
+		// with the name, which atrium already receives. So the question mark
+		// is recorded here, at the moment it is asked, and the card carries it
+		// into the wait that follows.
+		//
+		// Best effort like everything else on this path. A failure to record
+		// it must not fail a tool call. See docs/activity-design.md.
+		if IsAskingTool(in.Tool) {
+			if err := d.st.NoteAsked(taskID); err != nil {
+				log.Printf("[atrium] could not record a question from %s: %v", in.Agent, err)
+			}
+		}
 	case "tool-end":
 		// The turn continues, so the model has the floor again.
 		d.act.set(taskID, ActivityThinking, "")
@@ -297,12 +340,22 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	case "subagent-end":
 		d.act.subagentStopped(taskID, in.AgentID)
 	case "idle", "waiting":
-		// The agent stopped and it is the operator's move. `waiting` is what
-		// the Notification hook reports, which fires when claude has been
-		// sitting on a prompt; `idle` is a turn ending. Same meaning to a
-		// board: this one wants you.
+		// NOT the same meaning, which is what this used to say.
+		//
+		// `idle` is the Stop hook: a turn ended, the agent has nothing more to
+		// do, and it will sit there indefinitely costing nothing. `waiting` is
+		// the Notification hook, which Claude Code fires when it is BLOCKED ON
+		// YOU: a question put to you, or a prompt it cannot get past.
+		//
+		// Flattening them meant the board could not tell a session that asked
+		// you something from one that had simply finished, and both landed in
+		// `ready` reading the same. That was the gap.
 		d.act.set(taskID, ActivityIdle, "")
-		d.turnEnded(taskID)
+		if in.Event == "waiting" {
+			d.turnEndedBecause(taskID, store.WaitingAsked)
+		} else {
+			d.turnEnded(taskID)
+		}
 	default:
 		log.Printf("[atrium] unknown activity event %q from %s", in.Event, in.Agent)
 		return ""

@@ -189,6 +189,7 @@ func (s *Server) Handler() http.Handler {
 	// directory, and carried by whatever already carries the board.
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
+	mux.HandleFunc("GET /v1/tasks/{id}/files/zip", s.zipFiles)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)
@@ -430,7 +431,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	cancelled := 0
+	canceled := 0
 	// Whether unshelving started the runner again, and why not when it did not.
 	// Returned to the caller so the board can say so rather than leaving the
 	// operator to notice nothing happened.
@@ -451,7 +452,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, err)
 				return
 			}
-			cancelled = n
+			canceled = n
 		}
 		// Shelving stops the runner. The card, its history and its resume id
 		// stay, so unshelving starts the same conversation again. Before the
@@ -592,11 +593,11 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Broadcast("task", toView(t))
 	out := toView(t)
-	if cancelled > 0 {
-		s.Broadcast("permission", map[string]any{"cancelled": cancelled, "task": id})
+	if canceled > 0 {
+		s.Broadcast("permission", map[string]any{"canceled": canceled, "task": id})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"task": out, "cancelled": cancelled,
+		"task": out, "canceled": canceled,
 		"resumed": resumed, "resume_note": resumeNote,
 	})
 }

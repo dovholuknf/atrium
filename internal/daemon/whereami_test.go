@@ -50,7 +50,7 @@ func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
 
 // Not naming a file means the machine's real one. That is what a real daemon
 // wants, and the default has to stay the default: an option that has to be set
-// to get correct behaviour is an option everybody forgets.
+// to get correct behavior is an option everybody forgets.
 func TestNoOptionMeansTheRealPlace(t *testing.T) {
 	real, err := LocationPath()
 	if err != nil {

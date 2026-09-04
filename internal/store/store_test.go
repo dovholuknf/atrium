@@ -211,7 +211,7 @@ func TestRankPlacesNewCardsOnTop(t *testing.T) {
 	if len(listed) != 3 || listed[0].WireName != "third" {
 		t.Fatalf("board order wrong: %+v", listed)
 	}
-	// Midpoint insertion moves a card without renumbering its neighbours.
+	// Midpoint insertion moves a card without renumbering its neighbors.
 	mid := (listed[0].Rank + listed[1].Rank) / 2
 	if err := s.SetRank(listed[2].ID, mid); err != nil {
 		t.Fatal(err)
