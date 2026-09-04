@@ -5,6 +5,42 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launch can say what the work is and where it came from.** `atrium launch` took a directory, a title and a
+  reason. It now also takes `--tags`, `--prompt`, `--source`, `--external` and `--item-url`, which is intake
+  layer 0 from `docs/intake-design.md` and the thing every other layer needs first.
+
+  The point is the inversion the backlog already recorded for directories, applied one level up. Atrium does not
+  learn what a Zendesk ticket is. Whatever already knows makes the worktree, then hands it over with the
+  identifier and a first instruction attached, and the card arrives supervised, gated, tagged and linked back to
+  the thing it came from. `external_id` has existed since migration 0005 and was written by nothing; it is now
+  what deduplication is keyed on, paired with a source, because `4211` is an issue in one tracker and a ticket in
+  another.
+
+  How a runner takes an opening instruction is per runner, so it is configuration rather than a special case:
+  `prompt_args` sits next to `resume_args` on the harness, with `{prompt}` where the text goes. Claude and codex
+  take a bare argument. A shell has none, and a launch that hands one a prompt is refused rather than starting a
+  session that would try to execute it. A resume and a prompt together are refused too: that conversation already
+  has its instruction, and saying something else to it is what the message channel does.
+
+  The prompt does not reach the audit log. The `launched` event records the command line as it was before the
+  prompt was appended, plus whether there was one. A seed prompt is longer than the rest of the line put together,
+  and for a support case it is somebody else's words in a database that has no encryption and a board that has no
+  login.
+
+- **Two designs written down: intake, and moving files.** `docs/intake-design.md` gains the engineering versus
+  support split, which is the half of the original ask that had no answer. An engineering item names a repo and
+  therefore a directory, so its card can be fully prepared. A support case names a customer and a symptom, names
+  no repo, and can only be offered until somebody reads it, which turns out to be the strongest argument for the
+  `offered` status the inbox needs. It also carries somebody else's data, so the rule for a support source is to
+  carry the identifier and the URL and as little prose as gets the job done.
+
+  `docs/file-transfer-design.md` is new, and most of what it bought was finding out that the obvious shortcut is
+  closed. `docs/charon.md` said to derive a safe upload path from the answer `browse.go` already has. There is no
+  such answer: `browse.go` applies `filepath.Clean` to caller input and nothing else, with no root, no allow list
+  and no symlink resolution. So the first piece of work is a containment primitive that does not exist yet, and
+  the first version of upload takes no caller-supplied path at all. The same reading turned up a gap now recorded
+  in the backlog: a share publishes that unbounded listing.
+
 - **Saying something to a session, from the board.** The endpoint has existed for a while and only curl could
   reach it. There is now a box on the card, and it reports which of the two routes the message took, because
   they are different promises: typed into the terminal means it has already landed, and queued means it has not

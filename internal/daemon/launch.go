@@ -27,6 +27,18 @@ type LaunchRequest struct {
 	// one. Unshelving uses it: the card, its history and its resume id are the
 	// reason to pick the work back up, so a second card would defeat the point.
 	TaskID string `json:"task_id,omitempty"`
+	// Tags are what the operator calls this work. A script that starts a
+	// session from a ticket knows things the path does not.
+	Tags []string `json:"tags,omitempty"`
+	// Prompt is the first instruction the runner gets, handed over as the
+	// harness's PromptArgs say to. This is how a card raised from an issue
+	// starts with the issue in front of it rather than at an empty cursor.
+	Prompt string `json:"prompt,omitempty"`
+	// Source, ExternalID and URL record where this work came from. See
+	// store.SetOrigin and docs/intake-design.md.
+	Source     string `json:"source,omitempty"`
+	ExternalID string `json:"external_id,omitempty"`
+	URL        string `json:"url,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -71,6 +83,58 @@ func expandTemplate(tmpl []string, cwd, title, cmd string, args []string) []stri
 	return out
 }
 
+// runnerArgs builds the argument list for one launch, and separately the
+// command line worth writing into the audit log.
+//
+// The two are not the same thing on purpose. A seed prompt is routinely longer
+// than everything else on the line put together, and a card raised from a
+// support case carries somebody else's words, which docs/intake-design.md says
+// to keep out of atrium's own storage wherever it can be. What the log needs
+// to answer is "what was started here", and the prompt is on the card already.
+//
+// Resuming and prompting are refused together rather than combined. The
+// conversation being picked back up already has its instruction, and what a
+// runner does with a resume flag and a bare prompt argument at the same time
+// is per-runner and mostly undefined. Saying something to a resumed session is
+// what the message channel is for.
+//
+// Every argument stays its own argv element and the prompt is never joined
+// into a command string. expandTemplate carries the same rule for the same
+// reason: a joined prompt with a quote in it becomes a shell's problem rather
+// than the runner's.
+func runnerArgs(h *store.Harness, resume, rawPrompt string) (args []string, logged string, err error) {
+	args = h.Args
+	if resume != "" {
+		if len(h.ResumeArgs) == 0 {
+			return nil, "", fmt.Errorf("%s has no resume arguments configured", h.Label)
+		}
+		args = make([]string, 0, len(h.ResumeArgs))
+		for _, a := range h.ResumeArgs {
+			args = append(args, strings.ReplaceAll(a, "{resume}", resume))
+		}
+	}
+	logged = shellJoin(append([]string{h.Cmd}, args...))
+
+	prompt := strings.TrimSpace(rawPrompt)
+	if prompt == "" {
+		return args, logged, nil
+	}
+	if resume != "" {
+		return nil, "", errors.New("a resumed conversation already has its instruction. " +
+			"start it, then say something to it from the card")
+	}
+	if len(h.PromptArgs) == 0 {
+		return nil, "", fmt.Errorf("%s has no way to take an opening prompt. "+
+			"set prompt arguments on the runner, using {prompt} where the text goes", h.Label)
+	}
+	next := make([]string, 0, len(args)+len(h.PromptArgs))
+	next = append(next, args...)
+	for _, a := range h.PromptArgs {
+		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
+	}
+	return next, logged, nil
+}
+
 // Launch starts a runner and returns the card it created.
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
@@ -93,23 +157,16 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		return nil, fmt.Errorf("%s is not a directory", cwd)
 	}
 
-	args := h.Args
-	if req.Resume != "" {
-		if len(h.ResumeArgs) == 0 {
-			return nil, fmt.Errorf("%s has no resume arguments configured", h.Label)
-		}
-		args = make([]string, 0, len(h.ResumeArgs))
-		for _, a := range h.ResumeArgs {
-			args = append(args, strings.ReplaceAll(a, "{resume}", req.Resume))
-		}
+	args, logged, err := runnerArgs(h, req.Resume, req.Prompt)
+	if err != nil {
+		return nil, err
 	}
+	prompt := strings.TrimSpace(req.Prompt)
 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = filepath.Base(cwd)
 	}
-
-	inner := shellJoin(append([]string{h.Cmd}, args...))
 
 	// The card exists before the process does, and its name is what the runner
 	// will report when it first does something. Without this the runner would
@@ -236,9 +293,18 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 	}
+	if len(req.Tags) > 0 {
+		if err := d.st.SetTags(created.ID, req.Tags); err != nil {
+			return nil, err
+		}
+	}
+	if err := d.st.SetOrigin(created.ID, req.Source, req.ExternalID, req.URL); err != nil {
+		return nil, err
+	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
-		"harness": h.ID, "cmd": inner, "cwd": cwd, "resume": req.Resume,
-		"via": via, "mode": h.LaunchMode,
+		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
+		"via": via, "mode": h.LaunchMode, "prompted": prompt != "",
+		"source": req.Source, "external_id": req.ExternalID,
 	}); err != nil {
 		return nil, err
 	}

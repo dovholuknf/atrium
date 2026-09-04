@@ -456,6 +456,42 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS idx_task_archived ON task(archived_at)`,
 		},
 	},
+	{
+		// Where this work came from, when it came from somewhere.
+		//
+		// `external_id` has existed since 0005 and is written by nothing. It
+		// survived the abandoned ledger adoption and it is exactly the right
+		// column for "the identifier the system this came from already uses",
+		// so it gets used rather than replaced.
+		//
+		// `source` is what that identifier means to whoever issued it, and
+		// atrium never interprets it: `github`, `zendesk`, `ci` are strings
+		// that become a badge. `url` is the way back to the thing itself,
+		// which is the entire reverse direction worth building. See
+		// docs/intake-design.md.
+		//
+		// The index is on the pair, because the pair is what deduplicates: the
+		// same issue number means different work in two different trackers.
+		//
+		// `prompt_args` is on the harness for the same reason `resume_args`
+		// is. There is no common way to hand a runner an opening instruction:
+		// claude and codex take it as a bare argument and a shell would
+		// try to execute it. A runner with nothing here cannot be given one,
+		// and says so instead of being started with a prompt it will not read.
+		name: "0024_intake_origin",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN url TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_task_source_external ON task(source, external_id)`,
+			`ALTER TABLE harness ADD COLUMN prompt_args TEXT NOT NULL DEFAULT '[]'`,
+			// Seeding only reaches a row that does not exist yet, so an
+			// existing database would keep an empty list forever. Guarded on
+			// the empty list so an operator who has already written their own
+			// is not overwritten by a later run.
+			`UPDATE harness SET prompt_args = '["{prompt}"]'
+			   WHERE id IN ('claude','codex') AND (prompt_args = '[]' OR prompt_args = '')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
