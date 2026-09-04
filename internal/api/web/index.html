@@ -848,6 +848,12 @@
     background: transparent; border: 1px dashed var(--line);
     color: var(--dimmest); cursor: help;
   }
+  /* A file being dragged over the terminal. An outline rather than an overlay,
+     because an overlay would cover the thing you are dropping onto and hide
+     whichever session you were checking you had the right one. */
+  #t-screen.dropping {
+    outline: 2px dashed var(--teal); outline-offset: -4px;
+  }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
   /* Messages said and not yet arrived. Dimmed, because the interesting state
@@ -7860,6 +7866,9 @@ function openTerm(task) {
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
   term.open(screen);
+  // Drop a file onto the pane. The same pipeline as paste, because whatever
+  // gesture produced the bytes, the bytes go to the same place.
+  wireTerminalDrops(screen);
 
   // Copy and paste have to win over the terminal, or selecting text and
   // pressing ctrl-c interrupts the runner instead of copying. Returning false
@@ -7911,12 +7920,98 @@ function copySelection(quiet) {
 }
 
 async function pasteIntoTerm() {
+  // Files first, because a clipboard holding a screenshot usually also holds
+  // a text representation of it, and pasting that instead is how a paste
+  // silently does nothing useful.
+  if (await pasteFilesIntoTerm()) return;
   try {
     const text = await navigator.clipboard.readText();
     if (text) send({ t: "in", d: text });
   } catch (e) {
     toast("could not paste", "the browser refused clipboard access");
   }
+}
+
+// Pasting a file, which over an overlay has no workaround at all.
+//
+// Claude Code reads images, and the clipboard is on the machine with the
+// browser, not the machine with the daemon. So the bytes go up, and what comes
+// back is a path the runner can open with its own file tool. There is no
+// image-specific branch and no base64 inlining, which is exactly why one
+// pipeline covers files of any kind.
+//
+// Returns whether it handled the paste.
+async function pasteFilesIntoTerm() {
+  if (!termTask || !navigator.clipboard || !navigator.clipboard.read) return false;
+  let items;
+  try { items = await navigator.clipboard.read(); } catch (e) { return false; }
+
+  const files = [];
+  for (const item of items) {
+    // Anything that is not plain text. A screenshot is image/png; a copied
+    // file is whatever it is.
+    const type = item.types.find(t => t !== "text/plain" && t !== "text/html");
+    if (!type) continue;
+    try {
+      const blob = await item.getType(type);
+      files.push(new File([blob], "pasted." + (type.split("/")[1] || "bin"), { type }));
+    } catch (e) { /* an item that will not read is one to skip */ }
+  }
+  if (!files.length) return false;
+
+  await uploadIntoTerm(files);
+  return true;
+}
+
+// The one pipeline for paste, drop and picker.
+//
+// Whatever gesture produced the bytes, the bytes go to the same endpoint and
+// what comes back is a path. Charon's lesson, and worth taking whole.
+async function uploadIntoTerm(files) {
+  if (!termTask || !files || !files.length) return;
+  const form = new FormData();
+  for (const f of files) form.append("file", f, f.name);
+
+  toast("uploading", files.length === 1 ? files[0].name : files.length + " files");
+  let res;
+  try {
+    res = await api(`/v1/tasks/${termTask.id}/files`, { method: "POST", body: form });
+  } catch (e) {
+    toast("that did not go up", e.message);
+    return;
+  }
+
+  // Spliced into the stream and NOT submitted.
+  //
+  // handleMessage appends a newline because a message is a complete
+  // instruction being sent. A pasted path is a fragment of an instruction the
+  // human is still writing, and submitting it for them is the difference
+  // between a helpful paste and a runner that starts working on half a
+  // sentence. docs/supervision-design.md is why this matters: atrium owns a
+  // real terminal that a person may be mid-command in.
+  const paths = (res.paths || []).join(" ");
+  if (paths) send({ t: "in", d: paths + " " });
+  toast("in the working directory", paths);
+}
+
+// Dropping a file onto the terminal is the same gesture with a different hand.
+function wireTerminalDrops(screen) {
+  if (!screen || screen.dataset.drops) return;
+  screen.dataset.drops = "1";
+  screen.addEventListener("dragover", e => {
+    if (!termTask) return;
+    e.preventDefault();
+    screen.classList.add("dropping");
+  });
+  screen.addEventListener("dragleave", () => screen.classList.remove("dropping"));
+  screen.addEventListener("drop", e => {
+    screen.classList.remove("dropping");
+    if (!termTask) return;
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    if (!files.length) return;
+    e.preventDefault();
+    uploadIntoTerm(files);
+  });
 }
 
 // Sorting by most recent activity, so whichever agent just asked for something

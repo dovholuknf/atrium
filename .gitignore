@@ -5,6 +5,11 @@ build.claude/
 # came out of them live in docs/ instead.
 .mercurius/
 
+# Files pasted or dropped into a session from the board. Landed here rather
+# than in the working directory root so that one line covers them forever and a
+# screenshot never turns up in `git status`.
+.atrium/
+
 # the daemon's own state
 *.db
 *.db-wal

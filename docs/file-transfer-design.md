@@ -203,3 +203,22 @@ A half-written file in a directory an agent is building in is worse than no writ
 5. The write precondition, whenever a write endpoint appears.
 
 Steps 1 to 3 are the feature. Steps 4 and 5 are the ones that can wait and should not be skipped.
+
+## What got built, and what the tests turned up
+
+Steps 1 to 4 are done. `internal/safepath` is the primitive, `POST /v1/tasks/{id}/files` is the upload,
+`GET /v1/tasks/{id}/files?path=` is the download, and paste and drop on the terminal pane share one pipeline.
+
+Two things came out of writing the tests that are worth keeping written down.
+
+**The right-to-left override is not a control character.** `SafeName` stripped everything below `0x20` and
+U+202E sailed through, which is the oldest trick there is for making `photo<RLO>gpj.exe` render as
+`photo exe.jpg`. The fix is to strip the whole `Cf` category, not a list of the ones somebody thought of.
+Nothing legitimate needs a format character in a filename.
+
+**The two failure modes of download have to answer identically.** "Outside the card" and "does not exist" are
+both `403`, because two different answers make the endpoint an oracle for what is on the machine outside the
+card. That is a small thing that is easy to get wrong by writing the obviously more helpful error.
+
+Still not built, and step 5 is the reason: there is no write endpoint that names its own destination, so the
+precondition has nothing to guard yet. It goes in with the first one.
