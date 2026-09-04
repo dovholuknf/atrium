@@ -827,6 +827,14 @@
     color: hsl(var(--ghue) 70% 76%); cursor: pointer;
   }
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
+  /* Where the work came from. Deliberately not coloured per source: atrium
+     does not know what a source is, and a palette per system would be atrium
+     claiming to. One quiet chip that happens to be a link. */
+  .chip.origin {
+    background: transparent; border: 1px dashed var(--line);
+    color: var(--dim); text-decoration: none; font-family: var(--mono);
+  }
+  a.chip.origin:hover { color: var(--teal); border-color: var(--teal); }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
   /* Messages said and not yet arrived. Dimmed, because the interesting state
@@ -2758,6 +2766,7 @@ function cardHTML(t) {
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
       ${tagChips(t)}
+      ${originChip(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
@@ -3881,6 +3890,7 @@ function stackRow(t) {
     </div>
     <div class="chips">
       ${tagChips(t)}
+      ${originChip(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
@@ -3944,6 +3954,29 @@ function tagChips(t) {
        title="show only ${esc(tag)}"
        onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"
        >${esc(tag)}</span>`).join("");
+}
+
+// Where this work came from, when it came from somewhere.
+//
+// The link is the whole reverse direction worth having. Ticket state on the
+// board would be polling backwards and would sit next to the status column
+// disagreeing with it; one click gets the truth from the system that owns it.
+//
+// The label prefers the external identifier over the source name, because
+// "openziti/ziti#4211" says everything "github" says and more. The source is
+// the fallback for an item whose identifier is not worth reading.
+//
+// Opened in a new tab and stopped from bubbling, so clicking the link does not
+// also open the card behind it.
+function originChip(t) {
+  if (!t.source && !t.external_id && !t.url) return "";
+  const label = t.external_id || t.source || "link";
+  const title = [t.source, t.external_id, t.url].filter(Boolean).join(" ");
+  if (!t.url) {
+    return `<span class="chip origin" title="${esc(title)}">${esc(label)}</span>`;
+  }
+  return `<a class="chip origin" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer"
+      title="${esc(title)}" onclick="event.stopPropagation()">${esc(label)}</a>`;
 }
 
 // Types a tag into the stack's search box, which already filters on it.

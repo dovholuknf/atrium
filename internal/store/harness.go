@@ -27,6 +27,15 @@ type Harness struct {
 	// ResumeArgs replaces Args when picking a conversation back up. {resume}
 	// is substituted with the runner's own session id.
 	ResumeArgs []string `json:"resume_args"`
+	// PromptArgs are appended to Args to hand the runner an opening
+	// instruction. {prompt} is substituted with the text.
+	//
+	// Configured per runner for the same reason resuming is: there is no
+	// common answer. Claude and codex read a bare argument as the first thing
+	// to work on, and a shell would try to execute it. Empty means this runner
+	// cannot be given an opening prompt, and a launch that supplies one is
+	// refused rather than starting a session that will never read it.
+	PromptArgs []string `json:"prompt_args"`
 	// ExitKeys is what to send to ask this runner to exit, in order.
 	//
 	// There is no common answer: a shell takes `exit` and a newline, claude
@@ -80,13 +89,15 @@ func DefaultHarnesses() []Harness {
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
 			LaunchMode: LaunchPTY, ResumeArgs: []string{"--resume", "{resume}"},
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
+			PromptArgs:  []string{"{prompt}"},
 			RulesSource: "claude", Sort: 10,
 			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			Notes: "confirm the command and any resume flag before enabling",
+			PromptArgs: []string{"{prompt}"},
+			Notes:      "confirm the command and any resume flag before enabling",
 		},
 		{
 			ID: "ollama", Label: "ollama", Enabled: false, Cmd: "ollama",
@@ -110,14 +121,14 @@ func DefaultHarnesses() []Harness {
 
 func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error) {
 	var (
-		h                       Harness
-		args, env, resume, exit string
-		created                 string
-		enabled                 int
+		h                               Harness
+		args, env, resume, exit, prompt string
+		created                         string
+		enabled                         int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created); err != nil {
+		&h.Sort, &created, &prompt); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -125,6 +136,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(resume, "[]")), &h.ResumeArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(prompt, "[]")), &h.PromptArgs); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(exit, "[]")), &h.ExitKeys); err != nil {
@@ -148,7 +162,7 @@ func orDefault(s, def string) string {
 }
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
-	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at`
+	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -214,6 +228,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	prompt, err := json.Marshal(orEmptySlice(h.PromptArgs))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -241,17 +259,17 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			enabled = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
 				launch_mode = excluded.launch_mode, resume_args = excluded.resume_args,
 				exit_keys = excluded.exit_keys, prepare = excluded.prepare,
 				rules_source = excluded.rules_source, notes = excluded.notes,
-				sort = excluded.sort`,
+				sort = excluded.sort, prompt_args = excluded.prompt_args`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
-			h.RulesSource, h.Notes, h.Sort, created)
+			h.RulesSource, h.Notes, h.Sort, created, string(prompt))
 		return err
 	})
 	if err != nil {

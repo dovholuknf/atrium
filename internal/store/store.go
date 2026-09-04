@@ -84,6 +84,15 @@ type Task struct {
 	// pick that conversation back up.
 	ExternalID string `json:"external_id,omitempty"`
 	ResumeID   string `json:"resume_id,omitempty"`
+	// Source names the system ExternalID belongs to, and URL is the way back
+	// to the thing itself.
+	//
+	// Atrium never learns what a source means. `github`, `zendesk` and `ci`
+	// are strings it renders as a badge and stores, and whoever posted the
+	// item did the reading. That is the whole reason intake can serve a system
+	// nobody has thought of yet. See docs/intake-design.md.
+	Source string `json:"source,omitempty"`
+	URL    string `json:"url,omitempty"`
 	Branch     string `json:"branch,omitempty"`
 	WindowName string `json:"window_name,omitempty"`
 	// Gated is whether this session has joined atrium. It is state rather than

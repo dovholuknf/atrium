@@ -355,6 +355,13 @@ type patchBody struct {
 	// default for whichever kind of alert fired, so clearing it is a
 	// meaningful value rather than an omission.
 	Sound *string `json:"sound"`
+	// Where this work came from. Not pointers, because SetOrigin already
+	// treats an empty string as "not mentioned": these three are only ever
+	// filled in, and unlinking a card from the ticket it came from is not a
+	// thing anybody has wanted.
+	Source     string `json:"source"`
+	ExternalID string `json:"external_id"`
+	URL        string `json:"url"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +459,10 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	}
+	if err := s.st.SetOrigin(id, body.Source, body.ExternalID, body.URL); err != nil {
+		s.fail(w, err)
+		return
 	}
 	if body.AutoApprove != nil {
 		if err := s.st.SetAutoApprove(id, *body.AutoApprove); err != nil {

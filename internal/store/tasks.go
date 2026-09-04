@@ -13,7 +13,7 @@ import (
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
-	archived_at`
+	archived_at, source, url`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -30,7 +30,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
-		&tags, &pinned, &t.Theme, &t.Sound, &archived); err != nil {
+		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -173,10 +173,11 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		Tags: []string{},
 	}
 	if _, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), "{}", t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", "", ""); err != nil {
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, "[]", 0, "", "", "",
+		t.Source, t.URL); err != nil {
 		return nil, err
 	}
 	if err := s.appendEvent(t.ID, EventCreated, map[string]any{"observed": obs}); err != nil {
@@ -431,6 +432,57 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
 		return err
 	})
+}
+
+// SetOrigin records where a card's work came from: which system, that system's
+// own identifier, and the way back to it.
+//
+// All three or none. A url with no source is a link with nothing to say what
+// it points at, and an identifier with no source cannot be deduplicated
+// against, since the same issue number means different work in two trackers.
+//
+// Empty strings are ignored rather than written, so a caller that knows only
+// the url does not blank out an identifier something else supplied.
+func (s *Store) SetOrigin(id, source, externalID, url string) error {
+	source = strings.TrimSpace(source)
+	externalID = strings.TrimSpace(externalID)
+	url = strings.TrimSpace(url)
+	if source == "" && externalID == "" && url == "" {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET
+			source      = CASE WHEN ? = '' THEN source      ELSE ? END,
+			external_id = CASE WHEN ? = '' THEN external_id ELSE ? END,
+			url         = CASE WHEN ? = '' THEN url         ELSE ? END
+			WHERE id = ?`,
+			source, source, externalID, externalID, url, url, id)
+		return err
+	})
+}
+
+// BySourceExternal finds the card already raised for an external item, or
+// sql.ErrNoRows.
+//
+// The pair is the key rather than the identifier alone, because `4211` is a
+// GitHub issue and a Zendesk ticket and they are not the same work.
+//
+// Archived cards count. An item raised, worked and swept should not come back
+// the next time a source runs, which is the whole failure mode a poller has.
+func (s *Store) BySourceExternal(source, externalID string) (*Task, error) {
+	if strings.TrimSpace(source) == "" || strings.TrimSpace(externalID) == "" {
+		return nil, sql.ErrNoRows
+	}
+	var t *Task
+	err := s.guard(func() error {
+		got, err := s.getBy(`source = ? AND external_id = ?`, source, externalID)
+		if err != nil {
+			return err
+		}
+		t = got
+		return nil
+	})
+	return t, err
 }
 
 // PrunableStatuses are the only statuses a sweep will ever delete.
