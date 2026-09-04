@@ -339,6 +339,108 @@ card, and stops there.
 The line that stays true through all of this is the one `docs/overlays.md` already uses for overlays: atrium keeps
 the configuration, starts the process, and shows what it printed.
 
+## Engineering and support are not the same shape
+
+Everything above treats a source as a source. `github`, `zendesk` and `discourse` are strings that become a badge,
+and that is the right call for the transport. It is the wrong call for the design, because the two kinds of work
+behind those strings differ in a way that decides how much of a card can be filled in before a human looks at it.
+
+The ask named both: bugs, pull requests and enhancement requests on one side, and Zendesk on the other. They are
+not two instances of one thing.
+
+### An engineering item names a directory. A support case names a person.
+
+| | Engineering item | Support case |
+| --- | --- | --- |
+| What it identifies | a repo, usually a branch | a customer and a symptom |
+| Working directory | derivable, and gwt already derives it | unknown, and often unknowable until somebody reads it |
+| First action | do the work | find out what this is about |
+| Ends when | merged, closed, released | the customer agrees it is over |
+| Produces | a commit | a reply, and sometimes zero to several engineering items |
+| Identifier | globally meaningful, `openziti/ziti#4211` | meaningful inside one instance, `zendesk:12345` |
+| Text on the card | public | someone else's |
+
+Five things follow from that table, and each of them changes something concrete.
+
+**A support case can be offered and cannot be prepared.** `gwt pr` makes `pr-<n>` on the PR's head branch, so a
+review request can arrive with a directory, a branch and a seed prompt already correct, and the start button is
+the only thing left. `gwt zendesk` makes `zendesk-<id>` on a branch named after the ticket, which is a directory
+in the right shape and, importantly, a directory in *some* repo chosen by whoever typed the command. Nothing in
+the ticket said which repo. So a support item posted to `/v1/intake` legitimately has no `suggested_cwd`, and the
+inbox has to be able to hold a card that cannot be started until a human answers one question. That is the
+strongest argument for the `offered` status in layer 1, and it is stronger than the argument layer 1 makes for
+itself: without it there is nowhere to put an item that is real work and not yet a session.
+
+**The seed prompt differs in kind, not in wording.** An engineering prompt is imperative. A support prompt is
+interrogative, and gwt already writes it that way: read the ticket, summarize it, list the attachments, ask which
+to download, then work out a plan together. That is a triage prompt, and its output is a decision about what the
+work actually is. Atrium stores a prompt as text and does not care, which is the correct amount of caring, but
+the two default prompts a source ships with should not be written by someone who thinks they are the same
+sentence with a different noun.
+
+**One support case becomes several cards, and the link between them is a tag.** A ticket that turns out to be
+two bugs in two repos produces a triage card and two fix cards. Neither Zendesk nor GitHub models that
+relationship well, and atrium must not try: a `ticket` table is the thing this document already refuses. What it
+has instead is free text tags, and `zendesk-12345` on all three cards is the entire relationship, filterable and
+groupable today with no new mechanism. `store.go:100` already names this case in a comment: "a card is also a
+support case, a tangent, a pull request, a lab, and none of that is in the path."
+
+**Attachments are the reason support meets file transfer.** A support ticket carries logs, configuration and
+support bundles, and they are frequently the whole content of the case. `mcp-gateway` already exposes
+`zendesk_download_attachment`, and the agent in the session has that tool, so the download belongs to the agent
+and lands in the working directory. `docs/file-transfer-design.md` covers the other direction, which is the one
+with no answer today: getting a file the customer sent you by some route that is not the ticket into a session
+running on a machine you are not sitting at.
+
+**A support case carries someone else's data, and a card is not a safe place to put it.** This is the one that is
+genuinely new and it does not apply to the engineering side at all.
+
+An engineering item is public: an issue title, a PR description, a stack trace from a repository anybody can
+read. Copying it into `why` costs nothing. A support case is a named customer describing their own network, and
+the fields it would naturally fill are `title` and `why`, which are:
+
+- stored in a SQLite database with no encryption at rest,
+- rendered on a board with no login, by decision, in `CLAUDE.md`,
+- and reachable from another machine the moment a zrok or OpenZiti share is up, per `docs/overlays.md`.
+
+None of those three is a flaw. Together they mean the board is a fine place for "what was I doing" and a poor
+place for a customer's hostnames.
+
+So the rule for a support source, and it is a rule rather than a preference: **carry the identifier and the URL,
+and as little prose as gets the job done.** `zendesk-12345` as a title, `support case, unread` as the why, the
+URL as the link. The agent reads the ticket through its own tools four seconds later, in a session whose
+transcript is subject to whatever the operator already decided about transcripts, and the customer's words never
+enter atrium's database at all. This costs a less descriptive card and it is worth it, and it happens to be
+exactly what `gwt zendesk` already does, for reasons that were probably about effort rather than about privacy.
+
+The same rule read backwards is the argument against ever fetching ticket bodies daemon-side, which layer 3
+already loses on other grounds. Layer 3 would put customer prose into atrium's own memory to make a nicer title.
+
+### What the reverse direction means for each side
+
+`The reverse direction` above splits three ways and says posting back belongs to the agent. That stands, with one
+distinction between the two sides worth stating.
+
+An engineering result is self describing and self reviewing. A pull request is the artifact and the diff is the
+argument, so an agent opening one is proposing something a human will read before it lands.
+
+A support reply has no such gate. It goes to a customer, and the first person who reads it is the customer. So a
+support card's output is a **draft**, and the send is a human act. Atrium does not need to enforce that, because
+atrium never posts anything, but the seed prompt a support source ships with should say it, and the difference
+should be written down before somebody wires a card action called "reply to the customer" that does.
+
+### What this does not change
+
+The layers stay as they are and in the same order. Layer 0 is still first and still needed by everything. The
+`offered` status in layer 1 gets a better argument than it had. Layer 2 gains a note that engineering sources and
+support sources want very different intervals, which is the polling-interval objection already recorded, made
+sharper: a review request is stale in an hour, and a support queue somebody is paid to watch does not want a
+second watcher at all.
+
+And the refusals in "How this must not be built" all hold harder on the support side than the engineering side.
+A Zendesk token in the database is worse than a GitHub token in the database, for the same reason the prose rule
+exists.
+
 ## What else is in this category
 
 Ryan named source control and ticketing. The gwt script and the daemon between them suggest several more, and

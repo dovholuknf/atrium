@@ -254,8 +254,7 @@ Windows, which is the machine this matters on.
 
 ### Moving files, and pasting into a session
 
-Reaching a board from another machine makes this obvious. Once atrium is not on the machine you are sitting at,
-getting a file to or from the session is a second tool.
+Designed in `docs/file-transfer-design.md`. Nothing built.
 
 Two halves, and the second is the one worth having first:
 
@@ -265,8 +264,14 @@ Two halves, and the second is the one worth having first:
   that has no workaround at all over an overlay. Claude Code accepts images, so this is a paste handler on the
   terminal pane plus whatever the runner expects on the way in.
 
-Neither is designed. The path question is the same one `browse.go` already answers for launching, so start
-there rather than inventing a second idea of what a safe path is.
+**The obvious shortcut is closed, and finding that out is most of what the design bought.** This entry used to
+say the path question was the one `browse.go` already answers. It is not. `browse.go` applies `filepath.Clean`
+to caller input and nothing else: no root, no allow list, no containment, no symlink resolution. There is no
+answer in there to reuse, so the first piece of work is the containment primitive that does not exist yet, and
+everything else waits on it.
+
+The same reading turned up something worth knowing on its own, recorded under "Known gaps" below: a share
+publishes that unbounded listing.
 
 ### What Charon does that atrium does not
 
@@ -563,6 +568,14 @@ and already gated, which is what joining was for.
   request presents as `127.0.0.1`. The shutdown endpoint now notices and demands its token, but that is one
   endpoint. Anything else that ever decides by source address has the same problem, and there is no general
   answer here, only the rule: do not publish the agent listener on `:7777`.
+- **A share also publishes `GET /v1/browse`, which is unbounded.** Found while designing file transfer. The
+  handler applies `filepath.Clean` to whatever it is given and has no root, no allow list and no symlink
+  resolution, so every directory the daemon's user can read is listable. On loopback that is a directory picker
+  and it is fine. Over a share it is an unauthenticated recursive directory listing of the machine. Nothing
+  reads file contents through it, so this enumerates rather than discloses, which is why it is written down
+  rather than treated as an incident. `docs/file-transfer-design.md` builds the containment primitive that
+  would let this be narrowed, and deliberately does not narrow it in the same change: tightening a picker
+  people already use is its own argument.
 - **`wire_name` collisions are solved but not yet enforced.** `atrium name` prefixes every session an atrium
   registers, so two machines cannot claim each other's cards. Nothing makes a satellite set one, though, and an
   unnamed atrium still registers bare names. The forum handshake is the place to require it, since that is the
