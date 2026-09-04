@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Everything that has ever run here, as its own tab.** `ListArchived` had existed for a while and nothing
+  showed it. Cards were being archived off the board and going nowhere anybody could look.
+
+  Every card ever created, newest first, on the board or not, searchable across the title, the reason, the
+  directory, the tags, the recap and the external identifier, because a person looking for "that thing about
+  DNS" does not know which field they are remembering it from.
+
+  The cut that makes it worth having is **written up** against **never written up**, which is only a real
+  distinction now that an agent can say it finished. Before that no card had a recap and the filter would have
+  been an empty column. A card in the second group is either still worth writing up or was never worth starting,
+  and those are worth telling apart.
+
+  Paged from the start rather than after the first machine that has been running for a year finds out the hard
+  way, and fetched when you open the tab rather than on every poll: it is a question you go looking for, and a
+  query against a table that only grows has no business running every few seconds while you read something else.
+
 - **Actions on a card, written by you.** A card could be terminated, shelved, attached to and messaged, and all
   of those are things ATRIUM does. None of them was the thing a person does repeatedly, which is send the same
   instruction to whichever agent is in front of them.

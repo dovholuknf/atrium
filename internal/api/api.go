@@ -177,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
 	mux.HandleFunc("POST /v1/intake", s.intake)
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
+	mux.HandleFunc("GET /v1/history", s.history)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)

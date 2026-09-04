@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -110,6 +111,31 @@ func (s *Server) listOffered(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": toViews(tasks)})
+}
+
+// history answers "what have I had running here", which the board cannot.
+//
+// Everything ever created, archived or not, cut by whether it left an account
+// of itself. Paged, because this grows forever until somebody turns pruning
+// on, and paging it later would mean the first machine to have been running a
+// year finds out the hard way.
+func (s *Server) history(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	tasks, total, err := s.st.EverRun(store.HistoryQuery{
+		Recap:  q.Get("recap"),
+		Search: q.Get("q"),
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tasks": toViews(tasks), "total": total, "offset": offset,
+	})
 }
 
 // The sources: commands atrium runs on a timer to find work.
