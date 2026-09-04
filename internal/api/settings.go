@@ -47,6 +47,9 @@ func globalAutoView(s *Server) map[string]any {
 	for key, field := range map[string]string{
 		store.SettingSweepDead:  "sweep_dead_after",
 		store.SettingPruneAfter: "prune_after",
+		// Not a timer, but read the same way and for the same reason: empty is
+		// a value here, and it means the open button is off.
+		SettingEditor: "editor_command",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -90,6 +93,11 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// and setting it to `off` are different requests.
 		SweepDead  *string `json:"sweep_dead_after"`
 		PruneAfter *string `json:"prune_after"`
+		// The command that opens a file, on the machine atrium is on. A
+		// pointer for the same reason as the timers: not mentioning it and
+		// clearing it are different requests, and clearing it is how the open
+		// button gets turned back off.
+		Editor *string `json:"editor_command"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -139,6 +147,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := housekeeping(s, key, *value); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if body.Editor != nil {
+		// Stored as typed, minus the surrounding space. Not validated against
+		// anything on disk: a command that is not there fails at the moment
+		// somebody presses open and says which program it could not run, which
+		// is more use than refusing to save a line that would work tomorrow
+		// when the tool is installed.
+		if err := s.st.SetSetting(SettingEditor, strings.TrimSpace(*body.Editor)); err != nil {
+			s.fail(w, err)
 			return
 		}
 	}

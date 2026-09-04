@@ -68,6 +68,11 @@ type Daemon struct {
 	nats   map[overlayKind]*native
 	natsMu sync.Mutex
 
+	// peerLimit bounds how often one session may message others. In memory,
+	// because the thing it bounds is a runaway session and a session does not
+	// outlive the daemon either.
+	peerLimit *peerLimiter
+
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
@@ -109,7 +114,8 @@ func New(opts Options) (*Daemon, error) {
 	d := &Daemon{
 		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		nats: map[overlayKind]*native{},
+		nats:      map[overlayKind]*native{},
+		peerLimit: newPeerLimiter(),
 	}
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
@@ -123,6 +129,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
 	d.ap.Message = d.handleMessage
+	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
@@ -553,6 +560,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/activity", d.handleActivity)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
+	// Sessions addressing each other. On the AGENT listener, because that is
+	// what a session can already reach, and `docs/overlays.md` says never to
+	// publish this port. A peer bus is the first feature that gives anybody a
+	// reason to want it reachable, and the answer is still no: two machines
+	// talking is the forum's job, not this one's.
+	agentMux.HandleFunc("/peers", d.handlePeers)
+	agentMux.HandleFunc("/tell", d.handleTell)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
@@ -575,6 +589,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	log.Printf("[atrium] agents  -> http://localhost%s", d.opts.AgentAddr)
 	log.Printf("[atrium] board   -> http://localhost%s", d.opts.HumanAddr)
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
+
+	// Before the address file is overwritten, since the previous one is what
+	// says which database the last daemon used.
+	d.warnIfDifferentDatabase()
 
 	// Written once both listeners are bound, so the file never advertises an
 	// address that failed to open.

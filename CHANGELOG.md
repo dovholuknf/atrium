@@ -5,6 +5,406 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board paints its own scrollbars.** The stack, the perms list, the runners page and every board lane
+  arrived as the operating system's grey strip, which on a dark board is the one part of it that is not the
+  board. The terminal has been painting its own since it got a viewport; this is the same treatment for the
+  rest, set in one place so they cannot drift apart.
+
+  With room reserved for it. A scrollbar is drawn inside the padding box, so a row's right border was sitting
+  under the bar and the two mushed together. The negative margin gives that space back to the layout, so
+  nothing shifts when a list first grows long enough to need one.
+
+- **Starting the fixtures says one thing, and only when something went wrong.**
+
+  Every fixture that comes up produces a card that is ready, and a ready card is announced, so booting was one
+  notification per terminal for an event with no content: you configured them to start, and they started.
+
+  Two halves to the fix. A card that is ready BECAUSE IT JUST STARTED never rings, whoever launched it, which
+  is the general rule the fixtures case is an instance of. And the batch reports the other half once, since the
+  absence of a card is not an event and the board cannot notice it: `3 fixtures did not start`, naming them
+  when there are few enough to name, silent when everything worked.
+
+  **A fixture that failed now says why, on its own row.** Fixtures start in the background so a slow runner
+  cannot hold the board up, which meant a failure had nowhere to go but the daemon's log and the only symptom
+  was a terminal that was not there. The same shape `source` already uses: the row that failed carries its own
+  reason, so the page listing them is the page that answers why one is missing. It stays up until a start
+  works.
+
+- **The terminal bar wears the runner's mark and hides its settings behind a cog.**
+
+  The mark goes in front of the name, the way a card carries it. A `claude` pill among the chips said the same
+  thing in the place the eye goes last, and read as one more fact rather than as whose terminal this is.
+
+  Behind the cog: the palette, the notification mark, whether selecting copies, and how big this card's window
+  opens. `copy on select: off` was a permanent five word sentence taking the same room as `exit`, for a setting
+  changed about once. The bar was running out of room and worse in a popped-out window, which is narrow by
+  design and is exactly where per-window settings belong.
+
+  **A popped-out window's size is set on purpose now**, from that cog: remember it for this card, or make it
+  the default for every card. It used to save on every resize, so nudging an edge to see something behind the
+  window silently became the size every card opened at. A preference nobody expressed is worse than no
+  preference, because it is indistinguishable from a bug.
+
+- **The card menu, again, against what the entries actually do.**
+
+  **Attach is one row with two destinations**, `in terminals` and `in its own window`, on a flyout. They are
+  one intention with a different endpoint, so two rows both beginning "attach" was the same word twice.
+
+  **Auto mode reports what is happening, not what is configured.** A card read `off` while the header said
+  APPROVING EVERYTHING, because the board-wide switch and the per-card one both end in approve and the menu
+  was describing a field rather than an outcome. It says `on`, noted `board-wide` when it is not this card's
+  doing, since otherwise turning this card's switch off appears to change nothing.
+
+  **Resume is offered only when it can resume.** An entry that says "cannot resume" underneath itself is a
+  menu explaining why it is there, which is a question it raised.
+
+  **Start says what it will do.** With nothing running it puts a runner on this card. With a session already
+  going it cannot, so it says `start a NEW session here` and opens a second card in the same directory: a
+  different conversation, the same files, two agents editing them. Occasionally what you want and never what
+  you want by accident.
+
+  **Shelve is dimmed rather than dropped** on a card atrium does not own, with the reason on the row. An entry
+  that disappears on some cards and not others is a rule you have to infer.
+
+  **`details…` is `settings…` and sits last**, before terminate. It is the one entry you go into rather than
+  press. The notification mark moved inside it, next to the bell, since those answer the same question in the
+  two senses: which agent when you cannot see, and which agent when you can. It is drawn as you type, because
+  a glyph that renders as a box there will render as a box on the notification.
+
+  **Forget left the menu** for that dialog. It is not something done often, and it was sitting under the
+  pointer next to things that are.
+
+- **A session that has just come up no longer claims to have finished work.**
+
+  `needs-input` is reached two ways that mean opposite things. A session that has just started is ready because
+  it has done nothing yet; a session that has handed a turn back is ready because it did what was asked. Both
+  said "finished its turn and wants your next instruction", so launching a runner announced work it had not
+  begun. A new `waiting_reason` on the card carries which, set by the session hook, empty everywhere else, so
+  every card written before this reads correctly with no backfill.
+
+  A column rather than a read of the event log: the waiting list is polled every five seconds and the answer
+  is one fact per card, so asking `event` what happened last before each status change is a query per card per
+  poll to learn something the status change already knew.
+
+- **A card can wear its own mark on a desktop notification.**
+
+  Beside the theme and the tone, for the same reason both of those live on the card: telling sessions apart
+  without reading only works if the answer is the same tomorrow and in another browser. A notification arrives
+  with the operating system's own chrome around it and one small image, and every one of them carried the same
+  A, so the picture said only that atrium sent it.
+
+  Free text, not a list from here. A letter, a digit, an emoji, anything that renders in one glyph, which
+  makes the set of marks as big as the emoji keyboard rather than as big as whatever could be drawn in this
+  file. A fixed set would be atrium deciding what a project may look like, the mistake `tags` already refuses.
+
+  The kind of alert is still carried, by the field the mark is drawn on: amber for an agent that is blocked,
+  dark for one that is merely ready. So the notification now says which session AND how urgent, where it said
+  neither. Whatever is on the card is drawn to a canvas and sent as a PNG, never inserted, so an icon cannot
+  be markup however it was set, including by a source that filled the card in.
+
+- **The card menu is ordered by what you came to do, and says what is on.**
+
+  Look at it, get to its terminal, run something in its directory, change what it is, then the dangerous ones.
+
+  **Start a session here** and **resume the conversation here**, on any card with a directory. This is what
+  adopting an existing session actually amounts to: a runner atrium started in a terminal cannot be taken
+  over, because a pty cannot be adopted and `docs/supervision-design.md` records that there is no reattach on
+  Windows. What can happen is a new runner, owned by atrium, in the same place and onto the same card. A card
+  with a worktree and no session is exactly the case for it.
+
+  **Auto mode is drawn as a toggle**, label plus a lamp, rather than flipping between "auto mode" and "stop
+  auto mode". The old wording asked you to work out which of two sentences described now and which described
+  the click, and it was least readable in the case that matters, when the answer is already yes.
+
+  **Shelve is offered where there is a runner to stop.** On an unsupervised card it promised something atrium
+  cannot do: set the standing block and leave the process running. Unshelve stays available on any card,
+  because a shelved card refuses every request its session makes and has to be liftable wherever you find it.
+
+  **Done is gone from the menu.** Dragging a card into the column still files it.
+
+- **The stack's date sits last, in a fixed track.** The chips vary in number and width from row to row, so a
+  date carried along at the end of them landed somewhere different on every card and the eye could not run
+  down the column. Fixed width for the same reason: `Thu 4 Sep` and `Mon 12 May` differ by a character and
+  would shift the whole track. It is the first thing dropped when the row is narrow.
+
+- **A popped-out window opens at the size you last gave one, and stops announcing itself on arrival.**
+
+  **It rang on open.** The first poll compared "is this card ready" against a starting value of `false`, so
+  every rising edge included the very first one, and a card that had been sitting ready for an hour announced
+  itself the moment you got there. Which is why you popped it out. The first poll now only learns, matching
+  what `alerting.check` has always done on the board. The state still reaches the title bar, since a window
+  that opens onto a blocked session should say so; nothing is played and nothing is put on screen.
+
+  **The toast spanned the whole window.** A popped-out window is around 900px, which falls inside the phone
+  breakpoint, so a rule written for a phone stretched the toast edge to edge across a window whose entire
+  content is one terminal. Narrow is a shape, not a screen. It is also narrower here than on the board,
+  because this window carries the alert in its title bar and what is on screen only has to be legible.
+
+  **Size is remembered, per card, by resizing the window.** Not a settings field: the size you want is
+  something you find by dragging an edge until the terminal looks right, and having found it there is nothing
+  left to ask. A card popped out for the first time opens at whatever you last sized any window to, so a card
+  you keep tall and narrow beside an editor stays that shape and everything else inherits a sensible default.
+  Kept in `localStorage` rather than on the card, because it is a fact about this screen: the same card on a
+  laptop wants a different window, and a size synced from the desktop would be wrong on arrival.
+
+  **Pop out is on board cards too**, next to `attach`, the same mark as on the stack.
+
+- **A stack row can pop a terminal straight out, and stops saying the same number twice.**
+
+  Three things about one row.
+
+  **Pop out sits next to attach**, as the box-with-an-arrow mark that means "new window" everywhere else.
+  Attaching first and then popping out was two steps to reach one window, and it made the board briefly the
+  owner of a terminal it was about to give away. Popping out a card from the stack now leaves whatever the
+  board already has attached alone, which an unconditional detach did not.
+
+  **The state chip drops its duration when the big number on the left already is it.** Under the default sort
+  those are one measurement: the left column shows `wait_seconds` for a waiting card and `idle_seconds`
+  otherwise, and the chip printed exactly that again. It is compared rather than assumed, because the two come
+  apart under the other sorts. Sorting by activity makes the left number "how long since it last did anything"
+  for every row including the waiting ones, and there the wait is a fact nothing else on the row carries.
+
+  **The date is centred with the pills** instead of trailing the card's name. The name is the first of up to
+  three lines in its column while the chips are centred against the row, so the date sat on line one and the
+  pills on the middle line. Each half was centred correctly on its own terms and the row still read as
+  crooked.
+
+- **A popped-out window stays on its terminal, and alerts for it there.**
+
+  Two fixes to the same window, one of which was a defect and one of which was missing.
+
+  **It could wander back to the board.** A popped-out window has no tabs, so nothing looked like navigation,
+  but three paths reached `switchView` anyway: a tag chip calls `filterByTag`, the in-terminal permission block
+  offers "open in perms", and a launch that lands on an unsupervised card falls through to the board. Any of
+  them turned the window you alt-tabbed to into a second board. `switchView` now refuses anything but the
+  terminal while the window is popped out, and the other views are hidden in the stylesheet as well, which also
+  removes the flash of board while the card is being fetched.
+
+  **It said nothing when its own session needed you.** It never opened an event stream at all. It does now, and
+  polls for ONE card rather than running the board's whole alerting pass, which it would have done from a
+  document with no board to click through to.
+
+  **The title bar carries the alert, not a toast.** `(!) github/openziti/ziti:nightly-failures - atrium` for a
+  blocked agent, `*` for one that has finished its turn. The whole reason this window exists is alt-tab, and a
+  toast lives inside a window you may not be looking at while a title bar is what the switcher shows. Coming
+  back to the window clears the mark, because that IS reading it. The toast is still shown, but only when the
+  window is already in front of you.
+
+  **Which document speaks is decided by ownership, announced over a `BroadcastChannel`.** A popped-out window
+  claims its card and the board holds back its own desktop notification for it, or one event rings twice: by
+  its own foreground test the board is behind the popped-out window and therefore entitled to notify. The board
+  keeps that card's badges and counts, because routing a card off the board entirely would mean a window
+  buried on another desktop silently ate every alert for it. A board that starts later asks who is out there,
+  and windows that are gone do not answer.
+
+- **A terminal is named by its whole address.** `github/openziti/ziti-tunnel-sdk-c:nightly-failures` rather than
+  `ziti-tunnel-sdk-c/nightly-failures`. A card in a column has the board around it saying which machine and
+  which project; a window in alt-tab has nothing, so it needs the host and the org too. The same label is now
+  on the terminal bar, since the switcher beside it lists sessions whose short titles collide.
+
+  Anchored on the **repo name**, not on path depth and not on the last path segment. Depth varies, and the last
+  segment is the worktree DIRECTORY, which is not the branch: one card here sits in
+  `.../desktop-edge-win/fix-app-version` while actually being on `promote-2.11.3.1-and-beta`, because somebody
+  switched branches inside the worktree. The directory is the stale half, so the branch is what gets shown.
+
+  `scripts/check-terminal-titles.js` runs the rule against a live board, and earned itself immediately: two
+  cards with no repo recorded came out as `openziti/ziti/discourse-6036:discourse-6036`, naming the branch
+  twice. Neither was visible by reading the function.
+
+- **Something starts the daemon now.** Nothing did. The one on this machine had been started by hand once and
+  left running, so `atrium stop` looked like losing everything, and starting it again from a different terminal
+  opened a **different database**, because which one you get depends on `WORKTREE_ROOT` in the shell you were
+  in.
+
+  `scripts/atrium-autostart.ps1` registers a logon task that pins one command line and one database, and
+  `-Remove` takes it away. The `--db` is passed explicitly on purpose: leaving it out means the task inherits
+  whatever the environment happens to be at logon, which is the thing that caused the confusion.
+
+  A logon task rather than a Windows service, deliberately. A service runs as SYSTEM in session 0, which cannot
+  open a pseudo terminal a person can attach to, and supervision is most of what the daemon does. No execution
+  time limit either: the default is three days, after which the task host stops it and the board vanishes for no
+  visible reason.
+
+  Also `scripts/check-powershell.ps1`, because the two source scripts shipped last night had never been parsed
+  by anything. They do parse. Nothing was checking.
+
+- **An approval you can answer from a phone, without atrium growing a push service.** `docs/charon.md` calls
+  this the gap that matters most: a gate you cannot answer from away is a gate you turn off.
+
+  **Web push was the plan and it was dropped**, because it breaks three written rules at once. `CLAUDE.md` puts
+  authentication out of scope and says reaching the board from elsewhere is an overlay's job. `docs/overlays.md`
+  says atrium never issues an identity, and a VAPID key pair is one it would mint and hold. And it would be the
+  first secret this daemon keeps, where `schema.go` says of the source table that there is nowhere in it to put
+  a credential.
+
+  The answer that needs none of that is the one already built: the phone opens the board over the overlay that
+  already reaches it. So what was actually missing was that this screen was unusable at 390 pixels.
+
+  A breakpoint aimed at the permissions queue rather than the whole board, because reading a kanban on a phone
+  is not something anybody wants and answering a blocked agent from the sofa is. The four buttons go two by two
+  at full width rather than being shrunk to fit one row: approve and never side by side at eight millimetres is
+  how the wrong one gets pressed. The tabs scroll instead of wrapping, and the two widest things in the header
+  are hidden, neither of which is what you came for.
+
+  A pending request also says **how long it has been frozen** rather than the wall-clock time it asked. "asked
+  14:22:01" needs you to know what time it is and do the subtraction, which is exactly the work nobody does on a
+  phone at three in the morning. Not a countdown: atrium refuses approval timeouts, so nothing is running out.
+
+- **Sessions can address each other.** `CLAUDE.md` said atrium had no answer for this at all, and
+  `docs/charon.md` ranked it first of six things worth taking.
+
+  `atrium peers` lists who is reachable, with what each is working on and how much is already queued for it, so
+  a session that is already buried is one to leave alone. `atrium tell <handle> <message>` queues one.
+
+  Everything it needed already existed: the handle is `wire_name`, the transport is the agent listener every
+  hook posts to, the delivery is the `message` table drained by the permission and Stop hooks. So a peer message
+  lands whether the target is working or idle, exactly like one of yours.
+
+  **It is queued, never typed, even when atrium owns the terminal and could.** That is the whole difference from
+  Charon's version, which injects as though the human had typed. That works there because their sessions are SDK
+  turns with nobody at a keyboard; atrium owns a real terminal a person may be mid-command in, and
+  `docs/supervision-design.md` settled that input is not fanned out. The tempting simplification is to reuse
+  `handleMessage`, which does type, and there is a test whose only job is to catch that.
+
+  The envelope says who sent it and says it was not the human, because a model that reads a peer's request as
+  yours acts on it with an authority that session does not have.
+
+  Guardrails, each about ten lines and each the reason Charon's works: eight thousand characters, twenty sends a
+  minute per sender in a moving window, no messaging yourself, and nothing to a session that has ended. An
+  unknown handle answers with the list of ones that would have worked, which is how discovery survives being a
+  bare command rather than a tool whose description can make listing mandatory.
+
+  On the agent listener, and `docs/overlays.md` still says never publish that port. A peer bus is the first
+  feature that gives anybody a reason to want it reachable, and the answer is still no: two machines talking is
+  the forum's job.
+
+- **zrok is proved end to end. OpenZiti is not, and the docs now say so.** "Atrium drives an overlay" was a
+  claim whose two halves were not equally supported.
+
+  A private share was started from the board, opened locally with `zrok access private <token>`, and the board's
+  real card data came back through the tunnel. Then the share was released and the token stopped resolving. That
+  is the whole path: daemon, embedded SDK, zrok service, `zrok access`, HTTP. `docs/test-plan.md` section H has
+  it as a scenario to repeat, along with getting a file back out through the same tunnel, which is the case the
+  file panel exists for.
+
+  OpenZiti has never been exercised past configuration, because this machine has no enrolled identity and so
+  there has never been anything to bind a service as. `docs/overlays.md` says that plainly now instead of
+  implying both halves work.
+
+  **A start that has not been set up is refused before it is attempted**, in atrium's words, naming the next
+  step. Without it the attempt goes ahead, the library fails, and what reaches the board is zrok's or ziti's own
+  message about a thing that was never configured. Those are accurate and they answer a different question: they
+  say what broke, not what to do. A configured identity whose file has since gone says "it is not there", which
+  is the usual state after a machine is rebuilt and is worth telling apart from never having configured one.
+
+- **A terminal can be popped out into its own window.** The habit this competes with is alt-tab, which beats a
+  click into an app and then a click onto a tab, and which nothing could beat while a session was a pane inside
+  a page. The window's title bar carries the session name, which is the entire point: it is what alt-tab shows.
+
+  **The same page in terminal-only mode**, addressed by `#term=<id>`, not a second HTML file. `CLAUDE.md` calls
+  `index.html` "the whole board, one file", and a second page would be a second copy of the xterm wiring, the
+  resize handling and the attach lifecycle. Everything that is not the terminal is hidden rather than removed,
+  so the switcher, the card dialog and the settings all still exist and are simply never shown.
+
+  Popping out detaches the board's own pane, because two views onto one terminal both taking input is the
+  situation `docs/supervision-design.md` says nothing arbitrates. The window is named per card, so pressing it
+  twice raises the one that is open rather than opening a second onto the same session. Closing the window
+  detaches and stops nothing.
+
+  **Not** handing the session to Windows Terminal, which is the thing actually wanted. That needs atrium to stop
+  owning the pty, and with it attach, the activity badge, the liveness check and stop, and there is no reattach
+  on Windows to get them back. A browser window is what is available at a price worth paying.
+
+- **The settings dialog has a spine.** It was one column in the order things were added, with four headings as
+  the only structure, so finding a setting meant scrolling past every other setting and knowing roughly how old
+  it was. The last change made it worse by putting `housekeeping` at the bottom.
+
+  Four panes now: reaching it, alerts, housekeeping, the board. The grouping boxes were the worst of it, the
+  tallest thing in the dialog and the least often changed, and they are now behind one click instead of under
+  everything.
+
+  **The markup is still one flow of fields.** The nav is built when the dialog opens, by cutting that flow at
+  every heading, so adding a section is still a heading and its fields in order with nothing else to keep in
+  step. Which is also a way to break it silently, so `scripts/check-board.sh` now asserts the partition against
+  the real file: parsing cannot catch a heading nested one level too deep, and the symptom would be one giant
+  pane discovered by opening the gear.
+
+  It stays a modal rather than becoming a seventh tab. Settings is where you go from wherever you are and come
+  straight back, and a modal returns you there for free.
+
+  The line this nav has to hold, written down because the nav is what will be used to place the next setting:
+  **everything in this dialog is a setting for the MACHINE.** A card's theme, its bell and its notes are
+  settings for one piece of work and they live on the card.
+
+- **Notes on a card, and sending one when you are ready.** A note is for you. Sending it is a second, separate
+  act, and the difference is the point: the box underneath fires as soon as there is anything in it, reaching
+  the session on its next tool call. This one goes nowhere until you say.
+
+  What that buys is ordering. Three things thought of during a long turn, sent as one instruction at the end,
+  rather than three interruptions in the middle. Claude Code takes input while it is thinking, so the send is
+  less urgent than it once was, and the ordering is the half that still matters.
+
+  Saved as you stop typing rather than on a button, because a scratch pad you can lose by closing a dialog is a
+  scratch pad you stop using. Held by the daemon rather than the browser, like a card's theme and its bell: it
+  is about the work, not about this screen. Cleared only once the message is safely somewhere else, so a send
+  that fails leaves what you wrote where you can still see it.
+
+- **A message says who it is from.** `message` gains a `from_peer` column and the banner reads it. Empty means
+  the operator, which is what every message written before this was.
+
+  Landed now rather than with the peer bus that needs it, because both touch this one table and shipping two
+  migrations against it two patches apart is how a column ends up meaning slightly different things depending on
+  when the row was written.
+
+  The wording is load-bearing. A model that reads another session's request as an instruction from you acts on
+  it with an authority that session does not have, and the only thing between those two readings is the
+  envelope. A message from a peer names the session and says it was not the human. A mixed batch says so and
+  labels each one, rather than picking an author and being wrong about half of it. `QueueFromPeer` is a separate
+  function from `QueueMessage` and refuses an empty sender, because one function with an optional sender is one
+  defaulted argument away from a peer message that claims to be from you.
+
+- **The daemon says when it opened a different database than last time.** This cost twenty minutes of thinking
+  every card had been lost.
+
+  Which database you get depends on the shell you started from: `HubDir` returns `$WORKTREE_ROOT\hub` when that
+  variable is set and `~\.atrium` when it is not. Start the daemon from a terminal that has it and from one that
+  does not, and you get two different boards, both real, both populated, neither obviously wrong.
+
+  The existing guard only covered a database that had to be CREATED, which is the easier half: an empty board is
+  obviously empty. Opening a different EXISTING one was silent, and that is the worse case, because a populated
+  stranger looks exactly like your own board after something ate most of it.
+
+  `daemon.json` already recorded which database the last daemon opened, so the fix is to read it before
+  overwriting it. The warning names both paths and how many cards are in each, which is what makes it act on you
+  rather than get read past. The count comes from a **read-only** open, hand-rolled rather than going through
+  `store.Open`, because opening the other database properly would run every migration against it, and writing to
+  a database the operator did not ask this daemon to touch is the wrong way to tell them they have two.
+
+  Also `--location-file`, which is what makes it possible to run a second daemon to try something without
+  stealing the first one's hooks. Found by doing exactly that while testing the warning.
+
+- **Getting a file back OUT of an agent.** Bytes going in already worked. `GET /v1/tasks/{id}/files?path=`
+  served one back and nothing called it, because nothing could say what was in there.
+
+  A files panel on the card, folded until you want it. It lists one directory at a time under that card's
+  worktree, files and directories both, and every entry has a download link.
+
+  **It works over an overlay for free, which is the reason it is worth having.** The download is the board's own
+  HTTP, so whatever already carries the board carries this: loopback, a zrok share, a ziti service. Nothing new
+  is published and there is no second transport to configure.
+
+  Deliberately not `browse.go`, which lists the daemon's whole filesystem for the launch picker, takes no card
+  and has no containment. This takes a card and resolves everything through `internal/safepath` against that
+  card's worktree. **Every path the board uses comes from the server, including where "up" goes**, so the board
+  never does path arithmetic, which is where a traversal would come from if one were going to. Walking up stops
+  at the card.
+
+  Bounded at 500 entries with the listing saying when it truncated, because a working directory with a
+  `node_modules` in it has more entries than anybody is going to read and the answer is a shorter list rather
+  than a slow board. Everything outside the card answers `403` whether or not it exists, so this is not an
+  oracle for what is on the machine. An unqualified listing starts at `.atrium/incoming` when that exists,
+  since the thing you most often want back is the thing something just put there.
+
 - **Four things a review found, fixed.** A code review of everything above, run before any of it was committed.
   All four concerns were real. `.mercurius/s_rBMcLOgwpVAn/round-01/` has the findings and the triage.
 

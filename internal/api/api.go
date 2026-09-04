@@ -61,6 +61,9 @@ type Server struct {
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
+	// SendNote turns a card's note into one message and clears it. Owned by
+	// the daemon, which owns delivery.
+	SendNote http.HandlerFunc
 	// DrainAuto approves everything already waiting, when auto mode is turned
 	// on with a full queue. Supplied by the daemon for the same reason Decide
 	// is: each waiting agent is parked on an in-memory reply channel, and a
@@ -182,6 +185,10 @@ func (s *Server) Handler() http.Handler {
 	// docs/file-transfer-design.md.
 	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
+	// Finding a file so it can be taken back out. Bounded to the card's own
+	// directory, and carried by whatever already carries the board.
+	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
+	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)
@@ -222,6 +229,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/actions/{id}", s.deleteAction)
 	if s.RunAction != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/action", s.RunAction)
+	}
+	if s.SendNote != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/note/send", s.SendNote)
 	}
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
@@ -387,6 +397,10 @@ type patchBody struct {
 	// default for whichever kind of alert fired, so clearing it is a
 	// meaningful value rather than an omission.
 	Sound *string `json:"sound"`
+	// Icon is the mark this card wears on a desktop notification. Empty means
+	// the atrium mark, so clearing it is a meaningful value rather than an
+	// omission, the same as the two above.
+	Icon *string `json:"icon"`
 	// Where this work came from. Not pointers, because SetOrigin already
 	// treats an empty string as "not mentioned": these three are only ever
 	// filled in, and unlinking a card from the ticket it came from is not a
@@ -404,6 +418,9 @@ type patchBody struct {
 	// disagrees with is worse than no text. A pointer, so clearing it is a
 	// decision rather than an omission.
 	Recap *string `json:"recap"`
+	// Note is the card's scratch pad. A pointer, because clearing it is a
+	// decision and it is also what sending does.
+	Note *string `json:"note"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -502,6 +519,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if body.Icon != nil {
+		if err := s.st.SetIcon(id, *body.Icon); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
 	if err := s.st.SetOrigin(id, body.Source, body.ExternalID, body.URL); err != nil {
 		s.fail(w, err)
 		return
@@ -514,6 +537,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Recap != nil {
 		if err := s.st.SetRecap(id, *body.Recap); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Note != nil {
+		if err := s.st.SetNote(id, *body.Note); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -662,6 +691,10 @@ type permView struct {
 	// ring as that agent without the board having to hold every task in memory
 	// to look it up. The join is already being done here for the name.
 	Sound string `json:"sound,omitempty"`
+	// Icon rides along for the same reason and on the same join: a
+	// notification about a blocked agent should carry that agent's mark, and
+	// the alternative is the board holding every task in memory to look one up.
+	Icon string `json:"icon,omitempty"`
 }
 
 // namePermissions attaches the asking session to each request.
@@ -685,6 +718,7 @@ func (s *Server) namePermissions(perms []*store.Permission) []permView {
 			v.Agent = t.DisplayTitle()
 			v.Worktree = t.Worktree
 			v.Sound = t.Sound
+			v.Icon = t.Icon
 		}
 		out = append(out, v)
 	}

@@ -13,7 +13,8 @@ import (
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
-	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at`
+	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
+	icon`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -33,7 +34,8 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
-		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt); err != nil {
+		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
+		&t.WaitingReason, &t.Icon); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -225,11 +227,11 @@ func (s *Store) insertTask(t *Task) error {
 		tags = string(raw)
 	}
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
-		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "")
+		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "")
 	return err
 }
 
@@ -370,6 +372,21 @@ func placeholders(n int) string {
 // waiting_since is set on entry to a waiting state and cleared on exit, which
 // is what makes the Stack view's ordering meaningful.
 func (s *Store) SetStatus(id, status string) error {
+	return s.SetStatusBecause(id, status, "")
+}
+
+// SetStatusBecause is SetStatus with a note on WHY, for the one case where
+// the destination column does not say it.
+//
+// Only entry into a waiting column carries a reason, and only one caller has
+// one to give: the session hook, which knows the difference between a session
+// that has just come up and one that has handed a turn back. Everything else
+// goes through SetStatus and reads as the default, a turn that ended.
+//
+// The reason is cleared on the way out rather than left behind, because a card
+// that has gone back to running is not waiting for anything and a stale reason
+// would be waiting to be believed the next time it stopped.
+func (s *Store) SetStatusBecause(id, status, reason string) error {
 	return s.guard(func() error {
 		prev, err := s.getBy(`id = ?`, id)
 		if err != nil {
@@ -380,12 +397,14 @@ func (s *Store) SetStatus(id, status string) error {
 		}
 		n := now()
 		var waiting any
+		why := ""
 		if status == StatusNeedsInput || status == StatusNeedsPermission {
 			if prev.WaitingSince != nil {
 				waiting = ts(*prev.WaitingSince)
 			} else {
 				waiting = ts(n)
 			}
+			why = reason
 		}
 		// A card that is alive again comes back onto the board.
 		//
@@ -403,9 +422,9 @@ func (s *Store) SetStatus(id, status string) error {
 			archived = tsOrEmpty(prev.ArchivedAt)
 		}
 		if _, err := s.db.Exec(
-			`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?
-			 WHERE id = ?`,
-			status, waiting, ts(n), archived, id); err != nil {
+			`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?,
+			 waiting_reason = ? WHERE id = ?`,
+			status, waiting, ts(n), archived, why, id); err != nil {
 			return err
 		}
 		return s.appendEvent(id, EventStatusChanged, map[string]any{

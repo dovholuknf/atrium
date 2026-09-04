@@ -129,7 +129,37 @@ go into the same terminal as the prompt, so they are sent after a fixed pause, a
 submit could in principle receive a quit before its instruction. A shorter pause risks that; a longer one makes
 the button feel broken. The real fix would be a runner that acknowledges input, which none of them do.
 
-### The settings dialog is one long scroll and needs a spine
+### Priority on a card, for the work that never goes away
+
+Some work cannot be got rid of and has to stay top of mind. Right now the board has no way to say that: every
+ordering is either activity, waiting time, status, name, project or runner, and all of those are facts ABOUT
+the card rather than a judgement of how much it matters.
+
+**`pinned` is the closest thing and it is not this.** Pinned keeps a card at the top of every list and in the
+terminal switcher, which is the right behaviour for a permanent fixture like the dotfiles session. It is a
+boolean, so five pinned cards are five equals, and it says "always show me this" rather than "this one matters
+more than that one".
+
+What is wanted is an ordering among the things that matter. That is a different field and it should not be
+bolted onto the boolean, or "pinned" quietly becomes "priority 1" and the fixture case loses its meaning.
+
+Open questions, and the first one decides the rest:
+
+- **How many levels.** Three named ones (high, normal, low) are readable at a glance and never need a tie
+  break. A number is more expressive and turns into a thing to fiddle with. Given every other axis on this
+  board is a fact and this is the only judgement, three is probably right and a number is probably a trap.
+- **Whether it sorts or filters.** Sorting by priority buries a `needs-permission` card under a high-priority
+  one that is doing nothing, which inverts the whole point of the first column. More likely priority is a
+  visual weight plus its own SHOW pill, and the columns keep meaning what they mean.
+- **Whether it decays.** Something marked high a month ago and untouched since is not high any more, it is
+  forgotten. A priority that never expires becomes a field where everything is high. Worth considering the
+  same treatment auto mode got: read the age at the moment it is displayed rather than running a timer.
+- **Whether an agent can set it.** Probably not. Priority is the operator's judgement about their own
+  attention, which is the same argument that keeps the status column human. A source raising an item could
+  suggest one, and suggesting is not setting.
+
+Cheap to build once those are answered: a column on `task`, a control on the card, a pill on the stack, and
+the same ordering treatment tags already get.
 
 Everything is in one column in the order it was added. Three `h3` headings exist (`reach this board from
 elsewhere`, `sound`, `the board`) and they are the only structure, so finding a setting means scrolling past

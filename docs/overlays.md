@@ -20,6 +20,27 @@ Atrium keeps the configuration, opens the listener, and shows what came back. Th
 The listener ends when the daemon does. An address that outlives the board it points at answers with a
 connection refused, which reads as the overlay being broken.
 
+## What has actually been exercised
+
+Worth writing down, because "atrium drives an overlay" is a claim and the two halves of it are not equally
+proved.
+
+**zrok is proved end to end.** A private share was started from the board, opened locally with
+`zrok access private <token>`, and the board's real card data came back through the tunnel with a 200. Then the
+share was released and the token stopped resolving. That is the whole path: daemon, embedded SDK, zrok service,
+`zrok access`, HTTP. `docs/test-plan.md` section H has it as a scenario to repeat.
+
+**OpenZiti has not been.** Not because anything is known to be wrong with it, but because this machine has no
+enrolled identity, so there has never been anything to bind a service as. Everything up to that point is
+covered: the identity states, the token reading, the capability query against a controller, and the pre-flight
+that refuses a start with nothing configured. The listener itself is unexercised and this document should stop
+saying otherwise the moment somebody enrolls one.
+
+The pre-flight is worth its own line. A start that has not been set up is refused **before** it is attempted,
+in atrium's words, naming the next step. Without it the attempt goes ahead, the library fails, and what reaches
+the board is zrok's or ziti's own message about a thing that was never configured. Those are accurate and they
+answer a different question: they say what broke, not what to do.
+
 Both overlays are embedded SDKs rather than child processes. The one thing atrium still shells out for is
 setting an account up in the first place: see "What runs, and what does not" below.
 

@@ -690,6 +690,105 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// A note is for YOU. Sending it is a second, separate act.
+		//
+		// The message queue already exists and does the opposite thing: it
+		// fires as soon as there is anything to deliver, reaching the session
+		// on its next tool call. A note is written now and sent when you say.
+		//
+		// What that buys is ordering. Three things thought of during a long
+		// turn, sent as one instruction at the end, rather than three
+		// interruptions in the middle. Claude Code takes input while it is
+		// thinking, so the send is less urgent than it once was, and the
+		// ordering is the part that still matters.
+		//
+		// One column rather than a note table, because the thing being asked
+		// for is a scratch pad per card and not a list with its own lifecycle.
+		// It accumulates while you type and empties when you send.
+		name: "0031_task_note",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+			// Who a message is from.
+			//
+			// Empty means the operator, which is what every message written
+			// before this was, and what `messageBanner` still says by default.
+			//
+			// Added HERE rather than when the peer bus needs it, because both
+			// touch this one table and shipping two migrations against it two
+			// patches apart is how a column ends up meaning slightly different
+			// things depending on when the row was written.
+			//
+			// The banner has to be able to say who, and it has to say that it
+			// was not the human, or a model reads a peer's request as an
+			// instruction from you and acts on it with that authority.
+			`ALTER TABLE message ADD COLUMN from_peer TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// Why a card is waiting, which is not the same question as how long.
+		//
+		// `needs-input` is reached two ways and they mean opposite things. A
+		// session that has just started is ready because it has done nothing
+		// yet; a session that has finished a turn is ready because it has
+		// done what you asked. The board said "finished its turn and wants
+		// your next instruction" for both, so starting a session announced
+		// that it had completed work it had not begun.
+		//
+		// A column rather than a read of the event log. The waiting list is
+		// polled every five seconds and the answer is one fact per card, so
+		// asking `event` for the last thing that happened before each status
+		// change is a query per card per poll to learn something the status
+		// change already knew.
+		//
+		// Empty means a turn ended, which is what every row written before
+		// this was, and what the board still says by default.
+		name: "0032_task_waiting_reason",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN waiting_reason TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// The mark a card wears on a desktop notification.
+		//
+		// Same argument as `theme` and `sound`, and it belongs beside them:
+		// telling sessions apart without reading only works if the answer is
+		// the same tomorrow and in another browser. A notification arrives
+		// with the operating system's own chrome around it and one small
+		// image, and until now every one of them carried the same A.
+		//
+		// Free text rather than a name from a list, holding whatever renders
+		// in one glyph: a letter, a digit, an emoji. A fixed set would be
+		// atrium deciding what a project can look like, which is the same
+		// mistake `tags` already refuses to make. Bounded on the way in, and
+		// drawn to a canvas, so nothing here is ever interpreted as markup.
+		//
+		// Empty means the atrium mark, which is what every card has until it
+		// is given one.
+		name: "0033_task_icon",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN icon TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// What happened the last time a fixture was asked to start.
+		//
+		// Fixtures start in the background so a slow runner cannot hold the
+		// board up, which means a failure had nowhere to go but the daemon's
+		// log. A fixture pointing at a directory that no longer exists was
+		// therefore silent: the terminal you expect every morning is simply
+		// not there, and finding out why meant reading stdout of a process
+		// you did not start in a window you do not have.
+		//
+		// The same shape `source` already uses for the same reason: the row
+		// that failed carries its own reason, so the page listing them is
+		// also the page that answers why one is missing.
+		name: "0034_fixture_last_run",
+		stmts: []string{
+			`ALTER TABLE fixture ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE fixture ADD COLUMN last_run_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

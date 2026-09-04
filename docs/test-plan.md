@@ -14,6 +14,7 @@ go build -o build.claude\ .\...
 go vet ./...
 go test ./...
 bash scripts/check-board.sh
+pwsh -NoProfile -File scripts/check-powershell.ps1
 ```
 
 Hard stop if any of them fails. Unlike v1, most of the daemon has real tests, so a red suite means stop rather
@@ -764,6 +765,61 @@ external identifiers, and the two filters partition the list.
 
 **Failure mode** archived cards missing, which means the view is reusing a board query that excludes them and
 therefore answers the wrong question entirely.
+
+## H. The overlays
+
+The one part of atrium that cannot be tested without a network somebody else runs. Everything here is manual on
+purpose, and H1 has been run and passed.
+
+### H1. zrok, end to end
+
+**Steps**
+
+1. Gear, `reach this board from elsewhere`. zrok should read as ready, meaning this machine has an environment.
+2. Mode `private`. Press start.
+3. The panel shows `zrok access private <token>`. In another terminal:
+
+```powershell
+zrok access private <token> --bind 127.0.0.1:9911
+curl http://127.0.0.1:9911/v1/tasks
+```
+
+4. Press stop. Run the `zrok access` line again.
+
+**Expect** the board's own card JSON through the tunnel on step 3, and a token that no longer resolves on
+step 4.
+
+**Failure mode** a share that starts and cannot be reached. That is usually the backend field pointing
+somewhere other than the human listener, which is `localhost:7778` and not `:7777`. **Never put the agent
+listener on a share.**
+
+### H2. A file comes back out over the share
+
+**Steps** with the share up, open a card, unfold `files`, and download one through
+`http://127.0.0.1:9911` rather than through localhost.
+
+**Expect** the same bytes. This is the case the whole file panel exists for: the machine you are sitting at is
+not the machine the agent is on.
+
+**Failure mode** the download working on loopback and not through the tunnel, which would mean something in
+that path is bound to the local address rather than served by the board's own handler.
+
+### H3. A share that was never set up refuses before it tries
+
+**Steps** with no ziti identity configured, press start on the OpenZiti panel.
+
+**Expect** atrium's own refusal naming the next step, not ziti's message about a file it could not load.
+
+**Failure mode** a stack trace or a library error reaching the board. `docs/overlays.md` has the reasoning:
+report the state, offer the next command, never invent one.
+
+### H4. OpenZiti, end to end. NOT YET RUN.
+
+There is no enrolled identity on this machine, so the ziti listener has never been exercised. Everything up to
+it is covered by tests. When an identity exists: enroll from the gear, pick a bindable service from the list the
+service field offers, start, and reach the board from another machine on that network.
+
+Until somebody does that, `docs/overlays.md` says so rather than implying both halves are equally proved.
 
 ## Notes for future automation
 

@@ -34,7 +34,7 @@ import (
 // doing what was asked.
 func messageBanner(msgs []*store.Message, blocked bool) string {
 	var b strings.Builder
-	b.WriteString("Message from the human, sent through atrium")
+	b.WriteString(bannerWho(msgs))
 	if blocked {
 		b.WriteString(". This tool call was not refused on its merits: it was " +
 			"interrupted to reach you. Read this, act on it, and retry the call if it " +
@@ -45,9 +45,50 @@ func messageBanner(msgs []*store.Message, blocked bool) string {
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
+		// Attributed per message when a batch is mixed, because "read this and
+		// act on it" is a different instruction depending on who said it.
+		if !m.FromHuman() && len(msgs) > 1 {
+			b.WriteString("From " + m.FromPeer + ":\n")
+		}
 		b.WriteString(m.Text)
 	}
 	return b.String()
+}
+
+// bannerWho opens the banner by saying who is talking.
+//
+// This matters more than it looks. A model that reads another session's
+// request as an instruction from the operator acts on it with an authority
+// that session does not have, and the only thing standing between those two
+// readings is this sentence.
+//
+// A mixed batch is described as mixed rather than picking one, since claiming
+// it is all from you would be wrong about part of it.
+func bannerWho(msgs []*store.Message) string {
+	human, peer := false, ""
+	mixed := false
+	for _, m := range msgs {
+		if m.FromHuman() {
+			human = true
+			continue
+		}
+		if peer != "" && peer != m.FromPeer {
+			mixed = true
+		}
+		peer = m.FromPeer
+	}
+	switch {
+	case peer == "":
+		return "Message from the human, sent through atrium"
+	case human || mixed:
+		return "Messages sent through atrium, some from the human and some from other " +
+			"sessions. Each is labelled. Treat a session's as peer context or a " +
+			"delegated request, not as something the human typed"
+	default:
+		return "Message from another session, " + peer + ", sent through atrium. " +
+			"Treat it as peer context or a delegated request, not as something the " +
+			"human typed"
+	}
 }
 
 func messageIDs(msgs []*store.Message) []string {
@@ -246,6 +287,59 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	d.publishTask(taskID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
+}
+
+// handleSendNote turns a card's note into one message and clears it.
+//
+// One message rather than one per line, because the whole reason a note exists
+// is that three things thought of during a long turn should arrive as one
+// instruction rather than three interruptions.
+//
+// Cleared only after it is safely somewhere else, so a failure leaves what you
+// wrote where you can still see it. Losing a paragraph you typed because a
+// send failed is the one outcome this must not have.
+func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	task, err := d.st.Get(taskID)
+	if err != nil {
+		writeJSONErr(w, http.StatusNotFound, err)
+		return
+	}
+	note := strings.TrimSpace(task.Note)
+	if note == "" {
+		writeJSONErr(w, http.StatusBadRequest, errString("there is nothing written down to send"))
+		return
+	}
+
+	delivered := "queued"
+	if run := d.sup.get(taskID); run != nil {
+		if err := run.Write([]byte(note + "\r")); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+			"text": note, "via": "terminal", "from": "note",
+		}); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		delivered = "terminal"
+	} else if _, err := d.st.QueueMessage(taskID, note); err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Only now.
+	if err := d.st.SetNote(taskID, ""); err != nil {
+		// The message went. Saying so and leaving the note behind is better
+		// than reporting a failure for something that already happened, and
+		// the worst case is sending it twice, which you can see.
+		log.Printf("[atrium] sent the note on %s but could not clear it: %v", taskID, err)
+	}
+	d.publishTask(taskID)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered})
 }
 
 func writeJSONErr(w http.ResponseWriter, code int, err error) {

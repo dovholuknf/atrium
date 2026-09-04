@@ -206,9 +206,68 @@
   /* The ones that can be taller than the window scroll themselves. The board
      scrolls per lane and the terminal never scrolls at all, so neither is
      here. */
-  main > #stack,
   main > #perms,
   main > #runners { overflow-y: auto; overflow-x: hidden; }
+  /* The stack scrolls its LIST, not itself.
+     Its filter pills, sort pills and search box were inside the scroll box, so
+     they left the top of the screen as soon as there were enough cards to
+     scroll: the controls that decide what you are looking at, gone exactly when
+     the list is long enough to need them. The scrollbar ran up past them too,
+     which is what made it look like part of the bar rather than part of the
+     list. */
+  main > #stack {
+    display: flex; flex-direction: column; overflow: hidden; gap: 0;
+  }
+  #stack > .filters { flex: 0 0 auto; }
+  #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* The board's own scrollbar, on the four boxes that scroll.
+     Each arrived as the operating system's grey strip, which on a dark board is
+     the one part of it that is not the board.
+
+     NOT the terminal. `#t-screen` and everything under it are off limits: the
+     xterm fit addon measures its own viewport's scrollbar to decide how many
+     columns fit, so any rule that changes that measurement makes it draw rows
+     wider than the box and the text runs under the bar. That is written up at
+     `.xterm-viewport` below and it is the reason these selectors name their
+     four targets rather than saying "anything that scrolls".
+
+     `padding-right` reserves room for the bar, which is drawn INSIDE the
+     padding box: without it a row's right border sits under the bar and the
+     two mush together. No negative margin to claim the space back, because
+     `main` clips, so a box wider than main loses exactly the strip the bar is
+     in and the last of the content with it.
+
+     Firefox takes the two `scrollbar-*` properties and nothing else; Chromium
+     takes the pseudo elements. Both are set, neither is a fallback. */
+  #stack-list,
+  main > #perms,
+  main > #runners,
+  .board .col > .cards {
+    scrollbar-width: thin;
+    scrollbar-color: var(--stroke-dim) transparent;
+    padding-right: 12px;
+  }
+  #stack-list::-webkit-scrollbar,
+  main > #perms::-webkit-scrollbar,
+  main > #runners::-webkit-scrollbar,
+  .board .col > .cards::-webkit-scrollbar { width: 10px; }
+  #stack-list::-webkit-scrollbar-track,
+  main > #perms::-webkit-scrollbar-track,
+  main > #runners::-webkit-scrollbar-track,
+  .board .col > .cards::-webkit-scrollbar-track { background: transparent; }
+  #stack-list::-webkit-scrollbar-thumb,
+  main > #perms::-webkit-scrollbar-thumb,
+  main > #runners::-webkit-scrollbar-thumb,
+  .board .col > .cards::-webkit-scrollbar-thumb {
+    background: var(--stroke-dim); border-radius: var(--r-pill);
+    /* Inset by a transparent border, so the thumb reads as a slim pill in a
+       gutter rather than as a block filling the channel. */
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  #stack-list:hover::-webkit-scrollbar-thumb,
+  main > #perms:hover::-webkit-scrollbar-thumb,
+  main > #runners:hover::-webkit-scrollbar-thumb,
+  .board .col > .cards:hover::-webkit-scrollbar-thumb { background-color: var(--stroke); }
   /* A hidden view must not claim its share of the column. */
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }
@@ -246,8 +305,10 @@
   }
   .board .col > .cards {
     overflow-y: auto; overflow-x: hidden; min-height: 0;
-    padding-right: 4px; margin-right: -4px;
-    scrollbar-color: var(--stroke-dim) transparent;
+    /* The scrollbar and the room for it are set once, with the other scrolling
+       views, near the top of this stylesheet. A lane is narrow, so it takes
+       that room back: unlike the stack it has no width to spare. */
+    margin-right: -8px;
     /* Room for the lift. A card rises 2px on hover and this box clips, so the
        first card's top border went under the heading and the card looked like
        it was sliding behind it. The margin takes the space back so nothing
@@ -509,6 +570,63 @@
     display: block; font-size: var(--fs-xs); color: var(--dimmest); margin-top: 2px;
   }
   #cardmenu button.limited .note { color: var(--warn); opacity: .8; }
+  /* A toggle. The label names the thing and the lamp says whether it is on,
+     so the entry reads as a state rather than as an instruction whose meaning
+     you have to invert to learn what is true now. */
+  #cardmenu button.toggle { display: flex; align-items: center; gap: var(--sp-3); }
+  #cardmenu button.toggle .lamp {
+    margin-left: auto; font: var(--fs-xs) var(--mono); letter-spacing: .06em;
+    padding: 1px 7px; border-radius: var(--r-pill);
+    background: var(--chip); border: 1px solid var(--stroke-dim); color: var(--dimmest);
+  }
+  #cardmenu button.toggle.on { color: var(--head); }
+  /* On, and not yours to change. The lamp still says what is true; the label
+     is dim because pressing it does nothing, and `.toggle.on` would otherwise
+     brighten it back up and undo the one signal that says so. */
+  #cardmenu button.toggle.on.limited { color: var(--dim); }
+  #cardmenu button.toggle.on .lamp {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke);
+    color: var(--chip-accent-text);
+  }
+  /* The card's mark as the notification will draw it. Same PNG, at the size
+     Windows uses, so a glyph that comes out as a box comes out as a box here. */
+  .iconpreview { display: flex; align-items: center; flex: none; }
+  .iconpreview img {
+    width: 32px; height: 32px; border-radius: var(--r-sm); display: block;
+    border: 1px solid var(--stroke-dim);
+  }
+
+  /* A row that opens a flyout rather than doing something. The caret says so,
+     since a row that ignores a click and has no other sign is a broken row. */
+  #cardmenu button .more {
+    margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs);
+  }
+  #cardmenu button.toggle .more, #cardmenu button .lamp + .more { margin-left: 0; }
+  /* Drawn INSIDE the row that owns it, and overlapping it by a few pixels, so
+     the pointer never crosses a gap where neither is hovered and the flyout
+     vanishes on the way to it. */
+  #cardmenu .sub {
+    display: none; position: absolute; left: 100%; top: -5px; margin-left: -6px;
+    padding: 5px; min-width: 168px; border-radius: var(--r-md);
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: 0 14px 40px rgba(0,0,0,.55); z-index: 2;
+  }
+  #cardmenu button { position: relative; }
+  #cardmenu button:hover .sub, #cardmenu .sub:hover { display: block; }
+  #cardmenu .subitem {
+    display: flex; align-items: center; gap: var(--sp-3); padding: 7px 11px;
+    border-radius: var(--r-sm); color: var(--label); cursor: pointer;
+    /* `in its own window` wrapped onto two lines in a flyout wide enough for
+       it, because the box was sized by its shortest entry. The flyout grows
+       instead. */
+    white-space: nowrap;
+  }
+  /* Room for the bubble, which is drawn against the entry it explains. */
+  #cardmenu button .help { margin-left: 7px; }
+  #cardmenu .subitem:hover { background: var(--lift); color: var(--head); }
+  #cardmenu .subitem svg { flex: none; }
+  /* Off the right edge, the flyout goes left instead. */
+  #cardmenu.flip .sub { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
   #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
 
   /* Recolouring a group. Hues only, at the lightness the board draws them at,
@@ -659,6 +777,40 @@
     border-bottom: 1px solid var(--stroke-dim);
   }
   .s-section:first-child { margin-top: 0; }
+
+  /* The spine. Headings alone stopped being enough once finding a setting
+     meant scrolling past every other setting and knowing roughly how old it
+     was. The grouping boxes are the worst of it: the tallest thing in the
+     dialog and the least often changed.
+
+     Still a modal rather than a seventh tab. Settings is where you go from
+     wherever you are and come straight back, and a modal returns you there for
+     free. */
+  .s-split { display: flex; gap: 18px; align-items: flex-start; }
+  .s-nav {
+    flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;
+    gap: 2px; position: sticky; top: 0;
+  }
+  .s-nav button {
+    text-align: left; background: transparent; border: 1px solid transparent;
+    color: var(--dim); padding: 7px 10px; border-radius: var(--r-sm);
+    font: 500 var(--fs-sm)/1.2 var(--sans); cursor: pointer; white-space: nowrap;
+  }
+  .s-nav button:hover { color: var(--head); background: var(--stroke-dim); }
+  .s-nav button.on {
+    color: var(--teal); border-color: var(--stroke-dim);
+    background: rgba(4,11,20,.5);
+  }
+  .s-panes { flex: 1 1 auto; min-width: 0; }
+  /* The heading is the nav entry once there is a nav, so it would be said
+     twice. Kept in the markup because it is what the panes are cut on. */
+  .s-panes .s-section { display: none; }
+  .s-pane[hidden] { display: none; }
+  /* Narrow enough that a nav beside the panes leaves no room for either. */
+  @media (max-width: 640px) {
+    .s-split { flex-direction: column; }
+    .s-nav { flex-direction: row; flex-wrap: wrap; position: static; }
+  }
   .ov {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
     background: rgba(4,11,20,.35); padding: 14px 15px; margin-bottom: 12px;
@@ -854,6 +1006,82 @@
   #t-screen.dropping {
     outline: 2px dashed var(--teal); outline-offset: -4px;
   }
+  /* One terminal in its own window: the same page with everything that is not
+     the terminal hidden.
+
+     Hidden rather than removed, so every code path keeps working. The
+     switcher, the card dialog and the settings all still exist here and are
+     simply never shown, which is what makes this a mode of the board rather
+     than a second application. */
+  body.solo header,
+  body.solo #board-bar,
+  body.solo .term-list,
+  body.solo .term-help { display: none !important; }
+  /* Every view except the terminal, gone from the stylesheet rather than left
+     to `switchView`. The board is the visible view until the card is fetched
+     and attached, so without this the window opens on a board for as long as
+     that round trip takes. It is also the second half of the lock in
+     `switchView`: a view this window can never show cannot be shown by a path
+     nobody has found yet. */
+  body.solo #board,
+  body.solo #stack,
+  body.solo #perms,
+  body.solo #runners,
+  body.solo #history { display: none !important; }
+  body.solo main { padding: 0; }
+  /* The layout is flex, so the pane simply takes what the hidden list gave up.
+     A grid property here would have been inert, which is the kind of thing
+     that looks fine until somebody opens the window. */
+  /* Fills what main gives it, rather than declaring a viewport height of its
+     own. `100dvh` was a second opinion about how tall the window is, and any
+     disagreement with main's flex column is an overflow the page scrolls to
+     resolve, which puts a scrollbar over the terminal. */
+  body.solo .term-layout { gap: 0; height: 100%; min-height: 0; }
+  body.solo .term-pane { border: none; border-radius: 0; }
+  /* Detach would leave a window with nothing in it, and closing the window is
+     the same gesture with fewer steps. Pop out would open a window from a
+     window. */
+  body.solo #t-popout { display: none; }
+  /* Answering the request here works and is what this block is for. Going to
+     the perms tab does not, because there is no perms tab in this window, and
+     a button that does nothing is worse than one that is not there. Approve
+     once and block once are both still offered. */
+  body.solo .term-perm .to-perms { display: none; }
+  /* A popped-out window is around 900px, which is inside the phone breakpoint,
+     so the toast stretched itself edge to edge across a window whose whole
+     content is one terminal. That rule is right for a phone and wrong here:
+     narrow is a shape, not a screen.
+     Narrower than the board's toast as well. This window already carries the
+     alert in its title bar, so what is on screen only has to be legible, not
+     load-bearing. Class plus id outranks the media query's bare id whatever
+     order they end up in. */
+  body.solo #toasts {
+    left: auto; right: 14px; bottom: 14px; max-width: min(320px, 70vw);
+  }
+  body.solo .toast { padding: 10px 12px; }
+
+  /* Getting a file back out. A fold, because most of the time you are not
+     after one. */
+  .foldy { cursor: pointer; user-select: none; }
+  .foldy::before { content: "\25B8 "; display: inline-block; transition: transform .12s; }
+  .foldy.open::before { transform: rotate(90deg); }
+  .filebar { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: 6px; }
+  .filebar code { font-size: var(--fs-xs); color: var(--dim); }
+  .filelist {
+    max-height: 240px; overflow-y: auto;
+    border: 1px solid var(--stroke-dim); border-radius: 4px;
+  }
+  .filelist .frow {
+    display: flex; gap: var(--sp-2); align-items: center;
+    padding: 4px 8px; font-size: var(--fs-xs);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .filelist .frow:last-child { border-bottom: none; }
+  .filelist .frow.dir { cursor: pointer; color: var(--teal); }
+  .filelist .frow.dir:hover { background: var(--stroke-dim); }
+  .filelist .fname { flex: 1; overflow-wrap: anywhere; }
+  .filelist .fsize { color: var(--dimmest); font-family: var(--mono); }
+  .filelist .chip { text-decoration: none; }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
   /* Messages said and not yet arrived. Dimmed, because the interesting state
@@ -985,14 +1213,31 @@
   .stackrow .wait.quiet { color: var(--dimmest); }
   /* The day it started, under how long ago that was. Two different questions,
      and a duration alone cannot answer which day a card carried over from. */
-  /* When atrium first saw this card, beside the name rather than under the
-     age. Two durations stacked in one column read as one measurement in two
-     units, and they are different questions: how stale this is, and which day
-     it started. Quiet, and first to go when the row is narrow. */
-  .stackrow .who .since {
+  /* When atrium first saw this card. Not under the age: two durations stacked
+     in one column read as one measurement in two units, and they are different
+     questions, how stale this is and which day it started.
+     Last in the row and outside the chip group, rather than inside it. The
+     chips vary in number and width from card to card, so a date carried along
+     at the end of them landed in a different place on every row and the eye
+     could not run down the column. Its own fixed track at the right edge is a
+     column again.
+     Fixed width rather than fitted, for the same reason: `Thu 4 Sep` and
+     `Mon 12 May` differ by a character and would shift the whole track.
+     Centred against the row like the chips, since it is now their sibling
+     rather than a passenger inside the card's name, which is line one of three
+     and read as crooked beside them.
+     Quiet, and first to go when the row is narrow. */
+  /* Wide enough for the longest thing it ever says.
+     74px fitted `today 08:06` and cut `yesterday 16:06`, which is the form it
+     wears for most of the list. A fixed track narrower than its own content
+     is the one width that cannot work: the text has nowhere to go and the
+     row clips it. `ch` rather than pixels, so it stays right when the text
+     size setting moves. */
+  .stackrow .since {
     font-style: normal; font-size: var(--fs-xxs); font-weight: 400;
-    color: var(--dimmest); letter-spacing: 0; white-space: nowrap;
-    margin-left: auto; padding-left: var(--sp-3);
+    font-family: var(--mono); color: var(--dimmest); letter-spacing: 0;
+    white-space: nowrap; flex: 0 0 auto; width: 16ch; text-align: right;
+    align-self: center; padding-left: var(--sp-3); overflow: hidden;
   }
   .stackrow .who { flex: 1 1 320px; min-width: 0; }
   .stackrow .who b { display: flex; align-items: center; gap: var(--sp-2); color: var(--head); }
@@ -1005,11 +1250,74 @@
      column their vertical placement followed whatever that column did, which
      put them across the row's bottom border. As one centred group they sit
      against the middle of the row whatever height it is. */
+  /* Shrinkable, and allowed to wrap inside itself.
+     `flex: none` with a percentage cap meant the group kept its full width
+     whatever the row could spare, so a card with several tags pushed the date
+     past the right edge and the scroll container cut it off. The whole point
+     of the fixed date track is that it is always in the same place, which it
+     cannot be if something before it can shove it. Now the chips give way
+     first: they wrap, the name truncates, and the date does not move. */
   .stackrow .chips {
     display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end;
-    gap: var(--sp-2); flex: none; align-self: center; max-width: 55%;
+    gap: var(--sp-2); flex: 0 1 auto; min-width: 0; align-self: center;
   }
   .stackrow .chip { flex: none; white-space: nowrap; }
+  /* The runner's mark on the terminal bar, in front of the name the way a card
+     carries it. Smaller than the stack's, which sits in a row tall enough for
+     three lines of text: this bar is one line, and a 39px square in it pushes
+     everything else down. */
+  #t-mark { display: flex; flex: none; }
+  #t-mark:empty { display: none; }
+  #t-mark .rmark { width: 26px; height: 26px; border-radius: var(--r-sm); }
+  #t-mark .rmark svg { width: 17px; height: 17px; }
+  /* A picture does not want the padding a word does. */
+  #t-cog, #t-files { font-size: var(--fs-lg); padding: 5px 9px; line-height: 1; }
+  /* The directory, over the terminal rather than beside it. In a popped-out
+     window there is no width to split, and two halves too narrow to use is
+     worse than one that swaps. The terminal keeps running underneath. */
+  .term-files {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    padding: 10px 12px; gap: var(--sp-3);
+  }
+  .term-files[hidden] { display: none; }
+  .term-files .filebar { display: flex; align-items: center; gap: var(--sp-3); }
+  .term-files .filelist { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  /* Its own bar, painted like the rest of the board's. Not the terminal's:
+     this is an ordinary scrolling list that happens to live in the pane, and
+     nothing here goes near the xterm viewport. */
+  .term-files .filelist {
+    scrollbar-width: thin; scrollbar-color: var(--stroke-dim) transparent;
+    padding-right: 12px;
+  }
+  .term-files .filelist::-webkit-scrollbar { width: 10px; }
+  .term-files .filelist::-webkit-scrollbar-track { background: transparent; }
+  .term-files .filelist::-webkit-scrollbar-thumb {
+    background: var(--stroke-dim); border-radius: var(--r-pill);
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  /* The drawer takes the pane, so the terminal must give it up rather than
+     both claiming the same room. */
+  .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
+
+  /* A fixture whose last start failed, and the reason under it. Two rows
+     rather than one, because the reason is a command line or a path and
+     truncating it into the row would hide the half that identifies it.
+     The pair is bracketed by the same warn colour so they read as one entry
+     rather than as a row and an unrelated row. */
+  .row.line.broke { border-bottom: none; }
+  .row.line.why-broke {
+    border-left: 3px solid var(--warn); padding-left: 9px; background: var(--lift);
+  }
+  .row.line.why-broke code { color: var(--warn); }
+
+  /* A chip that is a mark rather than a word. Square, so it reads as a button
+     next to `attach` instead of a very short label, and the svg is centred by
+     the grid rather than by the line height it does not have.
+     Not scoped to the stack: the same mark sits on a board card. */
+  .chip.icon {
+    display: grid; place-items: center; padding: 0; width: 22px; height: 19px;
+  }
+  .chip.icon svg { display: block; }
   /* The harness, on the left where the eye starts, instead of a word among the
      chips on the right. Same colours as the runner chip so the two agree. */
   .rmark {
@@ -1215,7 +1523,18 @@
     border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
     flex: 0 0 auto;
   }
-  .term-bar strong { color: var(--head); font-size: var(--fs-lg); }
+  /* The mark and the name, always together and always on one line. It shrinks
+     by truncating the name rather than by wrapping: a bar that grows a second
+     row changes the terminal's height under a grid xterm has already measured
+     in characters. */
+  .term-who {
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-width: 0; flex: 0 1 auto;
+  }
+  .term-bar strong {
+    color: var(--head); font-size: var(--fs-lg);
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   /* An exited runner. The scrollback stays readable, since it carries the exit
      and the resume id, but the pane stops looking like a live session. */
   .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
@@ -1298,8 +1617,12 @@
   .asktext b { color: var(--head); font-weight: 600; }
   dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
 
+  /* Above everything, because it is always ABOUT something and is drawn
+     against it. It shared a layer with the card menu, so explaining a menu
+     entry put the explanation behind the menu, and behind the flyout the
+     entry had just opened. There is nothing a tooltip should ever be under. */
   #tip {
-    position: fixed; z-index: 90; max-width: 420px; pointer-events: none;
+    position: fixed; z-index: 400; max-width: 420px; pointer-events: none;
     background: var(--shell-0); color: var(--body);
     border: 1px solid var(--stroke); border-radius: var(--r-md); padding: 11px 14px;
     font: 400 var(--fs-base)/1.55 var(--sans); text-align: left; letter-spacing: 0;
@@ -1652,6 +1975,10 @@
     .scope { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
     .patview { width: fit-content; max-width: 100%; }
     .wait { min-width: 0; font-size: var(--fs-xl); }
+    /* A fixed track is worth 74px when there is room for it and is the first
+       thing to give up when there is not. Which day a card started is the
+       least urgent fact on the row. */
+    .stackrow .since { display: none; }
 
     .filters { gap: var(--sp-2); }
     .filters input[type=search] { min-width: 100%; order: -1; }
@@ -1689,6 +2016,41 @@
        be second rather than the least useful one. */
     .term-entry { min-width: 150px; }
     #t-screen { height: 55vh; }
+  }
+
+  /* A phone.
+     `docs/charon.md` calls answering approvals from away the gap that matters
+     most: a gate you cannot answer from away is a gate you turn off. The way
+     to reach the board from a phone already exists and is the overlay, so what
+     was missing is only that this screen was unusable at that width.
+     Aimed at the permissions queue rather than the whole board. Reading a
+     kanban on a phone is not a thing anybody wants; answering a blocked agent
+     from the sofa is. */
+  @media (max-width: 480px) {
+    /* Tabs scroll rather than wrap, so the header stays one line and the
+       count badges stay beside their own tab. */
+    header nav {
+      overflow-x: auto; flex-wrap: nowrap;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    header nav::-webkit-scrollbar { display: none; }
+    /* The two widest things in the header, and neither is what you came for. */
+    .newagent, .conn { display: none; }
+
+    .row.perm { padding: 12px; }
+    /* Room to read the command, which is the thing being decided on. */
+    .row.perm .cmd.edit { font-size: var(--fs-sm); }
+    .row.perm .diff { max-height: 40vh; overflow: auto; }
+    /* Two by two, full width, and big enough to hit with a thumb. The four
+       are deliberately not shrunk to fit one row: approve and never sitting
+       side by side at eight millimetres is how the wrong one gets pressed. */
+    .row.perm .actions {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      width: 100%; margin-top: 10px;
+    }
+    .row.perm .actions button { width: 100%; padding: 12px 8px; }
+    .row.perm .hints { gap: 6px; }
+    .row.perm .hints button { padding: 8px 10px; }
   }
 </style>
 </head>
@@ -1859,18 +2221,47 @@ Exports honour whatever filter is applied.">?</span>
       <aside class="term-list" id="term-list"></aside>
       <section class="term-pane">
         <div class="term-bar">
-          <strong id="t-title">nothing attached</strong>
+          <!-- The mark and the name are one thing, so they are one element.
+               As siblings in a wrapping flex row the runner's icon could end
+               up on the line above its own session's name, which reads as two
+               unrelated pieces of furniture. -->
+          <span class="term-who">
+            <span id="t-mark"></span>
+            <strong id="t-title">nothing attached</strong>
+          </span>
           <span class="chips" id="t-chips"></span>
           <span class="grow"></span>
           <button onclick="sendSignal('int')"
             title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
-          <button id="t-copymode" onclick="toggleCopyOnSelect()"></button>
+          <button id="t-popout" onclick="popOutTerm()"
+            title="open this terminal in its own window, so alt-tab reaches it">pop out</button>
+          <button id="t-files" onclick="openTermFiles()"
+            title="the files in this session's directory, on the machine running it">&#128193;</button>
+          <button id="t-cog" onclick="termSettings(event)"
+            title="how this terminal looks and behaves">&#9881;</button>
           <button class="no" onclick="exitTerm()"
             title="ask this runner to quit, the way its own harness says to">exit</button>
           <button class="no" onclick="closeTerm()"
             title="leave the terminal running and stop watching it">detach</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
+        <!-- This session's directory, in the pane rather than in a dialog.
+             The terminal is where you are when you want a file out of it, and
+             sending you to a card dialog to get one is leaving the room.
+
+             Same endpoints as the fold in the card dialog, driven by the same
+             function: there is one containment check behind this and one
+             listing, and two front ends that had drifted would disagree about
+             what may be reached. -->
+        <div class="term-files" id="t-files-panel" hidden>
+          <div class="filebar">
+            <button id="t-files-up" onclick="termFilesUp()" title="up one directory">up</button>
+            <code class="grow ell" id="t-files-where"></code>
+            <button onclick="openTermFiles()" title="close this">close</button>
+          </div>
+          <div class="filelist" id="t-files-list"></div>
+          <span class="hintline" id="t-files-note"></span>
+        </div>
         <div id="t-screen"></div>
         <div class="term-help">
           ctrl-c copies when text is selected, interrupts otherwise &middot;
@@ -2098,7 +2489,7 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         publish it through something that already knows who is allowed to see it.</span>
     </div>
 
-    <h3 class="s-section">sound</h3>
+    <h3 class="s-section">alerts</h3>
     <div class="field">
       <label class="eyebrow">volume</label>
       <input type="range" id="s-vol" min="0" max="100" step="5">
@@ -2196,6 +2587,24 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         of what that session ran and what it was allowed to do. Off unless you turn it on, and worth
         answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that
         seems large. Never touches shelved cards or the inbox.</span>
+    </div>
+
+    <h3 class="s-section">this machine</h3>
+    <!-- The one setting that starts a process nobody named. Off until it is
+         filled in: guessing an editor means atrium picks a program to run on
+         your machine, and a wrong guess is a process you did not want. -->
+    <div class="field">
+      <label class="eyebrow" for="s-editor">open a file with</label>
+      <div class="picker">
+        <input id="s-editor" spellcheck="false"
+          placeholder="empty means the open button does nothing">
+        <button onclick="saveEditorCommand()">save</button>
+      </div>
+      <span class="hintline">Runs on <b>the machine atrium is on</b>, not the one this browser is on.
+        That is the point over an overlay: the file is where the agent is. <code>{path}</code> is where the
+        filename goes, and is appended when you leave it out. Never a shell, so nothing in a filename can
+        become another command. Examples: <code>code -g {path}</code>, <code>notepad</code>,
+        <code>subl</code>.</span>
     </div>
 
     <h3 class="s-section">the board</h3>
@@ -2651,6 +3060,54 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
         back turned, so it wins over telling the two kinds apart.</span>
     </div>
+    <!-- The mark this card wears on a desktop notification. Beside the bell,
+         because it answers the same question in the other sense: one is which
+         agent when you cannot see, the other is which agent when you can. -->
+    <div class="field">
+      <label class="eyebrow" for="d-icon">its mark</label>
+      <div class="picker">
+        <input id="d-icon" maxlength="16" spellcheck="false"
+          placeholder="empty means the atrium mark">
+        <span class="iconpreview" id="d-icon-preview"></span>
+      </div>
+      <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
+        Windows renders it small, so a single bold glyph reads and a word does not.</span>
+    </div>
+    <!-- Getting a file back out. Folded, because most of the time you are not
+         after one, and open when you are.
+
+         This is the only way to reach a file on a machine you are not sitting
+         at, and it works over an overlay for free: the download is the board's
+         own HTTP, so whatever already carries the board carries this. -->
+    <div class="field" id="d-files-field" hidden>
+      <label class="eyebrow">
+        <span class="foldy" id="d-files-toggle" onclick="toggleFiles()">files</span>
+      </label>
+      <div id="d-files" hidden>
+        <div class="filebar">
+          <button id="d-files-up" onclick="filesUp()" title="up one directory">up</button>
+          <code class="grow ell" id="d-files-where"></code>
+        </div>
+        <div class="filelist" id="d-files-list"></div>
+        <span class="hintline" id="d-files-note"></span>
+      </div>
+    </div>
+    <!-- A note is for YOU. Sending it is a second, separate act.
+
+         The box below this one fires immediately, reaching the session on its
+         next tool call. This one does not go anywhere until you say. What that
+         buys is ordering: three things thought of during a long turn, sent as
+         one instruction at the end rather than three interruptions. -->
+    <div class="field">
+      <label class="eyebrow" for="d-note">notes to self</label>
+      <textarea id="d-note" rows="3" spellcheck="false"
+        placeholder="what you want next, while it is still working. nothing is sent until you press send."></textarea>
+      <div class="toolbar">
+        <button class="go" id="d-note-send" onclick="sendNote()">send it</button>
+        <button id="d-note-clear" onclick="clearNote()">clear</button>
+        <span class="hintline grow" id="d-note-state"></span>
+      </div>
+    </div>
     <!-- The things you say often enough to have got tired of typing. Above
          the box rather than below it, because the whole point is not opening
          the box. -->
@@ -2927,6 +3384,14 @@ const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permi
 const VIEWS = ["board", "stack", "perms", "runners", "terms", "history"];
 
 function switchView(name) {
+  // A popped-out window is one terminal and nothing else, forever. It has no
+  // tabs to click, so every way it could become a board is indirect and none
+  // of them are obvious from the call site: a tag chip calls `filterByTag`,
+  // the in-terminal permission block offers "open in perms", a launch that
+  // lands on an unsupervised card falls through to the board. Each one turned
+  // the window you alt-tabbed to into a second board, which is the one thing
+  // it must never be. Locking it here catches the paths nobody has found yet.
+  if (termOnly() && name !== "terms") return;
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
   VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
   // The board's toolbar is a sibling of the board rather than a child, so that
@@ -3053,7 +3518,7 @@ function cardHTML(t) {
   // shelve and every attach.
   return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
       t.auto_approve ? " autoon" : ""}"
-    onclick="openTask('${t.id}')"
+    onclick="cardMenu(event, '${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}" draggable="true"
     oncontextmenu="cardMenu(event, '${t.id}')">
     <div class="card-line">
@@ -3092,7 +3557,10 @@ function cardHTML(t) {
                this card is the target, so starting it does not make a second one"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
-        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
+      <span class="chip attach icon"
+        title="open this terminal in its own window"
+        onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
       </div>
     </div>
     ${t.why ? `<div class="why">${esc(t.why)}</div>` : ""}
@@ -3677,6 +4145,24 @@ function cannotResume(t) {
 // and nothing already running it.
 const canResume = (t) => !!t.resume_id && !t.supervised;
 
+// A session that has only just come up, as opposed to one that finished a turn.
+//
+// Both land in the same column and the column is right about both: each is
+// sitting at its prompt waiting for you. What differs is what it has already
+// done, and saying "finished its turn" about a session launched ten seconds
+// ago claims work that never happened.
+//
+// The daemon decides this, not a stopwatch here. Elapsed time cannot tell a
+// session that came up and has been ignored for an hour from one that worked
+// for an hour and then stopped.
+const justStarted = (t) => t.waiting_reason === "started";
+
+function readyBecause(t) {
+  return justStarted(t)
+    ? "just came online and is waiting for its first instruction"
+    : "finished its turn and wants your next instruction";
+}
+
 // Takes a card off the shelf, and puts it where the truth is.
 //
 // Unshelving does two things: it lifts the standing block on the card's
@@ -3724,45 +4210,133 @@ async function cardMenu(e, id) {
   // same: they answer future requests from a session that will not make any.
   const over = ["done", "dead", "shelved"].includes(t.status);
 
+  // A card is a place as much as a session: it carries a worktree, and that
+  // outlives whatever ran in it. So the menu is ordered by what you came to
+  // do. Look at it, get to its terminal, run something in its directory, then
+  // change what it is.
+  // Auto mode as it actually behaves, not as this card is configured.
+  //
+  // The board-wide switch and the per-card one both end in approve, so a card
+  // reading `off` while the header said APPROVING EVERYTHING was the menu
+  // describing a field rather than an outcome. The click still toggles this
+  // card's own setting, which is the only one it owns.
+  const autoOn = !!t.auto_approve || !!globalAuto;
+
+  // Where a terminal opens. The same two destinations whether it is one that
+  // already exists or one this menu is about to start, so they are written
+  // once: two entries offering different words for the same pair is how they
+  // drift.
+  const openIn = (go) => [
+    { label: "in terminals", act: () => go("here") },
+    { label: "in its own window", icon: popIcon(), act: () => go("window") }
+  ];
+
   const items = [
-    { label: "details…", act: () => openTask(id) },
-    t.supervised ? { label: "attach terminal", act: () => attachTask(id) } : null,
-    { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
+    // One entry, two ways to open it. Attaching and popping out are the same
+    // intention with a different destination, so they are one row that says
+    // where rather than two rows that both say attach.
+    t.supervised ? {
+      label: "attach terminal",
+      sub: openIn(where => where === "window" ? popOutTask(id) : attachTask(id))
+    } : null,
     { sep: true },
-    // A card already in a lane is not offered the move into it.
+    // Running something in this card's directory, which is the answer to
+    // "adopt": a session atrium started in a terminal cannot be taken over,
+    // because a pty cannot be adopted and `docs/supervision-design.md` records
+    // that there is no reattach on Windows. What CAN happen is a new runner,
+    // owned by atrium, in the same place and onto the same card.
     //
-    // Unshelving does two things: it lifts the standing block on this card's
-    // requests, and it starts the runner again. Only the second can fail, so
-    // the entry stays available and says what it will not do. Disabling it
-    // outright would strand the card on the shelf, still refusing everything
-    // its session asks for.
-    t.status === "shelved" ? unshelveItem(id, t)
-      : over ? null
-        : { label: "shelve", note: "stops its runner",
-            act: () => patchTask(id, { status: "shelved" }).then(refresh) },
-    t.status === "done" ? null
-      : { label: "done", act: () => patchTask(id, { status: "done" }).then(refresh) },
+    // Both entries need a directory and nothing else, so they are offered on
+    // every card that has one, whatever state it is in. A card with a worktree
+    // and no session is exactly the case this is for.
+    // Starting something in this card's directory.
+    //
+    // The wording changes when one is already running, because so does the
+    // consequence. With nothing there this puts a runner on THIS card. With a
+    // session already going it cannot, so it opens a second card in the same
+    // directory: a different conversation, the same files, two agents editing
+    // them. That is occasionally what you want and never what you want by
+    // accident, so the label says NEW and the tip says the rest.
+    t.worktree ? {
+      label: t.supervised ? "start a new session here" : "start a session here",
+      note: t.supervised ? "a second one, alongside" : "",
+      help: t.supervised
+        ? "One is already running here. This starts a SECOND runner in the same " +
+          "directory, on its own card and its own conversation. Both will be " +
+          "editing the same files."
+        : "Starts a runner in this card's directory, onto this card. A fresh " +
+          "conversation, not the old one.",
+      // Where it lands is decided when you start it, not afterwards. Landing
+      // somewhere and then being moved is two decisions for one intention.
+      sub: openIn(where => openLaunch(t.runner || null, "", t.worktree,
+        t.supervised ? null : id, null, where))
+    } : null,
+    // Only when it can. An entry that says "cannot resume" underneath itself
+    // is a menu explaining why it is there, which is a question it raised.
+    // In practice this is a card whose session is over and whose directory is
+    // still on disk, which is the case worth having.
+    t.worktree && canResume(t) && !cannotResume(t) ? {
+      label: "resume the conversation here",
+      help: "Starts a runner in this card's directory, picking the recorded " +
+        "conversation back up where it stopped.",
+      sub: openIn(where => openLaunch(t.runner || "claude", t.resume_id,
+        t.worktree || "", id, null, where))
+    } : null,
     { sep: true },
-    over ? null : {
-      label: t.auto_approve ? "stop auto mode" : "auto mode",
+    { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
+    // A toggle, drawn as one. It reads as a state you are looking at rather
+    // than a verb you are about to perform, which matters most in the case
+    // where the answer is already yes and the menu said "stop auto mode",
+    // a phrase you have to reason backwards from to learn what is on.
+    // Not pressable while the board-wide switch is on.
+    //
+    // Every request from this card is already being approved, so setting this
+    // card's own switch changes nothing you can observe: the same requests get
+    // the same answer for a different reason. An entry that reports a state
+    // and does nothing when pressed is worse than one that says why it cannot,
+    // so it says why.
+    over ? null : globalAuto ? {
+      label: "auto mode", on: true, note: "board-wide", limited: true,
+      help: "The board-wide switch is approving everything, including this " +
+        "card, so this card's own switch has nothing to decide. Turn the " +
+        "board-wide one off in the header first.",
+      act: () => toast("already approving everything",
+        "the board-wide switch covers this card. turn it off in the header first")
+    } : {
+      label: "auto mode",
+      on: !!t.auto_approve,
+      help: t.auto_approve
+        ? "Approving without asking. Everything is still recorded."
+        : "Approve this card's requests without asking. A standing never rule " +
+          "and a shelved card still win.",
       act: () => patchTask(id, { auto_approve: !t.auto_approve }).then(refresh)
     },
-    { label: "what did it do?", act: async () => { current = t; openReview(); } },
+    // Shelving stops a runner, so it needs a runner atrium owns. Shown and
+    // dimmed rather than hidden: the entry disappearing on some cards and not
+    // others is a rule you have to infer, and the reason is one line.
+    //
+    // Unshelving is never dimmed, whatever the card is. A shelved card refuses
+    // every request its session makes and has to be liftable wherever you find
+    // it. Only its second half, starting the runner again, can fail.
+    t.status === "shelved" ? unshelveItem(id, t)
+      : over ? null
+        : t.supervised
+          ? { label: "shelve", note: "stops its runner",
+              act: () => patchTask(id, { status: "shelved" }).then(refresh) }
+          : { label: "shelve", note: "atrium does not own this process",
+              limited: true,
+              tip: "Shelving stops the runner, and atrium can only stop one it " +
+                "started. This session is running somewhere else.",
+              act: () => toast("cannot shelve",
+                "atrium does not own this process, so it cannot stop it") },
     { sep: true },
-    // A finished card whose conversation atrium recorded can be started again.
-    // Offered here because the detail dialog was the only place it appeared,
-    // which meant opening a card to find out whether it could be resumed.
-    canResume(t) && t.status !== "shelved" ? {
-      label: "resume",
-      note: cannotResume(t) ? "cannot resume" : "",
-      limited: !!cannotResume(t),
-      tip: cannotResume(t) || "Starts this runner again from where the " +
-        "conversation left off.",
-      act: () => resumeCard(id, t)
-    } : null,
+    // Everything about what this card IS, in one dialog. Last, because it is
+    // the one entry you go into rather than press: the ones above are single
+    // actions and this opens a room.
+    { label: "settings…", act: () => openTask(id) },
+    { sep: true },
     t.pid > 0 && !over
-      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
-    { label: "forget this card", danger: true, act: () => forgetCard(id, t.display_title) }
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null
   ];
   showMenu(e, items);
 }
@@ -3777,14 +4351,45 @@ function showMenu(e, items) {
 
   cardMenuEl.innerHTML = items.map((it, i) => it.sep
     ? `<div class="sep"></div>`
-    : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}"
+    : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
+        it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
         data-i="${i}"${it.tip ? ` title="${esc(it.tip)}"` : ""}>${esc(it.label)}${
-        it.note ? `<span class="note">${esc(it.note)}</span>` : ""}</button>`
+        // The board's own bubble, not the browser's. A native tooltip arrives
+        // a second late, in the operating system's font, at the pointer rather
+        // than against the thing it explains, and it is the one part of a menu
+        // that cannot be styled at all.
+        it.help ? `<span class="help" tabindex="0" data-tip="${esc(it.help)}">?</span>` : ""}${
+        // A toggle says what it IS. The label stays put and a lamp beside it
+        // carries the state, rather than the label flipping between "auto
+        // mode" and "stop auto mode", which asks you to work out which of
+        // those two sentences describes now and which describes the click.
+        it.on === undefined ? "" : `<span class="lamp">${it.on ? "on" : "off"}</span>`}${
+        it.sub ? `<span class="more">&#9656;</span>` : ""}${
+        it.note ? `<span class="note">${esc(it.note)}</span>` : ""}${
+        // A flyout, drawn inside the row that owns it so hovering across the
+        // gap between the two does not close it. Two destinations for one
+        // intention: attaching here, or attaching in its own window.
+        it.sub ? `<span class="sub">${it.sub.map((s, j) =>
+          `<span class="subitem" data-i="${i}" data-j="${j}"
+            >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
   cardMenuEl.querySelectorAll("button").forEach(b => b.onclick = ev => {
     ev.stopPropagation();
+    // The question mark explains, it does not do. Clicking it used to run the
+    // entry, which on a destructive one is the worst possible reading of
+    // "tell me more".
+    if (ev.target.closest(".help")) return;
+    const it = items[Number(b.dataset.i)];
+    // A row that only opens a flyout does nothing when pressed. Closing the
+    // menu on it would take the choice away at the moment it was offered.
+    if (it.sub) return;
     closeCardMenu();
-    items[Number(b.dataset.i)].act();
+    it.act();
+  });
+  cardMenuEl.querySelectorAll(".subitem").forEach(s => s.onclick = ev => {
+    ev.stopPropagation();
+    closeCardMenu();
+    items[Number(s.dataset.i)].sub[Number(s.dataset.j)].act();
   });
 
   // Placed after it has a size, so a card near an edge does not open a menu
@@ -3797,6 +4402,12 @@ function showMenu(e, items) {
   const y = Math.min(e.clientY, window.innerHeight - r.height - 8);
   cardMenuEl.style.left = Math.max(8, x) + "px";
   cardMenuEl.style.top = Math.max(8, y) + "px";
+  // A flyout opens to the right unless there is no right left. Measured
+  // against the widest one this menu holds rather than a guess, so a long
+  // destination name does not hang off the screen.
+  const widest = items.reduce((w, it) => it.sub ? Math.max(w, 190) : w, 0);
+  cardMenuEl.classList.toggle("flip",
+    widest > 0 && Math.max(8, x) + r.width + widest > window.innerWidth);
 }
 
 function closeCardMenu() { cardMenuEl.classList.remove("on"); }
@@ -3814,6 +4425,15 @@ async function killById(id) {
   try { await api(`/v1/tasks/${id}/kill`, { method: "POST" }); }
   catch (e) { toast("could not terminate", e.message); }
   refresh();
+}
+
+// The open card, forgotten. Closes the dialog first: leaving it up over a card
+// that no longer exists means every control in it now edits nothing.
+async function forgetCurrent() {
+  if (!current) return;
+  const { id, display_title } = current;
+  document.getElementById("detail").close();
+  await forgetCard(id, display_title);
 }
 
 // Deleting one card, as opposed to clearing a whole column.
@@ -4184,17 +4804,14 @@ function stackRow(t) {
   return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
       t.pinned ? " pinned" : ""}"
     data-id="${t.id}"
-    onclick="openTask('${t.id}')"
+    onclick="cardMenu(event, '${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${pinStar(t)}
     ${runnerMark(t.runner)}
     <div class="wait ${w ? "" : "quiet"}" title="${esc(bigNumberMeans(t))}"
       >${ago(bigNumber(t))}</div>
     <div class="who">
-      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}<i class="since"
-        title="when atrium first saw this card. not when the session started: a session
-               that ran before atrium did is first seen when it says something."
-        >${esc(firstSeen(t.created_at))}</i></b>
+      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
       <span>${esc(t.worktree || "no directory")}</span>
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
@@ -4205,16 +4822,54 @@ function stackRow(t) {
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
-      <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
-        title="${esc(t.status)}">${esc(statusLabel(t.status))} ${
-        w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</span>
+      ${stateChip(t, w)}
       ${t.status === "backlog" ? `<span class="chip attach"
         title="start this, with what the source already knew filled in"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
-        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
+        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
+      <span class="chip attach icon"
+        title="open this terminal in its own window"
+        onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
     </div>
+    <i class="since"
+      title="when atrium first saw this card. not when the session started: a session
+             that ran before atrium did is first seen when it says something."
+      >${esc(firstSeen(t.created_at))}</i>
   </div>`;
+}
+
+// The state, and its duration only when that is not already the big number on
+// the left.
+//
+// Under the default sort those are the same measurement: `bigNumber` returns
+// `wait_seconds` for a waiting card and `idle_seconds` otherwise, which is
+// exactly what this chip was printing, so every row said one number twice.
+//
+// Not dropped outright, because the two come apart under the other sorts.
+// Sorting by activity makes the big number "how long since it last did
+// anything" for every row including the waiting ones, and then the wait is a
+// second fact that nothing else on the row carries. Compared rather than
+// assumed, so this stays right if either rule changes.
+function stateChip(t, w) {
+  const dur = w ? t.wait_seconds : t.idle_seconds;
+  const said = bigNumber(t) === dur;
+  return `<span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
+    title="${esc(t.status)}">${esc(statusLabel(t.status))}${said ? "" : " " + ago(dur)}</span>`;
+}
+
+// The conventional "opens in a new window" mark: a box with an arrow leaving
+// it. Drawn rather than typed, because the characters that mean this (U+29C9,
+// U+2197) either render as a box in the board's mono stack or read as a plain
+// arrow, and this sits next to `attach` where the difference is the whole
+// message.
+function popIcon() {
+  return `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3.5"/>
+    <path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/>
+  </svg>`;
 }
 
 // Shared with paintStack's filter, and used by stackRow.
@@ -4399,6 +5054,23 @@ function runnerMark(runner) {
 // poll is what silently reverted a typed pattern and applied the wrong rule,
 // so this never re-renders a card that already exists: it only adds new ones
 // and removes answered ones.
+// How long an agent has been frozen, rather than the wall-clock time it asked.
+//
+// "asked 14:22:01" needs you to know what time it is now and do the
+// subtraction, which is exactly the work you cannot be bothered to do on a
+// phone at three in the morning. This one says the thing being decided: how
+// long something has been stuck.
+//
+// Atrium refuses approval timeouts, so this is not a countdown and there is
+// nothing running out. It is a fact about how long you have taken.
+function waitedFor(requestedAt) {
+  const t = Date.parse(requestedAt || "");
+  if (!t) return "asked just now";
+  const secs = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (secs < 45) return "asked just now";
+  return "frozen for " + ago(secs);
+}
+
 function permCard(p) {
   const el = document.createElement("div");
   el.className = "row perm";
@@ -4412,8 +5084,8 @@ function permCard(p) {
   el.innerHTML = `
     <div class="who">
       <b>${esc(p.tool)}</b>
-      <span>${p.agent ? `<span class="asker">${esc(p.agent)}</span> &middot; ` : ""}asked ${
-        esc((p.requested_at || "").slice(11, 19))}</span>
+      <span>${p.agent ? `<span class="asker">${esc(p.agent)}</span> &middot; ` : ""}${
+        waitedFor(p.requested_at)}</span>
       <label class="eyebrow" for="cmd-${p.id}">command</label>
       <span class="hintline">this is what runs. edit it to run something else</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="1" spellcheck="false"
@@ -5272,6 +5944,45 @@ function inForeground() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
+// ── who owns an alert when a terminal is popped out ──────
+//
+// `inForeground` answers "can you see THIS document". Once a terminal is in
+// its own window there are two documents and the answer differs for each, so
+// the question becomes which one should speak.
+//
+// The popped-out window owns its card. It is the window you alt-tab to, it is
+// the one whose title bar carries the mark, and it is the only document that
+// knows whether you are looking at that session right now. The board keeps
+// everything else, including that card's badges and counts: routing a card
+// off the board entirely would mean a window buried on another desktop
+// silently ate every alert for it, which is worse than the duplicate.
+//
+// A board cannot find its popped-out windows. `window.open` hands back a
+// handle that dies when the board reloads while the window it opened carries
+// on, so ownership is ANNOUNCED, not discovered. Each solo window claims its
+// card, releases it on close, and re-claims whenever a board asks.
+const soloHeld = new Set();
+const soloBus = ("BroadcastChannel" in window) ? new BroadcastChannel("atrium-solo") : null;
+// Declared up here rather than beside the rest of the solo code, because the
+// bus handler below closes over it and a `let` further down the file would be
+// in its temporal dead zone if a claim ever arrived first.
+let soloID = "", soloTask = null;
+
+if (soloBus) {
+  soloBus.onmessage = e => {
+    const m = e.data || {};
+    // A solo window keeps no ledger. It alerts for its own card and nothing
+    // else, so it has no use for other windows' claims, and answering its own
+    // roll call would have it suppress itself.
+    if (termOnly()) {
+      if (m.type === "solo-who" && soloID) soloBus.postMessage({ type: "solo-claim", task: soloID });
+      return;
+    }
+    if (m.type === "solo-claim" && m.task) soloHeld.add(m.task);
+    if (m.type === "solo-release" && m.task) soloHeld.delete(m.task);
+  };
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
@@ -5356,13 +6067,18 @@ const alerting = (() => {
     preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
   }
 
-  function notify(title, body, goTo, permId, subject) {
+  function notify(title, body, goTo, permId, subject, taskFor, mark) {
     if (prefs.muted || prefs.desktop === false) return;
     // Looking at the board or not. That is the whole rule: if you can see it,
     // the toast has already told you and a second copy from the operating
     // system is noise.
     if (inForeground()) return;
-    showNotification(title, body, goTo, permId, subject);
+    // A card whose terminal is popped out is alerted by that window, which
+    // knows whether YOU are looking at it. The board cannot: it is behind the
+    // popped-out window and by its own test is in the background, so without
+    // this the same event rings twice, once from each document.
+    if (taskFor && soloHeld.has(taskFor)) return;
+    showNotification(title, body, goTo, permId, subject, mark);
   }
 
   btn.onclick = () => {
@@ -5391,7 +6107,7 @@ const alerting = (() => {
   const nagged = {};
 
   return {
-    check, nag, play, preview, save, unlock,
+    check, nag, play, preview, save, unlock, notify,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
@@ -5416,7 +6132,8 @@ const alerting = (() => {
       play("permission", soundForAlert(p));
       const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
       const who = p.agent || "an agent";
-      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id);
+      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id,
+        p.task_id || p.id, iconForAlert(p));
       toast(`${who} has waited ${mins}m`, body, "perms", p.id);
     });
     // Forget anything answered, so a later request with a fresh id starts over.
@@ -5441,7 +6158,9 @@ const alerting = (() => {
         const d = describe(items[0]);
         notify(items.length > 1 ? `${items.length} agents need permission` : d.title,
           d.body, "perms", items.length === 1 ? items[0].id : "",
-          items.length === 1 ? items[0].id : "");
+          items.length === 1 ? items[0].id : "",
+          items.length === 1 ? (items[0].task_id || items[0].id) : "",
+          items.length === 1 ? iconForAlert(items[0]) : "");
       }
       return;
     }
@@ -5499,7 +6218,9 @@ const alerting = (() => {
     // One at a time gets its own notification. A summary of several replaces
     // whatever summary was there, which is what you want from a count.
     const subject = fresh.length === 1 ? fresh[0].id : "";
-    notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject);
+    notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject,
+      fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
+      fresh.length === 1 ? iconForAlert(fresh[0]) : "");
     // A desktop notification is suppressed while the board is in front, so the
     // toast covers exactly that case. Clicking it goes where the work is.
     toast(title, body, kind === "permission" ? "perms" : "stack",
@@ -5530,9 +6251,19 @@ function soundForAlert(item) { return item.sound || ""; }
 // Two marks, distinguishable at a glance: a permission blocks an agent and a
 // waiting task does not.
 const notifIcons = {};
-function iconDataURL(kind) {
+function iconDataURL(kind, mark) {
   kind = kind === "perm" ? "perm" : "atrium";
-  if (notifIcons[kind]) return notifIcons[kind];
+  // A card's own mark, drawn instead of the A. The kind is still carried, by
+  // the field it is drawn on: amber for an agent that is blocked, dark for one
+  // that is merely ready. So the notification says both which session and how
+  // urgent, where before it said neither.
+  //
+  // Same trade the tone already makes: which agent is the fact you cannot get
+  // any other way while your back is turned, so it wins the picture, and the
+  // kind falls back to the colour.
+  mark = String(mark || "").trim();
+  const key = kind + ":" + mark;
+  if (notifIcons[key]) return notifIcons[key];
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const g = c.getContext("2d");
@@ -5540,6 +6271,35 @@ function iconDataURL(kind) {
   g.fillRect(0, 0, 128, 128);
   g.lineCap = "round";
   g.lineJoin = "round";
+
+  if (mark) {
+    if (kind === "perm") {
+      g.fillStyle = "#FFC64D";
+      g.fillRect(0, 0, 128, 128);
+    }
+    // Drawn, never inserted. Whatever is on the card arrives here as pixels,
+    // so an icon is one thing that can never be markup however it was set.
+    //
+    // Sized down when it is wider than one glyph, since a card set to a short
+    // word should shrink rather than run off the edge. Measured rather than
+    // guessed from length: an emoji is several code units and one glyph.
+    g.fillStyle = kind === "perm" ? "#3A2600" : "#E6EDF6";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    let size = 92;
+    g.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", ` +
+      `"Segoe UI", system-ui, sans-serif`;
+    const wide = g.measureText(mark).width;
+    if (wide > 104) {
+      size = Math.max(28, Math.floor(size * 104 / wide));
+      g.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", ` +
+        `"Segoe UI", system-ui, sans-serif`;
+    }
+    // Nudged down: text baselines sit optically high in a square this small.
+    g.fillText(mark, 64, 70);
+    notifIcons[key] = c.toDataURL("image/png");
+    return notifIcons[key];
+  }
 
   if (kind === "perm") {
     // An amber exclamation in a rounded square: something is blocked.
@@ -5570,9 +6330,16 @@ function iconDataURL(kind) {
     g.moveTo(44, 72);  g.lineTo(84, 72);
     g.stroke();
   }
-  notifIcons[kind] = c.toDataURL("image/png");
-  return notifIcons[kind];
+  notifIcons[key] = c.toDataURL("image/png");
+  return notifIcons[key];
 }
+
+// A card's own mark, for an alert that is about exactly one card.
+//
+// Both shapes carry it, the same way both carry the tone: a task has its own
+// icon and a permission is given the asking card's by the server, which is
+// already joining that row for the agent name.
+function iconForAlert(item) { return (item && item.icon) || ""; }
 
 // The service worker is what makes buttons on a notification possible, and it
 // keeps working with no tab open. Registration is best effort: without it,
@@ -5595,7 +6362,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-function showNotification(title, body, goTo, permId, subject) {
+function showNotification(title, body, goTo, permId, subject, mark) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
   const expiry = Number(alerting.get().expiry) || 0;
   // Sticky means Windows never takes it down by itself. That is right for a
@@ -5614,7 +6381,7 @@ function showNotification(title, body, goTo, permId, subject) {
   if (swReg && swReg.active) {
     swReg.active.postMessage({
       type: "notify", title, body: body || "",
-      icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
+      icon: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
       tag,
       sticky, expireMs: expiry * 1000, goTo, permId: permId || "",
       // What this is about, so it can be taken down once that is answered.
@@ -5628,8 +6395,8 @@ function showNotification(title, body, goTo, permId, subject) {
 
   const n = new Notification(title, {
     body: body || "",
-    icon: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
-    badge: iconDataURL(goTo === "perms" ? "perm" : "atrium"),
+    icon: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
+    badge: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
     tag,
     renotify: true,
     // A blocked agent is not something to miss, so that one stays on screen.
@@ -6736,6 +7503,260 @@ document.getElementById("s-group-order").addEventListener("change", e => {
   setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value });
 });
 
+// ── notes to self ───────────────────────────────────────
+//
+// Held by the daemon rather than the browser, because a note is about the work
+// and not about this screen: it should be there from another browser and after
+// a restart, like the card's theme and its bell.
+//
+// Saved as you stop typing rather than on a button, since a scratch pad you
+// can lose by closing a dialog is a scratch pad you stop using.
+
+let noteTimer = null;
+
+function paintNote() {
+  const box = document.getElementById("d-note");
+  box.value = (current && current.note) || "";
+  noteState("");
+  document.getElementById("d-note-send").disabled = !box.value.trim();
+  document.getElementById("d-note-clear").disabled = !box.value.trim();
+}
+
+function noteState(text) {
+  document.getElementById("d-note-state").textContent = text;
+}
+
+document.getElementById("d-note").addEventListener("input", e => {
+  const empty = !e.target.value.trim();
+  document.getElementById("d-note-send").disabled = empty;
+  document.getElementById("d-note-clear").disabled = empty;
+  noteState("saving...");
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(async () => {
+    if (!current) return;
+    // patchTask rather than patch: the wrapper repaints the board, and doing
+    // that every time you pause typing is a lot of work to show a card whose
+    // note nothing else displays.
+    try {
+      await patchTask(current.id, { note: e.target.value });
+      current.note = e.target.value;
+      noteState("saved");
+    } catch (err) { noteState("not saved: " + err.message); }
+  }, 500);
+});
+
+// One message, not one per line. The whole reason a note exists is that three
+// things thought of during a long turn should arrive as one instruction.
+async function sendNote() {
+  if (!current) return;
+  const box = document.getElementById("d-note");
+  if (!box.value.trim()) return;
+
+  // Any keystrokes still inside the debounce go first, or the send would post
+  // what was saved rather than what is on screen.
+  clearTimeout(noteTimer);
+  try { await patchTask(current.id, { note: box.value }); }
+  catch (e) { noteState("not saved, so not sent: " + e.message); return; }
+
+  let res;
+  try {
+    res = await api(`/v1/tasks/${current.id}/note/send`, { method: "POST" });
+  } catch (e) { noteState("did not send: " + e.message); return; }
+
+  box.value = "";
+  document.getElementById("d-note-send").disabled = true;
+  document.getElementById("d-note-clear").disabled = true;
+  // The same two words the message box uses, because they are the same two
+  // promises: typed means it has already landed, queued means it has not and
+  // will not until the session's next tool call or the end of its turn.
+  toast("sent", res.delivered === "terminal"
+    ? "typed into its terminal."
+    : "queued. it arrives on the session's next tool call or at the end of its turn.");
+  refresh();
+}
+
+async function clearNote() {
+  if (!current) return;
+  if (!await confirmUser("clear this note?",
+    "What you wrote is thrown away. It has not been sent anywhere.", "clear it")) return;
+  clearTimeout(noteTimer);
+  try { await patchTask(current.id, { note: "" }); } catch (e) { noteState(e.message); return; }
+  current.note = "";
+  document.getElementById("d-note").value = "";
+  document.getElementById("d-note-send").disabled = true;
+  document.getElementById("d-note-clear").disabled = true;
+  noteState("");
+}
+
+// ── getting a file out of a card ────────────────────────
+//
+// The counterpart to paste and drop. Those put bytes in; this takes them back
+// out, which is the half that has no workaround at all once atrium is not on
+// the machine you are sitting at.
+//
+// Every path comes from the server, including where "up" goes. The board never
+// does path arithmetic, because that is where a traversal would come from if
+// one were going to.
+
+let filesAt = null;
+let filesParent = "";
+
+function toggleFiles() {
+  const box = document.getElementById("d-files");
+  const open = box.hidden;
+  box.hidden = !open;
+  document.getElementById("d-files-toggle").classList.toggle("open", open);
+  if (open) loadFiles("");
+}
+
+// The attached session's directory, from the terminal bar.
+//
+// The card dialog with the file fold already open, rather than a second
+// browser built into the pane. There is one containment check behind this,
+// `internal/safepath`, and one listing endpoint, and a second front end onto
+// them is a second place for the rules about what may be reached to be
+// slightly different.
+//
+// It matters most in a popped-out window, and it works there for the same
+// reason the board does: this is the daemon's own HTTP, so whatever carries
+// the board over an overlay carries the file listing and the download with it.
+// The machine being remote changes nothing about the path this takes.
+// The attached session's directory, as a drawer in the pane.
+//
+// Opens over the terminal rather than beside it: the pane is already narrow in
+// a popped-out window, and a split that leaves both halves too small to use is
+// worse than one that swaps. The terminal keeps running underneath and its
+// scrollback is untouched, so closing the drawer puts you back where you were.
+function openTermFiles() {
+  if (!termTask) return;
+  const box = document.getElementById("t-files-panel");
+  const open = box.hidden;
+  box.hidden = !open;
+  document.getElementById("t-files").classList.toggle("go", open);
+  if (open) loadFiles("", termFilesCtx());
+  // The terminal's box changed, and xterm measures in characters, so it has to
+  // be told. Without this the pane comes back with rows sized for the drawer.
+  onTermResize();
+}
+
+// Which browser is being driven, so one implementation serves both.
+//
+// The alternative was a second copy of the listing, the walk and the download
+// link for the pane, which is exactly the drift the containment rules must not
+// have: two front ends onto one endpoint that disagree about what may be
+// reached is how a check gets fixed in one of them.
+function termFilesCtx() {
+  return {
+    id: termTask && termTask.id, at: "term",
+    where: "t-files-where", up: "t-files-up",
+    list: "t-files-list", note: "t-files-note"
+  };
+}
+function dialogFilesCtx() {
+  return {
+    id: current && current.id, at: "dialog",
+    where: "d-files-where", up: "d-files-up",
+    list: "d-files-list", note: "d-files-note"
+  };
+}
+
+// Where each browser is standing. Two of them, because the dialog and the pane
+// can be open on different directories and one shared variable made walking in
+// one of them move the other.
+const filesPos = { dialog: { at: "", parent: "" }, term: { at: "", parent: "" } };
+
+async function loadFiles(path, ctx) {
+  ctx = ctx || dialogFilesCtx();
+  if (!ctx.id) return;
+  const pos = filesPos[ctx.at];
+  let res;
+  try {
+    res = await api(`/v1/tasks/${ctx.id}/files/list` +
+      (path ? `?path=${encodeURIComponent(path)}` : ""));
+  } catch (e) {
+    setHTML(document.getElementById(ctx.list),
+      `<div class="empty">${esc(e.message)}</div>`);
+    return;
+  }
+  pos.at = res.path;
+  pos.parent = res.parent || "";
+  // Kept for the dialog's own callers, which still read the old names.
+  if (ctx.at === "dialog") { filesAt = res.path; filesParent = pos.parent; }
+
+  document.getElementById(ctx.where).textContent = res.path;
+  document.getElementById(ctx.where).title = res.path;
+  // Disabled rather than hidden at the top, so the control does not move
+  // under the cursor as you walk up.
+  document.getElementById(ctx.up).disabled = !pos.parent;
+  document.getElementById(ctx.note).textContent = res.truncated
+    ? `showing the first ${(res.entries || []).length}. this directory has more.`
+    : "";
+
+  const rows = res.entries || [];
+  if (!rows.length) {
+    setHTML(document.getElementById(ctx.list),
+      `<div class="empty">nothing here.</div>`);
+    return;
+  }
+  setHTML(document.getElementById(ctx.list), rows.map(e => e.dir
+    ? `<div class="frow dir" data-dir="${esc(e.path)}">
+         <span class="fname">${esc(e.name)}/</span>
+       </div>`
+    : `<div class="frow">
+         <span class="fname">${esc(e.name)}</span>
+         <span class="fsize">${esc(bytes(e.size))}</span>
+         <span class="chip open" data-open="${esc(e.path)}"
+           title="open it in the editor, on the machine this session runs on">open</span>
+         <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
+            encodeURIComponent(e.path)}">get</a>
+       </div>`).join(""));
+
+  // Wired rather than inlined: a filename with an apostrophe in it breaks an
+  // onclick attribute, and HTML escaping does nothing about that.
+  const host = document.getElementById(ctx.list);
+  host.querySelectorAll(".frow.dir").forEach(el => {
+    el.onclick = () => loadFiles(el.dataset.dir, ctx);
+  });
+  host.querySelectorAll(".chip.open").forEach(el => {
+    el.onclick = ev => { ev.stopPropagation(); openOnDaemon(ctx.id, el.dataset.open); };
+  });
+}
+
+// Opens a file in the editor, ON THE MACHINE THE SESSION RUNS ON.
+//
+// Worth being exact about, because over an overlay the obvious reading is
+// wrong: this does not open anything on the machine holding the browser. The
+// daemon runs the command, so the window appears wherever the daemon is, which
+// is the same machine the agent is editing on and is the point.
+async function openOnDaemon(id, path) {
+  try {
+    await api(`/v1/tasks/${id}/files/open`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path })
+    });
+  } catch (e) {
+    toast("could not open it", e.message);
+    return;
+  }
+  toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
+}
+
+function filesUp() {
+  if (filesPos.dialog.parent) loadFiles(filesPos.dialog.parent, dialogFilesCtx());
+}
+function termFilesUp() {
+  if (filesPos.term.parent) loadFiles(filesPos.term.parent, termFilesCtx());
+}
+
+// A size a person reads. Exact bytes matter for nothing here.
+function bytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + "B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + "K";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + "M";
+  return (n / 1024 / 1024 / 1024).toFixed(1) + "G";
+}
+
 // ── actions on a card ───────────────────────────────────
 //
 // The things you say to an agent often enough to have got tired of typing.
@@ -6828,6 +7849,19 @@ async function loadHousekeeping() {
   try { s = await api("/v1/settings"); } catch (e) { return; }
   setTimerValue("s-sweep", s.sweep_dead_after, "60");
   setTimerValue("s-prune", s.prune_after, "off");
+  const ed = document.getElementById("s-editor");
+  if (ed) ed.value = s.editor_command || "";
+}
+
+// Saved on a button rather than on every keystroke: a half-typed command is a
+// program name that does not exist, and the failure would arrive later, from
+// the open button, with no obvious connection to the typing.
+async function saveEditorCommand() {
+  const ed = document.getElementById("s-editor");
+  if (!ed) return;
+  await saveHousekeeping("editor_command", ed.value.trim());
+  toast(ed.value.trim() ? "editor set" : "editor cleared",
+    ed.value.trim() || "the open button will say it is not configured");
 }
 
 function setTimerValue(id, value, fallback) {
@@ -6855,7 +7889,92 @@ async function saveHousekeeping(field, value) {
   } catch (e) { tellUser("that did not stick", e.message); }
 }
 
+// ── the settings spine ──────────────────────────────────
+//
+// The dialog is written as ONE flow of fields with `h3.s-section` headings,
+// and that is how it stays: it reads top to bottom in the file, which is what
+// makes it editable. The nav is built from those headings when the dialog
+// opens rather than by wrapping every group in markup by hand, so adding a
+// section is still one heading and its fields, in order, with nothing else to
+// keep in step.
+//
+// The line this nav has to hold, because the nav is what will be used to place
+// the next setting: **everything in here is a setting for the MACHINE.** A
+// card's theme, its bell and its notes are settings for one piece of work, and
+// they live on the card. Nothing that is per-card belongs in this dialog, and
+// nothing board-wide belongs on a card.
+
+// Which pane was last looked at, so opening the gear again lands where you
+// were rather than at the top. Per browser, since it is about this screen.
+const SETTINGS_PANE = "atrium.settingsPane";
+
+function buildSettingsNav() {
+  const body = document.querySelector("#settings .dlg-body");
+  if (!body || body.dataset.split) return;
+
+  const headings = Array.from(body.querySelectorAll(":scope > .s-section"));
+  if (headings.length < 2) return;
+
+  // Everything from one heading up to the next is that pane.
+  const panes = headings.map(h => {
+    const pane = document.createElement("div");
+    pane.className = "s-pane";
+    pane.dataset.name = h.textContent.trim();
+    let node = h;
+    const take = [];
+    while (node) {
+      take.push(node);
+      node = node.nextElementSibling;
+      if (node && node.classList.contains("s-section")) break;
+    }
+    take.forEach(n => pane.appendChild(n));
+    return pane;
+  });
+
+  const nav = document.createElement("div");
+  nav.className = "s-nav";
+  const host = document.createElement("div");
+  host.className = "s-panes";
+  panes.forEach(p => host.appendChild(p));
+
+  panes.forEach(p => {
+    const b = document.createElement("button");
+    b.textContent = p.dataset.name;
+    b.onclick = () => showSettingsPane(p.dataset.name);
+    nav.appendChild(b);
+  });
+
+  const split = document.createElement("div");
+  split.className = "s-split";
+  split.appendChild(nav);
+  split.appendChild(host);
+  body.appendChild(split);
+  body.dataset.split = "1";
+
+  showSettingsPane(localStorage.getItem(SETTINGS_PANE) || panes[0].dataset.name);
+}
+
+function showSettingsPane(name) {
+  const body = document.querySelector("#settings .dlg-body");
+  if (!body) return;
+  const panes = Array.from(body.querySelectorAll(".s-pane"));
+  // A remembered name that no longer exists falls back to the first, so
+  // renaming a section does not open an empty dialog.
+  if (!panes.some(p => p.dataset.name === name)) {
+    name = panes.length ? panes[0].dataset.name : "";
+  }
+  panes.forEach(p => { p.hidden = p.dataset.name !== name; });
+  body.querySelectorAll(".s-nav button").forEach(b => {
+    b.classList.toggle("on", b.textContent === name);
+  });
+  // Scrolled back to the top, since the panes share one scroll box and
+  // arriving halfway down a short pane reads as a rendering fault.
+  body.scrollTop = 0;
+  try { localStorage.setItem(SETTINGS_PANE, name); } catch (e) {}
+}
+
 function paintSettings() {
+  buildSettingsNav();
   const p = alerting.get();
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
@@ -7088,7 +8207,15 @@ async function openTask(id) {
   // The session's own account, when there is one. Editable, because deciding
   // an account was wrong is the operator's call, and read-only text somebody
   // disagrees with is worse than no text.
+  paintNote();
   paintCardActions();
+  // Offered only where there is a directory to look in. Folded shut each time
+  // the dialog opens, since a panel that remembered being open would fetch a
+  // listing every time you glanced at a card.
+  const filesField = document.getElementById("d-files-field");
+  filesField.hidden = !current.worktree;
+  document.getElementById("d-files").hidden = true;
+  document.getElementById("d-files-toggle").classList.remove("open");
   const recapField = document.getElementById("d-recap-field");
   recapField.hidden = !current.recap;
   document.getElementById("d-recap").value = current.recap || "";
@@ -7112,7 +8239,11 @@ async function openTask(id) {
     // Auto mode and the review that pays for it, side by side.
     `<button class="${current.auto_approve ? "no" : ""}" onclick="toggleAuto()">${
       current.auto_approve ? "stop auto mode" : "auto mode"}</button>`,
-    `<button onclick="openReview()">what did it do?</button>`
+    `<button onclick="openReview()">what did it do?</button>`,
+    // Deleting one card. It left the context menu, which is a list of things
+    // you do often and this is not one of them, and there is nowhere else to
+    // do it: `clear` takes a whole column. It asks first.
+    `<button class="no" onclick="forgetCurrent()">forget this card</button>`
   ].join("");
   document.getElementById("d-auto-note").textContent = current.auto_approve
     ? "requests from this session are approved without asking. everything is still recorded, " +
@@ -7124,6 +8255,12 @@ async function openTask(id) {
   document.getElementById("d-sound").innerHTML =
     `<option value=""${current.sound ? "" : " selected"}>the board's tone</option>` +
     soundOptions(current.sound);
+  const iconEl = document.getElementById("d-icon");
+  iconEl.value = current.icon || "";
+  paintIconPreview();
+  // Drawn as you type, since a glyph that renders as a box here will render as
+  // a box on the notification, and that is worth finding out before it does.
+  iconEl.oninput = paintIconPreview;
   document.getElementById("d-say").value = "";
   // A message rides a hook, and a session that has ended fires no more of
   // them. Said rather than prevented: a card can be wrong about being dead,
@@ -7471,6 +8608,12 @@ function previewCardSound() {
   alerting.preview(name || alerting.get().input);
 }
 
+// Saved on the way out of the field, not on every keystroke. An emoji arrives
+// a code unit at a time and half of one is not a mark worth storing.
+document.getElementById("d-icon").addEventListener("change", e => {
+  patch({ icon: e.target.value.trim() });
+});
+
 // Enter sends, shift-enter is a newline. The chat convention, because this is
 // one: short things said to somebody, in a row. Escape would close the dialog
 // out from under a half-typed message, so it is caught and only clears the box.
@@ -7568,6 +8711,12 @@ function repaintLists() {
 }
 
 async function refresh() {
+  // A popped-out window polls for ONE card. Falling through here meant it ran
+  // the board's whole alerting pass, so a window opened onto one session put
+  // up desktop notifications for every other one, from a document with no
+  // board to click through to.
+  if (termOnly()) return soloRefresh();
+
   // A deadline that is running is re-read from the daemon rather than counted
   // down here. It costs one small request while a switch is temporary and
   // nothing at all the rest of the time, and it means the label cannot drift
@@ -7601,9 +8750,20 @@ async function refresh() {
       // Permissions are dropped here rather than described, because the block
       // below alerts on the same event with the tool and the command in hand.
       // Both firing meant one blocked agent rang twice and put up two toasts.
-      alerting.check("waiting", waiting.filter(t => t.status !== "needs-permission"), t => ({
+      // A session that is ready because it has JUST STARTED never rings.
+      //
+      // Nothing was accomplished and nobody needs telling: you launched it, or
+      // a fixture did at boot, and in the second case half a dozen terminals
+      // coming up meant half a dozen notifications for an event with no
+      // content. The one thing worth hearing about a batch of fixtures is the
+      // ones that did NOT start, and `fixtures-started` says that once.
+      //
+      // Still counted, still on the board, still marked in a popped-out
+      // window's title bar. Only the interruption is dropped.
+      alerting.check("waiting", waiting.filter(t =>
+        t.status !== "needs-permission" && !justStarted(t)), t => ({
         title: `${t.display_title} is ${statusLabel(t.status)}`,
-        body: "finished its turn and wants your next instruction"
+        body: readyBecause(t)
       }));
     }
     if (perms) {
@@ -7670,6 +8830,34 @@ function connect() {
       globalAutoLeft = s.global_auto_seconds || 0;
     } catch (err) { return; }
     paintGlobalAuto();
+  });
+  // The fixtures that came up with the daemon, said once.
+  //
+  // Each of them produces a ready card, and a ready card is normally announced,
+  // so booting used to be one notification per terminal for an event with no
+  // content. Those are suppressed at the source now: a card ready BECAUSE IT
+  // JUST STARTED never rings. What is left is the half the board cannot work
+  // out for itself, since the absence of a card is not an event, and it is the
+  // half worth hearing: the ones that were supposed to open and did not.
+  //
+  // Silent when everything worked. A summary that fires on success is the same
+  // interruption in one message rather than six.
+  es.addEventListener("fixtures-started", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    const bad = d.failed || [];
+    if (!bad.length) return;
+    const ok = Number(d.started) || 0;
+    const title = `${bad.length} fixture${bad.length === 1 ? "" : "s"} did not start`;
+    // Named when there are few enough to name. A count alone sends you to the
+    // page to find out which, and when it is one that is the whole answer.
+    const body = (ok ? `${ok} started. ` : "") +
+      (bad.length <= 3
+        ? bad.map(f => f.label).join(", ")
+        : bad.slice(0, 3).map(f => f.label).join(", ") + ` and ${bad.length - 3} more`);
+    alerting.play("permission");
+    alerting.notify(title, body, "runners", "", "fixtures", "", "");
+    toast(title, body + ". the runners tab says why", "runners");
   });
   es.addEventListener("hooks", async () => {
     await loadHooks();
@@ -7799,6 +8987,49 @@ function repoLeaf(name) {
 // Applied to the live terminal immediately as well as stored, so the choice
 // is judged by looking at it rather than by reading a name. xterm takes a new
 // theme on the running instance, so nothing has to be torn down.
+// The card's mark, drawn the way a notification will draw it.
+//
+// The same canvas that produces the PNG, shown at the size the operating
+// system uses. A glyph that renders as a box on the notification renders as a
+// box here, which is worth finding out while you are still typing it.
+function paintIconPreview() {
+  const el = document.getElementById("d-icon-preview");
+  const input = document.getElementById("d-icon");
+  if (!el || !input) return;
+  el.innerHTML = `<img alt="" src="${iconDataURL("atrium", input.value.trim())}">`;
+}
+
+// The mark a card wears on a desktop notification, asked for rather than
+// edited in the dialog.
+//
+// Kept because the terminal cog offers it too, where there is no dialog open
+// and opening one to change a single glyph is the wrong size of gesture.
+//
+// Whatever is typed is drawn to a canvas and sent as a PNG. It is never
+// inserted anywhere, so an icon cannot be markup however it was set, including
+// by a source that filled the card in.
+async function pickIcon(id, current) {
+  const pick = await askUser({
+    title: "notification icon",
+    body: "One character, or an emoji. Shown on desktop notifications from " +
+          "this card, and remembered on it, so it is the same tomorrow and in " +
+          "another browser. Windows draws it small: a single bold glyph reads, " +
+          "a word does not.",
+    input: true,
+    value: current || "",
+    placeholder: "empty means the atrium mark",
+    buttons: [{ label: "cancel", value: null }, { label: "use it", value: true, style: "go" }]
+  });
+  if (pick === null) return;
+  try {
+    await patchTask(id, { icon: String(pick).trim() });
+  } catch (e) {
+    toast("that did not stick", e.message);
+    return;
+  }
+  refresh();
+}
+
 async function pickTheme() {
   if (!termTask) return;
   const names = ["", ...Object.keys(TERM_THEMES).sort()];
@@ -7843,6 +9074,9 @@ let term = null, termFit = null, termSock = null, termTask = null;
 // scroll. Remembered, like the other preferences.
 let copyOnSelect = localStorage.getItem("atrium.copyOnSelect") === "1";
 
+// Kept because several places call it. The button it used to paint is gone
+// from the bar: `copy on select: off` was a permanent five word sentence
+// occupying the same room as `exit`, for a setting changed about once.
 function paintCopyMode() {
   const b = document.getElementById("t-copymode");
   if (!b) return;
@@ -7856,6 +9090,62 @@ function toggleCopyOnSelect() {
   paintCopyMode();
 }
 
+// Everything about how THIS terminal looks and behaves, behind one cog.
+//
+// The bar was running out of room, and worse in a popped-out window, which is
+// narrow by design and is exactly where the per-window settings belong. What
+// went in here is what you set rarely: the palette, whether selecting copies,
+// and how big this card's window opens.
+//
+// Size is set explicitly rather than learned from every drag. Remembering the
+// last size automatically meant nudging an edge to see something behind the
+// window silently became the size every card opened at, which is a preference
+// nobody expressed.
+function termSettings(e) {
+  const t = termTask;
+  if (!t) return;
+  const own = readSize("atrium.popout." + t.id);
+  const items = [
+    { label: "terminal theme…", note: t.theme || "from the project",
+      tip: "The palette this session uses, remembered on the card.",
+      act: () => pickTheme() },
+    { label: "notification icon…", note: t.icon || "the atrium mark",
+      tip: "The mark this card wears on a desktop notification.",
+      act: () => pickIcon(t.id, t.icon) },
+    { label: "copy on select", on: copyOnSelect,
+      tip: "Selecting text copies it, the way a terminal does.",
+      act: () => toggleCopyOnSelect() },
+    { sep: true },
+    // Only meaningful from the window whose size is being remembered. From the
+    // board there is no popped-out window to measure.
+    termOnly() ? {
+      label: "remember this size", note: "for this card",
+      tip: "This card's window opens at whatever size it is right now.",
+      act: () => {
+        rememberPopOutSize(t.id, outerWidth, outerHeight, false);
+        toast("size remembered", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
+      }
+    } : null,
+    termOnly() ? {
+      label: "make this the default", note: "for every card",
+      tip: "Every card without a size of its own opens at this one.",
+      act: () => {
+        rememberPopOutSize(t.id, outerWidth, outerHeight, true);
+        toast("default size set", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
+      }
+    } : null,
+    own ? {
+      label: "forget this card's size", note: `${own.w} by ${own.h}`,
+      tip: "Falls back to the default size.",
+      act: () => {
+        try { localStorage.removeItem("atrium.popout." + t.id); } catch (err) {}
+        toast("forgotten", "this card opens at the default size now");
+      }
+    } : null
+  ];
+  showMenu(e, items);
+}
+
 function openTerm(task) {
   if (typeof Terminal === "undefined") {
     tellUser("atrium", "the terminal library did not load");
@@ -7867,13 +9157,20 @@ function openTerm(task) {
 
   switchView("terms");
   termTask = task;
-  document.getElementById("t-title").textContent = task.display_title;
+  // The same address the popped-out window carries, so a session is one name
+  // whichever way you are looking at it. The full path matters here too: the
+  // switcher beside it lists sessions whose short titles collide.
+  document.getElementById("t-title").textContent = terminalLabel(task) || task.display_title;
+  document.getElementById("t-title").title = task.worktree || "";
+  // The runner as its mark, in front of the name, the way a card carries it.
+  // A `claude` pill among the chips said the same thing in the place the eye
+  // goes last, and read as one more fact rather than as whose terminal this is.
+  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);
+  // What is left is what changes: the process, and where it is. The theme
+  // moved into the cog, with the rest of how this terminal behaves.
   document.getElementById("t-chips").innerHTML =
-    `<span class="chip accent">${esc(task.runner || "?")}</span>` +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
-    `<span class="chip">${esc(task.worktree || "")}</span>` +
-    `<span class="chip theme" onclick="pickTheme()"
-       title="what this terminal looks like">${esc(task.theme || "auto")}</span>`;
+    `<span class="chip">${esc(task.worktree || "")}</span>`;
   paintCopyMode();
 
   const screen = document.getElementById("t-screen");
@@ -8251,13 +9548,55 @@ function markTermDead() {
       const close = document.createElement("button");
       close.className = "go t-close";
       close.textContent = "close";
-      close.title = "clear this away. its card and history stay on the board";
-      close.onclick = () => closeTerm();
+      close.title = termOnly()
+        ? "close this window. its card and history stay on the board"
+        : "clear this away. its card and history stay on the board";
+      close.onclick = () => termOnly() ? window.close() : closeTerm();
       bar.appendChild(close);
     }
   }
+  // A popped-out window has nothing else in it, so an exited runner leaves a
+  // window showing one dead terminal and no way to anything. It closes itself.
+  //
+  // Not instantly. The scrollback holds the exit and, for claude, the resume
+  // id, which is the one thing worth reading off a session that has ended, and
+  // a window that vanishes the moment a runner quits takes that with it. Long
+  // enough to see it and to press cancel by moving the pointer there.
+  //
+  // `window.close` works because the board opened this window. A tab the
+  // operator opened by hand is not script-closable, which is why this offers
+  // rather than assumes: the countdown is a button that says what it is about
+  // to do, so nothing is silently relying on it.
+  if (termOnly()) offerSoloClose();
   // Its card is dead now, so the board and the session list have to agree.
   refresh();
+}
+
+// The seconds before a popped-out window closes itself after its runner exits.
+//
+// Short. The window is empty and you are looking straight at it, so the wait
+// is the cost and the button is the escape hatch, not the countdown.
+const soloCloseAfter = 2;
+function offerSoloClose() {
+  const bar = document.querySelector(".term-bar");
+  if (!bar || bar.querySelector(".t-autoclose")) return;
+  let left = soloCloseAfter;
+  const btn = document.createElement("button");
+  btn.className = "no t-autoclose";
+  btn.title = "stop this window closing itself";
+  bar.appendChild(btn);
+  const paint = () => { btn.textContent = `closing in ${left}s. stay open`; };
+  paint();
+  const tick = setInterval(() => {
+    left--;
+    if (left > 0) { paint(); return; }
+    clearInterval(tick);
+    window.close();
+  }, 1000);
+  btn.onclick = () => {
+    clearInterval(tick);
+    btn.remove();
+  };
 }
 
 function closeTerm(switching) {
@@ -8309,7 +9648,8 @@ async function renderTermPerm() {
     <div class="actions">
       <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve once</button>
       <button class="no" onclick="decideFromTerm('${p.id}','block')">block once</button>
-      <button onclick="switchView('perms')" title="to set a standing rule for this">open in perms</button>
+      <button class="to-perms" onclick="switchView('perms')"
+        title="to set a standing rule for this">open in perms</button>
     </div>`;
 }
 
@@ -8750,7 +10090,7 @@ async function renderFixtures() {
   }
 
   setHTML(host, `<div class="panel">` + allFixtures.map((f, i) => `
-    <div class="row line">
+    <div class="row line${f.last_error ? " broke" : ""}">
       <span class="chip ${f.enabled ? "accent" : ""}">${f.enabled ? "on" : "off"}</span>
       <span class="ord">${i + 1}</span>
       <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
@@ -8766,7 +10106,18 @@ async function renderFixtures() {
       <button onclick="startFixtureNow('${esc(f.id)}')"
         title="start it now, without restarting atrium">start</button>
       <button onclick="editFixture('${esc(f.id)}')">edit</button>
-    </div>`).join("") + `</div>`);
+    </div>` +
+    // Why the last start failed, under the row rather than in a tooltip. This
+    // is the page the notification sends you to, so the reason has to be the
+    // thing you see on arriving, not something else to go looking for.
+    //
+    // It stays up until a start works, so a fixture that has been broken since
+    // Tuesday still says so on Friday, and says when it last tried.
+    (f.last_error ? `<div class="row line why-broke">
+      <span class="chip warn">did not start</span>
+      <code class="grow ell" title="${esc(f.last_error)}">${esc(f.last_error)}</code>
+      ${f.last_run_at ? `<span class="by">${esc(firstSeen(f.last_run_at))}</span>` : ""}
+    </div>` : "")).join("") + `</div>`);
 }
 
 // Reordering by swapping sort values with the neighbour.
@@ -9425,7 +10776,14 @@ async function startOffered(id) {
   });
 }
 
-async function openLaunch(id, resume, cwd, ontoTask, prefill) {
+// `where` is the destination for whatever this starts: "here" for the
+// terminals tab, "window" for its own window. Held on the dialog rather than
+// passed to the submit, because the decision is made in the menu that opened
+// the form and answered by the code that closes it.
+let launchWhere = "here";
+
+async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
+  launchWhere = where === "window" ? "window" : "here";
   if (!allHarnesses.length) {
     try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) {}
   }
@@ -9528,6 +10886,13 @@ async function doLaunch() {
   // means finding the new card and clicking attach, which is two steps to get
   // where you were already going.
   if (task && task.supervised) {
+    if (launchWhere === "window") {
+      // Its own window, which is where you said to put it. The board does not
+      // attach first: it would open the pane, then detach it a moment later,
+      // and the flicker reads as something going wrong.
+      popOutTask(task.id);
+      return;
+    }
     switchView("terms");
     openTerm(task);
     return;
@@ -9844,9 +11209,326 @@ loadGlobalAuto();
 rememberOpen("rules-d", "atrium.rules.open");
 rememberOpen("hist-d", "atrium.history.open");
 
-connect();
-refresh();
-setInterval(refresh, 5000);
+// ── one terminal, in its own window ─────────────────────
+//
+// The habit this competes with is alt-tab, which is faster than a click into
+// an app and then a click onto a tab, and which nothing here can beat while a
+// session is a pane inside a page.
+//
+// So: the same page, in terminal-only mode, addressed by `#term=<id>`. NOT a
+// second HTML file. `CLAUDE.md` calls index.html "the whole board, one file",
+// and a second page would be a second copy of the xterm wiring, the resize
+// handling and the attach lifecycle, which is two copies of one flow waiting
+// to diverge on the first fix.
+//
+// What this deliberately is NOT is handing the session to Windows Terminal.
+// That would mean atrium stops owning the pty, which costs attach, the
+// activity badge, the liveness check and stop, and `docs/supervision-design.md`
+// records that there is no reattach on Windows to get them back. A browser
+// window is what is buildable; the backlog is right that a real terminal is
+// what you actually want and that it is not available at this price.
+
+// What a popped-out window is called in alt-tab.
+//
+// `display_title` is written for a card sitting in a column, where the
+// surrounding board already says which machine and which project. A window in
+// alt-tab has no surroundings, so it needs the whole address:
+//
+//   github/openziti/ziti-tunnel-sdk-c:nightly-failures
+//
+// Anchored on the REPO NAME rather than on path depth or on the last segment.
+// Depth varies, and the last segment is the worktree DIRECTORY, which is not
+// the branch: one card here sits in `.../desktop-edge-win/fix-app-version`
+// while actually being on `promote-2.11.3.1-and-beta`, because somebody
+// switched branches inside the worktree. The directory is the stale half, so
+// the branch is what gets shown.
+//
+// Finding the repo segment gives the two before it for free, which on this
+// layout are the host and the org and are exactly what is missing.
+function windowTitle(task) {
+  const label = terminalLabel(task);
+  return label ? label + " - atrium" : "atrium terminal";
+}
+
+function terminalLabel(task) {
+  if (!task) return "";
+  const path = String(task.worktree || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  const segs = path.split("/").filter(Boolean);
+  const repo = String(task.repo || "").trim();
+  const branch = String(task.branch || "").trim();
+
+  // Last match, not first: a repo called `ziti` under `.../github/openziti/ziti`
+  // would otherwise anchor on the org when the two share a name.
+  let at = -1;
+  for (let i = 0; i < segs.length; i++) {
+    if (repo && segs[i] === repo) at = i;
+  }
+
+  let where = "";
+  if (at >= 0) {
+    where = segs.slice(Math.max(0, at - 2), at + 1).join("/");
+  } else if (segs.length) {
+    // No repo on the card. That happens for a worktree atrium has not been
+    // able to ask git about, and for a directory that is not a checkout at
+    // all.
+    //
+    // The last segment is dropped when it IS the branch, or the name appears
+    // twice: `openziti/ziti/discourse-6036:discourse-6036` reads as two
+    // different things and is one. Dropping it leaves the repo as the last
+    // segment, which is what the branch should hang off.
+    let tail = segs;
+    if (branch && tail[tail.length - 1] === branch) tail = tail.slice(0, -1);
+    // Never the drive letter, which is the same on every card and says
+    // nothing.
+    where = tail.slice(Math.max(1, tail.length - 3)).join("/");
+  }
+
+  if (where && branch) return where + ":" + branch;
+  if (where) return where;
+  return task.display_title || "";
+}
+
+// popOutTerm opens whatever is attached here in its own window.
+function popOutTerm() {
+  if (termTask) popOutTask(termTask.id);
+}
+
+// A terminal in its own window, from wherever a card is drawn.
+//
+// The stack is the case that matters. Attaching first and then popping out is
+// two steps to reach one window, and it makes the board briefly the owner of a
+// terminal it is about to give away.
+function popOutTask(id) {
+  // The card id, so the new window resolves the session itself rather than
+  // being handed a name that may be stale by the time it loads.
+  const url = location.pathname + "#term=" + encodeURIComponent(id);
+  const size = popOutSize(id);
+  // Named per card, so pressing pop out twice raises the existing window
+  // rather than opening a second one onto the same terminal.
+  const win = window.open(url, "atrium-term-" + id,
+    `width=${size.w},height=${size.h},menubar=no,toolbar=no,location=no,status=no`);
+  if (!win) {
+    tellUser("the browser blocked it", "allow pop-ups for this board and try again.");
+    return;
+  }
+  win.focus();
+  // Detached only when the board is holding THIS card, because two views onto
+  // one terminal both writing input is the situation
+  // `docs/supervision-design.md` says nothing arbitrates. Popping out one card
+  // from the stack must not tear down the unrelated terminal the board has
+  // open, which is what an unconditional `closeTerm` did.
+  if (termTask && termTask.id === id) closeTerm();
+}
+
+// How big a popped-out window opens.
+//
+// Set by resizing one, not by filling in a form. The size you want is a thing
+// you find by dragging an edge until the terminal looks right, and having
+// found it there is nothing left for a settings field to ask.
+//
+// Per card first, then whatever you last sized ANY window to, then a default.
+// Both halves earn their place: a card you keep in a tall narrow window beside
+// an editor stays that shape, and a card popped out for the first time opens
+// at the size the last one taught, rather than at a number chosen here.
+//
+// Held in localStorage rather than on the card, because it is a fact about
+// this screen. The same card popped out on a laptop wants a different window,
+// and a size synced from the desktop would be wrong on arrival.
+const POPOUT_DEFAULT = { w: 900, h: 620 };
+function popOutSize(id) {
+  return readSize("atrium.popout." + id) || readSize("atrium.popout") || POPOUT_DEFAULT;
+}
+function readSize(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || "null");
+    // Guarded because a stored zero or a NaN from an older shape would open a
+    // window with no area, which on Windows is a window you cannot grab.
+    if (v && v.w > 200 && v.h > 150) return { w: Math.round(v.w), h: Math.round(v.h) };
+  } catch (e) {}
+  return null;
+}
+// Records a size, on this card and optionally as the default for every card
+// that has none of its own.
+//
+// Asked for rather than learned. It used to save on every resize, which meant
+// dragging an edge to see something behind the window silently became the size
+// every card opened at. A preference nobody expressed is worse than no
+// preference, because it is indistinguishable from a bug.
+function rememberPopOutSize(id, w, h, alsoDefault) {
+  if (!(w > 200 && h > 150)) return;
+  const size = JSON.stringify({ w: Math.round(w), h: Math.round(h) });
+  try {
+    if (id) localStorage.setItem("atrium.popout." + id, size);
+    if (alsoDefault) localStorage.setItem("atrium.popout", size);
+  } catch (e) {}
+}
+
+// termOnly reports whether this window is a popped-out terminal.
+function termOnly() { return /^#term=/.test(location.hash); }
+
+// Strips the page down to one terminal.
+//
+// Everything else is hidden rather than removed, so the same code paths keep
+// working: the switcher, the card dialog and the settings all still exist and
+// are simply never shown.
+async function bootTerminalOnly() {
+  soloID = decodeURIComponent(location.hash.slice("#term=".length));
+  document.body.classList.add("solo");
+
+  let task;
+  try {
+    task = await api("/v1/tasks/" + encodeURIComponent(soloID));
+  } catch (e) {
+    document.title = "atrium: no such card";
+    tellUser("nothing to attach to", e.message);
+    return;
+  }
+  soloTask = task;
+  // The title bar is the whole reason this window is worth having: it is what
+  // alt-tab shows.
+  paintSoloTitle();
+  openTerm(task);
+
+  // Claimed before the first poll, so the board is already deferring by the
+  // time anything can ring.
+  if (soloBus) {
+    soloBus.postMessage({ type: "solo-claim", task: soloID });
+    // `pagehide` rather than `unload`, which a browser is free to skip when it
+    // freezes a page into the back/forward cache. A claim that is never
+    // released would leave the board permanently silent about this card.
+    addEventListener("pagehide", () => soloBus.postMessage({ type: "solo-release", task: soloID }));
+  }
+  // Coming back to the window IS reading the alert, so the mark clears without
+  // touching anything. Leaving it up until the next poll meant a title that
+  // still said a session was blocked while you sat looking at it.
+  addEventListener("focus", () => { soloMark = ""; paintSoloTitle(); });
+
+}
+
+// What the title bar says, and the mark in front of it.
+//
+// The mark is the point, not the toast. A toast lives inside a window you may
+// not be looking at, which is exactly the case this window exists for; a title
+// bar is what alt-tab and the taskbar show while the window is buried, and it
+// cannot be missed or dismissed by accident.
+//
+// Two marks, so they read differently at a glance in a switcher: a blocked
+// agent is doing nothing until you answer, a ready one is merely done.
+let soloMark = "";
+function paintSoloTitle() {
+  document.title = (soloMark ? soloMark + " " : "") + windowTitle(soloTask);
+}
+
+// One card's worth of the board's polling pass.
+//
+// Deliberately not `alerting.check`, which keeps board-wide sets of what it
+// has already rung for. Two documents sharing that logic would each seed their
+// own copy and disagree about what is new. This tracks one card and two
+// booleans, which is all a single session can be.
+// `null` until the first poll lands, which is what makes opening the window
+// silent. A card that has been sitting ready for an hour is why you popped it
+// out, so announcing it as news the moment you get there is both wrong and the
+// most annoying possible moment to be wrong. Only a change after that rings.
+//
+// The board draws the same distinction in `alerting.check` and it is the one
+// thing this had to copy from it.
+let soloKnown = { perm: null, ready: null };
+async function soloRefresh() {
+  if (!soloID) return;
+
+  const [task, waiting, perms] = await Promise.all([
+    api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
+    api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
+    api("/v1/permissions").then(r => r.permissions || []).catch(() => null)
+  ]);
+
+  // A branch can change under a running session, and the title is the whole
+  // product here, so it is re-read rather than fixed at open.
+  if (task) { soloTask = task; }
+
+  const mine = perms ? perms.filter(p => (p.task_id || p.id) === soloID) : null;
+  const ready = waiting
+    ? waiting.some(t => t.id === soloID && t.status !== "needs-permission")
+    : null;
+
+  if (mine !== null) soloAlert("perm", mine.length > 0, mine[0]);
+  if (ready !== null) soloAlert("ready", ready, task);
+  paintSoloTitle();
+  renderTermPerm();
+
+  // A halted daemon is a fact about this terminal too: the session behind it
+  // is parked and nothing said so.
+  api("/v1/health").then(h => {
+    const el = document.getElementById("halted");
+    el.style.display = h.halted ? "flex" : "none";
+    if (h.halted) {
+      document.getElementById("halt-t").innerHTML =
+        `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
+    }
+  }).catch(() => {});
+}
+
+// Rings once on the way in, and only on the way in.
+function soloAlert(kind, now, item) {
+  const was = kind === "perm" ? soloKnown.perm : soloKnown.ready;
+  if (kind === "perm") soloKnown.perm = now; else soloKnown.ready = now;
+  // Falling edge: answered, so the mark goes. A permission outranks a ready
+  // card, since one is blocked and the other is only idle.
+  if (!now) {
+    if (soloMark === (kind === "perm" ? "(!)" : "*")) soloMark = "";
+    return;
+  }
+  // The first poll only learns. The state is shown, since a window that opens
+  // on a blocked session should say so in its title, but nothing is played and
+  // nothing is put on screen: you are looking straight at it.
+  if (was === null) {
+    if (kind === "perm") soloMark = "(!)";
+    else if (!soloMark) soloMark = "*";
+    return;
+  }
+  if (was) return;
+
+  soloMark = kind === "perm" ? "(!)" : "*";
+  const who = soloTask ? (soloTask.display_title || "this session") : "this session";
+  const title = kind === "perm"
+    ? `${who} needs permission`
+    : `${who} is ${soloTask && justStarted(soloTask) ? "up" : "ready"}`;
+  const body = kind === "perm" && item
+    ? `${item.tool}: ${(item.command || "").slice(0, 120)}`
+    : readyBecause(soloTask || {});
+
+  alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
+  if (inForeground()) {
+    // In front of you, so the toast is the whole message. No `goTo`: there is
+    // nowhere in this window to go, and clicking through to a board is the
+    // thing this window refuses to become.
+    toast(title, body, null, item && item.id, soloID);
+  } else {
+    // Behind something. The mark on the title bar is already up, and the
+    // desktop notification is what makes you look at the switcher at all. The
+    // board is holding its own copy back because of the claim.
+    alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "", soloID, "",
+      iconForAlert(soloTask));
+  }
+}
+
+if (termOnly()) {
+  // The same stream and the same interval as the board. `refresh` sends a
+  // popped-out window down `soloRefresh`, so this costs one card's worth of
+  // polling rather than a second board's.
+  bootTerminalOnly().then(() => {
+    connect();
+    setInterval(refresh, 5000);
+  });
+} else {
+  connect();
+  refresh();
+  setInterval(refresh, 5000);
+  // A board that starts after a window was already popped out has missed the
+  // claim, so it asks. Windows that are gone do not answer and the board rings
+  // for their cards, which is the right way round to be wrong.
+  if (soloBus) soloBus.postMessage({ type: "solo-who" });
+}
 </script>
 </body>
 </html>

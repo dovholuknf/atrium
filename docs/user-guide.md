@@ -267,6 +267,25 @@ Example use: an agent assigned to "be the watchman" can sit on `wait_for_change`
 when something needs input elsewhere. The hub is your interactive surface; Mode B is the observational
 substrate.
 
+## Pattern 0: having the daemon there in the morning
+
+Nothing starts atrium on its own. A daemon started by hand once and left running looks like it comes back until
+the day it does not, and starting it again from a different terminal can open a **different database**, because
+which one you get depends on `WORKTREE_ROOT` in the shell you happened to be in.
+
+```powershell
+.\scripts\atrium-autostart.ps1
+Start-ScheduledTask -TaskName atrium
+```
+
+That pins one command line and one database, started the same way every time. `-Remove` takes it away.
+
+A logon task rather than a Windows service, deliberately: a service runs as SYSTEM in session 0, which cannot
+open a pseudo terminal you can attach to, and supervision is most of what the daemon does.
+
+If you start it by hand instead, **pass `--db`**. The daemon says so loudly when it opens a different database
+than last time, but not being told at all is better than being told after the fact.
+
 ## Pattern 7: starting work from an issue or a ticket
 
 Atrium does not learn what a Zendesk ticket is. Whatever already knows makes the worktree and hands it over.
