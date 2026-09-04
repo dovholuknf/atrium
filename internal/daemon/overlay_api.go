@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
@@ -202,14 +203,63 @@ func (d *Daemon) startOverlay(kind string) error {
 		if d.nat(OverlayZrok).running() {
 			return fmt.Errorf("the board is already on a zrok share")
 		}
+		if err := d.readyToShare(OverlayZrok); err != nil {
+			return err
+		}
 		return d.startZrokNative(d.zrokConfig())
 	case OverlayZiti:
 		if d.nat(OverlayZiti).running() {
 			return fmt.Errorf("the board is already on a ziti service")
 		}
+		if err := d.readyToShare(OverlayZiti); err != nil {
+			return err
+		}
 		return d.startZitiNative(d.zitiConfig())
 	}
 	return fmt.Errorf("no overlay called %q", kind)
+}
+
+// readyToShare refuses a start that has not been set up, in atrium's words.
+//
+// Without this the start is attempted, the underlying library fails, and what
+// reaches the board is zrok's or ziti's own message about a thing that was
+// never configured. Those are accurate and they are answers to a different
+// question: they say what broke, not what to do.
+//
+// This is the same line `docs/overlays.md` draws everywhere else. Report the
+// state honestly, offer the next command, never invent one. What is added here
+// is only that the state is checked BEFORE the attempt rather than inferred
+// from the wreckage of one.
+func (d *Daemon) readyToShare(k overlayKind) error {
+	switch k {
+	case OverlayZrok:
+		env := zrokEnv()
+		if !env.Enabled {
+			return fmt.Errorf("this machine has no zrok environment yet, so a share has " +
+				"nothing to attach to. enable it from the gear with an account token, " +
+				"or run `zrok enable` yourself")
+		}
+	case OverlayZiti:
+		cfg := d.zitiConfig()
+		if strings.TrimSpace(cfg.Identity) == "" {
+			return fmt.Errorf("no ziti identity is configured, so there is nothing to " +
+				"host the service as. enroll one from the gear with an enrollment token")
+		}
+		id := zitiEnrolment(cfg.Identity)
+		if !id.Present {
+			return fmt.Errorf("the ziti identity at %s is not there. it was configured "+
+				"and the file has gone, which is the usual state after a machine is "+
+				"rebuilt: enroll again", cfg.Identity)
+		}
+		if id.Err != "" {
+			return fmt.Errorf("the ziti identity at %s cannot be read: %s", cfg.Identity, id.Err)
+		}
+		if strings.TrimSpace(cfg.Service) == "" {
+			return fmt.Errorf("no ziti service is named, so the listener would have " +
+				"nothing to bind. the service field lists what this identity may host")
+		}
+	}
+	return nil
 }
 
 func (d *Daemon) stopOverlay(kind string) error {

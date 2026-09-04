@@ -59,6 +59,19 @@ if ! node --check "$sw"; then
   fail=1
 fi
 
+# The settings dialog is one flow of fields, and its left-hand nav is built at
+# runtime by cutting that flow at every `h3.s-section` that is a DIRECT child
+# of the dialog body. Nesting one inside a field, or moving a control out of
+# the body, breaks the dialog into one giant pane or none.
+#
+# Parsing cannot catch that: the markup is still valid and the script still
+# runs. So it is checked here, against the real file, rather than discovered by
+# opening the gear.
+if ! node "$here/scripts/check-settings-panes.js" "$page"; then
+  echo "the settings dialog would not partition into panes. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

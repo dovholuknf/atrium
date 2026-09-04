@@ -184,3 +184,58 @@ func TestAFirstStartStillRecordsItsResumeID(t *testing.T) {
 		t.Fatalf("status is %q, wanted a fresh session to be ready", task.Status)
 	}
 }
+
+// Two runners on one conversation braid its transcript, and nothing reports an
+// error while it happens. The file is append only, so each process writes turns
+// that do not account for the other's, and the next resume replays the braid as
+// one confused thread.
+//
+// Claude Code guards its own BACKGROUNDED sessions and does not guard this
+// case: two foreground resumes of the same id both open, silently, which is how
+// this was found.
+func TestASecondRunnerCannotResumeALiveConversation(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+
+	if err := d.resumeIsFree("busy-conversation"); err != nil {
+		t.Fatalf("nothing is running it yet, so it should be free: %v", err)
+	}
+
+	if err := d.onSession(SessionEvent{
+		Agent: "first", Event: "start", Cwd: "d:/w", PID: 1,
+		Resume: "busy-conversation", Resumable: boolp(true),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := d.st.GetByWireName("first")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Still free: the card carries the id, but atrium owns no runner on it.
+	// Refusing here would block resuming a session that has ended, which is the
+	// case resume exists for.
+	if err := d.resumeIsFree("busy-conversation"); err != nil {
+		t.Fatalf("no runner owns it, so it should still be free: %v", err)
+	}
+
+	// Now atrium owns a terminal on that card.
+	d.sup.add(&runner{taskID: task.ID})
+	if err := d.resumeIsFree("busy-conversation"); err == nil {
+		t.Fatal("a second runner was allowed onto a conversation atrium is already running")
+	}
+	// An unrelated conversation is unaffected. The guard is about the session
+	// id, not about the directory or the card.
+	if err := d.resumeIsFree("some-other-conversation"); err != nil {
+		t.Fatalf("an unrelated conversation was blocked: %v", err)
+	}
+	// A fresh start is never blocked. Two runners in one directory with no
+	// shared conversation write to different transcripts, which is a real thing
+	// to want.
+	if err := d.resumeIsFree(""); err != nil {
+		t.Fatalf("a fresh start was blocked: %v", err)
+	}
+}

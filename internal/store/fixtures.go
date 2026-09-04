@@ -44,9 +44,21 @@ type Fixture struct {
 	// lands on the same one rather than making another.
 	TaskID    string `json:"task_id"`
 	CreatedAt string `json:"created_at"`
+	// LastError is why the last start failed, or empty when it worked.
+	//
+	// Fixtures start in the background, so before this a failure had nowhere
+	// to go but the daemon's log and the only symptom was a terminal that was
+	// not there. The row that failed carries its own reason, which is what
+	// makes the page listing them the page that answers why one is missing.
+	LastError string `json:"last_error,omitempty"`
+	// LastRunAt is when it was last asked to start, whether or not that
+	// worked. Without it an empty LastError cannot be told apart from a
+	// fixture that has never been tried.
+	LastRunAt string `json:"last_run_at,omitempty"`
 }
 
-const fixtureColumns = `id, label, harness, cwd, resume, enabled, sort, theme, task_id, created_at`
+const fixtureColumns = `id, label, harness, cwd, resume, enabled, sort, theme, task_id, created_at,
+	last_error, last_run_at`
 
 func scanFixture(sc interface{ Scan(...any) error }) (*Fixture, error) {
 	var (
@@ -54,7 +66,7 @@ func scanFixture(sc interface{ Scan(...any) error }) (*Fixture, error) {
 		resume, enabled int
 	)
 	if err := sc.Scan(&f.ID, &f.Label, &f.Harness, &f.Cwd, &resume, &enabled,
-		&f.Sort, &f.Theme, &f.TaskID, &f.CreatedAt); err != nil {
+		&f.Sort, &f.Theme, &f.TaskID, &f.CreatedAt, &f.LastError, &f.LastRunAt); err != nil {
 		return nil, err
 	}
 	f.Resume = resume != 0
@@ -107,19 +119,33 @@ func (s *Store) SaveFixture(f *Fixture) (*Fixture, error) {
 	}
 	err := s.guard(func() error {
 		_, err := s.db.Exec(`INSERT INTO fixture (`+fixtureColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, harness = excluded.harness, cwd = excluded.cwd,
 				resume = excluded.resume, enabled = excluded.enabled, sort = excluded.sort,
 				theme = excluded.theme`,
 			f.ID, f.Label, f.Harness, f.Cwd, resume, enabled, f.Sort, f.Theme,
-			f.TaskID, f.CreatedAt)
+			f.TaskID, f.CreatedAt, f.LastError, f.LastRunAt)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return f, nil
+}
+
+// NoteFixtureRun records how the last start went. Empty reason means it
+// worked, which is what clears a failure that has since been fixed.
+//
+// Deliberately NOT part of SaveFixture. Same split as NoteFixtureTask: this is
+// the daemon reporting what happened, and an edit made in the board while a
+// fixture was starting must not overwrite it with a stale copy of the row.
+func (s *Store) NoteFixtureRun(id, reason string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE fixture SET last_error = ?, last_run_at = ? WHERE id = ?`,
+			strings.TrimSpace(reason), ts(now()), id)
+		return err
+	})
 }
 
 // DeleteFixture forgets one. The card it last started is left alone: the
@@ -212,6 +238,31 @@ func (s *Store) SetTheme(id, theme string) error {
 func (s *Store) SetSound(id, sound string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET sound = ? WHERE id = ?`, strings.TrimSpace(sound), id)
+		return err
+	})
+}
+
+// IconMax is how much of an icon is kept.
+//
+// One glyph is the point, but a glyph is not one rune: a flag is two, and an
+// emoji with a skin tone or a zero width joiner sequence is several. Counted in
+// runes rather than bytes so the limit means the same thing whatever alphabet
+// it is written in, and generous enough that no ordinary emoji is cut in half,
+// which would leave a replacement box on every notification that card sent.
+const IconMax = 16
+
+// SetIcon records the mark a card wears on a desktop notification.
+//
+// Not checked against a list, for the same reason the tone is not: the board
+// owns what it can draw, and a fixed set here would be the database deciding
+// what a project may look like.
+func (s *Store) SetIcon(id, icon string) error {
+	return s.guard(func() error {
+		icon = strings.TrimSpace(icon)
+		if r := []rune(icon); len(r) > IconMax {
+			icon = string(r[:IconMax])
+		}
+		_, err := s.db.Exec(`UPDATE task SET icon = ? WHERE id = ?`, icon, id)
 		return err
 	})
 }

@@ -42,14 +42,14 @@ func newRoot() *cobra.Command {
 	}
 	root.AddCommand(newStatus(), newWatch(), newServe(), newHub(), newAgent(), newDaemon(),
 		newJoin(), newLeave(), newStop(), newLaunch(), newHook(), newSession(), newTurn(),
-		newName(), newFinish())
+		newName(), newFinish(), newPeers(), newTell())
 	return root
 }
 
 // ── daemon ──────────────────────────────────────────────────────────────────
 
 func newDaemon() *cobra.Command {
-	var agentAddr, humanAddr, dbPath, shutdownToken string
+	var agentAddr, humanAddr, dbPath, shutdownToken, locationFile string
 	var timeoutSec int
 	var withTUI bool
 	c := &cobra.Command{
@@ -65,6 +65,7 @@ func newDaemon() *cobra.Command {
 				DBPath:        dbPath,
 				LongPoll:      time.Duration(timeoutSec) * time.Second,
 				ShutdownToken: shutdownToken,
+				LocationFile:  locationFile,
 			}, withTUI)
 		},
 	}
@@ -75,6 +76,14 @@ func newDaemon() *cobra.Command {
 	c.Flags().BoolVar(&withTUI, "tui", false, "also attach the terminal UI in this process")
 	c.Flags().StringVar(&shutdownToken, "shutdown-token", "",
 		"require this token on POST /v1/shutdown (default: loopback only, no token accepted)")
+	// Every daemon writes where it is listening, and hooks read that file to
+	// find one. So a second daemon started to try something out TAKES the
+	// address from the one you actually use, and every hook in every live
+	// session starts arriving at the wrong place. Naming another file is how
+	// to run one without doing that.
+	c.Flags().StringVar(&locationFile, "location-file", "",
+		"where to record this daemon's address (default: the machine's one place for it). "+
+			"name another to run a second daemon without stealing the first one's hooks")
 	return c
 }
 

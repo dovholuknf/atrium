@@ -330,7 +330,13 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		switch task.Status {
 		case store.StatusShelved:
 		default:
-			if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
+			// Ready because it has not started, which is the opposite of the
+			// other way into this column. Without the reason the board told
+			// you a session had "finished its turn and wants your next
+			// instruction" seconds after you launched it, announcing work it
+			// had not begun.
+			if err := d.st.SetStatusBecause(task.ID, store.StatusNeedsInput,
+				store.WaitingStarted); err != nil {
 				return err
 			}
 		}

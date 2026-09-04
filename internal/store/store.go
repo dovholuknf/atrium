@@ -46,6 +46,15 @@ const (
 	StatusDead            = "dead"
 )
 
+// Why a card is waiting. Empty is the default and means a turn ended, so every
+// card written before this existed reads correctly without a backfill.
+const (
+	// WaitingStarted is a session that has only just come up. It is ready
+	// because it has not done anything yet, which is the opposite of the other
+	// way into this column and has to read that way.
+	WaitingStarted = "started"
+)
+
 // Event kinds.
 const (
 	EventCreated       = "created"
@@ -87,6 +96,15 @@ type Task struct {
 	CreatedAt      time.Time         `json:"created_at"`
 	LastActivityAt time.Time         `json:"last_activity_at"`
 	WaitingSince   *time.Time        `json:"waiting_since,omitempty"`
+	// WaitingReason is why this card is in a waiting column, which is a
+	// different question from how long it has been there.
+	//
+	// `needs-input` is reached two ways that mean opposite things: a session
+	// that has just started is ready because it has done nothing yet, and one
+	// that finished a turn is ready because it did what was asked. Empty means
+	// a turn ended, which is what every card written before this column
+	// existed was.
+	WaitingReason string `json:"waiting_reason,omitempty"`
 	WireName       string            `json:"wire_name"`
 	Overrides      map[string]string `json:"overrides"`
 	Rank           float64           `json:"rank"`
@@ -162,6 +180,14 @@ type Task struct {
 	// if the answer is the same tomorrow and in another browser. Empty means
 	// the board-wide default for whichever kind of alert fired.
 	Sound string `json:"sound"`
+	// Icon is the mark this card wears on a desktop notification, beside the
+	// theme and the tone for the same reason: a notification arrives with the
+	// operating system's chrome around it and one small image, and the same A
+	// on all of them says only that atrium sent it.
+	//
+	// Whatever renders in one glyph. A letter, a digit, an emoji. Empty means
+	// the atrium mark.
+	Icon string `json:"icon"`
 	// Recap is what the session said it did, in its own words, and RecapAt is
 	// when it said so.
 	//
@@ -175,6 +201,13 @@ type Task struct {
 	// the only party that knows what happened. Bounded on the way in.
 	Recap   string     `json:"recap,omitempty"`
 	RecapAt *time.Time `json:"recap_at,omitempty"`
+	// Note is what you want to say next, written down while the agent is still
+	// working and not sent until you say.
+	//
+	// Deliberately not the message queue, which fires as soon as there is
+	// anything in it. What this buys is ordering: three things thought of
+	// during a long turn, sent as one instruction at the end.
+	Note string `json:"note,omitempty"`
 	// ArchivedAt is when this card left the board, or nil while it is on it.
 	//
 	// Off the board, still on the record. A dead card is swept so the finished

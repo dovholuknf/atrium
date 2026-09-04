@@ -136,6 +136,51 @@ func runnerArgs(h *store.Harness, resume, rawPrompt string) (args []string, logg
 }
 
 // Launch starts a runner and returns the card it created.
+// resumeIsFree refuses to start a second runner on a conversation that one
+// atrium already owns.
+//
+// Two processes resuming the same session id both append to one transcript.
+// That file is append only, so nothing is shredded byte by byte; what happens
+// is worse to diagnose. Each process resumed with its own snapshot of the
+// history and writes turns that do not account for the other's, so the file
+// becomes two conversations braided together, and the next resume replays the
+// braid as one confused thread. Nothing reports an error at any point.
+//
+// Claude Code guards its own backgrounded sessions and does NOT guard this
+// case: two foreground resumes of the same id both open, silently. So the
+// guard has to be here.
+//
+// Only against runners atrium owns, which is the honest limit. A session
+// started in a terminal atrium never saw is not in `sup`, and pretending
+// otherwise would be a check that passes for the wrong reason.
+//
+// A fresh start is always allowed. Two runners in one directory with no shared
+// conversation is a real thing to want: they write to the same files, which is
+// the operator's business, and they write to different transcripts.
+func (d *Daemon) resumeIsFree(resume string) error {
+	resume = strings.TrimSpace(resume)
+	if resume == "" {
+		return nil
+	}
+	tasks, err := d.st.List()
+	if err != nil {
+		// The store is the thing that is broken, and it says so elsewhere. A
+		// launch is not the place to also report it.
+		return nil
+	}
+	for _, t := range tasks {
+		if t.ResumeID != resume || d.sup.get(t.ID) == nil {
+			continue
+		}
+		return fmt.Errorf(
+			"%s is already running this conversation. two runners on one session id "+
+				"braid its transcript into a thread neither of them wrote. attach to "+
+				"that one, or start a fresh session here instead",
+			t.DisplayTitle())
+	}
+	return nil
+}
+
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
@@ -143,6 +188,9 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 	if !h.Enabled {
 		return nil, fmt.Errorf("%s is not enabled. turn it on in harness settings first", h.Label)
+	}
+	if err := d.resumeIsFree(req.Resume); err != nil {
+		return nil, err
 	}
 
 	// The card exists before the process does, and its name is what the runner

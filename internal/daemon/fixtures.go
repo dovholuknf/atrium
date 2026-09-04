@@ -48,24 +48,63 @@ func (d *Daemon) startFixtures() {
 	}
 
 	log.Printf("[atrium] starting %d fixture(s)", len(wanted))
+	// One report for the batch, not one per fixture.
+	//
+	// Every fixture that comes up produces a card that is ready, and a ready
+	// card is something the board announces. Half a dozen terminals opening at
+	// boot was therefore half a dozen notifications for an event with no
+	// content: you configured them to start, and they started.
+	//
+	// The board suppresses those on its own, because a card that is ready
+	// BECAUSE IT JUST STARTED never rings whoever launched it. What the board
+	// cannot work out for itself is the other half, the fixtures that were
+	// supposed to produce a card and did not, since the absence of a card is
+	// not an event. So the batch says so once, here, with the count of each.
+	var failed []FixtureFault
+	started := 0
 	for i, f := range wanted {
 		if i > 0 {
 			time.Sleep(fixtureGap)
 		}
-		d.startFixture(f)
+		if err := d.startFixture(f); err != nil {
+			failed = append(failed, FixtureFault{Label: fixtureName(f), Reason: err.Error()})
+			continue
+		}
+		started++
 	}
+	d.ap.Broadcast("fixtures-started", map[string]any{
+		"started": started,
+		"failed":  failed,
+	})
+}
+
+// FixtureFault is one fixture that did not start, and why.
+type FixtureFault struct {
+	Label  string `json:"label"`
+	Reason string `json:"reason"`
+}
+
+// fixtureName is what to call one in a message. The label, or the directory
+// when it has none, which is the same fallback a card's title uses.
+func fixtureName(f *store.Fixture) string {
+	if f.Label != "" {
+		return f.Label
+	}
+	return f.Cwd
 }
 
 // startFixture brings up one, and remembers the card it landed on.
 //
-// A failure is logged and skipped rather than returned. One fixture pointing
-// at a directory that no longer exists must not stop the rest, and it must
-// certainly not stop the daemon.
-func (d *Daemon) startFixture(f *store.Fixture) {
-	name := f.Label
-	if name == "" {
-		name = f.Cwd
-	}
+// The error is returned AND recorded on the row, but the caller keeps going:
+// one fixture pointing at a directory that no longer exists must not stop the
+// rest, and it must certainly not stop the daemon. It is returned so the batch
+// can count, and recorded so the page listing fixtures is also the page that
+// answers why one is missing.
+//
+// A fixture that was already running is neither a start nor a failure. Nothing
+// was asked of it, so nothing is written about it.
+func (d *Daemon) startFixture(f *store.Fixture) error {
+	name := fixtureName(f)
 
 	// Onto the card it used last time, so the same conversation continues
 	// rather than a second card appearing beside it every morning.
@@ -89,7 +128,7 @@ func (d *Daemon) startFixture(f *store.Fixture) {
 	// one it is not attached to.
 	if onto != "" && d.sup.get(onto) != nil {
 		log.Printf("[atrium] fixture %q is already running, leaving it alone", name)
-		return
+		return nil
 	}
 
 	req := LaunchRequest{
@@ -105,9 +144,17 @@ func (d *Daemon) startFixture(f *store.Fixture) {
 	task, err := d.Launch(req)
 	if err != nil {
 		log.Printf("[atrium] fixture %q did not start: %v", name, err)
-		return
+		if noteErr := d.st.NoteFixtureRun(f.ID, err.Error()); noteErr != nil {
+			log.Printf("[atrium] could not record the failure for fixture %q: %v", name, noteErr)
+		}
+		return err
 	}
 	log.Printf("[atrium] fixture %q started as %s", name, task.ID)
+	// Cleared on success, so a fixture that has been fixed stops reporting the
+	// thing that used to be wrong with it.
+	if err := d.st.NoteFixtureRun(f.ID, ""); err != nil {
+		log.Printf("[atrium] could not record the start of fixture %q: %v", name, err)
+	}
 
 	if task.ID != f.TaskID {
 		if err := d.st.NoteFixtureTask(f.ID, task.ID); err != nil {
@@ -124,17 +171,21 @@ func (d *Daemon) startFixture(f *store.Fixture) {
 			log.Printf("[atrium] could not theme fixture %q: %v", name, err)
 		}
 	}
+	return nil
 }
 
 // StartFixtureNow brings one up on demand, so a definition can be tried
 // without restarting the daemon to find out whether it works.
+//
+// The failure is returned here rather than swallowed. This is one fixture
+// somebody just pressed start on, so there is a person waiting to hear, which
+// is the opposite of the boot case.
 func (d *Daemon) StartFixtureNow(id string) error {
 	f, err := d.st.GetFixture(id)
 	if err != nil {
 		return err
 	}
-	d.startFixture(f)
-	return nil
+	return d.startFixture(f)
 }
 
 // resumeIDFor is the conversation to pick back up, when there is one.

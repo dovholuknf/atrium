@@ -1,6 +1,10 @@
 package store
 
-import "time"
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
 // A message is something the operator wants to say to a running session.
 //
@@ -27,20 +31,51 @@ type Message struct {
 	// Via records how it reached the session: "permission" or "stop". Worth
 	// knowing, because one of those costs the agent a refused tool call.
 	Via string `json:"via,omitempty"`
+	// FromPeer is the wire name of the session that sent this, or empty when
+	// the operator did.
+	//
+	// It exists so the banner can say who. A model that reads a peer's request
+	// as an instruction from the human acts on it with an authority the peer
+	// does not have, and the only thing standing between those two readings is
+	// what the envelope says.
+	FromPeer string `json:"from_peer,omitempty"`
 }
 
+// FromHuman reports whether the operator wrote this, as opposed to another
+// session.
+func (m *Message) FromHuman() bool { return m.FromPeer == "" }
+
 // QueueMessage stores something to say to a session the next time it is
-// reachable.
+// reachable. From the operator.
 func (s *Store) QueueMessage(taskID, text string) (*Message, error) {
-	m := &Message{ID: newID(), TaskID: taskID, Text: text, CreatedAt: now()}
+	return s.queueMessage(taskID, text, "")
+}
+
+// QueueFromPeer stores something one session said to another.
+//
+// Separate from QueueMessage so that a caller has to decide which it is. A
+// single function with an optional sender is one defaulted argument away from
+// a peer message that claims to be from you.
+func (s *Store) QueueFromPeer(taskID, text, fromPeer string) (*Message, error) {
+	if strings.TrimSpace(fromPeer) == "" {
+		return nil, errors.New("a peer message has to say which session sent it")
+	}
+	return s.queueMessage(taskID, text, fromPeer)
+}
+
+func (s *Store) queueMessage(taskID, text, fromPeer string) (*Message, error) {
+	m := &Message{
+		ID: newID(), TaskID: taskID, Text: text,
+		CreatedAt: now(), FromPeer: fromPeer,
+	}
 	err := s.guard(func() error {
 		if _, err := s.db.Exec(
-			`INSERT INTO message (id, task_id, text, created_at) VALUES (?,?,?,?)`,
-			m.ID, m.TaskID, m.Text, ts(m.CreatedAt)); err != nil {
+			`INSERT INTO message (id, task_id, text, created_at, from_peer) VALUES (?,?,?,?,?)`,
+			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer); err != nil {
 			return err
 		}
 		return s.appendEvent(taskID, EventPrompted, map[string]any{
-			"queued": true, "text": text,
+			"queued": true, "text": text, "from_peer": fromPeer,
 		})
 	})
 	if err != nil {
@@ -55,7 +90,7 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 	err := s.guard(func() error {
 		out = nil
 		rows, err := s.db.Query(
-			`SELECT id, task_id, text, created_at FROM message
+			`SELECT id, task_id, text, created_at, from_peer FROM message
 			 WHERE task_id = ? AND delivered_at IS NULL ORDER BY created_at ASC`, taskID)
 		if err != nil {
 			return err
@@ -66,7 +101,7 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 				m       Message
 				created string
 			)
-			if err := rows.Scan(&m.ID, &m.TaskID, &m.Text, &created); err != nil {
+			if err := rows.Scan(&m.ID, &m.TaskID, &m.Text, &created, &m.FromPeer); err != nil {
 				return err
 			}
 			if m.CreatedAt, err = parseTS(created); err != nil {
