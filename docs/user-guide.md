@@ -267,6 +267,72 @@ Example use: an agent assigned to "be the watchman" can sit on `wait_for_change`
 when something needs input elsewhere. The hub is your interactive surface; Mode B is the observational
 substrate.
 
+## Pattern 7: starting work from an issue or a ticket
+
+Atrium does not learn what a Zendesk ticket is. Whatever already knows makes the worktree and hands it over.
+
+The cheapest version is one line at the end of a script you already have:
+
+```powershell
+atrium launch --cwd $wtPath --title "zendesk-$id" --tags "zendesk,support,zendesk-$id" `
+  --source zendesk --external $id --item-url "https://$zendeskHost/agent/tickets/$id" `
+  --prompt "read this ticket, summarize it, and tell me which repository it is about"
+```
+
+The card arrives supervised, gated, tagged, and carrying a link back to the ticket.
+
+The version that does not need you at a prompt is a **source**: a command atrium runs on a timer whose stdout is
+a list of work items. Add one under **runners**. `scripts/sources/` has two working examples and a README.
+
+Atrium holds an argv and an interval and never holds a credential. `gh` already has a token in the keyring it
+uses; atrium has the path to a script that calls `gh`.
+
+Items land in the **inbox**, which is a column that only appears when there is something in it. Pressing
+**start** opens the launch dialog with everything the source knew already filled in, and starts the session onto
+that same card so the work keeps its link to what it came from.
+
+**Read the engineering versus support split in `docs/intake-design.md` before writing a source for a support
+queue.** A support case names a customer rather than a repo, so it can be offered and not prepared, and it
+carries somebody else's words, which is a reason to put the identifier on the card and not the subject line.
+
+## Pattern 8: telling atrium the work is finished
+
+Everything an agent reports lands in ready, so the board cannot tell "go and look at the result" from "answer
+me". One command fixes that, from inside a session:
+
+```powershell
+atrium finish "bumped the vcpkg dep, ran the tests, opened a pull request"
+```
+
+The card moves to **done** and keeps that sentence. `--hand-back` puts it in **ready** instead, which is the
+different and honest claim: handing the work over without saying it is over.
+
+A command rather than a tool, so it works for codex and for a bare shell and not only for the runner that
+happens to have a tool surface.
+
+**Nothing tells a session this exists.** The way to make it happen is the seeded card action **write it up and
+finish**, which sends exactly that instruction. Press it on any card.
+
+## Pattern 9: things you say often, as buttons
+
+Under **runners**, `actions` are named prompts offered on every card. Three are there to begin with. Limit one
+to a tag or a runner when it only makes sense there.
+
+`afterwards: ask the runner to quit` sends the prompt and then the harness's own exit keys, which is the "write
+it up and go away" case and the reason this is not a saved snippet. It is best effort: a session atrium does not
+own gets told to wrap up and has to be closed where it runs.
+
+## Pattern 10: getting a file to a session you are not sitting at
+
+Over an overlay this has no workaround at all, because the clipboard is on the machine with the browser.
+
+Attach to a terminal and paste, or drag a file onto the pane. The bytes land in `.atrium/incoming` under the
+card's working directory and the path is spliced into the terminal **without enter being pressed**, so you can
+type a sentence around it and send it yourself.
+
+Files only ever go into or out of one card's own directory. There is no way to ask atrium for a path that is not
+below a card.
+
 ## Limits / what this won't do
 
 - **No persistence.** Stopping the hub loses the conversation log. We may add per-agent JSONL transcripts in

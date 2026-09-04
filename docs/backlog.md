@@ -7,8 +7,13 @@ Kept here rather than in a conversation, because a list that lives in a chat die
 ## Where things stand
 
 The daemon is what gets used. It has durable state, a permission gate with standing rules, a web board, pseudo
-terminals it owns and can attach to from the browser, live activity per card, auto mode with a review, launching
-with a directory picker, a message channel into a running session, and a wind-down that is not a kill.
+terminals it owns and can attach to from the browser, live activity per card, auto mode with a review and a
+deadline, launching with a directory picker, a message channel into a running session, and a wind-down that is
+not a kill.
+
+Since the last time this paragraph was written it has also grown an inbox that sources fill on a timer, a way
+for an agent to say it finished and what it did, actions written by the operator, a history of everything ever
+run, and file transfer into a session including paste.
 
 `atrium hub` and `atrium serve` are untouched and still work.
 
@@ -617,8 +622,10 @@ and already gated, which is what joining was for.
   paying.
 - **Postgres portability is asserted, not tested.** The schema is written for it. Nothing runs the migrations
   against it. A CI job would settle it.
-- **`docs/test-plan.md` predates v2.** It covers the hub and the agent loop, not the daemon, the board, rules,
-  launching, supervision or the permission diff.
+- **`docs/test-plan.md` is no longer only v1.** Sections A to F still cover the hub and the agent loop, and
+  section G now covers the daemon: cards, activity, auto mode, folder rules, stopping, the inbox, sources,
+  finishing, actions, file transfer and the history view. What is still missing is the permission diff and the
+  overlays, neither of which has a scenario.
 - **Repo metadata is unset.** `gh repo edit` returns 403 with the current token, so the description and topics on
   the GitHub page are still empty. Needs `gh auth refresh -s repo` or setting them in the web UI.
 - **A share widens what loopback means.** A tunneler terminates on this machine, so while a share is up every
