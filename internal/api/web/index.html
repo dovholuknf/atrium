@@ -835,6 +835,19 @@
     color: var(--dim); text-decoration: none; font-family: var(--mono);
   }
   a.chip.origin:hover { color: var(--teal); border-color: var(--teal); }
+  /* What the session said it did. Quietly positive: a written-up card is the
+     good outcome and does not need shouting about. */
+  .chip.recap {
+    background: hsl(160 50% 40% / .16); border: 1px solid hsl(160 45% 45% / .4);
+    color: hsl(160 45% 72%); cursor: help;
+  }
+  /* And its absence, which is a fact rather than a fault. Dim enough to read
+     as a gap and not as a warning: a card can perfectly well be done with
+     nothing to say about it. */
+  .chip.norecap {
+    background: transparent; border: 1px dashed var(--line);
+    color: var(--dimmest); cursor: help;
+  }
   /* Tags already in use, offered so the second card spells one the same way
      as the first. */
   /* Messages said and not yet arrived. Dimmed, because the interesting state
@@ -2492,6 +2505,14 @@ Three failures in a row switches one off, with the reason still on the row. scri
       <label class="eyebrow" for="d-why">why am I doing this</label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
     </div>
+    <!-- What the session said it did, in its own words. Shown only when there
+         is one: an empty box on every card would read as a form to fill in,
+         and this is not something the operator writes. -->
+    <div class="field" id="d-recap-field" hidden>
+      <label class="eyebrow" for="d-recap">what it says it did</label>
+      <textarea id="d-recap" rows="4" spellcheck="false"></textarea>
+      <span class="hintline" id="d-recap-when"></span>
+    </div>
     <!-- What you call this, as opposed to what atrium worked out from the
          path. Free text: a fixed list would be atrium deciding what kinds of
          work exist. -->
@@ -2923,6 +2944,7 @@ function cardHTML(t) {
       <div class="chips">
       ${tagChips(t)}
       ${originChip(t)}
+      ${recapChip(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
@@ -4060,6 +4082,7 @@ function stackRow(t) {
     <div class="chips">
       ${tagChips(t)}
       ${originChip(t)}
+      ${recapChip(t)}
       ${activityChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
@@ -4126,6 +4149,31 @@ function tagChips(t) {
        title="show only ${esc(tag)}"
        onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"
        >${esc(tag)}</span>`).join("");
+}
+
+// What the session said it did, as a chip on a finished card.
+//
+// Only on finished cards, because that is where the question comes up. A card
+// in `done` with a recap has been written up. One without is either still
+// worth writing up or was never worth starting, and those are different enough
+// that the board should not make them look the same.
+//
+// The whole recap is in the tooltip rather than on the card. It is two or
+// three sentences, which is too much for a chip and exactly right for a hover.
+function recapChip(t) {
+  if (t.status !== "done" && t.status !== "dead") return "";
+  if (!t.recap) {
+    // Not on a dead card. A session that was killed did not decline to write
+    // itself up, it never got the chance, and marking that as a gap would put
+    // a reproach on every card that crashed.
+    if (t.status !== "done") return "";
+    return `<span class="chip norecap"
+      title="this finished without saying what it did. only a human moving the card produces that,
+             or a session that ended before it could say. nothing is wrong, there is just no account
+             of it."
+      >no recap</span>`;
+  }
+  return `<span class="chip recap" title="${esc(t.recap)}">recap</span>`;
 }
 
 // Where this work came from, when it came from somewhere.
@@ -6808,6 +6856,15 @@ async function openTask(id) {
       : ""
   ].join("");
   document.getElementById("d-why").value = current.why || "";
+  // The session's own account, when there is one. Editable, because deciding
+  // an account was wrong is the operator's call, and read-only text somebody
+  // disagrees with is worse than no text.
+  const recapField = document.getElementById("d-recap-field");
+  recapField.hidden = !current.recap;
+  document.getElementById("d-recap").value = current.recap || "";
+  document.getElementById("d-recap-when").textContent = current.recap_at
+    ? "said so " + firstSeen(current.recap_at) + ". edit it if it is wrong, or clear it."
+    : "";
   document.getElementById("d-tags").value = (current.tags || []).join(", ");
   paintKnownTags();
 
@@ -7169,6 +7226,7 @@ async function killTask() {
 
 // Saving the note on blur keeps it out of the way: type it, click off, it is kept.
 document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
+document.getElementById("d-recap").addEventListener("change", e => patch({ recap: e.target.value }));
 
 // Picked and heard in one place. Choosing a bell you cannot hear until the
 // next time that agent wants you is choosing blind, and by then it is too late

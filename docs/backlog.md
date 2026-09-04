@@ -412,16 +412,26 @@ until the query is known to have covered the range.
   is on the switch. Nothing enforces it: the deadline is read when the chain runs, because a timer that has to
   fire is a timer that does not fire across a restart. `docs/auto-mode.md`.
 
-### An agent cannot say it finished
+### An agent can say it finished now. Mostly.
 
-Everything an agent reports lands in `needs-input`, so the board cannot tell "finished, go look at the result"
-from "stuck, answer me". Only a human moving a card by hand produces `done`.
+`atrium finish [recap]` moves the card to `done` and records what the session says it did. `--hand-back` puts it
+in `ready` instead, which is a different claim and worth being able to make.
 
-The v2 design named `submit(kind="task-complete")` for this and it was never built. Whatever carries it, the
-board needs the two states to arrive from the agent rather than being sorted out afterwards, because sorting them
-out afterwards means reading each one.
+**A command rather than a tool, and that was the decision.** The v2 design named `submit(kind="task-complete")`
+for this. A command is better here than anywhere else in atrium, because a command is the one channel every
+runner already has: an agent that can run `ls` can run this, with no MCP server, no tool description and no
+cooperation from the harness. It works for codex and for a bare shell, not only for the runner with a tool
+surface.
 
-This is the largest remaining hole in the thing atrium exists to do.
+What is left, and it is the part that decides whether this gets used:
+
+- **Nothing tells an agent to call it.** It exists and is documented and no session knows. The honest options
+  are a line in the operator's `CLAUDE.md`, a skill, or a card action that sends "write yourself up and finish"
+  as a prompt. The third is the best of the three because it needs no cooperation from the session at all, and
+  it is the strongest argument for building card actions.
+- **A recap has nowhere else to live.** The `/recap` skill writes markdown into a history root outside atrium,
+  and this writes two or three sentences onto a card. Those are different artifacts with the same name, and
+  whether one should feed the other is not decided. See "Everything that has ever run here".
 
 ### Hooks for runners that are not Claude Code
 

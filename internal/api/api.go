@@ -384,6 +384,11 @@ type patchBody struct {
 	// something that has never read the ticket, and deleting it is a
 	// reasonable edit.
 	Prompt *string `json:"prompt"`
+	// Recap is what the session said it did. Editable, because deciding an
+	// account was wrong is the operator's call and read-only text somebody
+	// disagrees with is worse than no text. A pointer, so clearing it is a
+	// decision rather than an omission.
+	Recap *string `json:"recap"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -488,6 +493,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Prompt != nil {
 		if err := s.st.SetPrompt(id, *body.Prompt); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Recap != nil {
+		if err := s.st.SetRecap(id, *body.Recap); err != nil {
 			s.fail(w, err)
 			return
 		}

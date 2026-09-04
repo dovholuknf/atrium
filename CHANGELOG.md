@@ -5,6 +5,31 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **An agent can say it finished.** The largest hole in what atrium does, and it was a hole in the shape of a
+  missing verb. Everything an agent reported landed in `needs-input`, so the board could not tell "finished, go
+  and look at the result" from "stuck, answer me", and only a human moving a card by hand ever produced `done`.
+
+  `atrium finish [recap]` moves the card and records what the session says it did. `--hand-back` puts it in
+  `ready` instead, which is a different claim: handing the work over without saying it is over.
+
+  **A command rather than a tool, and that is the decision worth reading.** The v2 design named
+  `submit(kind="task-complete")` for this. A command is better, because it is the one channel every runner
+  already has: an agent that can run `ls` can run this, with no MCP server, no tool description and no
+  cooperation from the harness. It works for codex and for a bare shell, not only for the runner that happens to
+  have a tool surface.
+
+  A recap is two or three sentences and it is bounded at two thousand characters, because a column with no limit
+  is how a card ends up holding a diff. Too long is truncated rather than refused: a session that wrote too much
+  still wrote something worth keeping, and failing the call would make an agent retry with something longer.
+
+  The card carries whether there is one, which is the useful cut. A finished card with a recap has been written
+  up; one without is either still worth writing up or was never worth starting. A dead card is not marked as
+  missing one, because a session that was killed did not decline to write itself up.
+
+  What is NOT built: anything that tells an agent to call it. It exists, it is documented, and no session knows.
+  The best answer is a card action that sends "write yourself up and finish" as a prompt, because that needs no
+  cooperation from the session at all.
+
 - **Pruning on a timer, and the two timers put next to each other.** Sweeping finished columns was a button, so
   cards accumulated between presses, and archived rows accumulated forever because nothing had ever removed one.
 
