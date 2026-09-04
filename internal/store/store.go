@@ -326,6 +326,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("seed harnesses: %w", err)
 	}
+	if err := s.SeedCardActions(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("seed card actions: %w", err)
+	}
 	return s, nil
 }
 

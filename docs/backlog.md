@@ -102,30 +102,26 @@ What is not decided:
 - **How far back.** Nothing prunes archived rows today, so this grows forever. That is fine for a long time and
   not forever, and the answer should be a deliberate age rather than the first number that seems large.
 
-### Actions on a card, written by you
+### Actions on a card, written by you. Done.
 
-A card can be terminated, shelved, attached to and messaged. All of those are things atrium does. None of them
-is a thing the OPERATOR does repeatedly, which is send the same instruction to whichever agent is in front of
-them: run the tests, write it up, commit what you have.
+A named prompt, offered on every card, delivered through the message queue, with `and exit` sending the
+harness's own exit keys afterwards. Three are seeded, including **write it up and finish**, which is what makes
+`atrium finish` reachable without a session having to be told it exists.
 
-The shape: a named action holding a prompt, offered on every card, with a choice about what happens after it.
-`and keep running` leaves the session up for whatever comes next. `and exit` sends the prompt and then the
-harness's own exit keys, which is the "write it up and go away" case and the reason this is not just a saved
-snippet.
+The three open questions have answers now:
 
-The delivery path already exists and is the message queue: typed into the terminal when atrium owns one, queued
-for the next hook when it does not. What is new is storing the actions and putting them on the card.
+- **Stored daemon side**, so they are the same on every board. That makes them the first operator-authored
+  content atrium keeps and hands back, and the answer to what that costs is that an action is TEXT delivered to
+  a runner while a grouping expression is CODE evaluated in a browser. Different risk entirely.
+- **Scoped by tag or by runner**, both, because they answer different questions. Both empty offers it
+  everywhere, which is the common case.
+- **`and exit` is best effort and says so.** A session atrium does not own gets the prompt and a note saying
+  nothing can make it quit. Terminating instead would be a different promise and remains the wrong one.
 
-Open questions worth answering before building it:
-
-- **Where they are stored.** Daemon-side, so they are the same on every board, which is the right answer for
-  something that is about the work rather than about the screen. That makes them the first operator-authored
-  content atrium stores and hands back, and the grouping-expression entry above is about what that costs.
-- **Whether an action can be scoped.** "Run the tests" means something different in a Go repo and a docs repo.
-  A tag or a runner condition is the obvious cut, and offering every action on every card is the obvious start.
-- **What `and exit` does when the exit keys do not work.** `exit_keys` is per harness and best effort, and a
-  runner that ignores them leaves a session that was told to wrap up and did not. Terminating instead would be
-  a different promise and probably the wrong one.
+What is left, and it is the weak part: **there is no signal that a runner has accepted a line.** The exit keys
+go into the same terminal as the prompt, so they are sent after a fixed pause, and a runner that is slow to
+submit could in principle receive a quit before its instruction. A shorter pause risks that; a longer one makes
+the button feel broken. The real fix would be a runner that acknowledges input, which none of them do.
 
 ### The settings dialog is one long scroll and needs a spine
 
