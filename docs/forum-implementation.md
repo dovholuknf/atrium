@@ -198,7 +198,7 @@ Two numbers, both configurable and both with a stated default. `minSpare` defaul
 stream, one attach socket and two concurrent short requests without a redial on the critical path. `maxConns`
 defaults to 32, which is the cap that turns a runaway into a log line instead of a file descriptor exhaustion.
 
-One behaviour to expect and not be surprised by: the forum's `http.Transport` keeps connections alive and reuses
+One behavior to expect and not be surprised by: the forum's `http.Transport` keeps connections alive and reuses
 them, so a connection that carried one request returns to the transport's idle set rather than to the leaf's spare
 set. The steady state per leaf is therefore roughly `minSpare` plus the transport's idle count plus one per open
 stream. That number is worth exposing, and stage 1 exposes it, because "is the pool sized right" is a question with
@@ -359,7 +359,7 @@ type Link struct {
 }
 
 // Run dials, keeps dialling, and serves Handler on whatever it gets. It
-// returns only when ctx is cancelled.
+// returns only when ctx is canceled.
 func (l *Link) Run(ctx context.Context)
 
 // State is what the board shows for a link. Deliberately the same shape as
@@ -538,7 +538,7 @@ func newPeerProxy(p *peer, onErr func(*peer, http.ResponseWriter, error)) *httpu
 ```
 
 `httputil.ReverseProxy` handles the `101 Switching Protocols` case by hijacking and copying both directions, so the
-attach socket needs no separate code path here. That claim is from the stdlib's documented behaviour and was not
+attach socket needs no separate code path here. That claim is from the stdlib's documented behavior and was not
 exercised against a running leaf. Stage 5 is where it is proven.
 
 ```go
@@ -588,7 +588,7 @@ misleading when the cause is a link. Two branches, two messages, one saying whic
   **because of the link**, with `zrok` and `ziti` both stopped. Confirm from the message text, which must name the
   forum rather than a share.
 - `POST localhost:7778/v1/shutdown` from the leaf's own terminal, with a link open and no token, is also refused.
-  This is the behaviour change and it will surprise somebody, so it belongs in `CHANGELOG.md` in this stage.
+  This is the behavior change and it will surprise somebody, so it belongs in `CHANGELOG.md` in this stage.
 - A Go test in `internal/forum` that stands a real `api.Server` behind a `Link` over a loopback listener and asserts
   a forwarded `GET /v1/health` matches a direct one. This is cheap and it is the regression net for every later
   stage.
@@ -905,7 +905,7 @@ and which was verified by reading agora rather than by running it (`federation-d
 and that is true today because the tunneler owns the key file. The agora SDK path opens the identity in-process.
 That sentence stops being true and has to be rewritten, not quietly outgrown.
 
-## Failure behaviour, checked against the guarantees
+## Failure behavior, checked against the guarantees
 
 The guarantees are in `CLAUDE.md`. Each is checked rather than asserted.
 
@@ -925,7 +925,7 @@ the stage to refuse.
 **`/activity` is fire and forget.** Unaffected for the same reason.
 
 **Shutdown is narrated and bounded.** `d.shutdown` (`daemon.go:567-636`) releases event streams first, closes
-overlays, gives supervised runners ten seconds, then closes both listeners. The link goroutine has to be cancelled
+overlays, gives supervised runners ten seconds, then closes both listeners. The link goroutine has to be canceled
 in that sequence, and it belongs beside `d.closeOverlays()` at line 578 and for the same reason: an address that
 outlives the board it points at answers with a connection refused. Closing the link makes the leaf drop off the
 forum within `peerGrace` rather than sitting there as a peer that times out on every request.
@@ -989,7 +989,7 @@ place, and the cheapest way not to repeat that is not to write one.
 **An atrium that never joins a forum is unaffected, and the mechanism is that the code does not run.** `Options.Forum`
 defaults to empty, `d.link` is nil, the link goroutine never starts, `linked()` returns false at its first line, and
 `sharing()` behaves exactly as it does today. There is no branch on any hot path: not in `onPermRequest`, not in
-`handleActivity`, not in `Register`, not in the reaper. The one behaviour that changes for an atrium that **does**
+`handleActivity`, not in `Register`, not in the reaper. The one behavior that changes for an atrium that **does**
 open a link is the shutdown endpoint, and that change is the point.
 
 **Forward compatibility across versions.** `Hello.Proto` is `1`. A forum that reads a proto it does not know refuses
@@ -1000,7 +1000,7 @@ with a reason naming both versions, which is a one-line log on both sides rather
 `http.Handler`. A copied file would drift, and the drift would appear as a feature that works locally and not
 through the forum, which is the worst shape a bug can have.
 
-**One doc obligation per stage, not one at the end.** `CHANGELOG.md` gets an entry for the shutdown behaviour change
+**One doc obligation per stage, not one at the end.** `CHANGELOG.md` gets an entry for the shutdown behavior change
 in stage 2 specifically, because it is the only stage that changes what an existing single-machine atrium does.
 `docs/backlog.md` gets the attach latency number from stage 5. `CLAUDE.md`'s subcommand table gets a line for
 `atrium forum` in stage 1, next to `atrium hub`, saying they have nothing to do with each other.
@@ -1039,7 +1039,7 @@ appears, which is what a working board also looks like. Every alerting key becom
 Two things this plan could not verify by reading and that are the first things to check when building.
 
 `httputil.ReverseProxy` carrying a `101 Switching Protocols` upgrade over a `Transport` whose `DialContext` returns
-a pooled connection is documented stdlib behaviour and was not exercised. Stage 5 is the proof, and if it fails the
+a pooled connection is documented stdlib behavior and was not exercised. Stage 5 is the proof, and if it fails the
 fallback is a hand-written hijack-and-copy in `internal/forum/proxy.go`, which is maybe forty lines and does not
 change any interface here.
 

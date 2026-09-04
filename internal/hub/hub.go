@@ -382,7 +382,7 @@ type PermissionRequest struct {
 	// content for a write. The command line alone names the target without
 	// saying what happens to it, which is not enough to decide on.
 	Details string `json:"details,omitempty"`
-	// DedupKey identifies one attempt, so a retried request is recognised as
+	// DedupKey identifies one attempt, so a retried request is recognized as
 	// the same question rather than asked again.
 	//
 	// The hook fails open when atrium is unreachable, and it also retries. A
@@ -405,7 +405,7 @@ type PermissionRequest struct {
 	//
 	// When present it becomes the key and the replay window does not apply,
 	// because there is nothing to guard against. A hook that sends only a hash
-	// keeps the old behaviour.
+	// keeps the old behavior.
 	ToolUseID string `json:"tool_use_id,omitempty"`
 }
 
@@ -596,7 +596,7 @@ func (h *Hub) PendingPermissions() []PendingPermission {
 	return out
 }
 
-// Serve runs the HTTP server until ctx is cancelled.
+// Serve runs the HTTP server until ctx is canceled.
 func (h *Hub) Serve(ctx context.Context, addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/submit", h.HandleSubmit)

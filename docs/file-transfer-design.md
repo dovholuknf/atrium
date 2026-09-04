@@ -23,7 +23,7 @@ dir := filepath.Clean(raw)
 ```
 
 `filepath.Clean` resolves `..` lexically, but there is nothing to resolve it against. There is no root, no
-allow list, no containment, and no symlink resolution. `?path=C:/Users` is honoured. `?path=/etc` is honoured.
+allow list, no containment, and no symlink resolution. `?path=C:/Users` is honored. `?path=/etc` is honored.
 Every directory the daemon's own user can read is listable, and the handler consults no card and takes no task
 id, so it has no notion of which session is asking or what that session's directory is.
 

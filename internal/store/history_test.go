@@ -181,7 +181,7 @@ func TestEverRunPages(t *testing.T) {
 	}
 }
 
-// An absurd limit is bounded rather than honoured. A view is not a way to ask
+// An absurd limit is bounded rather than honored. A view is not a way to ask
 // for the whole table.
 func TestAnAbsurdLimitIsBounded(t *testing.T) {
 	s := open(t)

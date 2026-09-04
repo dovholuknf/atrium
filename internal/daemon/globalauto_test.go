@@ -62,7 +62,7 @@ func TestGlobalAutoIsRecordedUnderItsOwnName(t *testing.T) {
 }
 
 // A session with its own auto mode on keeps saying so, rather than being
-// relabelled by the global switch being on at the same time.
+// relabeled by the global switch being on at the same time.
 func TestPerSessionAutoKeepsItsOwnMarker(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()

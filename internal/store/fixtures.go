@@ -33,7 +33,7 @@ type Fixture struct {
 	// means start fresh every time, which is what a plain shell wants.
 	Resume bool `json:"resume"`
 	// Enabled is whether this one starts. Off keeps the definition without
-	// the behaviour, so a fixture can be parked without being retyped.
+	// the behavior, so a fixture can be parked without being retyped.
 	Enabled bool `json:"enabled"`
 	// Sort is the order they start and the order they appear in. Lower first.
 	Sort float64 `json:"sort"`
@@ -144,6 +144,23 @@ func (s *Store) NoteFixtureRun(id, reason string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE fixture SET last_error = ?, last_run_at = ? WHERE id = ?`,
 			strings.TrimSpace(reason), ts(now()), id)
+		return err
+	})
+}
+
+// NoteAsked records that this session has put a question to the operator.
+//
+// Written straight to the column rather than through SetStatus, because the
+// card is still RUNNING when this happens: the model calls the asking tool
+// mid-turn, and the wait it causes arrives afterwards from a different hook
+// that knows nothing about it. SetStatus carries the mark forward from here.
+//
+// Cleared by the same rule everything else in that column follows: leaving a
+// waiting state empties it, so a question that has been answered stops being
+// reported the moment the session gets back to work.
+func (s *Store) NoteAsked(id string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET waiting_reason = ? WHERE id = ?`, WaitingAsked, id)
 		return err
 	})
 }

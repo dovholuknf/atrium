@@ -20,7 +20,7 @@ func TestOnlyNotificationsThatWantAHumanAreReported(t *testing.T) {
 		// the card telling itself something it already knows.
 		"permission_prompt",
 		"agent_completed", "tool_use", "background_task", "auto_compact",
-		// An unrecognised kind stays silent, so a new notification type in a
+		// An unrecognized kind stays silent, so a new notification type in a
 		// future release does not turn into noise on upgrade.
 		"something_invented_next_year", "",
 	} {

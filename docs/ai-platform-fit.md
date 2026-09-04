@@ -144,7 +144,7 @@ sessions." mcp-gateway has no application-layer caller identity at all. Its `Cli
 `{RemoteAddr, UserAgent, Headers}` (`gateway/session.go:22-27`), it authenticates nobody, and over zrok or Agora
 the remote address is an overlay address rather than a user. Its per-call audit lines carry a `session_id` and no
 principal (`gateway/session.go:372-379`). So every gated call would arrive at atrium as the same anonymous caller
-and the board would show one card labelled `mcp-gateway`, holding requests from every agent at once, with shelving
+and the board would show one card labeled `mcp-gateway`, holding requests from every agent at once, with shelving
 and messaging and auto mode all meaningless because they are per-card and there is one card.
 
 A second argument, weaker but real: mcp-gateway's identity story is deliberately delegated to the network. Its

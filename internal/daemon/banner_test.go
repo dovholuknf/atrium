@@ -50,7 +50,7 @@ func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
 	if !strings.Contains(got, "some from the human") {
 		t.Fatalf("a mixed batch claimed one author: %q", got)
 	}
-	// And each is labelled, or "some of these are from a peer" is unusable.
+	// And each is labeled, or "some of these are from a peer" is unusable.
 	if !strings.Contains(got, "From sg4/other:") {
 		t.Fatalf("a mixed batch does not say which is which: %q", got)
 	}

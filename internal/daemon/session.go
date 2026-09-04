@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -302,7 +304,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 		// A card put down by hand stays where it was put.
 		if task.Status != store.StatusShelved && task.Status != store.StatusDone {
-			if err := d.st.SetStatus(task.ID, store.StatusDead); err != nil {
+			if err := d.st.SetStatus(task.ID, endedAs(task)); err != nil {
 				return err
 			}
 		}
@@ -343,4 +345,35 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	}
 	d.publishTask(task.ID)
 	return nil
+}
+
+// endedAs is where a card goes when its session is over.
+//
+// The difference between `done` and `dead` is whether there is anything left to
+// come back to, and the directory is the evidence:
+//
+//   - The worktree is still on disk: DONE. The conversation can be resumed, the
+//     files are there, and this is a session that finished rather than one that
+//     vanished. `done` is never swept, so the card waits.
+//   - The worktree is gone: DEAD. The process is gone AND the place is gone,
+//     which is the only case where there is provably nothing to return to.
+//     `dead` is archived on a timer, and that is right for exactly this.
+//
+// It used to be `dead` for both, so a session exited on purpose left the board
+// a minute later still carrying a resume id nobody could reach.
+//
+// A card with no worktree at all is `dead`: there is no directory to judge and
+// nothing to resume into.
+func endedAs(task *store.Task) string {
+	dir := strings.TrimSpace(task.Worktree)
+	if dir == "" {
+		return store.StatusDead
+	}
+	// A stat, and nothing cleverer. The question is "is this still a place",
+	// and a directory that cannot be read is not one.
+	fi, err := os.Stat(filepath.FromSlash(dir))
+	if err != nil || !fi.IsDir() {
+		return store.StatusDead
+	}
+	return store.StatusDone
 }

@@ -60,7 +60,7 @@ func TestInspectReportsEveryHookMissingOnAFreshMachine(t *testing.T) {
 		if h.Installed {
 			t.Fatalf("%s reported installed with no settings file", h.Hook)
 		}
-		// The command has to be one this binary would recognise as reporting
+		// The command has to be one this binary would recognize as reporting
 		// that event, which is not the same as containing its name: the
 		// session subcommand spells its own argument differently.
 		if !reportsEvent(h.Want, h.Event) {
@@ -214,7 +214,7 @@ func TestInstallWritesNothingWhenAlreadyCorrect(t *testing.T) {
 
 // Session events ride a different subcommand with a different argument, and
 // the round trip has to survive that: what Install writes is what Inspect
-// recognises.
+// recognizes.
 func TestSessionHooksRoundTrip(t *testing.T) {
 	withHome(t, "")
 
@@ -243,7 +243,7 @@ func TestSessionHooksRoundTrip(t *testing.T) {
 }
 
 // The script the session subcommand replaces reports the same events, so it
-// has to be recognised and replaced rather than left alongside.
+// has to be recognized and replaced rather than left alongside.
 func TestSessionHookReplacesTheOldScript(t *testing.T) {
 	path := withHome(t, `{
   "hooks": {

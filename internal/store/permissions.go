@@ -47,7 +47,7 @@ func ExactKey(toolUseID string) string { return ExactKeyPrefix + toolUseID }
 func exactKey(k string) bool { return strings.HasPrefix(k, ExactKeyPrefix) }
 
 // DecidedByMessage marks a block that exists to carry a message rather than to
-// judge the command. Named here because the store has to recognise it: it is
+// judge the command. Named here because the store has to recognize it: it is
 // the one decision that must never be replayed.
 const DecidedByMessage = "message"
 

@@ -384,7 +384,7 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 	// plain file silently detaches the repo: every later edit on either side
 	// goes somewhere the other cannot see, and the divergence is only noticed
 	// much later. Resolved explicitly rather than relying on the write
-	// following the link, since that is platform behaviour and this is a
+	// following the link, since that is platform behavior and this is a
 	// promise.
 	target := path
 	if real, err := filepath.EvalSymlinks(path); err == nil {

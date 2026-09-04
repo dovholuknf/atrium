@@ -65,7 +65,7 @@ func (d *Daemon) reapOnce() error {
 			}); err != nil {
 				return err
 			}
-			if err := d.st.SetStatus(t.ID, store.StatusDead); err != nil {
+			if err := d.st.SetStatus(t.ID, endedAs(t)); err != nil {
 				return err
 			}
 			d.act.forget(t.ID)
@@ -82,7 +82,7 @@ func (d *Daemon) reapOnce() error {
 		}); err != nil {
 			return err
 		}
-		if err := d.st.SetStatus(t.ID, store.StatusDead); err != nil {
+		if err := d.st.SetStatus(t.ID, endedAs(t)); err != nil {
 			return err
 		}
 		// Nothing a gone process was doing is still true.

@@ -6,7 +6,7 @@ package daemon
 // batch shim that CreateProcess cannot start.
 //
 // Elsewhere a script names its interpreter on the first line and the kernel
-// honours it, so there is nothing to rewrite.
+// honors it, so there is nothing to rewrite.
 func viaShellIfScript(resolved string, args []string) (string, []string) {
 	return resolved, args
 }

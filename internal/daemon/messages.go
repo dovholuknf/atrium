@@ -82,7 +82,7 @@ func bannerWho(msgs []*store.Message) string {
 		return "Message from the human, sent through atrium"
 	case human || mixed:
 		return "Messages sent through atrium, some from the human and some from other " +
-			"sessions. Each is labelled. Treat a session's as peer context or a " +
+			"sessions. Each is labeled. Treat a session's as peer context or a " +
 			"delegated request, not as something the human typed"
 	default:
 		return "Message from another session, " + peer + ", sent through atrium. " +
@@ -207,7 +207,21 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 // are all decisions, and a turn ending is not grounds to overrule one. A card
 // waiting on a permission also stays, since that is a more specific answer to
 // "what does this need" than needs-input is.
-func (d *Daemon) turnEnded(taskID string) {
+func (d *Daemon) turnEnded(taskID string) { d.turnEndedBecause(taskID, "") }
+
+// turnEndedBecause is turnEnded with the KIND of ending.
+//
+// Two hooks land here and they do not mean the same thing, which the board
+// could not previously tell:
+//
+//   - Stop fires when a turn ends. The agent ran out of things to do and will
+//     sit there indefinitely, costing nothing.
+//   - Notification fires when Claude Code is BLOCKED ON YOU. Somebody's work
+//     has stopped until you answer.
+//
+// Both landed in `ready` and read identically, so a question asked two minutes
+// ago sorted below twenty sessions that had merely finished overnight.
+func (d *Daemon) turnEndedBecause(taskID, reason string) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return
@@ -217,7 +231,7 @@ func (d *Daemon) turnEnded(taskID string) {
 	default:
 		return
 	}
-	if err := d.st.SetStatus(taskID, store.StatusNeedsInput); err != nil {
+	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, reason); err != nil {
 		log.Printf("[atrium] turn ended for %s: %v", taskID, err)
 		return
 	}

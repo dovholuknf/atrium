@@ -53,6 +53,17 @@ const (
 	// because it has not done anything yet, which is the opposite of the other
 	// way into this column and has to read that way.
 	WaitingStarted = "started"
+	// WaitingAsked is a session that put a QUESTION to you, rather than one
+	// that ran out of things to do.
+	//
+	// Knowable because asking is a tool call, so the permission hook sees it
+	// by name before the turn ends. Nothing in the Stop hook could have told
+	// these apart: "the turn ended" is all it says.
+	//
+	// The difference is worth a column's worth of attention. A card that asked
+	// has a person on the other end of it who cannot proceed; a card that
+	// merely finished does not.
+	WaitingAsked = "asked"
 )
 
 // Event kinds.
@@ -172,7 +183,7 @@ type Task struct {
 	Pinned bool `json:"pinned"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
-	// which is the point of colouring terminals: telling them apart at a
+	// which is the point of coloring terminals: telling them apart at a
 	// glance, permanently. Empty means the board picks from the project name.
 	Theme string `json:"theme"`
 	// Sound names the tone this card rings with. Held on the card for the same

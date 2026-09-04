@@ -121,7 +121,7 @@ Two gaps in that surface, both small.
 One fact that shapes everything below: **the daemon makes no outbound HTTP calls.** Grepping `http.Client` across
 `internal/` finds the CLI, the Mode A agent, and tests. The overlay code starts child processes and reads what
 they printed. Atrium has never once dialled out to a third party, and every proposal that has it do so is
-proposing a new class of behaviour, not an extension of an existing one.
+proposing a new class of behavior, not an extension of an existing one.
 
 ## Layer 0: finish the hand-off that already exists
 

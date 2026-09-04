@@ -70,7 +70,7 @@ aggregator unless it polls, and the aggregator would then be storing "peer B is 
 the same category of lie as storing activity.
 
 Client federation gets the correct answer for free. `/v1/health` is per daemon, so the banner is per column, and
-a peer that cannot be reached at all is a fetch that failed rather than a state that has to be modelled.
+a peer that cannot be reached at all is a fetch that failed rather than a state that has to be modeled.
 
 ### The permission chain runs where the request is blocked
 
@@ -316,7 +316,7 @@ authenticates whom": the overlay does, before a packet reaches the daemon.
 The operator's machine runs a tunneler or `zrok access private`, which presents each remote board as a local
 address. So the browser sees several ordinary HTTP endpoints and each daemon still sees a connection from its own
 loopback. There is no atrium to atrium trust relationship anywhere in this design, because no daemon ever talks to
-another daemon. This is exactly why (a) can honour "no auth invented here" and (b) cannot.
+another daemon. This is exactly why (a) can honor "no auth invented here" and (b) cannot.
 
 Three rules follow, and they are not optional.
 
@@ -327,7 +327,7 @@ is ever a candidate for a service, and a ziti service definition or a zrok backe
 misconfiguration worth writing down where someone will read it.
 
 **Configure a shutdown token whenever a share is running.** See the `atrium stop` section above. A token replaces
-the loopback rule, which is the intended behaviour and the only one that survives a tunneler.
+the loopback rule, which is the intended behavior and the only one that survives a tunneler.
 
 **A private zrok share is the floor.** A public share hands the board to whoever has the link, and the board can
 approve any command an agent asks to run. The code already defaults to private and already asks before going
@@ -368,7 +368,7 @@ Each stage ships on its own and leaves the single machine case exactly as it is.
 
 Store a list of `{name, base_url}` in the board's own settings, and route every fetch in the page through a
 helper that prefixes the selected peer's base rather than emitting a relative path. Selecting the local daemon is
-the empty prefix, which is today's behaviour.
+the empty prefix, which is today's behavior.
 
 *How you know it works.* With one peer configured pointing at `http://localhost:7778`, the board behaves
 identically to now, including attach and SSE. Nothing on the daemon changed.
@@ -429,7 +429,7 @@ If cross origin proves painful, add `atrium front`: serve the board, hold the pe
 including SSE and the attach socket, store nothing. Because stage 1 made the base URL configurable, this is a
 change to the peer list and nothing else.
 
-*How you know it works.* Same board, same behaviour, one origin, and stopping the front door leaves every peer
+*How you know it works.* Same board, same behavior, one origin, and stopping the front door leaves every peer
 running and reachable directly.
 
 ## Open risks

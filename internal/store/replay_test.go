@@ -143,7 +143,7 @@ func TestDedupKeyIsScopedToOneCard(t *testing.T) {
 	}
 }
 
-// No key means treat every request as new, which is the behaviour for any
+// No key means treat every request as new, which is the behavior for any
 // caller that does not send one.
 func TestNoKeyNeverReplays(t *testing.T) {
 	s := open(t)

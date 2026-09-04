@@ -136,7 +136,7 @@ ordering is either activity, waiting time, status, name, project or runner, and 
 the card rather than a judgement of how much it matters.
 
 **`pinned` is the closest thing and it is not this.** Pinned keeps a card at the top of every list and in the
-terminal switcher, which is the right behaviour for a permanent fixture like the dotfiles session. It is a
+terminal switcher, which is the right behavior for a permanent fixture like the dotfiles session. It is a
 boolean, so five pinned cards are five equals, and it says "always show me this" rather than "this one matters
 more than that one".
 
@@ -753,7 +753,7 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   back on. The ones that throw something away have no such tick.
 - Grouping cards by project, on rules the operator writes: a function that names a card's group and one that
   orders the groups, both plain JavaScript in the browser, both defaulted so it works with nothing configured.
-  A colour per group, hashed from its name, overridable. On the board and on the stack, off one setting, with an
+  A color per group, hashed from its name, overridable. On the board and on the stack, off one setting, with an
   on/off control on both screens rather than only in the gear.
 - The stack as the first tab: every card as one ordered list, sorted by activity, waiting, status, name, project
   or runner, with one axis per pill.

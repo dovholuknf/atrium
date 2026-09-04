@@ -415,8 +415,8 @@ var migrations = []struct {
 	},
 	{
 		// What a terminal looks like. Held on the card so a session keeps its
-		// colours across a restart, which is the whole reason the operator
-		// colours terminals in the first place: telling them apart at a
+		// colors across a restart, which is the whole reason the operator
+		// colors terminals in the first place: telling them apart at a
 		// glance, permanently.
 		name: "0021_task_theme",
 		stmts: []string{

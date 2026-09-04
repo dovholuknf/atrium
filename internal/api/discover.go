@@ -113,7 +113,7 @@ func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 // discoverRunners reports runners this machine has that are not set up yet.
 //
 // Only ones actually on PATH, and only ones without a row already, so the
-// answer is a short list of things you could turn on rather than a catalogue.
+// answer is a short list of things you could turn on rather than a catalog.
 func (s *Server) discoverRunners(w http.ResponseWriter, r *http.Request) {
 	hs, err := s.st.Harnesses()
 	if err != nil {
