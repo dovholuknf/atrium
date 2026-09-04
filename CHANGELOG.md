@@ -5,6 +5,31 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium control`: an MCP server that can restart the daemon from inside a session the daemon is running.**
+
+  The chicken and egg. A supervised runner cannot restart the daemon, because the daemon owns that runner's
+  pseudo terminal and closing it takes the runner with it. Whatever does the restart has to outlive both, so it
+  is neither of them: a stdio MCP server, usable as a subprocess of a claude session, as an mcp-gateway backend,
+  or both, with two tools.
+
+  **`restart_atrium` schedules, it never restarts immediately, and that is the load-bearing decision.** A tool
+  call that kills its own caller never returns: the session is resumed later holding a tool call with no result,
+  a state nothing has tested and the model cannot reason about. So it spawns a detached process, answers
+  `scheduled`, and the turn ends normally before the floor goes away.
+
+  The database is captured while the daemon is still up, because `atrium stop` deletes the address file on its
+  way out. Reading it afterwards would find nothing and the new daemon would take its database from whatever
+  environment the detached process inherited, which is the exact confusion `--db` exists to end. The restarter
+  then waits for the port to actually close rather than sleeping a guessed amount, since the wind-down gives
+  supervised runners ten seconds and starting inside that produces a second daemon that cannot bind.
+
+  **A side effect worth more than the feature:** the daemon it starts is detached, with no console and no parent
+  lifetime, so it survives the session that asked for the restart. One restart is enough to stop the daemon
+  dying with whatever terminal happened to start it.
+
+  `atrium_status` answers without a daemon too, which is the case worth being able to see: `running:false` plus
+  where the last one was, rather than an error.
+
 - **The board can tell a session that ASKED you something from one that merely finished.** Both landed in
   `ready` and read identically, so a question put to you two minutes ago sorted below twenty sessions that had
   run out of things to do overnight.

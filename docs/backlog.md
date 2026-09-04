@@ -639,6 +639,105 @@ URL today), PR review requests, advisories and backports, a TODO scan, unanswere
 (a trap: a page on an hourly board is a missed page), calendar and email (worst, because neither yields a
 worktree), and `gwt sessions audit` pointed at the board, which needs no external system and is an afternoon.
 
+### Picking a terminal theme is the worst control on the board
+
+Fifty two themes, chosen through a text box with a datalist. Two things are wrong with it and the second is the
+interesting one.
+
+**The list collapses to the current value.** A datalist filters on what is in the field, and the field opens
+pre-filled with the theme already set, so the only suggestion offered is the one already in use. Picking a
+different theme means first deleting the text, which nothing tells you. The datalist was chosen because fifty
+two is a long list to scroll and a short list to type into, and that reasoning holds for the typing case and
+breaks completely for the browsing case, which is the actual one: nobody knows the name of the theme they want.
+
+**Choosing a colour scheme from names cannot work.** `tarnished`, `cocoa`, `blood-moon` and `deep-fern` are all
+plausible and none of them tells you what the terminal will look like. The theme is a set of sixteen ANSI
+colours plus a background, and the only useful preview is a real session rendered in it.
+
+So the ask, in the shape it was asked in: **try it on the terminal you are looking at.** A picker on the
+terminal bar that applies each theme as you move through it, arrow keys included, against the scrollback that is
+already there. Escape puts back what was set, enter keeps it. No dialog, no swatch grid, no round trip: the
+preview is the session.
+
+What makes this cheap: `TERM_THEMES` is already a table in the page, `term.options.theme` takes a new value at
+any time and repaints immediately, and the card only needs writing when you commit. What needs deciding is where
+the control lives now that the cog holds the settings, and whether moving through themes should write anything
+at all before enter, which it should not: an arrow key is not a decision.
+
+### Hand one agent to one person, over a share
+
+Lend a single session to somebody else. Start a codex or a claude here, share only THAT terminal over zrok, and
+give the link to one person. They drive it in their browser, it runs on your machine, under your account, on a
+directory you chose.
+
+**This is the best answer atrium has to a question it kept refusing.** Multi tenancy is a product; this is an
+afternoon, and it covers most of what people actually want from one. Nobody gets an account, nothing holds an
+identity, and the blast radius is exactly one card.
+
+What already exists, which is why this is small:
+
+- The terminal is already a page addressed by card: `#term=<id>`, and it already hides everything that is not
+  that terminal. A share pointed at the board with a card in the fragment is most of the feature.
+- zrok private shares already work end to end and are already driven by the daemon. `docs/overlays.md`.
+- The permission gate already answers per card, and a shelved card is already a standing no. Handing somebody a
+  session that cannot run anything you have not allowed is a rule that exists.
+
+What has to be decided, and none of it is hard:
+
+- **The share must reach ONE card, not the board.** A fragment is client side and reaches the whole board, so
+  this needs a share whose scope the daemon enforces: a per-card token in the path, checked server side, that
+  answers 403 for every other card and for the JSON API.
+- **What that person may do.** Type into the terminal, certainly. Everything else is a question: can they
+  approve their own permission requests, upload a file, read the directory, see other cards' names in a switcher
+  that should not be there at all.
+- **How it ends.** A share released, a card shelved, or a token revoked. Probably all three, and the card should
+  say plainly while it is lent out, because a terminal somebody else is typing into is not a state to discover.
+
+The line from `CLAUDE.md` still holds and this does not cross it: atrium starts the share and reports what it
+said. It does not hold an identity, proxy traffic, or decide who may connect. The token is authorization for one
+card on one share, not an account.
+
+## Far back, and a different product
+
+### Multi-tenant atrium: one deployment, a slice each
+
+**Not now, and deliberately at the bottom.** Atrium is one person's tool and every decision in it says so. This
+is written down because it is the one idea here that would be a PRODUCT rather than a feature, and because it
+contradicts a line in "Out of scope" below, which currently reads that multi tenancy will not happen. That line
+was right for the tool and is not a judgment about the market.
+
+The shape: atrium as a service in a cluster, each developer with their own slice, the board reached over the
+network instead of over loopback.
+
+What that costs, honestly, because none of it is small and most of it is load-bearing today:
+
+- **Authentication, which every design note refuses.** `CLAUDE.md` says single machine, loopback, and that
+  reaching it from elsewhere is an overlay's job. That holds for one person. Many people on one deployment
+  means identity, and identity means the thing atrium currently gets to not have.
+- **The supervisor is the hard part, not the storage.** The schema is already written to be Postgres portable
+  and nothing has ever run it there, which is a day of work. Pseudo terminals are the opposite: the daemon owns
+  a pty per runner in the operator's own logon session, which is why the autostart script is a scheduled task
+  and not a service. A cluster has no logon session. Runners would have to move into containers with the
+  terminal proxied, which is a different program.
+- **A runner holds credentials.** Today that is fine: it is your machine and your Claude subscription. Ten
+  developers on one deployment means ten sets of credentials somebody is now responsible for, which is a
+  security posture rather than a config file.
+- **The blast radius of the permission gate changes meaning.** Auto mode approving everything is a decision one
+  person makes about their own machine. The same switch on a shared deployment approves things on behalf of
+  people who did not press it.
+
+What is already pointing the right way, and should stay that way whether or not this ever happens:
+
+- **Federation** (`docs/federation-design-v2.md`) is one board over many machines, which is the same shape
+  turned inside out and is the cheaper half of this.
+- **`atrium name`** prefixes wire names so two machines cannot claim each other's cards. That is the first
+  tenancy boundary and it exists.
+- **Overlays** already reach a board from elsewhere without atrium holding an identity.
+
+If this is ever picked up, it is a fork or a second product, not a flag. Bolting tenancy onto a tool whose whole
+design is "one person, one machine, no auth" would cost the tool its clarity and produce a worse version of
+both.
+
 ## Parked
 
 Real, understood, and not wanted yet.
@@ -715,7 +814,9 @@ and already gated, which is what joining was for.
 ## Out of scope
 
 - Authentication. Single machine, loopback. Reaching it from elsewhere is a job for an overlay such as OpenZiti.
-- Multi tenancy, accounts, a deployment story. This is one person's tool.
+- Multi tenancy, accounts, a deployment story. This is one person's tool. Out of scope FOR THIS TOOL, which is
+  not the same as a bad idea: see "Multi-tenant atrium" above for what it would cost and why it would be a
+  separate product rather than a flag.
 - Adopting sessions from a worktree ledger. Tried and removed. It filled the board with sessions atrium could
   watch but never talk to. See the abandoned section in `docs/architecture-v2.md`.
 - Replacing the runner. claude-code owns the tool loop, context and credentials. Atrium supervises, it does not
