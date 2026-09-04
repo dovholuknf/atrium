@@ -1928,6 +1928,24 @@ Three failures in a row switches one off, with the reason still on the row. scri
     </div>
     <div id="source-list"></div>
 
+    <!-- Things you say to an agent often enough to have got tired of typing.
+         Here because this page is where the things atrium runs live, and
+         because the alternative was a fourth tab. -->
+    <div class="col-head" style="margin:26px 0 10px">
+      <span>actions</span>
+      <span class="help" tabindex="0" data-tip="A named prompt, offered on every card, sent the same way as anything else you say.
+
+Atrium can terminate, shelve, attach and message. None of those is the thing you actually do repeatedly, which is send the same instruction to whichever agent is in front of you.
+
+'and exit' sends the prompt and then asks the runner to quit the way its harness says to. That is the 'write it up and go away' case and the reason this is not just a saved snippet.
+
+Limit one to a tag or a runner when it only makes sense there: run the tests means something different in a go repo and a docs repo.">?</span>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editAction(null)">add an action</button>
+    </div>
+    <div id="action-list"></div>
+
   </div>
 </main>
 
@@ -2209,6 +2227,55 @@ Three failures in a row switches one off, with the reason still on the row. scri
      dialogs need no guard, since both write on change. -->
 <!-- One terminal that comes up with the daemon. Guarded like the runner form:
      it keeps edits only on save. -->
+<dialog id="action" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="a-heading">action</h2></div>
+    <button onclick="document.getElementById('action').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="a-label">what goes on the button</label>
+      <input type="text" id="a-label" spellcheck="false" placeholder="run the tests">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="a-prompt">what it says</label>
+      <textarea id="a-prompt" rows="5" spellcheck="false"
+        placeholder="Run the test suite and tell me what failed, if anything."></textarea>
+      <span class="hintline">Sent as text, exactly as typed. Write it as an instruction to the
+        agent, not as a note to yourself.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="a-after">afterwards</label>
+      <div class="picker">
+        <select id="a-after">
+          <option value="keep">keep the session running</option>
+          <option value="exit">ask the runner to quit</option>
+        </select>
+      </div>
+      <span class="hintline">Quitting sends the harness's own exit keys a moment after the prompt.
+        Best effort: a runner that ignores them stays up, having been told to wrap up.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="a-tag">only on cards tagged</label>
+      <input type="text" id="a-tag" spellcheck="false" placeholder="any (leave empty)">
+      <span class="hintline">One tag. Empty offers it on every card.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="a-runner">only for runner</label>
+      <div class="picker"><select id="a-runner"></select></div>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="a-enabled"> offer it</label>
+    </div>
+  </div>
+  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+    <button class="go" onclick="saveAction()">save</button>
+    <button class="no" id="a-delete" onclick="deleteAction()">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('action').close()">cancel</button>
+  </div>
+</dialog>
+
 <dialog id="source" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="s-heading">source</h2></div>
@@ -2545,6 +2612,16 @@ Three failures in a row switches one off, with the reason still on the row. scri
       <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
         that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
         back turned, so it wins over telling the two kinds apart.</span>
+    </div>
+    <!-- The things you say often enough to have got tired of typing. Above
+         the box rather than below it, because the whole point is not opening
+         the box. -->
+    <div class="field" id="d-actions-field" hidden>
+      <label class="eyebrow">do this</label>
+      <div class="toolbar" id="d-actions"></div>
+      <span class="hintline">Your own, edited in the runners tab. Each one is a prompt sent the
+        same way as anything else you say, and the ones marked <b>and exit</b> ask the runner to
+        quit afterwards.</span>
     </div>
     <!-- Saying something to a session that is already running. There is no
          channel into a claude process from outside, so this goes one of two
@@ -6585,6 +6662,84 @@ document.getElementById("s-group-order").addEventListener("change", e => {
   setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value });
 });
 
+// ── actions on a card ───────────────────────────────────
+//
+// The things you say to an agent often enough to have got tired of typing.
+// Stored by the daemon so they are the same on every board, which is right for
+// something about the work rather than about the screen.
+
+let allActions = [];
+
+async function loadActions() {
+  try { allActions = (await api("/v1/actions")).actions || []; } catch (e) { allActions = []; }
+  return allActions;
+}
+
+// Which actions belong on one card. The same two conditions the daemon
+// applies, because the board offering one the daemon would refuse is worse
+// than offering none.
+function actionsFor(t) {
+  if (!t) return [];
+  const tags = (t.tags || []).map(x => String(x).toLowerCase());
+  return allActions.filter(a => {
+    if (!a.enabled) return false;
+    if (a.runner && String(a.runner).toLowerCase() !== String(t.runner || "").toLowerCase()) return false;
+    if (a.tag && !tags.includes(String(a.tag).toLowerCase())) return false;
+    return true;
+  });
+}
+
+async function paintCardActions() {
+  const field = document.getElementById("d-actions-field");
+  const host = document.getElementById("d-actions");
+  if (!field || !host || !current) return;
+  if (!allActions.length) await loadActions();
+
+  const mine = actionsFor(current);
+  field.hidden = !mine.length;
+  if (!mine.length) return;
+
+  setHTML(host, mine.map(a =>
+    `<button data-action="${esc(a.id)}" title="${esc(a.prompt)}"
+      >${esc(a.label)}${a.after === "exit"
+        ? ` <span class="by">and exit</span>` : ""}</button>`).join(""));
+  // Wired rather than inlined, because a label with an apostrophe in it breaks
+  // an onclick attribute and HTML escaping does nothing about that.
+  host.querySelectorAll("button[data-action]").forEach(b => {
+    b.onclick = () => runCardAction(b.dataset.action);
+  });
+}
+
+async function runCardAction(id) {
+  if (!current) return;
+  const action = allActions.find(a => a.id === id);
+  if (!action) return;
+  // Confirmed only when it ends the session. Sending a prompt is undoable by
+  // sending another one; quitting is not.
+  if (action.after === "exit" && !await confirmUser(action.label + ", then quit?",
+    "The prompt is sent, then the runner is asked to exit the way its harness says to." +
+    "<br><br>If it is still working, it finishes what it is doing first. If atrium does not " +
+    "own its terminal it will be told to wrap up and will need closing where it runs.",
+    "send it")) return;
+
+  let res;
+  try {
+    res = await api(`/v1/tasks/${current.id}/action`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: id })
+    });
+  } catch (e) { tellUser("that did not go", e.message); return; }
+
+  // Which of the two routes it took, said out loud, because they are different
+  // promises: typed means it has already landed, queued means it has not and
+  // will not until the session makes its next tool call or ends its turn.
+  const how = res.delivered === "terminal"
+    ? "typed into its terminal."
+    : "queued. it arrives on the session's next tool call or at the end of its turn.";
+  toast(action.label, how + (res.note ? " " + res.note : ""));
+  refresh();
+}
+
 // The two housekeeping timers.
 //
 // Daemon side, not browser side, because they are about what happens to the
@@ -6859,6 +7014,7 @@ async function openTask(id) {
   // The session's own account, when there is one. Editable, because deciding
   // an account was wrong is the operator's call, and read-only text somebody
   // disagrees with is worse than no text.
+  paintCardActions();
   const recapField = document.getElementById("d-recap-field");
   recapField.hidden = !current.recap;
   document.getElementById("d-recap").value = current.recap || "";
@@ -8057,8 +8213,100 @@ async function renderRunners() {
   renderDiscovered();
   renderFixtures();
   renderSources();
+  renderActions();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
+}
+
+// ── the actions editor ──────────────────────────────────
+
+async function renderActions() {
+  const host = document.getElementById("action-list");
+  if (!host) return;
+  await loadActions();
+
+  if (!allActions.length) {
+    setHTML(host, `<div class="panel"><div class="empty">
+      no actions. one is a named prompt you can send to any card without typing it again.
+    </div></div>`);
+    return;
+  }
+
+  setHTML(host, `<div class="panel">` + allActions.map(a => `
+    <div class="row line">
+      <span class="chip ${a.enabled ? "accent" : ""}">${a.enabled ? "on" : "off"}</span>
+      <span class="tool">${esc(a.label)}</span>
+      <code class="grow ell" title="${esc(a.prompt)}">${esc(a.prompt)}</code>
+      ${a.after === "exit" ? `<span class="by" title="asks the runner to quit afterwards"
+        >and exit</span>` : ""}
+      ${a.tag ? `<span class="chip tag" style="--ghue:${groupHue(a.tag)}">${esc(a.tag)}</span>` : ""}
+      ${a.runner ? `<span class="by">${esc(a.runner)}</span>` : ""}
+      <button data-edit="${esc(a.id)}">edit</button>
+    </div>`).join("") + `</div>`);
+  host.querySelectorAll("button[data-edit]").forEach(b => {
+    b.onclick = () => editAction(b.dataset.edit);
+  });
+}
+
+function editAction(id) {
+  const a = allActions.find(x => x.id === id) || {
+    id: "", label: "", prompt: "", after: "keep", tag: "", runner: "",
+    enabled: true, sort: allActions.length * 10
+  };
+  const dlg = document.getElementById("action");
+  dlg.dataset.editing = a.id;
+  document.getElementById("a-heading").textContent = a.id ? "action" : "new action";
+
+  document.getElementById("a-label").value = a.label || "";
+  document.getElementById("a-prompt").value = a.prompt || "";
+  document.getElementById("a-after").value = a.after || "keep";
+  document.getElementById("a-tag").value = a.tag || "";
+  document.getElementById("a-enabled").checked = !!a.enabled;
+  document.getElementById("a-delete").hidden = !a.id;
+
+  // Every runner, not only the enabled ones: an action can outlive a runner
+  // being switched off and should still say which one it was for.
+  document.getElementById("a-runner").innerHTML =
+    `<option value="">any runner</option>` + (allHarnesses || []).map(h =>
+      `<option value="${esc(h.id)}"${h.id === a.runner ? " selected" : ""}
+        >${esc(h.label)}</option>`).join("");
+
+  dlg.showModal();
+}
+
+async function saveAction() {
+  const dlg = document.getElementById("action");
+  const id = dlg.dataset.editing || "new";
+  const body = {
+    id: dlg.dataset.editing || "",
+    label: document.getElementById("a-label").value.trim(),
+    prompt: document.getElementById("a-prompt").value.trim(),
+    after: document.getElementById("a-after").value,
+    tag: document.getElementById("a-tag").value.trim(),
+    runner: document.getElementById("a-runner").value,
+    enabled: document.getElementById("a-enabled").checked
+  };
+  try {
+    await api("/v1/actions/" + encodeURIComponent(id), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) { tellUser("could not save it", e.message); return; }
+  dlg.close();
+  renderActions();
+}
+
+async function deleteAction() {
+  const id = document.getElementById("action").dataset.editing;
+  if (!id) return;
+  if (!await confirmUser("delete this action?",
+    "It stops being offered on any card. Nothing that has already been sent is affected.",
+    "delete it")) return;
+  try {
+    await api("/v1/actions/" + encodeURIComponent(id), { method: "DELETE" });
+  } catch (e) { tellUser("could not delete it", e.message); return; }
+  document.getElementById("action").close();
+  renderActions();
 }
 
 // ── sources ─────────────────────────────────────────────

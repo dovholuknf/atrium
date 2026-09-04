@@ -5,6 +5,29 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Actions on a card, written by you.** A card could be terminated, shelved, attached to and messaged, and all
+  of those are things ATRIUM does. None of them was the thing a person does repeatedly, which is send the same
+  instruction to whichever agent is in front of them.
+
+  A named prompt, offered on every card, optionally limited to a tag or a runner because "run the tests" means
+  something different in a Go repo and a docs repo. Delivery is the existing message queue: typed into the
+  terminal when atrium owns one, queued for the next hook when it does not, and the toast says which, because
+  they are different promises.
+
+  `and exit` is why this is not a saved snippet. It sends the prompt and then the harness's own exit keys, which
+  is the "write it up and go away" case. It is best effort and says so: there is a pause between the two so the
+  keys do not land before the prompt has been submitted, and a session atrium does not own gets told to wrap up
+  with a note explaining that nothing can make it quit.
+
+  Three are seeded, because a feature whose value is "you write your own" starts as an empty list nobody fills
+  in. Deleting all three does not bring them back. One of them is **write it up and finish**, and it is the
+  answer to the gap the previous entry leaves open: nothing tells a session that `atrium finish` exists, and this
+  needs no cooperation from the session at all.
+
+  This is the first operator-authored content atrium stores and hands back, which `docs/backlog.md` flags as a
+  cost under the grouping-expression entry. The answer is that the two are different in kind: a grouping
+  expression is CODE evaluated in a browser with full page scope, and an action is TEXT delivered to a runner.
+
 - **An agent can say it finished.** The largest hole in what atrium does, and it was a hole in the shape of a
   missing verb. Everything an agent reported landed in `needs-input`, so the board could not tell "finished, go
   and look at the result" from "stuck, answer me", and only a human moving a card by hand ever produced `done`.

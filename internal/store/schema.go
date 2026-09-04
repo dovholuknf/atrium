@@ -653,6 +653,43 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN recap_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// Things you say to an agent often enough to have got tired of typing.
+		//
+		// A card can be terminated, shelved, attached to and messaged, and all
+		// of those are things ATRIUM does. None of them is the thing the
+		// operator does repeatedly, which is send the same instruction to
+		// whichever agent is in front of them: run the tests, write it up,
+		// commit what you have.
+		//
+		// `after` is why this is not a saved snippet. `keep` leaves the
+		// session up for whatever comes next; `exit` sends the prompt and then
+		// the harness's own exit keys, which is the "write it up and go away"
+		// case and the reason this needed building at all.
+		//
+		// Stored daemon side, which makes it the first operator-authored
+		// content atrium keeps and hands back. The grouping-expression entry
+		// in docs/backlog.md is about what that costs, and the answer here is
+		// that these are different in kind: a grouping expression is CODE
+		// evaluated in a browser with full page scope, and an action is TEXT
+		// delivered to a runner. Storing the second one centrally does not
+		// create the stored-XSS shape the first one would.
+		name: "0030_card_action",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_action (
+				id         TEXT PRIMARY KEY,
+				label      TEXT NOT NULL,
+				prompt     TEXT NOT NULL,
+				after      TEXT NOT NULL DEFAULT 'keep'
+				             CHECK (after IN ('keep','exit')),
+				tag        TEXT NOT NULL DEFAULT '',
+				runner     TEXT NOT NULL DEFAULT '',
+				enabled    INTEGER NOT NULL DEFAULT 1,
+				sort       INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -38,6 +38,10 @@ type Server struct {
 	Launch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
+	// RunAction says a stored action's prompt to a card, and optionally asks
+	// the runner to leave afterwards. Owned by the daemon, which owns the
+	// terminals and the message queue.
+	RunAction http.HandlerFunc
 	// RunSource runs one intake source now rather than on its interval, and
 	// reports how many new items it produced. Owned by the daemon, which owns
 	// process spawning.
@@ -207,6 +211,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
+	}
+	mux.HandleFunc("GET /v1/actions", s.listActions)
+	mux.HandleFunc("PUT /v1/actions/{id}", s.saveAction)
+	mux.HandleFunc("DELETE /v1/actions/{id}", s.deleteAction)
+	if s.RunAction != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/action", s.RunAction)
 	}
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
