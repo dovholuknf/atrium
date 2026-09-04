@@ -1897,6 +1897,24 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
     </div>
     <div id="fixture-list"></div>
 
+    <!-- Commands that find work. Here rather than in the gear for the same
+         reason fixtures are: this page is where the things atrium runs live,
+         and a source is one of them. -->
+    <div class="col-head" style="margin:26px 0 10px">
+      <span>sources</span>
+      <span class="help" tabindex="0" data-tip="Commands atrium runs on a timer. Whatever they print becomes cards in the inbox.
+
+Atrium holds an argv and an interval. It never holds a credential: gh already has a token, in the keyring it already uses. There is nowhere in a source to put one.
+
+A source runs as whoever started the daemon, with the daemon's environment. That makes it exactly as trusted as a runner, which is to say completely.
+
+Three failures in a row switches one off, with the reason still on the row. scripts/sources has working examples.">?</span>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editSource(null)">add a source</button>
+    </div>
+    <div id="source-list"></div>
+
   </div>
 </main>
 
@@ -2140,6 +2158,67 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
      dialogs need no guard, since both write on change. -->
 <!-- One terminal that comes up with the daemon. Guarded like the runner form:
      it keeps edits only on save. -->
+<dialog id="source" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="s-heading">source</h2></div>
+    <button onclick="document.getElementById('source').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="s-id">id</label>
+      <input type="text" id="s-id" spellcheck="false" placeholder="assigned-issues">
+      <span class="hintline">Used in the log when it says something. Cannot be changed later.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-label">what to call it</label>
+      <input type="text" id="s-label" spellcheck="false" placeholder="issues assigned to me">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-cmd">command</label>
+      <input type="text" id="s-cmd" spellcheck="false" placeholder="pwsh">
+      <span class="hintline">Runs as whoever started the daemon, with the daemon's environment.
+        As trusted as a runner. Put the credential in the tool, never here.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-args">arguments</label>
+      <textarea id="s-args" rows="3" spellcheck="false"
+        placeholder="-NoProfile&#10;-File&#10;D:/git/github/you/atrium/scripts/sources/github-assigned.ps1"></textarea>
+      <span class="hintline">One per line, never split by atrium. A path with a space in it is
+        one line and stays one argument.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-cwd">working directory</label>
+      <div class="picker">
+        <input type="text" id="s-cwd" spellcheck="false" placeholder="optional">
+        <button onclick="browseInto('s-cwd')">browse</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-interval">how often, in seconds</label>
+      <input type="number" id="s-interval" min="30" step="30" value="900">
+      <span class="hintline">There is no good default. A review request is stale in an hour, a
+        CI failure is worth knowing in five minutes, and a queue somebody is paid to watch does
+        not want a second watcher. Thirty seconds is the floor.</span>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer</label>
+      <span class="hintline">Off keeps the definition without the behaviour. You can still run
+        it by hand, which is how to test one before turning it on.</span>
+    </div>
+    <div class="field" id="s-status-field" hidden>
+      <label class="eyebrow">last run</label>
+      <div class="hintline" id="s-status"></div>
+    </div>
+  </div>
+  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+    <button class="go" onclick="saveSource()">save</button>
+    <button id="s-run" onclick="runSourceNow()">run it now</button>
+    <button class="no" id="s-delete" onclick="deleteSource()">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('source').close()">cancel</button>
+  </div>
+</dialog>
+
 <dialog id="fixture" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="f-heading">fixture</h2></div>
@@ -7759,8 +7838,191 @@ async function renderRunners() {
 
   renderDiscovered();
   renderFixtures();
+  renderSources();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
+}
+
+// ── sources ─────────────────────────────────────────────
+//
+// Commands atrium runs on a timer, whose stdout becomes cards in the inbox.
+// Rows in a table, like runners and fixtures, because that is what they are.
+//
+// The row is the whole reporting surface: when it last ran, what it found, and
+// what it said when it broke. A source that has failed three times running is
+// switched off with the reason still attached, and the row says so rather than
+// looking like one that was never turned on.
+
+let allSources = [];
+
+async function renderSources() {
+  const host = document.getElementById("source-list");
+  if (!host) return;
+  try { allSources = (await api("/v1/sources")).sources || []; } catch (e) { return; }
+
+  if (!allSources.length) {
+    setHTML(host, `<div class="panel"><div class="empty">
+      nothing is looking for work. a source is a command that prints intake items,
+      and scripts/sources has working examples.
+    </div></div>`);
+    return;
+  }
+
+  setHTML(host, `<div class="panel">` + allSources.map(s => `
+    <div class="row line">
+      <span class="chip ${s.enabled ? "accent" : s.last_error ? "warn" : ""}"
+        >${s.enabled ? "on" : s.last_error ? "off" : "off"}</span>
+      <span class="tool">${esc(s.label || s.id)}</span>
+      <code class="grow ell" title="${esc([s.cmd].concat(s.args || []).join(" "))}">${
+        esc([s.cmd].concat(s.args || []).join(" "))}</code>
+      <span class="by" title="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
+      ${sourceStateChip(s)}
+      <button onclick="editSource('${esc(s.id)}')">edit</button>
+    </div>`).join("") + `</div>`);
+}
+
+// How a source is doing, as one chip.
+//
+// A failing source and a source nobody turned on are both "off", and they are
+// not the same thing at all. The reason is what tells them apart, so it is on
+// the chip rather than behind the edit dialog.
+function sourceStateChip(s) {
+  if (s.last_error) {
+    const off = !s.enabled
+      ? "switched off after " + s.failures + " failures in a row. "
+      : "failed " + s.failures + " time(s) in a row. ";
+    return `<span class="chip warn" title="${esc(off + s.last_error)}">failing</span>`;
+  }
+  if (!s.last_run_at) {
+    return `<span class="by" title="it has not run yet">never run</span>`;
+  }
+  return `<span class="by" title="${esc(s.last_run_at)}">found ${s.last_count} last time</span>`;
+}
+
+// An interval as something readable. Seconds are what the field takes, because
+// that is what the row stores, and nobody reads 900 as a quarter of an hour.
+function everyLabel(secs) {
+  secs = Number(secs) || 0;
+  if (secs % 3600 === 0 && secs >= 3600) return "every " + (secs / 3600) + "h";
+  if (secs % 60 === 0 && secs >= 60) return "every " + (secs / 60) + "m";
+  return "every " + secs + "s";
+}
+
+function editSource(id) {
+  const s = allSources.find(x => x.id === id) || {
+    id: "", label: "", cmd: "", args: [], cwd: "",
+    // Off by default. A source is a command somebody just wrote, and the first
+    // thing to do with one is run it by hand and read what it printed.
+    interval_secs: 900, enabled: false
+  };
+  const dlg = document.getElementById("source");
+  dlg.dataset.editing = s.id;
+  document.getElementById("s-heading").textContent = s.id ? "source" : "new source";
+
+  const idBox = document.getElementById("s-id");
+  idBox.value = s.id || "";
+  // The id is the key, so changing it would make a second source rather than
+  // renaming one. Editable exactly once.
+  idBox.disabled = !!s.id;
+
+  document.getElementById("s-label").value = s.label || "";
+  document.getElementById("s-cmd").value = s.cmd || "";
+  document.getElementById("s-args").value = (s.args || []).join("\n");
+  document.getElementById("s-cwd").value = s.cwd || "";
+  document.getElementById("s-interval").value = s.interval_secs || 900;
+  document.getElementById("s-enabled").checked = !!s.enabled;
+  document.getElementById("s-delete").hidden = !s.id;
+  document.getElementById("s-run").hidden = !s.id;
+
+  showSourceStatus(s);
+  dlg.showModal();
+}
+
+function showSourceStatus(s) {
+  const field = document.getElementById("s-status-field");
+  const box = document.getElementById("s-status");
+  if (!s.id || !s.last_run_at) {
+    field.hidden = true;
+    return;
+  }
+  field.hidden = false;
+  box.textContent = s.last_error
+    ? "failed at " + s.last_run_at + " (" + s.failures + " in a row): " + s.last_error
+    : "ran at " + s.last_run_at + " and found " + s.last_count + " item(s).";
+}
+
+async function saveSource() {
+  const id = document.getElementById("s-id").value.trim();
+  if (!id) { tellUser("atrium", "a source needs an id."); return; }
+  const body = {
+    id,
+    label: document.getElementById("s-label").value.trim(),
+    cmd: document.getElementById("s-cmd").value.trim(),
+    // Split on lines and never on spaces. A path with a space in it is one
+    // argument, and splitting on whitespace is how that stops being true.
+    args: document.getElementById("s-args").value
+      .split("\n").map(x => x.trim()).filter(Boolean),
+    cwd: document.getElementById("s-cwd").value.trim(),
+    interval_secs: Number(document.getElementById("s-interval").value) || 900,
+    enabled: document.getElementById("s-enabled").checked
+  };
+  try {
+    await api("/v1/sources/" + encodeURIComponent(id), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) { tellUser("could not save it", e.message); return; }
+  document.getElementById("source").close();
+  renderSources();
+}
+
+// Run it now, without waiting for the interval.
+//
+// The reason this exists: a source is a script somebody just wrote, and the
+// question they have is whether it works. Waiting fifteen minutes to find out
+// that a path was wrong is how a feature goes unused.
+async function runSourceNow() {
+  const id = document.getElementById("source").dataset.editing;
+  if (!id) return;
+  const btn = document.getElementById("s-run");
+  btn.disabled = true;
+  btn.textContent = "running...";
+  let res;
+  try {
+    res = await api("/v1/sources/" + encodeURIComponent(id) + "/run", { method: "POST" });
+  } catch (e) {
+    tellUser("could not run it", e.message);
+    btn.disabled = false; btn.textContent = "run it now";
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = "run it now";
+  await renderSources();
+  const fresh = allSources.find(x => x.id === id);
+  if (fresh) showSourceStatus(fresh);
+  if (res.error) {
+    tellUser("the source failed", res.error);
+    return;
+  }
+  tellUser("atrium", res.created
+    ? res.created + " new item(s) are in the inbox."
+    : "it ran and there was nothing new.");
+}
+
+async function deleteSource() {
+  const id = document.getElementById("source").dataset.editing;
+  if (!id) return;
+  // The cards it raised stay. They are work, and deleting the thing that found
+  // it does not make it not work.
+  if (!await confirmUser("delete this source?",
+    "Nothing looks for this kind of work any more. The cards it already raised stay on the " +
+    "board: they are work, and deleting the thing that found it does not make it not work.",
+    "delete it")) return;
+  try {
+    await api("/v1/sources/" + encodeURIComponent(id), { method: "DELETE" });
+  } catch (e) { tellUser("could not delete it", e.message); return; }
+  document.getElementById("source").close();
+  renderSources();
 }
 
 // ── fixtures ────────────────────────────────────────────

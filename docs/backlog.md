@@ -489,7 +489,35 @@ Worth doing last, and worth keeping manual status override as the escape hatch.
 
 ### Starting a card from a ticket, an issue or a pull request
 
-Researched and written up in `docs/intake-design.md`. Nothing built.
+Designed in `docs/intake-design.md`. **Layers 0, 1 and 2 are built.** What follows is the original entry, kept
+because the layers it describes are still the shape, with the state of each marked.
+
+- **Layer 0, the hand-off. DONE.** `--tags`, `--prompt`, `--source`, `--external` and `--item-url` on
+  `atrium launch`. A `prompt_args` column on the harness, next to `resume_args`, because how a runner takes an
+  opening instruction is per runner. A `-WithAtrium` switch on the gwt verbs is still not written, and is now
+  the whole remaining integration.
+- **Layer 1, the inbox. DONE.** `POST /v1/intake`, an `offered` lane, a start button that claims the card rather
+  than making a second one. It uses `backlog` rather than a new status, and the reason is worth reading: see the
+  correction in `docs/intake-design.md`.
+- **Layer 2, sources on a timer. DONE.** A `source` table, a scheduler, bounded output, failure reporting on the
+  row, and `run it now`. `scripts/sources/` has working examples.
+- **Layer 3, mcp-gateway as a Go dependency. NOT DONE and still refused** on the grounds the document gives. The
+  place the gateway belongs is behind a layer 2 source command, which needs nothing from atrium.
+
+What is left, in order of value: the `-WithAtrium` switch on gwt, a CI failure source, and
+`gwt sessions audit` pointed at the board, which needs no external system at all.
+
+Two things found while building it, both recorded rather than fixed:
+
+- **`offered` cards are not prunable yet.** The design says an item nobody started for a month is not work, and
+  `PrunableStatuses` is still `done` and `dead`. Adding `backlog` to it would make the existing `clear` button
+  delete unstarted work, which is not what anybody pressing it means. It belongs with the pruning timer.
+- **A source has no way to say an item stopped being work.** An issue that gets closed by somebody else stays in
+  the inbox forever. Polling ticket state backwards is refused below, and the honest alternative is that a
+  source could report what it can see and atrium could archive offered items that stopped appearing. That is a
+  real design question and it is not answered.
+
+Researched and written up in `docs/intake-design.md`.
 
 The ask was source control and ticketing integration, so a card can be started from GitHub, GitLab, Zendesk, Jira
 or Discourse. The `gwt` script already does this and has seven verbs for it: `issue`, `pr`, `advisory`, `ghsa`,

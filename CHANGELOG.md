@@ -5,6 +5,30 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A source is a command on a timer.** The inbox fills itself now. A `source` row is an id, a command, its
+  arguments, a directory and an interval, and atrium runs it and reads its stdout as intake items. Shaped like
+  the `harness` table on purpose and for the same reason: a harness row says how to start a runner without atrium
+  knowing what claude is, and a source row says how to find work without atrium knowing what GitHub is.
+
+  **There is nowhere in the table to put a credential**, which is the design rather than an omission. `gh` has a
+  token in the keyring it already uses. Atrium has an argv.
+
+  The rules it runs under, each of which is a refusal rather than a truncation: one megabyte of output, two
+  minutes, and three consecutive failures switches it off with the reason still on the row. A run either lands
+  entirely or not at all, because one unkeyable item in a batch of forty is a source to fix rather than a partial
+  import to reconcile, and the same batch arrives again next tick once it is fixed. An empty stdout is a normal
+  answer and not a failure: a queue with nothing in it is the state you want. Thirty seconds is the floor on an
+  interval, because a source is a child process and one every second is a fork bomb with a settings screen.
+
+  `run it now` sits next to save, because a source is a script somebody just wrote and the question they have is
+  whether it works. Waiting fifteen minutes to find out that a path was wrong is how a feature goes unused. It
+  runs a disabled source too, since pressing the button is the operator saying to run it.
+
+  `scripts/sources/` has two working examples and a README. They are deliberately not symmetrical: the GitHub one
+  suggests a directory, derives a branch and writes an imperative prompt, and the Zendesk one does none of those
+  and explains at length why. A support case names no repo, so there is nothing to suggest, and it carries
+  somebody else's data, so it deliberately does not copy the subject line onto a card.
+
 - **An inbox atrium owns and does not fill.** `POST /v1/intake` takes a normalized work item and makes a card
   with no runner. It takes one item or an array of them, because a shell script producing one thing should not
   have to wrap it in brackets and `gh issue list --json` produces an array. One malformed entry in a batch of
