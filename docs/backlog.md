@@ -494,11 +494,17 @@ the whole integration.
 What is left is the other direction: atrium creating a worktree itself, for the case where there is no script to
 call it. Lower value now that the hand-off works.
 
-### Pruning on a timer
+### Pruning on a timer. Done.
 
-Sweeping finished columns is a button. Cards still accumulate on their own between presses. An age based sweep on
-a schedule, with the age configurable, would keep the board from needing the button at all. Done and dead only:
-`Prune` refuses shelved no matter what it is asked, and that has to stay true.
+Two settings in the gear under `housekeeping`, side by side because the difference between them is the point.
+Sweeping archives and pruning deletes, so one is on by default and the other is off until you turn it on, with
+what it destroys spelled out and an hour floor under it. `done` and `dead` only: shelved is refused by the store
+whatever it is asked, and the inbox is left alone because an offered item nobody started is still work somebody
+found.
+
+What is still open, from "Everything that has ever run here": **how far back**. The setting exists now and the
+answer to what to put in it is a deliberate judgement about how long the record is worth keeping, which is not
+something a default can make.
 
 ### Status inference for runners that cannot speak
 

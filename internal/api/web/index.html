@@ -2091,6 +2091,44 @@ Three failures in a row switches one off, with the reason still on the row. scri
       <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
     </div>
 
+    <!-- Housekeeping. Two timers that are easy to confuse and must not be:
+         one takes a card off a screen and keeps every word of its history, the
+         other destroys that history. They sit next to each other so the
+         difference is read rather than assumed. -->
+    <h3 class="s-section">housekeeping</h3>
+    <div class="field">
+      <label class="eyebrow" for="s-sweep">take dead cards off the board</label>
+      <div class="picker">
+        <select id="s-sweep">
+          <option value="off">never, leave them there</option>
+          <option value="60">after a minute</option>
+          <option value="900">after fifteen minutes</option>
+          <option value="3600">after an hour</option>
+          <option value="86400">after a day</option>
+        </select>
+      </div>
+      <span class="hintline">Archived, not deleted. The card and its whole audit log stay, which is
+        what answers &ldquo;what have I had running this week&rdquo;. Dead only: done is you saying
+        the work is finished, and a board that filed away what you just filed would make filing
+        pointless.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-prune">delete finished cards for good</label>
+      <div class="picker">
+        <select id="s-prune">
+          <option value="off">never</option>
+          <option value="604800">after a week</option>
+          <option value="2592000">after a month</option>
+          <option value="7776000">after three months</option>
+          <option value="31536000">after a year</option>
+        </select>
+      </div>
+      <span class="hintline"><b>This destroys the record.</b> A card's audit log is the only account
+        of what that session ran and what it was allowed to do. Off unless you turn it on, and worth
+        answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that
+        seems large. Never touches shelved cards or the inbox.</span>
+    </div>
+
     <h3 class="s-section">the board</h3>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
@@ -5674,6 +5712,28 @@ function applyDensity() {
 }
 applyDensity();
 
+document.getElementById("s-sweep").addEventListener("change", e => {
+  saveHousekeeping("sweep_dead_after", e.target.value);
+});
+// The one setting in the dialog that destroys something, so turning it on is
+// confirmed and turning it off never is. Not skippable: the tick box that
+// stops asking belongs on repeatable questions, and this one is answered about
+// once.
+document.getElementById("s-prune").addEventListener("change", async e => {
+  const value = e.target.value;
+  if (value !== "off") {
+    const label = e.target.options[e.target.selectedIndex].textContent;
+    if (!await confirmUser("delete finished cards " + label + "?",
+      "Every done or dead card older than that is deleted, along with its whole audit log: what " +
+      "the session ran, what it was allowed to do, and what answered each request. There is no " +
+      "other copy.<br><br>Shelved cards and the inbox are never touched.",
+      "delete them")) {
+      loadHousekeeping();
+      return;
+    }
+  }
+  saveHousekeeping("prune_after", value);
+});
 document.getElementById("s-cardsize").addEventListener("change", e => {
   localStorage.setItem(UI_SCALE_KEY, e.target.value);
   applyUiScale();
@@ -6477,6 +6537,47 @@ document.getElementById("s-group-order").addEventListener("change", e => {
   setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value });
 });
 
+// The two housekeeping timers.
+//
+// Daemon side, not browser side, because they are about what happens to the
+// machine's data rather than about how this screen looks. Every other setting
+// in this dialog is a preference and these two are not.
+//
+// A stored value the dropdown has no option for is added rather than silently
+// shown as something else. Somebody who set an unusual age by hand should see
+// the age they set, not the nearest one on a list.
+async function loadHousekeeping() {
+  let s;
+  try { s = await api("/v1/settings"); } catch (e) { return; }
+  setTimerValue("s-sweep", s.sweep_dead_after, "60");
+  setTimerValue("s-prune", s.prune_after, "off");
+}
+
+function setTimerValue(id, value, fallback) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  // Unset means the default the daemon applies, which is not the same as off.
+  const want = (value === undefined || value === null || value === "") ? fallback : String(value);
+  if (!Array.from(sel.options).some(o => o.value === want)) {
+    const o = document.createElement("option");
+    o.value = want;
+    o.textContent = "after " + want + " seconds";
+    sel.appendChild(o);
+  }
+  sel.value = want;
+}
+
+async function saveHousekeeping(field, value) {
+  const body = {};
+  body[field] = value;
+  try {
+    await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) { tellUser("that did not stick", e.message); }
+}
+
 function paintSettings() {
   const p = alerting.get();
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
@@ -6486,6 +6587,10 @@ function paintSettings() {
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
+  // The two housekeeping timers. Held by the daemon rather than the browser,
+  // because they are about the machine's data and not about this screen, so
+  // they are read here rather than assumed.
+  loadHousekeeping();
   paintGrouping();
   paintSkipped();
   // Fetched when the gear opens rather than on every poll: a share's state

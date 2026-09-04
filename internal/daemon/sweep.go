@@ -38,7 +38,10 @@ var SweepDeadAfter = time.Minute
 // SettingSweepDead turns it off. Stored as the number of seconds, so the
 // setting is also the answer to "how long", and `off` is the one value that
 // means never.
-const SettingSweepDead = "sweep_dead_after"
+//
+// Defined in the store, because the HTTP layer names it too and cannot import
+// this package.
+const SettingSweepDead = store.SettingSweepDead
 
 // sweepDead deletes dead cards that have been dead long enough.
 //
@@ -68,6 +71,80 @@ func (d *Daemon) sweepDead() error {
 		d.ap.Broadcast("task-removed", nil)
 	}
 	return nil
+}
+
+// Pruning on a timer, which is a different thing from sweeping and has to be.
+//
+// Sweeping ARCHIVES a dead card after a minute: it leaves the board and its
+// whole audit log stays. Pruning DELETES, and takes the record with it. The
+// board asks what wants attention now, the history asks what has ever run
+// here, and archiving is what lets those be different questions.
+//
+// So this is the answer to a different complaint: archived rows accumulate
+// forever, and nothing has ever removed one. `clear` on a column is the manual
+// version and it has to be pressed.
+
+// SettingPruneAfter is how old a finished card has to be before it is deleted
+// outright, in seconds. `off`, which is the default, means never.
+const SettingPruneAfter = store.SettingPruneAfter
+
+// PruneDefaultAfter is the age offered when somebody turns it on, and not a
+// default in the sense of applying to anybody who has not.
+//
+// Thirty days, because this deletes the only account of what a session ran and
+// what it was allowed to do. The right number is a deliberate answer to "how
+// far back do I ever look", and the first number that seems large is not it.
+const PruneDefaultAfter = 30 * 24 * time.Hour
+
+// pruneOld deletes finished cards past the configured age.
+//
+// OFF unless somebody turned it on, which is the opposite of the sweep and for
+// the obvious reason: one takes a card off a screen and the other destroys
+// evidence.
+//
+// `done` and `dead` only. Shelved is refused by the store whatever it is asked,
+// and `backlog` is left out deliberately: an offered item nobody started is
+// still work somebody found, and deleting it on a schedule would make the
+// inbox quietly lossy.
+func (d *Daemon) pruneOld() error {
+	after, ok := d.pruneAfter()
+	if !ok {
+		return nil
+	}
+	n, err := d.st.Prune(after, store.PrunableStatuses...)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		log.Printf("[atrium] pruned %d card(s) older than %s, with their history", n, after)
+		d.ap.Broadcast("task-removed", nil)
+	}
+	return nil
+}
+
+// pruneAfter reads the configured age, and whether pruning is on at all.
+//
+// Unset means OFF. Every other setting in here defaults to doing something;
+// this one defaults to doing nothing, because the thing it does cannot be
+// undone.
+func (d *Daemon) pruneAfter() (time.Duration, bool) {
+	v, err := d.st.Setting(SettingPruneAfter)
+	if err != nil || v == "" || v == "off" {
+		return 0, false
+	}
+	secs, err := time.ParseDuration(v + "s")
+	if err != nil || secs <= 0 {
+		return 0, false
+	}
+	// A floor, so a mistyped setting cannot turn this into "delete everything
+	// that finished". An hour is far shorter than anybody would choose and far
+	// longer than an accident.
+	if secs < time.Hour {
+		log.Printf("[atrium] %s is set to %s, which is under the one hour floor. not pruning.",
+			SettingPruneAfter, secs)
+		return 0, false
+	}
+	return secs, true
 }
 
 // sweepAfter reads the configured age, and whether sweeping is on at all.
