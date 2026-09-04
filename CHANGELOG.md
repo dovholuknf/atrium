@@ -5,6 +5,63 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The terminal's horizontal gap is a margin, not padding.** xterm fits to `#t-screen`'s content box and draws
+  its viewport, scrollbar included, across the full width of it. Horizontal padding sits inside that box, so
+  the bar landed on the last column of text and the right-hand characters read as running underneath it. A
+  margin is outside the box: xterm gets a narrower element, fits it exactly, and the gap is still there.
+
+  Found in devtools against a live popped-out terminal, which is the only way anything about xterm's geometry
+  gets settled here. Three guesses from the code missed it.
+
+  The same shorthand was hiding in `@media (max-width: 900px)` as `padding: 6px`, so the fix was undone for
+  every window narrower than 900px, which is every popped-out terminal. That block also carried
+  `.term-bar strong { width: 100% }`, written for a phone, where an extra row on a bar costs nothing. At 894px
+  it pushed every button onto a second row, and a bar that grows a row changes the terminal's height under a
+  grid xterm has already measured in characters. The name truncates instead.
+
+- **The stack's date column follows the sort.** It was `created_at`, when atrium first saw the card, while the
+  list was ordered by last activity, so it read `today, today, yesterday, today`: correct about two different
+  facts and indistinguishable from a broken sort. It now shows the moment the big number is counting from, so
+  one says how long ago, the other says when, and the order is that same moment.
+
+  With seconds, for today and yesterday. The order resolves to the second, and two rows a few seconds apart
+  both reading `10:23` looked like the sort had given up when the sort was right and the clock was rounding.
+
+- **Every scrollbar on the board is styled by one rule.** Three attempts at this styled the boxes somebody had
+  noticed, and there are twenty-odd: the stack, the perms list, the runners page, each board lane, the file
+  lists, the session switcher, every dialog body, the overlay log, every wide code block, the nav on a narrow
+  window. The sixteenth kept arriving as the operating system's grey strip. A new scrolling box inherits this
+  now without anybody remembering to come back.
+
+  Two things make it safe to write universally. The terminal is carved out by name, because the xterm fit addon
+  measures its viewport's scrollbar to decide how many columns fit and anything that changes that width makes
+  it draw rows the text then runs underneath. And the selectors use `:where()`, which scores zero, so the three
+  places that hide their bar on purpose still win: a universal rule is a default and has to lose every
+  argument.
+
+- **The file browser is shaped like a repository listing.** One directory at a time, a breadcrumb across the
+  top, folders first, and the size and the time in their own right-aligned tracks so the eye can run down
+  them. A tree and Miller columns both want horizontal room, and the place this matters most is a popped-out
+  window at 900px.
+
+  The breadcrumb replaces the `up` button as the way back. `up` said nothing about where it went, and getting
+  back from three deep was three presses of it. It stays as an arrow beside the crumbs, since one step back is
+  the commonest move and should not need aiming at a word. The trail is trimmed to the card's own directory:
+  everything above the worktree answers `403` anyway, and drawing `C:` as a step you could press would offer a
+  walk that always fails.
+
+  Six file glyphs, drawn here rather than vendored. An icon theme is several hundred SVGs for extensions this
+  board will never see, and the board has to work offline, which is the same reason xterm is vendored rather
+  than fetched. The question a glyph answers in a listing is "which of these is the code and which is the
+  readme", and colour carries most of that: telling `.ts` from `.tsx` at 11px is not something an icon can do.
+
+  The two actions appear on hover but hold their place in the layout, so a row's contents never move under the
+  pointer.
+
+- **The stack's date fits.** The track was 74px, `yesterday 16:06` needs about 98px, and a fixed track narrower
+  than its own content is the one width that cannot work: the text has nowhere to go and the row clips it.
+  Sized in `ch` now, so it stays right when the text size setting moves.
+
 - **The board paints its own scrollbars.** The stack, the perms list, the runners page and every board lane
   arrived as the operating system's grey strip, which on a dark board is the one part of it that is not the
   board. The terminal has been painting its own since it got a viewport; this is the same treatment for the
