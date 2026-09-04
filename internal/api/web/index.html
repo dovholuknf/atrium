@@ -2322,6 +2322,16 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
       <label class="eyebrow" for="l-why">why</label>
       <input type="text" id="l-why" spellcheck="false" placeholder="read this in a week and remember">
     </div>
+    <!-- Handed to the runner as its first instruction. Hidden while resuming,
+         because that conversation already has one and the daemon refuses
+         both. -->
+    <div class="field" id="l-prompt-field">
+      <label class="eyebrow" for="l-prompt">first instruction</label>
+      <textarea id="l-prompt" rows="3" spellcheck="false"
+        placeholder="what it should start on. leave empty to start at a bare prompt"></textarea>
+      <span class="hintline" id="l-prompt-note">Sent as the runner's opening
+        argument. A runner with no way to take one will say so.</span>
+    </div>
     <div class="toolbar"><button class="go big" onclick="doLaunch()">start it</button></div>
   </div>
 </dialog>
@@ -2455,9 +2465,33 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
 // `drop` is where a card dragged onto the column lands, since a column holding
 // two statuses has to pick one.
 //
-// `backlog` is not here. Nothing ever creates a card in it, and an empty column
-// on every screen is a column you learn to skip past.
+// `backlog` is the inbox now. It used to be absent from this list, because
+// nothing ever created a card in it and an empty column on every screen is a
+// column you learn to skip past. Intake creates cards in it: work that is real
+// and has no session yet.
+//
+// It stays hidden while it is empty, which is the same judgement as before
+// rather than a reversal of it. Nobody who has not wired up a source should
+// have a permanently empty column in front of them.
 const COLUMNS = [
+  {
+    // Last in the DOM, first here, because reading order is what this array
+    // decides and an inbox is where you start. See docs/intake-design.md.
+    //
+    // `accepts: false` for the usual reason plus one of its own: dragging a
+    // card back into the inbox would claim it had never been started, and the
+    // session it already had would still be running.
+    id: "backlog", label: "inbox", statuses: ["backlog"],
+    accepts: false, hideWhenEmpty: true,
+    why: "Work something found and nobody has started.\n\n" +
+      "A source posts an item, atrium makes a card with no runner, and it " +
+      "waits here until you press start. Atrium never learns what the source " +
+      "is: github, zendesk and ci are words on a badge.\n\n" +
+      "Nothing here is costing an agent anything, which is why it sits above " +
+      "the columns that are and below nothing else: it is the only column " +
+      "that answers what to do next rather than what is happening now.\n\n" +
+      "Empty until you wire up a source, and hidden while it is."
+  },
   // `accepts: false` refuses a card dragged in. These two columns are reports,
   // not buckets: a card is in them because an agent said so. Dropping one into
   // needs-permission would claim a request that does not exist, and into
@@ -2530,7 +2564,12 @@ const COLUMNS = [
 // call one state three things.
 const STATUS_LABEL = {
   "needs-input": "ready",
-  "needs-permission": "needs permission"
+  "needs-permission": "needs permission",
+  // Stored as `backlog` since the first migration. Called `offered` because
+  // that is what it means now: something found this and nobody has picked it
+  // up. Backlog is a word for a list you are behind on, and an inbox nobody
+  // has looked at is not the same feeling as one you are behind on.
+  "backlog": "offered"
 };
 const statusLabel = (s) => STATUS_LABEL[s] || s;
 
@@ -2790,6 +2829,10 @@ function cardHTML(t) {
           : "start it again from where the conversation left off"}"
         onclick="event.stopPropagation();unshelveCard('${t.id}')"
         >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
+      ${t.status === "backlog" ? `<span class="chip attach"
+        title="open the launch dialog with what the source already knew filled in.
+               this card is the target, so starting it does not make a second one"
+        onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
       </div>
@@ -3098,7 +3141,16 @@ async function renderBoard() {
   lastTasks = all;
   const g = grouper();
 
-  const html = COLUMNS.map(col => {
+  const html = COLUMNS.filter(col => {
+    // The inbox is the one column that should not be there when it is empty.
+    //
+    // Every other column earns its header while empty: it is where you drop a
+    // card, or "nothing needs permission" is worth reading. Neither is true
+    // here. Nothing is dropped into the inbox, and nobody who has not wired up
+    // a source has anything to learn from an empty one.
+    if (!col.hideWhenEmpty) return true;
+    return all.some(t => col.statuses.includes(t.status));
+  }).map(col => {
     const mine = all.filter(t => col.statuses.includes(t.status));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
     // A column with nothing to SHOW gives its width back rather than holding
@@ -3897,6 +3949,9 @@ function stackRow(t) {
       <span class="chip ${w ? "warn" : over(t) ? "" : "accent"}"
         title="${esc(t.status)}">${esc(statusLabel(t.status))} ${
         w ? ago(t.wait_seconds) : ago(t.idle_seconds)}</span>
+      ${t.status === "backlog" ? `<span class="chip attach"
+        title="start this, with what the source already knew filled in"
+        onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.supervised ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>` : ""}
     </div>
@@ -8388,7 +8443,23 @@ async function toggleHarness(id) {
 // `ontoTask` starts onto a card that already exists, which is what resuming a
 // finished card means. Without it the runner would come back as a second card
 // and the history would be split across two.
-async function openLaunch(id, resume, cwd, ontoTask) {
+// Start an offered card: the launch dialog with everything the source already
+// knew filled in.
+//
+// The card is the target rather than a template, so pressing start does not
+// make a second card. The item keeps its identifier, its link and its history,
+// and the session that runs attaches to the card that says what it is for.
+async function startOffered(id) {
+  const t = (lastTasks || []).find(x => x.id === id);
+  if (!t) return;
+  await openLaunch(t.runner || null, "", t.worktree, t.id, {
+    title: t.display_title || t.title || "",
+    why: t.why || "",
+    prompt: t.prompt || ""
+  });
+}
+
+async function openLaunch(id, resume, cwd, ontoTask, prefill) {
   if (!allHarnesses.length) {
     try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) {}
   }
@@ -8408,9 +8479,15 @@ async function openLaunch(id, resume, cwd, ontoTask) {
   launchTarget = { harness: h.id, resume: resume || "", task_id: ontoTask || "" };
   document.getElementById("l-heading").textContent =
     resume ? "resume " + (h.label || h.id) : picking ? "new agent" : "start " + (h.label || h.id);
+  const pre = prefill || {};
   document.getElementById("l-cwd").value = cwd || h.cwd || "";
-  document.getElementById("l-title").value = "";
-  document.getElementById("l-why").value = "";
+  document.getElementById("l-title").value = pre.title || "";
+  document.getElementById("l-why").value = pre.why || "";
+  document.getElementById("l-prompt").value = pre.prompt || "";
+
+  // A resumed conversation already has its instruction, and the daemon refuses
+  // both. Hidden rather than disabled, so there is nothing to wonder about.
+  document.getElementById("l-prompt-field").hidden = !!resume;
 
   // Resuming is opt-out. Where there is a conversation to pick up, continuing
   // it is nearly always the intent, and starting fresh by accident discards
@@ -8467,7 +8544,11 @@ async function doLaunch() {
     resume: resumeOff ? "" : launchTarget.resume,
     cwd: document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
-    why: document.getElementById("l-why").value.trim()
+    why: document.getElementById("l-why").value.trim(),
+    // Empty while resuming, since the field is hidden and the daemon refuses
+    // a prompt and a resume together.
+    prompt: resumeOff || !launchTarget.resume
+      ? document.getElementById("l-prompt").value.trim() : ""
   });
   let task;
   try {

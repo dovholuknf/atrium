@@ -93,6 +93,21 @@ type Task struct {
 	// nobody has thought of yet. See docs/intake-design.md.
 	Source string `json:"source,omitempty"`
 	URL    string `json:"url,omitempty"`
+	// Prompt is the instruction this card was raised with, waiting for a
+	// runner to hand it to.
+	//
+	// An offered card has no session, so there is nothing to say it to yet.
+	// Kept after the start rather than cleared: it is what this card is for,
+	// and a start that failed should be repeatable without retyping it.
+	Prompt string `json:"prompt,omitempty"`
+	// IntakeKey deduplicates work raised by a source. Empty on every card a
+	// human made or a script launched.
+	//
+	// Held as its own column rather than enforced over source and external id,
+	// so that uniqueness applies to a poller and not to a person. Two poll
+	// ticks reporting one ticket are one card; two deliberate launches naming
+	// one ticket are two pieces of work somebody asked for twice.
+	IntakeKey string `json:"intake_key,omitempty"`
 	Branch     string `json:"branch,omitempty"`
 	WindowName string `json:"window_name,omitempty"`
 	// Gated is whether this session has joined atrium. It is state rather than

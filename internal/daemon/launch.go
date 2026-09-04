@@ -145,33 +145,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		return nil, fmt.Errorf("%s is not enabled. turn it on in harness settings first", h.Label)
 	}
 
-	cwd := strings.TrimSpace(req.Cwd)
-	if cwd == "" {
-		cwd = h.Cwd
-	}
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	cwd = filepath.FromSlash(cwd)
-	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("%s is not a directory", cwd)
-	}
-
-	args, logged, err := runnerArgs(h, req.Resume, req.Prompt)
-	if err != nil {
-		return nil, err
-	}
-	prompt := strings.TrimSpace(req.Prompt)
-
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = filepath.Base(cwd)
-	}
-
 	// The card exists before the process does, and its name is what the runner
 	// will report when it first does something. Without this the runner would
 	// announce itself as the directory leaf and land on whichever card already
 	// claimed that name, which on a repo with two sessions is the wrong one.
+	//
+	// Resolved first, because a card carries defaults for the rest of this: an
+	// offered item knows the directory the work belongs in and the instruction
+	// it was raised with, and neither has to be retyped to start it.
 	var (
 		task      *store.Task
 		agentName string
@@ -187,11 +168,66 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		task = t
 		agentName = t.WireName
 	}
+
+	cwd := strings.TrimSpace(req.Cwd)
+	if cwd == "" && task != nil {
+		cwd = task.Worktree
+	}
+	if cwd == "" {
+		cwd = h.Cwd
+	}
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	cwd = filepath.FromSlash(cwd)
+	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", cwd)
+	}
+
+	// A card's own prompt is the fallback, not an override. Whoever pressed
+	// start may have edited it in the dialog, and what they typed wins over
+	// what the source guessed.
+	//
+	// Not on a resume. The prompt stays on the card after the first start, so
+	// that a start which failed can be repeated, and unshelving an
+	// intake-raised card is a resume onto a conversation that has already been
+	// given it. Falling back here would refuse that launch for carrying an
+	// instruction the operator never asked to send twice.
+	wanted := strings.TrimSpace(req.Prompt)
+	if wanted == "" && task != nil && req.Resume == "" {
+		wanted = task.Prompt
+	}
+	args, logged, err := runnerArgs(h, req.Resume, wanted)
+	if err != nil {
+		return nil, err
+	}
+	prompt := wanted
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = filepath.Base(cwd)
+	}
+
+	claimed := task != nil && task.WireName == ""
 	if agentName == "" {
 		agentName = fmt.Sprintf("%s-%d", filepath.Base(cwd), time.Now().UnixNano()%100000)
 	}
-	if task == nil {
+	switch {
+	case task == nil:
 		t, _, err := d.st.Register(store.Observed{
+			WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		task = t
+	case claimed:
+		// A card offered by a source has never been on the wire, so it has no
+		// name for Register to match and no pid for the fallback. Registering
+		// the generated name here would find nothing and make a SECOND card,
+		// leaving the item in the inbox and its session on a card with no link
+		// to what it was for.
+		t, err := d.st.Claim(task.ID, store.Observed{
 			WireName: agentName, Worktree: filepath.ToSlash(cwd), Runner: h.ID,
 		})
 		if err != nil {

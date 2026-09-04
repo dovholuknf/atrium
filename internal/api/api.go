@@ -163,6 +163,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
+	mux.HandleFunc("POST /v1/intake", s.intake)
+	mux.HandleFunc("GET /v1/offered", s.listOffered)
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
@@ -362,6 +364,11 @@ type patchBody struct {
 	Source     string `json:"source"`
 	ExternalID string `json:"external_id"`
 	URL        string `json:"url"`
+	// Prompt is the instruction an offered card carries. A pointer, because
+	// clearing it is a decision: a source's default wording is a guess by
+	// something that has never read the ticket, and deleting it is a
+	// reasonable edit.
+	Prompt *string `json:"prompt"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -463,6 +470,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.SetOrigin(id, body.Source, body.ExternalID, body.URL); err != nil {
 		s.fail(w, err)
 		return
+	}
+	if body.Prompt != nil {
+		if err := s.st.SetPrompt(id, *body.Prompt); err != nil {
+			s.fail(w, err)
+			return
+		}
 	}
 	if body.AutoApprove != nil {
 		if err := s.st.SetAutoApprove(id, *body.AutoApprove); err != nil {

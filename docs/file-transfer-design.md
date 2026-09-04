@@ -104,8 +104,14 @@ Bounds, all of which are refusals rather than truncations:
 - **The card must not be archived.** Uploading into the working directory of a session that ended is almost
   always a mistake about which card is which.
 
-The response is the list of paths written, in the daemon's own slash form, which is what gets spliced into the
-prompt.
+The response is the list of paths written, in the daemon's own forward-slash form, which is what every path in
+atrium already looks like: `CLAUDE.md` makes it a convention, `store.Task.Worktree` holds one, and `browse.go`
+returns them.
+
+That form is deliberate and it is also the one to splice. On Windows, both PowerShell and claude accept
+`D:/git/thing/x.png`, so a forward-slash path typed into the terminal works without anybody converting anything.
+Paste splices back exactly the string the endpoint returned, so there is one path convention in play rather than
+one for the API and another for the terminal.
 
 ## Download: bytes out
 

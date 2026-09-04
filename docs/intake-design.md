@@ -183,11 +183,33 @@ The important part is what atrium does not do: it does not know what `source` me
 `discourse`, `ci`, `email` are all strings that get rendered as a badge and stored on the card. Whoever posts the
 item did the reading.
 
-**Why a new status rather than an existing one.** Every current status describes a session. `running` and
-`needs-input` describe a process, `done` and `dead` describe one that ended, `shelved` is a standing no in the
-permission chain and would refuse requests from a card that has never made one. An offered item is a card with no
-process, which none of the six mean. Call it `offered`. It has one rule: it is prunable, because an item nobody
-started for a month is not work.
+**Why a new status rather than an existing one. This was wrong, and the correction is worth reading.**
+
+The argument was: every current status describes a session. `running` and `needs-input` describe a process,
+`done` and `dead` describe one that ended, `shelved` is a standing no in the permission chain and would refuse
+requests from a card that has never made one. An offered item is a card with no process, which none of the six
+mean. So call it `offered`.
+
+Six of the seven. **`backlog` was skipped, and `backlog` is exactly this.** It has been in the status `CHECK`
+since migration `0001`, it has a constant in `store.go`, and nothing has ever created a card in it. The board
+says so in the comment above `COLUMNS`: "nothing ever creates a card in it, and an empty column on every screen
+is a column you learn to skip past". An offered item is on the board and not started, which is what that word
+means.
+
+Missing it would have been a cosmetic mistake if the cost of a new status were small. It is not.
+
+**Changing a status means changing a `CHECK` constraint, and SQLite cannot alter one in place.** The pattern for
+that is in `0010` and `0014`: build the table again, copy, drop, rename. Both of those rebuild a CHILD table.
+`task` is the PARENT of four `ON DELETE CASCADE` relationships, and with foreign keys on, `DROP TABLE` performs an
+implicit delete that fires them. A migration written by following `0010` faithfully would have deleted every
+event, every permission, every message and every launch spec in the database, and it would have looked exactly
+like the two migrations it was copied from.
+
+So the rule that came out of this, which is more useful than the entry it corrects: **before adding a status,
+check whether one of the seven already means it, because the cheapest migration is the one that is not needed.**
+
+The rest of the original entry stands. An offered card is prunable, because an item nobody started for a month is
+not work, and it is never gated, because a card with no session has never made a request.
 
 **What it costs.** Two days. A migration adding the status to the `CHECK` constraint and adding a `source` and
 `url` column, an endpoint, a column on the board, and a start button that reuses the launch dialog.
