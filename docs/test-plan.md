@@ -13,10 +13,18 @@ cd <atrium-repo>
 go build -o build.claude\ .\...
 go vet ./...
 go test ./...
+bash scripts/check-board.sh
 ```
 
-Hard stop if any of the three fails. Unlike v1, most of the daemon has real tests, so a red suite means stop
-rather than "check by hand".
+Hard stop if any of them fails. Unlike v1, most of the daemon has real tests, so a red suite means stop rather
+than "check by hand".
+
+`check-board.sh` parses the board's JavaScript. It is here because the board is one embedded HTML file with no
+build step, so a syntax error in it compiles, ships, and shows up as a blank page. It has caught a real one.
+
+**Do not run `go test ./...` and then wonder why a hook stopped working.** It used to overwrite and then delete
+the running daemon's address file. That is fixed, and the fix is a test option that is easy to forget when
+adding a new test that calls `Run`: `Options.LocationFile` must point somewhere temporary.
 
 ## A. Mode A (hub + agent loop)
 
@@ -611,6 +619,151 @@ browser's. This is the whole reason it is not the native picker.
 until the request is decided from anywhere.
 
 **Failure mode** notifications piling up in the Windows action centre, which is what sticky means there.
+
+### G9. The inbox, filled by hand
+
+**Steps**
+
+1. Post an item to the throwaway daemon:
+
+```powershell
+$body = @{
+  source = "github"; external_id = "openziti/ziti#4211"
+  url = "https://github.com/openziti/ziti/issues/4211"
+  title = "tunneler drops DNS on resume"
+  suggested_cwd = "D:/git/github/dovholuknf/atrium"
+  prompt = "read the issue and tell me what you think the fix is"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:7878/v1/intake -Body $body -ContentType application/json
+```
+
+2. Post it a second time, unchanged.
+3. Post it a third time with `source = "GitHub"`.
+
+**Expect** one card, in an **inbox** column that was not there before. The second and third posts answer
+`created: false`. The chip on the card reads `openziti/ziti#4211` and opens the issue.
+
+**Failure mode** three cards. That means the deduplication key is not being canonicalized, and a poller would
+fill the board on every tick.
+
+### G10. Starting an offered card
+
+**Steps** press **start** on the inbox card. The launch dialog opens with the directory, the title and the
+first instruction already filled in. Press **start it**.
+
+**Expect** ONE card, the same one, now running, still carrying its `#4211` link. The instruction is what the
+session begins on.
+
+**Failure mode** two cards, one running and one still sitting in the inbox. That means the card was registered
+rather than claimed, and the work has lost its link to what it was for.
+
+### G11. A source on a timer
+
+**Steps** in **runners**, add a source pointing at `scripts/sources/github-assigned.ps1` with `gh` installed
+and logged in. Leave it disabled. Press **run it now**.
+
+**Expect** it says how many new items it found, or says nothing was new, or shows the reason it failed. A
+failure puts the reason on the row rather than only in the log.
+
+Then break it on purpose: change the command to something that does not exist and press **run it now** three
+times.
+
+**Expect** the row switches itself off after the third, with the reason still attached. Turning it back on
+clears the count.
+
+**Failure mode** a source retrying forever against a script somebody deleted, which is a process spawned every
+interval to produce an error nobody reads.
+
+### G12. An agent saying it finished
+
+**Steps** in a session that is on the board, run:
+
+```powershell
+atrium finish "bumped the dep, ran the tests, opened a pull request"
+```
+
+**Expect** the card moves to **done** and carries a `recap` chip whose tooltip is that sentence. Run it again
+in another session with no argument.
+
+**Expect** that card is done with a `no recap` chip instead.
+
+Then try `atrium finish --hand-back "got as far as the build failing"`.
+
+**Expect** **ready**, not done, with the recap attached. That is a different claim and the board should show it
+as one.
+
+**Failure mode** the card not moving at all, which usually means `ATRIUM_AGENT_NAME` is unset and the directory
+name does not match the card's wire name.
+
+### G13. An action, including the exit half
+
+**Steps** open a card with a supervised terminal and press **write it up and finish** under `do this`.
+
+**Expect** the prompt is typed into the terminal and the toast says `typed into its terminal`. On a card with no
+terminal, the toast says `queued` and the message arrives on the session's next tool call.
+
+Then make an action with `afterwards: ask the runner to quit` and press it on a supervised card.
+
+**Expect** a confirmation first, then the prompt, then the runner exiting a moment later. On a card atrium does
+not own, expect the prompt and a note saying nothing can make it quit.
+
+**Failure mode** the runner quitting before it has taken the prompt. That is the known weak point: there is no
+signal that a runner has accepted a line, so the gap between the two is a fixed pause.
+
+### G14. Auto mode running out
+
+**Steps** turn on **approving everything** and choose **for an hour**.
+
+**Expect** the header reads `approving everything, 60m left` and counts down. Turn it off and on again with
+**until I turn it off**.
+
+**Expect** no countdown, and the tooltip says there is no deadline.
+
+To see it expire without waiting an hour, set the deadline into the past directly in the database and make a
+tool call.
+
+**Expect** the request reaches you, and the badge stops claiming auto mode is on.
+
+**Failure mode** a request being approved after the deadline. Nothing enforces the deadline on a timer by
+design, so this means the chain is not reading the clock.
+
+### G15. Pasting a screenshot into a session
+
+**Steps** attach to a supervised terminal, copy an image to the clipboard, and press ctrl-v on the terminal
+pane. Then drag a file onto the same pane.
+
+**Expect** both land in `.atrium/incoming` under the card's working directory, and the path is spliced into the
+terminal WITHOUT enter being pressed. Type a sentence around it and send it yourself.
+
+**Expect** the agent can read the file at that path.
+
+**Failure mode** the path being submitted on its own, which starts the agent working on half a sentence. That
+is the one thing this must not do.
+
+### G16. Files cannot escape a card
+
+**Steps** with the daemon running, ask for something outside a card's directory:
+
+```powershell
+curl "http://localhost:7878/v1/tasks/<id>/files?path=C:/Windows/win.ini"
+curl "http://localhost:7878/v1/tasks/<id>/files?path=../../../../etc/passwd"
+```
+
+**Expect** `403` for both, and the same `403` for a path outside the card that does not exist, so the endpoint
+cannot be used to find out what is on the machine. A file INSIDE the card that is missing answers `404`, which
+is fine.
+
+**Failure mode** anything being served, or the two outside cases answering differently.
+
+### G17. Everything that has ever run here
+
+**Steps** open **history**. Search for a word from a card's recap. Switch the filter to **never written up**.
+
+**Expect** archived cards appear alongside live ones, the search matches titles, reasons, tags, recaps and
+external identifiers, and the two filters partition the list.
+
+**Failure mode** archived cards missing, which means the view is reusing a board query that excludes them and
+therefore answers the wrong question entirely.
 
 ## Notes for future automation
 
