@@ -48,11 +48,13 @@ func helperSource(t *testing.T, id, out string) store.Source {
 // a child process and writes to the database, and none of it needs a port.
 func testDaemon(t *testing.T) *Daemon {
 	t.Helper()
+	dir := t.TempDir()
 	d, err := New(Options{
-		AgentAddr: freePort(t),
-		HumanAddr: freePort(t),
-		DBPath:    filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db")),
-		LongPoll:  time.Second,
+		AgentAddr:    freePort(t),
+		HumanAddr:    freePort(t),
+		DBPath:       filepath.ToSlash(filepath.Join(dir, "atrium.db")),
+		LongPoll:     time.Second,
+		LocationFile: filepath.Join(dir, "daemon.json"),
 	})
 	if err != nil {
 		t.Fatal(err)

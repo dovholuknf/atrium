@@ -78,12 +78,25 @@ func LocationPath() (string, error) {
 	return filepath.Join(dir, "atrium", "daemon.json"), nil
 }
 
+// locationPath is where THIS daemon records its address.
+//
+// The machine's one true place unless the options name another. A test names
+// another, because Run writes this file and deletes it again, and a test doing
+// that to the real file removes the address of whatever daemon is actually
+// running on the machine at the time.
+func (d *Daemon) locationPath() (string, error) {
+	if d.opts.LocationFile != "" {
+		return d.opts.LocationFile, nil
+	}
+	return LocationPath()
+}
+
 // writeLocation records where this daemon is listening.
 //
 // Failure is logged and otherwise ignored. Callers fall back to the default
 // address, which is what they did before this existed.
 func (d *Daemon) writeLocation() {
-	path, err := LocationPath()
+	path, err := d.locationPath()
 	if err != nil {
 		log.Printf("[atrium] could not work out where to record my address: %v", err)
 		return
@@ -95,6 +108,17 @@ func (d *Daemon) writeLocation() {
 		Since: time.Now().Format(time.RFC3339),
 		DB:    d.opts.DBPath,
 	}
+	// Taking the file off another daemon is allowed and is said out loud. Two
+	// daemons on one machine is a mistake worth being able to see, and the
+	// symptom without this line is every hook in every session quietly
+	// arriving at the wrong one.
+	if raw, err := os.ReadFile(path); err == nil {
+		if prev, taking := takingOver(raw, os.Getpid(), processAlive); taking {
+			log.Printf("[atrium] WARNING: pid %d is already listening on %s and every hook "+
+				"was aimed at it. they will now arrive here instead.", prev.PID, prev.Agent)
+		}
+	}
+
 	body, err := json.MarshalIndent(loc, "", "  ")
 	if err != nil {
 		return
@@ -108,6 +132,27 @@ func (d *Daemon) writeLocation() {
 		return
 	}
 	log.Printf("[atrium] address  -> %s", filepath.ToSlash(path))
+}
+
+// takingOver reports whether writing this file would take it off a daemon
+// that is still running.
+//
+// Three things all have to be true, and each of the other cases is a normal
+// one that must stay silent: a file this process already owns is a restart in
+// place, a file naming a process that has gone is what a daemon killed outright
+// leaves behind, and a file that does not parse says nothing at all.
+//
+// The liveness check is a parameter so this can be tested without arranging
+// for a second live process, which is not a thing a test can portably do.
+func takingOver(raw []byte, myPID int, alive func(int) bool) (Location, bool) {
+	var prev Location
+	if err := json.Unmarshal(raw, &prev); err != nil {
+		return prev, false
+	}
+	if prev.PID == 0 || prev.PID == myPID {
+		return prev, false
+	}
+	return prev, alive(prev.PID)
 }
 
 // handleHooksChanged says a board should re-read settings.json now.
@@ -128,7 +173,7 @@ func (d *Daemon) handleHooksChanged(w http.ResponseWriter, r *http.Request) {
 // clearLocation removes the file on the way out, so the next hook to run does
 // not aim at a daemon that has stopped.
 func (d *Daemon) clearLocation() {
-	path, err := LocationPath()
+	path, err := d.locationPath()
 	if err != nil {
 		return
 	}

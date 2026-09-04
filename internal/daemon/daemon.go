@@ -35,6 +35,18 @@ type Options struct {
 	// ShutdownToken guards POST /v1/shutdown. Empty means loopback only.
 	// Setting one says the endpoint is meant to be reachable remotely.
 	ShutdownToken string
+	// LocationFile is where this daemon records the address it is listening
+	// on. Empty means the machine's one true place for it, which is what a
+	// real daemon wants and what every caller looks in.
+	//
+	// It exists so a test can point somewhere else. Run writes this file on
+	// start and DELETES it on stop, so a test that starts a daemon and stops
+	// it was removing the address of whatever real daemon was running at the
+	// time. Nothing broke, because a caller that cannot find the file falls
+	// back to the default port and the daemon under test was on the default
+	// port anyway, which is exactly why it went unnoticed. On a non-default
+	// port it would have quietly unhooked every live session instead.
+	LocationFile string
 }
 
 // Daemon owns the store, the hub, and both listeners.

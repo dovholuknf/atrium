@@ -65,11 +65,16 @@ func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan erro
 	log.SetOutput(logs)
 	t.Cleanup(func() { log.SetOutput(old) })
 
+	dir := t.TempDir()
 	d, err := New(Options{
 		AgentAddr: freePort(t),
 		HumanAddr: freePort(t),
-		DBPath:    filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db")),
+		DBPath:    filepath.ToSlash(filepath.Join(dir, "atrium.db")),
 		LongPoll:  2 * time.Second,
+		// Never the machine's real one. Run writes this file on start and
+		// deletes it on stop, so a test without this removes the address of
+		// whatever daemon is actually running while the test suite runs.
+		LocationFile: filepath.Join(dir, "daemon.json"),
 	})
 	if err != nil {
 		t.Fatalf("daemon did not start: %v", err)

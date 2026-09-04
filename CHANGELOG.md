@@ -5,6 +5,23 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Running the tests no longer deletes the running daemon's address.** Found by noticing the file was gone.
+
+  `Run` writes `daemon.json` on start and deletes it on stop, and the delete is guarded on the pid so a daemon
+  does not remove a file another one owns. The write was not guarded, so every test that started a daemon
+  overwrote the file with its own pid and its own random port, and then the guarded delete matched and removed
+  it. Net effect of one `go test ./...`: the machine's real daemon becomes unfindable.
+
+  Nothing broke, and that is the interesting part. A caller that cannot find the file falls back to
+  `localhost:7777`, and the daemon this was found on was on the default port. On any other port a test run would
+  have quietly unhooked every live session on the machine, with no error anywhere, because a hook that cannot
+  reach atrium fails open by design.
+
+  `Options.LocationFile` is the fix: tests point it at a temp directory and a real daemon leaves it empty and
+  gets the machine's one true place. Writing the file over one that names a DIFFERENT, still-running process now
+  logs a warning as well, because two daemons on one machine is a mistake whose only symptom is every hook in
+  every session arriving at the wrong one.
+
 - **A source is a command on a timer.** The inbox fills itself now. A `source` row is an id, a command, its
   arguments, a directory and an interval, and atrium runs it and reads its stdout as intake items. Shaped like
   the `harness` table on purpose and for the same reason: a harness row says how to start a runner without atrium

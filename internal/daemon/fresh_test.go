@@ -32,12 +32,15 @@ func TestNewDatabaseIsAnnouncedLoudly(t *testing.T) {
 // database it made last time must be silent about it, or the notice becomes
 // noise and stops being read.
 func TestReopeningADatabaseIsQuiet(t *testing.T) {
-	path := filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db"))
+	dir := t.TempDir()
+	path := filepath.ToSlash(filepath.Join(dir, "atrium.db"))
 	opts := Options{
 		AgentAddr: freePort(t),
 		HumanAddr: freePort(t),
 		DBPath:    path,
 		LongPoll:  2 * time.Second,
+		// Never the machine's real one. See Options.LocationFile.
+		LocationFile: filepath.Join(dir, "daemon.json"),
 	}
 
 	first, err := New(opts)
