@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"strings"
@@ -96,17 +98,32 @@ func (d *Daemon) runSource(ctx context.Context, s *store.Source) (created int, e
 	items, runErr := d.readSource(ctx, s)
 	if runErr == nil {
 		for _, item := range items {
-			task, isNew, err := d.st.Offer(item)
+			task, err := func() (*store.Task, error) {
+				t, isNew, err := d.st.Offer(item)
+				if err != nil {
+					return nil, err
+				}
+				if isNew {
+					created++
+				}
+				return t, nil
+			}()
 			if err != nil {
-				// One bad item does not fail the run. The source will report
-				// the same batch next tick and the good ones are already in.
-				log.Printf("[atrium] source %s: %v", s.ID, err)
-				continue
+				// An item that fails to land FAILS THE RUN.
+				//
+				// Every item was checked before any was offered, so reaching
+				// here is a write failing rather than a bad item, and a write
+				// failing is the store's problem and not this batch's.
+				//
+				// Items already offered stay. That is safe rather than untidy:
+				// offering is keyed on the pair, so the next tick sees them as
+				// known and reports nothing new. What must NOT happen is the
+				// row saying the run succeeded, because then nothing ever
+				// reconciles and the inbox is quietly short.
+				runErr = fmt.Errorf("could not offer %s: %w", item.ExternalID, err)
+				break
 			}
-			if isNew {
-				created++
-				d.publishTask(task.ID)
-			}
+			d.publishTask(task.ID)
 		}
 	}
 
@@ -125,6 +142,36 @@ func (d *Daemon) runSource(ctx context.Context, s *store.Source) (created int, e
 			s.ID, created, len(items))
 	}
 	return created, runErr
+}
+
+// limitedWriter passes bytes through until a budget runs out, then discards
+// the rest.
+//
+// Not an error on overflow: returning one makes the child's next write fail,
+// which for a shell script means a broken pipe and a confusing exit status
+// instead of the clear "printed too much" the caller wants to report. The
+// caller checks how much arrived and decides.
+type limitedWriter struct {
+	w    io.Writer
+	left int
+}
+
+func (l *limitedWriter) Write(p []byte) (int, error) {
+	if l.left <= 0 {
+		return len(p), nil
+	}
+	take := p
+	if len(take) > l.left {
+		take = take[:l.left]
+	}
+	n, err := l.w.Write(take)
+	l.left -= n
+	if err != nil {
+		return n, err
+	}
+	// The child is told everything landed, so it is not the one that finds out
+	// about the limit.
+	return len(p), nil
 }
 
 // RunSourceNow runs one source outside its interval.
@@ -159,25 +206,40 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 	// launched runner gets, and for the same reason.
 	cmd.Env = childEnv(nil, nil)
 
-	out, err := cmd.Output()
+	// Bounded WHILE reading, not after.
+	//
+	// `cmd.Output()` buffers everything the child prints and hands it over,
+	// so checking the length afterwards is a check made once the memory has
+	// already been allocated. A source that dumps a repository would be
+	// refused, having first been read in full. The whole point of the bound is
+	// that it never happens.
+	//
+	// One byte over the limit is enough to know: the read stops there and the
+	// child is left to be killed by the context.
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &limitedWriter{w: &out, left: sourceOutputLimit + 1}
+	// Stderr is bounded too, and much smaller. It exists to put a readable
+	// reason on the row, and a row is one line.
+	cmd.Stderr = &limitedWriter{w: &errOut, left: 8 << 10}
+
+	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
 		return nil, fmt.Errorf("took longer than %s and was stopped", sourceTimeout)
+	}
+	if out.Len() > sourceOutputLimit {
+		return nil, fmt.Errorf("printed more than the %d byte limit and was stopped",
+			sourceOutputLimit)
 	}
 	if err != nil {
 		// A source that fails is usually a source whose command said why on
 		// stderr, and the exit status alone is not worth reading.
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("exited %d: %s", ee.ExitCode(), firstLine(string(ee.Stderr)))
+		if errOut.Len() > 0 {
+			return nil, fmt.Errorf("%v: %s", err, firstLine(errOut.String()))
 		}
 		return nil, err
 	}
-	if len(out) > sourceOutputLimit {
-		return nil, fmt.Errorf("printed %d bytes, over the %d byte limit",
-			len(out), sourceOutputLimit)
-	}
 
-	trimmed := strings.TrimSpace(string(out))
+	trimmed := strings.TrimSpace(out.String())
 	if trimmed == "" {
 		// Nothing to report is a normal answer and not a failure. A queue with
 		// nothing in it is the state you want.

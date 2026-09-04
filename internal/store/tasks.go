@@ -490,7 +490,7 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 func (s *Store) SetOrigin(id, source, externalID, url string) error {
 	source = strings.TrimSpace(source)
 	externalID = strings.TrimSpace(externalID)
-	url = strings.TrimSpace(url)
+	url = SafeURL(url)
 	if source == "" && externalID == "" && url == "" {
 		return nil
 	}

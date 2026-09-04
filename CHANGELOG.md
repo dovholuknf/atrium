@@ -5,6 +5,33 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Four things a review found, fixed.** A code review of everything above, run before any of it was committed.
+  All four concerns were real. `.mercurius/s_rBMcLOgwpVAn/round-01/` has the findings and the triage.
+
+  **A stored `javascript:` url on a card.** The worst of the four and the one that arrived with the feature that
+  created it. Escaping protects the attribute and does nothing about the scheme, so `javascript:alert(1)` on a
+  card's origin link survived escaping intact and would have run in the board's own context, which holds the
+  settings, the grouping expression and every card. It matters here because of where the data comes from: a
+  source is a script reading GitHub or Zendesk and whatever it prints becomes a link. Now allowed only `http`
+  and `https`, checked where a link enters AND where it is drawn, and anything else renders as text rather than
+  taking the identifier down with it. An allow list, because the set of schemes a browser will act on is not a
+  set this code gets to enumerate.
+
+  **The upload directory was created before it was checked.** The computed destination is the whole security
+  argument for shipping upload before any write endpoint, and calling `MkdirAll` before `Contained` undercut it:
+  a `.atrium` that was already a symlink elsewhere would have had a directory made outside the card before
+  anything refused anything. Resolved first now, and again afterwards, because `MkdirAll` resolves links it did
+  not create.
+
+  **The source output limit was checked after the output was in memory.** `cmd.Output()` buffers everything and
+  hands it over, so a source dumping a repository was refused having first been read in full, which is exactly
+  what the bound exists to prevent. Bounded while reading now.
+
+  **A partial import was recorded as a successful run.** One item failing to land was logged and skipped, and
+  the row then said the run succeeded, so nothing ever reconciled. Any failure now fails the run. Items already
+  offered are left alone rather than rolled back, because offering is keyed on the pair and the next tick sees
+  them as known.
+
 - **Paste a screenshot into a session.** The half of file transfer with no workaround at all: the clipboard is
   on the machine with the browser and the session is on the machine with the daemon, so over an overlay there
   was simply no way to get an image to an agent. Paste, drop and picker are one pipeline, because whatever
@@ -30,8 +57,9 @@ section heading is just "what landed in this iteration."
 
   Two things the tests turned up. The right-to-left override is not a control character, so stripping everything
   below `0x20` left the oldest trick there is for making an executable look like an image; the whole `Cf`
-  category goes now. And "outside this card" and "no such file" both answer `403`, because two different answers
-  make the endpoint an oracle for what is on the machine.
+  category goes now. And every path OUTSIDE the card answers `403` whether or not it exists, so the endpoint
+  cannot be used to find out what is on the machine. A path inside the card that is missing answers `404`, which
+  leaks nothing: anyone who can ask can already see that directory.
 
 - **Everything that has ever run here, as its own tab.** `ListArchived` had existed for a while and nothing
   showed it. Cards were being archived off the board and going nowhere anybody could look.

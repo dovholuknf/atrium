@@ -193,6 +193,41 @@ func TestUploadingToAnArchivedCardIsRefused(t *testing.T) {
 	}
 }
 
+// Mercurius round two, C3. The upload path is computed and has no caller input
+// in it, which is what makes the rest of this safe, and that is not enough on
+// its own: if `.atrium` already exists as a symlink pointing elsewhere, then
+// creating `incoming` under it makes a directory outside the card BEFORE
+// anything has refused anything.
+//
+// The order is the whole fix. Resolve first, create second.
+func TestUploadRefusesAnIncomingDirectoryThatEscapes(t *testing.T) {
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(work, ".atrium")); err != nil {
+		t.Skipf("cannot create a symlink on this machine: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	s.uploadFiles(w, uploadReq(t, task.ID, []string{"a.png"}, []byte("x")))
+	if w.Code == http.StatusOK {
+		t.Fatalf("an upload through an escaping symlink was accepted: %s", w.Body.String())
+	}
+
+	// And nothing was created out there on the way to refusing.
+	if _, err := os.Stat(filepath.Join(outside, "incoming")); err == nil {
+		t.Fatal("a directory was created outside the card before the upload was refused")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("%d things were written outside the card", len(entries))
+	}
+}
+
 // Download is the first caller-supplied path in atrium that is bounded.
 
 func downloadReq(id, path string) *http.Request {
