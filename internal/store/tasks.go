@@ -13,7 +13,7 @@ import (
 const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, status,
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
-	archived_at, source, url, prompt, intake_key, auto_until`
+	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -27,12 +27,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		pinned       int
 		archived     string
 		autoUntil    string
+		recapAt      string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
-		&t.Prompt, &t.IntakeKey, &autoUntil); err != nil {
+		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -73,6 +74,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 			return nil, fmt.Errorf("task %s auto_until: %w", t.ID, err)
 		}
 		t.AutoUntil = &u
+	}
+	if recapAt != "" {
+		r, err := parseTS(recapAt)
+		if err != nil {
+			return nil, fmt.Errorf("task %s recap_at: %w", t.ID, err)
+		}
+		t.RecapAt = &r
 	}
 	t.WireName = wire.String
 	t.Overrides = map[string]string{}
@@ -217,11 +225,11 @@ func (s *Store) insertTask(t *Task) error {
 		tags = string(raw)
 	}
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
-		t.Source, t.URL, t.Prompt, t.IntakeKey, "")
+		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "")
 	return err
 }
 

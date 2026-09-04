@@ -162,6 +162,19 @@ type Task struct {
 	// if the answer is the same tomorrow and in another browser. Empty means
 	// the board-wide default for whichever kind of alert fired.
 	Sound string `json:"sound"`
+	// Recap is what the session said it did, in its own words, and RecapAt is
+	// when it said so.
+	//
+	// The point of this is that a session which ended with an account of
+	// itself and one that did not are different, and until there was somewhere
+	// to put one the board could not tell them apart. A card in `done` with no
+	// recap is either still worth writing up or was never worth starting, and
+	// both of those are worth being able to see.
+	//
+	// Not a transcript. Two or three sentences, written once at the end, by
+	// the only party that knows what happened. Bounded on the way in.
+	Recap   string     `json:"recap,omitempty"`
+	RecapAt *time.Time `json:"recap_at,omitempty"`
 	// ArchivedAt is when this card left the board, or nil while it is on it.
 	//
 	// Off the board, still on the record. A dead card is swept so the finished

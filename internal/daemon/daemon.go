@@ -550,6 +550,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/stop", d.handleStop)
 	agentMux.HandleFunc("/activity", d.handleActivity)
+	// A session declaring its work over, which nothing could say before.
+	agentMux.HandleFunc("/finish", d.handleFinish)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}

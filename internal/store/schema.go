@@ -631,6 +631,28 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN auto_until TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// What the session says it did, in its own words.
+		//
+		// This closes the largest hole in what atrium does. Everything an
+		// agent reported landed in `needs-input`, so the board could not tell
+		// "finished, go and look at the result" from "stuck, answer me", and
+		// only a human moving a card by hand ever produced `done`. Sorting
+		// those two apart afterwards means reading each one, which is the
+		// thing a board exists to avoid.
+		//
+		// A recap is not a transcript and must not become one. It is the two
+		// or three sentences a session would say if you asked it what it just
+		// did, written once at the end, by the only party that knows.
+		//
+		// Bounded when it is written rather than here, because a TEXT column
+		// with no limit is how a card ends up holding a diff.
+		name: "0029_task_recap",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN recap TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN recap_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
