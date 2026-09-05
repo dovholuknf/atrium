@@ -68,6 +68,13 @@ type Daemon struct {
 	nats   map[overlayKind]*native
 	natsMu sync.Mutex
 
+	// guests holds sessions lent out one at a time, each on its own share that
+	// reaches that session and nothing else. In memory, and gone on restart on
+	// purpose: a link handed to somebody should stop working when the machine
+	// serving it stops, rather than coming back hours later without anybody
+	// deciding it should. See overlay_guest.go.
+	guests guestShares
+
 	// peerLimit bounds how often one session may message others. In memory,
 	// because the thing it bounds is a runaway session and a session does not
 	// outlive the daemon either.
@@ -162,6 +169,9 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
 	d.ap.SetApiEndpoint = d.SetZrokApiEndpoint
+	d.ap.ShareCard = d.ShareCard
+	d.ap.StopCardShare = d.StopCardShare
+	d.ap.GuestShares = d.GuestShares
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }

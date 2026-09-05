@@ -183,6 +183,10 @@ func (s *supervisor) get(taskID string) *runner {
 	return s.runners[taskID]
 }
 
+// has is `get` for callers that only want the question answered, so they do
+// not hold a runner they have no business writing to.
+func (s *supervisor) has(taskID string) bool { return s.get(taskID) != nil }
+
 func (s *supervisor) add(r *runner) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

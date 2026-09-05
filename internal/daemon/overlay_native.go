@@ -225,14 +225,14 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 
 	shr, err := zroksdk.CreateShare(root, req)
 	if err != nil {
-		return fmt.Errorf("zrok refused the share: %w", err)
+		return zrokSays("could not put the board on a zrok share", err)
 	}
 
 	ln, err := zroksdk.NewListener(shr.Token, root)
 	if err != nil {
 		// The share exists and nothing is answering it, so it goes.
 		_ = zroksdk.DeleteShare(root, shr)
-		return fmt.Errorf("could not listen on that share: %w", err)
+		return zrokSays("the share was created but nothing could answer it", err)
 	}
 
 	// The address as data. A public share carries its frontend URLs; a private

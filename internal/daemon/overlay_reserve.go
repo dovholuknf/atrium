@@ -66,7 +66,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 
 	zrok, err := root.Client()
 	if err != nil {
-		return "", fmt.Errorf("could not reach the zrok api: %w", err)
+		return "", zrokSays("could not reach the zrok api", err)
 	}
 	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
 
@@ -76,7 +76,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 		// Already existing is the ordinary case on the second press, and the
 		// reservation below is what actually matters. Anything else is real.
 		if !alreadyThere(err) {
-			return "", fmt.Errorf("could not create the name %q: %w", name, err)
+			return "", zrokSays(fmt.Sprintf("could not create the name %q", name), err)
 		}
 	}
 
@@ -85,7 +85,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 		NamespaceToken: namespace, Name: name, Reserved: true,
 	}
 	if _, err := zrok.Share.UpdateShareName(reserve, auth); err != nil {
-		return "", fmt.Errorf("the name %q exists but could not be reserved: %w", name, err)
+		return "", zrokSays(fmt.Sprintf("the name %q exists but could not be reserved", name), err)
 	}
 
 	// What the start path wants in its config, so the answer can be pasted
