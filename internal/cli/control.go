@@ -109,7 +109,12 @@ func controlServer() *mcp.Server {
 			"that session's terminal. Say what you are doing before you call this, and expect " +
 			"to be resumed rather than answered.\n\n" +
 			"Supervised sessions come back from their resume ids if they are fixtures. Anything " +
-			"else does not come back at all.",
+			"else does not come back at all.\n\n" +
+			"OTHER AGENTS ARE PARKED FIRST. A restart closes every terminal atrium owns and " +
+			"kills the process in each, so any supervised session that is working is told what " +
+			"is coming and given time to stop. If some are still working when that runs out, " +
+			"NOTHING IS SCHEDULED and they are returned in `busy`: wait and call again, or pass " +
+			"`force`. Sessions atrium does not own are unaffected by a restart and are ignored.",
 	}, restartHandler)
 
 	return s
@@ -192,8 +197,17 @@ func statusHandler(ctx context.Context, _ *mcp.CallToolRequest, _ StatusInput) (
 
 type RestartInput struct {
 	// Why is recorded in the log the restarter writes, so a board that came
-	// back has an account of who asked and what for.
+	// back has an account of who asked and what for. It is also what the other
+	// agents are told, so it is worth writing as a sentence.
 	Why string `json:"why,omitempty" jsonschema:"what this restart is for"`
+	// Force skips waiting for other agents to reach a stopping point.
+	//
+	// Off by default and it should stay off. The whole reason this exists is
+	// that a restart closes every terminal atrium owns, and closing one kills
+	// the process in it. Forcing is for a board that is already broken.
+	Force bool `json:"force,omitempty" jsonschema:"restart even if other agents are still working"`
+	// WaitSeconds bounds how long to wait for them. Zero uses the default.
+	WaitSeconds int `json:"wait_seconds,omitempty" jsonschema:"how long to wait for other agents, in seconds"`
 }
 
 type RestartOutput struct {
@@ -201,6 +215,12 @@ type RestartOutput struct {
 	InSeconds int    `json:"in_seconds"`
 	DB        string `json:"db,omitempty"`
 	Note      string `json:"note"`
+	// Parked is who was asked to stop and did. Named rather than counted,
+	// because the next question is always which ones.
+	Parked []string `json:"parked,omitempty"`
+	// Busy is who was still working when the wait ran out. Non-empty means
+	// nothing was scheduled, unless force was set.
+	Busy []busyCard `json:"busy,omitempty"`
 }
 
 func restartHandler(_ context.Context, _ *mcp.CallToolRequest, in RestartInput) (
@@ -225,6 +245,34 @@ func restartHandler(_ context.Context, _ *mcp.CallToolRequest, in RestartInput) 
 			"cannot tell which database to reopen. start the daemon once with --db and try again")
 	}
 
+	// NOBODY ELSE GETS THE RUG PULLED.
+	//
+	// The restart closes every terminal atrium owns and takes the process in
+	// each one with it. The caller signed up for that; nothing else did. So
+	// anything supervised and working is told what is coming and given a
+	// chance to stop, and the restart does not happen until they have.
+	//
+	// Skipped entirely when the board is not answering: there is nothing to
+	// ask and nothing to interrupt.
+	var parked []string
+	if loc, err := readLocation(); err == nil && strings.TrimSpace(loc.Board) != "" {
+		wait := parkWait
+		if in.WaitSeconds > 0 {
+			wait = time.Duration(in.WaitSeconds) * time.Second
+		}
+		busy, told, perr := parkAgents(loc.Board, in.Why, wait)
+		parked = told
+		if perr == nil && len(busy) > 0 && !in.Force {
+			return nil, RestartOutput{
+				Busy:   busy,
+				Parked: told,
+				Note: "NOT restarted. these sessions are still working and the restart would " +
+					"close their terminals: " + describe(busy) + ". they have been asked to " +
+					"stop. wait and try again, or pass force if you accept interrupting them.",
+			}, nil
+		}
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, RestartOutput{}, fmt.Errorf("cannot find my own binary: %w", err)
@@ -236,13 +284,18 @@ func restartHandler(_ context.Context, _ *mcp.CallToolRequest, in RestartInput) 
 		return nil, RestartOutput{}, fmt.Errorf("could not schedule the restart: %w", err)
 	}
 
+	note := "the daemon goes down in a few seconds and comes back on the same database. " +
+		"if you are a supervised session you will be taken down with it. say nothing " +
+		"further this turn."
+	if len(parked) > 0 {
+		note = "parked " + strings.Join(parked, ", ") + " first. " + note
+	}
 	return nil, RestartOutput{
 		Scheduled: true,
 		InSeconds: int(restartDelay.Seconds()),
 		DB:        db,
-		Note: "the daemon goes down in a few seconds and comes back on the same database. " +
-			"if you are a supervised session you will be taken down with it. say nothing " +
-			"further this turn.",
+		Parked:    parked,
+		Note:      note,
 	}, nil
 }
 
@@ -285,10 +338,9 @@ func runRestart(db, delay string) error {
 		return err
 	}
 	// The daemon is DOWN right now, which is the only moment its binary can be
-	// replaced. Anything staged beside it goes in here.
-	if err := swapStaged(exe); err != nil {
-		log.Printf("[atrium] could not install the staged binary: %v", err)
-	}
+	// replaced. Anything staged beside it goes in here, the control server
+	// included.
+	swapAllStaged(exe)
 	return spawnDetached(exe, []string{"daemon", "--db", db})
 }
 
@@ -332,13 +384,46 @@ func exeSuffix() string {
 // A failure here is logged and stepped over rather than returned. The staged
 // binary not landing means the daemon comes back on the old one, which is a
 // disappointment. Not coming back at all is an outage.
+// swapAllStaged installs whatever has been staged beside the running binaries.
+//
+// TWO BINARIES, and forgetting the second one is a trap worth naming. The
+// daemon is `atrium`, and the MCP server that schedules this restart is
+// `atrium-control`, split apart precisely because neither can overwrite a file
+// the other is running. Swapping only the daemon means a change to the control
+// server sits staged forever: the daemon comes back new, spawns claude, claude
+// spawns the OLD control binary, and nothing about the tool has changed.
+//
+// The control binary is swapped by a copy of ITSELF, which is fine for the
+// same reason the daemon swap is: Windows permits renaming an open file, and
+// the running image keeps its handle to the file under its new name.
+func swapAllStaged(daemonExe string) {
+	if err := swapStaged(daemonExe); err != nil {
+		log.Printf("[atrium] could not install the staged daemon: %v", err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	// Only when they are siblings. A control server installed somewhere else
+	// entirely is not something this should be reaching into.
+	if filepath.Dir(self) != filepath.Dir(daemonExe) {
+		return
+	}
+	if err := swapStaged(self); err != nil {
+		log.Printf("[atrium] could not install the staged control server: %v", err)
+	}
+}
+
+// swapStaged installs `<name>.next` over `<name>`, keeping the outgoing one as
+// `<name>.old`.
 func swapStaged(exe string) error {
 	dir := filepath.Dir(exe)
-	staged := filepath.Join(dir, "atrium.next"+exeSuffix())
+	base := strings.TrimSuffix(filepath.Base(exe), exeSuffix())
+	staged := filepath.Join(dir, base+".next"+exeSuffix())
 	if _, err := os.Stat(staged); err != nil {
 		return nil
 	}
-	aside := filepath.Join(dir, "atrium.old"+exeSuffix())
+	aside := filepath.Join(dir, base+".old"+exeSuffix())
 
 	// THE OUTGOING BINARY IS MOVED ASIDE, NOT DELETED, and on Windows that
 	// distinction is the whole reason this works.
