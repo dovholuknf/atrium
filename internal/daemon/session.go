@@ -271,15 +271,32 @@ func (d *Daemon) onSession(in SessionEvent) error {
 
 	case "compact":
 		// A moment, not a state. The card records that this session forgot
-		// something and stays exactly where it was: nothing about compacting
-		// changes whether it wants a human, and moving it would take a card
-		// out of the column somebody is reading for a reason that is not about
-		// them.
+		// something. Nothing here puts it in a `compacting` status, because it
+		// is not one: the session is working before, during and after.
 		if err := d.st.AppendEvent(task.ID, store.EventCompacted, map[string]any{
 			"trigger": in.Trigger,
 		}); err != nil {
 			return err
 		}
+		// BUT IT IS WORK, so a card that was waiting is not any more.
+		//
+		// This used to say the card stays exactly where it was, on the
+		// reasoning that compacting says nothing about whether a human is
+		// wanted. That is wrong in the one direction that matters. Compaction
+		// happens because a session is busy: automatically, mid-turn, or
+		// because somebody typed `/compact` at it. Neither is a session
+		// sitting waiting for you.
+		//
+		// So a card in `needs-input` that compacts was left sitting in the
+		// column that means "answer me" while the agent worked, and it stayed
+		// there until the next tool call happened to move it. Between a long
+		// compaction and a turn that starts by thinking, that is a real
+		// stretch of the board being wrong.
+		//
+		// `turnResumed` only lifts from `needs-input`, so a shelved, done or
+		// dead card is untouched and nothing is dragged back out of a column
+		// somebody put it in.
+		d.turnResumed(task.ID)
 		log.Printf("[atrium] %s compacted its context (%s)", in.Agent, orWord(in.Trigger, "unsaid"))
 
 	case "end":
