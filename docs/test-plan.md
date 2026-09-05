@@ -3,8 +3,10 @@
 Manual test scenarios for every shipped feature. Run end-to-end before tagging a build, after touching the
 hub / agent / TUI / hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
 
-Sections A through F cover v1: the hub, the agent loop and the permission surface they share. Section G covers
-the daemon, which is where the work now happens.
+Sections A through F cover v1: the hub, the agent loop and the permission surface they share. G covers the
+daemon, which is where the work now happens. H covers the overlays, I covers importing rules from Claude Code,
+and J covers what landed most recently, written the night it was built so the first person to run it is checking
+claims rather than remembering intent.
 
 ## Pre-flight
 
@@ -820,6 +822,146 @@ it is covered by tests. When an identity exists: enroll from the gear, pick a bi
 service field offers, start, and reach the board from another machine on that network.
 
 Until somebody does that, `docs/overlays.md` says so rather than implying both halves are equally proved.
+
+
+## I. Importing rules from Claude Code
+
+The one part of the permission surface with no scenario, named in Known gaps for months. It matters because it
+is the only path that writes a standing rule atrium did not watch somebody make, and a standing rule is the
+thing that answers without asking.
+
+### I1. Import, and what it refuses to bring
+
+**Steps**
+
+1. Rules tab, `import from claude code`. Leave `include broad` off.
+2. Read the list of what it skipped.
+3. Import again, unchanged.
+4. Turn `include broad` on and import once more.
+
+**Expect**
+
+- Rules whose pattern matches EVERY request for a tool are skipped, and each skipped row says why in a sentence
+  rather than a code. A rule that answers everything is not a rule, it is auto mode with worse provenance.
+- Step 3 adds nothing and updates nothing. Import is idempotent: the same settings file imported twice is the
+  same set of rules, or every restart of a habit doubles somebody's rule list.
+- Step 4 brings the broad ones, and they arrive marked with where they came from.
+
+**Most common failure** the count reported does not match the rows that appear, because `added` and `updated`
+are counted separately and one of them is not shown.
+
+### I2. Export and re-import
+
+**Steps**
+
+1. Rules tab, export as JSON.
+2. Open the file. It should be a `{"rules": [...]}` object, not a bare array.
+3. Import it back with `source: json`.
+
+**Expect** no change at all: the same rules, no duplicates, no updates. The export is shaped so it can be handed
+straight back, and a round trip that adds anything means the two ends disagree about what identifies a rule.
+
+## J. What landed on 2026-09-05
+
+Written the night the work was done, so the first person to run these is checking claims rather than
+remembering intent. Every one of these is fast.
+
+### J1. The event log answers with the newest events
+
+**Steps**
+
+1. Open a card that has been running a while. Card dialog, the timeline.
+2. Compare the newest entry against what that session just did.
+
+**Expect** the LAST events, ending in something that happened in the last few minutes, ascending down the page.
+
+**What it used to do** answer with the oldest 200, so a busy card showed the day it was created and nothing
+since. If the timeline ends hours or days ago on a card that is working, the fix is not in.
+
+### J2. The directory picker refuses what is outside its roots
+
+**Steps**
+
+1. Launch dialog, press browse. Note what the root list offers.
+2. Walk into a card's directory, then press up repeatedly.
+3. Settings, this machine, `the picker may open`. Read `Right now:`.
+4. Add a directory of your own, save, press browse again.
+
+**Expect**
+
+- The root list is your home directory plus every directory a card, fixture, source or harness already names,
+  rather than `C: D:`.
+- Pressing up from a root returns to the root list rather than climbing to its parent.
+- The line under the box names exactly what resolved. A path that does not exist is dropped, and the only way
+  to notice is that it is missing from that line.
+
+**Also check** the picker fills in the field that OPENED it. Open it from a fixture's directory box, choose
+something, and confirm it landed there rather than in the launch dialog's box.
+
+### J3. Hooks stop reading `points elsewhere`
+
+This one needs the manual step in `REPORT.md` first: install, restart the daemon from the installed path, then
+`atrium hook install`.
+
+**Steps**
+
+1. Gear, hooks. Read the state beside each row.
+2. Hover any row that says `points elsewhere`.
+
+**Expect** every atrium row reads `wired` once the three steps are done. Before that, hovering a stale row names
+BOTH paths: what the entry runs, and what the daemon is running. The two differing by one directory is the whole
+story.
+
+**Then rebuild and check again.** `go build`, and the rows must still read `wired`: the identity is the
+installed binary, not the one you just built, which is the entire point.
+
+### J4. Priority is weight, not order
+
+**Steps**
+
+1. Right-click a card, `how much it matters`, `high`.
+2. Look at the column it is in. Then mark a card in `needs-permission` normal and a card in `running` high.
+3. Click the `high` chip.
+4. Find a card marked high more than a week ago, or change the clock, and look at the chip.
+
+**Expect**
+
+- Nothing reorders. A `needs-permission` card stays above a high-priority idle one, because a blocked agent is
+  blocked whatever you think of the work.
+- The chip filters the stack to `!high`.
+- A priority older than a week is drawn faded, and the tooltip says how old it is.
+- The flyout ticks the level already set, and picking that same level clears it back to normal.
+
+### J5. A held note says so on the card
+
+**Steps**
+
+1. Open a card, write something in `notes to self`, close the dialog without sending.
+2. Look at the card on the board and its row in the stack.
+3. Hover the `note` chip.
+4. Open the card and press `send it`.
+
+**Expect** an amber `note` chip in both places, carrying the text in its tooltip and NO send button. Sending
+clears both the note and the chip. A chip that survives a send means the note was not cleared, which is the one
+outcome that matters: the note is cleared only after it is safely somewhere else.
+
+### J6. The logon task points somewhere that does not move
+
+Do not run this on a machine where atrium is already registered unless you mean to replace the registration.
+
+**Steps**
+
+```powershell
+.\scripts\atrium-autostart.ps1
+Get-ScheduledTask -TaskName atrium | Select-Object -ExpandProperty Actions
+Get-ScheduledTask -TaskName atrium | Select-Object -ExpandProperty Principal
+```
+
+**Expect** the action runs `conhost.exe --headless <installed path> daemon --db ...`, and the principal names
+the identity in the form this machine uses (`DOMAIN\user` or `MicrosoftAccount\...`), not a bare username. The
+path must NOT be under `build.claude`.
+
+**Then** log out and back in, and confirm no console window appears.
 
 ## Notes for future automation
 

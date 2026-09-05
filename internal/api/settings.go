@@ -60,6 +60,9 @@ func globalAutoView(s *Server) map[string]any {
 		// showing today's default as though somebody had chosen it.
 		SettingScrollbackMB:    "scrollback_mb",
 		SettingScrollbackLines: "scrollback_lines",
+		// Where the directory picker may look. Empty means the default set,
+		// which is the home directory plus every directory a card names.
+		SettingBrowseRoots: "browse_roots",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -82,6 +85,10 @@ func globalAutoView(s *Server) map[string]any {
 	out["scrollback_lines_now"] = scrollbackLines(s.st)
 	out["scrollback_mb_max"] = maxScrollbackMB
 	out["scrollback_lines_max"] = maxScrollbackLines
+	// What the picker will actually use, resolved. An empty box means the
+	// default set, and the person reading it wants to know what that came out
+	// as rather than being told there is a default.
+	out["browse_roots_now"] = s.browseRootsFor()
 	return out
 }
 
@@ -132,6 +139,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// has no way to say it.
 		ScrollbackMB    *string `json:"scrollback_mb"`
 		ScrollbackLines *string `json:"scrollback_lines"`
+		// Where the picker may look. A pointer, because clearing it back to
+		// the default set is a request.
+		BrowseRoots *string `json:"browse_roots"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -254,6 +264,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, err)
 				return
 			}
+		}
+	}
+
+	if body.BrowseRoots != nil {
+		// Stored as typed. Nothing is validated here on purpose: a root that
+		// does not exist is dropped when the set is resolved, and refusing one
+		// at save time would stop somebody preparing a list for a drive that
+		// is not plugged in.
+		if err := s.st.SetSetting(SettingBrowseRoots, *body.BrowseRoots); err != nil {
+			s.fail(w, err)
+			return
 		}
 	}
 

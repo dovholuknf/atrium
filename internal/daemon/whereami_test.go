@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/claudeconf"
 )
 
 // Where the daemon writes its address, and the rule that a test must never
@@ -153,5 +155,61 @@ func TestTheTakeoverWarningIsPrinted(t *testing.T) {
 	if strings.Contains(logs.String(), "already listening") &&
 		!strings.Contains(logs.String(), "arrive here instead") {
 		t.Fatal("the warning does not say what happens next")
+	}
+}
+
+// The daemon records which binary it is running, and it records its own.
+//
+// This is what stops `atrium hook install`, typed at a freshly built binary,
+// writing that binary's path into settings.json while the daemon runs from
+// somewhere else. `internal/claudeconf/whichexe.go` reads this field.
+func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+
+	raw, err := os.ReadFile(d.opts.LocationFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loc Location
+	if err := json.Unmarshal(raw, &loc); err != nil {
+		t.Fatal(err)
+	}
+	if loc.Exe == "" {
+		t.Fatal("the location file records no binary, so a hook written outside " +
+			"the daemon has nothing to aim at")
+	}
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if real, err := filepath.EvalSymlinks(self); err == nil {
+		self = real
+	}
+	if loc.Exe != filepath.ToSlash(self) {
+		t.Fatalf("recorded %q, want this process's own binary %q",
+			loc.Exe, filepath.ToSlash(self))
+	}
+}
+
+// The location path is duplicated in `internal/claudeconf` to avoid an import
+// cycle. If the two disagree, hooks are written naming a binary that is not the
+// daemon's, and they fail silently by design.
+func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {
+	mine, err := LocationPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := claudeconf.LocationPathForTest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mine != theirs {
+		t.Fatalf("the daemon writes %q and the hook resolver reads %q. they are "+
+			"duplicated on purpose and have drifted", mine, theirs)
 	}
 }

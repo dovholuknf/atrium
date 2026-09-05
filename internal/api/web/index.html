@@ -1074,6 +1074,34 @@
     background: hsl(160 50% 40% / .16); border: 1px solid hsl(160 45% 45% / .4);
     color: hsl(160 45% 72%); cursor: help;
   }
+  /* HOW MUCH THIS MATTERS, and the only chip on the board that is a judgement
+     rather than a fact.
+     High is loud and low is quiet, which is the entire visual argument: a
+     priority that reads at the same weight as everything else has not said
+     anything. Neither reorders a column. */
+  .chip.prio { cursor: pointer; font-weight: 600; letter-spacing: .04em; }
+  .chip.prio.high {
+    background: hsl(4 65% 48% / .18); border: 1px solid hsl(4 70% 58% / .55);
+    color: hsl(4 80% 76%);
+  }
+  .chip.prio.low {
+    background: transparent; border: 1px solid var(--stroke-dim);
+    color: var(--dimmest); font-weight: 500;
+  }
+  /* Marked and then left. A week without being touched and it is drawn as an
+     old opinion rather than a current one, because high-and-forgotten is not
+     high and a field where everything is high says nothing. */
+  .chip.prio.faded { opacity: .45; }
+  .chip.prio.faded:hover { opacity: 1; }
+
+  /* Something you wrote and have not sent. Amber, like everything else on this
+     board that is waiting on you, because that is exactly what it is: an
+     instruction that goes nowhere until you send it. Quieter than a waiting
+     card, since nothing is blocked and nobody is idle. */
+  .chip.note {
+    background: hsl(38 60% 45% / .14); border: 1px solid hsl(38 55% 50% / .35);
+    color: hsl(38 60% 74%); cursor: help;
+  }
   /* And its absence, which is a fact rather than a fault. Dim enough to read
      as a gap and not as a warning: a card can perfectly well be done with
      nothing to say about it. */
@@ -2283,6 +2311,17 @@
     background: #1d4666; transform: translateY(-1px);
   }
   button:active { transform: translateY(0); }
+  /* A control that cannot do anything has to look like it cannot. There was no
+     rule for this at all, only one scoped to `.row.line`, so a disabled button
+     kept full contrast, the hover lift and the pointer cursor. The picker was
+     where it showed: `up` and `use this one` are both disabled at the root, and
+     both read as buttons that were ignoring you. */
+  button:disabled,
+  button:disabled:hover,
+  button:disabled:active {
+    opacity: .38; cursor: not-allowed; transform: none; box-shadow: none;
+    color: var(--body); background: var(--chip); border-color: var(--stroke-dim);
+  }
   button.go {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
@@ -2639,7 +2678,7 @@
            you ask for it. Filled in by paintStackShow. -->
       <div class="seg multi" id="stack-seg"></div>
       <input type="search" id="stack-q"
-        placeholder="filter by name, path, runner or tag. #tag for that tag only"
+        placeholder="name, path, runner or tag. #tag for one tag, !high or !low for priority"
         spellcheck="false">
       <span class="matchcount" id="stack-match"></span>
     </div>
@@ -3260,6 +3299,25 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         of what you type here, so keep one.</span>
     </div>
 
+    <!-- Where the launch dialog's directory picker may look.
+         It used to be the whole machine, which is right for a picker on
+         loopback and wrong the moment the board is published: a share
+         terminates here, so every request over one looks like loopback and
+         nothing can be decided by address. -->
+    <div class="field">
+      <label class="eyebrow" for="s-browseroots">the picker may open</label>
+      <div class="picker">
+        <textarea id="s-browseroots" spellcheck="false" rows="3"
+          placeholder="one directory per line. empty means your home directory and every card's directory"
+          ></textarea>
+        <button onclick="saveBrowseRoots()">save</button>
+      </div>
+      <span class="hintline">One per line. Leave it empty and the picker offers your home directory plus
+        every directory a card already uses, which is where work already is. Anything outside is refused
+        whether or not it exists, so the refusal cannot be used to find out what is on the machine.
+        <b id="s-browseroots-now"></b></span>
+    </div>
+
     <!-- Two buffers, one question. Kept side by side because the smaller of
          the two is what you actually get, and setting one without seeing the
          other is how somebody pays for 512MB of daemon and still scrolls back
@@ -3489,11 +3547,19 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     <div class="field">
       <label class="eyebrow" for="f-theme">theme</label>
       <div class="picker">
-        <input type="text" id="f-theme" spellcheck="false" list="f-theme-list"
-          placeholder="empty picks one from the project">
-        <datalist id="f-theme-list"></datalist>
+        <!-- A SELECT, not a datalist, and the reason is written up under
+             "Picking a terminal theme is the worst control on the board".
+             A datalist filters on what is in the field, and the field opens
+             pre-filled with the theme already set, so the only suggestion
+             offered is the one already in use: picking a different one means
+             first deleting the text, which nothing tells you.
+             The terminal bar has the live picker, where a theme is judged
+             against real output. This is a fixture that is not running yet, so
+             there is nothing to preview against and a plain list is right. -->
+        <select id="f-theme"></select>
       </div>
-      <span class="hintline">What the terminal looks like. Empty lets the project choose.</span>
+      <span class="hintline">What the terminal looks like. Empty lets the project choose. To see one
+        against real output, start it and use the cog on the terminal bar.</span>
     </div>
     <div class="field">
       <div class="picker">
@@ -3678,11 +3744,11 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <h2>pick a directory</h2>
       <div class="crumb" id="b-path"></div>
     </div>
-    <button onclick="document.getElementById('browse').close()">cancel</button>
+    <button onclick="document.getElementById('browse').close()">close</button>
   </div>
   <div class="dlg-body">
     <div class="toolbar">
-      <button id="b-up" onclick="browseUp()">&#8593; up</button>
+      <button id="b-up" onclick="browseUp()">&#8593;&#8202;up a folder</button>
       <button class="go" id="b-use" onclick="useBrowsed()">use this one</button>
     </div>
     <div class="dirlist" id="b-list"></div>
@@ -4305,6 +4371,8 @@ function cardHTML(t) {
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
       ${tagChips(t)}
+      ${priorityChip(t)}
+      ${noteChip(t)}
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
@@ -5304,6 +5372,21 @@ async function cardMenu(e, id) {
     { sep: true },
     actionItems(t),
     shareItem(t),
+    // A flyout rather than three rows, which would be most of the menu spent
+    // on one decision.
+    {
+      label: "how much it matters",
+      note: t.priority || "normal",
+      help: "Your judgement, not the session's. It does not reorder anything: a " +
+        "blocked agent is blocked whatever you think of the work. It is weight " +
+        "on the card and a filter, and it fades after a week so that high and " +
+        "forgotten stops reading as high.",
+      sub: [
+        prioItem(id, t, "high", "high"),
+        prioItem(id, t, "", "normal"),
+        prioItem(id, t, "low", "low")
+      ]
+    },
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
@@ -5961,10 +6044,21 @@ function paintStack() {
   COLUMNS.forEach(c => { if (show.has(c.id)) c.statuses.forEach(s => wanted.add(s)); });
 
   // `#tag` means that tag exactly, so filtering to `#prs` does not also drag
-  // in a card whose path happens to contain the letters. Anything else is a
-  // plain substring across everything a card carries, tags included.
+  // in a card whose path happens to contain the letters. `!high` and `!low`
+  // are the same idea for priority: an exact match on a small closed set,
+  // rather than a substring that would also find every card with the word
+  // `high` in its path.
+  //
+  // `!` rather than `#` because the two are different kinds of thing and
+  // sharing a prefix would make `#high` ambiguous the day somebody makes a tag
+  // called high. Anything else is a plain substring across everything a card
+  // carries, tags included.
   const matchesText = t => {
     if (!q) return true;
+    if (q.startsWith("!")) {
+      const want = q.slice(1).trim();
+      return want ? (t.priority || "").toLowerCase() === want : true;
+    }
     if (q.startsWith("#")) {
       const want = q.slice(1).trim();
       return want ? (t.tags || []).includes(want) : true;
@@ -6134,6 +6228,8 @@ function stackRow(t) {
     </div>
     <div class="chips">
       ${tagChips(t)}
+      ${priorityChip(t)}
+      ${noteChip(t)}
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
@@ -6290,6 +6386,75 @@ function recapChip(t) {
   return `<span class="chip recap" title="${esc(t.recap)}">recap</span>`;
 }
 
+// One entry in the priority flyout.
+//
+// The level already set is ticked and clears itself when picked. Without that
+// there is no way back to normal from a list of three, and a fourth entry
+// called `none` would be a fourth way of saying the thing `normal` says.
+function prioItem(id, t, level, label) {
+  const on = (t.priority || "") === level;
+  return {
+    label: (on ? "✓ " : " ") + label,
+    act: () => setPriority(id, on ? "" : level)
+  };
+}
+
+async function setPriority(id, level) {
+  try {
+    await patchTask(id, { priority: level });
+  } catch (e) {
+    toast("could not set that", e.message);
+    return;
+  }
+  refresh();
+}
+
+// How much a card matters, as a chip.
+//
+// IT DOES NOT SORT, and nothing here should make it. Sorting by priority would
+// bury a `needs-permission` card under a high-priority one that is doing
+// nothing, which inverts the point of the first column: a blocked agent is
+// blocked whatever you think of the work.
+//
+// The fade is computed here and written nowhere. See `SetPriority` for why
+// there is no server-side expiry.
+const priorityStaleAfter = 7 * 24 * 3600;
+
+function priorityChip(t) {
+  const p = (t.priority || "").toLowerCase();
+  if (p !== "high" && p !== "low") return "";
+
+  const age = t.priority_at ? (Date.now() - Date.parse(t.priority_at)) / 1000 : 0;
+  const stale = age > priorityStaleAfter;
+  const said = t.priority_at ? ` ${ago(age)} ago` : "";
+  const why = p === "high"
+    ? `you marked this high${said}.` +
+      (stale ? " it has not been touched since, so it is drawn faded: high and forgotten is not high."
+             : "")
+    : `you marked this low${said}. worth keeping, not worth looking at now.`;
+
+  return `<span class="chip prio ${p}${stale ? " faded" : ""}"
+    title="${esc(why + " click to see only these.")}"
+    onclick="event.stopPropagation();filterByPriority('${p}')"
+    >${p}</span>`;
+}
+
+// A note written and held, said on the card.
+//
+// The text goes in the tooltip because a note is a sentence or three and a card
+// is one line. What the card has to carry is that there IS one.
+//
+// NO SEND BUTTON HERE. Sending is the deliberate half of what a note is for,
+// and a one-click send on a hover target beside `attach` is how a paragraph
+// arrives mid-turn by accident.
+function noteChip(t) {
+  const note = (t.note || "").trim();
+  if (!note) return "";
+  return `<span class="chip note"
+    title="${esc("held, not sent:\n\n" + note + "\n\nopen the card to send it")}"
+    >note</span>`;
+}
+
 // Where this work came from, when it came from somewhere.
 //
 // The link is the whole reverse direction worth having. Ticket state on the
@@ -6351,6 +6516,16 @@ function filterByTag(tag) {
   const q = document.getElementById("stack-q");
   if (!q) return;
   q.value = "#" + tag;
+  paintStack();
+}
+
+// The same motion for priority. Seeing `high` on a card and wanting only those
+// is one thought, and it should be one click.
+function filterByPriority(level) {
+  switchView("stack");
+  const q = document.getElementById("stack-q");
+  if (!q) return;
+  q.value = "!" + level;
   paintStack();
 }
 
@@ -9606,6 +9781,36 @@ async function loadHousekeeping() {
     lines.max = s.scrollback_lines_max || 1000000;
   }
   applyScrollback();
+
+  const roots = document.getElementById("s-browseroots");
+  if (roots) roots.value = s.browse_roots || "";
+  const now = document.getElementById("s-browseroots-now");
+  if (now) {
+    const list = s.browse_roots_now || [];
+    // What it resolved to, always, not only when the box is empty. A
+    // configured root that does not exist is dropped, and the only way to
+    // notice is to be shown what survived.
+    now.textContent = list.length
+      ? "Right now: " + list.join(", ")
+      : "Right now: nothing resolves, so the picker has nowhere to open.";
+  }
+}
+
+async function saveBrowseRoots() {
+  const el = document.getElementById("s-browseroots");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ browse_roots: el.value })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  loadHousekeeping();
+  toast("saved", "the picker opens in " +
+    ((pastePrefs.browse_roots_now || []).length || 0) + " place(s)");
 }
 
 // Both halves together, since they are one decision in two units.
@@ -13152,8 +13357,13 @@ function editFixture(id) {
   document.getElementById("f-harness").innerHTML = enabled.map(h =>
     `<option value="${esc(h.id)}"${h.id === f.harness ? " selected" : ""}>${esc(h.label)}</option>`
   ).join("");
-  document.getElementById("f-theme-list").innerHTML =
-    Object.keys(TERM_THEMES).sort().map(n => `<option value="${esc(n)}"></option>`).join("");
+  // Every theme, with an explicit entry for "let the project decide". A blank
+  // first option rather than an empty select: the default is a real choice and
+  // has to be selectable, not just what you get by not choosing.
+  document.getElementById("f-theme").innerHTML =
+    `<option value="">use the project default</option>` +
+    Object.keys(TERM_THEMES).sort()
+      .map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
 
   document.getElementById("f-label").value = f.label || "";
   document.getElementById("f-cwd").value = f.cwd || "";
@@ -13351,8 +13561,14 @@ async function loadHooks() {
 // the one report it knows how to read.
 function hookRow(h, runner) {
   const done = h.installed && !h.stale;
+  // BOTH PATHS, in the tooltip. `points elsewhere` names neither the entry's
+  // path nor the daemon's, which leaves opening settings.json and comparing by
+  // eye as the only way to act on it.
+  const drift = h.stale
+    ? `this entry runs:\n${h.found || "(nothing)"}\n\natrium is running:\n${h.want || ""}`
+    : (h.found || "");
   const state = h.stale
-    ? `<span class="by missing" title="${esc(h.found || "")}">points elsewhere</span>`
+    ? `<span class="by missing" title="${esc(drift)}">points elsewhere</span>`
     : done
       ? `<span class="by found" title="${esc(h.found || "")}">wired</span>`
       : `<span class="by missing">not wired</span>`;
@@ -13919,6 +14135,24 @@ let browseAt = { path: "", parent: "" };
 // launch form and the runner form.
 let browseInto_ = "l-cwd";
 
+// ESCAPE CLOSES THE PICKER.
+//
+// A modal `<dialog>` does this natively, but only while the focus is inside it,
+// and this one opens over a board whose terminal takes focus back on a redraw.
+// Listening on the document in the capture phase makes the answer independent
+// of where the caret happened to be, and the `open` guard keeps it from
+// touching anything when the picker is not up.
+//
+// `stopPropagation` because the picker STACKS: it opens over the settings,
+// fixture, source and harness dialogs, and without it one press would close
+// the picker and the form that asked for it.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !browseDlg.open) return;
+  e.preventDefault();
+  e.stopPropagation();
+  browseDlg.close();
+}, true);
+
 function openBrowse() { return browseInto("l-cwd"); }
 
 async function browseInto(fieldID) {
@@ -13967,7 +14201,10 @@ function browseUp() { browseTo(browseAt.parent); }
 
 function useBrowsed() {
   if (!browseAt.path) return;
-  document.getElementById("l-cwd").value = browseAt.path;
+  // THE FIELD THAT ASKED. `browseInto` records which one opened the picker,
+  // and there are four: launch, source, fixture and harness.
+  const into = document.getElementById(browseInto_) || document.getElementById("l-cwd");
+  if (into) into.value = browseAt.path;
   browseDlg.close();
 }
 

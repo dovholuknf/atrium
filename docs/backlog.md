@@ -19,43 +19,93 @@ run, and file transfer into a session including paste.
 
 The gaps below are ordered by what would change day to day.
 
-## The order, as of 2026-09-04
+## The order, as of 2026-09-05
 
 The sections below are grouped by subject rather than by rank, because each one is a design note and they were
 written as the questions came up. This is the rank. It is short on purpose: a list of twenty priorities is a
 list of none.
 
+**The whole of the previous top six shipped.** Themes, sharing one agent, the event log, `/v1/browse`, priority
+and notes are all built and their sections say so. What follows is what is left, re-ranked.
+
 | # | Item | Size |
 | --- | --- | --- |
-| 1 | Picking a terminal theme is the worst control on the board | half day |
-| 2 | Hand one agent to one person, over a share | a day |
-| 3 | The event log answers with the wrong end of itself | an hour |
-| 4 | `GET /v1/browse` is unbounded (Known gaps) | two hours |
-| 5 | Priority on a card | half day |
-| 6 | Notes on a card, and sending one when you are ready | half day |
-| 7 | An editor in the board, for the half that is still open | a day |
-| 8 | Starting a card from a ticket, an issue or a pull request | two days |
-| 9 | Hooks for runners that are not Claude Code | two days |
-| 10 | Approvals from a phone (deprioritized: auto mode makes it moot for now) | a day |
+| 1 | Proper packaging: scoop, choco, homebrew, deb and rpm, and the Store | a week, unevenly |
+| 2 | Starting a card from a ticket, an issue or a pull request | two days |
+| 3 | Hooks for runners that are not Claude Code | two days |
+| 4 | `docs/test-plan.md` predates v2 and does not cover permissions diff or overlays | a day |
+| 5 | The overlay panel is a configuration screen pretending to be a switch | a day |
+| 6 | Themes you can edit, and themes you can bring | a day |
+| 7 | A shell beside a wedged agent, in the same card | a day |
+| 8 | The grouping expression rule, before anything stores one daemon-side | half day |
+| 9 | Approvals from a phone (deprioritized: auto mode makes it moot for now) | a day |
 
-Below that, in no particular order: the grouping expression rule, the forum, Postgres, stage 5, and the three
-defects in `scripts/atrium-autostart.ps1`, which only matter at a reboot now that `restart_atrium` exists.
+Below that, in no particular order: the forum, Postgres, stage 5, and multi-tenant.
 
 ## Next
 
-### The event log answers with the wrong end of itself
+### Proper packaging, on every platform atrium runs on
 
-`GET /v1/tasks/{id}/events` returns the OLDEST events, not the newest. The query is
-`ORDER BY at ASC, id ASC LIMIT ?` in `internal/store/tasks.go:803`, so a limit of 200 on a card with a thousand
-events answers with the first two hundred, from the day the card was created.
+There is no way to install atrium. You build it and copy the binary somewhere, and every machine ends up with a
+different somewhere. An `atrium install` subcommand was written for this and **removed before it shipped**,
+because copying a file to a fixed path is the shallow half of the problem and doing it in-tree makes the deep
+half harder to reach later.
 
-That makes the endpoint useless for the question anybody actually asks it, which is what just happened. It was
+What it did not do is the list of what installing actually means: report a version, uninstall cleanly, land on
+PATH, upgrade in place, tell you an upgrade exists, and be signed so the operating system does not warn about
+it. It also invented `~/.atrium/bin` as a convention that no packaging format would have agreed with, which is
+one more path for atrium to be wrong about.
+
+**The targets, easiest first.**
+
+- **Scoop.** A JSON manifest in a bucket, pointing at a GitHub release asset and its hash. No signing, no
+  review, no account. This is close to free once releases carry checksums, and it is the one to do first
+  because it proves the release shape is right before anything harder depends on it.
+- **Homebrew.** A tap of our own to start, since core has criteria atrium does not meet yet. A formula that
+  installs the binary and a `brew services` plist for the daemon. Unsigned means macOS quarantines the download
+  and the first run is a right-click-open, so this wants a Developer ID and notarization to be pleasant rather
+  than merely possible.
+- **deb and rpm.** One `nfpm` config emits both from the same built binary, plus a systemd **user** unit. It
+  has to be a user unit, not a system one, for the reason `scripts/atrium-autostart.ps1` is a logon task and
+  not a Windows service: a daemon in a system context cannot open a pseudo terminal a person can attach to, and
+  supervision is most of what atrium is for. That script and the systemd unit are the same design decision on
+  two platforms and should be written together, so neither drifts into starting a second daemon on one
+  database.
+- **Chocolatey.** A nuspec, an install script, and moderation on the community feed. Wants a code-signed exe,
+  which is the real cost here and is shared with the next one.
+- **Microsoft Store.** MSIX, a package identity, and a certificate. Also the strictest: an MSIX-packaged app
+  runs with a virtualized filesystem and registry, which will move where the database lives and needs deciding
+  before packaging rather than discovered after. Last, and possibly never, since the audience for atrium is
+  people who already have a terminal open.
+
+**Three things this has to get right, because they are the reason the fixed path existed at all.**
+
+1. **Which binary is running.** Every hook in `settings.json` names one, the logon task names one, and
+   `restart_atrium` swaps onto one. The daemon already records its own binary in the location file
+   (`internal/claudeconf/whichexe.go`), and that is the part of the removed change that was correct and stayed.
+   It is correct however the binary arrived, which is why packaging does not disturb it.
+2. **Self-update against a package manager.** `restart_atrium` renames a staged binary over the running one.
+   Under scoop or choco or a deb, the package manager owns that file and a rename behind its back leaves it
+   reporting a version that is not installed. The rule to land on is probably that a packaged atrium refuses
+   the swap and tells you the upgrade command for the manager that owns it, which means the build has to know
+   how it was installed. See `docs/reload-design.md`, which assumes the swap always works.
+3. **Where the database lives.** Currently `~/.atrium/atrium.db`, keyed off `WORKTREE_ROOT`. Packaging is the
+   moment to decide whether that is right, because MSIX will change it whether or not anybody decides.
+
+This also closes **"atrium on PATH"** under Parked, which was parked for want of exactly this.
+
+### The event log answers with the wrong end of itself. Fixed.
+
+`GET /v1/tasks/{id}/events` returned the OLDEST events, not the newest: `ORDER BY at ASC, id ASC LIMIT ?`, so a
+limit of 200 on a card with a thousand events answered with the day the card was created.
+
+That made the endpoint useless for the question anybody actually asks it, which is what just happened. It was
 found by trying to confirm a restart and having to read the process table instead, and it had already caused
 three wrong conclusions once before, recorded in "The unexplained block was not a bug" below.
 
-The fix is a newest-first query with the limit applied to that end. What needs deciding is only whether the
-response stays oldest-first for rendering, which the timeline expects: select the newest N in the store, then
-reverse before returning, so the wire shape does not change and no caller has to know.
+The limit now applies to the newest end and the window is reversed in the store, so the wire shape is unchanged
+and the timeline, which renders in time order, needed no edit. The `id` tie-break mirrors `at` in both clauses,
+which matters because these timestamps have millisecond resolution and a hook can write two events inside one.
 
 ### The grouping expression is safe today for one reason, and that reason is not written down anywhere
 
@@ -165,7 +215,7 @@ go into the same terminal as the prompt, so they are sent after a fixed pause, a
 submit could in principle receive a quit before its instruction. A shorter pause risks that; a longer one makes
 the button feel broken. The real fix would be a runner that acknowledges input, which none of them do.
 
-### Priority on a card, for the work that never goes away
+### Priority on a card, for the work that never goes away. Built.
 
 Some work cannot be got rid of and has to stay top of mind. Right now the board has no way to say that: every
 ordering is either activity, waiting time, status, name, project or runner, and all of those are facts ABOUT
@@ -179,23 +229,60 @@ more than that one".
 What is wanted is an ordering among the things that matter. That is a different field and it should not be
 bolted onto the boolean, or "pinned" quietly becomes "priority 1" and the fixture case loses its meaning.
 
-Open questions, and the first one decides the rest:
+**Built.** The four open questions were answered as follows, and each answer is written into the code beside
+what it decided.
 
-- **How many levels.** Three named ones (high, normal, low) are readable at a glance and never need a tie
-  break. A number is more expressive and turns into a thing to fiddle with. Given every other axis on this
-  board is a fact and this is the only judgement, three is probably right and a number is probably a trap.
-- **Whether it sorts or filters.** Sorting by priority buries a `needs-permission` card under a high-priority
-  one that is doing nothing, which inverts the whole point of the first column. More likely priority is a
-  visual weight plus its own SHOW pill, and the columns keep meaning what they mean.
-- **Whether it decays.** Something marked high a month ago and untouched since is not high any more, it is
-  forgotten. A priority that never expires becomes a field where everything is high. Worth considering the
-  same treatment auto mode got: read the age at the moment it is displayed rather than running a timer.
-- **Whether an agent can set it.** Probably not. Priority is the operator's judgement about their own
-  attention, which is the same argument that keeps the status column human. A source raising an item could
-  suggest one, and suggesting is not setting.
+- **Three levels: `high`, normal, `low`.** Normal is the empty string, which is what every existing row already
+  was. A number is more expressive and is a trap: it needs tie-breaking, it turns into something to fiddle
+  with, and nobody can tell 6 from 7 a week later. Three never need a tie break. Migration `0036`.
+- **It filters. It never sorts.** Sorting would bury a `needs-permission` card under a high-priority one that is
+  doing nothing, which inverts the entire point of the first column: a blocked agent is blocked whatever you
+  think of the work. So it is visual weight on the card plus `!high` / `!low` in the stack search, and clicking
+  the chip filters to it the way clicking a tag already does. The columns keep meaning what they mean.
+- **It decays, in the browser, and nothing writes back.** `priority_at` ships in the SAME migration, because two
+  migrations against one table two patches apart is how a column ends up meaning different things depending on
+  when the row was written. After a week the chip is drawn faded and the tooltip says why: high and forgotten is
+  not high, and a priority that never expires becomes a field where everything is high.
 
-Cheap to build once those are answered: a column on `task`, a control on the card, a pill on the stack, and
-the same ordering treatment tags already get.
+  Not the auto-mode treatment, which was the wrong analogue. Auto mode stores a deadline and CLEARS IT
+  server-side in the permission chain, because that is the one moment auto mode means anything. Priority has no
+  such moment, since nothing acts on it, so a server-side expiry would be a third timer in `sweep.go` doing no
+  work and one more thing to confuse with the two already there. It is the board's age rendering instead.
+- **An agent cannot set it, and there was nothing to refuse.** The agent listener registers ten routes and none
+  of them patch a card, so a refusal would have implied a channel that does not exist. Priority is on the human
+  API beside every other card mutation.
+
+  A `suggested_priority` on an offered item was designed and then dropped, which is worth recording. An offered
+  item IS a task in `backlog` rather than a row in an inbox table, so the only place to put a suggestion is the
+  card, which is exactly the thing it must not touch. A source that wants to say something is urgent already
+  can: a tag. It shows in the inbox, filters like everything else, and becomes a priority only when a person
+  reads it and decides. Suggesting and setting stay different acts.
+
+What it is NOT is `pinned`, and the two stay apart. Pinned is a boolean and means "always show me this", which
+is right for a fixture. Five pinned cards are five equals. Bolting an ordering onto it would quietly turn pinned
+into priority-1 and lose the fixture case.
+
+### The settings dialog was one column in the order things were added. Fixed.
+
+**Shipped**, and this entry had no heading of its own until now: it was written directly under the priority
+section and read as part of it. Anything that follows a section without a heading gets read as belonging to it.
+
+Five panes, built at runtime by cutting the flow at every `h3.s-section` that is a DIRECT child of the dialog
+body: `reach this board from elsewhere`, `alerts`, `housekeeping`, `this machine`, `the board`.
+`scripts/check-settings-panes.js` asserts the partition against the real file and prints the panes it would
+build, because parsing cannot catch a nested heading or a control moved outside the body: the markup stays valid
+and the script still runs, and the dialog silently becomes one giant pane or none.
+
+The two questions the entry left open were answered by building it, and the answers are worth recording:
+
+- **It stayed a modal.** A settings page is a view and a sixth tab is cheap, but settings is somewhere you go
+  from wherever you are and come straight back, and a modal returns you there for free. A tab would have to
+  remember where you were and put you back.
+- **Per-card settings stayed on the card.** The line is "settings for the machine" against "settings for one
+  piece of work". A card's bell, its theme, its icon and its priority are all the second, and none of them
+  belongs in the gear.
+
+The original argument, kept because it is the reason the rule exists:
 
 Everything is in one column in the order it was added. Three `h3` headings exist (`reach this board from
 elsewhere`, `sound`, `the board`) and they are the only structure, so finding a setting means scrolling past
@@ -276,18 +363,26 @@ What got built, and one thing that was wrong for a long time:
 The shape that fits the rest of atrium: report the state honestly, offer the next command, never invent one. The
 runner discovery already does this and is the model.
 
-### Notes on a card, and sending one to the agent when you are ready
+### Notes on a card, and sending one to the agent when you are ready. Built.
 
-Two things that look like one. A note is for you: a place to write down what you want next while the agent is
-still working, so it is not held in your head or in a scratch file. Sending it is the second, separate act.
+**Shipped.** A note is for you: a place to write down what you want next while the agent is still working, so it
+is not held in your head or in a scratch file. Sending it is the second, separate act, and nothing sends by
+itself.
 
-The reason to split them is that the queue already exists and does something else. `POST
-/v1/tasks/{id}/message` reaches a session through its next tool call or its Stop hook, and it fires as soon as
-there is something to deliver. A note is the opposite: written now, sent when you say.
+Two things that look like one, kept apart because the queue already exists and does something else.
+`POST /v1/tasks/{id}/message` reaches a session through its next tool call or its Stop hook and fires as soon as
+there is something to deliver. A note is the opposite: written now, sent when you say. What that buys is the
+ordering, which is the whole point: three things thought of during a long turn arrive as one instruction at the
+end rather than three interruptions in the middle. `POST /v1/tasks/{id}/note/send` sends it as ONE message, and
+clears the note only after it is safely somewhere else, so a failed send leaves what you wrote where you can
+still see it.
 
-Claude Code takes input while it is thinking, so the send is less urgent than it once was. What it buys is the
-ordering: three notes queued during a long turn, sent as one instruction at the end, rather than three
-interruptions in the middle.
+The last piece landed later than the rest and is worth recording, because it made the feature nearly pointless
+until it did: **a held note now says so on the card.** Before that the only place a note appeared was the box
+you typed it into, so the thing meant to stop you holding an instruction in your head was itself something you
+had to remember. It is a chip on the card and on the stack row, with the text in the tooltip and no send button:
+sending is the deliberate half, and a one-click send on a hover target beside `attach` is how a paragraph
+arrives mid-turn by accident.
 
 ### Popping a terminal out, and putting it back. Built.
 
@@ -339,12 +434,12 @@ and which the design was mostly about discovering the absence of.
 
 What is left:
 
-- **The write precondition.** Step 5. There is no endpoint yet that writes to a caller-named path, so it has
-  nothing to guard. It goes in with the first one, and the design records the one correction to make to
-  Charon's version: an absent hash should be an error, not consent.
-- **`browse.go` is still unbounded.** The primitive exists now and `browse.go` does not use it. That was
-  deliberate: tightening a picker people already use is its own argument with its own answer, and doing it in
-  the same change as a new feature would have hidden it. See "Known gaps".
+- **The write precondition. Done.** `internal/api/filetext.go` writes a text file behind a sha256 expected-
+  content precondition, answering 409 with the current content rather than arbitrating who owns the file. The
+  one correction to Charon's version was made: an absent hash is an error, not consent.
+- **`browse.go` is bounded. Done.** `internal/api/browseroots.go` holds it to a root set resolved through the
+  primitive. The argument that kept it unbounded was that tightening a picker people already use deserves its
+  own change rather than riding along with a feature, which is what it got.
 - **Nothing outside a card.** Upload and download are per card and rooted at that card's worktree. There is no
   way to ask atrium for a path that is not below a card, and adding one would build the thing `browse.go`
   accidentally is.
@@ -403,6 +498,39 @@ Where atrium is ahead, and should stay:
 Refused outright, with the reasons in `docs/charon.md` section 6: approval timeouts, the hub-dials-out
 federation transport, a second durable event store on the agent side, holding provider credentials, and any of
 the authentication.
+
+### An editor in the board. Built, and CodeMirror evaluated and refused.
+
+**Shipped.** `GET`/`PUT /v1/tasks/{id}/files/text` read and write a text file in a card's directory, resolved
+through `internal/safepath`, bounded at 2MB, refusing anything that is not valid UTF-8. The board has an editor
+on the file drawer with ctrl-s to save, and it says `not saved` the moment you type, because a text box that
+looks the same saved and unsaved is one you close without meaning to.
+
+The write is guarded by an **expected-content-hash precondition**, which answers the "does a save race the agent
+editing the same file" question without a lock: a mismatch is a 409 carrying the current content, so the write
+is refused and the two versions are handed back rather than atrium arbitrating who owns the file. Charon's
+version treats an absent hash as consent; here it is an error, which was the one correction the design called
+for.
+
+That answers the over-an-overlay case the entry below was left open on: reading a file when the board is
+somewhere else and the configured open-command would land on a machine nobody is at.
+
+**CodeMirror 6 was evaluated and is not being vendored.** The reason is mechanical rather than aesthetic. Atrium
+vendors self-contained files served from `/vendor/` behind plain `<script>` tags, which works because xterm.js
+and its addons ship UMD bundles: one file, no imports, `window.Terminal` afterwards. CodeMirror 6 ships
+`dist/index.js` as an ES module with bare specifiers (`import ... from '@codemirror/view'`) across seven
+packages and NO prebuilt bundle. Using it means adding rollup or esbuild, which means adding node and a JS build
+step to a repo that has neither and whose board is one HTML file on purpose.
+
+What that buys is syntax highlighting. What it costs is a build step in front of the board, and the board being
+one file that a browser can open is load-bearing: `scripts/check-board.sh` extracts the script block and parses
+it, and the whole thing is `go:embed`ed into the binary.
+
+So the standing answer is: **a plain textarea, and highlighting is not worth a bundler.** If it ever is, the
+thing to reach for first is a highlighter that ships a single file, not CodeMirror. Revisit if the board becomes
+a built artifact for some other reason, at which point this cost is already paid.
+
+Below is the original entry.
 
 ### An editor in the board
 
@@ -675,7 +803,22 @@ URL today), PR review requests, advisories and backports, a TODO scan, unanswere
 (a trap: a page on an hourly board is a missed page), calendar and email (worst, because neither yields a
 worktree), and `gwt sessions audit` pointed at the board, which needs no external system and is an afternoon.
 
-### Picking a terminal theme is the worst control on the board
+### Picking a terminal theme is the worst control on the board. Fixed.
+
+**Shipped.** The cog on the terminal bar puts a picker on the bar itself, and moving through it applies each
+theme to the running terminal against the scrollback already on screen. Escape puts back what was set, enter
+keeps it and writes the card, and nothing is written before enter: an arrow key is not a decision.
+
+It stays up until it is answered rather than committing on blur, which was the first version and was wrong for
+an obvious reason once seen: the control vanished the moment you clicked the terminal to look at what you had
+just chosen, which is the one thing you want to do while choosing a theme.
+
+The datalist survived in one more place and went with the same change: the fixture form, which had exactly the
+control described below. It is a `select` now. A fixture is not running, so there is nothing to preview against
+and a plain list is right there.
+
+What follows is the original entry, kept because the second half is the argument for why a name is not a way to
+choose a colour scheme, and that argument now decides how "themes you can edit" gets built.
 
 Fifty two themes, chosen through a text box with a datalist. Two things are wrong with it and the second is the
 interesting one.
@@ -786,6 +929,9 @@ are inert. Hardcoding a checkout path into a skill would work on one machine and
 Parked because launching from the board covers the same ground: a runner atrium starts is already on the board
 and already gated, which is what joining was for.
 
+Unparked by packaging, which puts `atrium` on PATH as a side effect of doing the larger job properly. See
+"Proper packaging" above.
+
 ## Known gaps
 
 - **Stage 5 was skipped.** The TUI still receives a `*Hub` pointer in process rather than going through the HTTP
@@ -793,11 +939,13 @@ and already gated, which is what joining was for.
   and its gaps are invisible.
 - **The board is a plain page**, not the React app the decisions table names. It speaks the same JSON and SSE
   contract, so this is a client side swap whenever it is worth doing.
-- **The dedup key names a command, not an attempt.** The permission hook hashes the session, the tool and the
-  command, which is all it has: Claude Code's `PreToolUse` payload carries no per-call identifier the hook
-  reads today. A two minute replay window makes that safe, but the window is a bound on a wrong key rather
-  than a right one. If the payload does carry a tool use id, using it would make the key exact and the window
-  unnecessary. Unverified, and worth checking next time the hook events are looked at.
+- **The dedup key names an attempt where the runner says so. Closed.** It used to hash the session, the tool and
+  the command, which cannot tell a retry from the same command run again tomorrow, and a two minute replay
+  window bounded a wrong key rather than making it right. Claude Code's `PreToolUse` payload DOES carry
+  `tool_use_id`, which the entry recorded as unverified; it is read in `internal/cli/hook.go` and wrapped by
+  `store.ExactKey` as a `tu:` prefixed key. A key carrying one is exempt from the window, because an attempt has
+  exactly one answer and replaying it forever is correct. The hash and the window remain for runners that report
+  no such id.
 - **A session that dies without warning is now handled three ways, and one gap is left.** A known pid gets the
   liveness check. No pid and three hours of silence gets the quiet check. No pid while waiting to be answered
   gets the orphan check, which asks the hub whether anybody is still parked on the request. What is left: a
@@ -807,24 +955,25 @@ and already gated, which is what joining was for.
   paying.
 - **Postgres portability is asserted, not tested.** The schema is written for it. Nothing runs the migrations
   against it. A CI job would settle it.
-- **`docs/test-plan.md` is no longer only v1.** Sections A to F still cover the hub and the agent loop, and
-  section G now covers the daemon: cards, activity, auto mode, folder rules, stopping, the inbox, sources,
-  finishing, actions, file transfer and the history view. What is still missing is the permission diff and the
-  overlays, neither of which has a scenario.
+- **`docs/test-plan.md` covers v2 now.** Sections A to F still cover the hub and the agent loop. G covers the
+  daemon, H the overlays, I importing rules from Claude Code (the last part of the permission surface with no
+  scenario), and J what landed on 2026-09-05. The two gaps this entry used to name are both closed. What is
+  still true is that all of it is manual: the daemon has real tests, and everything in here is the part a test
+  cannot reach.
 - **Repo metadata is unset.** `gh repo edit` returns 403 with the current token, so the description and topics on
   the GitHub page are still empty. Needs `gh auth refresh -s repo` or setting them in the web UI.
 - **A share widens what loopback means.** A tunneler terminates on this machine, so while a share is up every
   request presents as `127.0.0.1`. The shutdown endpoint now notices and demands its token, but that is one
   endpoint. Anything else that ever decides by source address has the same problem, and there is no general
   answer here, only the rule: do not publish the agent listener on `:7777`.
-- **A share also publishes `GET /v1/browse`, which is unbounded.** Found while designing file transfer. The
-  handler applies `filepath.Clean` to whatever it is given and has no root, no allow list and no symlink
-  resolution, so every directory the daemon's user can read is listable. On loopback that is a directory picker
-  and it is fine. Over a share it is an unauthenticated recursive directory listing of the machine. Nothing
-  reads file contents through it, so this enumerates rather than discloses, which is why it is written down
-  rather than treated as an incident. `docs/file-transfer-design.md` builds the containment primitive that
-  would let this be narrowed, and deliberately does not narrow it in the same change: tightening a picker
-  people already use is its own argument.
+- **`GET /v1/browse` is bounded now. Closed.** It used to apply `filepath.Clean` and nothing else, so every
+  directory the daemon's user could read was listable. On loopback that is a directory picker and it was fine;
+  over a share it was an unauthenticated recursive directory listing of the machine, since a share terminates
+  here and every request over one presents as loopback. `internal/api/browseroots.go` holds it to a root set,
+  resolved through `internal/safepath` so a symlink out of a root is refused, with one answer for outside,
+  missing and unreadable. The default set is the home directory plus every directory a card, fixture, source or
+  harness already names, and `browse_roots` under settings widens it. A guest share refuses the endpoint
+  outright.
 - **`wire_name` collisions are solved but not yet enforced.** `atrium name` prefixes every session an atrium
   registers, so two machines cannot claim each other's cards. Nothing makes a satellite set one, though, and an
   unnamed atrium still registers bare names. The forum handshake is the place to require it, since that is the
@@ -833,9 +982,10 @@ and already gated, which is what joining was for.
   takes the attached process with it. There is no reattach. So stopping the daemon ends every runner it started,
   and a runner cannot outlive a restart. Resume ids are the answer rather than orphan survival, which ConPTY does
   not offer.
-- **The daemon can silently open an empty database.** `WORKTREE_ROOT` unset means it falls back to `~/.atrium`,
-  which looks exactly like every rule and card having vanished. It should say loudly when it creates a database
-  rather than opening one.
+- **The daemon saying it created a database rather than opening one. Closed.** `WORKTREE_ROOT` unset means it
+  falls back to `~/.atrium`, which looks exactly like every rule and card having vanished. `Run` prints a five
+  line banner when `store.Fresh()` is true, naming both `WORKTREE_ROOT` and `--db` as the two things to check,
+  and it prints the resolved path either way.
 
 ## Waiting on something external
 
@@ -1052,3 +1202,32 @@ the collapse:
 
 **The board's own share should be reservable in one press.** Reserving a name and starting a public share are the
 same intention, and doing it takes filling a name field, pressing `reserve it`, and then pressing start.
+
+### A window you are looking at should not tell you what you can see
+
+A popped-out terminal alerts for its own card, which is the whole reason it claims that card over the broadcast
+channel. It gets one case wrong: when the window is FOCUSED and the session in it finishes, it plays a tone and
+puts a toast over the terminal you are watching.
+
+`soloAlert` already splits on `inForeground()`, and takes the wrong branch for the right reason. Behind
+something, the title bar carries the mark, which is correct and is what the window is for. In front of you, it
+falls through to a toast, on the reasoning that a desktop notification is suppressed while you are looking so
+the toast covers that case. That reasoning is the board's, where "in front of you" means the board is focused
+and the card is one of thirty. In a window that IS one terminal, in front of you means you are watching the
+thing it is telling you about.
+
+**What it should do:** nothing at all, except clear the mark. You saw it happen.
+
+Three things to get right, and the third is the one that makes this more than a one-line change:
+
+- **Focused is not the same as visible.** `document.hasFocus()` is the test, not `visibilityState`: a window
+  that is visible behind another is not one you are reading.
+- **The sound is the part that actually intrudes**, more than the toast, and it is played before the branch.
+- **A permission is not a finish.** A blocked agent in a window you are staring at still wants answering, and
+  the terminal shows the prompt, so the toast is redundant there too. But losing the tone means a permission
+  arriving while you are reading scrollback three screens up is silent. Probably: no toast either way, keep the
+  tone for a permission, drop it for a ready.
+
+The board has the same shape one level out and is already correct there: `announce` filters out cards whose
+window is open, so it does not speak for a session that has its own voice. This is that rule applied to the
+window itself.

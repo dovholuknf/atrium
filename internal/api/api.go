@@ -442,6 +442,16 @@ type patchBody struct {
 	// Note is the card's scratch pad. A pointer, because clearing it is a
 	// decision and it is also what sending does.
 	Note *string `json:"note"`
+	// Priority is how much this card matters: `high`, `low`, or empty for
+	// normal. A pointer, because clearing it back to normal is a decision.
+	//
+	// ON THE HUMAN API ONLY, which is where every card mutation already lives.
+	// There is nothing on the agent listener that patches a card, so this needs
+	// no refusal written for it: the channel does not exist. What DOES need
+	// saying is where a machine-supplied priority is allowed to land, and the
+	// answer is an offered item in the inbox. A source suggests; a human
+	// accepting the item is what writes it here.
+	Priority *string `json:"priority"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -564,6 +574,19 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Note != nil {
 		if err := s.st.SetNote(id, *body.Note); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Priority != nil {
+		// 400 rather than 500. A value that is not a level is a caller
+		// mistake, and the store's message names the three that work.
+		if _, ok := store.ValidPriority(*body.Priority); !ok {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"priority is high, low or normal, not %q", *body.Priority))
+			return
+		}
+		if err := s.st.SetPriority(id, *body.Priority); err != nil {
 			s.fail(w, err)
 			return
 		}

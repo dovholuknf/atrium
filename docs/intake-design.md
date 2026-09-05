@@ -90,9 +90,11 @@ gap this document is really about.
 
 ## What a card already carries
 
-`internal/store/store.go:66`. A card has `Title`, `Why`, `Repo`, `Worktree`, `Runner`, `Hostname`, `PID`,
+`internal/store/store.go`. A card has `Title`, `Why`, `Repo`, `Worktree`, `Runner`, `Hostname`, `PID`,
 `Status`, `WireName`, `Overrides`, `Rank`, `ExternalID`, `ResumeID`, `Branch`, `WindowName`, `Gated`,
-`AutoApprove`, `Tags`, `Pinned`, `Theme`.
+`AutoApprove`, `Tags`, `Pinned`, `Theme`, and since this was written `Note`, `Icon`, `WaitingReason`,
+`Priority` and `PriorityAt`. Read the struct rather than this list, which is what a list of fields in prose
+always becomes.
 
 Four of those matter here.
 
@@ -102,26 +104,27 @@ Four of those matter here.
   names the case this feature is about: "A card is also a support case, a tangent, a pull request, a lab, and none
   of that is in the path." A `zendesk` tag and a `12345` tag would group and filter with no new mechanism.
 - **`Worktree`** is the directory. Everything downstream keys off it, including the folder permission rules.
-- **`ExternalID`** is a column that survives from the abandoned ledger adoption. It is written by nothing today.
-  `Task.Observed()` at `store.go:137` is the only reader, and it tests for a card with an external id and no wire
-  name, which the 0014 migration deleted every instance of. So the column exists, is indexed, and is free.
+- **`ExternalID`** was a column surviving from the abandoned ledger adoption, written by nothing, which is what
+  made it free to take. Intake writes it now, and `atrium launch --external` sets it by hand.
 
 `Launch` in `internal/daemon/launch.go` takes `{harness, cwd, title, why, resume, task_id}`. It creates the card
 before the process so the wire name is reserved, applies `title` as an override and `why` as itself after the
 runner starts, and records a `launched` event. `atrium launch` wraps that for scripts and prints the card id.
 
-Two gaps in that surface, both small.
+Two gaps were named here and both are closed: `atrium launch` takes `--tags` and `--prompt`.
 
-- **`atrium launch` cannot set tags.** `PATCH /v1/tasks/{id}` accepts them, `POST /v1/launch` does not, so a
-  script that wants a tagged card has to launch and then patch.
-- **`atrium launch` cannot set an initial prompt.** gwt's whole intake mechanism is the seed prompt. Atrium starts
-  the runner with the harness's fixed `Args` and no way to append one. `POST /v1/tasks/{id}/prompt` exists but
-  reaches a runner already parked in the agent loop, which a freshly launched claude is not.
+One fact shaped everything below and it is **no longer true**, which matters more than any of the above.
 
-One fact that shapes everything below: **the daemon makes no outbound HTTP calls.** Grepping `http.Client` across
-`internal/` finds the CLI, the Mode A agent, and tests. The overlay code starts child processes and reads what
-they printed. Atrium has never once dialled out to a third party, and every proposal that has it do so is
-proposing a new class of behavior, not an extension of an existing one.
+It said: the daemon makes no outbound HTTP calls, the overlay code starts child processes and reads what they
+printed, and atrium has never once dialled out to a third party. Sharing is embedded SDKs now rather than child
+processes, and `internal/daemon/overlay_reserve.go` authenticates against the zrok REST API to reserve a name.
+Only the setup step still shells out.
+
+So the line this section drew has moved, and the line that actually holds is the one `CLAUDE.md` states:
+**atrium may hold the name of a command that has a credential, and never the credential.** Dialling an overlay
+this machine is already enrolled with, using a token that overlay's own tooling put on disk, is not the same
+class of thing as atrium holding somebody's Zendesk key. Every proposal below still has to answer that rule
+rather than the weaker "it never dials out" one.
 
 ## Layer 0: finish the hand-off that already exists
 

@@ -422,3 +422,77 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return b
 }
+
+// THE OPERATOR'S OWN HOOKS SURVIVE AN INSTALL, named one by one.
+//
+// This machine's settings.json carries several pwsh hooks that have nothing to
+// do with atrium, and some of them share events with atrium's: two sit on the
+// same SessionStart and PreToolUse rows that install rewrites. Losing one would
+// be silent, and would surface days later as "my terminal titles stopped
+// updating".
+//
+// Named rather than generic because the general case is covered above. This is
+// the specific file that has to keep working.
+func TestInstallKeepsTheOperatorsOwnScripts(t *testing.T) {
+	path := withHome(t, `{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "", "hooks": [
+        { "type": "command", "command": "pwsh -NoProfile -WindowStyle Hidden -File C:/Users/x/.claude/hooks/session-bootstrap.ps1 -Phase start" },
+        { "type": "command", "command": "pwsh -NoProfile -File C:/Users/x/.claude/hooks/set-session-state.ps1 -State thinking" },
+        { "type": "command", "command": "pwsh -NoProfile -File C:/Users/x/.claude/hooks/atrium-session-hook.ps1 -Event start" }
+      ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "", "hooks": [
+        { "type": "command", "command": "pwsh -NoProfile -File C:/Users/x/.claude/hooks/atrium-perm-hook.ps1" },
+        { "type": "command", "command": "powershell.exe -NoProfile -File C:/Users/x/.claude/hooks/pre-tool-use-hook.ps1" }
+      ] }
+    ]
+  }
+}`)
+
+	_, _, err := Install("C:/Users/x/.atrium/bin/atrium.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := allCommands(t, path)
+
+	// Four scripts that are not atrium's business.
+	keep := []string{
+		"session-bootstrap.ps1",
+		"set-session-state.ps1",
+		"atrium-perm-hook.ps1",
+		"pre-tool-use-hook.ps1",
+	}
+	for _, want := range keep {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("install removed %s. what survived:\n%s", want, joined)
+		}
+	}
+
+	// The one that IS atrium's is replaced rather than duplicated: it reports a
+	// session start through an old script, which is what install takes over.
+	if strings.Contains(joined, "atrium-session-hook.ps1") {
+		t.Fatalf("the old atrium session script is still registered:\n%s", joined)
+	}
+	if n := strings.Count(joined, "session --event start"); n != 1 {
+		t.Fatalf("session start is registered %d times, want exactly one:\n%s", n, joined)
+	}
+}
+
+// allCommands flattens every registered command in a settings file.
+func allCommands(t *testing.T, path string) string {
+	t.Helper()
+	doc := readSettings(t, path)
+	hooks, _ := doc["hooks"].(map[string]any)
+	var cmds []string
+	for _, v := range hooks {
+		entries, _ := v.([]any)
+		for _, e := range entries {
+			cmds = append(cmds, commandsIn(e)...)
+		}
+	}
+	return strings.Join(cmds, "\n")
+}

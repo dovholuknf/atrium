@@ -578,21 +578,33 @@ live holder's socket (section 4).
 
 ### 4. Optimistic concurrency on any write endpoint, and CodeMirror 6 over Monaco
 
-**Adopt the concurrency model now, even without an editor. Defer the editor.**
+**Adopted, both halves, and the editor turned out not to need CodeMirror.**
 
 The `expected_sha256` precondition (`fsnav.py:503-521`, `:532-540`) is the same shape as HTTP `If-Match` and it
-is the answer to the question `docs/backlog.md` asks about a save racing the agent. It costs one column of
-thought and it sits naturally on top of `/v1/browse`, which already lists the daemon's own filesystem
-(`internal/api/browse.go`, `internal/api/api.go:140`). Whatever atrium's write endpoint turns out to be, give it
-the precondition on day one rather than adding it after the first lost edit.
+is the answer to the question `docs/backlog.md` asks about a save racing the agent. It is
+`internal/api/filetext.go` now, on `GET`/`PUT /v1/tasks/{id}/files/text`, and it went in on day one of that
+endpoint rather than after the first lost edit.
+
+It did NOT land on `/v1/browse`, which this section suggested. That endpoint lists directories and never reads
+a file, and the path question it seemed to answer was the thing `docs/file-transfer-design.md` refuted:
+`browse.go` had no notion of containment to reuse. `internal/safepath` is what both now go through.
 
 **Adapt on one point.** Charon's force-overwrite is `expected_sha256=None`, which means "no precondition" and
-"deliberately clobber" are the same value. Make them different. An absent field should be an error, not consent.
+"deliberately clobber" are the same value. Made different: an absent field is an error, not consent.
 
 The editor itself is CodeMirror 6, not Monaco (`app/CodeEditor.tsx:2-16`), with lazy per-file language modes from
 `@codemirror/language-data` and an LSP client wired in (`app/lspClient.tsx`, imported at `CodeEditor.tsx:8`).
-`docs/backlog.md` guesses Monaco. CodeMirror 6 is the lighter thing to evaluate first and it vendors as a static
-asset the way xterm.js already does, which is the rule the board already follows.
+
+**The claim that it "vendors as a static asset the way xterm.js already does" was wrong, and it was checked
+later.** CodeMirror 6 ships `dist/index.js` as an ES module with bare specifiers (`import ... from
+'@codemirror/view'`) across seven packages, and no prebuilt bundle. xterm.js vendors because it ships UMD: one
+file, no imports, a global afterwards. Using CodeMirror means adding rollup or esbuild, which means adding a JS
+build step to a repo that has none and whose board is one HTML file on purpose. Charon pays that cost already,
+because it is a Next.js application.
+
+So the conclusion this section reached does not transfer. Atrium's answer is a plain textarea over the
+concurrency model below, and highlighting is not worth a bundler. `docs/backlog.md` has the full argument under
+"An editor in the board".
 
 ### 5. One upload pipeline for drag, paste and picker
 
@@ -604,11 +616,15 @@ model's own file reader: upload, get a remote path, splice the path into the pro
 lands, and the input is covered while one is outstanding so the caret cannot move underneath
 (`:1344-1349`).
 
-Atrium already has the read side of the same problem working, `/v1/browse` listing the daemon's filesystem so a
-picker works over a remote board (`internal/api/browse.go`). What is missing is an upload endpoint and a place
-to land bytes. **What has to change:** the path question. `browse.go` already decides what a safe path is, so
-the landing spot should be derived from `task.worktree` through that same answer rather than from a second idea
-of safety. Nothing about the supervised runner or the permission chain needs to move.
+**Built.** `POST /v1/tasks/{id}/files` takes the bytes, `.atrium/incoming` under the card is where they land,
+and one function serves paste, drop and the picker exactly as this section argues.
+
+**The paragraph that used to be here was wrong and is worth recording as wrong**, because it is the mistake this
+whole comparison nearly caused. It said the landing spot should be derived from `task.worktree` through
+`browse.go`, "which already decides what a safe path is". It did not: its entire treatment of caller input was
+`filepath.Clean`, with no root and no symlink resolution. `docs/file-transfer-design.md` opens by refuting this
+premise, and the answer was a new primitive, `internal/safepath`, which `browse.go` was itself later bounded
+through. Reading a peer's design and assuming the local equivalent does the same job is the specific failure.
 
 ### 6. An idempotency key on the prompt endpoint
 
@@ -717,7 +733,7 @@ got wrong, and what settles each one.
 | Go and TypeScript, supervising agents like atrium | Python agent driving the Claude Agent SDK **in process**, hooks as Python callables, no interactive CLI anywhere. Hub is Next.js. No Go in the tree | `session.py:30`, `:2000-2010` |
 | "Charon's approvals are per request" | One standing-rule mechanism exists. "Always" persists a JSON array of bare **tool names** per session, hub-side. One "Always" on a `Bash` card approves every later `Bash` command in that session | `sessionOps.ts:1847-1850`, `:1052`, `lib/db/schema.ts:244` |
 | "Times out at 10 minutes for Claude and 30 for Codex" | Three timeouts. 10 min for a Claude tool permission, **30 min for Claude's `AskUserQuestion`**, 30 min for Codex, and Codex can override its own with `autoResolutionMs` | `session.py:1281`, `:1313`, `codex_session.py:1886`, `:1856` |
-| "A small IDE", and "the obvious candidate is the Monaco editor" | CodeMirror 6, lazy per-file language modes, a remote LSP client behind it | `app/CodeEditor.tsx:2-16`, `lsp.py` |
+| "A small IDE", and "the obvious candidate is the Monaco editor" | CodeMirror 6, lazy per-file language modes, a remote LSP client behind it. Not transferable: it ships ES modules with bare specifiers and no bundle, which Charon can use because it is a Next.js app and atrium cannot because its board is one file | `app/CodeEditor.tsx:2-16`, `lsp.py` |
 | "Sessions talk to each other over MCP" | True, and not the mechanism the phrase suggests. The MCP server holds no state and no routing, it is a thin argv-identified adapter over a Unix socket. The reply is not fetched by a tool: the daemon captures the target's turn text and injects it into the sender | `peer_mcp.py:97-116`, `server.py:503-544` |
 | "Charon is session-shaped. Atrium's cards carry history across restarts" | Charon's sessions are durable too: `claude_sessions` rows, an event log with a `seq` resume cursor, SDK resume ids. The difference is not durability, it is that Charon has no unit above a session and no status a human curates | `lib/db/schema.ts:143-160`, `event_log.py`, `session.py:2012` |
 | "No exposed ports on the remote side" | True of *new* ports. It requires an inbound `sshd` the operator already runs, so the far side is by definition already accepting connections. That is why the shape does not reach a laptop or a pod | `sshShared.js:115-121`, `docs/federation-design-v2.md:75-97` |

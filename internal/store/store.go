@@ -219,6 +219,24 @@ type Task struct {
 	// anything in it. What this buys is ordering: three things thought of
 	// during a long turn, sent as one instruction at the end.
 	Note string `json:"note,omitempty"`
+	// Priority is how much this matters, and it is the ONE judgement on this
+	// board. Everything else is a fact: what a runner is doing, how long it has
+	// waited, what repository it is in.
+	//
+	// `high`, empty for normal, or `low`. Three levels rather than a number,
+	// because three never need a tie break and a number turns into something to
+	// fiddle with. See migration 0036 for the rest of the argument.
+	//
+	// NOT set by an agent, ever. This is the operator's judgement about their
+	// own attention, which is the same argument that keeps the status column
+	// human. A source may SUGGEST one on an offered item; accepting the item is
+	// what writes it here.
+	Priority string `json:"priority,omitempty"`
+	// PriorityAt is when that judgement was made, so the board can fade one
+	// that has not been touched in a month. Read at display time and never
+	// written back: nothing acts on priority, so there is no moment to expire
+	// it in and no timer that would own doing so.
+	PriorityAt *time.Time `json:"priority_at,omitempty"`
 	// ArchivedAt is when this card left the board, or nil while it is on it.
 	//
 	// Off the board, still on the record. A dead card is swept so the finished

@@ -358,8 +358,8 @@ below a card.
   `$env:WORKTREE_ROOT\hub\` later.
 - **No auth.** Single machine, localhost. If you bind to a non-loopback address, anything on your LAN can talk
   to the hub. Don't do that without thinking about it first.
-- **No real TUI yet.** If a message arrives while you're mid-type, it'll print over your input. Workaround:
-  finish your line and re-read.
+- **`--simple` prints over your input.** A message arriving mid-type lands on your line. That is the line-mode
+  fallback for piping and scripting; the default is a full-screen Bubble Tea UI that does not have the problem.
 - **No multi-host.** If you need cross-machine, the right substrate is Agora (OpenZiti A2A), not extending
   Atrium with network identity / policy code.
 
@@ -367,7 +367,8 @@ below a card.
 
 | Thing | Path |
 | --- | --- |
-| Built binary | `<atrium-repo>\build.claude\atrium.exe` |
+| Installed binary | `~\.atrium\bin\atrium.exe` on this machine, copied there by hand. There is no packaged install yet, so this path is a convention, not a product decision. Run the daemon from HERE: hooks, the logon task and the self-restart all name a path, and a build directory moves under all three |
+| Build output | `<atrium-repo>\build.claude\atrium.exe`, which is what you build and then copy FROM |
 | Project MCP config | `<repo or worktree>\.mcp.json` |
 | Atrium repo docs | `<atrium-repo>\docs\` |
 | gwt session JSONs | `$env:WORKTREE_ROOT\sessions\*.json` |

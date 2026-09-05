@@ -170,11 +170,33 @@ Two things this does not cover, and both are yours to get right:
 
 - **not installed** when the command is not on the daemon's PATH, with a link to where to get it. Resolved with
   the same lookup starting a runner uses, so what the board reports is what starting a share will find.
-- **the address**, on its own line with a copy button, once the share prints one. Matched out of the output
-  rather than parsed, because what a share prints is not a documented format.
-- **whatever it said**, in full, under the panel. A share that refuses explains itself there and nowhere else.
+- **the address**, on its own line with a copy button. It comes back as DATA from the SDK rather than being
+  matched out of a child process's log lines, which is what an earlier version did and is why this used to warn
+  that a share's output is not a documented format. There is no child process now: `internal/daemon/
+  overlay_native.go` takes a `net.Listener` from the SDK and serves the board's own handler on it.
+- **whatever went wrong**, as a sentence about what to do next. `internal/daemon/overlay_zrok_errors.go` turns
+  what zrok returns into an account limit, a revoked token, a name already taken, an unreachable instance or the
+  instance's own error, and always appends the original, because the classification is a guess.
+
+## Lending one session rather than publishing the board
+
+A second shape, and the reason it is not an option on the first one: publishing the board hands over every card,
+every directory, the settings and the file browser. That is right for reaching your own board from your own
+phone and wrong for giving somebody a link.
+
+`share this session` on a card serves a **separate restricted handler** on its own share, rather than the board
+with a filter over it. The surface is an allowlist and has to stay one, so an endpoint added later is invisible
+to a guest until somebody adds it deliberately: the page and its assets, `/v1/health`, a `GET` on that one card,
+its attach socket, its icon. Everything else answers 403, and `internal/daemon/overlay_guest.go` names the ones
+refused on purpose so nobody has to work out whether they were forgotten.
+
+Read-only is enforced on the SOCKET rather than by hiding a control, because a guest owns their copy of the
+page. Permission prompts stay with the operator whichever mode is chosen.
+
+The address is deliberately not reserved. The board's address is one you keep; a lent session's address IS the
+credential, since there is no login, so it is fresh every time and dies when the share stops or atrium restarts.
 
 ## Adding another one
 
-`OVERLAY_UI` in the board describes the fields, `overlayViews` describes the panel, and one `*Args` method turns
-a config into a command line. A third overlay is an entry in each, not a branch through the rendering.
+`OVERLAY_UI` in the board describes the fields and `overlayViews` describes the panel. A third overlay is an
+entry in each plus a way to get a `net.Listener`, not a branch through the rendering.

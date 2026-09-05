@@ -112,7 +112,8 @@ So the switch approves what is already queued. Three things about how:
 
 ## What is not built
 
-- **A time limit.** "Auto mode for the next hour" is the shape this should have. Today it stays on until
-  switched off, with only the card's `auto` badge as a reminder.
 - **Anything reading the review other than a person.** Feeding it to a model to summarise what changed is
   obvious and unbuilt.
+
+The time limit used to be listed here, and this file described it two sections up at the same time. It is built:
+`auto_until` per card and board-wide, cleared in the permission chain rather than by a timer.

@@ -9,6 +9,12 @@ any of it can be built safely, because the assumption everyone reaches for first
 
 ## The assumption that is wrong
 
+**Everything in this section is written in the present tense and describes the state at design time.** Both
+halves of it have since been answered: `internal/safepath` is the primitive it says has to exist, and
+`internal/api/browseroots.go` bounds `browse.go` through that primitive, so the share exposure described below
+is closed. It is kept as written because the reasoning is what the answer was built from, and because the
+correction it makes to `docs/charon.md` still stands.
+
 `docs/charon.md` says, of an upload endpoint:
 
 > `browse.go` already decides what a safe path is, so the landing spot should be derived from `task.worktree`
@@ -71,9 +77,9 @@ Non-existent paths are the case that gets missed. An upload names a file that is
 `EvalSymlinks` fails on the full path. Walk up to the longest existing ancestor, resolve that, and re-join the
 remainder. If the ancestor resolves outside the root, refuse.
 
-`browse.go` can be retrofitted onto this later. It is not a prerequisite and it is not in the first patch,
-because widening a picker that people already use into something that refuses paths is a separate argument with
-its own answer.
+`browse.go` was retrofitted onto this later, as predicted here and for the reason given: narrowing a picker that
+people already use into something that refuses paths is a separate argument, and it got its own change rather
+than riding along with this one. `internal/api/browseroots.go` holds it to a root set.
 
 ## Upload: bytes in
 
@@ -211,16 +217,18 @@ A half-written file in a directory an agent is building in is worse than no writ
 ## What is refused
 
 - **A general file server.** The endpoints are per card and rooted at that card's worktree. There is no way to
-  ask atrium for a path that is not below a card, and adding one would be building the thing `browse.go`
-  accidentally is.
+  ask atrium for a path that is not below a card. `browse.go` used to be that thing accidentally, by listing any
+  directory it was given; it is now bounded to a root set and still lists directories only, never contents.
 - **Directory upload and zip streams.** One file, or several files, into one computed directory. Recursive
   transfer has its own bounds, its own traversal problems and its own partial-failure story, and the case that
   comes up is a screenshot.
 - **Serving anything inline.** Everything downloaded is an attachment. See above.
 - **Reading the clipboard from the daemon side.** The clipboard is on the machine with the browser. That is the
   whole reason this feature exists.
-- **An editor, for now.** `docs/charon.md` ranks CodeMirror 6 as the thing to evaluate and says to take the
-  concurrency model first. The precondition above is that model, and it is useful with no editor at all.
+- **A vendored editor component.** The concurrency model came first as planned, and the precondition above is
+  that model. A plain textarea sits on top of it and does the job. CodeMirror 6 was then evaluated and refused:
+  it ships ES modules with bare specifiers across seven packages and no prebuilt bundle, so vendoring it means
+  adding a bundler to a repo whose board is one file on purpose. See `docs/backlog.md`.
 
 ## Order to build it
 
@@ -232,6 +240,10 @@ A half-written file in a directory an agent is building in is worse than no writ
 5. The write precondition, whenever a write endpoint appears.
 
 Steps 1 to 3 are the feature. Steps 4 and 5 are the ones that can wait and should not be skipped.
+
+**All five shipped**, and so did two things this list did not anticipate: reading and writing text through
+`internal/api/filetext.go` behind the precondition from step 5, and `browse.go` bounded through the same
+primitive.
 
 ## What got built, and what the tests turned up
 
@@ -249,5 +261,7 @@ Nothing legitimate needs a format character in a filename.
 both `403`, because two different answers make the endpoint an oracle for what is on the machine outside the
 card. That is a small thing that is easy to get wrong by writing the obviously more helpful error.
 
-Still not built, and step 5 is the reason: there is no write endpoint that names its own destination, so the
-precondition has nothing to guard yet. It goes in with the first one.
+**Built.** `internal/api/filetext.go` reads and writes a text file at a caller-named path, and every write
+carries an expected-content hash. A mismatch answers `409` with the current content and the current hash, so the
+two versions are handed back and nothing arbitrates who owns the file. An ABSENT hash is an error rather than
+consent, which was the one correction this design made to Charon's version.
