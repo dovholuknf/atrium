@@ -7,6 +7,18 @@
 <link rel="stylesheet" href="/vendor/xterm.css">
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/xterm-addon-fit.js"></script>
+<!-- The renderer. Without it xterm falls back to its DOM renderer, which
+     builds a span per styled run per row on every frame: one board tab was
+     holding 26% of a CPU and had burned two and a half hours of CPU time
+     just drawing terminals. Matched to the core by hash, not by guess:
+     xterm 5.5.0, addon-fit 0.10.0, addon-webgl 0.18.0. -->
+<script src="/vendor/xterm-addon-webgl.js"></script>
+<!-- Finding something in the scrollback. Ctrl-F does nothing on its own here:
+     the browser's own find walks the DOM, and a WebGL terminal has no DOM to
+     walk, so the text on screen is invisible to it. This addon searches
+     xterm's buffer, which is the only place that text exists.
+     addon-search 0.15.0, from the same wave as the rest. -->
+<script src="/vendor/xterm-addon-search.js"></script>
 <style>
   :root {
     --bg-0: #0B1B2E; --bg-1: #071322; --bg-2: #040B14;
@@ -489,6 +501,14 @@
   .cardgroup.project > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
   /* Nested inside a status group, the indent would stack. */
   .cardgroup .cardgroup.project { margin-left: 0; }
+  /* The pinned group. Louder than a project group on purpose: it is the one
+     you asked to always be able to find, and a wash the same strength as
+     everything else around it would defeat that. */
+  .cardgroup.project.pins {
+    border-left-color: var(--warn);
+    background: hsl(var(--ghue) 70% 50% / calc(var(--group-fill) + .06));
+  }
+  .cardgroup.project.pins > summary .gname { color: var(--warn); }
 
   /* One line: the name and its chips on the same row.
      Two rows per card meant a column of eight filled the screen, so seeing
@@ -554,9 +574,11 @@
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
     animation: pulse 1.9s ease-in-out infinite;
   }
+  /* Opacity only. The box-shadow ripple this used to animate forced a full
+     repaint every frame; opacity composites on the GPU for near-zero CPU. */
   @keyframes pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,198,77,.5); }
-    50% { opacity: .55; box-shadow: 0 0 0 6px rgba(255,198,77,0); }
+    0%, 100% { opacity: 1; }
+    50% { opacity: .55; }
   }
   .chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .chip {
@@ -594,7 +616,7 @@
   /* Live activity. A running tool breathes so a moving card is distinguishable
      from a still one across a whole board, without reading it. */
   .chip.live { background: rgba(80,220,190,.10); color: var(--teal); }
-  .chip.live.tool { animation: breathe 2.4s ease-in-out infinite; }
+  /* .chip.live.tool: the teal color already marks a live tool; motion removed (CPU). */
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
   .chip.sub { background: rgba(140,170,255,.12); color: #9db4ff; }
   /* Nothing heard, and no process id to check. Dimmed rather than warned
@@ -602,9 +624,14 @@
   .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
   .card.nocontact { opacity: .68; }
   .card.nocontact:hover { opacity: 1; }
-  @keyframes breathe { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  /* Everything that repeats forever, stopped, in ONE place.
+     Scattered per-rule opt-outs are how two of these came to animate through
+     reduced motion for months: the block only named the chips somebody
+     thought of. This names the animations instead, so a new one is covered by
+     having been written rather than by being remembered. */
   @media (prefers-reduced-motion: reduce) {
-    .chip.live.tool { animation: none; opacity: 1; }
+    .pulse, .chip.live.tool, .chip.auto, .gauto.on,
+    button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
   }
   /* Dragging a card. The insertion line is drawn on the neighbor rather than
      as a floating element, so it cannot end up in the wrong place. */
@@ -791,14 +818,9 @@
     background: var(--warn-bg); color: var(--warn);
     border: 1px solid var(--warn-stroke); font-weight: 600;
     letter-spacing: .06em; text-transform: uppercase;
-    animation: autopulse 2s ease-in-out infinite;
   }
   .chip.auto::before {
     content: "\25CF"; margin-right: 5px; font-size: .8em; vertical-align: 1px;
-  }
-  @keyframes autopulse {
-    0%, 100% { box-shadow: 0 0 0 0 var(--warn-stroke); }
-    50%      { box-shadow: 0 0 10px 2px var(--warn-stroke); }
   }
   /* And the whole card, so it is visible from across the board rather than
      only once you are reading the chips. */
@@ -807,10 +829,6 @@
     background: linear-gradient(180deg, var(--warn-bg), transparent 60%);
   }
   .stackrow.autoon { border-left: 3px solid var(--warn); }
-  /* Anyone who does not want the movement keeps the color. */
-  @media (prefers-reduced-motion: reduce) {
-    .chip.auto { animation: none; }
-  }
   /* Global auto, in the header. Quiet while it is gating, and impossible to
      miss while it is not: the whole point is that nothing else on screen will
      tell you nobody is being asked. */
@@ -828,7 +846,6 @@
   }
   .gauto.on {
     color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
-    animation: autopulse 2s ease-in-out infinite;
   }
   /* ── overlays ────────────────────────────────────────── */
   /* One panel per way out, each carrying its own mark, its own color and its
@@ -994,18 +1011,11 @@
      of the list is obviously deliberate rather than a sort you do not
      recognize. */
   .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
-  .term-entry.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
-  /* Pinned but with no terminal behind it. Offering to start one rather than
-     pretending there is something to attach to. */
-  .term-entry.cold b, .term-entry.cold span { opacity: .72; }
-  .term-entry.cold:hover { opacity: 1; }
   /* On a card title it sits inline with the text, so it takes the title's
      size rather than the row's. */
   .card .title .pin {
     font-size: var(--fs-xl); width: auto; padding: 0; margin-right: 5px;
   }
-  /* In the terminal switcher, matched to the entry's own title. */
-  .term-entry .pin { font-size: var(--fs-2xl); width: 24px; }
 
   /* Work you started and left. Drawn back, not hidden: findable is the point
      of the bucket, and not competing with what you are doing now is the point
@@ -1397,8 +1407,31 @@
   #t-mark:empty { display: none; }
   #t-mark .rmark { width: 26px; height: 26px; border-radius: var(--r-sm); }
   #t-mark .rmark svg { width: 17px; height: 17px; }
+  /* The worktree. The chip itself is a LABEL and is selectable text: only the
+     glyph in front of it is a button. A pressable target the width of the bar
+     is one you hit by accident every time you reach for what is behind it. */
+  #t-chips .chip.path { cursor: text; user-select: text; gap: 5px; }
+  /* `all: unset` rather than a list of overrides. A button carries a padding,
+     a border, a background, a font and a line-height of its own, and undoing
+     four of the five left the fifth to make the chip taller than every chip
+     beside it. This is a glyph that happens to be pressable. */
+  .copybit {
+    all: unset; cursor: pointer; color: inherit; opacity: .65;
+    display: inline-flex; align-items: center;
+  }
+  .copybit:hover { opacity: 1; color: var(--teal); }
   /* A picture does not want the padding a word does. */
   #t-cog, #t-files { font-size: var(--fs-lg); padding: 5px 9px; line-height: 1; }
+  /* The theme picker, while it is up. Sized to the longest name so the bar
+     does not change width as you arrow through, which would move every button
+     beside it and change the terminal's box under a fitted grid. */
+  .themepicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+  .themepicker[hidden] { display: none; }
+  .themepick {
+    flex: none; width: 20ch; font: var(--fs-sm) var(--mono);
+    background: var(--shell-0); color: var(--head);
+    border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 4px 6px;
+  }
   /* The directory, over the terminal rather than beside it. In a popped-out
      window there is no width to split, and two halves too narrow to use is
      worse than one that swaps. The terminal keeps running underneath. */
@@ -1410,8 +1443,60 @@
   .term-files .filebar { display: flex; align-items: center; gap: var(--sp-3); }
   .term-files .filelist { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   /* Room for the bar. The bar itself is painted by the universal rule near the
-     top of this stylesheet, along with every other one on the board. */
-  .term-files .filelist { padding-right: 12px; }
+     top of this stylesheet, along with every other one on the board.
+     `max-height: none` because `.filelist` carries a 240px cap that is right
+     inside the card dialog, where the list is one field among several, and
+     wrong here, where the drawer IS the pane and there is nothing else in it
+     to leave room for. */
+  .term-files .filelist {
+    padding-right: 12px; max-height: none;
+  }
+  /* The drawer wears the terminal's colors, because it sits on the terminal's
+     background. Every one of these falls back to the board's own value, so a
+     pane with no session attached looks exactly as it did. */
+  .term-files .filelist { border-color: var(--term-line, var(--stroke-dim)); }
+  .term-files .filelist .frow { border-bottom-color: var(--term-line, var(--stroke-dim)); }
+  .term-files .filelist .frow:hover { background: var(--term-line, var(--lift)); }
+  .term-files .filelist .fname { color: var(--term-fg, var(--body)); }
+  .term-files .filelist .ficon { color: var(--term-fg, var(--dimmest)); opacity: .75; }
+  .term-files .filelist .frow.dir .fname,
+  .term-files .filelist .frow.dir .ficon { color: var(--term-thumb-hi, var(--teal)); opacity: 1; }
+  .term-files .fsize, .term-files .fwhen { color: var(--term-fg, var(--dimmest)); opacity: .6; }
+  .term-files .fpick { accent-color: var(--term-thumb-hi, var(--teal)); }
+  /* Destructive, and it says so before it is pressed. */
+  .chip.no { background: var(--warn-bg); color: var(--warn); cursor: pointer;
+             border: 1px solid var(--warn-stroke); }
+  .chip.no:hover { background: var(--warn-stroke); color: var(--head); }
+  .term-files .crumbs .crumb { color: var(--term-fg, var(--dim)); opacity: .75; }
+  .term-files .crumbs .crumb.here { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
+  .term-files .crumbs .crumb:hover { background: var(--term-line, var(--lift)); opacity: 1; }
+  .term-files .hintline { color: var(--term-fg, var(--dimmest)); opacity: .7; }
+  .fedit textarea {
+    background: var(--term-bg, var(--bg-2));
+    color: var(--term-fg, var(--head));
+    border-color: var(--term-line, var(--stroke-dim));
+  }
+  .fedit textarea:focus { border-color: var(--term-thumb-hi, var(--teal)); }
+  .fedit .filebar code { color: var(--term-fg, var(--dim)); }
+  /* The editor takes the drawer, the same way the drawer takes the pane. Two
+     of them side by side in a 900px window is two things too narrow to use. */
+  .fedit { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .fedit[hidden] { display: none; }
+  .term-files:has(.fedit:not([hidden])) .filelist,
+  .term-files:has(.fedit:not([hidden])) > .filebar,
+  .term-files:has(.fedit:not([hidden])) > .hintline { display: none; }
+  .fedit textarea {
+    flex: 1 1 auto; min-height: 0; resize: none;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    background: var(--bg-2); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 10px 12px;
+    /* A tab is a tab in a file, not a way out of the box. */
+    tab-size: 4;
+  }
+  .fedit textarea:focus { outline: none; border-color: var(--teal); }
+  /* A tick per row, and it must not swallow the click that walks a directory. */
+  .filelist .fpick { flex: none; margin: 0; accent-color: var(--teal); cursor: pointer; }
+  .filelist .frow { grid-template-columns: auto 1fr auto auto auto; }
   /* The drawer takes the pane, so the terminal must give it up rather than
      both claiming the same room. */
   .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
@@ -1603,77 +1688,219 @@
      terminal reaches the bottom of the window at any zoom or bar wrap. */
   .term-layout {
     display: flex; gap: var(--sp-4); align-items: stretch; min-width: 0;
-    flex: 1 1 auto; min-height: 0;
+    flex: 1 1 auto; min-height: 0; position: relative;
     /* Nothing here may make the page itself scroll. A page scrollbar sits over
        the terminal, which is the overlap that keeps coming back. */
     overflow: hidden;
   }
+  /* Dragged to a width, not given one. 260px is right for `atrium:main` and
+     wrong for a worktree three orgs deep, and the person who knows which of
+     those is on screen is the one looking at it.
+     Kept in localStorage rather than on the daemon: it is a fact about this
+     screen, and a width synced from a 32in monitor is wrong on a laptop. */
   .term-list {
-    flex: 0 0 260px; display: flex; flex-direction: column; gap: var(--sp-3);
-    min-height: 0; overflow-y: auto;
+    flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column; gap: var(--sp-3);
+    min-height: 0; overflow-y: auto; overflow-x: hidden;
     /* Room for the lift on hover and for a focus ring, or the top card's
        border is clipped by the scroll container. */
     padding: 3px 3px 6px;
   }
-  .term-entry {
-    background: linear-gradient(180deg, var(--card-0), var(--card-1));
-    /* A visible left edge always, so an inactive card does not read as
-       unfinished. The active one turns it teal rather than growing one. */
-    border: 1px solid var(--stroke-dim); border-left: 3px solid var(--stroke-dim);
-    border-radius: var(--r-md); padding: 10px 12px; cursor: pointer;
-    transition: border-color .14s, transform .14s, background .14s;
-  }
-  /* No lift. A card that moves under the pointer as you reach for it is a
-     card you click the wrong part of, and in a list this dense the shift
-     reads as the whole column twitching. Colour alone says the same thing and
-     nothing moves. */
-  .term-entry:hover { border-color: var(--blue); border-left-color: var(--blue); }
-  .term-entry.on {
-    border-left-color: var(--teal); border-color: var(--stroke); background: var(--shell-0);
-  }
-  .term-entry.attn { border-left-color: var(--warn); }
-  .term-entry b {
+  /* The list's own controls, above the entries and scrolling with them.
+     Same height as the terminal's bar, so the two headers read as one line
+     across the view instead of one sitting a few pixels above the other. */
+  .termhead {
     display: flex; align-items: center; gap: var(--sp-2);
-    color: var(--head); font-size: var(--fs-md); font-weight: 600; min-width: 0;
+    min-height: var(--barh); box-sizing: border-box; flex: none;
   }
-  /* The runner's mark, in front of the name, the way a card and the terminal
-     bar carry it. The `claude` pill said the same thing lower down and read as
-     one more fact rather than as whose session this is. */
-  .term-entry b .rmark { width: 22px; height: 22px; flex: none; border-radius: var(--r-sm); }
-  .term-entry b .rmark svg { width: 14px; height: 14px; }
-  .term-entry b .tname {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+  /* The drag handle.
+     Nine pixels wide with a two pixel line painted down the middle: a handle
+     you can see is not the same as a handle you can hit, and a 2px target is
+     one you miss. */
+  .term-grip {
+    flex: 0 0 9px; align-self: stretch; position: relative; cursor: col-resize;
+    background: none; border: 0; padding: 0; border-radius: 0;
   }
-  /* Sized to the row it is in rather than to a heading. At 2xl the star was
-     taller than the line and pushed everything beside it out of the way. */
-  .term-entry b .pin { font-size: var(--fs-lg); width: auto; flex: none; }
-  .term-entry span { font: var(--fs-xs)/1.5 var(--mono); color: var(--dimmest); }
-  /* One line, cut at the FRONT. The last segments of a path identify it; the
-     drive letter and `worktrees` are the same on every entry in this list.
-     `direction: rtl` is what puts the browser's ellipsis at the left end, and
-     the `bdi` inside keeps the text itself reading left to right. */
-  .term-entry .path {
-    display: block; direction: rtl; text-align: left; unicode-bidi: plaintext;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    cursor: pointer; margin: 2px 0;
+  /* In the attached terminal's colours, since it sits against that terminal.
+     `--term-line` and `--term-thumb-hi` are set on the layout by paintPaneBg
+     and fall back to the board's own when nothing is attached. */
+  .term-grip::after {
+    content: ""; position: absolute; inset: 8px 3px;
+    background: var(--term-line, var(--stroke-dim)); border-radius: 2px;
+    transition: background .14s;
   }
-  .term-entry .path:hover { color: var(--label); }
-  .term-entry .chip { margin-top: 6px; margin-right: 5px; }
+  .term-grip:hover::after, .term-grip.dragging::after {
+    background: var(--term-thumb-hi, var(--blue));
+  }
+  /* While dragging, the cursor belongs to the whole page. The pointer leaves
+     the handle constantly during a drag and a cursor that flickers back to an
+     arrow reads as the drag having been dropped. */
+  body.gripping { cursor: col-resize; user-select: none; }
+
+  /* Collapsed: the mark, eight characters, and the colour of the left edge.
+     The edge is what actually carries "this one wants you", so the mode that
+     drops everything else keeps that. */
+  .tl-mini .term-list { flex-basis: 104px; }
+  /* ONE ROW, not three. Stacking the star, the mark and the name gave each of
+     them a line of its own, so the mode that exists to take less room took
+     more of it: a collapsed entry was taller than the full one it replaced.
+     The star goes entirely. Pinning is a decision, and a decision does not
+     belong on the control you shrank to get it out of the way. It is on the
+     card in `full`, and in the right-click menu in both. */
+  .tl-mini .term-list .card { padding: 6px 4px; }
+  .tl-mini .term-list .card .chips, .tl-mini .term-list .card .title .pin { display: none; }
+  .tl-mini .term-list .card .title {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .tl-mini .term-list .card .title .rmark {
+    display: block; margin: 0; width: 18px; height: 18px;
+  }
+  .tl-mini .term-list .card .title .rmark svg { width: 12px; height: 12px; }
+  /* The SORT goes, the collapse button stays. Hiding both took away the only
+     way back to the full list: `off` has the rail to hover, and `mini` had
+     nothing at all, so shrinking the list was a one-way trip until you found
+     the localStorage key. */
+  .tl-mini .termsort:not(.tlcycle) { display: none; }
+  .tl-mini .termhead { justify-content: center; }
+  .tl-mini .termhead .grow { display: none; }
+  /* Which of the two names is showing is a CSS question, so both are rendered
+     and neither has to be recomputed when the mode changes. */
+  .tshort { display: none; }
+  .tl-mini .tname { display: none; }
+  .tl-mini .tshort {
+    display: block; font: 600 var(--fs-xs)/1.3 var(--mono); color: var(--head);
+    letter-spacing: -.2px; white-space: nowrap;
+  }
+
+  /* Hidden, and it SLIDES OVER the terminal rather than pushing it aside.
+     Nothing reflows, so a pointer crossing the left edge never re-fits xterm,
+     which measures itself in characters and repaints the whole grid to do it. */
+  .term-layout.tl-off { position: relative; }
+  .tl-off .term-list {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 40;
+    flex-basis: auto; width: var(--termw, 260px);
+    background: var(--shell-0); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-lg); box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    padding: 8px; transform: translateX(calc(-100% - 10px));
+    transition: transform .16s ease;
+  }
+  .tl-off .term-rail:hover ~ .term-list,
+  .tl-off .term-list:hover, .tl-off .term-list:focus-within { transform: translateX(0); }
+  .tl-off .term-grip { display: none; }
+  /* The strip you hover to get it back. Always there, always in the same
+     place, and it stays lit under the list so the way out is visible while
+     the list is over the terminal. */
+  .term-rail { display: none; }
+  .tl-off .term-rail {
+    display: block; flex: 0 0 10px; align-self: stretch; z-index: 41;
+    padding: 0; border: 0; border-radius: 3px; cursor: pointer;
+    background: linear-gradient(180deg, var(--stroke-dim), transparent 60%);
+  }
+  .tl-off .term-rail:hover { background: var(--blue); }
+  /* AN ENTRY IS A BOARD CARD. Same element, same class, same rules, so the
+     density setting, the hover, the group hue and the waiting edge all arrive
+     here for free and cannot drift from the board.
+     What the list adds is below, and it is only three things: no bottom
+     margin (the column has a gap), the attached one marked, and the two names
+     that swap when the list collapses. */
+  /* NO LIFT. A board card rises 2px under the pointer, which is fine when it
+     is a card in a column. Here it is a tab joined to the terminal beside it,
+     and lifting it slides that join two pixels out of true: the edge, the
+     bridge and the pane stop lining up and the whole thing reads as broken
+     rather than as hovered. The border already says which one you are on. */
+  .term-list .card { margin-bottom: 0; }
+  .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
+
+  /* A TAB, IN ITS OWN TERMINAL'S COLOURS.
+     `--tabc` and `--tabbg` come off the session's theme, set inline where the
+     entry is rendered, so the green session has a green edge and the one you
+     are attached to is filled with the same background you are looking at.
+     The list stops being a column of names and becomes a row of tabs onto the
+     panes behind it, which is what it has always been. */
+  .term-list .card.tab::before {
+    opacity: 1; width: 4px; background: var(--tabc, var(--blue));
+  }
+  /* Square on the side facing the terminal, rounded on the side facing away,
+     which is what makes it read as attached to the pane rather than as a
+     rectangle near it. The gutter between them stays, because the list
+     scrolls and a card that reached across it would be clipped by its own
+     scroll container. */
+  .term-list .card.on {
+    background: var(--tabbg, var(--shell-0));
+    border-color: var(--tabc, var(--stroke));
+    border-right-color: transparent;
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
+  }
+  /* The name has to stay readable ON the terminal's background, which for a
+     light theme is a light one. */
+  .term-list .card.on .title, .term-list .card.on .title .tshort { color: var(--tabc); }
+  /* Hovering says which one, and says it in that session's colour rather than
+     in one blue for all of them. */
+  .term-list .card.tab { --hover: var(--tabc, var(--blue)); }
+
+  /* THE PIECE THAT CROSSES THE GUTTER.
+     The attached card cannot reach the pane itself: the list scrolls, so it
+     clips its own children horizontally and a negative margin is simply cut
+     off. So the span between them is drawn as a separate element, a sibling of
+     both, positioned over the gap and the drag handle.
+     Above the handle on purpose. The colour running over the divider is the
+     whole point: it says these two are one surface, and a 2px line through
+     the middle of it says they are two. */
+  .tabbridge {
+    position: absolute; z-index: 45; pointer-events: none;
+    background: var(--tabbg, var(--shell-0));
+    border-top: 1px solid var(--tabc, var(--stroke));
+    border-bottom: 1px solid var(--tabc, var(--stroke));
+    box-sizing: border-box;
+  }
+  .tabbridge[hidden] { display: none; }
+  /* The title WRAPS here and truncates on the board. A board column is wide
+     and this one is 260px, so the same label came out as
+     `github/dovholuknf/dotfil…`: every entry cut in the org name, which is the
+     part they all share. Two lines say it, one line said nothing. */
+  .term-list .card .title {
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.3; flex: 1 1 auto;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  /* Clamped text is a box, so the star and the mark cannot be flex children of
+     it. They are inline, sized to the line rather than to a heading. */
+  .term-list .card .title .pin { font-size: var(--fs-md); cursor: pointer; }
+  .term-list .card .title .rmark { display: inline-block; vertical-align: -5px; margin-right: 4px; }
   button.termsort {
     align-self: flex-start; font-size: var(--fs-sm); padding: 5px 11px;
     background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
   }
   button.termsort:hover { color: var(--head); border-color: var(--blue); }
 
+  /* The pane behind the terminal, in the terminal's own color once one is
+     attached. The margin around `#t-screen` and the pane's rounded corners
+     both show through, and in the board's blue they framed a red session in a
+     color it had nothing to do with. */
   .term-pane {
     flex: 1; min-width: 0; display: flex; flex-direction: column;
-    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
-    border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
+    background: var(--term-bg,
+      linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7)));
+    /* The same edge the tab wears, so the card, the bridge and the pane read
+       as one outline in one colour rather than three things that happen to be
+       next to each other. */
+    border: 1px solid var(--term-edge, var(--stroke-dim));
+    border-radius: var(--r-lg); overflow: hidden;
   }
+  /* The bar keeps the board's colors whatever the terminal is themed.
+     It is atrium's chrome, not the session's: the name, the buttons and the
+     cog belong to the board, and a bar that turned dark red with the terminal
+     read as part of the session, which is the one thing it is not. The pane
+     below it takes the theme, so the line between them says which is which. */
+  /* One height for both headers, so the list's controls sit on the same line
+     as the terminal's rather than a few pixels above them. Declared once and
+     used by both, because two paddings that happen to agree today do not. */
+  .term-layout { --barh: 44px; }
   .term-bar {
     display: flex; align-items: center; gap: var(--sp-4); padding: 10px 14px;
+    min-height: var(--barh); box-sizing: border-box;
     border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
     flex: 0 0 auto;
+    background: linear-gradient(180deg, rgba(13,33,53,.92), rgba(8,22,37,.92));
   }
   /* The mark and the name, always together and always on one line. It shrinks
      by truncating the name rather than by wrapping: a bar that grows a second
@@ -1703,14 +1930,80 @@
      right-hand characters read as running underneath it. A MARGIN is outside
      the box entirely: xterm gets a narrower element, fits to it exactly, and
      the gap is still there.
-     Vertical padding is harmless and stays, because nothing measures height in
-     characters the way the width is measured in columns. */
+     The vertical gap is gone entirely. It was harmless, in that nothing
+     measures height in characters the way width is measured in columns, and
+     20px of padding plus 20px of margin was 40px of the terminal's own
+     background between the last line and the help text, which reads as the
+     session having stopped saying anything. */
+  /* Waiting for the daemon, or for a session to come back. Centred over the
+     terminal, in the terminal's own colours. */
+  .termwait {
+    position: absolute; z-index: 35; left: 50%; top: 42%;
+    transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 12px 18px; border-radius: var(--r-lg);
+    background: var(--shell-0); border: 1px solid var(--term-edge, var(--stroke));
+    color: var(--term-fg, var(--head)); font: var(--fs-base)/1.4 var(--mono);
+    box-shadow: 0 18px 44px rgba(0,0,0,.55); max-width: 80%; text-align: left;
+  }
+  .termwait[hidden] { display: none; }
+  .termwait .spin {
+    width: 13px; height: 13px; flex: none; border-radius: 50%;
+    border: 2px solid var(--term-line, var(--stroke));
+    border-top-color: var(--term-thumb-hi, var(--teal));
+    animation: termspin 900ms linear infinite;
+  }
+  @keyframes termspin { to { transform: rotate(360deg); } }
+
+  /* Floating over the top-right of the terminal, in the terminal's colours,
+     because it belongs to the session rather than to the board. */
+  .findbar {
+    position: absolute; z-index: 30; top: 6px; right: 16px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 6px; border-radius: var(--r-md);
+    background: var(--term-bg, var(--shell-0));
+    border: 1px solid var(--term-line, var(--stroke));
+    box-shadow: 0 10px 26px rgba(0,0,0,.5);
+  }
+  .findbar[hidden] { display: none; }
+  .findbar input {
+    background: rgba(0,0,0,.25); border: 1px solid var(--term-line, var(--stroke-dim));
+    color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
+    padding: 4px 8px; width: 230px; font: var(--fs-sm)/1.3 var(--mono);
+  }
+  .findbar input:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }
+  .findbar button {
+    all: unset; cursor: pointer; padding: 3px 7px; border-radius: var(--r-sm);
+    color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
+  }
+  .findbar button:hover { opacity: 1; background: rgba(255,255,255,.08); }
+  /* A toggle that is ON has to look different from one being hovered, or the
+     only way to know whether case matters is to try it both ways. */
+  .findbar button.findtog.on {
+    opacity: 1; background: var(--term-thumb, rgba(255,255,255,.16));
+    color: var(--term-fg, var(--head));
+  }
+  .findcount {
+    font: var(--fs-xs)/1.2 var(--mono); color: var(--term-fg, var(--dimmest));
+    opacity: .7; min-width: 54px; text-align: right;
+  }
+  /* Positioning context for the find bar. The pane already clips, which is
+     what keeps the bar inside the terminal. */
+  .term-pane { position: relative; }
+
   #t-screen {
     flex: 1 1 auto; min-height: 0; min-width: 0;
-    padding: 10px 0; margin: 10px 5px; overflow: hidden;
+    /* A little air under the bar, and none at the bottom. The first line of
+       output sitting against the bar read as clipped. */
+    padding: 6px 0 0; margin: 0 5px; overflow: hidden;
+    /* The attached session's own background, so the strip xterm does not
+       reach is the terminal's color rather than the board's. Falls back to
+       nothing when there is no terminal, which is when the pane should look
+       like the rest of the board. */
+    background: var(--term-bg, transparent);
   }
   #t-screen .xterm { height: 100%; width: 100%; }
-  .term-entry .chip { white-space: nowrap; }
+  .term-list .card .chip { white-space: nowrap; }
 
   /* NEVER set a width here. Color only.
      The fit addon works out how many columns fit by measuring the viewport's
@@ -1733,16 +2026,28 @@
      not have, that exclusion is where to look, not here. */
   #t-screen .xterm-viewport {
     background: transparent !important;
-    scrollbar-color: var(--stroke-dim) var(--bg-2);
+    scrollbar-color: var(--term-thumb, var(--stroke-dim)) var(--term-bg, var(--bg-2));
   }
-  #t-screen .xterm-viewport::-webkit-scrollbar-track { background: var(--bg-2); }
+  #t-screen .xterm-viewport::-webkit-scrollbar-track {
+    background: var(--term-bg, var(--bg-2));
+  }
   #t-screen .xterm-viewport::-webkit-scrollbar-thumb {
-    background: var(--stroke-dim); border-radius: var(--r-sm);
+    background: var(--term-thumb, var(--stroke-dim)); border-radius: var(--r-sm);
   }
-  #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--stroke); }
+  #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--term-thumb-hi, var(--stroke));
+  }
+  /* Sits ON the terminal's background, so it takes the terminal's colours.
+     The board's dim grey over a dark green pane was the one piece of chrome
+     that had not been told which surface it was on. `--term-fg` is the theme's
+     foreground, faded, since this is a footnote and not output. */
   .term-help {
-    padding: 8px 14px; border-top: 1px solid var(--stroke-dim);
-    font: var(--fs-xs)/1.4 var(--mono); color: var(--dimmest); flex: 0 0 auto;
+    padding: 5px 14px; border-top: 1px solid var(--term-line, var(--stroke-dim));
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dimmest));
+    opacity: .55; flex: 0 0 auto;
+    /* One line. It is a reminder of four shortcuts, and it was taking three
+       rows off the bottom of the terminal to say them. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   /* A request while attached: the runner is blocked and the terminal shows
      nothing, so the question has to appear where you are looking. */
@@ -1893,6 +2198,13 @@
   @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
   .toast .body { flex: 1; min-width: 0; }
   .toast b { display: block; color: var(--head); font-size: var(--fs-base); margin-bottom: 3px; }
+  /* How many times the same message arrived. Empty until the second one, so a
+     toast that happened once says nothing about counting. */
+  .toast .ntimes:not(:empty) {
+    display: inline-block; margin: 0 0 3px; padding: 1px 6px; border-radius: 999px;
+    background: var(--warn-stroke); color: var(--head);
+    font: 600 var(--fs-xs)/1.4 var(--mono);
+  }
   /* Breaks at spaces, and mid-word only when a single word cannot fit.
      break-all cuts wherever the line ends whatever is there, which was chosen
      for toasts carrying a command or a path and is wrong now that most of them
@@ -2159,8 +2471,22 @@
       flex: 0 0 auto; flex-direction: row; max-height: none;
       overflow-x: auto; overflow-y: hidden; padding-bottom: 4px;
     }
-    .term-entry { flex: 0 0 auto; min-width: 190px; }
-    .term-entry span { display: none; }
+    /* The width, the handle and the slide-over are answers to the list being
+       a COLUMN beside the terminal. Here it is a row above it, where none of
+       the three means anything, so all of them are undone: a stored width
+       from a wide window must not survive into this layout. */
+    .term-layout.tl-off .term-list,
+    .term-layout.tl-mini .term-list {
+      position: static; transform: none; width: auto; flex-basis: auto;
+      box-shadow: none; background: none; border: 0; padding: 3px 3px 6px;
+    }
+    .tl-mini .tname { display: inline; }
+    .tl-mini .tshort, .term-grip, .term-rail, .tl-off .term-rail { display: none; }
+    .tl-mini .term-list .card .title { display: -webkit-box; text-align: left; }
+    .tl-mini .term-list .card .title .rmark { display: inline-block; margin: 0 4px 0 0; }
+    /* No gutter to cross when the list is a row above the terminal. */
+    .tabbridge { display: none; }
+    .term-list .card { flex: 0 0 auto; min-width: 190px; }
     .term-bar { gap: var(--sp-3); padding: 8px 10px; }
     /* The name TRUNCATES, it does not take a row of its own.
        `width: 100%` here was written for a phone, where a bar is a stack and
@@ -2190,7 +2516,7 @@
        growing a third row. They scroll sideways now, so nothing needs
        hiding, and hiding by position would drop whichever chip happened to
        be second rather than the least useful one. */
-    .term-entry { min-width: 150px; }
+    .term-list .card { min-width: 150px; }
     #t-screen { height: 55vh; }
   }
 
@@ -2393,8 +2719,24 @@ Exports honor whatever filter is applied.">?</span>
   <!-- Terminals are a view, not a modal. A modal is the wrong shape for
        something you switch between and leave open while doing other things. -->
   <div id="terms" hidden>
-    <div class="term-layout">
+    <div class="term-layout" id="term-layout">
+      <!-- The way back when the list is hidden. Before the list in the DOM so
+           hovering it can reveal the list with a sibling selector, which keeps
+           the whole reveal in CSS and out of a mousemove handler. -->
+      <button class="term-rail" id="term-rail" onclick="showTermList()"
+        title="hover to peek at the sessions, click to dock the list again"></button>
       <aside class="term-list" id="term-list"></aside>
+      <!-- Drag to set the width. Also a button: keyboard arrows move it, since
+           a control that only answers to a pointer is one some people do not
+           have. -->
+      <button class="term-grip" id="term-grip" aria-label="resize the session list"
+        title="drag to resize the list"
+        onpointerdown="startGrip(event)"
+        onkeydown="gripKey(event)"></button>
+      <!-- Carries the attached session's colour across the gap and over the
+           handle, so its card and its terminal read as one surface. Placed
+           and sized in `placeTabBridge`. -->
+      <div class="tabbridge" id="tab-bridge" hidden></div>
       <section class="term-pane">
         <div class="term-bar">
           <!-- The mark and the name are one thing, so they are one element.
@@ -2406,6 +2748,21 @@ Exports honor whatever filter is applied.">?</span>
             <strong id="t-title">nothing attached</strong>
           </span>
           <span class="chips" id="t-chips"></span>
+          <!-- Hidden until the cog asks for it. On the bar rather than in a
+               dialog because the terminal underneath IS the preview: a theme
+               is judged against real output, not against its name. -->
+          <!-- Stays up until it is answered. Committing on blur meant the
+               control vanished the moment you clicked the terminal to look at
+               what you had just chosen, which is the one thing you want to do
+               while choosing a theme. -->
+          <span class="themepicker" id="t-theme-wrap" hidden>
+            <select id="t-theme" class="themepick"
+              onchange="previewTheme(this.value)"
+              onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelTheme(); }
+                         else if (event.key === 'Enter') { event.preventDefault(); keepTheme(); }"></select>
+            <button class="go" onclick="keepTheme()" title="keep this one">use it</button>
+            <button onclick="cancelTheme()" title="put back what was there">cancel</button>
+          </span>
           <span class="grow"></span>
           <button onclick="sendSignal('int')"
             title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
@@ -2438,16 +2795,66 @@ Exports honor whatever filter is applied.">?</span>
           <div class="filebar">
             <button id="t-files-up" onclick="termFilesUp()" title="up one directory">&#8593;</button>
             <span class="crumbs" id="t-files-where"></span>
-            <a class="chip" id="t-files-zip" download>get all</a>
+            <a class="chip go" id="t-files-zip" download hidden></a>
+            <span class="chip no" id="t-files-del" hidden></span>
             <button onclick="openTermFiles()" title="close this">close</button>
           </div>
           <div class="filelist" id="t-files-list"></div>
           <span class="hintline" id="t-files-note"></span>
+          <!-- The editor, over the list, for the case where you want to change
+               one line rather than fetch the whole file. Over an overlay it is
+               the only way: `files/open` starts an editor on the daemon's
+               machine, where nobody is sitting. -->
+          <div class="fedit" id="t-edit" hidden>
+            <div class="filebar">
+              <code class="grow ell" id="t-edit-where"></code>
+              <span class="by" id="t-edit-state"></span>
+              <button class="go" onclick="saveEditor()">save</button>
+              <button onclick="closeEditor()">close</button>
+            </div>
+            <!-- ctrl-s saves, because that is the reflex and the browser's own
+                 answer to it is "save this web page", which is never what was
+                 meant while typing into a file. -->
+            <textarea id="t-edit-text" spellcheck="false"
+              onkeydown="if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                           event.preventDefault(); saveEditor();
+                         } else if (event.key === 'Escape') {
+                           event.preventDefault(); closeEditor();
+                         }"></textarea>
+          </div>
+        </div>
+        <!-- Find, over the terminal rather than above it. A bar that took a
+             row would change the terminal's box, and xterm measures itself in
+             characters: opening find would reflow the grid and repaint every
+             line, which is a lot of work to ask for a text box. -->
+        <!-- Said on the pane rather than written into the scrollback. A line
+             of text in the terminal scrolls away, is indistinguishable from
+             output, and is gone entirely across the reload that a new build
+             triggers. This is the state of the connection, so it lives where
+             state belongs. -->
+        <div class="termwait" id="t-wait" hidden>
+          <span class="spin"></span><span id="t-wait-say"></span>
+        </div>
+        <div class="findbar" id="t-find" hidden>
+          <input id="t-find-q" spellcheck="false" placeholder="find in this session"
+            oninput="runFind(false)"
+            onkeydown="if (event.key === 'Enter') { event.preventDefault();
+                         runFind(true, event.shiftKey); }
+                       else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
+          <span class="findcount" id="t-find-n"></span>
+          <button onclick="runFind(true, true)" title="previous (shift-enter)">&#8593;</button>
+          <button onclick="runFind(true, false)" title="next (enter)">&#8595;</button>
+          <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
+            title="match case">Aa</button>
+          <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
+            title="regular expression">.*</button>
+          <button onclick="closeFind()" title="close (escape)">&times;</button>
         </div>
         <div id="t-screen"></div>
         <div class="term-help">
           ctrl-c copies when text is selected, interrupts otherwise &middot;
           ctrl-v or shift-insert pastes &middot; ctrl-insert copies &middot;
+          shift-enter or ctrl-enter writes a newline instead of sending &middot;
           ctrl-shift-c is not used, the browser takes it for dev tools
         </div>
       </section>
@@ -2619,6 +3026,14 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
            something not on it stays possible. -->
       <datalist id="ask-list"></datalist>
     </div>
+    <!-- A real select, for a closed set whose members need naming. A datalist
+         is the wrong control there twice over: it filters on what is already
+         in the field, so a pre-filled value hides every other option, and it
+         shows values rather than labels, which is useless when the values are
+         uuids. -->
+    <div class="field" id="ask-choices-field" hidden>
+      <select id="ask-choices"></select>
+    </div>
     <!-- Only shown for a confirmation that can be turned off. Ticking it and
          confirming means this question never appears again. -->
     <div class="field" id="ask-remember" hidden>
@@ -2789,6 +3204,56 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         <code>subl</code>.</span>
     </div>
 
+    <!-- Where a pasted screenshot ends up. There is no third answer here: a
+         pseudo terminal carries input characters, and an image is not one, so
+         the file has to exist somewhere the agent can open it. The choice is
+         whether that somewhere is your repository or a scratch directory. -->
+    <div class="field">
+      <label class="eyebrow" for="s-pastekeep">a pasted file</label>
+      <div class="picker">
+        <select id="s-pastekeep" onchange="savePastePrefs()">
+          <option value="keep">stays in the card, under .atrium/incoming</option>
+          <option value="scrap">goes to a scratch folder, emptied on restart</option>
+        </select>
+      </div>
+      <span class="hintline">The path is what reaches the agent either way. <b>Stays</b> means you still
+        have the screenshot tomorrow, and also every screenshot you ever pasted. <b>Scratch</b> keeps your
+        working directory clean, and the file is gone the next time atrium starts, so anything you want to
+        keep gets saved before then.</span>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-pastepre">and is announced as</label>
+      <div class="picker">
+        <input id="s-pastepre" spellcheck="false" placeholder="just the path, on its own">
+        <button onclick="savePastePrefs()">save</button>
+      </div>
+      <span class="hintline">Typed in front of the path, into the line you are already writing. Nothing is
+        submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part
+        of what you type here, so keep one.</span>
+    </div>
+
+    <!-- Two buffers, one question. Kept side by side because the smaller of
+         the two is what you actually get, and setting one without seeing the
+         other is how somebody pays for 512MB of daemon and still scrolls back
+         five thousand lines. -->
+    <div class="field">
+      <label class="eyebrow" for="s-sbmb">a terminal remembers</label>
+      <div class="picker">
+        <input id="s-sbmb" type="number" min="1" placeholder="16" style="max-width:110px">
+        <span class="unit">MB in the daemon</span>
+        <input id="s-sblines" type="number" min="1" placeholder="50000" style="max-width:130px">
+        <span class="unit">lines in the browser</span>
+        <button onclick="saveScrollback()">save</button>
+      </div>
+      <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
+        the lot over when you attach, so nothing older than that can reach the page at all. The browser
+        then keeps that many lines of it. <b>The smaller of the two is what you get.</b> Megabytes are
+        resident per running session and lines are resident per open terminal, so ten sessions at 64MB is
+        640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
+        empty for the default.</span>
+    </div>
+
     <h3 class="s-section">the board</h3>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
@@ -2816,6 +3281,10 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
           <option value="1">normal</option>
           <option value="0.72">tight</option>
           <option value="0.5">tighter</option>
+          <!-- The floor. Below this the padding is gone rather than small, and
+               rows start touching, which costs more in readability than the
+               extra row is worth. -->
+          <option value="0.3">tightest</option>
         </select>
       </div>
       <span class="hintline">How much room around things, without changing how big anything reads.
@@ -3001,12 +3470,19 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     </div>
     <div class="field">
       <div class="picker">
-        <label class="check"><input type="checkbox" id="f-resume"> resume the conversation</label>
+        <label class="check"><input type="checkbox" id="f-resume"> resume a conversation</label>
+        <select id="f-resume-mode">
+          <option value="latest">the latest one in that directory</option>
+          <option value="card">the one this fixture started last time</option>
+        </select>
         <label class="check"><input type="checkbox" id="f-enabled"> starts with atrium</label>
       </div>
-      <span class="hintline">Resuming picks up where it left off. Off starts fresh every time,
-        which is what a plain shell wants. Turning off &ldquo;starts with atrium&rdquo; keeps the
-        definition without the behavior.</span>
+      <span class="hintline">Off starts fresh every time, which is what a plain shell wants.
+        <b>The latest one</b> is what a fixture usually means: give me back the terminal I had.
+        <b>The one it started last time</b> pins it to a single conversation, which goes stale as
+        soon as anything else runs in that directory and points at nothing once that transcript is
+        deleted. Turning off &ldquo;starts with atrium&rdquo; keeps the definition without the
+        behavior.</span>
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
@@ -3251,6 +3727,14 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         <input id="d-icon" maxlength="16" spellcheck="false"
           placeholder="empty means the atrium mark">
         <span class="iconpreview" id="d-icon-preview"></span>
+        <!-- A picture instead of a glyph. Hidden input plus a button, because
+             the browser's own file control is the one piece of furniture on
+             this board that cannot be styled at all. -->
+        <input type="file" id="d-icon-file" accept="image/*" hidden
+          onchange="uploadIcon(this)">
+        <button onclick="document.getElementById('d-icon-file').click()"
+          title="png, jpeg, gif, webp or svg">use a picture</button>
+        <button class="no" id="d-icon-clear" onclick="clearIcon()" hidden>back to a glyph</button>
       </div>
       <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
         Windows renders it small, so a single bold glyph reads and a word does not.</span>
@@ -3269,7 +3753,8 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         <div class="filebar">
           <button id="d-files-up" onclick="filesUp()" title="up one directory">&#8593;</button>
           <span class="crumbs" id="d-files-where"></span>
-          <a class="chip" id="d-files-zip" download>get all</a>
+          <a class="chip go" id="d-files-zip" download hidden></a>
+          <span class="chip no" id="d-files-del" hidden></span>
         </div>
         <div class="filelist" id="d-files-list"></div>
         <span class="hintline" id="d-files-note"></span>
@@ -3495,10 +3980,42 @@ const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
 // Rewriting a list that came back identical throws away selection, scroll
 // position inside it, and any open native menu, and shows up as constant churn
 // in dev tools.
+// Replace a chunk of the page, WITHOUT throwing away where somebody had
+// scrolled to.
+//
+// The equality check above is not enough on its own and never could be: a card
+// carries how long it has been sitting, so every poll produces different HTML
+// even when nothing has happened. Replacing `innerHTML` puts every scroll
+// position inside it back to zero, so scrolling down a long `done` column
+// snapped back to the top every five seconds.
+//
+// Both the element and whatever scrolls it are saved, because either can be
+// the one that moved: a column with its own overflow scrolls itself, and a
+// short list scrolls the view around it.
 function setHTML(el, html) {
   if (!el || el.innerHTML === html) return false;
+  const outer = scrollParent(el);
+  const mine = el.scrollTop, theirs = outer ? outer.scrollTop : 0;
   el.innerHTML = html;
+  // Restored immediately rather than on a frame. The new content is in the
+  // document synchronously, so its height is already known, and deferring
+  // would show one frame at the top and read as a flicker.
+  if (mine) el.scrollTop = mine;
+  if (outer && theirs) outer.scrollTop = theirs;
   return true;
+}
+
+// The nearest ancestor that actually scrolls, or null.
+//
+// `overflow: auto` on something that fits is not a scroller, so the height is
+// checked as well as the style: otherwise the first `auto` ancestor claims the
+// answer and the real one never gets asked.
+function scrollParent(el) {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
 }
 
 function ago(secs) {
@@ -3592,7 +4109,45 @@ function switchView(name) {
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
   if (name === "history") renderHistory(false);
+  // Where you were, so a reload puts you back. A restart of the daemon
+  // reloads every board it is serving, and landing on the board every time
+  // meant two clicks to get back to the terminal you were reading.
+  //
+  // localStorage rather than the URL, because the URL already means something
+  // here: `#term=` is a popped-out window, and a view in the hash would make
+  // every reload of a solo window a negotiation between the two.
+  rememberWhereYouAre();
   refresh();
+}
+
+// Where you are, read off the page rather than off the last thing that was
+// called.
+//
+// It matters that this MEASURES rather than remembers. Writing the name into
+// storage inside `switchView` looks equivalent and is not: a toast click, an
+// alert, a launch that lands on the board and the restore itself all move the
+// view, and any one of them writing last leaves storage describing a view you
+// were on for a moment on your way somewhere else. The hidden attribute is the
+// view you are actually looking at.
+function rememberWhereYouAre() {
+  if (termOnly()) return;
+  try {
+    const now = VIEWS.find(isViewing);
+    if (now) localStorage.setItem("atrium.view", now);
+    // ONLY EVER WRITTEN, NEVER CLEARED HERE.
+    //
+    // This was the bug that made the whole restore look broken. The daemon
+    // answers HTTP before its fixtures start, so the first poll after a
+    // restart lists the card as not supervised, `renderTermList` calls
+    // `clearTermPane` because there is nothing to attach to, and clearing used
+    // to forget which session you were on. By the time the build id changed
+    // and the page reloaded, there was nothing left to go back to.
+    //
+    // Forgetting is a decision, so it is made where the decision is made:
+    // attaching something else overwrites this, and closing the terminal
+    // yourself clears it. A session that merely went away does neither.
+    if (termTask) localStorage.setItem("atrium.term", termTask.id);
+  } catch (e) {}
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
 
@@ -4006,23 +4561,63 @@ function pickGroupHue(name) {
 }
 
 // Renders a list of cards, split into project groups when grouping is on.
+// A pinned card is in the pinned group, and in no other.
+//
+// The board never ordered by pinned at all: the stack has done it since
+// pinning existed, and the board drew whatever order the API returned, so a
+// pinned card could sit at the BOTTOM of its column, which is the one place it
+// was promised never to be.
+//
+// Sorting it to the top of its own project group was the first fix and it was
+// not enough. Pinning says "keep this where I can see it", and a card at the
+// top of a group four screens down is not where you can see it. So pinned is a
+// group of its own, at the top, and a pinned card leaves whatever group it
+// would otherwise have been in. Being in two places at once would make the
+// counts lie and the card appear twice.
+//
+// Per column rather than board-wide, because a column is a bucket of your
+// attention and a pinned card that is BLOCKED is a different fact from a
+// pinned card that is idle.
+function pinnedGroupHTML(pins, keyPrefix) {
+  if (!pins.length) return "";
+  const key = keyPrefix + ": pinned";
+  const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+  // A fixed hue rather than one derived from a name. Every other group takes
+  // its color from what it is called; this one is not a project and borrowing
+  // a project's color would say it was.
+  return `<details class="cardgroup project pins"${shut} style="--ghue:41">
+    <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')">
+      <span class="gname">&#9733; pinned</span>
+      <span class="gn">${pins.length}</span>
+    </summary>
+    ${pins.map(cardHTML).join("")}
+  </details>`;
+}
+
 function cardsHTML(cards, g, keyPrefix) {
   if (!cards.length) return '<div class="empty">empty</div>';
-  if (!g) return cards.map(cardHTML).join("");
+
+  // Taken out before anything else looks at them, so they cannot also appear
+  // under a project.
+  const pins = cards.filter(t => t.pinned);
+  const rest = cards.filter(t => !t.pinned);
+  const head = pinnedGroupHTML(pins, keyPrefix);
+
+  if (!g) return head + rest.map(cardHTML).join("");
 
   // A card can belong to several groups when grouping by tag, so it appears
   // under each. Anything else returns one name and this reads the same.
   const byName = new Map();
-  for (const t of cards) {
+  for (const t of rest) {
     for (const name of g.of(t)) {
       if (!byName.has(name)) byName.set(name, []);
       byName.get(name).push(t);
     }
   }
   // One group holding everything is not a grouping, so it is not drawn as one.
-  if (byName.size < 2 && byName.has("")) return cards.map(cardHTML).join("");
+  if (byName.size < 2 && byName.has("")) return head + rest.map(cardHTML).join("");
 
-  return [...byName.keys()].sort(g.cmp).map(name => {
+  return head + [...byName.keys()].sort(g.cmp).map(name => {
     const mine = byName.get(name);
     if (!name) return mine.map(cardHTML).join("");
     const key = keyPrefix + ":" + name;
@@ -4446,7 +5041,100 @@ function resumeCard(id, t, where) {
 //
 // The form is still there for starting something, where those three ARE the
 // decision.
+// Which conversation, when a directory has more than one.
+//
+// A card carries the last session atrium saw on it, and that is the right
+// default and not the whole truth: a directory accumulates conversations, and
+// the one worth picking up is often not the most recent. `claude --resume`
+// asks in a terminal; this asks here.
+//
+// ONE conversation is not a question, and asking it would be the same dialog
+// with the same single answer every time. Zero is not a question either: the
+// card's own resume id is all there is, and it is what resume already used.
+async function pickSession(id, t) {
+  let list = [];
+  try {
+    list = (await api(`/v1/tasks/${id}/sessions`)).sessions || [];
+  } catch (e) {
+    // The listing is a convenience over the card's own resume id, so a failure
+    // to read it falls back to that rather than stopping the resume.
+    return t.resume_id || "";
+  }
+  if (list.length <= 1) return (list[0] && list[0].id) || t.resume_id || "";
+
+  const pick = await askUser({
+    title: "which conversation?",
+    body: `${list.length} in this directory. The one marked <b>current</b> is what ` +
+      `this card would resume on its own.`,
+    value: (list.find(s => s.current) || list[0]).id,
+    choices: list.map(s => ({
+      value: s.id,
+      label: `${s.title}  ·  ${firstSeen(s.at)}  ·  ${bytes(s.bytes)}` +
+        (s.current ? "  ·  current" : "")
+    })),
+    buttons: [{ label: "cancel", value: null }, { label: "resume it", value: true, style: "go" }]
+  });
+  if (pick === null) return null;
+  return String(pick).trim();
+}
+
+// Throwing a conversation away.
+//
+// A directory collects them, and most are two exchanges and an `/exit`. They
+// cost nothing but they make the list above hard to read, which is the only
+// reason this exists.
+//
+// The transcript is the conversation: deleting the file is the whole
+// operation, and nothing atrium holds refers to it except a card's resume id.
+// A card pointing at one that has gone falls back to starting fresh, which is
+// what it did before the conversation existed.
+async function forgetSessions(id, t) {
+  let list = [];
+  try {
+    list = (await api(`/v1/tasks/${id}/sessions`)).sessions || [];
+  } catch (e) {
+    toast("could not read them", e.message);
+    return;
+  }
+  if (!list.length) { toast("nothing to forget", "no conversations here"); return; }
+
+  const pick = await askUser({
+    title: "forget which conversation?",
+    body: "The transcript is deleted. Anything still running is untouched, and " +
+      "a card pointing at it starts fresh next time instead.",
+    value: (list.find(s => !s.current) || list[0]).id,
+    choices: list.map(s => ({
+      value: s.id,
+      label: `${s.title}  ·  ${firstSeen(s.at)}  ·  ${bytes(s.bytes)}` +
+        (s.current ? "  ·  current" : "")
+    })),
+    buttons: [{ label: "cancel", value: null },
+              { label: "forget it", value: true, style: "no" }]
+  });
+  if (pick === null) return;
+
+  const gone = list.find(s => s.id === pick);
+  // Named in the confirmation rather than shown as a uuid, because the id is
+  // not what anybody recognises it by.
+  if (!await confirmUser(`forget "${(gone && gone.title) || pick}"?`,
+    "The transcript goes. This cannot be undone.", "forget it")) return;
+
+  try {
+    await api(`/v1/tasks/${id}/sessions/${encodeURIComponent(pick)}`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not forget it", e.message);
+    return;
+  }
+  toast("forgotten", (gone && gone.title) || pick);
+}
+
 async function resumeNow(id, t, where) {
+  // Which conversation, when the directory has more than one. Returns the
+  // card's own resume id without asking when there is nothing to choose
+  // between, and null when the choice was cancelled.
+  const resume = await pickSession(id, t);
+  if (resume === null) return;
+
   let task;
   try {
     task = await api("/v1/launch", {
@@ -4454,7 +5142,7 @@ async function resumeNow(id, t, where) {
       body: JSON.stringify({
         harness: t.runner || "claude",
         cwd: t.worktree || "",
-        resume: t.resume_id,
+        resume: resume,
         task_id: id,
         // Onto the same card, so the title and everything else on it stay put.
         // Sending them again would let a stale copy of the row overwrite what
@@ -4570,6 +5258,15 @@ async function cardMenu(e, id) {
         "conversation back up where it stopped. Nothing to fill in: the " +
         "runner, the directory and the conversation all come off the card.",
       sub: openIn(where => resumeCard(id, t, where))
+    } : null,
+    // Only where there is a directory to have collected any. Reading them is
+    // one request and the menu is drawn on a click, so it is not done here to
+    // decide whether to offer this.
+    t.worktree ? {
+      label: "forget a conversation…",
+      help: "A directory collects transcripts, most of them two exchanges and " +
+        "an exit. Deleting one only removes the transcript.",
+      act: () => forgetSessions(id, t)
     } : null,
     { sep: true },
     actionItems(t),
@@ -5186,6 +5883,22 @@ function stateChip(t, w) {
 // U+2197) either render as a box in the board's mono stack or read as a plain
 // arrow, and this sits next to `attach` where the difference is the whole
 // message.
+// Two sheets, drawn rather than typed.
+//
+// The clipboard EMOJI was the first attempt and it is the wrong tool: an emoji
+// is a full-colour glyph with its own metrics and its own idea of a baseline,
+// so it came out orange next to grey text, taller than the line it sat on, and
+// nothing about it could be themed. This is one stroke weight in
+// `currentColor`, which means it is whatever colour the chip is.
+function copyIcon() {
+  return `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5.5" y="5.5" width="8" height="9" rx="1.5"/>
+    <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v6A1.5 1.5 0 0 0 4 10.5h1.5"/>
+  </svg>`;
+}
+
 function popIcon() {
   return `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"
     fill="none" stroke="currentColor" stroke-width="1.6"
@@ -6284,7 +6997,19 @@ function inForeground() {
 // handle that dies when the board reloads while the window it opened carries
 // on, so ownership is ANNOUNCED, not discovered. Each solo window claims its
 // card, releases it on close, and re-claims whenever a board asks.
-const soloHeld = new Set();
+// Claims, with a time on each, because a claim is a heartbeat and not a memory.
+//
+// It was a Set: a window announced itself on load and removed itself on
+// `pagehide`. Anything that skipped that release left the card claimed
+// forever, and the board would then refuse to attach and say it had raised a
+// window that no longer existed. A crash does it, and so does the browser
+// discarding a background tab.
+//
+// So a solo window re-claims on every poll, and a claim that has not been
+// heard in `soloClaimFor` is not believed. Self-healing: the worst case is one
+// poll of being wrong, and it corrects without anybody restarting anything.
+const soloHeld = new Map();
+const soloClaimFor = 15000;
 const soloBus = ("BroadcastChannel" in window) ? new BroadcastChannel("atrium-solo") : null;
 // Declared up here rather than beside the rest of the solo code, because the
 // bus handler below closes over it and a `let` further down the file would be
@@ -6299,9 +7024,14 @@ if (soloBus) {
     // roll call would have it suppress itself.
     if (termOnly()) {
       if (m.type === "solo-who" && soloID) soloBus.postMessage({ type: "solo-claim", task: soloID });
+      // No `solo-raise` here any more, and it is worth saying why it went.
+      // A window cannot raise itself: `window.focus()` in a background tab has
+      // no user gesture behind it and every browser refuses it, silently. The
+      // board is the one holding the click, so the board raises the window by
+      // NAME. See `reopenByName`.
       return;
     }
-    if (m.type === "solo-claim" && m.task) soloHeld.add(m.task);
+    if (m.type === "solo-claim" && m.task) soloHeld.set(m.task, Date.now());
     if (m.type === "solo-release" && m.task) soloHeld.delete(m.task);
   };
 }
@@ -6390,7 +7120,11 @@ const alerting = (() => {
     preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
   }
 
-  function notify(title, body, goTo, permId, subject, taskFor, mark) {
+  // `taskFor` is the card to SUPPRESS for: a popped-out window speaks for its
+  // own card, so the board must not. `artFor` is the card the picture belongs
+  // to, which is the same thing everywhere except in that window, where they
+  // are deliberately different.
+  function notify(title, body, goTo, permId, subject, taskFor, mark, artFor) {
     if (prefs.muted || prefs.desktop === false) return;
     // Looking at the board or not. That is the whole rule: if you can see it,
     // the toast has already told you and a second copy from the operating
@@ -6400,8 +7134,8 @@ const alerting = (() => {
     // knows whether YOU are looking at it. The board cannot: it is behind the
     // popped-out window and by its own test is in the background, so without
     // this the same event rings twice, once from each document.
-    if (taskFor && soloHeld.has(taskFor)) return;
-    showNotification(title, body, goTo, permId, subject, mark);
+    if (taskFor && poppedOut(taskFor)) return;
+    showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor);
   }
 
   btn.onclick = () => {
@@ -6664,6 +7398,19 @@ function iconDataURL(kind, mark) {
 // already joining that row for the agent name.
 function iconForAlert(item) { return (item && item.icon) || ""; }
 
+// An uploaded picture, rather than a glyph to draw.
+//
+// `img:` is the marker the card carries. Everything else in that field is a
+// character to render, which is what it has always been.
+function iconIsImage(mark) { return String(mark || "").startsWith("img:"); }
+
+// The URL a notification should use for a card's uploaded icon.
+//
+// Served by the daemon rather than inlined as a data URL, so the bytes are not
+// copied into every notification and the service worker can fetch it with no
+// tab open.
+function iconURLFor(taskID) { return `/v1/tasks/${taskID}/icon`; }
+
 // The service worker is what makes buttons on a notification possible, and it
 // keeps working with no tab open. Registration is best effort: without it,
 // notifications still appear, just without buttons.
@@ -6685,7 +7432,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-function showNotification(title, body, goTo, permId, subject, mark) {
+function showNotification(title, body, goTo, permId, subject, mark, taskFor) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
   const expiry = Number(alerting.get().expiry) || 0;
   // Sticky means Windows never takes it down by itself. That is right for a
@@ -6699,12 +7446,28 @@ function showNotification(title, body, goTo, permId, subject, mark) {
   // meant to replace each other.
   const tag = (goTo === "perms" ? "atrium-perm" : "atrium") + (subject ? ":" + subject : "");
 
+  // An uploaded picture is used as it is. A glyph is drawn.
+  //
+  // `mark` carries `img:<file>` for a card with a picture, and the picture is
+  // served by the daemon rather than inlined, so the bytes are not copied into
+  // every notification and the service worker can fetch it with no tab open.
+  //
+  // The kind of alert stops being carried by the field it is drawn on, since
+  // atrium did not draw this one. The amber and dark backgrounds only apply to
+  // glyphs, and that is the trade for using your own image: it says WHICH
+  // agent, and the title says how urgent.
+  // The CARD id, not the subject: for a permission the subject is the request,
+  // and the picture belongs to the agent that asked.
+  const art = iconIsImage(mark) && taskFor
+    ? iconURLFor(taskFor)
+    : iconDataURL(goTo === "perms" ? "perm" : "atrium", mark);
+
   // With a worker, the notification gets approve and block buttons and can
   // outlive the page. Without one, fall back to a plain notification.
   if (swReg && swReg.active) {
     swReg.active.postMessage({
       type: "notify", title, body: body || "",
-      icon: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
+      icon: art,
       tag,
       sticky, expireMs: expiry * 1000, goTo, permId: permId || "",
       // What this is about, so it can be taken down once that is answered.
@@ -6718,8 +7481,8 @@ function showNotification(title, body, goTo, permId, subject, mark) {
 
   const n = new Notification(title, {
     body: body || "",
-    icon: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
-    badge: iconDataURL(goTo === "perms" ? "perm" : "atrium", mark),
+    icon: art,
+    badge: art,
     tag,
     renotify: true,
     // A blocked agent is not something to miss, so that one stays on screen.
@@ -6834,6 +7597,10 @@ async function closeOpenDialogs() {
   const open = [...document.querySelectorAll("dialog[open]")]
     .filter(d => d.id !== "ask");
   if (!open.length) return true;
+  // WHO ASKED. A dialog closing on its own is the kind of thing that gets
+  // reported as "it just vanished", and by the time anybody looks there is
+  // nothing left to inspect. The stack names the path.
+  rlog("closing dialogs:", open.map(d => d.id).join(", "), "\n" + new Error().stack);
 
   const dirty = open.filter(d => d.dataset.dirty === "1");
   if (dirty.length) {
@@ -6853,18 +7620,39 @@ async function closeOpenDialogs() {
 }
 
 
+// Returns the toast, so a caller that is about to say something better can
+// take back what it just said.
 function toast(title, body, goTo, key, taskFor) {
   const host = document.getElementById("toasts");
+
+  // THE SAME THING TWICE IS ONE THING WITH A COUNT.
+  //
+  // Four alerts saying `the file exists` say nothing the first one did not,
+  // and they cover the screen while doing it. The newest is checked rather
+  // than the whole stack, so two alternating messages still both show: the
+  // case worth collapsing is a repeat, not a recurrence.
+  const last = host.lastElementChild;
+  if (last && !last.classList.contains("leaving") &&
+      last.dataset.sig === title + " " + (body || "")) {
+    last.dataset.n = String(Number(last.dataset.n || 1) + 1);
+    const n = last.querySelector(".ntimes");
+    if (n) n.textContent = "×" + last.dataset.n;
+    // Back to the top of its life, since it is being said again NOW.
+    if (last.again) last.again();
+    return last;
+  }
+
   const el = document.createElement("div");
+  el.dataset.sig = title + " " + (body || "");
   el.className = "toast";
   // A toast tied to a pending item is cleared when that item is answered,
   // whether it was answered here or anywhere else.
   if (key) el.dataset.key = key;
-  el.innerHTML = `<div class="body"><b></b><span></span></div>
+  el.innerHTML = `<div class="body"><b></b><span class="ntimes"></span><span class="what"></span></div>
     <button class="copy" title="copy this message">&#128203;</button>
     <button class="x" title="dismiss">&times;</button>`;
   el.querySelector("b").textContent = title;
-  el.querySelector("span").textContent = body || "";
+  el.querySelector(".what").textContent = body || "";
   const dismiss = () => {
     el.classList.add("leaving");
     setTimeout(() => el.remove(), 200);
@@ -6905,15 +7693,24 @@ function toast(title, body, goTo, key, taskFor) {
     if (key) setTimeout(() => focusPerm(key), 60);
   });
   el.dismiss = dismiss;
+  // Everything clears itself. A permission gets longer since it blocks an
+  // agent. The pending count in the tab is the durable signal, not the toasts.
+  //
+  // Held so a collapsed repeat can restart it. A message said again is new
+  // again, and inheriting the first one's remaining second would have the
+  // count tick up on a toast that vanishes as you look at it.
+  const life = goTo === "perms" ? 30000 : 9000;
+  let timer = setTimeout(dismiss, life);
+  el.again = () => { clearTimeout(timer); timer = setTimeout(dismiss, life); };
+
   host.appendChild(el);
   // After the content is in, so the host is put back on top of whatever is
   // open at the moment there is something to show.
   raiseToasts();
-  // Everything clears itself. A permission gets longer since it blocks an
-  // agent. The pending count in the tab is the durable signal, not the toasts.
-  setTimeout(dismiss, goTo === "perms" ? 30000 : 9000);
-  // Never let the stack grow past what fits on screen.
-  while (host.children.length > 4) host.firstChild.remove();
+  // Never let the stack grow past what fits on screen. Three, not four: the
+  // fourth was always half off the bottom on a laptop.
+  while (host.children.length > 3) host.firstChild.remove();
+  return el;
 }
 
 // Scrolls a pending request into view and flashes it, so clicking a toast puts
@@ -7985,14 +8782,14 @@ function termFilesCtx() {
   return {
     id: termTask && termTask.id, at: "term",
     where: "t-files-where", up: "t-files-up", zip: "t-files-zip",
-    list: "t-files-list", note: "t-files-note"
+    del: "t-files-del", list: "t-files-list", note: "t-files-note"
   };
 }
 function dialogFilesCtx() {
   return {
     id: current && current.id, at: "dialog",
     where: "d-files-where", up: "d-files-up", zip: "d-files-zip",
-    list: "d-files-list", note: "d-files-note"
+    del: "d-files-del", list: "d-files-list", note: "d-files-note"
   };
 }
 
@@ -8028,15 +8825,8 @@ async function loadFiles(path, ctx) {
   document.getElementById(ctx.note).textContent = res.truncated
     ? `showing the first ${(res.entries || []).length}. this directory has more.`
     : "";
-  // The whole directory, as one download. Getting a build output or a set of
-  // screenshots one file at a time is the shape that made this worth adding.
-  // A link rather than a fetch, so the browser saves it as a stream and a
-  // large directory never has to exist in the page.
-  const zip = document.getElementById(ctx.zip);
-  if (zip) {
-    zip.href = `/v1/tasks/${ctx.id}/files/zip?path=${encodeURIComponent(res.path)}`;
-    zip.title = "download everything under " + res.path + " as a zip";
-  }
+  // The download button is painted from the selection, not from the directory.
+  // See paintPicked.
 
   const rows = res.entries || [];
   if (!rows.length) {
@@ -8047,13 +8837,21 @@ async function loadFiles(path, ctx) {
   // Sorted by the daemon, folders first then by name, so the board does not
   // hold a second opinion about the order.
   setHTML(document.getElementById(ctx.list), rows.map(e => `
-    <div class="frow${e.dir ? " dir" : ""}"${e.dir ? ` data-dir="${esc(e.path)}"` : ""}>
+    <div class="frow${e.dir ? " dir" : ""}" data-path="${esc(e.path)}"${
+        e.dir ? ` data-dir="${esc(e.path)}"` : ""}>
+      <input type="checkbox" class="fpick" data-path="${esc(e.path)}"
+        title="pick this for a download">
       <span class="fname">${fileIcon(e)}${esc(e.name)}${e.dir ? "/" : ""}</span>
       <span class="fsize">${e.dir ? "" : esc(bytes(e.size))}</span>
       <span class="fwhen">${esc(firstSeen(e.mtime))}</span>
       <span class="facts">${e.dir ? "" : `
+        ${editable(e.name) ? `<span class="chip edit" data-edit="${esc(e.path)}"
+          title="in a box right here, in this browser. works from anywhere."
+          >edit here</span>` : ""}
         <span class="chip open" data-open="${esc(e.path)}"
-          title="open it in the editor, on the machine this session runs on">open</span>
+          title="in your own editor, on the machine this session runs on. over an overlay that
+                 window opens there, not where you are sitting."
+          >open there</span>
         <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
            encodeURIComponent(e.path)}">get</a>`}</span>
     </div>`).join(""));
@@ -8067,6 +8865,96 @@ async function loadFiles(path, ctx) {
   host.querySelectorAll(".chip.open").forEach(el => {
     el.onclick = ev => { ev.stopPropagation(); openOnDaemon(ctx.id, el.dataset.open); };
   });
+  host.querySelectorAll(".chip.edit").forEach(el => {
+    el.onclick = ev => { ev.stopPropagation(); openEditor(ctx.id, el.dataset.edit); };
+  });
+  // A tick must not also walk into the directory it is on.
+  host.querySelectorAll(".fpick").forEach(el => {
+    el.onclick = ev => ev.stopPropagation();
+    el.onchange = () => paintPicked(ctx);
+  });
+  paintPicked(ctx);
+}
+
+// The download button, painted from what is ticked.
+//
+// `get all` was the wrong shape and said so out loud. "Everything under here"
+// is a guess that is usually wrong by a build directory, and it made the case
+// anybody actually has, four files out of two hundred, unreachable. So the
+// button appears when something is picked, says how many, and is a plain link
+// so the browser streams it and a large selection never exists in the page.
+//
+// Nothing ticked means no button rather than a disabled one. There is no
+// sensible default download and offering one was the whole mistake.
+function paintPicked(ctx) {
+  const host = document.getElementById(ctx.list);
+  const zip = document.getElementById(ctx.zip);
+  if (!host || !zip) return;
+  const picked = [...host.querySelectorAll(".fpick")]
+    .filter(c => c.checked).map(c => c.dataset.path);
+
+  const del = document.getElementById(ctx.del);
+  zip.hidden = picked.length === 0;
+  if (del) {
+    del.hidden = picked.length === 0;
+    del.onclick = () => deletePicked(ctx, picked);
+    del.textContent = picked.length === 1 ? "delete 1" : `delete ${picked.length}`;
+  }
+  if (!picked.length) return;
+
+  // ONE file downloads as itself. Several become a zip.
+  //
+  // Not two buttons. A zip holding a single file is a chore to open for no
+  // reason, and offering both shapes every time turns every download into a
+  // decision that has an obvious right answer. The count already decides it.
+  if (picked.length === 1) {
+    zip.href = `/v1/tasks/${ctx.id}/files?path=${encodeURIComponent(picked[0])}`;
+    zip.textContent = "download";
+  } else {
+    zip.href = `/v1/tasks/${ctx.id}/files/zip?` +
+      picked.map(p => "path=" + encodeURIComponent(p)).join("&");
+    zip.textContent = `download ${picked.length} as a zip`;
+  }
+  zip.title = picked.join("\n");
+}
+
+async function deletePicked(ctx, picked) {
+  if (!picked.length) return;
+  const names = picked.map(p => p.split(/[\\/]/).pop());
+  if (!await confirmUser(
+    picked.length === 1 ? `delete ${names[0]}?` : `delete ${picked.length} files?`,
+    // Named, not counted. "Delete 4 files?" is a question nobody can check.
+    `<code>${esc(names.join("\n"))}</code>This cannot be undone.`,
+    "delete")) return;
+
+  try {
+    await api(`/v1/tasks/${ctx.id}/files?` +
+      picked.map(p => "path=" + encodeURIComponent(p)).join("&"), { method: "DELETE" });
+  } catch (e) {
+    toast("could not delete", e.message);
+    return;
+  }
+  toast(picked.length === 1 ? "deleted" : `deleted ${picked.length}`, names.join(", "));
+  loadFiles(filesPos[ctx.at].at, ctx);
+}
+
+// Which files are worth opening in a text box.
+//
+// Extension only, and a short list. Guessing from content would mean reading
+// the file to decide whether to offer to read it, and being wrong means an
+// editor full of bytes that cannot survive a round trip: opening a PNG as text
+// and saving it destroys it silently.
+const EDITABLE = [
+  "md", "txt", "markdown", "rst", "adoc", "log",
+  "json", "yaml", "yml", "toml", "ini", "conf", "env", "csv", "tsv",
+  "go", "js", "ts", "jsx", "tsx", "css", "html", "sh", "ps1", "py", "rb",
+  "sql", "gitignore", "editorconfig", "mod", "sum"
+];
+
+function editable(name) {
+  const bare = String(name || "").replace(/^\./, "");
+  const ext = bare.includes(".") ? bare.split(".").pop().toLowerCase() : bare.toLowerCase();
+  return EDITABLE.includes(ext);
 }
 
 // The path as steps you can press.
@@ -8145,6 +9033,79 @@ function fileIcon(e) {
     <path d="M9.2 1.9H4a.8.8 0 0 0-.8.8v10.6a.8.8 0 0 0 .8.8h8a.8.8 0 0 0 .8-.8V5.5Z"/>
     <path d="M9.2 1.9v3.6h3.6"/>
   </svg>`;
+}
+
+// A file in a text box, and back to disk.
+//
+// Deliberately a textarea rather than an editor component. What this is for is
+// changing a line in a TODO or a config an agent got nearly right, and
+// CodeMirror is three hundred kilobytes to vendor for that. When syntax
+// highlighting and a gutter start being the thing that is missing, the backlog
+// entry says which one to reach for and why.
+//
+// The hash is the whole point. It comes back with the read, goes out with the
+// write, and the daemon refuses if the file moved on. Editing a file an agent
+// is also editing is otherwise last-write-wins at machine speed, and the loss
+// is silent.
+let editing = null;
+
+async function openEditor(taskID, path) {
+  let res;
+  try {
+    res = await api(`/v1/tasks/${taskID}/files/text?path=${encodeURIComponent(path)}`);
+  } catch (e) {
+    toast("could not read it", e.message);
+    return;
+  }
+  editing = { taskID, path, hash: res.hash, eol: res.eol };
+
+  document.getElementById("t-edit-where").textContent = res.path;
+  document.getElementById("t-edit-where").title = res.path;
+  const box = document.getElementById("t-edit-text");
+  box.value = res.text;
+  editorState("");
+  // Typed into means unsaved, said plainly, because a text box that looks the
+  // same saved and unsaved is one you close without meaning to.
+  box.oninput = () => editorState("not saved");
+  document.getElementById("t-edit").hidden = false;
+  box.focus();
+}
+
+function editorState(s) {
+  const el = document.getElementById("t-edit-state");
+  if (el) el.textContent = s;
+}
+
+function closeEditor() {
+  const box = document.getElementById("t-edit");
+  if (box) box.hidden = true;
+  editing = null;
+}
+
+async function saveEditor() {
+  if (!editing) return;
+  const text = document.getElementById("t-edit-text").value;
+  editorState("saving");
+
+  let res;
+  try {
+    res = await api(`/v1/tasks/${editing.taskID}/files/text?path=${
+      encodeURIComponent(editing.path)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, hash: editing.hash, eol: editing.eol })
+    });
+  } catch (e) {
+    // A conflict is not a failure to report and forget. The file changed under
+    // you, and the useful thing is to say so and leave what you typed alone so
+    // it can be reconciled rather than lost.
+    editorState("not saved");
+    toast("it changed while you were editing", e.message +
+      " nothing was written. close and reopen to see what it says now.");
+    return;
+  }
+  editing.hash = res.hash;
+  editorState("saved");
+  toast("saved", editing.path.split(/[\\/]/).pop());
 }
 
 // Opens a file in the editor, ON THE MACHINE THE SESSION RUNS ON.
@@ -8302,6 +9263,130 @@ async function loadHousekeeping() {
   setTimerValue("s-prune", s.prune_after, "off");
   const ed = document.getElementById("s-editor");
   if (ed) ed.value = s.editor_command || "";
+  pastePrefs = s;
+  const keep = document.getElementById("s-pastekeep");
+  if (keep) keep.value = (s.paste_keep === "scrap") ? "scrap" : "keep";
+  const pre = document.getElementById("s-pastepre");
+  // Never set shows the default, because that is what the next paste will use.
+  // The stored `none` shows empty, which is also what it does.
+  if (pre) pre.value = preambleOf(s);
+  // Empty stays empty, and the placeholder carries the default. A box filled
+  // in with today's default reads as a choice somebody made.
+  const mb = document.getElementById("s-sbmb");
+  if (mb) {
+    mb.value = s.scrollback_mb || "";
+    mb.placeholder = s.scrollback_mb_now || 16;
+    mb.max = s.scrollback_mb_max || 512;
+  }
+  const lines = document.getElementById("s-sblines");
+  if (lines) {
+    lines.value = s.scrollback_lines || "";
+    lines.placeholder = s.scrollback_lines_now || 50000;
+    lines.max = s.scrollback_lines_max || 1000000;
+  }
+  applyScrollback();
+}
+
+// Both halves together, since they are one decision in two units.
+async function saveScrollback() {
+  const mb = document.getElementById("s-sbmb");
+  const lines = document.getElementById("s-sblines");
+  if (!mb || !lines) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        scrollback_mb: String(mb.value || "").trim(),
+        scrollback_lines: String(lines.value || "").trim()
+      })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  // The browser's half is live. The daemon's is not, and saying so beats
+  // somebody scrolling up in a session started an hour ago and finding the
+  // old limit still in force.
+  applyScrollback();
+  loadHousekeeping();
+  toast("scrollback saved",
+    `${pastePrefs.scrollback_lines_now} lines here, now. ` +
+    `${pastePrefs.scrollback_mb_now}MB in the daemon, for sessions started from here on.`);
+}
+
+// pastePrefs is the last answer from the daemon, kept so that a paste does not
+// have to ask first. Null until something has looked, which pasteSettings does
+// once per window.
+let pastePrefs = null;
+
+// How many lines a terminal keeps.
+//
+// Synchronous, because it is read while xterm is being constructed and there
+// is no awaiting that. Whatever the last GET said, and the daemon's own
+// default when nothing has been asked yet, so the two ends agree by default
+// rather than by coincidence.
+function scrollbackLines() {
+  const n = pastePrefs && Number(pastePrefs.scrollback_lines_now);
+  return n > 0 ? n : 50000;
+}
+
+// A terminal that was built before the settings arrived. xterm takes a new
+// scrollback at any time and keeps what it already holds, so this costs
+// nothing and closes the window where a popped-out terminal opened on the
+// fallback and stayed there.
+function applyScrollback() {
+  if (term) term.options.scrollback = scrollbackLines();
+}
+
+// preambleOf turns what is stored into what gets typed.
+//
+// Three cases and only three: unset means the daemon's default, the sentinel
+// means nothing at all, anything else is what somebody wrote.
+function preambleOf(s) {
+  const raw = s.paste_preamble;
+  if (raw === undefined || raw === null || raw === "") {
+    return s.paste_preamble_default || "";
+  }
+  if (raw === (s.paste_preamble_none || "none")) return "";
+  return raw;
+}
+
+// pasteSettings fetches once per window and caches. A popped-out terminal is
+// its own window and never opens the settings dialog, so it cannot rely on
+// loadHousekeeping having run.
+async function pasteSettings() {
+  if (pastePrefs) return pastePrefs;
+  try { pastePrefs = await api("/v1/settings"); } catch (e) { pastePrefs = {}; }
+  // A terminal may already be up, built on the fallback. Now that the real
+  // answer is here, it gets it.
+  applyScrollback();
+  return pastePrefs;
+}
+
+// Both paste settings, saved together, because they are one decision about
+// what a paste does and reading them back separately is how the two disagree.
+async function savePastePrefs() {
+  const keep = document.getElementById("s-pastekeep");
+  const pre = document.getElementById("s-pastepre");
+  if (!keep || !pre) return;
+  // Empty is stored as the sentinel, or it would read back as the default and
+  // the box would refill itself with words somebody just deleted.
+  const body = {
+    paste_keep: keep.value,
+    paste_preamble: pre.value === "" ? "none" : pre.value,
+  };
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  toast("saved", keep.value === "scrap"
+    ? "pasted files land in a folder that is emptied on restart"
+    : "pasted files stay in the card");
 }
 
 // Saved on a button rather than on every keystroke: a half-typed command is a
@@ -9020,8 +10105,39 @@ async function move(status) {
 }
 
 async function attachTask(id) {
+  // Already in a window of its own. Raise that rather than attaching here.
+  //
+  // Two views onto one terminal both taking input is the situation
+  // `docs/supervision-design.md` says nothing arbitrates, and popping out
+  // detaches the board's pane for exactly that reason. Attaching again from
+  // the switcher would put it straight back, quietly.
+  if (poppedOut(id)) {
+    const what = popOutTask(id);
+    // Said from what happened rather than from what was believed. A claim can
+    // be a heartbeat stale, so "it is already open" is a guess until the
+    // window has actually been found.
+    if (what === "raised") toast("it is in its own window", "raised it for you");
+    else if (what === "opened") toast("it was not there any more", "opened it again");
+    return;
+  }
   try { openTerm(await api(`/v1/tasks/${id}`)); }
   catch (e) { toast("could not attach", e.message); }
+}
+
+// Whether this card is showing in a window of its own.
+//
+// Two sources, because neither is complete on its own: a handle this page
+// opened, and a claim broadcast by a window it did not. The second covers
+// every window that outlived a reload of this one.
+function poppedOut(id) {
+  const held = popOuts.get(id);
+  if (held && !held.closed) return true;
+  const at = soloHeld.get(id);
+  if (!at) return false;
+  // Gone quiet. Dropped rather than left, so this answers the same way next
+  // time without waiting for anything else to notice.
+  if (Date.now() - at > soloClaimFor) { soloHeld.delete(id); return false; }
+  return true;
 }
 
 function attachCurrent() {
@@ -9204,6 +10320,28 @@ function repaintLists() {
   render().catch(e => console.error(e));
 }
 
+// One refresh for a burst of events.
+//
+// The stream publishes a task event on every change to a card, and a working
+// agent changes one constantly: a tool starts, a tool ends, the activity badge
+// moves. Bound straight to `refresh`, each of those cost three fetches and a
+// rebuild of every card's markup, and with one busy session the board tab sat
+// at a fifth of a CPU doing it. A popped-out terminal next to it, drawing on
+// the GPU, was at one percent.
+//
+// Trailing rather than leading: the events arrive in clumps, and the state
+// worth drawing is the one at the end of the clump. A quarter second is below
+// what anybody notices on a board and far above the gap between two events
+// from the same tool call.
+let refreshPending = 0;
+function refreshSoon() {
+  if (refreshPending) return;
+  refreshPending = setTimeout(() => {
+    refreshPending = 0;
+    refresh();
+  }, 250);
+}
+
 async function refresh() {
   // A popped-out window polls for ONE card. Falling through here meant it ran
   // the board's whole alerting pass, so a window opened onto one session put
@@ -9285,6 +10423,7 @@ async function refresh() {
   });
 
   api("/v1/health").then(h => {
+    checkBuild(h.build);
     const el = document.getElementById("halted");
     el.style.display = h.halted ? "flex" : "none";
     if (h.halted) {
@@ -9309,7 +10448,8 @@ function connect() {
     loadGlobalAuto();
   };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
-  ["task", "task-removed", "permission", "halted"].forEach(k => es.addEventListener(k, refresh));
+  ["task", "task-removed", "permission", "halted"]
+    .forEach(k => es.addEventListener(k, refreshSoon));
   // settings.json changed under us, which is `atrium hook install` run in a
   // terminal. Without this the count only moves on the next poll, and only
   // while the runners tab happens to be open.
@@ -9491,8 +10631,56 @@ function repoLeaf(name) {
 function paintIconPreview() {
   const el = document.getElementById("d-icon-preview");
   const input = document.getElementById("d-icon");
+  const clear = document.getElementById("d-icon-clear");
   if (!el || !input) return;
+
+  // A card with a picture shows the picture, and its glyph field goes away:
+  // there is one mark, and offering to edit a glyph that is not being used
+  // would be a control with no effect.
+  const img = current && iconIsImage(current.icon);
+  input.hidden = !!img;
+  if (clear) clear.hidden = !img;
+  if (img) {
+    // Cache-busted, or replacing a picture shows the old one until something
+    // else evicts it. The URL is stable by design, which is what makes this
+    // necessary.
+    el.innerHTML = `<img alt="" src="${iconURLFor(current.id)}?v=${Date.now()}">`;
+    return;
+  }
   el.innerHTML = `<img alt="" src="${iconDataURL("atrium", input.value.trim())}">`;
+}
+
+async function uploadIcon(input) {
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file || !current) return;
+
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const res = await api(`/v1/tasks/${current.id}/icon`, { method: "POST", body: form });
+    current.icon = res.icon;
+  } catch (e) {
+    toast("that did not go up", e.message);
+    return;
+  }
+  paintIconPreview();
+  toast("icon set", file.name);
+  refresh();
+}
+
+async function clearIcon() {
+  if (!current) return;
+  try {
+    await api(`/v1/tasks/${current.id}/icon`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not clear it", e.message);
+    return;
+  }
+  current.icon = "";
+  document.getElementById("d-icon").value = "";
+  paintIconPreview();
+  refresh();
 }
 
 // The mark a card wears on a desktop notification, asked for rather than
@@ -9526,38 +10714,145 @@ async function pickIcon(id, current) {
   refresh();
 }
 
-async function pickTheme() {
-  if (!termTask) return;
-  const names = ["", ...Object.keys(TERM_THEMES).sort()];
-  const pick = await askUser({
-    title: "terminal theme",
-    body: "Applied now and remembered on this card, so it survives a restart and " +
-          "follows the session into another browser.",
-    input: true,
-    value: termTask.theme || "",
-    placeholder: "empty means pick from the project",
-    // A datalist rather than a select: fifty two of them is a long list to
-    // scroll and a short list to type into.
-    list: names,
-    buttons: [{ label: "cancel", value: null }, { label: "use it", value: true, style: "go" }]
-  });
-  if (pick === null) return;
+// Trying a theme ON the terminal, rather than choosing one from a list of
+// names.
+//
+// The dialog this replaces was the worst control on the board, for two
+// reasons. Its datalist filtered on the field's contents and the field opened
+// pre-filled with the theme already set, so the only suggestion offered was
+// the one already in use and you had to delete the text before the list
+// appeared. Nothing said so.
+//
+// The second reason is the real one and no dialog could have fixed it:
+// `tarnished`, `cocoa` and `blood-moon` are all plausible and none of them
+// tells you what a terminal will look like. A theme is sixteen ANSI colors
+// and a background, and the only honest preview is a real session rendered in
+// it, with the output already on screen.
+//
+// So it is a `<select>` on the bar, not in a dialog. A closed select fires
+// `change` on every arrow key, which is exactly the asked-for behavior:
+// arrow down, see it, arrow again. Nothing is written until you leave the
+// control, and escape puts back what was there.
 
-  const name = String(pick).trim();
-  if (name && !TERM_THEMES[name]) {
-    toast("no theme called that", name);
+// What the theme was before this started, so escape has something to restore.
+let themeBefore = null;
+
+function pickTheme() {
+  const sel = document.getElementById("t-theme");
+  if (!sel || !termTask) return;
+  themeBefore = termTask.theme || "";
+
+  // Rebuilt each time. Themes are a table in this page rather than a fetch, so
+  // this costs nothing, and it keeps the selected value honest after a change
+  // made from somewhere else.
+  sel.innerHTML =
+    `<option value="">use the project default</option>` +
+    Object.keys(TERM_THEMES).sort()
+      .map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  sel.value = themeBefore;
+  document.getElementById("t-theme-wrap").hidden = false;
+  sel.focus();
+}
+
+// Applied to the running terminal and nowhere else. xterm takes a new theme on
+// a live instance, so nothing is torn down and the scrollback is untouched,
+// which is the whole point: you are judging it against real output.
+function previewTheme(name) {
+  if (!term || !termTask) return;
+  const t = themeFor(Object.assign({}, termTask, { theme: name }));
+  term.options.theme = t;
+  paintPaneBg(t);
+}
+
+// The pane takes the terminal's own background.
+//
+// xterm paints the character grid and nothing outside it, and the grid is a
+// whole number of cells, so there is always a strip left over: the padding,
+// the margin, and the partial row and column at the far edge. That strip was
+// the board's dark blue, which around a session themed dark red read as a
+// frame nobody drew on purpose.
+//
+// Set as a variable on the pane rather than as a style on one element, so the
+// screen, the bar and the pane's own rounded corner all agree without three
+// places knowing the color.
+function paintPaneBg(theme) {
+  const pane = document.querySelector(".term-pane");
+  if (!pane) return;
+  const bg = (theme && theme.background) || "";
+  if (!bg) {
+    pane.style.removeProperty("--term-bg");
+    pane.style.removeProperty("--term-thumb");
+    pane.style.removeProperty("--term-thumb-hi");
+    pane.style.removeProperty("--term-edge");
     return;
   }
+  // The pane's own outline, in the colour the tab beside it is using. Same
+  // source as `--tabc` where the switcher card is rendered, so the two cannot
+  // drift apart.
+  pane.style.setProperty("--term-edge", theme.cursor || theme.foreground || "");
+  pane.style.setProperty("--term-bg", bg);
+  // The scrollbar too, from colors the theme already carries.
+  //
+  // `selectionBackground` is the right one: every theme defines it, and it is
+  // by construction a mid tone that reads against that theme's background,
+  // which is exactly what a thumb has to be. Picking one here, or lightening
+  // the background by some percentage, would invent a color for fifty two
+  // palettes that already answered the question.
+  //
+  // The cursor for the hover state, which is the loudest color a theme owns
+  // and is meant to be found at a glance.
+  pane.style.setProperty("--term-thumb", theme.selectionBackground || theme.foreground || "");
+  pane.style.setProperty("--term-thumb-hi", theme.cursor || theme.foreground || "");
+  // The drawer's chrome too. It sits ON the theme background, so board-blue
+  // borders and icons over a dark red pane read as a control panel from a
+  // different application bolted onto the terminal.
+  //
+  // Same source as the thumb, and for the same reason: `selectionBackground`
+  // is by construction a tone that reads against that theme's background, and
+  // is what a rule or a border wants to be.
+  pane.style.setProperty("--term-fg", theme.foreground || "");
+  pane.style.setProperty("--term-line", theme.selectionBackground || theme.foreground || "");
+
+  // And on the layout, for the chrome BESIDE the pane rather than inside it.
+  // The drag handle is between the list and the terminal and belongs to
+  // neither, and it was the last board-blue thing left on a themed view.
+  const lay = document.getElementById("term-layout");
+  if (lay) {
+    lay.style.setProperty("--term-line", theme.selectionBackground || theme.foreground || "");
+    lay.style.setProperty("--term-thumb-hi", theme.cursor || theme.foreground || "");
+  }
+}
+
+// Answered, not abandoned.
+//
+// Nothing happens on blur. A theme is judged by looking at the terminal, and
+// looking at the terminal means clicking it, so a picker that committed and
+// closed on blur closed itself the first time you tried to use it.
+async function keepTheme() {
+  const wrap = document.getElementById("t-theme-wrap");
+  const sel = document.getElementById("t-theme");
+  if (!sel || !wrap || wrap.hidden) return;
+  wrap.hidden = true;
+  const name = sel.value;
+  if (!termTask || name === themeBefore) return;
+
   try {
     await patchTask(termTask.id, { theme: name });
   } catch (e) {
     toast("that did not stick", e.message);
+    previewTheme(themeBefore);
     return;
   }
   termTask.theme = name;
-  if (term) term.options.theme = themeFor(termTask);
-  const chip = document.querySelector("#t-chips .chip.theme");
-  if (chip) chip.textContent = name || "auto";
+  toast("theme set", name || "back to the project's own");
+}
+
+function cancelTheme() {
+  const wrap = document.getElementById("t-theme-wrap");
+  if (!wrap || wrap.hidden) return;
+  wrap.hidden = true;
+  previewTheme(themeBefore);
+  if (termTask) termTask.theme = themeBefore;
 }
 
 // ── terminal ────────────────────────────────────────────
@@ -9613,8 +10908,10 @@ function termSettings(e) {
     // something to a session is a thing you want to do.
     actionItems(t),
     actionsFor(t).length ? { sep: true } : null,
-    { label: "terminal theme…", note: t.theme || "from the project",
-      tip: "The palette this session uses, remembered on the card.",
+    { label: "try a theme", note: t.theme || "from the project",
+      help: "Puts a picker on the bar. Arrow through them and the terminal " +
+        "you are looking at changes as you go, against the output already on " +
+        "screen. Escape puts back what was there.",
       act: () => pickTheme() },
     { label: "notification icon…", note: t.icon || "the atrium mark",
       tip: "The mark this card wears on a desktop notification.",
@@ -9663,7 +10960,16 @@ function openTerm(task) {
   if (termSock || term) closeTerm(true);
 
   switchView("terms");
+  // A find left open belonged to the session that just went away, and its
+  // decorations were painted on a buffer that no longer exists.
+  const findbar = document.getElementById("t-find");
+  if (findbar) findbar.hidden = true;
+  termWait("");
   termTask = task;
+  // Written down so a reload comes back here. Only in the board: a solo
+  // window is addressed by its hash and has no business voting on where the
+  // board lands.
+  if (!termOnly()) { try { localStorage.setItem("atrium.term", task.id); } catch (e) {} }
   // The same address the popped-out window carries, so a session is one name
   // whichever way you are looking at it. The full path matters here too: the
   // switcher beside it lists sessions whose short titles collide.
@@ -9675,9 +10981,20 @@ function openTerm(task) {
   document.getElementById("t-mark").innerHTML = runnerMark(task.runner);
   // What is left is what changes: the process, and where it is. The theme
   // moved into the cog, with the rest of how this terminal behaves.
+  // The path copies itself. It is the thing most often wanted somewhere else,
+  // and reading it off a screen to retype it is the worst way to spend a
+  // minute.
   document.getElementById("t-chips").innerHTML =
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
-    `<span class="chip">${esc(task.worktree || "")}</span>`;
+    // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
+    // button, so a row-width target sat over the bar saying `click to copy`
+    // and swallowed clicks meant for what was behind it. A path is also a
+    // thing you select with the mouse, which a click handler over all of it
+    // makes awkward.
+    `<span class="chip path" data-path="${esc(task.worktree || "")}"
+       ><button class="copybit" title="copy this path"
+         onclick="event.stopPropagation();copyPath(this.parentNode)"
+         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
   paintCopyMode();
 
   const screen = document.getElementById("t-screen");
@@ -9692,19 +11009,30 @@ function openTerm(task) {
     lineHeight: 1.2,
     letterSpacing: 0.2,
     cursorBlink: true,
-    // Enough that scrolling back through a long build is useful, without
-    // holding a whole session in memory.
-    scrollback: 5000,
+    // The second of the two limits, and the smaller one wins. The daemon
+    // keeps N megabytes of every runner's output and this decides how much of
+    // it survives once it is here, so both are one setting in two units.
+    //
+    // Asked of the daemon rather than carried here, because a number in this
+    // file and a number in the database can be configured to disagree and
+    // then the buffer you paid for is not the one you get. `settingsSeen` is
+    // whatever the last GET said, so a tab that has not talked to the daemon
+    // yet gets the same default the daemon would have used.
+    scrollback: scrollbackLines(),
     // The session's own theme, so a terminal looks the same here as it does
     // in a terminal window, and two sessions are tellable apart by color.
     theme: themeFor(termTask)
   });
+  paintPaneBg(themeFor(termTask));
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
   term.open(screen);
+  useWebgl(term);
+  useSearch(term);
   // Drop a file onto the pane. The same pipeline as paste, because whatever
   // gesture produced the bytes, the bytes go to the same place.
   wireTerminalDrops(screen);
+  wireTerminalPaste(screen);
 
   // Copy and paste have to win over the terminal, or selecting text and
   // pressing ctrl-c interrupts the runner instead of copying. Returning false
@@ -9718,11 +11046,69 @@ function openTerm(task) {
     // opened dev tools. The insert pair is the older terminal convention and
     // nothing claims it.
     if (ctrl && e.key === "Insert") { e.preventDefault(); copySelection(); return false; }
-    if (e.shiftKey && e.key === "Insert") { e.preventDefault(); pasteIntoTerm(); return false; }
 
-    // Plain ctrl-v pastes. xterm would otherwise send it to the runner as a
-    // control character, which does nothing useful in any agent.
-    if (ctrl && !e.shiftKey && e.code === "KeyV") { e.preventDefault(); pasteIntoTerm(); return false; }
+    // FIND. Both bindings, because both are muscle memory: ctrl-f is the
+    // browser's and ctrl-shift-f is what several editors use for "find in
+    // everything". Here they open the same bar, since there is one buffer to
+    // search.
+    //
+    // `preventDefault` matters. The browser's own find is useless on this
+    // terminal: it walks the DOM and a WebGL terminal draws to a canvas, so
+    // ctrl-f opened a find box that could never match a single character of
+    // what is on screen.
+    if (ctrl && e.code === "KeyF") { e.preventDefault(); openFind(); return false; }
+
+    // PASTE IS NOT PREVENTED HERE, and that is the whole fix.
+    //
+    // `preventDefault` on ctrl-v suppresses the browser's own `paste` event,
+    // which is the only place `clipboardData` exists. Without it the code fell
+    // back to `navigator.clipboard.read()`, and that API only offers the
+    // sanitized types Chromium can re-encode. The Windows Snipping Tool writes
+    // a `CF_DIBV5` bitmap that Chromium will not convert, so `read()` returned
+    // no image, the paste silently did nothing, and the same screenshot pasted
+    // through Paint worked because Paint rewrites it as a plain DIB.
+    //
+    // Returning false still stops xterm treating the keystroke as input, so
+    // the runner never sees a bare control character. The default action goes
+    // ahead and `wireTerminalPaste` takes it from there with the real
+    // clipboard payload.
+    if (e.shiftKey && e.key === "Insert") return false;
+    if (ctrl && !e.shiftKey && e.code === "KeyV") return false;
+
+    // A newline in the prompt, rather than sending it.
+    //
+    // xterm sends a plain carriage return for Enter, Shift-Enter and
+    // Ctrl-Enter alike: the modifier never reaches the runner, so all three
+    // submitted and there was no way to write a second line. The terminal is
+    // the only thing that can tell them apart, so it has to be the thing that
+    // does.
+    //
+    // Two encodings, because there is no single answer that is right for every
+    // runner and the two are wired to different keys ON PURPOSE:
+    //
+    //   Shift-Enter sends ESC CR, which is what a terminal emulator configured
+    //   by `claude /terminal-setup` sends, and what Claude Code parses back
+    //   into a newline. Exact for that harness, and meaningless to anything
+    //   else. Worse than meaningless in a shell with vi-mode readline, where a
+    //   bare ESC leaves insert mode.
+    //
+    //   Ctrl-Enter sends a line feed, which is what Ctrl-J has always sent and
+    //   what almost everything treats as "insert a newline here". Works with
+    //   nothing configured, and in some harnesses submits instead.
+    //
+    // If one of these turns out to be right everywhere, collapse them. Do not
+    // collapse them on a guess: the failure is silent and looks like the key
+    // doing nothing.
+    if (!ctrl && e.shiftKey && e.key === "Enter") {
+      e.preventDefault();
+      send({ t: "in", d: "\x1b\r" });
+      return false;
+    }
+    if (ctrl && e.key === "Enter") {
+      e.preventDefault();
+      send({ t: "in", d: "\n" });
+      return false;
+    }
 
     // Plain ctrl-c interrupts, unless something is selected, in which case
     // copying is what was meant. This is what every terminal does.
@@ -9755,14 +11141,60 @@ function copySelection(quiet) {
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
 }
 
+// The browser's own paste event, which is where the clipboard actually is.
+//
+// `clipboardData` on this event carries what the source application wrote,
+// handed over synchronously. `navigator.clipboard.read()` is the async API and
+// is a different, narrower thing: Chromium will only offer types it can decode
+// and re-encode itself, so a bitmap it does not like becomes no image at all
+// rather than an error. That is why a Snipping Tool screenshot pasted nothing
+// while the same screenshot round-tripped through Paint pasted fine.
+//
+// Capture phase, so this runs before xterm's own paste handler, and both
+// stopped, so a text paste is not delivered twice.
+//
+// WIRED ONCE. `#t-screen` outlives every attach: `openTerm` empties it and
+// builds a new terminal inside it, but the element itself is the same one it
+// was at boot, so a listener added on attach is still there on the next one.
+// Without this guard the fifth attach pasted five times, four of which lost
+// the race to create the file and each of which said so in its own alert.
+function wireTerminalPaste(screen) {
+  if (!screen || screen.dataset.pastes) return;
+  screen.dataset.pastes = "1";
+  screen.addEventListener("paste", e => {
+    const dt = e.clipboardData;
+    if (!dt || !termTask) return;
+
+    // `items` rather than `files`, because a screenshot arrives as an item of
+    // kind `file` with no name, and browsers have not always populated
+    // `files` for it.
+    const files = [];
+    for (const item of dt.items || []) {
+      if (item.kind !== "file") continue;
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    if (files.length) { uploadIntoTerm(files); return; }
+
+    // Files first, because a clipboard holding a screenshot usually also holds
+    // a text representation of it, and pasting that instead is how a paste
+    // silently does nothing useful.
+    const text = dt.getData("text/plain");
+    if (text) sendInput(text);
+  }, true);
+}
+
+// The fallback, for a paste that did not arrive as an event: a button, or a
+// browser that refused the default action. Kept because those cases exist,
+// and no longer the primary path.
 async function pasteIntoTerm() {
-  // Files first, because a clipboard holding a screenshot usually also holds
-  // a text representation of it, and pasting that instead is how a paste
-  // silently does nothing useful.
   if (await pasteFilesIntoTerm()) return;
   try {
     const text = await navigator.clipboard.readText();
-    if (text) send({ t: "in", d: text });
+    if (text) sendInput(text);
   } catch (e) {
     toast("could not paste", "the browser refused clipboard access");
   }
@@ -9808,14 +11240,19 @@ async function uploadIntoTerm(files) {
   const form = new FormData();
   for (const f of files) form.append("file", f, f.name);
 
-  toast("uploading", files.length === 1 ? files[0].name : files.length + " files");
+  // Taken back when the answer arrives. `uploading` and `in the working
+  // directory` are the same event twice, and the first one is only worth
+  // saying while it is still true.
+  const saying = toast("uploading", files.length === 1 ? files[0].name : files.length + " files");
   let res;
   try {
     res = await api(`/v1/tasks/${termTask.id}/files`, { method: "POST", body: form });
   } catch (e) {
+    if (saying) saying.dismiss();
     toast("that did not go up", e.message);
     return;
   }
+  if (saying) saying.dismiss();
 
   // Spliced into the stream and NOT submitted.
   //
@@ -9826,8 +11263,12 @@ async function uploadIntoTerm(files) {
   // sentence. docs/supervision-design.md is why this matters: atrium owns a
   // real terminal that a person may be mid-command in.
   const paths = (res.paths || []).join(" ");
-  if (paths) send({ t: "in", d: paths + " " });
-  toast("in the working directory", paths);
+  // The preamble says what the path is for. A bare path is what a person types
+  // when they mean "look at this", and it is not what they say.
+  const pre = preambleOf(await pasteSettings());
+  if (paths) sendInput(pre + paths + " ");
+  toast(pastePrefs && pastePrefs.paste_keep === "scrap"
+    ? "in the scratch folder" : "in the working directory", paths);
 }
 
 // Dropping a file onto the terminal is the same gesture with a different hand.
@@ -9879,6 +11320,198 @@ function toggleTermSort() {
   renderTermList();
 }
 
+// ── how much room the session list gets ─────────────────────────────────────
+//
+// Three modes and a width, because the list is competing with the one thing
+// on this page anybody came for. A terminal is measured in columns: every
+// pixel the list takes is characters the session does not have, and eighty
+// columns is not a preference.
+//
+// `full` is the list as it was. `mini` keeps the mark, eight characters and
+// the left edge, which between them still say which session and whether it
+// wants you. `off` gives the terminal the whole pane and leaves a strip to
+// hover, and in that mode the list floats OVER the terminal rather than
+// pushing it, so passing the pointer near the left edge never re-fits xterm.
+//
+// All of it is localStorage. It is a fact about this screen, and the same
+// board on a laptop wants a different answer.
+const TERMLIST_MIN = 150, TERMLIST_MAX = 520;
+let termListMode = localStorage.getItem("atrium.termlist.mode") || "full";
+let termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
+if (!["full", "mini", "off"].includes(termListMode)) termListMode = "full";
+
+function applyTermList() {
+  const lay = document.getElementById("term-layout");
+  if (!lay) return;
+  lay.classList.toggle("tl-mini", termListMode === "mini");
+  lay.classList.toggle("tl-off", termListMode === "off");
+  lay.style.setProperty("--termw", clampTermW(termListW) + "px");
+}
+
+// Puts the bridge across the gutter, level with the attached card.
+//
+// Measured rather than calculated. The gap is a CSS variable, the handle is
+// nine pixels, the list is a width somebody dragged and the card is wherever
+// the scroll left it: four numbers that all change independently, and the only
+// one that is ever right is the one the browser just laid out.
+//
+// Cheap enough to call on every scroll: two `getBoundingClientRect` calls and
+// four style writes, no layout of its own.
+function placeTabBridge() {
+  const bridge = document.getElementById("tab-bridge");
+  if (!bridge) return;
+  const lay = document.getElementById("term-layout");
+  const card = document.querySelector("#term-list .card.on");
+  // Nothing attached, or the list is not beside the terminal to begin with.
+  // In `off` the list floats OVER the pane, so there is no gutter to cross.
+  if (!lay || !card || termListMode === "off" || !term) { bridge.hidden = true; return; }
+
+  const l = lay.getBoundingClientRect();
+  const c = card.getBoundingClientRect();
+  const list = document.getElementById("term-list");
+  const lr = list.getBoundingClientRect();
+
+  // Scrolled out of sight behind its own header, or past the bottom. Drawing
+  // it anyway would leave a bar of colour floating against the terminal with
+  // nothing on the other end of it.
+  if (c.bottom <= lr.top + 2 || c.top >= lr.bottom - 2) { bridge.hidden = true; return; }
+
+  const pane = document.querySelector("#term-layout .term-pane");
+  const p = pane ? pane.getBoundingClientRect() : { left: lr.right };
+  // From just inside the card's right edge to just inside the pane's left
+  // one, so it overlaps both and no seam shows at either end.
+  const from = c.right - 2, to = p.left + 1;
+  if (to <= from) { bridge.hidden = true; return; }
+
+  bridge.hidden = false;
+  bridge.style.left = (from - l.left) + "px";
+  bridge.style.width = (to - from) + "px";
+  bridge.style.top = (Math.max(c.top, lr.top) - l.top) + "px";
+  bridge.style.height = (Math.min(c.bottom, lr.bottom) - Math.max(c.top, lr.top)) + "px";
+  // The colours are the card's, whatever theme it is wearing.
+  bridge.style.setProperty("--tabbg", getComputedStyle(card).backgroundColor);
+  bridge.style.setProperty("--tabc", getComputedStyle(card).borderTopColor);
+}
+
+function clampTermW(px) {
+  return Math.max(TERMLIST_MIN, Math.min(TERMLIST_MAX, Math.round(px || 0)));
+}
+
+// What the button will do next, said as a sentence rather than as the name of
+// a mode. Nobody is holding "mini" in their head.
+function termListNext() {
+  if (termListMode === "full") return "shrink the list to just the names";
+  if (termListMode === "mini") return "hide the list, and hover the left edge to peek";
+  return "put the list back";
+}
+
+function cycleTermList() {
+  termListMode = termListMode === "full" ? "mini" : termListMode === "mini" ? "off" : "full";
+  localStorage.setItem("atrium.termlist.mode", termListMode);
+  applyTermList();
+  renderTermList();
+  // The pane just changed width, and xterm only knows its size because
+  // something measured it. Deferred a frame so the measurement happens after
+  // the layout it is measuring.
+  requestAnimationFrame(onTermResize);
+}
+
+// Called by the rail, which is the way back from `off`.
+function showTermList() {
+  if (termListMode === "off") cycleTermList();
+}
+
+// ── dragging the width ──────────────────────────────────────────────────────
+//
+// Pointer events with capture rather than mousemove on the document. Capture
+// means the drag keeps following the pointer over the terminal, over an
+// iframe, and past the edge of the window, which a listener on the element
+// alone does not.
+let gripFrom = 0, gripWas = 0;
+function startGrip(e) {
+  if (termListMode === "off") return;
+  e.preventDefault();
+  // THE ELEMENT IS HELD IN A LOCAL, not read off the event inside the
+  // closures. `currentTarget` is only set while an event is being dispatched
+  // and is null after that, so `done` threw on its first line: nothing was
+  // removed, `gripping` was never taken off the body, and the pointermove
+  // handler stayed bound to the grip for the life of the page. Every later
+  // pass of the pointer near the handle then resized from a `gripFrom` set
+  // during a drag that ended long ago, which is why the list grew a little
+  // wider every time you moved across the cards.
+  const el = e.currentTarget;
+  gripFrom = e.clientX;
+  gripWas = clampTermW(termListW);
+  el.setPointerCapture(e.pointerId);
+  el.classList.add("dragging");
+  document.body.classList.add("gripping");
+  const move = ev => setTermW(gripWas + (ev.clientX - gripFrom));
+  const done = () => {
+    el.classList.remove("dragging");
+    document.body.classList.remove("gripping");
+    el.removeEventListener("pointermove", move);
+    el.removeEventListener("pointerup", done);
+    el.removeEventListener("pointercancel", done);
+    saveTermW();
+  };
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerup", done);
+  el.addEventListener("pointercancel", done);
+}
+
+function gripKey(e) {
+  const step = e.shiftKey ? 40 : 10;
+  if (e.key === "ArrowLeft") { e.preventDefault(); setTermW(termListW - step); saveTermW(); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); setTermW(termListW + step); saveTermW(); }
+  else return;
+}
+
+// The width is set on the element as it moves and written down only when the
+// drag ends. A localStorage write per pointermove is a write per frame.
+function setTermW(px) {
+  termListW = clampTermW(px);
+  const lay = document.getElementById("term-layout");
+  if (lay) lay.style.setProperty("--termw", termListW + "px");
+  // Live, so the terminal reflows under the handle rather than jumping when
+  // it is let go. xterm's fit is cheap next to the repaint it triggers, and
+  // this only runs while a pointer is down.
+  onTermResize();
+}
+
+function saveTermW() {
+  try { localStorage.setItem("atrium.termlist.w", String(termListW)); } catch (e) {}
+}
+
+// The name at eight characters, for the collapsed list.
+//
+// Built from the repo and the branch rather than by cutting the full address,
+// which starts with the host and the org: every entry would be truncated in
+// the part they all share. `github/dovholuknf/atrium:main` becomes `atrium:m`,
+// which is not the whole story and is not meant to be. The full name is the
+// title attribute, and the mode exists for the case where you already know
+// what is in your own list.
+// THE BRANCH IS NOT THE NAME. It was in here as a fallback, and it won every
+// time, because a card carries a branch far more often than it carries a repo:
+// every session was labelled `main`, which is the one word that cannot tell two
+// of them apart. What identifies a session in a list of four is the DIRECTORY.
+//
+// So: the repo if the card knows one, the last segment of the working
+// directory if not, and only then whatever the label ends with. The branch is
+// in the tooltip, where a tie-break belongs.
+function shortLabel(task) {
+  if (!task) return "";
+  const leaf = s => {
+    const segs = String(s || "").replace(/\\/g, "/").split("/").filter(Boolean);
+    return segs.length ? segs[segs.length - 1] : "";
+  };
+  // `atrium:main` is one segment of a label, and the half before the colon is
+  // the half worth keeping.
+  const base = String(task.repo || "").trim()
+    || leaf(task.worktree)
+    || leaf(terminalLabel(task) || task.display_title);
+  return base.split(":")[0].slice(0, 10);
+}
+
 // The list of things worth attaching to, so switching is a click.
 // Right click a session in the list. Renaming is the one people reach for
 // most: a launched runner is named after its directory and a timestamp, which
@@ -9910,16 +11543,23 @@ async function renameTask(id, currentName) {
 }
 
 async function renderTermList() {
+  // Cheap and idempotent, and it means the mode survives a reload without
+  // finding a second place to call it from.
+  applyTermList();
   let all = [];
   try { all = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
 
-  // A pinned card stays in the switcher whether or not it has a terminal
-  // right now. Some sessions are fixtures, and a fixture that vanishes from
-  // the list the moment it stops is the opposite of one.
+  // Terminals, and only terminals.
   //
-  // Only cards that could have a terminal again: a pinned card that has been
-  // swept or forgotten is not a fixture, it is gone.
-  const tasks = all.filter(t => t.supervised || (t.pinned && t.status !== "dead"));
+  // A pinned card without one used to sit here offering `resume`, on the
+  // reasoning that a fixture vanishing the moment it stops is the opposite of
+  // a fixture. That reasoning was about the CARD, and this list is not a list
+  // of cards: it is the switcher for the pane beside it, and a row that
+  // cannot be switched to is a row that does nothing.
+  //
+  // Restarting a stopped session is what the stack and the board are for, and
+  // both do it better, with the whole card in front of you.
+  const tasks = all.filter(t => t.supervised);
   // The badge counts what is actually attachable, since it is a count of live
   // terminals rather than of rows.
   badge("c-term", tasks.filter(t => t.supervised).length);
@@ -9947,43 +11587,74 @@ async function renderTermList() {
   tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   const host = document.getElementById("term-list");
-  const toggle = `<button class="termsort" onclick="toggleTermSort()"
-      title="newest activity first, and anything waiting on you above that">
-      ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>`;
+  const toggle = `<div class="termhead">
+      <button class="termsort" onclick="toggleTermSort()"
+        title="newest activity first, and anything waiting on you above that">
+        ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
+      <span class="grow"></span>
+      <button class="termsort tlcycle" onclick="cycleTermList()" title="${esc(termListNext())}"
+        >${termListMode === "full" ? "&laquo;" : termListMode === "mini" ? "&laquo;&laquo;" : "&raquo;"}</button>
+    </div>`;
 
   setHTML(host, tasks.length
-    ? toggle + tasks.map(t => `
-        <div class="term-entry ${termTask && t.id === termTask.id ? "on" : ""} ${
-          isWaiting(t) ? "attn" : ""} ${t.pinned ? "pinned" : ""} ${
-          t.supervised ? "" : "cold"}"
+    // A BOARD CARD, the same shape and the same class. The switcher had grown
+    // its own card with its own borders, its own hover and its own chips, and
+    // the two drifted until the same session looked like two different things
+    // depending on which view you were in.
+    //
+    // What it does NOT carry is the status chip and the duration beside it.
+    // This list is a switcher: the question it answers is which session, and
+    // a pill that rewrites itself every few seconds in the corner of your eye
+    // answers a question nobody asked it. The board is where "how long has
+    // this been sitting" belongs, and it says it better.
+    ? toggle + tasks.map(t => {
+      // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a
+      // row of tabs onto the panes behind it rather than as a list of names.
+      // Amber for waiting said something the board already says better and
+      // cost the one signal that is actually per session.
+      const th = themeFor(t);
+      const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
+      return `
+        <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}"
+             style="${style}"
              onclick="${t.supervised
                ? `attachTask('${t.id}')`
                : `resumePinned('${t.id}')`}"
              oncontextmenu="termMenu(event, '${t.id}')">
-          <!-- The star, the mark and the name are one row. As siblings of the
-               name each took a line of its own, so a pinned session spent
-               three rows saying what one says. -->
-          <b>
-            <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
-              onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-              >${t.pinned ? "&#9733;" : "&#9734;"}</span>
-            ${runnerMark(t.runner)}
-            <span class="tname">${esc(terminalLabel(t) || t.display_title)}</span>
-          </b>
-          <span class="path" title="click to copy"
-            onclick="event.stopPropagation();copyPath(this)"
-            data-path="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
-          ${t.supervised
-            ? `<span class="chip ${isWaiting(t) ? "warn" : "accent"}"
-                 title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
-               <span class="chip">${ago(t.idle_seconds)}</span>`
-            // A pinned card with no terminal is offering to start one, so it
-            // says that rather than reporting a status nothing is behind.
-            : `<span class="chip">${t.resume_id ? "resume" : "start"}</span>`}
-        </div>`).join("")
+          <div class="card-line">
+            <div class="title">
+              <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+                onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
+                >${t.pinned ? "&#9733;" : "&#9734;"}</span>${runnerMark(t.runner)}<span
+                class="tname">${esc(terminalLabel(t) || t.display_title)}</span><span
+                class="tshort" title="${esc(terminalLabel(t) || t.display_title)}"
+                >${esc(shortLabel(t))}</span>
+            </div>
+            ${poppedOut(t.id)
+              // Says where it is rather than letting you click and wonder why
+              // nothing happened. Clicking raises that window.
+              ? `<div class="chips"><span class="chip accent"
+                   title="this session is showing in a window of its own. click to raise it"
+                   >&#8599;</span></div>` : ""}
+          </div>
+        </div>`;
+    }).join("")
     : `<div class="panel"><div class="empty">
-         no agents running. pin one on the stack to keep it here.
+         no terminals. start one from the board, or attach to a running session.
        </div></div>`);
+
+  // After the cards exist, since it is placed against one of them. A frame
+  // later, so the measurement happens on the layout that was just written
+  // rather than on the one being replaced.
+  requestAnimationFrame(placeTabBridge);
+  // Scrolling the list moves the attached card under a bridge that is not
+  // moving with it. Wired here rather than at boot because the host is
+  // replaced wholesale, and guarded so a refresh does not stack listeners the
+  // way the terminal's paste handler did.
+  if (!host.dataset.bridged) {
+    host.dataset.bridged = "1";
+    host.addEventListener("scroll", placeTabBridge, { passive: true });
+  }
 }
 
 // How long to keep trying to attach to a runner that is not there YET.
@@ -9995,11 +11666,272 @@ async function renderTermList() {
 // terminal, showing "nothing attached".
 //
 // A socket that NEVER OPENED and one that closed after being open are different
-// events and now take different paths. The first is a race and is retried; the
-// second is the runner going away and still tears down.
-const attachRetryFor = 10000;
-const attachRetryEvery = 400;
+// events and take different paths.
+//
+// The second case then splits again, and this is the part that matters when
+// atrium restarts itself. A socket that was open and closed means either the
+// RUNNER went away or the DAEMON did, and those want opposite behavior: a
+// runner that exited should tear the pane down, and a daemon that is coming
+// back should be waited for. Nothing in the close event says which.
+//
+// So the daemon is asked. `/v1/health` answering means the daemon is up and
+// this was the runner; a failed request means the daemon is the thing missing.
+// One extra request, only on a disconnect, and it is the difference between a
+// terminal that reconnects itself after `restart_atrium` and one that clears
+// itself two seconds before the daemon comes back.
+const attachRetryFor = 5 * 60 * 1000;
+const attachRetryEvery = 700;
+// How long a refused attach stays silent before it says it is waiting.
+//
+// `/v1/launch` returns before the supervisor has registered the runner, and
+// that gap is well under a second. Anything past this is a wait worth naming.
+const attachRaceFor = 4000;
 let attachSince = 0;
+// Said once per outage rather than once per attempt. At 700ms a five minute
+// wait is four hundred lines of the same sentence.
+let attachSaidGone = false;
+
+// Draw the terminal on the GPU rather than in the DOM.
+//
+// xterm has no renderer of its own beyond a fallback, and the fallback is the
+// DOM: a `<span>` per styled run per row, rebuilt every frame, plus a
+// generated stylesheet of 256 color rules. It is correct and it is enormously
+// expensive. One board tab was holding a quarter of a CPU and had accumulated
+// two and a half hours of CPU time doing nothing but drawing terminals.
+//
+// AFTER `term.open`, which is not optional: the addon needs a canvas in the
+// document to get a context from, and loading it earlier fails silently and
+// leaves you on the DOM renderer wondering why nothing changed.
+//
+// Three ways this can not happen, all of them ending on the DOM renderer,
+// which is slow rather than broken:
+//
+//   - No WebGL at all: a remote session, a blocklisted driver, a machine with
+//     no GPU worth using.
+//   - The context is lost later. A driver reset or a laptop switching GPUs
+//     does this, and the addon cannot recover, so it is disposed and xterm
+//     falls back on its own.
+//   - The addon is missing entirely, which is what a build with a stale
+//     `vendor/` looks like.
+//
+// None of them is worth a message to the operator. A terminal that renders is
+// the requirement; which path drew it is not.
+function useWebgl(t) {
+  if (typeof WebglAddon === "undefined") return;
+  let addon;
+  try {
+    addon = new WebglAddon.WebglAddon();
+  } catch (e) {
+    console.warn("no webgl renderer, falling back to the DOM one:", e);
+    return;
+  }
+  addon.onContextLoss(() => {
+    console.warn("webgl context lost, falling back to the DOM renderer");
+    addon.dispose();
+  });
+  try {
+    t.loadAddon(addon);
+  } catch (e) {
+    console.warn("webgl renderer would not load:", e);
+    addon.dispose();
+  }
+}
+
+// ── finding something in the scrollback ─────────────────────────────────────
+//
+// xterm's own search addon rather than anything written here. It walks the
+// terminal BUFFER, which is the only place the text exists: the WebGL renderer
+// draws to a canvas, so nothing on screen is in the DOM and the browser's
+// ctrl-f has nothing to match. Decorations paint every other hit down the
+// scrollbar, which is what makes "17 of 240" mean something.
+let termSearch = null;
+let findCase = false, findRe = false;
+
+function useSearch(t) {
+  termSearch = null;
+  if (typeof SearchAddon === "undefined") return;
+  try {
+    termSearch = new SearchAddon.SearchAddon();
+    t.loadAddon(termSearch);
+    // The count comes back on an event rather than from the call, because the
+    // addon searches lazily and a buffer of two hundred thousand lines is not
+    // walked before it has to be.
+    if (termSearch.onDidChangeResults) {
+      termSearch.onDidChangeResults(r => paintFindCount(r));
+    }
+  } catch (e) {
+    console.warn("the search addon would not load:", e);
+    termSearch = null;
+  }
+}
+
+// The colours are the theme's. A hit highlighted in board-blue on a dark green
+// terminal is the same mistake the rest of the chrome just stopped making.
+function findOpts(back) {
+  const th = themeFor(termTask);
+  return {
+    caseSensitive: findCase,
+    regex: findRe,
+    decorations: {
+      matchBackground: th.selectionBackground || "#173A57",
+      matchBorder: th.cursor || "#00E3B0",
+      matchOverviewRuler: th.cursor || "#00E3B0",
+      activeMatchBackground: th.cursor || "#00E3B0",
+      activeMatchBorder: th.cursor || "#00E3B0",
+      activeMatchColorOverviewRuler: th.cursor || "#00E3B0"
+    },
+    incremental: !back
+  };
+}
+
+function openFind() {
+  const bar = document.getElementById("t-find");
+  const q = document.getElementById("t-find-q");
+  if (!bar || !q) return;
+  bar.hidden = false;
+  // Selected rather than cleared, so pressing ctrl-f again and typing replaces
+  // the last search, and pressing it to look at the old one still works.
+  q.focus();
+  q.select();
+  if (q.value) runFind(false);
+}
+
+function closeFind() {
+  const bar = document.getElementById("t-find");
+  if (bar) bar.hidden = true;
+  if (termSearch) termSearch.clearDecorations();
+  // Back to the terminal, or the next thing typed goes into a box nobody can
+  // see.
+  if (term) term.focus();
+}
+
+// `step` means move to another hit. Typing searches from where you are without
+// moving on, so the first match found while typing does not run away as the
+// word gets longer.
+function runFind(step, back) {
+  const q = document.getElementById("t-find-q");
+  if (!termSearch || !q) return;
+  const text = q.value;
+  if (!text) {
+    termSearch.clearDecorations();
+    paintFindCount(null);
+    return;
+  }
+  try {
+    if (step && back) termSearch.findPrevious(text, findOpts(true));
+    else termSearch.findNext(text, findOpts(!step));
+  } catch (e) {
+    // A half-typed regular expression is the ordinary case here, not an
+    // error worth a dialog: `(foo` is what `(foo|bar)` looks like on the way
+    // in.
+    paintFindCount(null, findRe ? "bad pattern" : "");
+  }
+}
+
+function toggleFind(which) {
+  if (which === "case") findCase = !findCase;
+  if (which === "re") findRe = !findRe;
+  const el = document.getElementById(which === "case" ? "t-find-case" : "t-find-re");
+  if (el) el.classList.toggle("on", which === "case" ? findCase : findRe);
+  runFind(false);
+}
+
+function paintFindCount(r, msg) {
+  const el = document.getElementById("t-find-n");
+  if (!el) return;
+  if (msg) { el.textContent = msg; return; }
+  if (!r || !r.resultCount) { el.textContent = ""; return; }
+  // `resultIndex` is -1 until something is selected, which is the state while
+  // a search is still running over a long buffer.
+  el.textContent = (r.resultIndex >= 0 ? (r.resultIndex + 1) + " of " : "") + r.resultCount;
+}
+
+// Ctrl-F when the terminal does not have focus.
+//
+// xterm's key handler only sees keystrokes aimed at the terminal, and the
+// common case is exactly the other one: you have just clicked a card in the
+// switcher, or scrolled with the mouse, and the focus is anywhere but the
+// grid. Without this, find worked only if you had typed into the terminal
+// first, which is indistinguishable from not working.
+addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyF") return;
+  const terms = document.getElementById("terms");
+  if (!term || !terms || terms.hidden) return;
+  // Somebody typing in a real text box wants their browser's find, or wants
+  // nothing. The one exception is the find box itself, where ctrl-f means
+  // "select what is in here and start over".
+  const el = document.activeElement;
+  const tag = el ? el.tagName : "";
+  if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && el.id !== "t-find-q") return;
+  e.preventDefault();
+  openFind();
+});
+
+// Reload when the daemon starts serving a board this page is not.
+//
+// A restart replaces what is served and touches nothing already running, so a
+// window open since before a fix is still executing the old JavaScript. On the
+// board that is a reload away and obvious. On a POPPED-OUT TERMINAL it is
+// neither: those stay open for days, and the symptom is a fix that works in
+// every window opened afterwards and not in the one you are looking at.
+//
+// The build id is a hash of the board the binary carries, so this fires when
+// the page and the daemon genuinely differ and never on an ordinary restart of
+// the same build.
+//
+// Reloading a popped-out terminal costs the scrollback and nothing else: the
+// card id is in the URL, the runner is untouched, and it reattaches on load.
+let boardBuild = "";
+function checkBuild(build) {
+  if (!build) return;
+  if (!boardBuild) { boardBuild = build; return; }
+  if (build === boardBuild) return;
+  boardBuild = build;
+  // This is THE reload that matters for coming back to where you were, so
+  // where you are is written down here rather than trusted to have been
+  // written earlier.
+  rememberWhereYouAre();
+  location.reload();
+}
+
+// Is the daemon there at all.
+//
+// The one question that separates "the runner exited" from "atrium is
+// restarting", and neither the websocket close code nor its reason can answer
+// it: a daemon shutting down and a runner quitting both close normally.
+async function daemonAnswers() {
+  try {
+    const res = await fetch("/v1/health", { cache: "no-store" });
+    if (!res.ok) return false;
+    // The reconnect path is the one that matters most for this: a popped-out
+    // window asks here on every retry, so a daemon that came back on a new
+    // build is noticed at the moment it comes back rather than on the next
+    // five second poll.
+    try { checkBuild((await res.clone().json()).build); } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// What the pane says while it is not connected to anything.
+//
+// One function, called from every path that waits, so the message cannot be
+// left up by one of them and cleared by another.
+function termWait(say) {
+  const box = document.getElementById("t-wait");
+  const line = document.getElementById("t-wait-say");
+  if (!box || !line) return;
+  if (!say) { box.hidden = true; return; }
+  line.textContent = say;
+  box.hidden = false;
+}
+
+// The session's name, for a sentence about it. Falls back to something rather
+// than to nothing: "reconnecting to" with a blank after it reads as truncated.
+function waitName(t) {
+  return (t && (shortLabel(t) || t.display_title)) || "the session";
+}
 
 function connectTerm(taskID) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -10013,6 +11945,11 @@ function connectTerm(taskID) {
   termSock.onopen = () => {
     opened = true;
     attachSince = 0;
+    termWait("");
+    if (attachSaidGone && term) {
+      term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
+    }
+    attachSaidGone = false;
     sendResize();
     term.focus();
   };
@@ -10020,17 +11957,71 @@ function connectTerm(taskID) {
     if (typeof e.data === "string") { term.write(e.data); return; }
     term.write(new Uint8Array(e.data));
   };
-  termSock.onclose = () => {
-    // Never opened, and not for long. The runner is still being registered, so
-    // try again rather than deciding there is nothing here. Nothing is written
-    // to the terminal in this case: a window that says "connection failed"
-    // twice a second while it is in fact starting is worse than a blank one.
-    if (!opened && term && Date.now() - attachSince < attachRetryFor) {
+  const sock = termSock;
+  termSock.onclose = async () => {
+    if (!term) return;
+    // A close belonging to a socket that is no longer the one attached.
+    //
+    // This is the race behind "I clicked a session and it said nothing
+    // attached, then I clicked again and it was there". Switching sessions
+    // calls `closeTerm(true)`, which closes the old socket and builds the new
+    // one immediately. The OLD socket's close event lands a moment later, and
+    // nothing here distinguished it, so it ran the teardown path and cleared
+    // the terminal that had just been attached.
+    //
+    // Compared by identity rather than by a flag, so it covers every way a
+    // socket stops being the current one, including ways nobody has thought
+    // of yet.
+    if (termSock !== sock) return;
+    if (!attachSince) attachSince = Date.now();
+    const within = Date.now() - attachSince < attachRetryFor;
+
+    // Never opened: keep trying until it works or the window runs out.
+    //
+    // Deliberately NOT clever about why. An earlier version asked the daemon
+    // whether it was up, and declared the card dead when it answered while
+    // still refusing the attach. That reasoning breaks the exact case this
+    // exists for: a daemon comes back BEFORE its fixtures do, so there is
+    // always a stretch where `/v1/health` answers and the card has no runner
+    // yet. It would have cleared the pane a second before the terminal
+    // appeared.
+    //
+    // The page is addressed by card id and that id does not change. Waiting
+    // for it to start answering is the whole job, and five minutes of patience
+    // costs nothing next to clearing a window that was about to work.
+    if (!opened && within) {
+      // One line, once, and only after long enough that this is not the
+      // ordinary launch race. Silence for five minutes reads as broken.
+      if (!attachSaidGone && Date.now() - attachSince > attachRaceFor) {
+        attachSaidGone = true;
+        term.write("\r\n\x1b[38;5;244m[atrium] waiting for atrium\x1b[0m\r\n");
+      }
+      if (Date.now() - attachSince > attachRaceFor) {
+        termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+      }
       setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
       return;
     }
+
+    // Was open, and now is not. Ask who left.
+    if (within && !(await daemonAnswers())) {
+      if (!attachSaidGone) {
+        attachSaidGone = true;
+        term.write("\r\n\x1b[38;5;244m[atrium] atrium went away. reconnecting" +
+          "\x1b[0m\r\n");
+      }
+      termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      return;
+    }
+
     attachSince = 0;
-    if (term) term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
+    termWait("");
+    if (attachSaidGone) {
+      attachSaidGone = false;
+      term.write("\r\n\x1b[38;5;203m[atrium] gave up waiting for atrium\x1b[0m\r\n");
+    }
+    term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
     // The socket also closes when the runner exits, leaving a live-looking
     // header over a dead terminal, with the session list saying there is
     // nothing to attach to. Keeping the scrollback around left a dead terminal
@@ -10039,11 +12030,24 @@ function connectTerm(taskID) {
     // clearing costs nothing.
     setTimeout(() => closeTerm(), 900);
   };
-  termSock.onerror = () => {
-    if (term) term.write("\r\n\x1b[38;5;203m[atrium] connection failed\x1b[0m\r\n");
-  };
+  // Nothing written here. Every failed attempt during a restart fires this,
+  // and `onclose` follows immediately with the one message worth reading.
+  termSock.onerror = () => {};
 
-  term.onData(d => send({ t: "in", d }));
+  term.onData(d => {
+    // `sendInput` rather than `send`: xterm delivers a bracketed paste here in
+    // one call, so this is the other path a large paste takes.
+    sendInput(d);
+    // TYPING PUTS YOU BACK AT THE BOTTOM. You cannot see what you are typing
+    // from three screens up, and the alternative is typing blind into a
+    // terminal that looks like it is ignoring you. This is what every real
+    // terminal does.
+    //
+    // Here rather than on xterm's `scrollOnUserInput`, which only covers keys
+    // xterm itself handled: a paste, a middle-click and anything atrium sends
+    // through `send` never touch it.
+    term.scrollToBottom();
+  });
   // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.
 }
@@ -10052,12 +12056,38 @@ function send(msg) {
   if (termSock && termSock.readyState === WebSocket.OPEN) termSock.send(JSON.stringify(msg));
 }
 
+// Input to the runner, whatever produced it: a keystroke, a paste, a path
+// after an upload.
+//
+// ONE FRAME, however big it is. DO NOT CHUNK THIS.
+//
+// Chunking is the obvious answer and it is wrong, and the way it is wrong is
+// worth writing down because it looks like an improvement. A paste that
+// arrived as four hundred 16KB frames was read by Claude Code as four hundred
+// separate pastes: it detects a paste from a burst of input, so every chunk
+// boundary became a new one and a single file came out as
+// `[Pasted text #1 +18 lines][Pasted text #2 +10 lines]` a hundred and
+// forty-six times over. The pty has no framing, so the receiver has nothing to
+// reassemble from except timing, and timing is what splitting destroys.
+//
+// The size limit that started all this belongs on the daemon, and that is
+// where it was fixed: `coder/websocket` reads 32KB per message by default and
+// CLOSES THE CONNECTION when one is bigger, which is why pasting a text file
+// said `detached`. See `internal/daemon/attach.go`.
+function sendInput(text) {
+  send({ t: "in", d: String(text == null ? "" : text) });
+}
+
 function sendResize() {
   if (!term) return;
   send({ t: "resize", cols: term.cols, rows: term.rows });
 }
 
 function onTermResize() {
+  // The bridge is placed either way. It spans the gap between the list and
+  // the pane, and that gap moves whenever anything else does, attached
+  // terminal or not.
+  placeTabBridge();
   if (!termFit || !term) return;
   termFit.fit();
   sendResize();
@@ -10112,7 +12142,7 @@ function markTermDead() {
       close.title = termOnly()
         ? "close this window. its card and history stay on the board"
         : "clear this away. its card and history stay on the board";
-      close.onclick = () => termOnly() ? window.close() : closeTerm();
+      close.onclick = () => termOnly() ? window.close() : forgetTerm();
       bar.appendChild(close);
     }
   }
@@ -10167,10 +12197,18 @@ function closeTerm(switching) {
 
 // Tears the pane down without refreshing, so it can be called from inside one.
 function clearTermPane(switching) {
+  const was = termTask ? termTask.id : "";
   if (termSock) { termSock.close(); termSock = null; }
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
+  // Nothing attached, so nothing for the bridge to span.
+  placeTabBridge();
+  // NOT FORGOTTEN HERE. This runs whenever the pane is torn down, and most of
+  // those are not decisions: the daemon restarting, a poll that has not seen
+  // the fixture come back yet, a socket that dropped. Forgetting on any of
+  // them is what made the restore useless across exactly the restart it was
+  // written for. `closeTerm` forgets, because closing it is something you did.
   if (switching) return;
   const pane = document.querySelector(".term-pane");
   if (pane) pane.classList.remove("dead");
@@ -10182,10 +12220,39 @@ function clearTermPane(switching) {
     const stale = bar.querySelector(".t-close");
     if (stale) stale.remove();
   }
+  paintPaneBg(null);
   document.getElementById("t-title").textContent = "nothing attached";
   document.getElementById("t-chips").innerHTML = "";
   document.getElementById("t-screen").innerHTML = "";
   document.getElementById("term-perm").hidden = true;
+
+  // AND THEN GO BACK AND WAIT FOR IT.
+  //
+  // This is the other half of surviving a restart, and it is the half that was
+  // missing. Only one of the two paths through an outage ends in a page
+  // reload: the board reloads when the daemon serves a build it has not seen,
+  // and when the build is unchanged nothing reloads at all. In that case the
+  // socket retry is the only thing trying, and it stops the moment this
+  // function disposes the terminal it was checking for. So the pane sat empty
+  // next to a session that had come back, and the way to get it was to click
+  // the card.
+  //
+  // Safe to fire on every teardown: `waitAndAttach` gives up on a card that is
+  // archived, popped out or replaced by something you attached yourself, and
+  // the deliberate close forgets the card first so there is nothing to wait
+  // for.
+  if (was) {
+    const kept = localStorage.getItem("atrium.term");
+    rlog("pane torn down. was", was, "remembered", kept || "(nothing)");
+    if (kept === was) waitAndAttach(was);
+  }
+}
+
+// Closing it yourself, which is the one teardown that means "stop showing me
+// this". Everything else is something that happened TO the session.
+function forgetTerm() {
+  try { localStorage.removeItem("atrium.term"); } catch (e) {}
+  closeTerm();
 }
 
 // A permission request while attached: the runner is blocked and its terminal
@@ -10734,6 +12801,10 @@ function editFixture(id) {
   document.getElementById("f-cwd").value = f.cwd || "";
   document.getElementById("f-theme").value = f.theme || "";
   document.getElementById("f-resume").checked = !!f.resume;
+  // Empty means latest, which is what an existing fixture with resume on
+  // should always have been doing.
+  document.getElementById("f-resume-mode").value =
+    f.resume_mode === "card" ? "card" : "latest";
   document.getElementById("f-enabled").checked = !!f.enabled;
   document.getElementById("f-delete").hidden = !f.id;
 
@@ -10755,6 +12826,7 @@ async function saveFixture() {
     cwd: document.getElementById("f-cwd").value.trim(),
     theme: document.getElementById("f-theme").value.trim(),
     resume: document.getElementById("f-resume").checked,
+    resume_mode: document.getElementById("f-resume-mode").value,
     enabled: document.getElementById("f-enabled").checked,
     // Keeps its place in the order, or goes last when it is new.
     sort: known ? known.sort : allFixtures.length,
@@ -11561,6 +13633,19 @@ function askClose(resolve, value) {
   resolve(value);
 }
 
+// What a dialog answers with.
+//
+// A cancel is always `null`, whatever field is on screen, because the caller
+// distinguishes "did not choose" from "chose the empty string" and an input
+// cannot express the first. Otherwise the answer is whichever field the dialog
+// was built with, and the button's own value when it was built with neither.
+function answerOf(opts, btnValue, input, choices) {
+  if (btnValue === null) return null;
+  if (opts.choices && opts.choices.length) return choices.value;
+  if (opts.input) return input.value;
+  return btnValue;
+}
+
 // opts: { title, body (html), buttons: [{label, value, style}], input, value }
 function askUser(opts) {
   return new Promise(resolve => {
@@ -11585,6 +13670,17 @@ function askUser(opts) {
       input.setAttribute("list", (opts.list && opts.list.length) ? "ask-list" : "");
     }
 
+    // `choices: [{value, label}]` is the closed-set case: a real select, where
+    // the answer is one of these and the labels are what makes them readable.
+    const chField = document.getElementById("ask-choices-field");
+    const choices = document.getElementById("ask-choices");
+    chField.hidden = !(opts.choices && opts.choices.length);
+    if (!chField.hidden) {
+      setHTML(choices, opts.choices
+        .map(c => `<option value="${esc(c.value)}">${esc(c.label)}</option>`).join(""));
+      choices.value = opts.value || opts.choices[0].value;
+    }
+
     // A confirmation that can be turned off. Only recorded on the affirmative
     // button: ticking the box and then cancelling means "no, and stop asking",
     // which would silently turn a refusal into a standing yes.
@@ -11607,7 +13703,7 @@ function askUser(opts) {
         if (opts.rememberKey && rememberOn.checked && b.value !== null) {
           skipConfirm(opts.rememberKey, true);
         }
-        askClose(resolve, opts.input && b.value !== null ? input.value : b.value);
+        askClose(resolve, answerOf(opts, b.value, input, choices));
       };
       actions.appendChild(el);
     });
@@ -11619,7 +13715,7 @@ function askUser(opts) {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
       const last = buttons[buttons.length - 1];
-      askClose(resolve, opts.input && last.value !== null ? input.value : last.value);
+      askClose(resolve, answerOf(opts, last.value, input, choices));
     };
 
     askDlg.showModal();
@@ -11859,18 +13955,59 @@ function popOutTerm() {
 // The stack is the case that matters. Attaching first and then popping out is
 // two steps to reach one window, and it makes the board briefly the owner of a
 // terminal it is about to give away.
+// Windows this page has opened, so a second press raises rather than opens.
+//
+// The window NAME already does most of this: `window.open` with a name that is
+// already taken returns the existing window. It stops being enough as soon as
+// the opener reloads, which this board now does by itself when the daemon
+// serves a new build, and a handle held across that reload is gone while the
+// window is still very much there.
+//
+// So there are two answers and both are needed. The handle covers this page's
+// own presses. The broadcast covers a window this page never opened, which is
+// every window opened before the last reload.
+const popOuts = new Map();
+
+// Returns what it did: `raised` for a window that was already there, `opened`
+// for a new one, `blocked` when the browser refused. The caller says something
+// different about each, and saying the wrong one is how "raised it for you"
+// ended up pointing at a window nobody could find.
 function popOutTask(id) {
+  const held = popOuts.get(id);
+  if (held && !held.closed) { held.focus(); return "raised"; }
+
+  // Opened by an earlier incarnation of this page, so there is no handle. Get
+  // one back by NAME.
+  //
+  // `window.open("", name)` with an empty url returns an existing window under
+  // that name WITHOUT navigating it, so the scrollback survives. Names live in
+  // the browsing context group, which a popup stays in across the opener's
+  // reload, and the board reloads itself whenever the daemon serves a new
+  // build.
+  //
+  // **This is the half that actually raises.** Asking the window to focus
+  // itself over the broadcast does not work and never did: `window.focus()` in
+  // a background tab has no user gesture behind it and every browser refuses
+  // it. The board is the one holding the click, so the board has to do it.
+  // That is why "raised it for you" was routinely a lie.
+  if (poppedOut(id)) {
+    const found = reopenByName(id);
+    if (found) { popOuts.set(id, found); found.focus(); return "raised"; }
+    // Nothing under that name. The claim was stale by up to one heartbeat, so
+    // fall through and open one rather than insisting it is already there.
+  }
+
   // The card id, so the new window resolves the session itself rather than
   // being handed a name that may be stale by the time it loads.
   const url = location.pathname + "#term=" + encodeURIComponent(id);
   const size = popOutSize(id);
-  // Named per card, so pressing pop out twice raises the existing window
-  // rather than opening a second one onto the same terminal.
+  // Named per card, which is the first line of defence against a second one.
   const win = window.open(url, "atrium-term-" + id,
     `width=${size.w},height=${size.h},menubar=no,toolbar=no,location=no,status=no`);
+  if (win) popOuts.set(id, win);
   if (!win) {
     tellUser("the browser blocked it", "allow pop-ups for this board and try again.");
-    return;
+    return "blocked";
   }
   win.focus();
   // Detached only when the board is holding THIS card, because two views onto
@@ -11879,6 +14016,28 @@ function popOutTask(id) {
   // from the stack must not tear down the unrelated terminal the board has
   // open, which is what an unconditional `closeTerm` did.
   if (termTask && termTask.id === id) closeTerm();
+  return "opened";
+}
+
+// reopenByName finds a popped-out window this page did not open.
+//
+// The catch is that `window.open("", name)` OPENS A BLANK WINDOW when the name
+// is free, so the answer has to be checked and an unwanted one closed again.
+// A window that is really the terminal is same-origin and is on this board's
+// path; a fresh one is `about:blank`.
+function reopenByName(id) {
+  let w = null;
+  try { w = window.open("", "atrium-term-" + id); } catch (e) { return null; }
+  if (!w) return null;
+  try {
+    if (w.location.href !== "about:blank") return w;
+  } catch (e) {
+    // Cross-origin, which cannot be one of ours. Left alone rather than
+    // closed: it belongs to something else.
+    return null;
+  }
+  w.close();
+  return null;
 }
 
 // How big a popped-out window opens.
@@ -11996,6 +14155,10 @@ function paintSoloTitle() {
 let soloKnown = { perm: null, ready: null };
 async function soloRefresh() {
   if (!soloID) return;
+  // The heartbeat behind every board's `soloHeld`. On the poll rather than a
+  // timer of its own: it is the same question at the same rate, and a second
+  // timer is a second thing to get wrong.
+  if (soloBus) soloBus.postMessage({ type: "solo-claim", task: soloID });
 
   const [task, waiting, perms] = await Promise.all([
     api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
@@ -12020,6 +14183,7 @@ async function soloRefresh() {
   // A halted daemon is a fact about this terminal too: the session behind it
   // is parked and nothing said so.
   api("/v1/health").then(h => {
+    checkBuild(h.build);
     const el = document.getElementById("halted");
     el.style.display = h.halted ? "flex" : "none";
     if (h.halted) {
@@ -12068,11 +14232,153 @@ function soloAlert(kind, now, item) {
     // Behind something. The mark on the title bar is already up, and the
     // desktop notification is what makes you look at the switcher at all. The
     // board is holding its own copy back because of the claim.
+    // taskFor is this window's own card, which is what the picture belongs to.
+    // Not passed as the suppression key: this window IS the one that should
+    // speak, and handing it its own claim would silence it.
     alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "", soloID, "",
-      iconForAlert(soloTask));
+      iconForAlert(soloTask), soloID);
   }
 }
 
+// Back to the view you were on, and to the terminal you were reading.
+//
+// The daemon reloads every board it is serving when it comes up with a new
+// build, so this runs several times an evening while atrium is being worked
+// on. Landing on the board each time and clicking `terminals` and then the
+// same card is two clicks to undo something nobody asked for.
+//
+// Both halves are checked rather than trusted. A remembered view that is not a
+// view, and a remembered card that is gone or is no longer supervised, both
+// mean the same thing: whatever was written down does not describe this board
+// any more, so it is dropped and you get the board.
+async function restoreWhereYouWere() {
+  let view = "", card = "";
+  try {
+    view = localStorage.getItem("atrium.view") || "";
+    card = localStorage.getItem("atrium.term") || "";
+  } catch (e) { return; }
+  rlog("boot. remembered view", view || "(none)", "card", card || "(none)");
+  if (!VIEWS.includes(view) || view === "board") return;
+  switchView(view);
+  if (view !== "terms" || !card) return;
+
+  // Popped out since, in which case the board must not take it back: two
+  // views on one terminal both writing input is what popping out exists to
+  // prevent.
+  if (poppedOut(card)) return;
+  waitAndAttach(card);
+}
+
+// How long to keep waiting for a remembered session to come back.
+//
+// THE RACE THIS EXISTS FOR: the daemon restarting is what reloads the board,
+// and the daemon answers HTTP before its fixtures have started. So the board
+// comes up, asks about the card it was reading, and is told it is not
+// supervised, which is true and is about to stop being true. Asking once put
+// you on an empty terminals page every single restart.
+//
+// Ninety seconds, because a fixture is a real agent starting: claude resuming
+// a long conversation takes a while, and the cost of waiting is one request a
+// second at a moment when nothing else is happening.
+const restoreWaitFor = 90 * 1000;
+
+// Reconnecting is the one thing on this page that happens while nobody is
+// watching and cannot be reproduced on demand: it needs the daemon to go away.
+// So it says what it is doing, on the console, with a timestamp.
+//
+// Left ON rather than behind a flag. It is a handful of lines per restart, it
+// costs nothing, and the alternative is asking somebody to turn on logging and
+// then restart the daemon again to reproduce what they just saw.
+function rlog() {
+  const t = new Date().toISOString().slice(11, 23);
+  console.log("[atrium " + t + "]", ...arguments);
+}
+
+// One waiter at a time. Every teardown starts one, and a restart produces
+// several in a row: the socket closing, the poll that finds nothing to attach
+// to, and the runner-exited event are three separate teardowns of the same
+// outage, and three loops all calling `openTerm` on the same card would attach
+// it and then tear it down again as each of the others noticed.
+let waitingFor = "";
+
+async function waitAndAttach(card) {
+  if (waitingFor === card) { rlog("already waiting for", card); return; }
+  waitingFor = card;
+  rlog("waiting for", card, "to come back");
+  try { await waitLoop(card); } finally { if (waitingFor === card) waitingFor = ""; }
+}
+
+async function waitLoop(card) {
+  const until = Date.now() + restoreWaitFor;
+  let said = false, tries = 0;
+  while (Date.now() < until) {
+    // Somebody got there first: attached something by hand, went to another
+    // view, or popped this one out. Any of those is a decision, and a restore
+    // that overrode it would be the board arguing with you.
+    if (term || termTask) { rlog("stopped: something else attached"); termWait(""); return; }
+    if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); termWait(""); return; }
+    if (poppedOut(card)) { rlog("stopped: it is in its own window"); termWait(""); return; }
+
+    let task = null, err = "";
+    try { task = await api("/v1/tasks/" + encodeURIComponent(card)); }
+    catch (e) { err = e.message; }
+    tries++;
+    rlog("try", tries, err ? "no answer: " + err
+      : "supervised=" + !!(task && task.supervised) +
+        " archived=" + !!(task && task.archived_at));
+    // Gone for good rather than not back yet. A card that has been archived is
+    // never going to be supervised again, so waiting out the ninety seconds
+    // would be waiting for nothing.
+    if (task && task.archived_at) { rlog("stopped: the card is archived"); termWait(""); return; }
+    if (task && task.supervised) { rlog("it is back. attaching"); termWait(""); openTerm(task); return; }
+    // Named as soon as there is a name to use, which is the first answer that
+    // comes back. Before that it is `the session`, which is still better than
+    // an empty pane saying nothing attached while something is happening.
+    if (!said || task) {
+      said = true;
+      termWait("atrium is restarting. waiting for " + waitName(task) + " to come back…");
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  // Ninety seconds and it never came back. Saying nothing would leave the
+  // spinner up forever.
+  rlog("gave up after", restoreWaitFor / 1000, "seconds");
+  termWait("");
+  toast("could not get back to your session", "it has not come back. pick one from the list.");
+}
+
+// Which view is on screen, read off the page. The same question
+// `rememberWhereYouAre` asks, and asked the same way for the same reason.
+function isViewing(name) {
+  const el = document.getElementById(name);
+  return !!el && !el.hidden;
+}
+
+// Every dialog says when it closed and what closed it.
+//
+// `close` fires for all of them: the close button, escape, a form submit, and
+// a script calling `close()`. The stack tells them apart, which is the whole
+// point: a settings dialog that shuts by itself while an agent is typing is
+// not something that can be caught by watching.
+document.querySelectorAll("dialog").forEach(d => {
+  d.addEventListener("close", () => {
+    rlog("dialog closed:", d.id, "\n" + new Error().stack);
+  });
+});
+
+// ── boot ────────────────────────────────────────────────────────────────────
+//
+// LAST IN THE FILE, and it has to stay last.
+//
+// A `function` declaration is hoisted and callable from anywhere, but `let` and
+// `const` are not: they exist from the top of the scope and THROW until the
+// line that declares them has run. So boot code sitting above a `let` calls a
+// function that reads it and dies with `Cannot access 'waitingFor' before
+// initialization`, which is a real error thrown into a promise nobody was
+// awaiting, so the restore stopped dead and the rest of the page carried on
+// looking fine.
+//
+// Starting the page from the bottom means every declaration above it has run.
 if (termOnly()) {
   // The same stream and the same interval as the board. `refresh` sends a
   // popped-out window down `soloRefresh`, so this costs one card's worth of
@@ -12089,6 +14395,11 @@ if (termOnly()) {
   // claim, so it asks. Windows that are gone do not answer and the board rings
   // for their cards, which is the right way round to be wrong.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
+  restoreWhereYouWere();
+  // Every other way this page goes away: a manual reload, a close, a
+  // navigation. `pagehide` rather than `unload`, which a browser is free to
+  // skip when it freezes a page into the back/forward cache.
+  addEventListener("pagehide", rememberWhereYouAre);
 }
 </script>
 </body>

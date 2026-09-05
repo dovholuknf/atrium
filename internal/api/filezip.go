@@ -56,27 +56,55 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	root := filepath.FromSlash(task.Worktree)
 
-	want := strings.TrimSpace(r.URL.Query().Get("path"))
-	if want == "" {
-		want = root
-	}
-	dir, err := safepath.Contained(root, want)
-	if err != nil {
-		// One answer for outside and for missing, the same rule the listing and
-		// the single-file download follow, so this cannot be used to find out
-		// what is on the machine outside the card.
-		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
-		return
-	}
-	fi, err := os.Stat(dir)
-	if err != nil || !fi.IsDir() {
-		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
-		return
+	// `path` repeats. One is the old shape and means "everything under here";
+	// several is a selection and means exactly those, files and directories
+	// alike.
+	//
+	// A selection rather than a whole directory is what people actually want.
+	// "Everything under here" is a guess that is usually wrong by a build
+	// directory, and it made the one useful case, four files out of two
+	// hundred, unreachable.
+	wanted := r.URL.Query()["path"]
+	if len(wanted) == 0 {
+		wanted = []string{root}
 	}
 
-	name := filepath.Base(dir)
+	roots := make([]string, 0, len(wanted))
+	for _, want := range wanted {
+		want = strings.TrimSpace(want)
+		if want == "" {
+			want = root
+		}
+		p, err := safepath.Contained(root, want)
+		if err != nil {
+			// One answer for outside and for missing, the same rule the
+			// listing and the single-file download follow, so this cannot be
+			// used to find out what is on the machine outside the card.
+			writeErr(w, http.StatusForbidden, safepath.ErrOutside)
+			return
+		}
+		if _, err := os.Stat(p); err != nil {
+			writeErr(w, http.StatusForbidden, safepath.ErrOutside)
+			return
+		}
+		roots = append(roots, p)
+	}
+
+	// What the archive is called, and what paths inside it are relative to.
+	//
+	// For a selection that is the directory they share, so `src/a.go` and
+	// `src/b.go` unpack into `src/`. Falls back to the card's own directory,
+	// which is always an ancestor because everything here passed containment.
+	base := commonDir(roots)
+	if base == "" {
+		base = root
+	}
+	name := filepath.Base(base)
 	if name == "" || name == string(filepath.Separator) {
 		name = "files"
+	}
+	if len(wanted) > 1 {
+		name = name + "-selection"
 	}
 	w.Header().Set("Content-Type", "application/zip")
 	// Quoted, and the name sanitised, because a directory name is not under
@@ -94,11 +122,18 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 	)
 	stopped := ""
 
-	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	// Every selected path is walked. A file is a walk of one, so files and
+	// directories need no separate branch.
+	//
+	// Deduplicated by the archive's own naming: two selections that overlap
+	// produce the same relative name, and `seen` drops the second rather than
+	// writing a duplicate entry that most unzip tools handle badly.
+	seen := map[string]bool{}
+	walk := func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// A directory that cannot be read is noted and stepped over. One
 			// unreadable subtree must not lose the rest of the archive.
-			notes = append(notes, relOf(dir, p)+": "+err.Error())
+			notes = append(notes, relOf(base, p)+": "+err.Error())
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -121,12 +156,12 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 		// entitled to, which is the whole reason `internal/safepath` resolves
 		// symlinks on both sides.
 		if _, err := safepath.Contained(root, p); err != nil {
-			notes = append(notes, relOf(dir, p)+": outside this card, not included")
+			notes = append(notes, relOf(base, p)+": outside this card, not included")
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
-			notes = append(notes, relOf(dir, p)+": "+err.Error())
+			notes = append(notes, relOf(base, p)+": "+err.Error())
 			return nil
 		}
 		// Regular files only. A device, a socket or a named pipe has no
@@ -137,10 +172,14 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 
 		hdr, err := zip.FileInfoHeader(info)
 		if err != nil {
-			notes = append(notes, relOf(dir, p)+": "+err.Error())
+			notes = append(notes, relOf(base, p)+": "+err.Error())
 			return nil
 		}
-		hdr.Name = filepath.ToSlash(relOf(dir, p))
+		hdr.Name = filepath.ToSlash(relOf(base, p))
+		if seen[hdr.Name] {
+			return nil
+		}
+		seen[hdr.Name] = true
 		hdr.Method = zip.Deflate
 		out, err := zw.CreateHeader(hdr)
 		if err != nil {
@@ -148,26 +187,73 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		f, err := os.Open(p)
 		if err != nil {
-			notes = append(notes, relOf(dir, p)+": "+err.Error())
+			notes = append(notes, relOf(base, p)+": "+err.Error())
 			return nil
 		}
 		n, copyErr := io.Copy(out, f)
 		f.Close()
 		if copyErr != nil {
-			notes = append(notes, relOf(dir, p)+": "+copyErr.Error())
+			notes = append(notes, relOf(base, p)+": "+copyErr.Error())
 		}
 		files++
 		written += n
 		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, fs.SkipAll) {
-		notes = append(notes, "walk: "+walkErr.Error())
+	}
+
+	for _, p := range roots {
+		if stopped != "" {
+			break
+		}
+		if err := filepath.WalkDir(p, walk); err != nil && !errors.Is(err, fs.SkipAll) {
+			notes = append(notes, "walk: "+err.Error())
+		}
 	}
 
 	if stopped != "" || len(notes) > 0 {
-		writeZipNote(zw, dir, files, written, stopped, notes)
+		writeZipNote(zw, base, files, written, stopped, notes)
 	}
-	log.Printf("[atrium api] zipped %d file(s), %d byte(s) from %s", files, written, dir)
+	log.Printf("[atrium api] zipped %d file(s), %d byte(s) from %s", files, written, base)
+}
+
+// commonDir is the deepest directory every path is inside.
+//
+// What the archive's entries are named relative to. Two files in `src` unpack
+// into `src`, and a selection spread across the tree falls back toward the
+// card's own directory, which is as far as it can go: everything here has
+// already passed containment against it.
+func commonDir(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	dirOf := func(p string) string {
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			return p
+		}
+		return filepath.Dir(p)
+	}
+	common := dirOf(paths[0])
+	for _, p := range paths[1:] {
+		common = sharedPrefix(common, dirOf(p))
+	}
+	return common
+}
+
+// sharedPrefix walks two paths back until they agree, segment by segment.
+//
+// Segments rather than characters: `C:\work\atrium` and `C:\work\atrium-afk`
+// share fourteen characters and no directory, and trimming to the character
+// count would name a directory that does not exist.
+func sharedPrefix(a, b string) string {
+	as := strings.Split(filepath.Clean(a), string(filepath.Separator))
+	bs := strings.Split(filepath.Clean(b), string(filepath.Separator))
+	n := 0
+	for n < len(as) && n < len(bs) && strings.EqualFold(as[n], bs[n]) {
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	return strings.Join(as[:n], string(filepath.Separator))
 }
 
 // relOf is a path as it should appear inside the archive.

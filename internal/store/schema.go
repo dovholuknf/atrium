@@ -789,6 +789,28 @@ var migrations = []struct {
 			`ALTER TABLE fixture ADD COLUMN last_run_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// WHICH conversation a fixture resumes, as opposed to whether it does.
+		//
+		// `resume` is a boolean and answered the wrong question. On means "the
+		// id recorded on the card I started last time", which is a specific
+		// conversation, and a fixture does not want a specific conversation.
+		// It wants the terminal it had, and that id goes stale the moment
+		// anything else starts a session in the directory, and points at
+		// nothing once that transcript is deleted. Both fail the same silent
+		// way: a fresh conversation, no error, and it repeats every restart.
+		//
+		// Three values. Empty means `latest`, which is what an existing
+		// fixture with `resume` on should have been doing:
+		//
+		//   latest  the newest conversation in that directory
+		//   card    the id recorded on the card, the old behavior
+		//   (resume off is still the boolean, and means always fresh)
+		name: "0035_fixture_resume_mode",
+		stmts: []string{
+			`ALTER TABLE fixture ADD COLUMN resume_mode TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

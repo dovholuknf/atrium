@@ -153,6 +153,35 @@ When atrium does not own the terminal there is nothing to type into, so the path
 box as text rather than being queued. Queuing would deliver "C:/x/y/z.png" to the model on its next tool call
 with no sentence around it.
 
+### Where the file lands, and what gets said about it
+
+Two settings, both daemon-side because both are about the machine atrium is on.
+
+`paste_keep` is `keep` or `scrap`. `keep` is the original behaviour: `.atrium/incoming` inside the card, where
+the file stays until somebody clears the folder out. `scrap` is a directory beside the database, emptied on every
+daemon start. The path still reaches the runner and the file still works for as long as the conversation does.
+The complaint that produced it is fair and specific: a repository accumulating a folder of screenshots looked at
+once is a cost paid forever for a gesture that took a second.
+
+The emptying happens on the way UP. A daemon that was killed does not run cleanup on the way down, and the
+promise wanted from this setting is that the pictures are gone, not that they were deleted tidily.
+
+Containment still applies in both modes, against the directory that was chosen rather than against the card. The
+scrap directory is not inside a card, and checking it against one would refuse the only place it was ever
+supposed to write.
+
+`paste_preamble` is what gets typed in front of the path, defaulting to `check out the image here: `. A bare path
+is what a person types when they mean "look at this" and it is not what they say. Nothing is submitted: the
+preamble and the path are spliced into the line the same way the path alone was, and the rule above still holds.
+
+Stored empty means the default, because empty is also what a key that was never written reads as. Choosing to
+have no preamble at all is stored as the word `none`, which the board writes and nobody types.
+
+**There is no third option that hands the bytes to the model.** A pseudo terminal carries input characters. An
+image is not one. Claude Code gets a pasted image by reading the clipboard ITSELF, natively, on its own machine,
+which is precisely what a browser two machines away cannot do. The file has to exist somewhere; the only real
+question is where, and for how long.
+
 ## Writing a file: the precondition, which is worth having on its own
 
 There is no write endpoint today and there will be one, whether it arrives with an editor or before it. When it

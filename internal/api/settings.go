@@ -50,6 +50,16 @@ func globalAutoView(s *Server) map[string]any {
 		// Not a timer, but read the same way and for the same reason: empty is
 		// a value here, and it means the open button is off.
 		SettingEditor: "editor_command",
+		// Where a pasted file lands, and what gets typed in front of its path.
+		// Read as stored, because empty means something for each: the default
+		// in one case, a bare path in the other.
+		SettingPasteKeep:     "paste_keep",
+		SettingPastePreamble: "paste_preamble",
+		// How far back a terminal remembers, at both ends. Read as stored so
+		// an empty box shows as empty and means the default, rather than
+		// showing today's default as though somebody had chosen it.
+		SettingScrollbackMB:    "scrollback_mb",
+		SettingScrollbackLines: "scrollback_lines",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -57,6 +67,21 @@ func globalAutoView(s *Server) map[string]any {
 		}
 		out[field] = v
 	}
+	// Sent rather than written into the board, so the wording lives in one
+	// place and an old tab cannot show a different default than the daemon
+	// would use.
+	out["paste_preamble_default"] = DefaultPastePreamble
+	out["paste_preamble_none"] = PastePreambleNone
+	// What is actually in force, whatever the two boxes say. An empty box
+	// means the default, and the person reading it wants the number.
+	//
+	// `scrollback_lines_now` is also how the board sizes xterm: it asks the
+	// daemon rather than carrying a number of its own, so the two buffers
+	// cannot be configured to disagree by editing only one of them.
+	out["scrollback_mb_now"] = scrollbackMB(s.st)
+	out["scrollback_lines_now"] = scrollbackLines(s.st)
+	out["scrollback_mb_max"] = maxScrollbackMB
+	out["scrollback_lines_max"] = maxScrollbackLines
 	return out
 }
 
@@ -98,6 +123,15 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// clearing it are different requests, and clearing it is how the open
 		// button gets turned back off.
 		Editor *string `json:"editor_command"`
+		// Whether a pasted file is kept in the card, and the words that go in
+		// front of the path. Pointers, again because clearing one is a request.
+		PasteKeep     *string `json:"paste_keep"`
+		PastePreamble *string `json:"paste_preamble"`
+		// How far back a terminal remembers. Strings rather than numbers,
+		// because empty is a value and means the default, and a JSON number
+		// has no way to say it.
+		ScrollbackMB    *string `json:"scrollback_mb"`
+		ScrollbackLines *string `json:"scrollback_lines"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -159,6 +193,67 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.SetSetting(SettingEditor, strings.TrimSpace(*body.Editor)); err != nil {
 			s.fail(w, err)
 			return
+		}
+	}
+
+	if body.PasteKeep != nil {
+		// Two values and nothing else. Anything unrecognised would read as
+		// `keep` at the one place that asks, which is a setting that looks
+		// changed and is not.
+		v := strings.ToLower(strings.TrimSpace(*body.PasteKeep))
+		if v == "" {
+			v = "keep"
+		}
+		if v != "keep" && v != "scrap" {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"a pasted file is either `keep` or `scrap`, not %q", v))
+			return
+		}
+		if err := s.st.SetSetting(SettingPasteKeep, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.PastePreamble != nil {
+		// Kept exactly as typed, trailing space and all. The space between the
+		// words and the path is part of what somebody wrote, and trimming it
+		// would join the two.
+		if err := s.st.SetSetting(SettingPastePreamble, *body.PastePreamble); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	// Checked before either is written, so a bad number in the second box does
+	// not leave the first one changed.
+	if body.ScrollbackMB != nil || body.ScrollbackLines != nil {
+		var mb, lines string
+		var err error
+		if body.ScrollbackMB != nil {
+			mb, err = checkNum("the daemon's scrollback, in megabytes", *body.ScrollbackMB, maxScrollbackMB)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if body.ScrollbackLines != nil {
+			lines, err = checkNum("the terminal's scrollback, in lines", *body.ScrollbackLines, maxScrollbackLines)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if body.ScrollbackMB != nil {
+			if err := s.st.SetSetting(SettingScrollbackMB, mb); err != nil {
+				s.fail(w, err)
+				return
+			}
+		}
+		if body.ScrollbackLines != nil {
+			if err := s.st.SetSetting(SettingScrollbackLines, lines); err != nil {
+				s.fail(w, err)
+				return
+			}
 		}
 	}
 

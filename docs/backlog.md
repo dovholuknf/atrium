@@ -19,7 +19,43 @@ run, and file transfer into a session including paste.
 
 The gaps below are ordered by what would change day to day.
 
+## The order, as of 2026-09-04
+
+The sections below are grouped by subject rather than by rank, because each one is a design note and they were
+written as the questions came up. This is the rank. It is short on purpose: a list of twenty priorities is a
+list of none.
+
+| # | Item | Size |
+| --- | --- | --- |
+| 1 | Picking a terminal theme is the worst control on the board | half day |
+| 2 | Hand one agent to one person, over a share | a day |
+| 3 | The event log answers with the wrong end of itself | an hour |
+| 4 | `GET /v1/browse` is unbounded (Known gaps) | two hours |
+| 5 | Priority on a card | half day |
+| 6 | Notes on a card, and sending one when you are ready | half day |
+| 7 | An editor in the board, for the half that is still open | a day |
+| 8 | Starting a card from a ticket, an issue or a pull request | two days |
+| 9 | Hooks for runners that are not Claude Code | two days |
+| 10 | Approvals from a phone (deprioritized: auto mode makes it moot for now) | a day |
+
+Below that, in no particular order: the grouping expression rule, the forum, Postgres, stage 5, and the three
+defects in `scripts/atrium-autostart.ps1`, which only matter at a reboot now that `restart_atrium` exists.
+
 ## Next
+
+### The event log answers with the wrong end of itself
+
+`GET /v1/tasks/{id}/events` returns the OLDEST events, not the newest. The query is
+`ORDER BY at ASC, id ASC LIMIT ?` in `internal/store/tasks.go:803`, so a limit of 200 on a card with a thousand
+events answers with the first two hundred, from the day the card was created.
+
+That makes the endpoint useless for the question anybody actually asks it, which is what just happened. It was
+found by trying to confirm a restart and having to read the process table instead, and it had already caused
+three wrong conclusions once before, recorded in "The unexplained block was not a bug" below.
+
+The fix is a newest-first query with the limit applied to that end. What needs deciding is only whether the
+response stays oldest-first for rendering, which the timeline expects: select the newest N in the store, then
+reverse before returning, so the wire shape does not change and no caller has to know.
 
 ### The grouping expression is safe today for one reason, and that reason is not written down anywhere
 
@@ -877,3 +913,109 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   was split into tokens that looked relative. Both fixed with regression tests. A third, `/activity` returning
   400 on a malformed body against its own fail-open contract, was also real and fixed.
 - Nothing has been run against `docs/supervision-design.md` as built.
+
+### Themes you can edit, and themes you can bring
+
+Fifty two themes ship in the page and that is the whole set. Two things are missing.
+
+**Editing one.** A theme is sixteen ANSI colours plus a foreground, a background and a cursor. Every one of those
+is a colour picker and a name, and the live preview problem is already solved: the terminal repaints on
+`term.options.theme` and the picker on the bar already previews against real scrollback. Editing is that control
+with the swatches exposed, saving under a new name.
+
+**Bringing one.** Every terminal emulator has a theme format, and people arrive with the one they already use.
+Windows Terminal, iTerm2 and Alacritty all express the same seventeen colours in different files, so an import is
+a small parser per format and nothing else. Export matters as much: a theme built here should leave in a shape the
+rest of the machine understands.
+
+Where they live is the open question. A theme is not per card and not per screen, so localStorage is wrong and the
+card row is wrong. It belongs to the daemon, beside the icons, which means a table or a directory of small files
+and an endpoint. Files are the better guess: a theme is a thing you want to copy between machines by hand.
+
+Watch for the same hazard as icons. An imported file is untrusted input, every colour is validated before it
+reaches CSS, and a theme with a name from another machine does not overwrite one of the built-in fifty two.
+
+### The gap that table describes is the one atrium already fills
+
+Somebody put together a comparison of what people ask remote agent control to do, across Claude Code's Remote
+Control, Codex's, and OpenCode's `serve` plus client split. The table is worth keeping because it is a list of
+capabilities rather than a list of bugs, and because atrium already answers most of it.
+
+What the table says is missing, everywhere:
+
+- **The actual terminal.** Remote Control gives you the CONVERSATION, not a shell. When the agent wedges and you
+  need `git status`, or to kill something, or to look at a process, there is no way to open the shell underneath.
+- **Everything the CLI can do.** `/mcp`, `/plugin`, `/resume` and anything else built on a terminal picker are
+  local only.
+- **Always on.** Remote Control is enabled per session. People have asked for `autoRemoteControl: true`.
+- **Taking over a session you already started**, rather than starting a special one that is remote-controlled and
+  is therefore not the one you were using.
+- **Self-hosting the relay.** OpenCode is the only one that says yes, because there is no relay: it is your
+  server.
+- **Programmable control**: start a session remotely with a prompt, drive it from CI, address it by name.
+
+Read that list against what is already built here and the overlap is close to total. Atrium owns a pseudo
+terminal per supervised runner, so the terminal IS the product rather than a view onto a conversation, and a
+wedged agent is one you can drop a shell next to. There is no relay at all: the board is a loopback HTTP server
+and reaching it from elsewhere is an overlay's job, which is the same answer OpenCode gets credit for. Sessions
+are always on because the daemon outlives them and fixtures bring them back. `atrium join` takes over a session
+that was already running rather than requiring a special one. `atrium tell` and the agent listener are the
+programmable half.
+
+What atrium does NOT have from that list, honestly:
+
+- **A shell beside a wedged agent.** The terminal is the runner's. There is no "open a second terminal in this
+  card's directory" and it is the single most valuable thing on the list.
+- **The local-only commands.** `/resume` is answered by the session picker, and `/mcp` and `/plugin` are not.
+  These are pickers Claude Code draws in its own terminal, and atrium owns that terminal, so they should already
+  work: worth actually testing rather than assuming either way.
+- **A phone.** The board is responsive and has been used from one, but nothing has been designed for it.
+
+The conclusion the author reached is `tmux + SSH + agent UI + mobile app`, and that is a fair description of what
+this is turning into. The part worth stealing deliberately is the first one: a card should be able to hold more
+than one terminal, and the second one should be a plain shell in the same directory.
+
+#### The table, as it arrived
+
+Kept verbatim, with an atrium column added. Their three columns are somebody else's assessment and are not
+re-checked here: they are a record of what people were asking for in late 2026, which is the useful part. The
+atrium column is ours and every row of it is answerable against the code.
+
+| Wanted capability | Claude Code RC | Codex | OpenCode | atrium |
+| --- | --- | --- | --- | --- |
+| Full terminal access remotely | no | no | the OpenCode TUI, not an arbitrary shell | **yes.** a pty per supervised runner, attached over a websocket |
+| Take over an already-running local session | generally | a special, exclusive session | yes, server/client | **yes.** `atrium join`, no restart |
+| Do everything remotely the CLI can | no | limited | partly | mostly. it is the same terminal, so anything the CLI draws is there |
+| Remote interactive pickers | some commands are local-only | limited | better, not equivalent | **untested.** the pickers are drawn in a pty atrium owns, so they should work |
+| Upload files and screenshots into the workspace | yes | yes | asked for | **yes.** paste, drop or pick, and the path is typed into the line you are writing |
+| Always-on remote access to every session | per session | limited | yes, if the server is left running | **yes.** the daemon outlives sessions and fixtures restart them |
+| A shell when the agent wedges | no | no | no | **no.** the single biggest gap, and the next thing to build |
+| Self-host the relay | no | no | yes, there is no relay | **yes,** and for the same reason: loopback plus an overlay you own |
+| Automation and API control | limited | limited | best architecture for it | **yes.** an HTTP API, `atrium tell`, `atrium peers`, sources on a timer |
+| A phone | an app | an app | no | the board is responsive. nothing is designed for it |
+
+The sources behind their three columns:
+
+- Claude Code, remote control stability and usability: <https://github.com/anthropics/claude-code/issues/33205>
+- Claude Code, local-only commands: <https://code.claude.com/docs/en/remote-control>
+- Claude Code, asking for auto-enable: <https://github.com/anthropics/claude-code/issues/43269>
+- Codex, remote control from the ChatGPT app: <https://github.com/openai/codex/discussions/9200>
+- OpenCode, remote server connection from CI: <https://github.com/anomalyco/opencode/issues/15801>
+
+Two more observations from the same notes, which are about how fast this moves: Claude Code no longer needs the
+terminal to stay open, and no longer has to be started in remote-control mode. Anything written here has a shelf
+life measured in weeks, so the version of this table that goes anywhere public gets re-checked on the day it
+ships rather than trusted.
+
+#### What to do with it
+
+**This is a README table, not a backlog item.** Nothing above is work: it is the argument for why the work
+matters, and it belongs where somebody deciding whether to try atrium will read it. Three things before it goes
+anywhere public:
+
+1. **Test the rows marked untested.** `/mcp` and `/plugin` in an attached terminal, and a picker driven entirely
+   from the browser. A table that claims a capability atrium does not have is worse than no table.
+2. **Build the shell.** It is the only `no` in the atrium column and it is the row every other product also fails.
+   Shipping the table while owning that row is a much better story than shipping it with a gap.
+3. **Date it, and cite them.** Every claim about another product gets a link and a date, in their words rather
+   than ours.
