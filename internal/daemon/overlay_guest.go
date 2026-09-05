@@ -292,7 +292,9 @@ func (d *Daemon) guestHandler(taskID string, writable bool) http.Handler {
 		//                      driving a session hits the gate and you answer
 		//                      it, which is the correct division.
 		//   /v1/settings       machine settings, including paths.
-		//   /v1/browse         the filesystem.
+		//   /v1/browse         the directory picker. Bounded to a root set
+		//                      since `browseroots.go`, and still not a guest's
+		//                      business: those roots are where your work is.
 		//   /v1/tasks/*/files  reading and writing files in the directory.
 		//
 		// The page tolerates all of these failing: it polls, catches, and

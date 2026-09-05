@@ -811,6 +811,49 @@ var migrations = []struct {
 			`ALTER TABLE fixture ADD COLUMN resume_mode TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// How much a card matters, which is the only judgement on this board.
+		//
+		// Every other axis is a FACT about the card: what it is doing, how long
+		// it has waited, which status somebody filed it under, what repository
+		// it is in. None of those can say "this one matters more than that one",
+		// and some work cannot be got rid of and has to stay top of mind.
+		//
+		// `pinned` is the closest thing and is not this. Pinned is a boolean, so
+		// five pinned cards are five equals, and it means "always show me this"
+		// rather than "this outranks that". Bolting an ordering onto it would
+		// quietly turn pinned into priority-1 and lose the fixture case.
+		//
+		// THREE VALUES AND NO NUMBER. Empty is normal, which is what every
+		// existing row is and what most cards should stay:
+		//
+		//   high  say it out loud
+		//   ''    normal, the default
+		//   low   worth keeping, not worth looking at
+		//
+		// A number is more expressive and is a trap: it turns into a thing to
+		// fiddle with, it needs tie-breaking, and nobody can tell 6 from 7 a
+		// week later. Three levels never need a tie break and read at a glance.
+		//
+		// NO CHECK CONSTRAINT. This file uses CHECK only inside CREATE TABLE
+		// (see `task.status` in 0001), and SQLite cannot add one by ALTER, so a
+		// CHECK here would mean rebuilding the table the way 0010 and 0014 do,
+		// to buy a guard the two writers already apply.
+		//
+		// `priority_at` is in the SAME migration on purpose. It is when the
+		// judgement was made, and it is what lets the board fade a priority set
+		// a month ago and forgotten: something marked high and untouched since
+		// is not high any more. Shipping it later would be a second migration
+		// against this table, which is how a column ends up meaning different
+		// things depending on when the row was written. Read at display time
+		// and never written back: nothing acts on priority, so there is no
+		// moment for a sweep to expire it and no third timer in sweep.go.
+		name: "0036_task_priority",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN priority TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN priority_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

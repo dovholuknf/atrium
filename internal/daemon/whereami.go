@@ -37,6 +37,18 @@ type Location struct {
 	// DB is which database this daemon opened. Two daemons on one machine is
 	// a mistake worth being able to see.
 	DB string `json:"db"`
+	// Exe is the binary this daemon is running, and it is what any hook must
+	// name to be considered wired.
+	//
+	// Here because this file is already the answer to "where is the daemon",
+	// and which binary it is running is the same question one level down.
+	// `atrium hook install` run from a freshly built binary used to write that
+	// binary's path into settings.json, so every hook pointed at a build
+	// directory while the daemon ran from an installed copy, and the board
+	// reported them all as pointing elsewhere. Correctly: they were.
+	//
+	// See `internal/claudeconf/whichexe.go`, which reads it.
+	Exe string `json:"exe,omitempty"`
 }
 
 // LocationPath is the file, in whatever this operating system calls the place
@@ -107,6 +119,7 @@ func (d *Daemon) writeLocation() {
 		PID:   os.Getpid(),
 		Since: time.Now().Format(time.RFC3339),
 		DB:    d.opts.DBPath,
+		Exe:   daemonBinary(),
 	}
 	// Taking the file off another daemon is allowed and is said out loud. Two
 	// daemons on one machine is a mistake worth being able to see, and the
@@ -132,6 +145,22 @@ func (d *Daemon) writeLocation() {
 		return
 	}
 	log.Printf("[atrium] address  -> %s", filepath.ToSlash(path))
+}
+
+// daemonBinary is this process's own path, resolved.
+//
+// `os.Executable()` is the right call HERE and nowhere else: this is the
+// daemon, so its own binary is the answer by definition. Everything outside
+// the daemon reads it back out of the location file rather than asking itself.
+func daemonBinary() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	return filepath.ToSlash(exe)
 }
 
 // takingOver reports whether writing this file would take it off a daemon

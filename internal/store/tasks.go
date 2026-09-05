@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon`
+	icon, priority, priority_at`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -29,13 +29,14 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		archived     string
 		autoUntil    string
 		recapAt      string
+		priorityAt   string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
-		&t.WaitingReason, &t.Icon); err != nil {
+		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -83,6 +84,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 			return nil, fmt.Errorf("task %s recap_at: %w", t.ID, err)
 		}
 		t.RecapAt = &r
+	}
+	if priorityAt != "" {
+		p, err := parseTS(priorityAt)
+		if err != nil {
+			return nil, fmt.Errorf("task %s priority_at: %w", t.ID, err)
+		}
+		t.PriorityAt = &p
 	}
 	t.WireName = wire.String
 	t.Overrides = map[string]string{}
@@ -226,12 +234,18 @@ func (s *Store) insertTask(t *Task) error {
 		}
 		tags = string(raw)
 	}
+	// The placeholder count has to match `taskColumns`, which is why both live
+	// in this one function. Counting question marks twice is how a migration
+	// lands and one of the two insert sites keeps writing the old shape.
+	//
+	// A card is created with NO priority. Empty is normal, and a source
+	// suggesting one does not get to skip a human agreeing with it.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
-		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "")
+		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "")
 	return err
 }
 
@@ -691,6 +705,57 @@ func (s *Store) SetTags(id string, tags []string) error {
 	})
 }
 
+// Priority levels. Empty is normal and is what almost everything should be.
+const (
+	PriorityHigh = "high"
+	PriorityLow  = "low"
+)
+
+// ValidPriority reports whether a value is one atrium stores, and normalizes
+// it.
+//
+// The guard lives here rather than in a CHECK constraint, because SQLite cannot
+// add one by ALTER and this file uses CHECK only inside CREATE TABLE. Both
+// writers go through it, which is the same protection with a better error.
+func ValidPriority(p string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "", "normal":
+		// `normal` spelled out is accepted and stored as empty. A caller
+		// clearing a priority reasonably sends either.
+		return "", true
+	case PriorityHigh:
+		return PriorityHigh, true
+	case PriorityLow:
+		return PriorityLow, true
+	}
+	return "", false
+}
+
+// SetPriority records how much a card matters, and when that was decided.
+//
+// The timestamp is read at display time and nothing ever expires it. Nothing
+// acts on priority, so a sweep for it would be a third timer doing no work
+// beside the two in sweep.go that are already easy to confuse.
+//
+// last_activity_at is deliberately NOT touched, for the same reason `SetTags`
+// does not: this is the operator filing a card, not the session doing anything,
+// and bumping it would move a silent card to the top of an activity sort.
+func (s *Store) SetPriority(id, priority string) error {
+	clean, ok := ValidPriority(priority)
+	if !ok {
+		return fmt.Errorf("priority is high, low or normal, not %q", priority)
+	}
+	at := ""
+	if clean != "" {
+		at = ts(now())
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET priority = ?, priority_at = ? WHERE id = ?`,
+			clean, at, id)
+		return err
+	})
+}
+
 // SetPinned marks a card as a fixture, or stops.
 func (s *Store) SetPinned(id string, on bool) error {
 	return s.guard(func() error {
@@ -790,7 +855,17 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 	return err
 }
 
-// Events returns a task's history, oldest first.
+// Events returns the NEWEST `limit` events, oldest first within that window.
+//
+// The two halves pull opposite ways and both belong here: selecting `at ASC`
+// with a LIMIT takes the oldest N, which on a busy card is the day it was
+// created rather than what just happened. So the limit applies to the newest
+// end and the window is reversed before it is returned, which keeps the wire
+// oldest-first for the timeline.
+//
+// `id` breaks ties in the same direction as `at` in both clauses. These
+// timestamps have millisecond resolution and a hook can write two events inside
+// one.
 func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 	if limit <= 0 {
 		limit = 200
@@ -800,7 +875,7 @@ func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 		out = nil
 		rows, err := s.db.Query(
 			`SELECT id, task_id, at, kind, payload FROM event
-			 WHERE task_id = ? ORDER BY at ASC, id ASC LIMIT ?`, taskID, limit)
+			 WHERE task_id = ? ORDER BY at DESC, id DESC LIMIT ?`, taskID, limit)
 		if err != nil {
 			return err
 		}
@@ -819,7 +894,15 @@ func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 			e.Payload = json.RawMessage(pay)
 			out = append(out, &e)
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		// Newest-first came back, oldest-first goes out. In place, since the
+		// slice is bounded by `limit` and is nobody else's yet.
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+		return nil
 	})
 	return out, err
 }

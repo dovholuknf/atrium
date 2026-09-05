@@ -13,22 +13,27 @@ import (
 // counts and the message channel stay inert until five lines land in
 // settings.json.
 
-// atriumExe is the absolute path of the running binary, which is what gets
-// written into settings.json.
+// atriumExe is the path written into settings.json, and compared against what
+// is already registered there.
 //
 // Not the word "atrium": settings.json is read by a session whose PATH atrium
 // has no say over, and a hook that cannot be found fails silently by design.
+//
+// `claudeconf.HookExe` rather than `os.Executable()` directly. This code runs
+// inside the daemon, so the two agree here, and that is exactly why it was
+// wrong to have three copies of the second one: the copy in `internal/cli`
+// runs in whatever binary you typed, so installing hooks from a fresh build
+// wrote the build directory's path and the board then reported every hook as
+// pointing elsewhere.
 func atriumExe() (string, error) {
-	exe, err := os.Executable()
+	self, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	// Resolved, so a symlinked or shimmed atrium writes the real target and
-	// keeps working when the link moves.
-	if real, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = real
+	if exe := claudeconf.HookExe(self); exe != "" {
+		return exe, nil
 	}
-	return filepath.ToSlash(exe), nil
+	return filepath.ToSlash(self), nil
 }
 
 // hookStatus reports which hooks are registered. Read only: it never touches

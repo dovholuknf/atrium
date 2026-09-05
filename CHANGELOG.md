@@ -5,6 +5,100 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Priority on a card.** The one judgement on a board where everything else is a fact: what a runner is doing,
+  how long it has waited, which repository it is in. Some work cannot be got rid of and has to stay top of mind,
+  and nothing could say so.
+
+  `high`, normal, `low`, set from the card menu. Three levels rather than a number, because three never need a
+  tie break and a number turns into something to fiddle with that nobody can read a week later.
+
+  **It never sorts.** Sorting by priority would bury a `needs-permission` card under a high-priority one that is
+  doing nothing, which inverts the entire point of the first column: a blocked agent is blocked whatever you
+  think of the work. It is weight on the card, plus `!high` and `!low` in the stack search, and clicking the chip
+  filters to it the way a tag already does.
+
+  **It fades after a week.** Something marked high a month ago and untouched since is not high, it is forgotten,
+  and a priority that never expires becomes a field where everything is high. Read in the browser from
+  `priority_at` and never written back: nothing acts on priority, so there is no moment for a server-side expiry
+  and no third timer beside the two in `sweep.go`.
+
+  **An agent cannot set it,** and it turned out there was nothing to refuse: the agent listener has no route
+  that patches a card. A `suggested_priority` on an offered item was designed and dropped, because an offered
+  item IS a card and the only place to put the suggestion was the thing it must not touch. A source that wants
+  to say something is urgent uses a tag, which a human then reads and decides about.
+
+  It is not `pinned` and the two stay apart. Pinned is a boolean meaning "always show me this", which is right
+  for a fixture; five pinned cards are five equals. Bolting an ordering onto it would quietly turn pinned into
+  priority-1 and lose the fixture case.
+
+- **Three defects in `scripts/atrium-autostart.ps1`.** They only bite at a reboot, which is why they lasted.
+
+  It defaulted to `build.claude\atrium.exe` in the repo, a path that moves with the checkout, is rewritten by
+  every build, and cannot be written at all while the daemon is running from it. It now looks for `atrium` on
+  PATH, falls back to `~\.atrium\bin\atrium.exe`, and refuses to register a task naming a binary that is not
+  there rather than registering one that fails silently at the next logon.
+
+  Both the trigger and the principal took `$env:USERNAME`, a bare name with no domain. On a domain-joined
+  machine or a Microsoft account the identity is `DOMAIN\user` or `MicrosoftAccount\you@example.com`, and a bare
+  name either fails to register or registers against nothing and never fires. It happens to work on a local
+  account, which is why it survived. It now uses the identity Windows itself reports.
+
+  A comment claimed `-WindowStyle Hidden` and `New-ScheduledTaskAction` has no such parameter, so a console
+  window appeared at every logon and sat there waiting to be closed by accident, taking the daemon and every
+  supervised runner with it. It launches through `conhost.exe --headless` now, and says so plainly when that is
+  not available rather than pretending.
+
+  A fourth, found while fixing those: `-Force` replaced the registration and left a running instance alone, so
+  re-running the script while atrium was up registered a task that would start a SECOND daemon on the same
+  database at the next logon. The task is stopped first.
+
+- **`make check`** runs the tests, `scripts/check-board.sh` and `scripts/check-powershell.ps1` together. All
+  three already existed and nothing ran them as a set, so the two that are not `go test` were easy to skip. The
+  parse checks matter here because neither thing they cover can be verified by trying it: the board is one
+  embedded HTML file with no build step, and the scripts register a scheduled task and reach a network.
+
+- **Hooks stop drifting away from the daemon that is running.** The board reported six wired, working hooks as
+  `points elsewhere`, and it was right: they named `build.claude/atrium.exe` while the daemon ran from an
+  installed copy. The cause is self-inflicting and was in three files at once. `atrium hook install` resolved
+  the path with `os.Executable()`, which is the binary YOU TYPED, so installing from a fresh build wrote the
+  build directory's path, and the next rebuild put the drift straight back.
+
+  `os.Executable()` is correct in exactly one place: inside the daemon, where it is the daemon. So the daemon
+  now records its own binary in the location file it already writes at startup, beside the port every hook
+  already reads to find it, and `claudeconf.HookExe` resolves `ATRIUM_HOOK_EXE`, then that, then the caller's
+  own path. The three duplicated resolvers call it.
+
+  `points elsewhere` also now says both paths in its tooltip, since the old one named neither and the only way
+  to act on it was to open settings.json and compare by eye.
+
+  An `atrium install` subcommand was written for this and then removed before shipping. Copying a file to a
+  fixed path is the shallow half of installing: no version, no uninstall, no PATH entry, no upgrade, and a
+  home-directory convention invented here that no packaging format would have agreed with. Proper packaging is
+  on the backlog. Nothing in the fix above depends on it: a daemon reporting its own binary is correct however
+  that binary got onto the machine.
+
+- **The event log answers with the newest events.** `GET /v1/tasks/{id}/events` selected `ORDER BY at ASC
+  LIMIT ?`, which is the OLDEST N: on a card with a thousand events a limit of two hundred answered with the day
+  the card was created. It is useless for the question the endpoint is for, which is what just happened, and it
+  had produced three wrong conclusions before anybody looked at the query. The limit now applies to the newest
+  end and the window is reversed in the store, so the wire shape is unchanged and the timeline needs no edit.
+
+- **The directory picker is bounded.** `GET /v1/browse` applied `filepath.Clean` and nothing else, so every
+  directory the daemon's user could read was listable. On loopback that is a directory picker and it was fine.
+  Over a share it was an unauthenticated recursive listing of the machine, because a share terminates here and
+  every request over one presents as loopback, so nothing can be decided by address.
+
+  It now resolves through `internal/safepath` against a root set: symlinks followed on both sides, comparison on
+  a separator boundary, and one answer for outside, missing and unreadable so the refusal is not an oracle for
+  what is on the machine. The default set is your home directory plus every directory a card, fixture, source or
+  harness already names, which is where the picker is actually opened; `browse_roots` under settings widens it.
+  With nothing open it offers those roots instead of the machine's drive letters.
+
+  Two things went with it. `useBrowsed()` always wrote into the launch form's box and ignored which field opened
+  the picker, so choosing a directory for a fixture, a source or a harness filled in the wrong one. And the two
+  platform files that listed drive letters had no caller left, so they are gone rather than waiting to be
+  restored by somebody reading their absence as a bug.
+
 - **Lend one session to one person.** Right click a card, or the terminal's cog: `share this session…`. Public or
   private zrok, and whether they can type or only watch. What comes back is an address to send somebody, and a
   public one carries the card in its fragment so the link opens straight into the terminal.

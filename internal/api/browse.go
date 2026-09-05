@@ -27,22 +27,44 @@ type browseEntry struct {
 // browse lists the directories inside a path. Directories only: the launch form
 // asks where to run, and a file is not an answer to that.
 func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
+	roots := s.browseRootsFor()
+
 	raw := r.URL.Query().Get("path")
 	if strings.TrimSpace(raw) == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"path": "", "parent": "", "entries": browseRoots(), "roots": true,
+			"path": "", "parent": "", "entries": browseRootEntries(roots), "roots": true,
 		})
 		return
 	}
 
-	dir := filepath.Clean(raw)
+	// CONTAINED, not cleaned. `filepath.Clean` collapses `..` as text and knows
+	// nothing about symlinks, so it was never a containment check and
+	// `internal/safepath` exists because nothing here answered the question.
+	// See browseroots.go for why the picker is bounded at all.
+	dir, ok := insideARoot(roots, filepath.Clean(raw))
+	if !ok {
+		// The same answer for outside, missing and unreadable. Distinguishing
+		// them makes this an oracle for what is on the machine, which is most
+		// of what an unbounded lister was giving away in the first place.
+		writeErr(w, http.StatusForbidden, errOutsideRoots)
+		return
+	}
+
 	info, err := os.Stat(dir)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, err)
+		writeErr(w, http.StatusForbidden, errOutsideRoots)
 		return
 	}
 	if !info.IsDir() {
-		dir = filepath.Dir(dir)
+		// The parent of a file is checked again rather than assumed: a root
+		// can BE a file's directory, and stepping up from a root's own child
+		// must not step outside it.
+		up, ok := insideARoot(roots, filepath.Dir(dir))
+		if !ok {
+			writeErr(w, http.StatusForbidden, errOutsideRoots)
+			return
+		}
+		dir = up
 	}
 
 	listing, err := os.ReadDir(dir)
@@ -76,10 +98,14 @@ func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
 
-	parent := filepath.ToSlash(filepath.Dir(dir))
-	if parent == filepath.ToSlash(dir) {
-		// At the top of a drive or filesystem, so up means the root list.
-		parent = ""
+	// Up, as far as the roots allow. At the top of a root, `up` is the root
+	// list rather than the filesystem's parent, which is the directory the
+	// picker is not allowed to see.
+	parent := ""
+	if p := filepath.Dir(dir); !eqPath(p, dir) {
+		if real, ok := insideARoot(roots, p); ok {
+			parent = filepath.ToSlash(real)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path":    filepath.ToSlash(dir),

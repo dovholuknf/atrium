@@ -50,6 +50,23 @@ type IntakeItem struct {
 	Prompt string `json:"prompt"`
 	// Runner names the harness to start, if the source has an opinion.
 	Runner string `json:"runner"`
+
+	// THERE IS NO `SuggestedPriority`, and that is a decision rather than an
+	// omission.
+	//
+	// Priority is the operator's judgement about their own attention, which is
+	// the same argument that keeps the status column human. A machine that can
+	// set it will raise everything it produces, and a field a source can write
+	// `high` into says nothing within a week.
+	//
+	// A field here would have nowhere to live either. An offered item IS a task
+	// in `backlog` rather than a row in an inbox table, so the only place to
+	// put a suggestion is the card, which is exactly what it must not touch.
+	//
+	// A source that wants to say something is urgent already can: `Tags`. A tag
+	// is visible in the inbox, filters like everything else, and turns into a
+	// priority only when a person reads it and decides. Suggesting and setting
+	// stay different acts, which is the whole rule.
 }
 
 // SafeURL keeps a link that a browser can be given, and drops one it cannot.

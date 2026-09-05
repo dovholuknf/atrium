@@ -34,10 +34,16 @@ It runs on one machine, for one person. No multi-tenancy, no accounts, no cloud.
 
 ```powershell
 go build -o build.claude\ .\...
-.\build.claude\atrium.exe daemon
+.\build.claude\atrium.exe install     # copy it somewhere it can stay
+& "$env:USERPROFILE\.atrium\bin\atrium.exe" daemon
 # agents -> http://localhost:7777
 # board  -> http://localhost:7778
 ```
+
+Running the daemon from the installed copy rather than from `build.claude\` matters more than it looks. Hooks
+name a path, the logon task names a path, and the self-restart swaps a binary at a fixed name. A path under
+`build.claude\` moves with the checkout and is rewritten by every build, so anything pointing at it goes stale
+the next time you rebuild.
 
 ## What it gives you
 
@@ -123,9 +129,15 @@ not it is still on the board. Filterable, exportable as JSON or CSV.
 **Liveness for free.** A card stores its runner's process id, and whether that process still exists is a question
 the operating system answers. No turn, no token, no contact with the agent.
 
-**Reachable from elsewhere, without becoming a proxy.** Atrium can drive zrok or OpenZiti so the board answers on
-an overlay listener. It starts the process and reports what it said. It never holds an identity, proxies traffic,
-or decides who may connect. Loopback and no login stays true.
+**Reachable from elsewhere, without becoming a proxy.** Atrium can serve the board on a zrok share or an
+OpenZiti service. Both SDKs hand back a `net.Listener` and the board is one `http.Handler`, so atrium answers on
+the overlay itself: no child process to supervise, no output to scrape, and nothing proxied anywhere. It never
+holds an identity or decides who may connect. Loopback and no login stays true.
+
+**Or lend one session to one person.** Publishing the board hands over every card. `share this session` on a
+card serves a restricted handler on its own address that answers for that terminal and 403s everything else,
+with an allowlist rather than a filter, so an endpoint added later is invisible to a guest until somebody adds
+it deliberately. Read-only is enforced on the socket, because a guest owns their copy of the page.
 
 **A way to stop that is not a kill.** `atrium stop` winds the daemon down the way ctrl-c does: event streams
 released, supervised runners given ten seconds, listeners closed in order. Killing the process closes every

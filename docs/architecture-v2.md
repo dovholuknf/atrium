@@ -568,11 +568,15 @@ Each stage leaves `atrium hub` working.
 7. **Supervision.** PTY spawn, kill, and output capture, then browser attach over a WebSocket. Validate ConPTY
    first. Status inference for non-cooperative runners comes last, after attach proves the capture works.
    **Done, except status inference.** Window mode launches a runner in a real terminal. PTY mode is now the
-   default for a launched runner: the daemon owns the pseudo terminal, holds 256KB of scrollback, fans output out
-   to every attached browser, and takes keystrokes, resizes and signals back over a WebSocket. Stopping walks
-   ctrl-c, then `exit`, then closing the terminal, then a kill, narrating each step. Status inference for a
-   runner with no hooks is still the missing piece.
-8. **Ziti.** Bind the daemon to a service and confirm the board works unchanged over the overlay. **Not started.**
+   default for a launched runner: the daemon owns the pseudo terminal, keeps a ring buffer of recent output,
+   fans it out to every attached browser, and takes keystrokes, resizes and signals back over a WebSocket. How
+   much it keeps is the `scrollback_mb` setting, defaulting to 16MB, since 256KB turned out to be a few hundred
+   lines and under one turn of a coding agent. Stopping walks ctrl-c, then `exit`, then closing the terminal,
+   then a kill, narrating each step. Status inference for a runner with no hooks is still the missing piece.
+8. **Ziti.** Bind the daemon to a service and confirm the board works unchanged over the overlay. **Built, not
+   proved.** `startZitiNative` binds the identity to a named service and serves the board's own handler on the
+   listener the SDK returns, with no tunneler and no proxy hop. Nobody has enrolled an identity on this machine,
+   so it has never been exercised end to end. `docs/test-plan.md` H4 says so rather than implying otherwise.
 
 Stages 1 through 5 are the critical refactor. 6 through 8 are additive.
 
@@ -637,8 +641,10 @@ These were not in the original plan and are worth recording, because two of them
 - **The subagent count is inferred.** There is no hook for a subagent starting, so a `Task` tool call counts up
   and `SubagentStop` counts down. Inference drifts. The floor is enforced at zero so it can never render as
   nonsense, and the whole activity record expires after fifteen minutes of silence, but the count can be wrong.
-- **Auto mode has no time limit.** It stays on until switched off. The card shows an `auto` badge so it is
-  never invisible, but "auto mode for the next hour" is the shape this should have.
+- **The subagent count is also why auto mode grew a deadline.** It used to stay on until switched off, and
+  "auto mode for the next hour" was named here as the shape it should have. It has that shape now: `auto_until`
+  per card and board-wide, cleared server-side in the permission chain, which is the one moment auto mode means
+  anything. See `docs/auto-mode.md`.
 - ConPTY behavior under Go on Windows 11 is validated, with one trap: returning from `main` after tearing a
   pseudo terminal down yields exit 127. See "ConPTY was validated, and it has one trap" above.
 - Inferring status from output for non-cooperative runners is heuristic. Expect it to be wrong sometimes, and keep

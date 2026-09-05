@@ -171,14 +171,19 @@ func newHookInstall() *cobra.Command {
 			"added a few at a time.\n\n" +
 			"The board notices on its own: it reads the same file every few seconds.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			exe, err := os.Executable()
-			if err != nil {
-				return err
+			// THE RUNNING DAEMON'S BINARY, NOT THIS ONE.
+			//
+			// This command is usually typed at a binary somebody just built,
+			// and it used to write that binary's path. The daemon runs from
+			// somewhere else, so the hooks pointed at a build directory and
+			// the board reported all six as pointing elsewhere, correctly,
+			// and rebuilding put it straight back. See
+			// `internal/claudeconf/whichexe.go`.
+			exe := claudeconf.HookExe("")
+			if exe == "" {
+				return fmt.Errorf("cannot work out which atrium binary to write into your " +
+					"settings. start the daemon once, or set " + claudeconf.HookExeEnv)
 			}
-			if real, err := filepath.EvalSymlinks(exe); err == nil {
-				exe = real
-			}
-			exe = filepath.ToSlash(exe)
 
 			var only []string
 			if strings.TrimSpace(event) != "" {
@@ -248,14 +253,10 @@ func newHookStatus() *cobra.Command {
 		Use:   "status",
 		Short: "Say which of atrium's hooks are registered.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			exe, err := os.Executable()
-			if err != nil {
-				return err
-			}
-			if real, err := filepath.EvalSymlinks(exe); err == nil {
-				exe = real
-			}
-			rep, err := claudeconf.Inspect(filepath.ToSlash(exe))
+			// The same question install answers, asked the same way, or status
+			// would report as wired what install is about to rewrite.
+			exe := claudeconf.HookExe("")
+			rep, err := claudeconf.Inspect(exe)
 			if err != nil {
 				return err
 			}

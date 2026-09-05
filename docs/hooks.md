@@ -25,18 +25,32 @@ elsewhere, with the same button to correct it.
 
 | Hook | Event | What it gives you |
 | --- | --- | --- |
+| `SessionStart` | `session-start` | a card appears when a session opens, before it does anything |
+| `SessionEnd` | `session-end` | the card goes to finished when the session closes |
 | `PreToolUse` | `tool-start` | which tool a session is running right now |
 | `PostToolUse` | `tool-end` | when that tool finished, so the card stops claiming it |
+| `PostToolUseFailure` | `tool-failed` | a tool that failed also stops running |
 | `UserPromptSubmit` | `prompt` | you answered, so the card leaves `needs-input` |
 | `SubagentStart` | `subagent-start` | the subagent count going up |
 | `SubagentStop` | `subagent-end` | and coming back down |
+| `Notification` | `waiting` | the session put a question on screen and is blocked on it |
+| `PreCompact` | `compacting` | the moment this session forgot something, and that it is working |
+| `Stop` | `turn-end` | a message reaches a session sitting idle. **Offered, never installed by default** |
 
 Together they turn a board of identical `running` cards into one that says `thinking`, `running Bash`,
 `3 subagents`, and how long it has been at it.
 
+`Notification` is the one that separates a question from a finish. `Stop` says a turn ended and the session will
+sit there forever costing nothing; `Notification` says Claude Code is blocked ON YOU. Flattening them meant the
+board could not tell an agent that asked you something from one that had run out of work, and both landed in
+`ready` reading the same.
+
 A gated session already reports activity through the permission hook, at no extra cost, because a permission
-request IS a tool starting. These five are what reach the sessions that are not gated, which are the ones that
-look dead on the board.
+request IS a tool starting. These are what reach the sessions that are not gated, which are the ones that look
+dead on the board.
+
+**`Stop` is the exception in this table.** It is offered by name with what it does said out loud, and "install
+all" never sweeps it in, because it is the one hook whose answer changes what a session DOES. See below.
 
 `PreToolUse` already runs the permission hook. Claude Code allows more than one command per hook, so the activity
 entry joins it rather than replacing it, and installing does not touch what is already there.
@@ -50,8 +64,13 @@ successful post behaves exactly as it did before. See `docs/activity-design.md`.
 | Hook | Script | Why it stays manual |
 | --- | --- | --- |
 | `PreToolUse` | `atrium-perm-hook.ps1` | The permission gate. Yours, in your dotfiles, and it decides what runs. |
-| `SessionStart` / `SessionEnd` | `atrium-session-hook.ps1` | Same file, same reason. |
-| `Stop` | `atrium-stop-hook.ps1` | See below. |
+
+That is the only one left. `SessionStart` and `SessionEnd` used to be here, wired through
+`atrium-session-hook.ps1`; the board writes them itself now as `atrium session --event start|end`, and
+installing REPLACES the old script rather than adding a second command beside it. A row still running that
+script reads as pointing elsewhere, which is correct: it is the old one.
+
+`Stop` is also written by the board, and is not swept in by "install all". It is the next section.
 
 ### Stop: reaching a session that is sitting idle
 
@@ -59,7 +78,8 @@ This delivers a message you queued for a session that is not making tool calls. 
 message back, but only when the session calls a tool, and an idle session calls none. Idle is when you most want
 to reach it.
 
-**Understand this one before wiring it**, which is why the board does not offer it. A `Stop` hook that returns
+**Understand this one before wiring it**, which is why "install all" leaves it out and the board asks for it by
+name with this explanation attached. A `Stop` hook that returns
 `block` tells the model to keep going with the reason it was given. That is the mechanism, and it is also the
 risk: get it wrong and sessions will not stop. Two things keep it safe, and both must stay:
 
