@@ -5,6 +5,66 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Lend one session to one person.** Right click a card, or the terminal's cog: `share this session…`. Public or
+  private zrok, and whether they can type or only watch. What comes back is an address to send somebody, and a
+  public one carries the card in its fragment so the link opens straight into the terminal.
+
+  The part that matters is what a guest CANNOT reach. The daemon serves a separate restricted handler on that
+  share rather than the board with a filter over it, and the surface is an ALLOWLIST: the page and its assets,
+  `/v1/health`, a GET on that one card, its attach socket, its icon. Everything else is 403, including endpoints
+  that do not exist yet. `/v1/tasks`, `/v1/events`, `/v1/permissions`, `/v1/settings`, `/v1/browse` and file
+  read/write are all named in the code as refused on purpose, so nobody has to work out whether they were
+  forgotten.
+
+  Read-only is enforced on the SOCKET, not by hiding a control. A guest owns their copy of the page and can send
+  whatever frame they like, so the only thing that decides is the end that reads them. Permission prompts stay
+  with you whichever mode you pick.
+
+  The address is deliberately not reserved. The board's address is one you keep and bookmark; a lent session's
+  address IS the credential, since there is no login, so it is fresh every time and dies when you stop the share
+  or when atrium restarts.
+
+- **What zrok said, turned into what to do about it.** A zrok account has caps on shares, on environments and on
+  transfer, and the free tier is reachable in an evening. What came back through the generated client was often
+  the HTTP status and nothing else, so the board showed `unexpected response 429`. Limits, a revoked token, a
+  name already taken, an unreachable instance and the instance's own 5xx each get a sentence about the next step,
+  with the original always appended, because the classification is a guess.
+
+- **A restart parks every other agent first.** Restarting closes every terminal atrium owns and kills the process
+  in each one. The session that asked for it signed up for that; nothing else did. So `restart_atrium` asks the
+  board what is supervised and working, excluding itself via `ATRIUM_TASK_ID`, queues each one a message saying
+  what is about to happen, and waits up to ninety seconds. Anything still working means NOTHING is scheduled and
+  the busy sessions come back named. `force` overrides.
+
+  `running` is not the test: a card sits in `running` from launch until something moves it. It asks the live
+  activity the daemon tracks, treats `needs-input` and `needs-permission` as already parked, and counts "I cannot
+  tell" as busy.
+
+  The restarter also installs a staged `atrium-control`, not just a staged `atrium`. Swapping only the daemon
+  meant a change to the control server staged forever: new daemon, new claude, and claude spawns the OLD control
+  binary.
+
+- **One alert per event, and a popped-out window that comes back on its own.** Three bugs with one shape.
+
+  The rule "a card with its own window is announced by that window" was written down and applied in exactly one
+  place: the desktop notification was suppressed and the chime and the toast beside it went ahead anyway. Both
+  documents rang for every event.
+
+  The board also asked who was popped out and then did its first poll and its restore without waiting for the
+  answers, so a restart, which reloads every document at once, had it ringing for cards whose windows were about
+  to ring, and taking a terminal back out of a window that owned it. A popped-out window now claims its card as
+  its FIRST act rather than after a round trip and a WebGL context, and the board waits for the answers.
+
+  And a popped-out window no longer tears itself down when its runner exits. The wind-down stops supervised
+  runners while the HTTP listener is still up, so "is the daemon there" answers yes during the first second of a
+  restart and the exit reads as final. That window IS that card: it retries, and a watchdog on the poll attaches
+  whenever the pane is empty and the card has a terminal, which needs nothing to have survived.
+
+- **Compacting no longer leaves a card in `needs-input`.** It used to stay put, on the reasoning that compacting
+  says nothing about whether a human is wanted. That is wrong in the one direction that matters: compaction
+  happens because a session is BUSY. The card was left in the column that means "answer me" until the next tool
+  call moved it.
+
 - **The session list is a title again, and it takes the room you give it.** Three things landed on the terminal
   view's left column.
 

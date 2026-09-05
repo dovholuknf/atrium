@@ -704,7 +704,13 @@
     box-shadow: 0 14px 40px rgba(0,0,0,.55); z-index: 2;
   }
   #cardmenu button { position: relative; }
-  #cardmenu button:hover .sub, #cardmenu .sub:hover { display: block; }
+  /* OPENED AND CLOSED BY SCRIPT, not by `:hover`.
+     `:hover` closes a flyout the instant the pointer leaves the row, and the
+     row is 30px tall: reaching across to a flyout entry means travelling
+     diagonally, and clipping the edge for one frame took the whole thing away.
+     The class is added on enter and removed after a delay on leave, so a slip
+     is survivable. See `wireFlyouts`. */
+  #cardmenu button.subopen .sub { display: block; }
   #cardmenu .subitem {
     display: flex; align-items: center; gap: var(--sp-3); padding: 7px 11px;
     border-radius: var(--r-sm); color: var(--label); cursor: pointer;
@@ -1090,7 +1096,14 @@
      than a second application. */
   body.solo header,
   body.solo #board-bar,
+  /* There is no list in this window, so there is nothing to resize, nothing
+     to reveal and no gutter to bridge. The handle and the rail were sitting
+     down the left edge of a popped-out terminal offering to drag a list that
+     is `display: none`. */
   body.solo .term-list,
+  body.solo .term-grip,
+  body.solo .term-rail,
+  body.solo .tabbridge,
   body.solo .term-help { display: none !important; }
   /* Every view except the terminal, gone from the stylesheet rather than left
      to `switchView`. The board is the visible view until the card is fetched
@@ -1410,7 +1423,21 @@
   /* The worktree. The chip itself is a LABEL and is selectable text: only the
      glyph in front of it is a button. A pressable target the width of the bar
      is one you hit by accident every time you reach for what is behind it. */
-  #t-chips .chip.path { cursor: text; user-select: text; gap: 5px; }
+  /* CHIPS SIT ON A LINE, THEY DO NOT STRETCH TO THE TALLEST.
+     `.chips` is a flex row and a flex row stretches its items by default, so
+     the path chip, which is taller because it carries an icon, was pulling
+     every chip beside it to its own height. A stretched chip keeps its text at
+     the TOP of the box it was given, which is why `pid 21088` looked like it
+     had floated up out of its pill. */
+  #t-chips { align-items: center; }
+  /* `inline-flex`, so the glyph and the path sit on one centred line. As
+     inline content the button aligned on the text baseline, which puts a
+     square icon low against lowercase letters and is what made it look like
+     it was falling out of the chip. */
+  #t-chips .chip.path {
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: text; user-select: text;
+  }
   /* `all: unset` rather than a list of overrides. A button carries a padding,
      a border, a background, a font and a line-height of its own, and undoing
      four of the five left the fifth to make the chip taller than every chip
@@ -4297,6 +4324,12 @@ function cardHTML(t) {
       ${t.auto_approve ? `<span class="chip auto"
         title="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
+      ${sharedCards.has(t.id) ? `<span class="chip warn"
+        title="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
+          ". anyone with that link can " +
+          (sharedCards.get(t.id).writable ? "type into it" : "watch it") +
+          ". right click to stop.")}"
+        >shared${sharedCards.get(t.id).writable ? "" : ", read only"}</span>` : ""}
       ${t.status === "shelved" ? `<span class="chip attach"
         title="${cannotResume(t)
           ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
@@ -5270,6 +5303,7 @@ async function cardMenu(e, id) {
     } : null,
     { sep: true },
     actionItems(t),
+    shareItem(t),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
@@ -5323,9 +5357,216 @@ async function cardMenu(e, id) {
     { label: "settings…", act: () => openTask(id) },
     { sep: true },
     t.pid > 0 && !over
-      ? { label: "terminate", danger: true, act: () => killById(id) } : null
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
+    // Deleting the CARD. The endpoint has been there since the beginning and
+    // nothing in the page reached it, so the only way to get rid of one was to
+    // wait for the sweep or to use curl.
+    //
+    // Last, under `terminate`, and marked dangerous. It is the one entry here
+    // that destroys something rather than changing it.
+    { label: "forget this session…", danger: true, act: () => deleteCard(id, t) }
   ];
   showMenu(e, items);
+}
+
+// ── lending one session ─────────────────────────────────────────────────────
+//
+// The board over an overlay hands over EVERYTHING: every card, every
+// directory, the settings, the file browser. That is right for reaching your
+// own board from your own phone and wrong for giving somebody a link.
+//
+// This is the other shape, and it is a different endpoint rather than an
+// option on the same one, because the two are one slip apart. The daemon
+// serves a restricted handler on its own share: that card, its terminal, the
+// page itself, and 403 for everything else.
+//
+// Kept as a Map so a menu drawn on a click knows what is already lent without
+// asking first. Refreshed on the poll like everything else.
+let sharedCards = new Map();
+
+async function loadShares() {
+  try {
+    const r = await api("/v1/shares");
+    const next = new Map();
+    (r.shares || []).forEach(s => next.set(s.task_id, s));
+    sharedCards = next;
+  } catch (e) { /* an older daemon has no shares. not worth saying. */ }
+}
+
+// What the menu offers for one card: share it, or stop.
+function shareItem(t) {
+  if (!t || !t.supervised) return null;
+  const live = sharedCards.get(t.id);
+  if (live) {
+    return {
+      label: "stop sharing", note: live.writable ? "" : "read only",
+      help: "The link stops working and the share is released. " +
+        "Its address was single-use, so sharing again gives a different one.",
+      act: () => stopSharing(t)
+    };
+  }
+  return {
+    label: "share this session…",
+    help: "Publishes THIS terminal, and nothing else, at its own address. " +
+      "The rest of the board, your other sessions and your files are not " +
+      "reachable through it.",
+    act: () => shareSession(t)
+  };
+}
+
+async function shareSession(t) {
+  const pick = await askUser({
+    title: "share " + (t.display_title || "this session") + "?",
+    body: "Publishes <b>this terminal only</b>, at an address of its own. The board, " +
+      "your other sessions, your files and your settings are not reachable through " +
+      "it: the daemon serves a handler that answers for this one card and refuses " +
+      "everything else." +
+      "<br><br><b>The link is the key.</b> There is no login, so anyone who has it can " +
+      "open it while the share is up. It is a fresh address every time and it dies " +
+      "when you stop sharing or when atrium restarts." +
+      "<br><br><b>Let them type</b> means they drive the session as you would. " +
+      "Permission prompts still come to you, on this board, whichever you pick.",
+    choices: [
+      { value: "public-ro", label: "a link anyone can open, they watch only" },
+      { value: "public-rw", label: "a link anyone can open, they can type" },
+      { value: "private-ro", label: "zrok private, they watch only" },
+      { value: "private-rw", label: "zrok private, they can type" }
+    ],
+    buttons: [{ label: "cancel", value: null }, { label: "share it", value: true, style: "go" }]
+  });
+  if (!pick) return;
+  const [mode, rw] = pick.split("-");
+
+  let out;
+  try {
+    out = await api(`/v1/tasks/${t.id}/share`, {
+      method: "POST",
+      body: JSON.stringify({ mode, writable: rw === "rw" })
+    });
+  } catch (e) {
+    // The message is the product here. zrok's limits are the usual failure and
+    // the daemon turns them into a sentence, so it is shown whole rather than
+    // summarised into "could not share".
+    tellUser("could not share it", esc(e.message));
+    return;
+  }
+  sharedCards.set(t.id, out);
+  showShareLink(t, out);
+  refresh();
+}
+
+// The address, big enough to read and one press to copy.
+//
+// A toast is the wrong shape: this is the whole output of the action, it needs
+// to survive being looked away from, and it is going to be pasted into a
+// message to somebody.
+function showShareLink(t, s) {
+  tellUser("sharing " + (t.display_title || "this session"),
+    (s.mode === "public"
+      ? "Send them this link. It opens straight into the terminal."
+      : "They need zrok. This is the command they run.") +
+    `<br><br><input readonly id="share-link" value="${esc(s.address)}"
+       style="width:100%;font:var(--fs-sm)/1.4 var(--mono);padding:8px"
+       onclick="this.select()">` +
+    `<br><br><b>${s.writable ? "They can type." : "They can watch, not type."}</b> ` +
+    "The share stops when you say so, or when atrium restarts.");
+  // Selected, so the next thing that happens is a copy.
+  setTimeout(() => {
+    const el = document.getElementById("share-link");
+    if (el) { el.focus(); el.select(); }
+  }, 60);
+}
+
+async function stopSharing(t) {
+  try {
+    await api(`/v1/tasks/${t.id}/share`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not stop the share", e.message);
+    return;
+  }
+  sharedCards.delete(t.id);
+  toast("stopped sharing", t.display_title || t.id);
+  refresh();
+}
+
+// Deleting a card, and being clear about what that does and does not touch.
+//
+// The confusion worth heading off: a card is atrium's record of a session, and
+// the session's TRANSCRIPT is Claude Code's, in `~/.claude/projects`. Deleting
+// the card leaves that alone, so the conversation is still resumable from the
+// command line and `forget a conversation…` is the entry that removes it.
+// Saying so here is cheaper than the mistake.
+async function deleteCard(id, t) {
+  const running = t.supervised || t.pid > 0;
+  // TWO THINGS ARE CALLED THE SESSION, and which one you meant decides what
+  // this does.
+  //
+  //   the CARD          atrium's record: its history, its events, everything
+  //                     it was told, the icon, the pin.
+  //   the CONVERSATION  Claude Code's transcript, a `.jsonl` under
+  //                     `~/.claude/projects`. It is what `--resume` reads and
+  //                     it outlives the card entirely.
+  //
+  // Deleting the card and leaving the transcript is the safe half and is
+  // almost never what somebody means by "delete this session": the thing comes
+  // straight back the next time anything resumes in that directory. So both
+  // are offered, and named, rather than one being assumed.
+  //
+  // What is NOT offered, at any price, is deleting `~/.claude` or the whole
+  // project directory under it. That directory holds every conversation ever
+  // had in that working directory, most of them belonging to other cards, and
+  // one of them is very often the session doing the deleting.
+  const conv = String(t.resume_id || "").trim();
+  const opts = [{ value: "card", label: "the card only, keeping the conversation" }];
+  if (conv) {
+    opts.unshift({
+      value: "both", label: "the card and its conversation transcript"
+    });
+  }
+  const pick = await askUser({
+    title: "delete " + (t.display_title || "this card") + "?",
+    body: "<b>The card</b> is atrium's record: its history, its events and everything it was " +
+      "told. <b>The conversation</b> is Claude Code's own transcript, the thing " +
+      "<code>--resume</code> reads, and it lives outside atrium." +
+      (conv ? "<br><br>This card's conversation is <code>" + esc(conv) + "</code>. Deleting " +
+        "the card alone leaves it there, still resumable from a terminal."
+            : "<br><br>This card has no recorded conversation, so there is nothing but the " +
+              "card to delete.") +
+      (running
+        ? "<br><br><b>Its runner is still going.</b> Deleting the card does not stop it: " +
+          "atrium stops knowing about it. Terminate it first if that is what you meant."
+        : "") +
+      "<br><br>Other conversations in the same directory are never touched.",
+    choices: opts,
+    buttons: [{ label: "cancel", value: null }, { label: "delete", value: true, style: "danger" }]
+  });
+  if (!pick) return;
+
+  // The transcript FIRST. Its endpoint hangs off the card, so deleting the
+  // card first would leave nothing to ask.
+  if (pick === "both" && conv) {
+    try {
+      await api(`/v1/tasks/${id}/sessions/${encodeURIComponent(conv)}`, { method: "DELETE" });
+    } catch (e) {
+      toast("could not delete the conversation", e.message + ". the card was left alone.");
+      return;
+    }
+  }
+  try {
+    await api(`/v1/tasks/${id}`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not delete it", e.message);
+    return;
+  }
+  // Attached to the one that just went. Nothing to reconnect to, and the
+  // remembered card has to go too or the board would spend ninety seconds
+  // waiting for a card that no longer exists.
+  if (termTask && termTask.id === id) {
+    try { localStorage.removeItem("atrium.term"); } catch (err) {}
+    closeTerm();
+  }
+  toast("deleted", t.display_title || id);
+  refresh();
 }
 
 // Draws a context menu at the pointer. Shared, so the board and the terminal
@@ -5378,6 +5619,7 @@ function showMenu(e, items) {
     closeCardMenu();
     items[Number(s.dataset.i)].sub[Number(s.dataset.j)].act();
   });
+  wireFlyouts();
 
   // Placed after it has a size, so a card near an edge does not open a menu
   // off screen.
@@ -5397,10 +5639,69 @@ function showMenu(e, items) {
     widest > 0 && Math.max(8, x) + r.width + widest > window.innerWidth);
 }
 
-function closeCardMenu() { cardMenuEl.classList.remove("on"); }
+// A flyout that forgives a slip.
+//
+// The old rule was `button:hover .sub { display: block }`, which is exact and
+// unusable: the row is thirty pixels tall, the flyout hangs off its right
+// edge, and getting to an entry in it means moving diagonally across a corner.
+// Clipping outside for a single frame closed the menu, and the only way to
+// work was to trace an L with the pointer.
+//
+// So closing is DELAYED and opening is not. Two thirds of a second is long
+// enough to cross a corner and short enough that a flyout does not follow you
+// around the menu. The flyout is drawn INSIDE the row it belongs to, so the
+// pointer moving onto it never leaves the row and never starts the timer at
+// all: the delay is only for the case where you actually left.
+const flyoutGrace = 650;
+let flyoutTimer = 0;
+
+function wireFlyouts() {
+  cardMenuEl.querySelectorAll("button").forEach(b => {
+    if (!b.querySelector(".sub")) return;
+    b.addEventListener("pointerenter", () => {
+      clearTimeout(flyoutTimer);
+      // One at a time. Two open flyouts overlap, and the one underneath is
+      // reachable by pointer while being invisible.
+      cardMenuEl.querySelectorAll("button.subopen").forEach(o => {
+        if (o !== b) o.classList.remove("subopen");
+      });
+      b.classList.add("subopen");
+    });
+    b.addEventListener("pointerleave", () => {
+      clearTimeout(flyoutTimer);
+      flyoutTimer = setTimeout(() => b.classList.remove("subopen"), flyoutGrace);
+    });
+  });
+}
+
+function closeCardMenu() {
+  clearTimeout(flyoutTimer);
+  cardMenuEl.classList.remove("on");
+  cardMenuEl.querySelectorAll("button.subopen").forEach(b => b.classList.remove("subopen"));
+}
 document.addEventListener("click", closeCardMenu);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeCardMenu(); });
-window.addEventListener("scroll", closeCardMenu, true);
+// Scrolling closes it, because the menu is placed at a point on the page and
+// scrolling moves whatever it was placed against.
+//
+// EXCEPT THE TERMINAL, which is the thing on this page that scrolls all by
+// itself. Capture phase catches a scroll on any element, and xterm scrolls its
+// viewport on every line a runner prints, so an agent working underneath the
+// open menu closed it several times a second. Nothing about the menu's anchor
+// moves when the terminal scrolls: it is a box inside the page, not the page.
+//
+// The tooltip below takes the same exemption for the same reason.
+window.addEventListener("scroll", e => {
+  if (fromTerminal(e)) return;
+  closeCardMenu();
+}, true);
+
+// Did this event come from inside the terminal's own scrolling area.
+function fromTerminal(e) {
+  const t = e.target;
+  if (!t || !t.closest) return false;
+  return !!t.closest("#t-screen");
+}
 
 async function killById(id) {
   const t = await api(`/v1/tasks/${id}`);
@@ -5891,11 +6192,14 @@ function stateChip(t, w) {
 // nothing about it could be themed. This is one stroke weight in
 // `currentColor`, which means it is whatever colour the chip is.
 function copyIcon() {
-  return `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"
-    fill="none" stroke="currentColor" stroke-width="1.5"
+  // 14px against a 12px line. An icon drawn at the text's own size reads as
+  // smaller than the text, because letters fill their box and a line drawing
+  // does not.
+  return `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.4"
     stroke-linecap="round" stroke-linejoin="round">
-    <rect x="5.5" y="5.5" width="8" height="9" rx="1.5"/>
-    <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v6A1.5 1.5 0 0 0 4 10.5h1.5"/>
+    <rect x="5.5" y="5.5" width="9" height="9.5" rx="1.5"/>
+    <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5"/>
   </svg>`;
 }
 
@@ -7210,14 +7514,18 @@ const alerting = (() => {
       // answering. Staying silent about it meant every reload swallowed the
       // alert for whatever was already blocked, which during a working session
       // is most of them.
-      if (kind === "permission" && items.length) {
+      // The same rule as `announce`: a card with its own window is announced
+      // by that window. This is the path a RELOAD takes, which is every
+      // restart, so getting it wrong here is what you actually hear.
+      const first = items.filter(i => !poppedOut(i.task_id || i.id));
+      if (kind === "permission" && first.length) {
         play(kind);
-        const d = describe(items[0]);
-        notify(items.length > 1 ? `${items.length} agents need permission` : d.title,
-          d.body, "perms", items.length === 1 ? items[0].id : "",
-          items.length === 1 ? items[0].id : "",
-          items.length === 1 ? (items[0].task_id || items[0].id) : "",
-          items.length === 1 ? iconForAlert(items[0]) : "");
+        const d = describe(first[0]);
+        notify(first.length > 1 ? `${first.length} agents need permission` : d.title,
+          d.body, "perms", first.length === 1 ? first[0].id : "",
+          first.length === 1 ? first[0].id : "",
+          first.length === 1 ? (first[0].task_id || first[0].id) : "",
+          first.length === 1 ? iconForAlert(first[0]) : "");
       }
       return;
     }
@@ -7256,6 +7564,19 @@ const alerting = (() => {
 
   // Says one thing about a set of items that all arrived together.
   function announce(kind, fresh, describe) {
+    // A CARD WITH ITS OWN WINDOW IS THAT WINDOW'S TO ANNOUNCE, and that means
+    // the sound and the toast as well as the notification.
+    //
+    // The rule was written down and then applied in exactly one place:
+    // `notify` skipped the desktop notification for a popped-out card, and the
+    // two lines around it went ahead and rang and toasted anyway. So a session
+    // in its own window produced two chimes and two toasts, one from each
+    // document, and the suppression that existed made no observable
+    // difference.
+    //
+    // Dropped here rather than in `check`, so those cards are still recorded
+    // as seen: they were announced, by the window that owns them.
+    fresh = fresh.filter(i => !poppedOut(i.task_id || i.id));
     if (!fresh.length) return;
     const d = describe(fresh[0]);
     // One card's own tone when there is exactly one. A pile has no single
@@ -10365,6 +10686,10 @@ async function refresh() {
     repaintLists();
   }
 
+  // What is lent out, so a card can say so and the menu knows without asking.
+  // Cheap: an in-memory map on the daemon, usually empty.
+  loadShares();
+
   // Waiting and permissions are polled whichever view is open, because the
   // badges, the title, and the alert all have to work while you are looking at
   // something else.
@@ -10892,7 +11217,7 @@ function toggleCopyOnSelect() {
 // last size automatically meant nudging an edge to see something behind the
 // window silently became the size every card opened at, which is a preference
 // nobody expressed.
-function termSettings(e) {
+async function termSettings(e) {
   // Without this the menu opens and closes in the same event: `showMenu` draws
   // it, the click keeps bubbling to the document listener that dismisses any
   // open menu, and the cog reads as a dead button. `cardMenu` stops the same
@@ -10901,12 +11226,19 @@ function termSettings(e) {
   e.stopPropagation();
   const t = termTask;
   if (!t) return;
-  if (!allActions.length) loadActions().then(() => {});
+  // AWAITED. This used to start the fetch and build the menu without it, so
+  // the first open of the session was missing `say something` and the second
+  // had it: a menu whose contents depend on when you last opened it. One
+  // request, once per page, and only the first click waits for it.
+  if (!allActions.length) await loadActions();
   const own = readSize("atrium.popout." + t.id);
   const items = [
     // Reachable from the terminal you are looking at, which is where saying
     // something to a session is a thing you want to do.
     actionItems(t),
+    // Here as well as on the card, because handing somebody a session is
+    // something you decide while looking at it.
+    shareItem(t),
     actionsFor(t).length ? { sep: true } : null,
     { label: "try a theme", note: t.theme || "from the project",
       help: "Puts a picker on the bar. Arrow through them and the terminal " +
@@ -12011,6 +12343,32 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      return;
+    }
+
+    // A WINDOW THAT IS ONE TERMINAL KEEPS TRYING, whatever left.
+    //
+    // The branch above asks the daemon who went away and gets a useful answer
+    // most of the time. It gets the WRONG answer during a restart, because of
+    // the order a wind-down happens in: supervised runners are stopped while
+    // the HTTP listener is still up. So the runner dies, `daemonAnswers()`
+    // says yes, and this reads as "the runner exited" when it is the first
+    // second of a restart. On the board that costs a cleared pane and the
+    // waiter picks it up again. In a popped-out window it took the window's
+    // entire reason for existing, and the only way back was F5.
+    //
+    // There is nothing to weigh here. This window IS that card: if the card
+    // comes back it should reattach, and if it is really gone the scrollback
+    // holds the exit and the resume id, and the window can be closed. So it
+    // retries for the whole window rather than deciding.
+    if (termOnly() && within) {
+      if (!attachSaidGone) {
+        attachSaidGone = true;
+        term.write("\r\n\x1b[38;5;244m[atrium] waiting for this session to come back" +
+          "\x1b[0m\r\n");
+      }
+      termWait("waiting for " + waitName(termTask) + " to come back…");
       setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
       return;
     }
@@ -13832,21 +14190,43 @@ function placeTip(anchor, text) {
   tipEl.style.top = Math.round(top) + "px";
 }
 
-function hideTip() { tipEl.classList.remove("on"); }
+function hideTip() { tipEl.classList.remove("on"); tipSoon(null); }
+
+// HALF A SECOND OF STAYING PUT, then it appears.
+//
+// Instant was right for a control you went to on purpose and wrong for
+// everything else, and the board is dense with these: moving the pointer
+// across a card set off three bubbles on the way to whatever you were
+// reaching for. A delay is the difference between hovering something and
+// passing over it, and it is the only thing that can tell them apart.
+//
+// Keyboard focus is NOT delayed. Tabbing to a `?` is deliberate every time,
+// and waiting half a second after a keystroke reads as the page being slow.
+const tipAfter = 500;
+let tipTimer = 0;
+
+function tipSoon(fn) {
+  clearTimeout(tipTimer);
+  if (fn) tipTimer = setTimeout(fn, tipAfter);
+}
 
 document.addEventListener("pointerover", e => {
   const help = e.target.closest && e.target.closest(".help");
-  if (help) placeTip(help, help.dataset.tip);
+  if (!help) return;
+  // Re-read when it fires rather than captured now, so a tooltip whose text
+  // was rewritten while you hovered shows what it says at the moment it
+  // appears.
+  tipSoon(() => placeTip(help, help.dataset.tip));
 });
 document.addEventListener("pointerout", e => {
   if (e.target.closest && e.target.closest(".help")) hideTip();
 });
 document.addEventListener("focusin", e => {
   const help = e.target.closest && e.target.closest(".help");
-  if (help) placeTip(help, help.dataset.tip);
+  if (help) { tipSoon(null); placeTip(help, help.dataset.tip); }
 });
 document.addEventListener("focusout", hideTip);
-window.addEventListener("scroll", hideTip, true);
+window.addEventListener("scroll", e => { if (!fromTerminal(e)) hideTip(); }, true);
 window.addEventListener("resize", hideTip);
 
 // The copy mode button lives in static markup, so it has no text until
@@ -14095,6 +14475,27 @@ async function bootTerminalOnly() {
   soloID = decodeURIComponent(location.hash.slice("#term=".length));
   document.body.classList.add("solo");
 
+  // THE CLAIM IS THE FIRST THING THIS WINDOW DOES.
+  //
+  // It used to be posted after the card was fetched and the terminal opened,
+  // which is a round trip and a WebGL context later. A restart reloads the
+  // board and every popped-out window at once, and the board is a smaller page
+  // that finishes first: it asked who was out there, nobody had claimed
+  // anything yet, and it rang for a card that was a few hundred milliseconds
+  // away from ringing for itself. Two chimes for one event.
+  //
+  // Nothing here depends on the card existing. The id is in the URL, this
+  // window is going to speak for it either way, and claiming a card that turns
+  // out to be gone costs one alert the board skips for a session that has
+  // nothing to alert about.
+  if (soloBus) {
+    soloBus.postMessage({ type: "solo-claim", task: soloID });
+    // `pagehide` rather than `unload`, which a browser is free to skip when it
+    // freezes a page into the back/forward cache. A claim that is never
+    // released would leave the board permanently silent about this card.
+    addEventListener("pagehide", () => soloBus.postMessage({ type: "solo-release", task: soloID }));
+  }
+
   let task;
   try {
     task = await api("/v1/tasks/" + encodeURIComponent(soloID));
@@ -14109,15 +14510,6 @@ async function bootTerminalOnly() {
   paintSoloTitle();
   openTerm(task);
 
-  // Claimed before the first poll, so the board is already deferring by the
-  // time anything can ring.
-  if (soloBus) {
-    soloBus.postMessage({ type: "solo-claim", task: soloID });
-    // `pagehide` rather than `unload`, which a browser is free to skip when it
-    // freezes a page into the back/forward cache. A claim that is never
-    // released would leave the board permanently silent about this card.
-    addEventListener("pagehide", () => soloBus.postMessage({ type: "solo-release", task: soloID }));
-  }
   // Coming back to the window IS reading the alert, so the mark clears without
   // touching anything. Leaving it up until the next poll meant a title that
   // still said a session was blocked while you sat looking at it.
@@ -14169,6 +14561,23 @@ async function soloRefresh() {
   // A branch can change under a running session, and the title is the whole
   // product here, so it is re-read rather than fixed at open.
   if (task) { soloTask = task; }
+
+  // THE WATCHDOG. If this window has no terminal and its card has one, attach.
+  //
+  // Everything else about reconnecting hangs off the socket's retry loop, and
+  // a retry loop can only run while something is holding it. Any path that
+  // disposes the terminal ends the loop, and this window then sits on a dead
+  // page with a live session behind it, which is what F5 was fixing by hand.
+  //
+  // This asks the only question that matters, on the poll that is already
+  // running, and needs nothing to have survived. It is deliberately the last
+  // line of defence rather than the mechanism: reattaching costs the
+  // scrollback, so the retry loop keeping one socket alive is still the good
+  // outcome and this is the one that stops a window being useless.
+  if (!term && task && task.supervised) {
+    rlog("solo window has no terminal and the card does. attaching");
+    openTerm(task);
+  }
 
   const mine = perms ? perms.filter(p => (p.task_id || p.id) === soloID) : null;
   const ready = waiting
@@ -14282,6 +14691,19 @@ async function restoreWhereYouWere() {
 // second at a moment when nothing else is happening.
 const restoreWaitFor = 90 * 1000;
 
+// How long the board waits for popped-out windows to say they exist.
+//
+// Every one of them answers `solo-who` immediately, so this is a message
+// between two documents in one browser and nothing more. The number is
+// generous because being wrong costs a duplicate alert and a terminal stolen
+// out of somebody's window, and being slow costs half a second at page load.
+// A popped-out window claims its card as its first act now, so the answer is
+// back almost immediately. The margin is for the case that actually bit: a
+// restart reloads both documents at once, the board is the smaller page and
+// finishes first, and it must not get to its first alert before the other one
+// has drawn breath.
+const soloRollCall = 900;
+
 // Reconnecting is the one thing on this page that happens while nobody is
 // watching and cannot be reproduced on demand: it needs the daemon to go away.
 // So it says what it is doing, on the console, with a timestamp.
@@ -14389,13 +14811,28 @@ if (termOnly()) {
   });
 } else {
   connect();
-  refresh();
-  setInterval(refresh, 5000);
+  // THE ROLL CALL GOES FIRST, AND THE BOARD WAITS FOR THE ANSWERS.
+  //
   // A board that starts after a window was already popped out has missed the
   // claim, so it asks. Windows that are gone do not answer and the board rings
   // for their cards, which is the right way round to be wrong.
+  //
+  // What was wrong was doing anything before the answers came back. The very
+  // first poll is where the board decides what to alert about and the restore
+  // decides what to attach to, and both ran with `soloHeld` still empty. So a
+  // restart, which reloads every board and every popped-out window at once,
+  // ended with the board ringing for cards their own windows were already
+  // ringing for, and taking a terminal back into the pane that was open in a
+  // window of its own.
+  //
+  // A broadcast round trip between two documents in one browser is well under
+  // a frame. Half a second is many times that, and it is paid once at load.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
-  restoreWhereYouWere();
+  setTimeout(() => {
+    refresh();
+    restoreWhereYouWere();
+  }, soloRollCall);
+  setInterval(refresh, 5000);
   // Every other way this page goes away: a manual reload, a close, a
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.

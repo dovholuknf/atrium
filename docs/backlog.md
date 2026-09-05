@@ -1019,3 +1019,36 @@ anywhere public:
    Shipping the table while owning that row is a much better story than shipping it with a gap.
 3. **Date it, and cite them.** Every claim about another product gets a link and a date, in their words rather
    than ours.
+
+### The overlay panel is a configuration screen pretending to be a switch
+
+`reach this board from elsewhere` shows two overlays, and each one shows everything about itself at once: the
+state, the setup step, every configuration field, and the button that starts it. Most of that is answered once
+and never touched again, and it is in front of you every time you open the gear to change something else.
+
+**Rename it `expose the board`.** That is what it does, and it is the phrase somebody arrives with. The current
+name describes a goal rather than an action, and there is now a second kind of exposing beside it, so the two
+need names that tell them apart: `expose the board` and, on a card, `share this session`.
+
+**Collapse it to a summary.** Per overlay: the mark, one line of what it is, whether this machine is set up, and
+the start or stop button. That is the whole panel in the common case. Everything else goes behind
+`configure zrok…`, which is a disclosure, **and whether it is open is remembered** so somebody who lives in those
+fields does not re-open them every time.
+
+**The zrok configuration needs to be better than it is.** Named as its own piece of work rather than folded into
+the collapse:
+
+- The reservation flow is two ideas in one box. Creating a name and reserving it are separate calls with
+  separate failures, and the field says `reserved name (public)` which is the state you want rather than the
+  thing you are typing. What it should show is: is this name yours, is it reserved, and what will the address be.
+- **Limits have to be legible.** A zrok account has caps on shares, environments and transfer, and the free tier
+  is easy to reach in an evening. `internal/daemon/overlay_zrok_errors.go` turns what comes back into a sentence
+  and that is the floor, not the finish: the panel should be able to say what the account allows and what is
+  currently used before anybody presses a button that fails.
+- A share that dies on its own says nothing. The listener stops, `OverlayState.Err` is set, and the panel shows
+  it only if you happen to be looking. It should alert like anything else that stops unexpectedly.
+- Enabling against a non-default instance works and is hard to find, and getting it wrong produces a token error
+  that does not mention the endpoint.
+
+**The board's own share should be reservable in one press.** Reserving a name and starting a public share are the
+same intention, and doing it takes filling a name field, pressing `reserve it`, and then pressing start.
