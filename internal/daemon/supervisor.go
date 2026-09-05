@@ -103,11 +103,56 @@ type runner struct {
 	// is nothing to fall back to.
 	spec *launchSpec
 
-	mu       sync.Mutex
-	buf      *ringBuffer
-	watchers map[chan []byte]struct{}
-	done     chan struct{}
-	exitOnce sync.Once
+	mu        sync.Mutex
+	buf       *ringBuffer
+	watchers  map[chan []byte]struct{}
+	done      chan struct{}
+	exitOnce  sync.Once
+	closeOnce sync.Once
+	// seen is when somebody was last attached, which only a shell reads.
+	//
+	// A runner is kept alive by being a runner: it holds the work, and closing
+	// it because nobody was looking would throw away what it was doing. A
+	// shell has no work, so the question "is anyone still interested in this"
+	// is the only thing that decides whether it should still be running.
+	seen time.Time
+}
+
+// closePTY closes the pseudo terminal, at most once.
+//
+// TWO PATHS REACH IT. `windDown` closes the terminal when a runner will not
+// take the hint, and `awaitExit` closes it when `cmd.Wait` returns, which is
+// what closing it caused.
+//
+// A double close of a Windows handle is not a Go panic. The process disappears
+// with no output at all: no stack, no exit message, nothing in a log. That is
+// why the guard is here rather than a check at either call site.
+func (r *runner) closePTY() {
+	r.closeOnce.Do(func() {
+		if r.pty != nil {
+			_ = r.pty.Close()
+		}
+	})
+}
+
+// touch marks this terminal as looked at just now.
+func (r *runner) touch() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.seen = time.Now()
+}
+
+func (r *runner) lastSeen() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seen
+}
+
+// watching says whether anybody is attached right now.
+func (r *runner) watching() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.watchers) > 0
 }
 
 // Write sends keystrokes to the runner. Nothing arbitrates between two
@@ -170,12 +215,26 @@ func (r *runner) closeWatchers() {
 }
 
 // supervisor holds every runner atrium owns.
+//
+// TWO MAPS, BOTH KEYED BY CARD, and keeping them apart is deliberate. `runners`
+// is the process doing the work: the reaper asks the operating system about it,
+// the park tells it to stop, shelving refuses on its behalf, and its exit files
+// the card as dead. `shells` is the plain shell an operator may open beside a
+// wedged agent, which is none of those things.
+//
+// Folding a shell into `runners` puts it in front of every one of those
+// callers, which all say `get(taskID)` and mean the runner, and the first
+// consequence is a card filed as dead when somebody closes a shell. See
+// `shell.go`.
 type supervisor struct {
 	mu      sync.Mutex
 	runners map[string]*runner
+	shells  map[string]*runner
 }
 
-func newSupervisor() *supervisor { return &supervisor{runners: map[string]*runner{}} }
+func newSupervisor() *supervisor {
+	return &supervisor{runners: map[string]*runner{}, shells: map[string]*runner{}}
+}
 
 func (s *supervisor) get(taskID string) *runner {
 	s.mu.Lock()
@@ -296,7 +355,7 @@ func (d *Daemon) awaitExit(r *runner) {
 	// Read before the terminal closes. For a runner that dies on startup this
 	// text is the reason, and the only copy of it.
 	tail := lastOutput(r.buf.Snapshot(), 12)
-	_ = r.pty.Close()
+	r.closePTY()
 	d.sup.remove(r.taskID)
 	// The process is gone, so nothing it was doing is still true.
 	d.act.forget(r.taskID)
@@ -471,7 +530,7 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 	// It did not take the hint. Close the terminal, which most processes treat
 	// as a hangup.
 	log.Printf("[atrium] runner for %s did not exit in %s, closing its terminal", r.taskID, grace)
-	_ = r.pty.Close()
+	r.closePTY()
 	select {
 	case <-r.done:
 		log.Printf("[atrium] runner for %s stopped", r.taskID)

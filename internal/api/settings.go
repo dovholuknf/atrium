@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -89,6 +90,11 @@ func globalAutoView(s *Server) map[string]any {
 	// default set, and the person reading it wants to know what that came out
 	// as rather than being told there is a default.
 	out["browse_roots_now"] = s.browseRootsFor()
+	// What the board is wearing, and everything it could wear. The list is
+	// sent rather than written into the page so the picker and the validator
+	// cannot disagree: there is one list and the daemon holds it.
+	out["board_skin"] = s.SkinOrDefault()
+	out["board_skins"] = Skins
 	return out
 }
 
@@ -142,11 +148,72 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where the picker may look. A pointer, because clearing it back to
 		// the default set is a request.
 		BrowseRoots *string `json:"browse_roots"`
+		// What the board wears. A pointer for the same reason: setting it back
+		// to the one it shipped with is a thing somebody asks for.
+		BoardSkin *string `json:"board_skin"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+	// Read once and decoded twice: into the struct, which is what the handler
+	// works from, and into a map, which is the only way to notice a field that
+	// has no struct member. The guard further down needs the second one, and
+	// the whole point of that guard is a field nobody has added yet.
+	payload, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	raw := map[string]json.RawMessage{}
+	// A body that decoded into the struct but not into a map is not possible,
+	// so this cannot fail on its own. Ignored rather than reported, which keeps
+	// one malformed body from producing two different errors depending on which
+	// decode noticed first.
+	_ = json.Unmarshal(payload, &raw)
+
+	// AN EXPRESSION MAY BE STORED WHERE IT WAS TYPED, AND NOWHERE ELSE.
+	//
+	// The board compiles two operator-supplied functions with `new Function` to
+	// group cards. That is safe for exactly one reason: `groupingPrefs()` reads
+	// `localStorage`, so the code running in a browser was typed into that
+	// browser by whoever was sitting at it, and somebody who can write it can
+	// already open dev tools.
+	//
+	// Moving that storage here would change what it is. A daemon-side
+	// expression is something one machine typed and another machine runs, which
+	// is a stored XSS with a friendly name, and these functions run with full
+	// page scope: `fetch` is in hand, and the board can read this machine's
+	// filesystem through `/v1/browse`, every card's title, every worktree path
+	// and the audit log. It stops being a grouping rule and becomes a
+	// general-purpose exfiltration primitive the moment somebody other than the
+	// operator can supply one.
+	//
+	// It is a reasonable thing to WANT: grouping is board-wide and today it is
+	// lost when you open a different browser. So this is a refusal with a
+	// reason rather than a silence, because the way this goes wrong is somebody
+	// adding the obvious field, seeing it work, and shipping it. The answers
+	// that do work are in `docs/backlog.md`: a restricted expression language, a
+	// worker with no network, or a fixed menu for the shared case.
+	//
+	// Checked on the RAW body rather than a struct field, because the failure
+	// being guarded is a field that does not exist yet.
+	//
+	// AHEAD OF EVERY WRITE BELOW, and that is not tidiness. A body carrying a
+	// grouping expression beside a legitimate setting has to be refused whole:
+	// applying half of it and reporting a failure is the worst of both, since
+	// the caller reads an error and the machine has changed anyway.
+	for _, banned := range []string{"group_by", "group_order"} {
+		if _, ok := raw[banned]; ok {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"%s cannot be stored here. a grouping expression is compiled and run by whichever "+
+					"browser loads the board, so keeping it daemon-side means one machine typing code "+
+					"that another machine runs. it stays in localStorage. see docs/backlog.md, "+
+					"\"the grouping expression\"", banned))
+			return
+		}
+	}
+
 	if body.Minutes < 0 || body.Minutes > maxAutoMinutes {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf(
 			"auto mode can be left on for up to %d minutes, or with no deadline at all",
@@ -273,6 +340,25 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// at save time would stop somebody preparing a list for a drive that
 		// is not plugged in.
 		if err := s.st.SetSetting(SettingBrowseRoots, *body.BrowseRoots); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.BoardSkin != nil {
+		// Refused rather than stored, unlike the browse roots above, and the
+		// two differ for a reason. A root that does not exist yet is a list
+		// somebody is preparing, and it costs nothing to hold. An unknown skin
+		// can never become right: it names a rule that is not in the
+		// stylesheet, so the board would save it, wear it, and look exactly as
+		// it did before.
+		name := strings.TrimSpace(*body.BoardSkin)
+		if !KnownSkin(name) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"no skin called %q. the ones there are: %s", name, strings.Join(Skins, ", ")))
+			return
+		}
+		if err := s.st.SetSetting(SettingBoardSkin, name); err != nil {
 			s.fail(w, err)
 			return
 		}

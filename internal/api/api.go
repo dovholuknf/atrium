@@ -57,7 +57,18 @@ type Server struct {
 	// Attach upgrades to a WebSocket carrying a supervised runner's terminal.
 	// Supplied by the daemon, which owns the processes. Registered only when
 	// set, so a build without supervision has no dead route.
+	//
+	// `?kind=shell` asks for the card's shell instead. Absent means the runner,
+	// which is what every caller written before shells existed sends.
 	Attach http.HandlerFunc
+	// OpenShell starts a plain shell in a card's working directory, beside the
+	// runner's own terminal, and ShutShell ends it.
+	//
+	// The one gap in what the board can do that walking to the machine still
+	// answers: when the agent wedges, the terminal on the card belongs to the
+	// agent and there is nowhere to type `git status`.
+	OpenShell http.HandlerFunc
+	ShutShell http.HandlerFunc
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
@@ -243,6 +254,10 @@ func (s *Server) Handler() http.Handler {
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
 	}
+	if s.OpenShell != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
+		mux.HandleFunc("DELETE /v1/tasks/{id}/shell", s.ShutShell)
+	}
 	mux.HandleFunc("GET /v1/actions", s.listActions)
 	mux.HandleFunc("PUT /v1/actions/{id}", s.saveAction)
 	mux.HandleFunc("DELETE /v1/actions/{id}", s.deleteAction)
@@ -316,6 +331,13 @@ type view struct {
 	// window mode launch is not supervised, so offering attach on it would be
 	// a button that cannot work.
 	Supervised bool `json:"supervised"`
+	// Shell marks a card that already has a plain shell open beside its runner,
+	// so the board can offer to go to it rather than to open a second one.
+	//
+	// Asked every time rather than remembered in the page. A shell outlives a
+	// reload and is closed by an idle sweep the browser knows nothing about, so
+	// a board keeping its own list would be wrong within the hour.
+	Shell bool `json:"shell,omitempty"`
 	// Activity is what the runner is doing right now, as opposed to what it
 	// needs. Absent when atrium has heard nothing recently, which is the case
 	// for a runner with no hooks and after a daemon restart. See
@@ -326,6 +348,13 @@ type view struct {
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
 // daemon, since the supervisor lives there.
 var IsSupervised func(taskID string) bool
+
+// HasShell reports whether this task has a plain shell open beside its runner.
+// Supplied by the daemon for the same reason.
+var HasShell func(taskID string) bool
+
+// CloseShellFor ends a card's shell, called as the card is deleted.
+var CloseShellFor func(taskID string)
 
 // ActivityOf returns a task's live activity, or nil. Supplied by the daemon,
 // since the activity is held in memory there rather than in the store.
@@ -340,6 +369,9 @@ func toView(t *store.Task) view {
 	}
 	if IsSupervised != nil {
 		v.Supervised = IsSupervised(t.ID)
+	}
+	if HasShell != nil {
+		v.Shell = HasShell(t.ID)
 	}
 	if ActivityOf != nil {
 		v.Activity = ActivityOf(t.ID)
@@ -647,6 +679,16 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// Before the card goes, not after. A pty holding the card's working
+	// directory open once the card is gone is a process nothing on the board
+	// accounts for, and on Windows it locks the directory against the removal
+	// that is usually the next thing somebody does.
+	//
+	// The daemon's own sweep catches the bulk paths, where there is no single
+	// id to act on. This is here because the operator is watching this one.
+	if CloseShellFor != nil {
+		CloseShellFor(id)
+	}
 	if err := s.st.Forget(id); err != nil {
 		s.fail(w, err)
 		return

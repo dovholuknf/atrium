@@ -193,6 +193,18 @@ refused on purpose so nobody has to work out whether they were forgotten.
 Read-only is enforced on the SOCKET rather than by hiding a control, because a guest owns their copy of the
 page. Permission prompts stay with the operator whichever mode is chosen.
 
+**A share is the agent's terminal and never the card's shell.** A card can hold two terminals, told apart by
+`?kind=shell` on the same attach path the share already allows, so without an explicit refusal a writable guest
+could have appended six characters to their one route and got a general purpose command line on this machine.
+Lending a session means lending that session: the agent, the conversation, the work. A shell in the card's
+directory is the machine, and handing that over is the line at the top of this file. Refused rather than
+quietly redirected to the runner, because a guest asking for it is either confused or trying it, and both are
+better answered.
+
+This is the shape of hazard the allowlist exists for, and it is worth noticing that the allowlist alone did not
+catch it: the route was already allowed, and what changed was what the route could mean. An endpoint that grows
+a parameter is a new endpoint.
+
 The address is deliberately not reserved. The board's address is one you keep; a lent session's address IS the
 credential, since there is no login, so it is fresh every time and dies when the share stops or atrium restarts.
 

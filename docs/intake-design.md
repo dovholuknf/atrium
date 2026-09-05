@@ -182,6 +182,18 @@ Atrium creates a card with no runner, no worktree it made itself, and a status t
 The board shows it in its own column with a start button. Pressing start is the existing launch, with the item's
 fields already filled in.
 
+`source` plus `external_id` is the deduplication key. Anything else in the item may change between ticks and the
+card is updated in place; those two together are what makes it the same item. See the decision at the end of
+this document for why the URL is not the key.
+
+**A support source should send an identifier and a route, not a ticket.** The trust boundary here is
+deliberately "the operator wrote the command", so nothing enforces this, but the likeliest way customer content
+ends up in an atrium card is a helpful script pasting the ticket body into `why` or `prompt` because the fields
+were there. For a support source the shape that works is: the ticket number, its URL, a title generic enough to
+be read over a shoulder, and a `prompt` that tells the agent to go and READ the ticket. The agent has the
+credential and the card does not need the contents. This is the same division the engineering-versus-support
+section below argues for, said at the point where somebody is writing the JSON.
+
 The important part is what atrium does not do: it does not know what `source` means. `github`, `zendesk`,
 `discourse`, `ci`, `email` are all strings that get rendered as a badge and stored on the card. Whoever posts the
 item did the reading.
@@ -512,10 +524,26 @@ Layer 1 makes every one of them a script rather than a feature. Listed with what
   Either atrium refuses to start until a human makes it, or the start button runs a configured command to create
   it, which is `gwt new` wearing a different hat and re-opens the question the backlog closed under "Working
   directories from a repo URL".
-- **Deduplication across restarts and across machines.** `external_id` is unique per source at best, and once
-  there is a forum, two leaves polling the same GitHub account raise the same card twice. The `wire_name`
-  qualification that `atrium name` introduced is the existing answer to a near-identical problem and is probably
-  the shape here too.
+- ~~**Deduplication across restarts and across machines.**~~ **Decided: the key is `source` plus `external_id`,
+  and nothing else.** It was left open long enough that a reviewer could pick four different answers out of this
+  document, which is the point at which an open question becomes a defect: `external_id`, `source` plus
+  `external_id`, the URL, or a wire-name qualification would each produce a working implementation and they
+  disagree about when two items are the same thing.
+
+  **Why `source` is in the key.** `external_id` is unique per source AT BEST, and the sample value in this
+  document, `openziti/ziti#4211`, is only unique because the source that emits it happens to include the repo. A
+  source that emits `4211` is not doing anything wrong. Qualifying by source makes the key correct without
+  demanding anything of the person writing the command.
+
+  **Why the URL is NOT the key,** even though it is more obviously unique. It is not stable: the same issue is
+  reachable at several addresses, a source can start emitting a canonical form after somebody improves it, and
+  the whole inbox would then duplicate itself once. An id is a name; a URL is a route.
+
+  **What this deliberately does not solve, and the forum inherits.** Two machines polling the same GitHub
+  account raise the same card twice, because `source` is per machine. That is correct today: two machines with
+  two inboxes SHOULD each see it, since neither knows about the other. When the forum exists it needs a
+  cross-machine identity, and `atrium name`'s wire-name qualification is the shape, but that is a decision for
+  `docs/federation-design-v2.md` rather than a hole here.
 - **Whether the seed prompt belongs on the card.** gwt stores `PromptText` in the ledger entry and passes it as a
   single argv element, deliberately never interpolated into a command line. If atrium takes a `prompt`, it
   inherits that requirement exactly, and `expandTemplate` in `launch.go` already has a comment about what goes

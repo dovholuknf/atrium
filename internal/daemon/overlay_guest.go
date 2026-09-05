@@ -260,6 +260,28 @@ func (d *Daemon) guestHandler(taskID string, writable bool) http.Handler {
 
 		// The terminal. The point of the whole exercise.
 		if p == mine+"/attach" {
+			// THE RUNNER'S TERMINAL, NEVER THE CARD'S SHELL.
+			//
+			// A card may hold two terminals now, told apart by `?kind=shell`
+			// (`attach.go`). Lending a session means lending THAT SESSION: the
+			// agent, the conversation, the work. A shell in the card's
+			// directory is a general purpose command line on this machine, so
+			// a share that reached one would be a share of the machine, which
+			// is the line `docs/overlays.md` says atrium does not cross.
+			//
+			// Refused rather than quietly rewritten to the runner. A guest
+			// asking for this is either confused or trying it, and both are
+			// better answered than silently redirected.
+			//
+			// The read-only path below cannot express the question at all: it
+			// calls `attachReadOnly`, which never looks at the query. This
+			// guard is for the writable case, where the request reaches the
+			// board's own handler.
+			if r.URL.Query().Get("kind") != "" {
+				http.Error(w, "a shared session is the agent's terminal. "+
+					"there is nothing else here.", http.StatusForbidden)
+				return
+			}
 			if !writable {
 				// Read only is enforced HERE rather than in the page, because a
 				// guest can edit the page. The socket carries input in one

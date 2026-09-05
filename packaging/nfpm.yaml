@@ -1,0 +1,79 @@
+# One config, a deb and an rpm out of it.
+#
+#   nfpm package -f packaging/nfpm.yaml -p deb -t build.claude/release/
+#   nfpm package -f packaging/nfpm.yaml -p rpm -t build.claude/release/
+#
+# `nfpm` rather than `fpm` or hand-rolled `dpkg-deb`: it is one static Go binary
+# with no ruby and no build host of the target distribution, which matters
+# because the whole point of `CGO_ENABLED=0` here is that atrium does not need a
+# machine of the platform it is built for.
+#
+# ENV VARS, not hardcoded values, so `scripts/release.sh` can drive this without
+# a templating step:
+#
+#   VERSION   the version being packaged
+#   ARCH      amd64 or arm64
+#   BINARY    path to the built binary for that arch
+#
+# UNVERIFIED. This has never been run: `nfpm` is not installed on the machine it
+# was written on, and installing a package to test it is a change to a machine
+# that was not asked for. It is written from nfpm's documented schema and it is
+# the piece of tonight's work most likely to be wrong in a small way.
+
+name: atrium
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: Clint Dovholuk <clint.dovholuk@netfoundry.io>
+description: |
+  Organizes coding agents.
+  A daemon holding durable state, a permission gate and a web board, with a
+  pseudo terminal per supervised runner that a browser can attach to.
+vendor: dovholuknf
+homepage: https://github.com/dovholuknf/atrium
+license: MIT
+
+contents:
+  - src: ${BINARY}
+    dst: /usr/bin/atrium
+
+  # A USER unit, and this is the decision worth reading before changing it.
+  #
+  # Not a system service. A system unit runs as root or as a service account in
+  # its own session, and it CANNOT open a pseudo terminal a person can attach
+  # to. Supervision is most of what atrium is for, so a system unit would
+  # install a version of atrium with its main feature removed.
+  #
+  # It is the same decision `scripts/atrium-autostart.ps1` makes on Windows,
+  # where it is a logon task rather than a Windows service, and for exactly the
+  # same reason. The two files are one design on two platforms and should be
+  # changed together.
+  - src: packaging/atrium.service
+    dst: /usr/lib/systemd/user/atrium.service
+    type: config
+
+  - src: README.md
+    dst: /usr/share/doc/atrium/README.md
+    type: doc
+
+# NOT ENABLED ON INSTALL, and not started either.
+#
+# Installing a package is saying "put this here". Starting a daemon that opens
+# two listeners and begins supervising processes is a different sentence, and a
+# package that says the second when you asked for the first is a package people
+# uninstall.
+#
+# There is also a practical reason: a user unit cannot be enabled from a package
+# postinstall in any way that works. The postinstall runs as root, and which
+# user would it enable it for? The answer has to come from a person, and it is
+# one command.
+scripts: {}
+
+deb:
+  fields:
+    Bugs: https://github.com/dovholuknf/atrium/issues
+
+rpm:
+  group: Applications/System
