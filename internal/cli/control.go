@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -278,11 +280,93 @@ func runRestart(db, delay string) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	exe, err := os.Executable()
+	exe, err := daemonExe()
 	if err != nil {
 		return err
 	}
+	// The daemon is DOWN right now, which is the only moment its binary can be
+	// replaced. Anything staged beside it goes in here.
+	if err := swapStaged(exe); err != nil {
+		log.Printf("[atrium] could not install the staged binary: %v", err)
+	}
 	return spawnDetached(exe, []string{"daemon", "--db", db})
+}
+
+// daemonExe is which binary to start as the daemon.
+//
+// A sibling `atrium.exe` when there is one, and this process otherwise.
+//
+// The two are separated because they cannot be the same file. This process is
+// the MCP server, held open by whatever claude session registered it, for as
+// long as that session lives. A binary cannot be overwritten while it is
+// running, so if the daemon and the control server were one file there would
+// be no moment at which a rebuild could be installed: exactly the chicken and
+// egg this command exists to break, one level down.
+func daemonExe() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	sibling := filepath.Join(filepath.Dir(self), "atrium"+exeSuffix())
+	if sibling != self {
+		if _, err := os.Stat(sibling); err == nil {
+			return sibling, nil
+		}
+	}
+	return self, nil
+}
+
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
+// swapStaged installs a newer binary left beside the daemon's.
+//
+// A rebuild cannot overwrite a running daemon, so it writes `atrium.next` and
+// leaves it. This is the one instant that file can be moved into place: after
+// the stop and before the start.
+//
+// A failure here is logged and stepped over rather than returned. The staged
+// binary not landing means the daemon comes back on the old one, which is a
+// disappointment. Not coming back at all is an outage.
+func swapStaged(exe string) error {
+	dir := filepath.Dir(exe)
+	staged := filepath.Join(dir, "atrium.next"+exeSuffix())
+	if _, err := os.Stat(staged); err != nil {
+		return nil
+	}
+	aside := filepath.Join(dir, "atrium.old"+exeSuffix())
+
+	// THE OUTGOING BINARY IS MOVED ASIDE, NOT DELETED, and on Windows that
+	// distinction is the whole reason this works.
+	//
+	// Windows refuses to delete a file that is open, and an executable is open
+	// for as long as anything is running it. It permits a RENAME within the
+	// same directory, which is how every self-updater on this platform does
+	// it: the running image keeps its handle, the name is freed, and the new
+	// file takes it.
+	//
+	// Without that, this had to be done by hand from a shell outside atrium,
+	// with the daemon stopped, which is exactly the chore `restart_atrium`
+	// exists to remove.
+	_ = os.Remove(aside) // last time's, now that nothing is running it
+	if err := os.Rename(exe, aside); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// A rename rather than a copy, so there is no instant where the daemon's
+	// binary is half written.
+	if err := os.Rename(staged, exe); err != nil {
+		// Put it back. A failure here with the old one moved aside would leave
+		// no binary at that name at all, which is an outage rather than a
+		// disappointment.
+		_ = os.Rename(aside, exe)
+		return err
+	}
+	log.Printf("[atrium] installed the staged binary at %s", exe)
+	return nil
 }
 
 // ── plumbing ────────────────────────────────────────────────────────────────
