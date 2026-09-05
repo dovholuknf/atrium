@@ -5,6 +5,104 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The session list is a title again, and it takes the room you give it.** Three things landed on the terminal
+  view's left column.
+
+  The name in each entry had been rendering grey, monospaced and clamped, which is what a path looks like, so the
+  list read as a column of directories with no titles at all. `.term-entry span` matches the name as well as the
+  path, and was handing every span in the card the dim monospace the path wants. The name now declares its own
+  font and colour, with a note that anything named on `.term-entry span` has to be answered there.
+
+  The column is **draggable**, between 150 and 520 pixels, and it has two collapsed modes past that. `mini` keeps
+  the runner's mark, eight characters of `repo:branch`, and the colour of the left edge, which is what actually
+  carries "this one wants you". `off` gives the terminal the whole pane and leaves a strip to hover. In that mode
+  the list slides OVER the terminal rather than pushing it, so a pointer crossing the left edge never re-fits
+  xterm, which measures itself in characters and repaints the whole grid to do it. All of it is localStorage: a
+  width is a fact about this screen, and one synced from a 32in monitor is wrong on a laptop.
+
+- **"raised it for you" now raises it.** A board that had reloaded held no handle to a popped-out window, so it
+  asked the window to focus itself over the broadcast channel. That never worked: `window.focus()` in a
+  background tab has no user gesture behind it and every browser refuses it, silently. The board is the one
+  holding the click, so the board raises the window by NAME, with `window.open("", name)`, which returns an
+  existing window without navigating it and keeps the scrollback. A free name opens a blank window instead, so
+  the answer is checked and an unwanted one closed again. `popOutTask` reports whether it raised or opened, and
+  the toast says which, because a claim can be a heartbeat stale.
+
+- **`docs/reload-design.md`**: how a new daemon gets installed by an agent the daemon is currently running. The
+  scheduled restart, why detaching is not `run_in_background`, the rename-aside binary swap that Windows permits
+  when a delete would fail, and why the board reloads itself on a hash of its own HTML.
+
+- **A pasted screenshot no longer has to live in your repository.** Two settings under "this machine": a pasted
+  file either stays in the card under `.atrium/incoming`, which is what it did, or goes to a scratch directory
+  beside the database that is emptied every time the daemon starts. The path is what reaches the agent either
+  way, and the words in front of it are yours to set, defaulting to "check out the image here: " rather than a
+  bare path dropped into the line.
+
+  What is NOT on offer is handing the bytes straight to the model. A pseudo terminal carries input characters
+  and an image is not one; Claude Code gets a pasted image by reading the clipboard itself, on its own machine,
+  which is exactly what a browser on another machine cannot do. The file has to exist somewhere, so the only
+  real question is where and for how long.
+
+  The scratch directory is cleared on the way UP, not on the way down, because a daemon that was killed never
+  runs its own cleanup and the guarantee wanted here is that the pictures are gone.
+
+- **The terminal draws on the GPU, and the board tab went from 26% of a CPU to about 7%.** xterm has no renderer
+  of its own beyond a fallback, and the fallback is the DOM: a `<span>` per styled run per row, rebuilt every
+  frame, plus a generated stylesheet of 256 color rules. Only `xterm.js` and the fit addon were vendored, so
+  that fallback was what every terminal had been using.
+
+  The version was not knowable from the bundles, which carry no version string, so it was established by
+  downloading candidates and hashing them: the vendored files are byte-identical to `@xterm/xterm@5.5.0` and
+  `@xterm/addon-fit@0.10.0`, which makes `@xterm/addon-webgl@0.18.0` the matching pair. `vendor/VERSIONS.md`
+  records all four with their hashes, and the trap: the check is not "does it work", because the DOM fallback
+  works too.
+
+  Two more sources went with it. `refresh()` was bound straight to the event stream, and a working agent
+  publishes a task event on every tool start and end, each costing three fetches and a rebuild of every card's
+  markup; those coalesce into one refresh per burst now. And four infinite CSS animations ran forever, two of
+  them on every matching card at once and two of them animating box-shadow, which forces a full repaint rather
+  than compositing. What is left is one opacity pulse and one header icon, and reduced motion now names the
+  animations in one block rather than the chips somebody remembered.
+
+- **Resuming asks which conversation, when there is more than one.** A card carries the last session atrium saw
+  on it, which is the right default and not the whole truth: a directory accumulates conversations and the one
+  worth picking up is often not the most recent. The picker shows the title Claude Code generated, the age and
+  the size, and marks the one the card would have taken on its own. One conversation is not a question and
+  resumes straight through; zero is not either.
+
+  Conversations can be forgotten from the same list. Deleting the transcript is the whole operation, and a card
+  pointing at one that has gone starts fresh instead.
+
+  `askUser` grew a real `select` for this. Building it on the existing datalist reproduced the defect that made
+  the theme picker unusable: a datalist filters on what is already in the field, so a pre-filled value hides
+  every other option, and here the values are uuids.
+
+- **A page notices when the daemon is serving a board it is not.** `Cache-Control` already stopped a stale
+  load; this is the other half, which is that a page ALREADY OPEN keeps the JavaScript it loaded. A restart
+  replaces what is served and touches nothing running, so a popped-out terminal left open since before a fix is
+  still executing the old code, and the symptom is a fix that works in every window opened afterwards. The
+  binary hashes the board it carries into a build id, `/v1/health` returns it, and a page that sees a different
+  one reloads. Reloading a popped-out terminal costs the scrollback and nothing else.
+
+- **A file can be edited in the board, and a download can be a selection.** `get all` was the wrong shape:
+  "everything under here" is a guess usually wrong by a build directory, and it made the case anybody has, four
+  files out of two hundred, unreachable. Tick what you want and the button says how many. The zip endpoint takes
+  repeated `path` parameters and names entries relative to the deepest directory they share.
+
+  The editor is a textarea, for a short list of extensions, refusing anything that is not UTF-8 or is over 2 MiB
+  rather than mangling it. **A write carries the hash of what was read and the daemon refuses if the file moved
+  on**, which is what makes editing a file an agent is also editing safe to offer: without it a save is
+  last-write-wins at machine speed and the loss is silent. Optimistic, not a lock.
+
+- **`swapStaged` renames the outgoing binary aside instead of deleting it.** Windows refuses to delete a running
+  executable and permits a rename within the same directory, which is how every self-updater on this platform
+  works. Without that, installing a rebuilt daemon meant a shell outside atrium with the daemon stopped, which
+  is the chore `restart_atrium` exists to remove.
+
+- **Smaller:** the terminal bar keeps the board's colors while the pane takes the session's theme, and the
+  scrollbar takes the theme's own selection and cursor colors; a `tightest` density; pinned cards are their own
+  group at the top of a column rather than sorted within a project group they also appeared in.
+
 - **`atrium control`: an MCP server that can restart the daemon from inside a session the daemon is running.**
 
   The chicken and egg. A supervised runner cannot restart the daemon, because the daemon owns that runner's

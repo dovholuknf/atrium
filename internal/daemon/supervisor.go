@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
+	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -26,13 +27,13 @@ import (
 // is strictly better, which is why launch mode is a per harness setting rather
 // than a migration.
 
-// scrollback is how much recent output is kept per runner, in bytes.
+// How much recent output is kept per runner is a SETTING, and it lives in
+// `internal/api/scrollback.go` next to the browser's half of the same
+// question. Read here at spawn, so a change applies to the next runner started.
 //
-// Sized in bytes rather than lines because one line of a progress bar can be
-// enormous. This is a convenience for someone attaching, not a transcript: the
-// durable record of what happened is the event log, and writing every byte a
-// runner emits to SQLite would grow without bound to buy very little.
-const scrollback = 256 * 1024
+// It is still not a transcript. The durable record of what happened is the
+// event log, and writing every byte a runner emits to SQLite would grow
+// without bound to buy very little.
 
 // ringBuffer keeps the last N bytes written to it.
 type ringBuffer struct {
@@ -249,7 +250,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
 		resumed:  resumed,
 		spec:     fresh,
-		buf:      newRing(scrollback),
+		buf:      newRing(api.ScrollbackBytes(d.st)),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

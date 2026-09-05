@@ -190,6 +190,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/zip", s.zipFiles)
+	mux.HandleFunc("DELETE /v1/tasks/{id}/files", s.deleteFiles)
+	mux.HandleFunc("GET /v1/tasks/{id}/icon", s.getIcon)
+	mux.HandleFunc("POST /v1/tasks/{id}/icon", s.putIcon)
+	mux.HandleFunc("DELETE /v1/tasks/{id}/icon", s.deleteIcon)
+	mux.HandleFunc("GET /v1/tasks/{id}/sessions", s.taskSessions)
+	mux.HandleFunc("DELETE /v1/tasks/{id}/sessions/{session}", s.forgetSession)
+	mux.HandleFunc("GET /v1/tasks/{id}/files/text", s.readText)
+	mux.HandleFunc("PUT /v1/tasks/{id}/files/text", s.writeText)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)
@@ -275,7 +283,9 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	halted, cause := s.st.Halted()
-	body := map[string]any{"ok": !halted, "halted": halted}
+	// `build` is here rather than on its own endpoint because health is the
+	// one thing every page already asks, on a timer and on every reconnect.
+	body := map[string]any{"ok": !halted, "halted": halted, "build": BuildID}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
 	}

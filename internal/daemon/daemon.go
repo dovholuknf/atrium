@@ -117,6 +117,18 @@ func New(opts Options) (*Daemon, error) {
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
 	}
+	// Card icons live beside the database, which is the one directory atrium
+	// already owns and already backs up with the rest of its state.
+	api.IconDir = filepath.Join(filepath.Dir(opts.DBPath), "icons")
+	// Pasted files go here when they are not being kept, and the directory is
+	// emptied on the way up rather than on the way down. A daemon that was
+	// killed never runs its own cleanup, and the guarantee somebody wants from
+	// this setting is that the pictures are gone, not that they were deleted
+	// tidily.
+	api.ScrapDir = filepath.Join(filepath.Dir(opts.DBPath), "scrap")
+	if err := os.RemoveAll(api.ScrapDir); err != nil {
+		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
+	}
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
 	d.ap.Prompt = d.prompt

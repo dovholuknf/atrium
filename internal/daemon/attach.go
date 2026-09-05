@@ -55,6 +55,21 @@ func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.CloseNow()
 
+	// PASTING SOMETHING BIG MUST NOT KILL THE SESSION.
+	//
+	// `coder/websocket` reads at most 32KB per message by default and closes
+	// the connection when one is bigger, which is the right default for a
+	// server taking messages from strangers and the wrong one here: this
+	// carries keystrokes from a person who already owns the machine, and a
+	// paste of a stack trace or a diff goes past 32KB without trying. The
+	// symptom was a terminal that detached the moment you pasted anything
+	// substantial, with nothing on screen to say why.
+	//
+	// Four megabytes, which is far more than anybody types and still bounded.
+	// The other direction, output, is written rather than read and was never
+	// affected.
+	c.SetReadLimit(4 << 20)
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 

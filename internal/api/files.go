@@ -46,9 +46,80 @@ const (
 	incomingDir = ".atrium/incoming"
 )
 
+// SettingPasteKeep decides whether a pasted file is kept.
+//
+// Two honest answers and no third one:
+//
+//	keep   the card's own `.atrium/incoming`, where it stays. You have the
+//	       screenshot tomorrow, and you also have every screenshot you ever
+//	       pasted.
+//	scrap  a directory beside atrium's own state, emptied on every daemon
+//	       start. The path still reaches the agent, the file still works for
+//	       as long as the conversation does, and your repository does not
+//	       accumulate a folder of pictures you looked at once.
+//
+// There is no option that hands the bytes straight to the model. A pseudo
+// terminal carries input characters, and an image is not one. Claude Code gets
+// a pasted image by reading the clipboard ITSELF, on its own machine, which is
+// exactly what a browser two machines away cannot do.
+const SettingPasteKeep = "paste_keep"
+
+// SettingPastePreamble is what gets typed in front of the path.
+//
+// A bare path is what a person types when they mean "look at this", and it is
+// not what they say. Nothing is submitted either way: the text and the path
+// are spliced into the line being written, and pressing enter stays yours.
+const SettingPastePreamble = "paste_preamble"
+
+// DefaultPastePreamble reads as an instruction rather than as a fragment.
+const DefaultPastePreamble = "check out the image here: "
+
+// PastePreambleNone is how "no preamble at all" is stored.
+//
+// A word rather than an empty string, because an empty string is what a
+// setting that has never been written reads as, and "never chose" and "chose
+// nothing" have to be two different answers or the default can never be turned
+// off. Nobody types this: the board writes it when the box is unticked.
+const PastePreambleNone = "none"
+
+// ScrapDir is where uploads go when they are not being kept. Set by the daemon
+// beside the rest of its state, and emptied at every start.
+var ScrapDir string
+
 // uploadTarget resolves a card to the directory its files belong in, making it
 // if it is not there.
-func uploadTarget(t *store.Task) (string, error) {
+//
+// Returns the directory and the root every written path has to stay inside.
+// The two differ by mode, and the check downstream is against the root rather
+// than against the card, or the scrap directory would be refused for being
+// exactly where it was asked to be.
+func (s *Server) uploadTarget(t *store.Task) (string, string, error) {
+	// Not kept, so not in the repository. The path has no caller input in it,
+	// the filename is sanitised where it is written, and the root below is this
+	// directory, so a filename that tried to climb out is still refused.
+	if s.pasteIsScrap() && strings.TrimSpace(ScrapDir) != "" {
+		if err := os.MkdirAll(ScrapDir, 0o700); err != nil {
+			return "", "", err
+		}
+		return ScrapDir, ScrapDir, nil
+	}
+	dir, err := uploadTargetIn(t)
+	if err != nil {
+		return "", "", err
+	}
+	return dir, filepath.FromSlash(t.Worktree), nil
+}
+
+// pasteIsScrap reports whether uploads are being thrown away on the next start.
+func (s *Server) pasteIsScrap() bool {
+	v, err := s.st.Setting(SettingPasteKeep)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "scrap")
+}
+
+func uploadTargetIn(t *store.Task) (string, error) {
 	if t.Worktree == "" {
 		return "", errors.New("this card has no directory, so there is nowhere to put a file")
 	}
@@ -97,7 +168,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	dir, err := uploadTarget(task)
+	dir, root, err := s.uploadTarget(task)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -141,9 +212,9 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		dest := filepath.Join(dir, leaf)
 
 		// Checked anyway. Nothing caller-supplied is in this path, so this can
-		// only fail if the card's own directory has moved under a symlink, and
-		// that is worth refusing rather than assuming.
-		if _, err := safepath.Contained(filepath.FromSlash(task.Worktree), dest); err != nil {
+		// only fail if the directory has moved under a symlink, and that is
+		// worth refusing rather than assuming.
+		if _, err := safepath.Contained(root, dest); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
