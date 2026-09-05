@@ -72,6 +72,14 @@ if ! node "$here/scripts/check-settings-panes.js" "$page"; then
   fail=1
 fi
 
+# The runners page is cut the same way, by the same function, with the same
+# hazard. Checked separately because its headings are labelled explicitly and
+# its lists are named, and neither of those is true of the dialog.
+if ! node "$here/scripts/check-runner-panes.js" "$page"; then
+  echo "the runners page would not partition into panes. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

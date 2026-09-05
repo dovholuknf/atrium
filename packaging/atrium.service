@@ -1,0 +1,64 @@
+# Start atrium when you log in.
+#
+#   systemctl --user enable --now atrium
+#   systemctl --user status atrium
+#   journalctl --user -u atrium -f
+#
+# A USER UNIT, NOT A SYSTEM ONE, and the reason is the same one that makes
+# `scripts/atrium-autostart.ps1` a logon task rather than a Windows service.
+#
+# A system unit runs outside your login session. It cannot open a pseudo
+# terminal you can attach to, it does not have your PATH, your shell
+# configuration, your ssh agent or your credential helpers, and every runner it
+# started would inherit none of those. Supervision is most of what atrium is
+# for, so a system unit installs a version of atrium with its main feature
+# missing and no error to say so.
+#
+# The trade, stated: a user unit stops when you log out, unless lingering is on.
+# `loginctl enable-linger $USER` is the switch, and it is deliberately not done
+# for you: a daemon that keeps running after you log out is a decision about
+# your machine.
+
+[Unit]
+Description=atrium, organizing coding agents
+Documentation=https://github.com/dovholuknf/atrium
+After=network-online.target
+
+[Service]
+Type=simple
+
+# THE DATABASE IS NAMED EXPLICITLY, which is the whole reason this file is more
+# than one line.
+#
+# Which database atrium opens depends on WORKTREE_ROOT in the environment it was
+# started from. A unit inherits almost nothing, so leaving it out means the
+# daemon started at login opens a DIFFERENT database from the one you get when
+# you run it by hand, and the symptom is a board that has lost every card. This
+# is the exact confusion the Windows script exists to end, recorded there at
+# length.
+ExecStart=/usr/bin/atrium daemon --db %h/.atrium/atrium.db
+
+# Restarted, but not into a crash loop. A daemon that halts on a storage failure
+# does so on purpose and will halt again in three seconds, so the interval is
+# long enough that the journal reads as a repeated failure rather than a wall.
+Restart=on-failure
+RestartSec=15s
+
+# NOT `KillMode=control-group`, which is the default and is wrong here.
+#
+# Atrium owns a pseudo terminal per supervised runner, and every one of those
+# processes is in this unit's cgroup. The default kills the whole group at stop,
+# which takes every agent with it at exactly the moment atrium is trying to wind
+# them down tidily. `mixed` signals the main process and lets it do that.
+#
+# `atrium stop` is still the better way to stop it. This is what happens when
+# systemd stops it for you.
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Ten seconds for the supervised runners plus room for the listeners, matching
+# the grace period in the daemon's own shutdown.
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=default.target

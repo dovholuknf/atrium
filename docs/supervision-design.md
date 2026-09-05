@@ -34,6 +34,24 @@ A supervisor that, for a harness whose launch mode is `pty`:
 
 ## Decisions
 
+### A card holds two terminals, and only one of them is a runner
+
+The runner's, and one plain shell in the same working directory. The shell is what a wedged agent needs: the
+terminal on the card belongs to the agent, so when it stops answering and the question is `git status` there is
+nowhere to type it.
+
+They are kept in two maps on the supervisor and the separation is the design, not an implementation detail.
+`supervisor.get` is asked fifteen times across the reaper, the park, shelving, actions, messages and the exit
+recorder, and every one of those means the process doing the work. A shell in that map would have been stopped
+by the park, reaped for liveness, and, when closed, would have marked its card dead.
+
+So a shell has no card status, writes no event, is never resumed or retried, and does not survive its card. It
+carries `ATRIUM_TASK_ID` so a hook can say which card it is in, and deliberately not `ATRIUM_AGENT_NAME`,
+because anything started from it would otherwise file activity as though the agent had done it.
+
+Two rather than any number. A list of terminals needs naming, ordering and a picker, and the case being solved
+is singular.
+
 ### Capture is not interpretation
 
 Output is captured for a human to read. It is not parsed to infer status for any runner that reports its own,

@@ -44,6 +44,23 @@ Below that, in no particular order: the forum, Postgres, stage 5, and multi-tena
 
 ## Next
 
+### Proper packaging. Groundwork built, publishing is yours.
+
+**Moved to `docs/packaging.md`,** which has the five targets, what each costs, and a table of what is written
+against what needs a human. The entry below is kept for the reasoning.
+
+Built and verified tonight: `atrium version`, stamped by the linker; `scripts/release.sh`, which builds five
+platforms, archives each in its ecosystem's shape and writes one checksum file. The Linux build off this
+Windows machine is a statically linked ELF, which is the property a deb and an rpm rest on.
+
+Written and NOT verified: `packaging/nfpm.yaml`, `packaging/atrium.service`, `packaging/scoop-atrium.json`.
+Each says so at the top of itself.
+
+**The one unsolved thing, named so it is not discovered later:** `restart_atrium` renames a staged binary over
+the running one, and under a package manager that file belongs to the manager. The rule is probably that a
+packaged atrium refuses the swap and names the upgrade command, which means the build has to know how it was
+installed. `docs/reload-design.md` assumes the swap always works.
+
 ### Proper packaging, on every platform atrium runs on
 
 There is no way to install atrium. You build it and copy the binary somewhere, and every machine ends up with a
@@ -106,6 +123,28 @@ three wrong conclusions once before, recorded in "The unexplained block was not 
 The limit now applies to the newest end and the window is reversed in the store, so the wire shape is unchanged
 and the timeline, which renders in time order, needed no edit. The `id` tie-break mirrors `at` in both clauses,
 which matters because these timestamps have millisecond resolution and a hook can write two events inside one.
+
+### The grouping expression rule. Decided and guarded.
+
+**The rule: an expression may be stored where it was typed. Anything wider needs a different mechanism, not a
+bigger text box.**
+
+The entry below is kept because the argument is what the next decision gets made from. What has changed is that
+the rule is now written where somebody will hit it rather than only here:
+
+- **`internal/api/settings.go` refuses `group_by` and `group_order`,** checked against the raw body rather than
+  a struct field, because the failure being guarded is a field that does not exist yet. The refusal names the
+  reason and points at this document. It sits ahead of every write in the handler, so a body carrying an
+  expression beside a legitimate setting is refused whole: applying half and reporting a failure is the worst
+  of both.
+- **`compiled()` in the board carries the rule and the three things that would break it,** so somebody reading
+  the `new Function` call finds out why it is safe before deciding it is not.
+- **Three tests,** including one asserting the refusal says why. A comment can be deleted; a failing test names
+  the decision at the moment somebody makes the mistake.
+
+**Why a refusal rather than an implementation.** Board-wide grouping is a reasonable thing to want and the
+reason it is not built is not laziness: the cheap version is the dangerous one. The options that work are in the
+entry below, unchanged, and all three are real work.
 
 ### The grouping expression is safe today for one reason, and that reason is not written down anywhere
 
@@ -735,6 +774,24 @@ The last piece of supervision. A cooperative runner reports its own state, so at
 A bare shell or a runner with no hook has only its terminal, and inferring `needs-input` from that is heuristic.
 Worth doing last, and worth keeping manual status override as the escape hatch.
 
+### Source control and ticketing, both directions. Designed, not built.
+
+`docs/scm-design.md`. Two things asked for together that share nothing but the word integration, and the first
+decision in the document is separating them.
+
+**Inbound** is the pull to the entry below's push: a table of URL recognisers, one row each, turning a pull
+request or a ticket into a filled-in launch dialog. It holds no credential, does not clone, does not learn what
+a repository is, and stops at a card because starting work is a decision. The prior art is `git-worktree.ps1`,
+which has done this for years.
+
+**Outbound** is atrium's own configuration as files a repository can hold. The requirement that shapes it is
+"any SCM, not just atrium's", which rules out an integration and rules in a directory of files.
+
+Reviewed before anything was promised. Three changes came out of it, all of the same kind: a stated invariant
+with no contract behind it. Naming whole tables as exportable is not a policy, so there is a per-field table now
+and one rule that can be checked by a machine rather than by judgement, which is that no absolute path leaves
+here. See the document for the rest.
+
 ### Starting a card from a ticket, an issue or a pull request
 
 Designed in `docs/intake-design.md`. **Layers 0, 1 and 2 are built.** What follows is the original entry, kept
@@ -1064,6 +1121,94 @@ Kept short, because the point of the list is what is left. Recorded so the same 
   400 on a malformed body against its own fail-open contract, was also real and fixed.
 - Nothing has been run against `docs/supervision-design.md` as built.
 
+### A shell beside a wedged agent. Built.
+
+The only `no` in the comparison table below, and the row every other product fails too. A card now holds two
+terminals: the runner's, and one plain shell in the same working directory. `agent | shell` on the terminal bar
+and `open a shell here` on the card menu.
+
+**Decided, with the alternatives.**
+
+- **Two terminals, not N.** A list of terminals needs naming, ordering, closing and a picker. One shell is a
+  tool for looking at something; three is a terminal multiplexer, and a good one is already installed.
+- **A second map on the supervisor rather than one map with mangled keys.** `supervisor.get` is said fifteen
+  times and every caller means the process doing the work: the reaper, the park, shelving, actions, messages,
+  the exit recorder. Putting a shell in front of any of them would have marked a card dead when somebody typed
+  `exit`.
+- **`?kind=shell` on the existing attach route, not a second route.** The route already carries a second
+  dimension the same way, in `attachReadOnly`. A second route duplicates the upgrade, the read limit, the
+  backlog replay and the write loop, which is the copy that drifts. Absent means the runner, so nothing written
+  before tonight moved.
+- **An explicit `POST` to create one,** rather than spawning inside the websocket upgrade. A shell fails to
+  start in readable ways and a close code cannot carry a sentence.
+- **No entry in the card's event log.** The event kind is a `CHECK`, and widening it means rebuilding the
+  largest table in the database, which `schema.go` calls "a fair price once and a bad habit". Also the log
+  records what a SESSION was allowed to do, and a shell is the operator on their own machine.
+- **Not lent over a share.** A writable guest could have appended `?kind=shell` to the one route a share
+  allows. Refused explicitly.
+- **Closed after thirty minutes with nobody attached,** on a clock that runs from the last time somebody
+  looked rather than from when it opened. Not a resource limit: one pty is nothing. It is about what the
+  operator believes is running on their machine.
+
+**Still open, and deliberately not built.**
+
+- **A shell on a card atrium does not own a runner for.** The toggle appears with the runner. A card with a
+  worktree and no session could reasonably have a shell too, and the reason it does not is that there is
+  nowhere on the board to put a terminal for a card that has no terminal pane. `start something here` covers
+  most of that case already.
+- **More than one.** See above. If it ever comes up, the thing that changes is the map's key, not the design.
+
+### The runners page was five pages in one scroll. Fixed.
+
+Six groups stacked in one column with a heading and twenty six pixels between them: launchers, runners,
+runners discovered on PATH, fixtures, sources, actions. Getting to the last of them meant scrolling past all of
+the others, and nothing on screen said where you were.
+
+Cut into five panes by the same function the settings dialog uses, which was generalised rather than copied.
+The markup is still one flow of headings and their content, so adding a section is a heading and its content and
+nothing else.
+
+**Decided.** Panes, not a sixth top-level tab: these five are one subject, which is the things atrium runs.
+Panes, not an accordion: an accordion is right when the common case is closed, and this page is only ever opened
+to do one of these five things.
+
+**Left alone deliberately.** The rows inside each pane. They are dense, and the complaint was about finding
+things rather than about reading them once found. Making the rows roomier is a `--density` question and that
+control already exists.
+
+### Skins for the board itself. Built.
+
+Ten, beside the navy one it came with, chosen under `the board` in the gear and stored on the daemon so the
+choice follows to another browser and to a phone.
+
+**This is not the entry below it,** and the two get confused because both are called themes in speech. That one
+is about TERMINAL themes, which belong to one terminal and may reasonably differ between two side by side. A
+skin is the chrome around them and there is one of it.
+
+**What it turned out to be about.** Not colour. The palette was only half a palette: every colour was a variable
+and about sixty tints of those colours were a second copy spelled `rgba(...)`, because CSS cannot add alpha to a
+hex. Overriding the variables repainted the solids and left every tint at the old hue. The definition is now the
+channel triple, the solid is derived from it, and a skin sets one value per colour.
+
+**Decided, and the alternatives.**
+
+- **A skin moves the palette and nothing else.** The type ladder, the space ladder, the radii and the shadow
+  geometry stay. `--uiscale` and `--density` are the operator's answer to size and a skin that moved them would
+  be a different board rather than the same board in another colour.
+- **All ten are dark.** `--lift` and `--hairline` are white at low alpha and every shadow is near black, so a
+  light board is a second set of those rather than a different palette. Named as its own work, below.
+- **Stored on the daemon, not in `localStorage`.** A terminal theme is per screen because two can differ. A skin
+  cannot. The browser keeps a copy anyway, purely so a load does not flash navy before the daemon answers, and it
+  is never the source of truth.
+- **An unknown name is refused rather than stored,** which is the opposite of the browse roots beside it. A root
+  that does not exist yet is a list somebody is preparing; an unknown skin saves, gets worn, matches no rule and
+  changes nothing, which is the worst answer available.
+
+**Still open: a light board.** Wanted eventually and deliberately not attempted. It needs `--lift`,
+`--hairline` and the shadows to become part of the skin rather than constants, and it needs somebody to decide
+what the terminal does underneath, since xterm draws its own background and a light board around a black
+terminal is worse than either.
+
 ### Themes you can edit, and themes you can bring
 
 Fifty two themes ship in the page and that is the whole set. Two things are missing.
@@ -1114,8 +1259,8 @@ programmable half.
 
 What atrium does NOT have from that list, honestly:
 
-- **A shell beside a wedged agent.** The terminal is the runner's. There is no "open a second terminal in this
-  card's directory" and it is the single most valuable thing on the list.
+- ~~**A shell beside a wedged agent.**~~ Built. A card holds two terminals: the runner's and one plain shell in
+  the same directory. See "A shell beside a wedged agent" below.
 - **The local-only commands.** `/resume` is answered by the session picker, and `/mcp` and `/plugin` are not.
   These are pickers Claude Code draws in its own terminal, and atrium owns that terminal, so they should already
   work: worth actually testing rather than assuming either way.
@@ -1139,7 +1284,7 @@ atrium column is ours and every row of it is answerable against the code.
 | Remote interactive pickers | some commands are local-only | limited | better, not equivalent | **untested.** the pickers are drawn in a pty atrium owns, so they should work |
 | Upload files and screenshots into the workspace | yes | yes | asked for | **yes.** paste, drop or pick, and the path is typed into the line you are writing |
 | Always-on remote access to every session | per session | limited | yes, if the server is left running | **yes.** the daemon outlives sessions and fixtures restart them |
-| A shell when the agent wedges | no | no | no | **no.** the single biggest gap, and the next thing to build |
+| A shell when the agent wedges | no | no | no | **yes.** a second terminal per card, in the same directory |
 | Self-host the relay | no | no | yes, there is no relay | **yes,** and for the same reason: loopback plus an overlay you own |
 | Automation and API control | limited | limited | best architecture for it | **yes.** an HTTP API, `atrium tell`, `atrium peers`, sources on a timer |
 | A phone | an app | an app | no | the board is responsive. nothing is designed for it |
@@ -1170,7 +1315,34 @@ anywhere public:
 3. **Date it, and cite them.** Every claim about another product gets a link and a date, in their words rather
    than ours.
 
-### The overlay panel is a configuration screen pretending to be a switch
+### The overlay panel is a configuration screen pretending to be a switch. Mostly fixed.
+
+**Two thirds of the entry below was already built** and the entry had gone stale. The collapse behind
+`configure zrok...` is `overlayBody`, and whether it is open is remembered per overlay in `OV_OPEN_KEY`. Both
+shipped some time ago. This is the third stale entry found this week, which is a fact about the list rather
+than about the code.
+
+**Done now:**
+
+- Renamed to `expose the board`, which pairs with `share this session` on a card.
+- A share that stops on its own alerts, on the running-to-stopped edge with a reason attached, and never on the
+  first event of a page's life so an old failure is not announced as news.
+- `reserve and share` in one press, beside `reserve it`, which stays because claiming a name without
+  publishing is a real thing to want. It goes through `startOverlay` so the public-share confirmation is still
+  asked: the convenient path must not be the one that skips the warning.
+- The field is `the address to keep` rather than `reserved name (public)`, which named the state you want
+  rather than the thing being typed.
+
+**Still open, and the reason:** the panel cannot say what your zrok account allows and how much is used before
+you press a button that fails. That is another REST call against the zrok API and a response shape nothing else
+in the daemon models. `overlay_zrok_errors.go` turns what comes back into a sentence and remains the floor.
+
+Also still open, from the original entry: enabling against a non-default zrok instance works and is hard to
+find, and getting it wrong produces a token error that does not mention the endpoint.
+
+### The original entry, for the reasoning
+
+
 
 `reach this board from elsewhere` shows two overlays, and each one shows everything about itself at once: the
 state, the setup step, every configuration field, and the button that starts it. Most of that is answered once

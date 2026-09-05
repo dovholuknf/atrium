@@ -5,6 +5,241 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium version`, and everything packaging needs that does not need a certificate.** `docs/packaging.md`.
+
+  **The binary can say what it is.** Nothing could answer that before, which is the first question every
+  packaging format asks: scoop compares it to decide whether an update exists, deb and rpm refuse to install one
+  package over another without it, Homebrew names the bottle with it. It also answers a question that comes up
+  with no packaging at all, which is what this daemon running since some morning weeks ago actually is.
+
+  Stamped by the linker, not by a constant somebody edits, because a hand-edited constant is wrong between the
+  edit and the tag and wrong again on every branch build. An unstamped build says `dev`, and there is a test
+  asserting it: the tempting alternative is the nearest tag plus a commit count, which reads like a version and
+  is not one, and a package manager comparing that string would believe a working-tree build is a release.
+
+  **`scripts/release.sh` builds all five platforms, archives each in the shape its ecosystem reads, and writes
+  one checksum file.** Run and verified: `windows/amd64`, `linux/amd64`, `linux/arm64`, `darwin/arm64`,
+  `darwin/amd64`, from a Windows machine, with the Linux build confirmed as a statically linked ELF. That last
+  part is what a deb and an rpm depend on, and it is free because `modernc.org/sqlite` is pure Go, which is why
+  `CGO_ENABLED=0` is set explicitly rather than relied on: a machine with a C toolchain would otherwise quietly
+  produce a binary that needs one.
+
+  The checksum file is the piece that matters most and is the easiest to leave for later. A manifest carrying a
+  hash that does not match its archive is the most common packaging failure there is, and it is only ever found
+  by a stranger.
+
+  **A scoop manifest, an nfpm config for deb and rpm, and a systemd user unit,** all written and none published.
+
+  The systemd unit is a USER unit, and it is the same decision `scripts/atrium-autostart.ps1` makes on Windows
+  in being a logon task rather than a service. A system unit runs outside your login session, cannot open a
+  pseudo terminal you can attach to, and has none of your PATH, shell configuration, ssh agent or credential
+  helpers, so every runner it started would inherit none of them. It would install a version of atrium with its
+  main feature missing and nothing to say so. The two files are one design on two platforms.
+
+  Nothing is enabled or started on install. Installing says put this here; starting a daemon that opens two
+  listeners and begins supervising processes is a different sentence.
+
+  **Named as unsolved rather than left to be discovered:** `restart_atrium` renames a staged binary over the
+  running one, and under any package manager that file belongs to the manager. A rename behind its back leaves
+  it reporting a version that is not installed, and the next update quietly puts the old binary back. The answer
+  is probably that a packaged atrium refuses the swap and names the upgrade command instead, which means the
+  build has to know how it was installed. `docs/reload-design.md` assumes the swap always works.
+
+  **What is unverified is most of it, and the document says so per file.** `nfpm` is not installed here, the
+  unit has never been loaded, and the scoop manifest points at a release that does not exist. Signing,
+  accounts, moderation and publishing are all yours.
+
+- **The grouping expression rule is decided, and refused at the boundary.** The board compiles two
+  operator-supplied functions with `new Function` to group cards. That has always been safe, for one reason
+  nobody had written down: `groupingPrefs()` reads `localStorage`, so the code running in a browser was typed
+  into that browser by whoever was sitting at it, and somebody who can write it can already open dev tools.
+
+  Safe by accident is not the same as safe by decision, and the accident is one commit from ending. Grouping is
+  board-wide and today it is lost when you open a different browser, so somebody will reach for the obvious
+  field, it will work perfectly on the first machine, and it will ship. A daemon-side expression is one machine
+  typing code that another machine runs. These functions have full page scope: `fetch` is in hand, and the board
+  can read the daemon's filesystem, every card title, every worktree path and the audit log. It stops being a
+  grouping rule and becomes an exfiltration primitive the moment somebody other than the operator supplies one.
+
+  **The rule: an expression may be stored where it was typed.** `POST /v1/settings` now refuses `group_by` and
+  `group_order` with the reason and a pointer to the argument, checked against the raw body rather than a struct
+  field, because what is being guarded is a field nobody has added yet. It sits ahead of every write in the
+  handler, so a body carrying an expression beside a real setting is refused whole rather than half applied.
+  Three tests, one of which asserts the refusal explains itself: a comment can be deleted, and a failing test
+  names the decision at the moment somebody makes the mistake.
+
+- **`docs/scm-design.md`,** which is a design and not a feature. Source control and ticketing, asked for
+  together and separated in the first paragraph because they share nothing but the word integration.
+
+  **Inbound** is the pull to `docs/intake-design.md`'s push. Sources on a timer fill an inbox with work aimed at
+  you; this is having a pull request open in front of you and wanting a card. The prior art is `git-worktree.ps1`
+  on this machine, whose URL dispatch already recognises GitHub, Bitbucket and GitLab pull requests, issues,
+  security advisories including the temporary private fork the fix lives on, Zendesk tickets and Discourse
+  threads. Four of its properties are worth taking exactly and one is worth refusing: it does the work inside the
+  recogniser, which is why it is six thousand lines.
+
+  A recogniser is a ROW, not code, like a runner and a source and an action. It holds a pattern with named
+  captures and templates over them. It holds no credential and never will: `fetch` is an argv the operator wrote,
+  and `gh` already has a token in the keyring it already uses. It produces a filled-in launch dialog and stops
+  there, because starting work is a decision. It does not learn what a repository is, does not clone, and does
+  not own a worktree layout, because `gwt` already does all three and a second worse copy is not an improvement.
+
+  **Outbound** is the half nobody asks for until it hurts: five runners, the fixtures, the sources, the actions
+  and the standing permission rules live in one SQLite file with no history and no diff. A permission rule is a
+  policy decision about what an agent may do unasked, and there is no way to see what it looked like last week.
+  The answer to "any SCM, not just atrium's" is files on disk, one per table, because git, Mercurial, Subversion
+  and a USB stick all handle a directory identically.
+
+  Reviewed before it was written down as anything more, and the review changed three things. Naming whole tables
+  as exportable is not a policy: every one of them holds fields true only of this machine, so an exporter could
+  satisfy every stated rule and still produce a file that is useless on the second machine. There is a per-field
+  table now, with `exported`, `local` and `flagged`, and a rule that can be checked mechanically: no absolute
+  path leaves this machine. The recogniser's `prepare` command is in the row shape rather than described in
+  prose. And `docs/intake-design.md`'s deduplication key, open long enough that a reviewer could pick four
+  different answers out of the document, is decided: `source` plus `external_id`, never the URL, because an id is
+  a name and a URL is a route.
+
+- **`expose the board`, and a share that dies tells you.** The overlay panel was named for a goal rather than an
+  action, which mattered more once there were two kinds of exposing: it now pairs with `share this session` on a
+  card, and each says which one it is.
+
+  Two thirds of the backlog entry for this turned out to be already built. The collapse behind `configure
+  zrok...` and the remembered open state both shipped some time ago and the entry had gone stale, which is worth
+  recording because it is the third stale entry found this week.
+
+  What was actually missing:
+
+  **A share that stops on its own now alerts.** It was the one state change in the panel that nobody pressed a
+  button for. The listener drops, `err` is set, and the only way to find out was to open the gear and look,
+  which nobody does because there is no reason to. It matters because the address is the thing you handed to
+  somebody else: a dead public share is a link that has stopped working for a person who is not in the room.
+  Only the running-to-stopped edge, only with a reason attached, and never on the first event of a page's life,
+  so a board opening onto a share that died an hour ago does not announce old news.
+
+  **Reserving a name and sharing it is one press.** It took three: type a name, `reserve it`, `start sharing`.
+  Nobody reserves a name in order to admire it, and the middle step exists because the two calls are separate on
+  zrok's side, which is zrok's business rather than yours. Both buttons stay, because claiming a name for later
+  without publishing anything now is a real thing to want. `reserve and share` goes through the same start path,
+  so the confirmation that a public share puts a board with no login on the open internet is still asked.
+
+  The field is called `the address to keep` rather than `reserved name (public)`, which was the state you want
+  rather than the thing you are typing.
+
+  **Not built, and recorded rather than dropped:** the panel still cannot say what your zrok account allows and
+  how much of it is used before you press a button that fails. That needs another REST call and a shape nothing
+  else in the daemon has, and the error classifier remains the floor rather than the finish.
+
+- **A shell beside a wedged agent.** A card can hold two terminals now: the runner's, and a plain shell in the
+  same directory. `agent | shell` on the terminal bar, and `open a shell here` on the card menu.
+
+  It was the only `no` in the comparison table in `docs/backlog.md`, and the row every other remote-agent
+  product also fails. Atrium owns a terminal per supervised card and that terminal belongs to the runner, so
+  when the agent stopped answering and the question was `git status`, or what is holding that lock, the answer
+  was to walk to the machine. Which is the thing the board exists to stop.
+
+  **Two terminals, not N.** A list needs naming, ordering, closing and a picker, and none of that is the
+  problem. One shell is a tool for looking at something; three is a terminal multiplexer, and a good one is
+  already installed.
+
+  **A shell is not a runner, and it lives in a second map to prove it.** `supervisor.get` is said fifteen times
+  across the reaper, the park, shelving, actions, messages and the exit recorder, and every one of them means
+  the process doing the work. Reusing that map is the obvious simplification and it would have marked a card
+  dead the moment somebody typed `exit`. There is a test named for exactly that.
+
+  The design was reviewed before any of it was written, and came back `needs_changes` on the one thing the prose
+  had left out: how a client asks for one terminal rather than the other. Answered as `?kind=shell` on the
+  existing attach route, absent meaning the runner so every caller written before tonight keeps its meaning, and
+  an explicit `POST /v1/tasks/{id}/shell` to create one. A POST rather than spawning inside the websocket
+  upgrade, because a shell fails to start in ways worth reading and a close code cannot say "there is no such
+  directory".
+
+  It carries `ATRIUM_TASK_ID` and deliberately not `ATRIUM_AGENT_NAME`: a shell that claimed the agent's name
+  would have anything started from it filing activity against the card as though the runner had done it.
+
+  **A writable share could have reached it, and cannot.** A lent session allows one route, `<id>/attach`, and
+  without a guard a guest could have appended `?kind=shell` and got a general purpose command line on this
+  machine. That is lending the machine rather than lending a session, which is the line `docs/overlays.md` says
+  atrium does not cross. Refused explicitly rather than quietly rewritten to the runner, with four tests naming
+  what a share hands over.
+
+  A shell closes when its card is deleted, when the daemon stops, and after thirty minutes with nobody attached.
+  The close waits for the process to actually go, because on Windows a directory cannot be removed while
+  anything sits in it, and deleting a card is very often followed by removing the tree.
+
+- **A pseudo terminal could be closed twice, and the process died with no output.** Found while building the
+  above. `windDown` closes a runner's terminal when it will not take the hint, and `awaitExit` closes it again
+  when `cmd.Wait` returns, which is what closing it caused. On Windows that is a double close of a handle, and
+  it is not a Go panic: the process disappears silently. It survived this long because the two were usually far
+  enough apart in time. Shells made it reliable, since closing one is immediate. Closing is guarded by a
+  `sync.Once` now, which fixes it for runners too.
+
+- **The runners page is five panes instead of one scroll.** `start`, `runners`, `fixtures`, `sources` and
+  `actions`, with a spine down the left.
+
+  It had grown to six groups stacked in one column, separated by a heading and twenty six pixels. Reaching
+  sources meant scrolling past launchers, runners and fixtures, nothing on screen said where you were, and the
+  page had no way to be arrived at pointing anywhere in particular.
+
+  **The settings dialog had this exact problem and solved it,** so the answer was to use that rather than write a
+  second one. `buildSettingsNav` is now `splitIntoPanes(host, headingClass, key)` with two callers, and the CSS
+  it uses lost its `s-` prefix in the process, because those classes were never about settings. The property both
+  keep is the one that makes it maintainable: the markup stays ONE FLOW of headings and their content, read top
+  to bottom in the file, and the nav is built from the headings at runtime. Adding a section is still a heading
+  and its content, in order, with nothing else to keep in step.
+
+  Two things the runners page needed that the dialog did not. Its headings carry help bubbles, so a nav built
+  from `textContent` would have put an entire tooltip inside a button: headings now name their own label with
+  `data-pane`. And the page scrolls in `main` rather than in itself, so switching panes had to scroll the element
+  that actually moved, or landing halfway down a short pane reads as a rendering fault.
+
+  Panes rather than a sixth top-level tab, because these five belong together: they are the things atrium runs.
+  Panes rather than an accordion, because an accordion is right when the common case is closed, and nobody opens
+  this page except to do one of these five things. `configuration` is called `runners` now, since a pane label
+  has to say what is in it.
+
+  `scripts/check-runner-panes.js` asserts the partition against the real markup, the way the settings one does:
+  the headings are direct children, every one is labelled, no two share a label, and every list `renderRunners`
+  fills is on the page. None of those is a syntax error, and all of them come out as a page with one giant pane
+  or a list that silently never appears.
+
+- **Ten skins for the board, and a setting to wear one.** `graphite`, `oxide`, `moss`, `plum`, `ember`,
+  `glacier`, `noir`, `vapor`, `sandstone` and `abyss`, beside the navy one the board came with.
+
+  **A skin is not a terminal theme,** and the two are only confusable in speech. A terminal theme is sixteen
+  ANSI colours handed to xterm.js, it belongs to one terminal, and two terminals side by side may reasonably
+  differ. A skin is the chrome around them, there is one of it, so it is a daemon setting and it follows to
+  another browser and to a phone. The picker for it sits under `the board`, not on the terminal bar, and says
+  which of the two it is.
+
+  **The reason this was not a two hour job is that the palette was only half a palette.** Every colour in the
+  page was a variable, and about sixty tints of those colours were a SECOND copy written out as `rgba(...)`,
+  because CSS cannot take a hex and add alpha to it. Overriding the variables therefore repainted the solids and
+  left every tint behind at the old hue, which came out as a dozen surfaces staying navy under a black skin. So
+  the definition is now the channel triple and the solid is derived from it, `--bg-2: rgb(var(--sink-rgb))`, and
+  a skin sets one value per colour with both forms following. The one hex in the stylesheet with no name at all,
+  a button's hover, has a name now.
+
+  What a skin may move is the palette and nothing else. The type ladder, the space ladder, the radii and the
+  shadow geometry are layout: `--uiscale` and `--density` already answer the size question and they belong to the
+  operator, not to the skin. All ten are dark, because `--lift` and `--hairline` are white at low alpha and every
+  shadow is near black, so a light board needs a second set of those rather than a different palette. It is a
+  separate piece of work and it is written down as one.
+
+  Three things could have named a skin: the stylesheet, the daemon's validator, and the picker. The picker is
+  built from what the daemon sends, so there are two, and `scripts/check-skins.sh` fails when they disagree. It
+  also asserts every skin sets the same twenty seven variables, because a skin missing one does not fail: it
+  falls through to `:root` and leaves a single element wearing the old palette, which nobody finds for a month.
+
+  An unknown skin is refused at the endpoint rather than stored, unlike every other setting beside it. The
+  others store what they are given because a browse root that does not exist yet is a list somebody is preparing.
+  An unknown skin can never become right, and it fails silently: it saves, it goes on the body element, no rule
+  matches, and the board looks exactly as it did. The refusal names the ones that would have worked.
+
+  The chosen skin is also remembered in the browser, which is not the source of truth and exists only to kill the
+  flash of navy on every load while the daemon is asked. Popped-out terminals get told over the same broadcast
+  channel that carries a restart, since one window in the old colours beside one in the new reads as a bug in
+  both.
+
 - **Priority on a card.** The one judgement on a board where everything else is a fact: what a runner is doing,
   how long it has waited, which repository it is in. Some work cannot be got rid of and has to stay top of mind,
   and nothing could say so.

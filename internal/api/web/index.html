@@ -21,25 +21,70 @@
 <script src="/vendor/xterm-addon-search.js"></script>
 <style>
   :root {
-    --bg-0: #0B1B2E; --bg-1: #071322; --bg-2: #040B14;
-    --teal: #00E3B0; --blue: #28C2FF;
+    /* THE PALETTE, AND WHY HALF OF IT IS SPELLED AS CHANNELS.
+       Most of these colours are used at full strength somewhere and at a tint
+       somewhere else, and CSS cannot take a hex and add alpha to it. Writing
+       the tint as its own `rgba(...)` makes it a second copy that a skin
+       cannot reach, so overriding the palette repaints the solids and leaves
+       every tinted surface at the old hue.
+
+       The triple is therefore the definition and the solid is derived from it.
+       A skin overrides ONE value per colour and both forms follow. Anything
+       with no tinted use stays a plain hex: a triple nothing reads is a second
+       thing to keep right for nothing. */
+    --sink-rgb: 4,11,20;          /* the recess behind inputs, lists and code */
+    --bg1-rgb: 7,19,34;
+    --shell0-rgb: 13,33,53;
+    --shell1-rgb: 8,22,37;
+    --chip-rgb: 23,58,87;
+    --stroke-rgb: 44,95,132;
+    --stroke-dim-rgb: 37,80,111;
+    --teal-rgb: 0,227,176;
+    --warn-rgb: 255,198,77;
+    --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255;
+    /* Not a surface. What a shadow is made of, which on a dark board is darker
+       than anything the shadow falls on. */
+    --shadow-rgb: 2,6,9;
+
+    --bg-2: rgb(var(--sink-rgb));
+    --bg-1: rgb(var(--bg1-rgb));
+    --shell-0: rgb(var(--shell0-rgb));
+    --shell-1: rgb(var(--shell1-rgb));
+    --chip: rgb(var(--chip-rgb));
+    --stroke: rgb(var(--stroke-rgb));
+    --stroke-dim: rgb(var(--stroke-dim-rgb));
+    --teal: rgb(var(--teal-rgb));
+    --warn: rgb(var(--warn-rgb));
+    --danger: rgb(var(--danger-rgb));
+    /* The blue-tinted accent a FOLDER rule wears, so a scope reads differently
+       from a command pattern. Named because it is a meaning, not a decoration:
+       confusing the two is how a rule ends up wider than anyone agreed to. */
+    --path: rgb(var(--path-rgb));
+
+    --bg-0: #0B1B2E;
+    --blue: #28C2FF;
     --card-0: #12293F; --card-1: #0A1A2B;
-    --shell-0: #0D2135; --shell-1: #081625;
-    --stroke: #2C5F84; --stroke-dim: #25506F; --grid: #1B3B5A;
+    --grid: #1B3B5A;
     --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4;
     --dim: #5E819C; --dimmest: #456C88;
-    --warn: #FFC64D; --danger: #FF6B6B;
-    --chip: #173A57; --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    /* Where a button goes when the pointer is over it. Named so a skin can
+       move it: an unnamed hex here gives every skin the same hover. */
+    --btn-hover: #1D4666;
+    /* One tone for text on a danger surface. Spelling near-identical pinks out
+       per rule is one chance each to skin nine tenths of a panel. */
+    --danger-text: #FFC3C9;
 
     /* Warn and accent at the tints they get used at, so changing --warn moves
        every surface derived from it instead of leaving hardcoded rgba behind. */
-    --warn-bg: rgba(255,198,77,.13);
-    --warn-bg-soft: rgba(255,198,77,.05);
-    --warn-stroke: rgba(255,198,77,.3);
+    --warn-bg: rgba(var(--warn-rgb),.13);
+    --warn-bg-soft: rgba(var(--warn-rgb),.05);
+    --warn-stroke: rgba(var(--warn-rgb),.3);
     --lift: rgba(255,255,255,.05);
     --lift-strong: rgba(255,255,255,.09);
     --hairline: rgba(255,255,255,.04);
-    --teal-bg: rgba(0,227,176,.10);
+    --teal-bg: rgba(var(--teal-rgb),.10);
 
     /* Type. Two families and one scale.
        Every size in the page comes from this ladder, multiplied by --uiscale,
@@ -91,10 +136,10 @@
        a decision, and it is one decision made in one place. Turn these up to
        make the blocks louder, down to make them a hint. */
     --group-fill: .22; --group-edge: .37; --card-tint: .07;
-    --shadow-card: 0 10px 22px rgba(2,6,9,.45);
-    --shadow-lift: 0 16px 30px rgba(2,6,9,.62);
-    --shadow-pop: 0 14px 34px rgba(2,6,9,.75);
-    --shadow-dialog: 0 30px 70px rgba(2,6,9,.8);
+    --shadow-card: 0 10px 22px rgba(var(--shadow-rgb),.45);
+    --shadow-lift: 0 16px 30px rgba(var(--shadow-rgb),.62);
+    --shadow-pop: 0 14px 34px rgba(var(--shadow-rgb),.75);
+    --shadow-dialog: 0 30px 70px rgba(var(--shadow-rgb),.8);
 
   }
   * { box-sizing: border-box; }
@@ -138,7 +183,7 @@
   header {
     position: sticky; top: 0; z-index: 20;
     backdrop-filter: blur(14px);
-    background: linear-gradient(180deg, rgba(7,19,34,.94), rgba(7,19,34,.72));
+    background: linear-gradient(180deg, rgba(var(--bg1-rgb),.94), rgba(var(--bg1-rgb),.72));
     border-bottom: 1px solid var(--stroke-dim);
   }
   /* One line, always. Nothing here wraps: a button that breaks across two
@@ -173,7 +218,7 @@
   }
   .tab .count {
     display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: var(--r-pill);
-    font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(255,198,77,.15); color: var(--warn);
+    font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(var(--warn-rgb),.15); color: var(--warn);
   }
   .tab .count:empty, .tab .count.zero { display: none; }
   .grow { flex: 1; }
@@ -185,11 +230,11 @@
 
   #halted {
     display: none; padding: 13px 26px; gap: var(--sp-4); align-items: baseline;
-    background: linear-gradient(90deg, rgba(255,107,107,.18), rgba(255,107,107,.04));
-    border-bottom: 1px solid var(--danger); color: #FFD7DD; font-size: var(--fs-md);
+    background: linear-gradient(90deg, rgba(var(--danger-rgb),.18), rgba(var(--danger-rgb),.04));
+    border-bottom: 1px solid var(--danger); color: var(--danger-text); font-size: var(--fs-md);
   }
   #halted strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: var(--fs-sm); }
-  #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: #FFB3BC; }
+  #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--danger-text); }
 
   /* Capped so a row's trailing buttons stay near its content. On an ultrawide
      an uncapped row puts the actions a foot away from what they act on. */
@@ -389,7 +434,7 @@
   }
   .board .col.vacant > .col-head .help { display: none; }
   .col {
-    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7));
     border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); padding: 13px 12px 10px;
     min-height: 108px;
   }
@@ -418,7 +463,7 @@
 
   @keyframes flash {
     0%, 100% { box-shadow: var(--shadow-card); }
-    30% { box-shadow: 0 0 0 3px var(--teal), 0 10px 22px rgba(2,6,9,.45); }
+    30% { box-shadow: 0 0 0 3px var(--teal), 0 10px 22px rgba(var(--shadow-rgb),.45); }
   }
   .flash { animation: flash 1.1s ease-out 2; }
   .col-head .n { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
@@ -600,13 +645,13 @@
     color: var(--chip-accent-text);
   }
   .chip.runner[data-runner="codex"] {
-    background: rgba(140,170,255,.14); border-color: rgba(140,170,255,.32); color: #A8BEFF;
+    background: rgba(var(--path-rgb),.14); border-color: rgba(var(--path-rgb),.32); color: var(--path);
   }
   .chip.runner[data-runner="ollama"] {
     background: rgba(214,140,255,.13); border-color: rgba(214,140,255,.3); color: #D9A8FF;
   }
   .chip.runner[data-runner="shell"] {
-    background: rgba(255,198,77,.10); border-color: var(--warn-stroke); color: var(--warn);
+    background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
   .chip.attach {
@@ -615,10 +660,10 @@
   }
   /* Live activity. A running tool breathes so a moving card is distinguishable
      from a still one across a whole board, without reading it. */
-  .chip.live { background: rgba(80,220,190,.10); color: var(--teal); }
+  .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
   /* .chip.live.tool: the teal color already marks a live tool; motion removed (CPU). */
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
-  .chip.sub { background: rgba(140,170,255,.12); color: #9db4ff; }
+  .chip.sub { background: rgba(var(--path-rgb),.12); color: var(--path); }
   /* Nothing heard, and no process id to check. Dimmed rather than warned
      about: it may be working, and a card that shouts is a card you distrust. */
   .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
@@ -636,7 +681,7 @@
   /* Dragging a card. The insertion line is drawn on the neighbor rather than
      as a floating element, so it cannot end up in the wrong place. */
   .card.dragging { opacity: .4; }
-  .col.drop-into { background: rgba(0,227,176,.05); border-radius: var(--r-md); }
+  .col.drop-into { background: rgba(var(--teal-rgb),.05); border-radius: var(--r-md); }
   .card.drop-before { box-shadow: 0 -2px 0 0 var(--teal); }
   .card.drop-after { box-shadow: 0 2px 0 0 var(--teal); }
 
@@ -645,7 +690,7 @@
     position: fixed; z-index: 90; display: none; min-width: 190px;
     padding: 5px; border-radius: var(--r-md);
     background: var(--shell-0); border: 1px solid var(--stroke);
-    box-shadow: 0 14px 40px rgba(0,0,0,.55);
+    box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55);
   }
   #cardmenu.on { display: block; }
   #cardmenu button {
@@ -701,7 +746,7 @@
     display: none; position: absolute; left: 100%; top: -5px; margin-left: -6px;
     padding: 5px; min-width: 168px; border-radius: var(--r-md);
     background: var(--shell-0); border: 1px solid var(--stroke);
-    box-shadow: 0 14px 40px rgba(0,0,0,.55); z-index: 2;
+    box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55); z-index: 2;
   }
   #cardmenu button { position: relative; }
   /* OPENED AND CLOSED BY SCRIPT, not by `:hover`.
@@ -740,9 +785,9 @@
   /* A folder scope reads differently from a command pattern, so it looks
      different. Getting the two confused is how a rule ends up wider than
      anyone agreed to. */
-  .hint.path { border-color: rgba(140,170,255,.35); color: #9db4ff; }
-  .patview.path { color: #9db4ff; }
-  code.path { color: #9db4ff; }
+  .hint.path { border-color: rgba(var(--path-rgb),.35); color: var(--path); }
+  .patview.path { color: var(--path); }
+  code.path { color: var(--path); }
 
   /* Directory browser and the quick picks under the path field. */
   .crumb {
@@ -796,16 +841,16 @@
      things when only one of them is a table. */
   .rev-rows {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
-    background: rgba(4,11,20,.35); overflow: hidden; margin-top: 6px;
+    background: rgba(var(--sink-rgb),.35); overflow: hidden; margin-top: 6px;
   }
   .rev-row {
     display: grid; align-items: baseline; gap: var(--sp-3);
     grid-template-columns: 74px 44px minmax(0, 1fr) minmax(0, 150px);
     padding: 5px 13px; font-size: var(--fs-sm);
-    border-bottom: 1px solid rgba(37,80,111,.28);
+    border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.28);
   }
   .rev-row:last-child { border-bottom: none; }
-  .rev-row:hover { background: rgba(23,58,87,.4); }
+  .rev-row:hover { background: rgba(var(--chip-rgb),.4); }
   .rev-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rev-row .verdict { font-weight: 600; color: var(--chip-accent-text); }
   .rev-row .verdict.no { color: var(--warn); }
@@ -874,34 +919,46 @@
      Still a modal rather than a seventh tab. Settings is where you go from
      wherever you are and come straight back, and a modal returns you there for
      free. */
-  .s-split { display: flex; gap: 18px; align-items: flex-start; }
-  .s-nav {
+  .pane-split { display: flex; gap: 18px; align-items: flex-start; }
+  .pane-nav {
     flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;
     gap: 2px; position: sticky; top: 0;
   }
-  .s-nav button {
+  .pane-nav button {
     text-align: left; background: transparent; border: 1px solid transparent;
     color: var(--dim); padding: 7px 10px; border-radius: var(--r-sm);
     font: 500 var(--fs-sm)/1.2 var(--sans); cursor: pointer; white-space: nowrap;
   }
-  .s-nav button:hover { color: var(--head); background: var(--stroke-dim); }
-  .s-nav button.on {
+  .pane-nav button:hover { color: var(--head); background: var(--stroke-dim); }
+  .pane-nav button.on {
     color: var(--teal); border-color: var(--stroke-dim);
-    background: rgba(4,11,20,.5);
+    background: rgba(var(--sink-rgb),.5);
   }
-  .s-panes { flex: 1 1 auto; min-width: 0; }
+  .panes { flex: 1 1 auto; min-width: 0; }
+  /* One sentence under a pane's heading saying what the pane is for.
+     A pane holding a button and an empty table says nothing about itself, and
+     the help bubble beside the heading only says it to somebody who already
+     suspected there was something to read. */
+  .pane-lead {
+    margin: 0 0 14px; max-width: 78ch;
+    font: var(--fs-base)/1.55 var(--sans); color: var(--dim);
+  }
+  /* On the runners page the heading IS the pane, and it keeps its help bubble,
+     so unlike the settings dialog it stays on screen. Given room, since it is
+     now the top of a page rather than a divider in the middle of one. */
+  .panes .r-section { margin-top: 0; }
   /* The heading is the nav entry once there is a nav, so it would be said
      twice. Kept in the markup because it is what the panes are cut on. */
-  .s-panes .s-section { display: none; }
-  .s-pane[hidden] { display: none; }
+  .panes .s-section { display: none; }
+  .pane[hidden] { display: none; }
   /* Narrow enough that a nav beside the panes leaves no room for either. */
   @media (max-width: 640px) {
-    .s-split { flex-direction: column; }
-    .s-nav { flex-direction: row; flex-wrap: wrap; position: static; }
+    .pane-split { flex-direction: column; }
+    .pane-nav { flex-direction: row; flex-wrap: wrap; position: static; }
   }
   .ov {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
-    background: rgba(4,11,20,.35); padding: 14px 15px; margin-bottom: 12px;
+    background: rgba(var(--sink-rgb),.35); padding: 14px 15px; margin-bottom: 12px;
     transition: border-color .2s, box-shadow .2s;
   }
   .ov.live { border-color: var(--chip-accent-stroke); box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset; }
@@ -949,7 +1006,7 @@
   }
   .ov-note {
     margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
-    background: rgba(4,11,20,.5); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
     color: var(--dim); font-size: var(--fs-xs); line-height: 1.5;
   }
   .ov-note code { font-family: var(--mono); color: var(--label); }
@@ -965,7 +1022,7 @@
      Set apart, because it is a form with a verb rather than settings. */
   .ov-setup {
     margin-top: 12px; padding: 13px 14px; border-radius: var(--r-md);
-    background: rgba(4,11,20,.45); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.45); border: 1px solid var(--stroke-dim);
   }
   .ov-setup > b { display: block; color: var(--head); font-size: var(--fs-md); }
   .ov-setup > p {
@@ -1284,7 +1341,7 @@
   .chip.sweep:hover { opacity: 1; color: var(--warn); }
   .why {
     font-size: var(--fs-sm); color: var(--dim); margin-top: 9px; padding-top: 8px;
-    border-top: 1px solid rgba(44,95,132,.35); font-style: italic;
+    border-top: 1px solid rgba(var(--stroke-rgb),.35); font-style: italic;
     /* A note is free text, so it can be one long unbroken run. Without this it
        sets its own minimum width and pushes the card wider than its lane. */
     min-width: 0; overflow-wrap: anywhere;
@@ -1313,17 +1370,17 @@
 
   /* ── stack + perms ──────────────────────────────────── */
   .panel {
-    background: linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7));
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7));
     border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
   }
   .row {
     display: flex; align-items: center; gap: var(--sp-5);
     padding: var(--row-y) var(--row-x);
-    border-bottom: 1px solid rgba(37,80,111,.5); cursor: pointer;
+    border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.5); cursor: pointer;
     transition: background .14s;
   }
   .row:last-child { border-bottom: none; }
-  .row:hover { background: rgba(23,58,87,.4); }
+  .row:hover { background: rgba(var(--chip-rgb),.4); }
   .wait {
     font: 700 var(--fs-2xl)/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
   }
@@ -1352,7 +1409,7 @@
     display: flex; align-items: baseline; gap: var(--sp-4); cursor: default;
     padding: 8px 16px; font-size: var(--fs-md);
   }
-  .row.line:hover { background: rgba(23,58,87,.5); }
+  .row.line:hover { background: rgba(var(--chip-rgb),.5); }
   .row.line .stamp { font: var(--fs-base)/1 var(--mono); color: var(--dim); flex: none; }
   .row.line .stamp time { color: var(--label); }
   .row.line .stamp i { color: var(--dimmest); font-style: normal; }
@@ -1482,6 +1539,30 @@
      beside it and change the terminal's box under a fitted grid. */
   .themepicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
   .themepicker[hidden] { display: none; }
+  /* The same control in the header. Same shape as the terminal's, because it
+     is the same act. Narrower: a skin name is one word and a theme name is
+     frequently three. */
+  .skinpicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+  .skinpicker[hidden] { display: none; }
+  .skinpicker .themepick { width: 14ch; }
+  /* Which of a card's two terminals. A segmented pair rather than two loose
+     buttons: they are one choice, and spacing them apart would read as two
+     unrelated things to press. */
+  .termkind { display: inline-flex; flex: none; }
+  .termkind[hidden] { display: none; }
+  .termkind button {
+    padding: 5px 12px; font-size: var(--fs-xs); border-radius: 0;
+    background: transparent; color: var(--dim); border-color: var(--stroke-dim);
+  }
+  .termkind button:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+  .termkind button:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; margin-left: -1px; }
+  .termkind button:hover { background: var(--lift); transform: none; }
+  /* The one you are looking at. Filled rather than outlined, because an
+     outline on one of two adjacent buttons reads as focus rather than as
+     state. */
+  .termkind button.on {
+    background: var(--chip); color: var(--head); border-color: var(--stroke);
+  }
   .themepick {
     flex: none; width: 20ch; font: var(--fs-sm) var(--mono);
     background: var(--shell-0); color: var(--head);
@@ -1589,7 +1670,7 @@
   .rmark[data-runner="claude"] { color: #E8825A; background: rgba(232,130,90,.14); }
   .rmark[data-runner="codex"]  { color: #A8BEFF; background: rgba(140,170,255,.14); }
   .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
-  .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(255,198,77,.10); }
+  .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(var(--warn-rgb),.10); }
 
   /* A project group in the stack. Its panel carries the color down the left
      edge, the same as a group on the board. */
@@ -1633,7 +1714,7 @@
   .subhead code { font-family: var(--mono); color: var(--label); font-size: var(--fs-sm); }
   .subhead b { color: var(--body); font-weight: 600; }
   .cmd {
-    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); background: rgba(4,11,20,.65);
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); background: rgba(var(--sink-rgb),.65);
     border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 8px 11px;
     margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   }
@@ -1676,7 +1757,7 @@
   pre.diff {
     margin: 6px 0 0; padding: 10px 12px; overflow: auto;
     height: 260px; min-height: 90px; resize: vertical;
-    background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.65); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-sm); font: var(--fs-base)/1.5 var(--mono); white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -1686,11 +1767,11 @@
   pre.diff i.ctx { color: var(--dim); opacity: .65; }
   pre.diff i.del, pre.diff i.add { font-weight: 500; }
   pre.diff i.del {
-    background: rgba(255,107,107,.14); color: #FFB3BC;
+    background: rgba(var(--danger-rgb),.14); color: var(--danger-text);
     box-shadow: inset 3px 0 0 var(--danger);
   }
   pre.diff i.add {
-    background: rgba(0,227,176,.12); color: var(--chip-accent-text);
+    background: rgba(var(--teal-rgb),.12); color: var(--chip-accent-text);
     box-shadow: inset 3px 0 0 var(--teal);
   }
   pre.diff i.del::before,
@@ -1708,7 +1789,7 @@
   pre.diff i.hdr { color: var(--dimmest); margin-top: 8px; padding-left: 6px; }
 
   .scope {
-    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(44,95,132,.35);
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(var(--stroke-rgb),.35);
     display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap;
   }
   .scope .lbl { font-size: var(--fs-xs); color: var(--dimmest); flex: none; }
@@ -1725,7 +1806,7 @@
   .picker { display: flex; gap: var(--sp-3); align-items: center; }
   .picker select {
     font: var(--fs-md)/1.4 var(--sans); color: var(--head); flex: 1;
-    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-md); padding: 9px 11px;
   }
   .picker select:focus { outline: none; border-color: var(--blue); }
@@ -1835,7 +1916,7 @@
     position: absolute; left: 0; top: 0; bottom: 0; z-index: 40;
     flex-basis: auto; width: var(--termw, 260px);
     background: var(--shell-0); border: 1px solid var(--stroke-dim);
-    border-radius: var(--r-lg); box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    border-radius: var(--r-lg); box-shadow: 0 18px 40px rgba(var(--shadow-rgb),.45);
     padding: 8px; transform: translateX(calc(-100% - 10px));
     transition: transform .16s ease;
   }
@@ -1934,7 +2015,7 @@
   .term-pane {
     flex: 1; min-width: 0; display: flex; flex-direction: column;
     background: var(--term-bg,
-      linear-gradient(180deg, rgba(13,33,53,.7), rgba(8,22,37,.7)));
+      linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7)));
     /* The same edge the tab wears, so the card, the bridge and the pane read
        as one outline in one colour rather than three things that happen to be
        next to each other. */
@@ -1955,7 +2036,7 @@
     min-height: var(--barh); box-sizing: border-box;
     border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
     flex: 0 0 auto;
-    background: linear-gradient(180deg, rgba(13,33,53,.92), rgba(8,22,37,.92));
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.92), rgba(var(--shell1-rgb),.92));
   }
   /* The mark and the name, always together and always on one line. It shrinks
      by truncating the name rather than by wrapping: a bar that grows a second
@@ -1999,7 +2080,7 @@
     padding: 12px 18px; border-radius: var(--r-lg);
     background: var(--shell-0); border: 1px solid var(--term-edge, var(--stroke));
     color: var(--term-fg, var(--head)); font: var(--fs-base)/1.4 var(--mono);
-    box-shadow: 0 18px 44px rgba(0,0,0,.55); max-width: 80%; text-align: left;
+    box-shadow: 0 18px 44px rgba(var(--shadow-rgb),.55); max-width: 80%; text-align: left;
   }
   .termwait[hidden] { display: none; }
   .termwait .spin {
@@ -2018,11 +2099,11 @@
     padding: 5px 6px; border-radius: var(--r-md);
     background: var(--term-bg, var(--shell-0));
     border: 1px solid var(--term-line, var(--stroke));
-    box-shadow: 0 10px 26px rgba(0,0,0,.5);
+    box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.5);
   }
   .findbar[hidden] { display: none; }
   .findbar input {
-    background: rgba(0,0,0,.25); border: 1px solid var(--term-line, var(--stroke-dim));
+    background: rgba(var(--shadow-rgb),.25); border: 1px solid var(--term-line, var(--stroke-dim));
     color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
     padding: 4px 8px; width: 230px; font: var(--fs-sm)/1.3 var(--mono);
   }
@@ -2109,7 +2190,7 @@
   .term-perm {
     display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap;
     padding: 12px 14px; border-bottom: 1px solid var(--warn);
-    background: linear-gradient(90deg, rgba(255,198,77,.16), rgba(255,198,77,.04));
+    background: linear-gradient(90deg, rgba(var(--warn-rgb),.16), rgba(var(--warn-rgb),.04));
   }
   .term-perm .who { flex: 1; min-width: 240px; }
   .term-perm b { display: block; color: var(--warn); font-size: var(--fs-base); }
@@ -2140,7 +2221,7 @@
   }
   .asktext code {
     display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
-    background: rgba(4,11,20,.65); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.65); border: 1px solid var(--stroke-dim);
     /* Not break-all: a command has to break at its spaces, so a flag is never
        cut in half. anywhere covers the path, which has none. */
     font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
@@ -2169,7 +2250,7 @@
   .filters { display: flex; gap: var(--sp-3); align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
   .filters input[type=search] {
     font: var(--fs-sm)/1.4 var(--mono); color: var(--head); flex: 1; min-width: 160px;
-    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-sm); padding: 7px 11px;
   }
   .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
@@ -2197,7 +2278,7 @@
      chosen rather than merely last clicked. */
   .seg.multi button.on {
     border-color: var(--teal); color: var(--head);
-    box-shadow: inset 0 0 0 1px rgba(0,227,176,.25);
+    box-shadow: inset 0 0 0 1px rgba(var(--teal-rgb),.25);
   }
   /* How many a pill would give you. Dimmer than its label, since it is the
      answer to a question you did not have to click to ask. */
@@ -2211,7 +2292,7 @@
   .pillcount.zero { color: var(--dimmest); }
   .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
   button.big { font-size: var(--fs-base); padding: 10px 18px; }
-  button.go.big { box-shadow: 0 0 18px rgba(0,227,176,.14); }
+  button.go.big { box-shadow: 0 0 18px rgba(var(--teal-rgb),.14); }
 
   /* Toast: the in-page counterpart to a desktop notification, for when the
      tab is visible and a browser notification would be suppressed. */
@@ -2220,7 +2301,7 @@
     z-index: 55; display: none; opacity: 0; transition: opacity .18s, transform .18s;
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); font-size: var(--fs-sm); padding: 8px 16px; border-radius: var(--r-pill);
-    box-shadow: 0 10px 26px rgba(2,6,9,.6);
+    box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.6);
   }
   #held.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
   #held:hover { border-color: var(--teal); }
@@ -2244,7 +2325,7 @@
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-left: 3px solid var(--warn);
     border-radius: var(--r-md); padding: 13px 15px;
-    box-shadow: 0 18px 40px rgba(2,6,9,.7);
+    box-shadow: 0 18px 40px rgba(var(--shadow-rgb),.7);
     animation: toastin .22s ease-out;
   }
   .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
@@ -2290,7 +2371,7 @@
     justify-content: flex-start; gap: var(--sp-3); cursor: pointer;
     padding: 4px 3px; border-radius: var(--r-sm); user-select: none;
   }
-  details > summary.col-head:hover { color: var(--head); background: rgba(23,58,87,.35); }
+  details > summary.col-head:hover { color: var(--head); background: rgba(var(--chip-rgb),.35); }
   details > summary.col-head::before {
     content: "\25B8"; font-size: var(--fs-xl); line-height: 1; color: var(--teal);
     display: inline-block; transition: transform .15s; width: 12px;
@@ -2308,14 +2389,13 @@
   }
   button:hover {
     color: var(--head); border-color: var(--blue);
-    background: #1d4666; transform: translateY(-1px);
+    background: var(--btn-hover); transform: translateY(-1px);
   }
   button:active { transform: translateY(0); }
-  /* A control that cannot do anything has to look like it cannot. There was no
-     rule for this at all, only one scoped to `.row.line`, so a disabled button
-     kept full contrast, the hover lift and the pointer cursor. The picker was
-     where it showed: `up` and `use this one` are both disabled at the root, and
-     both read as buttons that were ignoring you. */
+  /* A control that cannot do anything has to look like it cannot. Without a
+     rule here a disabled button keeps full contrast, the hover lift and the
+     pointer cursor, and reads as a button that is ignoring you. The picker is
+     where it shows: `up` and `use this one` are both disabled at a root. */
   button:disabled,
   button:disabled:hover,
   button:disabled:active {
@@ -2325,8 +2405,8 @@
   button.go {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(0,227,176,.22); }
-  button.no:hover { border-color: var(--danger); color: #FFC3C9; box-shadow: 0 0 14px rgba(255,107,107,.18); }
+  button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(var(--teal-rgb),.22); }
+  button.no:hover { border-color: var(--danger); color: var(--danger-text); box-shadow: 0 0 14px rgba(var(--danger-rgb),.18); }
   button.icon {
     padding: 8px 13px; font-size: var(--fs-3xl); line-height: 1; color: var(--teal);
     background: transparent; border-color: transparent;
@@ -2354,7 +2434,7 @@
   /* For rows read down as a table, or content that is commands. A wrapped
      command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
-  dialog::backdrop { background: rgba(4,11,20,.74); backdrop-filter: blur(3px); }
+  dialog::backdrop { background: rgba(var(--sink-rgb),.74); backdrop-filter: blur(3px); }
   /* One command, with its own heading and its own copy button. Separated
      rather than run together, because they are pasted one at a time into
      different places. */
@@ -2366,7 +2446,7 @@
   pre.code {
     margin: 0; padding: 12px 14px; overflow-x: auto;
     font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
-    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-md); white-space: pre;
   }
   /* A path is there to be pasted somewhere else, so it carries its own copy
@@ -2396,7 +2476,7 @@
   .dlg-body textarea,
   .dlg-body select {
     font: var(--fs-md)/1.5 var(--sans); color: var(--head); width: 100%;
-    background: rgba(4,11,20,.6); border: 1px solid var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-md); padding: 10px 12px; transition: border-color .14s;
   }
   .dlg-body textarea {
@@ -2433,7 +2513,7 @@
      does not need a spine drawn down the side of it. */
   .timeline {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
-    background: rgba(4,11,20,.35); overflow: hidden;
+    background: rgba(var(--sink-rgb),.35); overflow: hidden;
   }
   .ev { position: relative; padding: 7px 0 7px 22px; font-size: var(--fs-sm); }
   .ev::before {
@@ -2454,11 +2534,11 @@
   .evr {
     display: grid; align-items: baseline; gap: var(--sp-3);
     grid-template-columns: 74px 62px 46px minmax(0, 1fr) minmax(0, 190px);
-    padding: 5px 13px; border-bottom: 1px solid rgba(37,80,111,.28);
+    padding: 5px 13px; border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.28);
     font-size: var(--fs-sm);
   }
   .evr:last-child { border-bottom: none; }
-  .evr:hover { background: rgba(23,58,87,.4); }
+  .evr:hover { background: rgba(var(--chip-rgb),.4); }
   .evr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The verdict, colored, because scanning an audit log is looking for what
      got through. */
@@ -2620,6 +2700,184 @@
     .row.perm .hints { gap: 6px; }
     .row.perm .hints button { padding: 8px 10px; }
   }
+
+  /* ── skins ─────────────────────────────────────────────
+     THE BOARD'S OWN COLOURS. Not the terminal's.
+
+     There are two theme systems in this page and confusing them is the trap.
+     A TERMINAL theme is sixteen ANSI colours plus a foreground, a background
+     and a cursor, handed to `term.options.theme`, and there are fifty two of
+     them. It belongs to a terminal, and two terminals side by side may
+     reasonably differ. A SKIN is the chrome around them, and it cannot differ,
+     because there is one board.
+
+     Each block below overrides the palette and NOTHING ELSE. The type ladder,
+     the space ladder, the radii and the shadow geometry are layout, not
+     colour: a skin that moved them would be a different board rather than the
+     same board in another colour, and `--uiscale` and `--density` already
+     answer the size question and belong to the operator.
+
+     ON `:root`, NOT ON `body`, AND THAT IS NOT A DETAIL.
+
+     The palette derives its solids from its triples: `--teal` is declared as
+     `rgb(var(--teal-rgb))`. A custom property is resolved against the element
+     it is DECLARED on, so `--teal` on `:root` reads `:root`'s own triple and
+     nothing lower down can change that. Overriding the triples on `body` left
+     every derived colour at the default while every plain hex changed, which
+     came out as a board with the right background and blue borders, blue
+     pills and a teal accent.
+
+     So the skin goes on the same element the derivations do. Anything that
+     moves them apart brings the whole failure back, and it does not look like
+     a failure: it looks like a skin that is nearly right.
+
+     Every skin declares the same set. A skin missing one falls through to the
+     default and produces one wrong-coloured element that nobody notices for a
+     month, so `scripts/check-skins.sh` counts them rather than trusting the
+     eye.
+
+     ALL TEN ARE DARK, deliberately. `--lift` and `--hairline` are white at low
+     alpha and every shadow is near-black, so light would need a second set of
+     those rather than a different palette, and the terminal underneath is dark
+     whatever the board does. A light board is a separate piece of work. */
+
+  /* Neutral near-black and ice cyan. The one that gets out of the way. */
+  :root[data-skin="graphite"] {
+    --sink-rgb: 6,8,11; --bg1-rgb: 12,15,19;
+    --shell0-rgb: 22,26,32; --shell1-rgb: 14,18,23;
+    --chip-rgb: 34,40,49; --stroke-rgb: 60,69,82; --stroke-dim-rgb: 44,52,63;
+    --teal-rgb: 110,231,249; --warn-rgb: 245,185,59; --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255; --shadow-rgb: 0,0,0;
+    --bg-0: #101318; --blue: #7C9CFF; --card-0: #1A1E25; --card-1: #111419; --grid: #262C35;
+    --head: #F5F7FA; --body: #B6BFCB; --label: #949FAD; --dim: #6B7583; --dimmest: #515A67;
+    --chip-accent: #0F2E31; --chip-accent-stroke: #1C5257; --chip-accent-text: #93E0EA;
+    --btn-hover: #2C3540; --danger-text: #FFC3C9;
+  }
+
+  /* Warm charcoal and copper. Reads like a workshop rather than a console. */
+  :root[data-skin="oxide"] {
+    --sink-rgb: 14,10,8; --bg1-rgb: 22,16,13;
+    --shell0-rgb: 33,25,20; --shell1-rgb: 24,18,14;
+    --chip-rgb: 54,39,30; --stroke-rgb: 96,66,48; --stroke-dim-rgb: 71,50,37;
+    --teal-rgb: 255,150,74; --warn-rgb: 245,196,80; --danger-rgb: 255,107,107;
+    --path-rgb: 214,167,255; --shadow-rgb: 10,4,2;
+    --bg-0: #191210; --blue: #E8A87C; --card-0: #241B16; --card-1: #16100C; --grid: #3A2A20;
+    --head: #FBF4EF; --body: #CDB6A4; --label: #AC9583; --dim: #806B5C; --dimmest: #635144;
+    --chip-accent: #3A2411; --chip-accent-stroke: #6B4120; --chip-accent-text: #F2C39A;
+    --btn-hover: #4A3325; --danger-text: #FFC9C3;
+  }
+
+  /* Forest black and lime. The only skin where the accent is louder than the
+     warning, which suits a board you look at rather than watch. */
+  :root[data-skin="moss"] {
+    --sink-rgb: 5,12,8; --bg1-rgb: 8,18,13;
+    --shell0-rgb: 14,30,21; --shell1-rgb: 9,21,15;
+    --chip-rgb: 24,50,34; --stroke-rgb: 46,92,62; --stroke-dim-rgb: 35,70,47;
+    --teal-rgb: 163,230,53; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 147,197,253; --shadow-rgb: 2,8,4;
+    --bg-0: #0A1710; --blue: #5EEAD4; --card-0: #10241A; --card-1: #081410; --grid: #1C3A28;
+    --head: #F2FBF4; --body: #A7C9B2; --label: #86AC94; --dim: #63866F; --dimmest: #4B6955;
+    --chip-accent: #17330F; --chip-accent-stroke: #2E5C1C; --chip-accent-text: #C7EE8F;
+    --btn-hover: #2A5238; --danger-text: #FFC9C9;
+  }
+
+  /* Aubergine and orchid. Danger goes pink here so it still separates from
+     the accent, which is the one thing a purple skin can get wrong. */
+  :root[data-skin="plum"] {
+    --sink-rgb: 12,6,16; --bg1-rgb: 19,10,26;
+    --shell0-rgb: 30,17,41; --shell1-rgb: 21,12,29;
+    --chip-rgb: 50,30,66; --stroke-rgb: 92,58,120; --stroke-dim-rgb: 68,43,89;
+    --teal-rgb: 217,138,255; --warn-rgb: 250,204,21; --danger-rgb: 255,107,143;
+    --path-rgb: 147,180,255; --shadow-rgb: 6,2,10;
+    --bg-0: #150C1C; --blue: #7DD3FC; --card-0: #201430; --card-1: #120A18; --grid: #33204A;
+    --head: #F9F2FF; --body: #C0AFD0; --label: #A18FB3; --dim: #7A6890; --dimmest: #5D4E70;
+    --chip-accent: #2E1240; --chip-accent-stroke: #572270; --chip-accent-text: #E0B4F5;
+    --btn-hover: #45276B; --danger-text: #FFC3D2;
+  }
+
+  /* Brown-black and gold. The warmest, and the one that survives a bright
+     room best. */
+  :root[data-skin="ember"] {
+    --sink-rgb: 13,9,6; --bg1-rgb: 20,14,9;
+    --shell0-rgb: 31,22,14; --shell1-rgb: 22,16,10;
+    --chip-rgb: 52,37,22; --stroke-rgb: 99,71,38; --stroke-dim-rgb: 73,53,29;
+    --teal-rgb: 255,183,77; --warn-rgb: 255,214,102; --danger-rgb: 255,107,107;
+    --path-rgb: 200,170,255; --shadow-rgb: 8,4,1;
+    --bg-0: #17100A; --blue: #FFCC80; --card-0: #221810; --card-1: #140E09; --grid: #3A2A18;
+    --head: #FFF7EC; --body: #D0BBA1; --label: #B09B80; --dim: #85705A; --dimmest: #665443;
+    --chip-accent: #3A2708; --chip-accent-stroke: #6B4712; --chip-accent-text: #F5CE8A;
+    --btn-hover: #4C3418; --danger-text: #FFC9C3;
+  }
+
+  /* Cold slate and ice blue, at the highest contrast of the ten. The one to
+     reach for on a laptop outdoors. */
+  :root[data-skin="glacier"] {
+    --sink-rgb: 8,13,18; --bg1-rgb: 13,20,27;
+    --shell0-rgb: 21,32,43; --shell1-rgb: 15,23,31;
+    --chip-rgb: 33,49,66; --stroke-rgb: 62,92,122; --stroke-dim-rgb: 46,69,92;
+    --teal-rgb: 125,211,252; --warn-rgb: 253,224,71; --danger-rgb: 251,113,133;
+    --path-rgb: 165,180,252; --shadow-rgb: 1,5,9;
+    --bg-0: #0E1620; --blue: #A5B4FC; --card-0: #16222E; --card-1: #0C131A; --grid: #1F3345;
+    --head: #F8FBFF; --body: #B9C9D8; --label: #98AABC; --dim: #718799; --dimmest: #566A7B;
+    --chip-accent: #0C2B3A; --chip-accent-stroke: #185066; --chip-accent-text: #A5DFF5;
+    --btn-hover: #2A4560; --danger-text: #FFC3CC;
+  }
+
+  /* True black, one white accent, one red. For an OLED panel, and for the
+     days when colour is noise. */
+  :root[data-skin="noir"] {
+    --sink-rgb: 0,0,0; --bg1-rgb: 8,8,8;
+    --shell0-rgb: 18,18,18; --shell1-rgb: 11,11,11;
+    --chip-rgb: 32,32,32; --stroke-rgb: 68,68,68; --stroke-dim-rgb: 48,48,48;
+    --teal-rgb: 240,240,240; --warn-rgb: 245,197,66; --danger-rgb: 255,84,84;
+    --path-rgb: 160,160,160; --shadow-rgb: 0,0,0;
+    --bg-0: #0A0A0A; --blue: #C8C8C8; --card-0: #161616; --card-1: #0C0C0C; --grid: #242424;
+    --head: #FFFFFF; --body: #B8B8B8; --label: #989898; --dim: #6E6E6E; --dimmest: #545454;
+    --chip-accent: #1C1C1C; --chip-accent-stroke: #3C3C3C; --chip-accent-text: #E8E8E8;
+    --btn-hover: #333333; --danger-text: #FFC0C0;
+  }
+
+  /* Indigo, magenta and cyan. The loud one, and the only one where the two
+     accents are a pair rather than a lead and a follow. */
+  :root[data-skin="vapor"] {
+    --sink-rgb: 8,6,20; --bg1-rgb: 13,10,31;
+    --shell0-rgb: 22,17,48; --shell1-rgb: 15,12,34;
+    --chip-rgb: 38,30,74; --stroke-rgb: 76,60,146; --stroke-dim-rgb: 56,45,108;
+    --teal-rgb: 244,114,255; --warn-rgb: 250,204,21; --danger-rgb: 255,90,120;
+    --path-rgb: 103,232,249; --shadow-rgb: 3,1,9;
+    --bg-0: #0F0B24; --blue: #67E8F9; --card-0: #191338; --card-1: #0C0919; --grid: #2A2158;
+    --head: #F7F2FF; --body: #B6ABDA; --label: #9589C0; --dim: #6F639C; --dimmest: #564C7C;
+    --chip-accent: #33104A; --chip-accent-stroke: #5E1F80; --chip-accent-text: #F0AFFB;
+    --btn-hover: #3C2E78; --danger-text: #FFC3CF;
+  }
+
+  /* Warm taupe and terracotta. Paper-coloured text on earth, which is the
+     least screen-like the board gets while staying dark. */
+  :root[data-skin="sandstone"] {
+    --sink-rgb: 15,12,10; --bg1-rgb: 24,20,16;
+    --shell0-rgb: 36,30,25; --shell1-rgb: 26,22,17;
+    --chip-rgb: 58,49,40; --stroke-rgb: 105,88,71; --stroke-dim-rgb: 78,66,53;
+    --teal-rgb: 232,124,77; --warn-rgb: 240,196,102; --danger-rgb: 232,90,90;
+    --path-rgb: 174,176,255; --shadow-rgb: 10,7,5;
+    --bg-0: #1A1512; --blue: #E8B98C; --card-0: #262019; --card-1: #16120E; --grid: #3E342A;
+    --head: #FBF6F0; --body: #CBBBA9; --label: #AB9B89; --dim: #7F7161; --dimmest: #625649;
+    --chip-accent: #3D2415; --chip-accent-stroke: #703F22; --chip-accent-text: #F0B78E;
+    --btn-hover: #4E3A29; --danger-text: #FFC9C9;
+  }
+
+  /* The default, taken further down. Same family, less light, for a dark room
+     and a long night. */
+  :root[data-skin="abyss"] {
+    --sink-rgb: 2,7,10; --bg1-rgb: 4,12,17;
+    --shell0-rgb: 8,22,30; --shell1-rgb: 5,15,21;
+    --chip-rgb: 15,40,52; --stroke-rgb: 30,80,100; --stroke-dim-rgb: 22,60,76;
+    --teal-rgb: 45,212,191; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 125,211,252; --shadow-rgb: 0,3,5;
+    --bg-0: #041018; --blue: #38BDF8; --card-0: #0A1E29; --card-1: #030D13; --grid: #113040;
+    --head: #EFFAFF; --body: #93B4C4; --label: #7597A8; --dim: #567585; --dimmest: #405A68;
+    --chip-accent: #073730; --chip-accent-stroke: #0E6155; --chip-accent-text: #7FE3D3;
+    --btn-hover: #17495C; --danger-text: #FFC3C9;
+  }
 </style>
 </head>
 <body>
@@ -2645,6 +2903,25 @@
          tab without going looking for it. -->
     <button id="gauto" onclick="toggleGlobalAuto()"></button>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>
+    <!-- Trying a skin is the same act as trying a terminal theme, so it is the
+         same control: a select that previews live, and two buttons that answer
+         it. In the header rather than the gear for the reason the terminal one
+         is on the bar rather than in a dialog: THE THING BEHIND IT IS THE
+         PREVIEW. A skin is judged against the board, and a dialog covers the
+         board.
+
+         The gear still has one. That is where you go when you are changing a
+         setting. This is where you go when you are trying them. -->
+    <span class="skinpicker" id="skin-wrap" hidden>
+      <select id="skin-pick" class="themepick"
+        onchange="previewSkin(this.value)"
+        onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelSkin(); }
+                   else if (event.key === 'Enter') { event.preventDefault(); keepSkin(); }"></select>
+      <button class="go" onclick="keepSkin()" title="keep this one">use it</button>
+      <button onclick="cancelSkin()" title="put back what was there">cancel</button>
+    </span>
+    <button id="skin" class="icon" onclick="pickSkin()"
+      title="how the board looks">&#9673;</button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
@@ -2829,6 +3106,18 @@ Exports honor whatever filter is applied.">?</span>
             <button class="go" onclick="keepTheme()" title="keep this one">use it</button>
             <button onclick="cancelTheme()" title="put back what was there">cancel</button>
           </span>
+          <!-- WHICH OF THIS CARD'S TWO TERMINALS. Hidden until there is a
+               choice, which means until the card has a runner atrium owns.
+
+               Two buttons rather than a dropdown, because there are exactly
+               two and both fit: a select for two options costs a click to
+               find out what the other one is. -->
+          <span class="termkind" id="t-kind" hidden>
+            <button id="t-kind-agent" onclick="showTerminal('runner')"
+              title="the terminal the agent is running in">agent</button>
+            <button id="t-kind-shell" onclick="showTerminal('shell')"
+              title="a plain shell in the same directory, for when the agent is not answering">shell</button>
+          </span>
           <span class="grow"></span>
           <button onclick="sendSignal('int')"
             title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
@@ -2956,8 +3245,18 @@ The useful cut is which ones left an account of themselves. A session that finis
     <div id="history-list"></div>
   </div>
 
+  <!-- FIVE THINGS, NOT ONE SCROLL.
+       One flow of headings in the markup, cut into panes at runtime by
+       `splitIntoPanes`, which is the same machinery the settings dialog uses.
+       Adding a section is a heading and its content, in order, and the nav
+       follows.
+
+       Panes rather than a sixth top-level tab, because these five belong
+       together: they are the things atrium runs. Panes rather than an
+       accordion, because an accordion is right when the common case is closed,
+       and nobody opens this page except to do one of these five things. -->
   <div id="runners" hidden>
-    <div class="col-head" style="margin:0 0 10px">
+    <div class="col-head r-section" data-pane="start" style="margin:0 0 10px">
       <span>start something</span>
       <span class="help" tabindex="0" data-tip="Runners are rows in a table, not code. A runner is a command, a working directory, an environment, and a way to resume.
 
@@ -2965,9 +3264,12 @@ Add your own with 'add a runner'. Nothing about claude, codex or ollama is speci
 
 window mode opens a real terminal. pty mode has atrium own the process and stream it to the browser, and is not built yet.">?</span>
     </div>
+    <p class="pane-lead">Every runner that is switched on, ready to start in a directory you pick.</p>
     <div id="launchers"></div>
 
-    <div class="col-head" style="margin:26px 0 10px"><span>configuration</span></div>
+    <div class="col-head r-section" data-pane="runners" style="margin:0 0 10px"><span>runners</span></div>
+    <p class="pane-lead">What atrium knows how to start. A command, a working directory, an environment
+      and a way to resume. Nothing about claude, codex or ollama is special-cased.</p>
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="editHarness(null)">add a runner</button>
     </div>
@@ -2979,7 +3281,7 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
     <!-- Terminals that come up with the daemon.
          Here rather than in the gear because a fixture names a runner, and
          the runners are the thing on this page. -->
-    <div class="col-head" style="margin:26px 0 10px">
+    <div class="col-head r-section" data-pane="fixtures" style="margin:0 0 10px">
       <span>fixtures</span>
       <span class="help" tabindex="0" data-tip="Terminals that start when atrium does.
 
@@ -2989,6 +3291,8 @@ They start in order, so the first one in the list is the first one up. Each land
 
 A fixture's card is pinned automatically, since a fixture is by definition something worth keeping in front of you.">?</span>
     </div>
+    <p class="pane-lead">Terminals that come up with the daemon, in order, each landing back on the card
+      it used last time.</p>
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="editFixture(null)">add a fixture</button>
     </div>
@@ -2997,7 +3301,7 @@ A fixture's card is pinned automatically, since a fixture is by definition somet
     <!-- Commands that find work. Here rather than in the gear for the same
          reason fixtures are: this page is where the things atrium runs live,
          and a source is one of them. -->
-    <div class="col-head" style="margin:26px 0 10px">
+    <div class="col-head r-section" data-pane="sources" style="margin:0 0 10px">
       <span>sources</span>
       <span class="help" tabindex="0" data-tip="Commands atrium runs on a timer. Whatever they print becomes cards in the inbox.
 
@@ -3007,6 +3311,8 @@ A source runs as whoever started the daemon, with the daemon's environment. That
 
 Three failures in a row switches one off, with the reason still on the row. scripts/sources has working examples.">?</span>
     </div>
+    <p class="pane-lead">Commands on a timer. Whatever they print becomes cards in the inbox, for you to
+      look at rather than for atrium to act on.</p>
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="editSource(null)">add a source</button>
     </div>
@@ -3015,7 +3321,7 @@ Three failures in a row switches one off, with the reason still on the row. scri
     <!-- Things you say to an agent often enough to have got tired of typing.
          Here because this page is where the things atrium runs live, and
          because the alternative was a fourth tab. -->
-    <div class="col-head" style="margin:26px 0 10px">
+    <div class="col-head r-section" data-pane="actions" style="margin:0 0 10px">
       <span>actions</span>
       <span class="help" tabindex="0" data-tip="A named prompt, offered on every card, sent the same way as anything else you say.
 
@@ -3025,6 +3331,8 @@ Atrium can terminate, shelve, attach and message. None of those is the thing you
 
 Limit one to a tag or a runner when it only makes sense there: run the tests means something different in a go repo and a docs repo.">?</span>
     </div>
+    <p class="pane-lead">A named prompt, offered on every card, sent the same way as anything else you
+      say to a session.</p>
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="editAction(null)">add an action</button>
     </div>
@@ -3145,11 +3453,18 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
          invented here would be a worse one than the overlays that already
          exist. This is atrium driving one of those rather than becoming one.
          It never handles an identity and never proxies traffic. -->
-    <h3 class="s-section">reach this board from elsewhere</h3>
+    <!-- `expose the board`, not `reach this board from elsewhere`. The old
+         name described a goal; this one names the action, and it is the phrase
+         somebody arrives with. It also has to pair with `share this session`
+         on a card, since there are two kinds of exposing now and the two names
+         have to tell them apart. -->
+    <h3 class="s-section">expose the board</h3>
     <div class="field">
       <div id="overlays"></div>
       <span class="hintline">Atrium listens on this machine only and has no login. Both of these
-        publish it through something that already knows who is allowed to see it.</span>
+        publish it through something that already knows who is allowed to see it. To hand one
+        session to one person instead of the whole board, use <b>share this session</b> on that
+        card.</span>
     </div>
 
     <h3 class="s-section">alerts</h3>
@@ -3340,6 +3655,19 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     </div>
 
     <h3 class="s-section">the board</h3>
+    <!-- The board's own colours, which are NOT the terminal's. A terminal
+         theme is picked on the terminal bar and belongs to that terminal. This
+         is the chrome around them, there is one of it, and it is stored on the
+         daemon so it follows to another browser and to a phone. -->
+    <div class="field">
+      <label class="eyebrow" for="s-skin">how the board looks</label>
+      <div class="picker">
+        <select id="s-skin" onchange="saveSkin()"></select>
+      </div>
+      <span class="hintline">Changes as you pick, so you can see it before you leave the dialog.
+        Not the terminal's colours: those are on the terminal's own bar, and each terminal keeps
+        its own.</span>
+    </div>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
       <div class="picker">
@@ -3688,7 +4016,7 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <label class="eyebrow" for="l-harness">runner</label>
       <div class="picker">
         <select id="l-harness"></select>
-        <button onclick="switchView('runners');document.getElementById('launch').close()">configure</button>
+        <button onclick="goRunners('runners');document.getElementById('launch').close()">configure</button>
       </div>
     </div>
     <div class="field">
@@ -4482,6 +4810,36 @@ function setGrouping(patch) {
 // Operator-supplied code running in the operator's own browser is not a
 // security question. A broken function taking the board down is, so a compile
 // or a call that throws falls back to the default and reports once.
+//
+// THE RULE THIS RESTS ON, WRITTEN DOWN BECAUSE IT IS NOT OBVIOUS:
+//
+//   AN EXPRESSION MAY BE STORED WHERE IT WAS TYPED. Anything wider needs a
+//   different mechanism, not a bigger text box.
+//
+// `groupingPrefs` reads `localStorage` and nothing else. That is what makes
+// `new Function` safe here, and it is safe by ACCIDENT rather than by design:
+// code that runs in this browser was typed into this browser, by whoever was
+// sitting at it, and somebody who can write it can already open dev tools.
+//
+// Three things would break that, and two of them are on the backlog:
+//
+//   - Storing the expression on the daemon. It becomes something one machine
+//     typed and another machine runs, which is the shape of a stored XSS.
+//     Wanted, reasonably: grouping is board-wide and today it is lost when you
+//     open a different browser. `internal/api/settings.go` refuses the field
+//     rather than leaving that to be discovered.
+//   - Federation. `docs/federation-design-v2.md` puts many machines behind one
+//     board, and a grouping function shipped from a leaf and run in the
+//     forum's browser crosses a boundary that does not exist today.
+//   - What the function can already reach. These run with full page scope, so
+//     `fetch` is in hand, and the board can read the daemon's filesystem. A
+//     grouping function is a general-purpose exfiltration primitive the moment
+//     somebody other than the operator can supply one.
+//
+// If board-wide grouping is wanted, the options in order are a restricted
+// expression language, a `Worker` with `connect-src 'none'`, or a fixed menu
+// for the shared case with free expressions staying local. `docs/backlog.md`
+// has the argument.
 let groupingFault = "";
 function compiled(body, fallback, ...args) {
   const src = (body || "").trim() ? body : fallback;
@@ -5316,6 +5674,15 @@ async function cardMenu(e, id) {
     t.supervised ? {
       label: "attach terminal",
       sub: openIn(where => where === "window" ? popOutTask(id) : attachTask(id))
+    } : null,
+    // Beside attach rather than under it, because it is a different terminal
+    // and not a different way of opening the same one. The wording changes on
+    // whether there is one already: opening and returning are different
+    // promises, and offering "open" for something already open is how you end
+    // up believing you have two.
+    t.supervised ? {
+      label: t.shell ? "go to its shell" : "open a shell here",
+      act: () => openShellFor(id)
     } : null,
     { sep: true },
     // Running something in this card's directory, which is the answer to
@@ -7498,6 +7865,22 @@ let soloID = "", soloTask = null;
 if (soloBus) {
   soloBus.onmessage = e => {
     const m = e.data || {};
+    // Ahead of the solo branch, because it is the one message every window
+    // cares about equally. A skin is board-wide, and a popped-out terminal
+    // sitting in the old colours beside a board in the new ones is the whole
+    // reason this is broadcast rather than left to the next reload.
+    if (m.type === "skin") {
+      applySkin(m.name);
+      rememberSkin(m.name === defaultSkin ? "" : m.name);
+      return;
+    }
+    // A skin being TRIED. Painted and deliberately not remembered: nothing has
+    // been chosen yet, and a window that wrote a preview to storage would come
+    // back wearing a skin somebody cancelled.
+    if (m.type === "skin-preview") {
+      applySkin(m.name);
+      return;
+    }
     // A solo window keeps no ledger. It alerts for its own card and nothing
     // else, so it has no use for other windows' claims, and answering its own
     // roll call would have it suppress itself.
@@ -8532,11 +8915,20 @@ const OVERLAY_UI = {
     // starts is what this field does. The name also has to BE reserved on
     // your account, or zrok deletes it the moment the share stops and the
     // address you handed out is gone. The button does that half.
-    { key: "name", label: "reserved name (public)", type: "text",
+    { key: "name", label: "the address to keep (public)", type: "text",
       placeholder: "optional, or namespace/name",
-      action: { label: "reserve it", fn: "reserveZrokName" },
-      hint: "Keeps one address for a public share. Empty means a new one each time. " +
-            "Reserve it once, or zrok takes the name back when the share stops." }
+      actions: [
+        { label: "reserve it", fn: "reserveZrokName",
+          title: "claim the name without publishing anything yet" },
+        // The common case, and the one the three-step version buried. Hidden
+        // while a share is already up, where it would mean nothing, and before
+        // the machine is enabled, where it cannot work.
+        { label: "reserve and share", fn: "reserveAndShare", go: true,
+          title: "claim the name and start the share",
+          when: o => o.ready && !o.running && (o.config || {}).mode === "public" }
+      ],
+      hint: "Keeps one address for a public share, so the link you hand out survives a restart. " +
+            "Empty means a new address every time." }
   ],
   ziti: [
     { key: "identity", label: "identity file", type: "text",
@@ -8547,7 +8939,7 @@ const OVERLAY_UI = {
     // listener refuses. Asking is the only way to tell them apart without
     // pressing start.
     { key: "service", label: "service", type: "text", placeholder: "atrium-board",
-      action: { label: "what can I host?", fn: "zitiServices" },
+      actions: [{ label: "what can I host?", fn: "zitiServices" }],
       hint: "The service this board answers. It has to already exist, with a bind policy " +
             "this identity satisfies." }
   ]
@@ -8556,6 +8948,38 @@ const OVERLAY_UI = {
 async function loadOverlays() {
   try { overlays = (await api("/v1/overlays")).overlays || []; } catch (e) { return; }
   paintOverlays();
+}
+
+// A SHARE THAT STOPS ON ITS OWN HAS TO SAY SO.
+//
+// The one state change in the overlay panel that nobody pressed a button for.
+// Starting and stopping are visible in the panel because you were looking at
+// it. A share ending by itself is not: the listener drops, `err` is set, and
+// the gear is not open.
+//
+// It matters because the address is the thing you handed to somebody else. A
+// dead public share is a link that has stopped working for a person who is not
+// in the room, and they have no way to tell you except by telling you.
+//
+// Only the running-to-stopped edge, and only with a reason attached. Pressing
+// `stop sharing` clears the error, so this cannot fire for something you did.
+function noticeSharesThatDied(before, after) {
+  // Nothing to compare against on the first event of a page's life. A board
+  // that opens onto a share that stopped an hour ago should not announce it as
+  // news: the panel says so, which is the right weight for old information.
+  if (!before || !before.length) return;
+  (after || []).forEach(now => {
+    const was = before.find(o => o.kind === now.kind);
+    if (!was || !was.running || now.running) return;
+    if (!now.err) return;
+    const what = now.label || now.kind;
+    // NO `goTo`. Every other alert on the board goes to a VIEW, and the gear
+    // is a dialog rather than one, so handing `settings` to `switchView` would
+    // be a click that appears to do nothing. The message says where to look
+    // instead, which is one instruction rather than a broken promise.
+    alerting.notify(`${what} stopped sharing`, now.err, "", "", "overlay:" + now.kind, "", "");
+    toast(`${what} stopped sharing`, now.err + ". open the gear, expose the board, to see why");
+  });
 }
 
 function paintOverlays() {
@@ -8924,14 +9348,17 @@ function overlayField(o, f) {
     // not stored and read back under the cursor.
     : `<input type="text" id="${id}" spellcheck="false" value="${esc(v)}"
         placeholder="${esc(f.placeholder || "")}" onchange="saveOverlay('${esc(o.kind)}')">`;
-  // A field can carry one action that acts on what is typed in it. The button
-  // sits beside the input rather than under the section, because what it does
-  // is about that one value and a button further away would be about the
-  // overlay.
-  const act = f.action
-    ? `<button onclick="${esc(f.action.fn)}('${esc(o.kind)}','${esc(f.key)}')"
-         >${esc(f.action.label)}</button>`
-    : "";
+  // A field can carry actions that act on what is typed in it. The buttons sit
+  // beside the input rather than under the section, because what they do is
+  // about that one value and a button further away would be about the overlay.
+  //
+  // A LIST rather than one: reserving a name, and reserving it and publishing
+  // it, are different intentions and both are worth offering. `when` keeps an
+  // action out of the way in the states where it cannot mean anything.
+  const act = (f.actions || []).filter(a => !a.when || a.when(o)).map(a =>
+    `<button class="${a.go ? "go" : ""}"
+       onclick="${esc(a.fn)}('${esc(o.kind)}','${esc(f.key)}')"
+       ${a.title ? `title="${esc(a.title)}"` : ""}>${esc(a.label)}</button>`).join("");
   return `<div class="ov-field">
     <label class="eyebrow" for="${id}">${esc(f.label)}</label>
     ${act ? `<div class="picker">${input}${act}</div>` : input}
@@ -9033,10 +9460,30 @@ async function reserveZrokName(kind, key) {
     // default not changing.
     el.value = res.name;
     said.textContent = `reserved. ${res.name} stays yours when the share stops.`;
-    saveOverlay(kind);
+    // Awaited, so starting below cannot race the daemon reading a name it has
+    // not stored yet.
+    await saveOverlay(kind);
+    return res.name;
   } catch (e) {
     said.textContent = e.message || String(e);
+    return "";
   }
+}
+
+// RESERVING AND STARTING ARE ONE INTENTION, so they are one press.
+//
+// Reserving and sharing are separate calls on zrok's side, which is zrok's
+// business rather than the operator's. `reserve it` stays beside this because
+// claiming a name for later without publishing anything now is a real thing to
+// want: a public share is a board with no login on the open internet.
+//
+// It goes through `startOverlay`, not around it, so the confirmation about
+// that is asked here too. The convenient path must not be the one that skips
+// the warning.
+async function reserveAndShare(kind, key) {
+  const name = await reserveZrokName(kind, key);
+  if (!name) return;
+  await startOverlay(kind);
 }
 
 // Reads the whole form back rather than patching one field, so what is stored
@@ -9794,6 +10241,179 @@ async function loadHousekeeping() {
       ? "Right now: " + list.join(", ")
       : "Right now: nothing resolves, so the picker has nowhere to open.";
   }
+
+  fillSkins(s);
+}
+
+// The name of the skin that has no rule of its own, because it IS `:root`.
+// Learned from the daemon's list rather than written here, so there is still
+// only one place a skin is named. Seeded so a page that never reaches the
+// daemon does not treat the default as a skin and set an attribute for it.
+let defaultSkin = "harbour";
+
+// THE PICKER IS BUILT FROM THE DAEMON'S LIST, not from a list in this file.
+//
+// There are three places a skin could be named: the stylesheet, the daemon's
+// validator, and this picker. Two of them are already checked against each
+// other by `scripts/check-skins.sh`. A third list here would be the one that
+// silently drifts, because a picker offering a name the daemon refuses fails
+// at the moment somebody chooses it, which is a long way from where it was
+// typed.
+function fillSkins(s) {
+  const names = s.board_skins || [];
+  if (names.length) defaultSkin = names[0];
+  const sel = document.getElementById("s-skin");
+  if (!sel || !names.length) return;
+  const now = s.board_skin || names[0];
+  sel.innerHTML = names.map(n =>
+    `<option value="${esc(n)}"${n === now ? " selected" : ""}>${esc(n)}</option>`).join("");
+  applySkin(now);
+}
+
+// Wearing it. One attribute on `body`, which every skin rule keys off.
+//
+// The default is the palette in `:root` and has no rule of its own, so it is
+// spelled by REMOVING the attribute rather than by setting it to a name that
+// matches nothing. Those two look identical on screen and are not: an
+// attribute matching no rule is also what a typo does, and this way the state
+// on the element says which happened.
+function applySkin(name) {
+  if (!name || name === defaultSkin) {
+    document.documentElement.removeAttribute("data-skin");
+    return;
+  }
+  document.documentElement.setAttribute("data-skin", name);
+}
+
+// TRYING SKINS, in the header, with the same control as trying a terminal
+// theme.
+//
+// The shape is copied from `pickTheme` deliberately, including what it refuses
+// to do. Nothing happens on blur: a skin is judged by looking at the BOARD, and
+// looking at the board means clicking it, so a picker that committed and closed
+// on blur would close itself the first time you tried to use it. It is answered
+// with `use it` or `cancel` and by nothing else.
+//
+// The one difference from the terminal's: this previews for every window, not
+// just this one. A skin is board-wide, so a preview that only repainted the
+// window you are in would be judging it against half the evidence.
+let skinBefore = null;
+
+function pickSkin() {
+  const wrap = document.getElementById("skin-wrap");
+  const sel = document.getElementById("skin-pick");
+  if (!wrap || !sel) return;
+  // A second press closes it, so the button is a toggle rather than a way to
+  // open something you then have to answer.
+  if (!wrap.hidden) { cancelSkin(); return; }
+
+  const names = (pastePrefs && pastePrefs.board_skins) || [];
+  if (!names.length) {
+    toast("no skins", "the daemon has not said which ones it has yet");
+    return;
+  }
+  skinBefore = currentSkin();
+  sel.innerHTML = names.map(n =>
+    `<option value="${esc(n)}"${n === skinBefore ? " selected" : ""}>${esc(n)}</option>`).join("");
+  wrap.hidden = false;
+  sel.focus();
+}
+
+// What is on screen right now, which is the attribute rather than the setting.
+// They differ exactly while a preview is up, and this is the value `cancel` has
+// to put back.
+function currentSkin() {
+  return document.documentElement.getAttribute("data-skin") || defaultSkin;
+}
+
+// Painted everywhere, and not saved. `applySkin` moves this window and the
+// broadcast moves the others, which is what makes the preview honest.
+function previewSkin(name) {
+  applySkin(name);
+  try { soloBus && soloBus.postMessage({ type: "skin-preview", name }); } catch (e) {}
+}
+
+async function keepSkin() {
+  const wrap = document.getElementById("skin-wrap");
+  const sel = document.getElementById("skin-pick");
+  if (!sel || !wrap || wrap.hidden) return;
+  wrap.hidden = true;
+  const name = sel.value;
+  if (name === skinBefore) return;
+  // Through the same path the settings dialog uses, so there is one place that
+  // writes this and one place that handles the refusal.
+  const picked = document.getElementById("s-skin");
+  if (picked) picked.value = name;
+  await saveSkin(name);
+}
+
+function cancelSkin() {
+  const wrap = document.getElementById("skin-wrap");
+  if (!wrap || wrap.hidden) return;
+  wrap.hidden = true;
+  previewSkin(skinBefore);
+}
+
+async function saveSkin(name) {
+  const sel = document.getElementById("s-skin");
+  const want = name || (sel && sel.value);
+  if (!want) return;
+  // Painted before the round trip, because this is the one setting whose whole
+  // point is what it looks like. Waiting for the daemon to answer means half a
+  // second of the old colours while you are staring at the control you just
+  // moved.
+  applySkin(want);
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ board_skin: want })
+    });
+  } catch (e) {
+    // Put it back. A skin that did not save and stayed on screen is a board
+    // that changes colour by itself at the next reload.
+    toast("that did not save", e.message);
+    fillSkins(pastePrefs || {});
+    return;
+  }
+  rememberSkin(want);
+  // Every popped-out terminal is a separate window with its own body, and a
+  // skin is board-wide by definition, so they repaint now rather than at their
+  // next reload.
+  try { soloBus && soloBus.postMessage({ type: "skin", name: want }); } catch (e) {}
+}
+
+// THE SKIN IS REMEMBERED IN THIS BROWSER AS WELL AS ON THE DAEMON, and the
+// local copy is not the source of truth. It exists to kill the flash.
+//
+// The daemon holds the setting, which is what makes it follow to a phone. But
+// reading it takes a round trip, and until it lands the page is painted in the
+// default palette, so every load of every window flickers navy for a moment
+// before going black. Applying the remembered one at parse time and then
+// reconciling means the flash only happens the first time a new browser sees
+// the board, which is the one time it is honest.
+const SKIN_KEY = "atrium.skin";
+function rememberSkin(name) {
+  try { name ? localStorage.setItem(SKIN_KEY, name) : localStorage.removeItem(SKIN_KEY); } catch (e) {}
+}
+
+async function bootSkin() {
+  try {
+    const remembered = localStorage.getItem(SKIN_KEY);
+    if (remembered) document.documentElement.setAttribute("data-skin", remembered);
+  } catch (e) {}
+  let s;
+  try { s = await api("/v1/settings"); } catch (e) { return; }
+  const names = s.board_skins || [];
+  const now = s.board_skin || names[0] || "";
+  // The daemon's answer wins, including when it says the default: a skin
+  // cleared from another browser has to reach this one.
+  if (now && names.length && now !== names[0]) {
+    document.documentElement.setAttribute("data-skin", now);
+    rememberSkin(now);
+  } else {
+    document.documentElement.removeAttribute("data-skin");
+    rememberSkin("");
+  }
 }
 
 async function saveBrowseRoots() {
@@ -9970,70 +10590,88 @@ async function saveHousekeeping(field, value) {
 // were rather than at the top. Per browser, since it is about this screen.
 const SETTINGS_PANE = "atrium.settingsPane";
 
-function buildSettingsNav() {
-  const body = document.querySelector("#settings .dlg-body");
-  if (!body || body.dataset.split) return;
+// SPLITTING A LONG SCROLL INTO PANES. Two callers: the settings dialog and the
+// runners page.
+//
+// The property both depend on: the markup stays ONE FLOW of headings and their
+// content, top to bottom, which is what makes it editable. The nav is built
+// from the headings, so adding a section is a heading and its fields with
+// nothing else to keep in step.
+//
+// `data-pane` on a heading is the nav label when the heading itself is not one.
+// The runners page needs it because its headings carry a help bubble, and
+// `textContent` would put the whole tooltip in the button.
+function splitIntoPanes(host, headingClass, key, opts) {
+  opts = opts || {};
+  if (!host || host.dataset.split) return;
 
-  const headings = Array.from(body.querySelectorAll(":scope > .s-section"));
+  const headings = Array.from(host.querySelectorAll(":scope > ." + headingClass));
   if (headings.length < 2) return;
 
   // Everything from one heading up to the next is that pane.
   const panes = headings.map(h => {
     const pane = document.createElement("div");
-    pane.className = "s-pane";
-    pane.dataset.name = h.textContent.trim();
+    pane.className = "pane";
+    pane.dataset.name = (h.dataset.pane || h.textContent || "").trim();
     let node = h;
     const take = [];
     while (node) {
       take.push(node);
       node = node.nextElementSibling;
-      if (node && node.classList.contains("s-section")) break;
+      if (node && node.classList.contains(headingClass)) break;
     }
     take.forEach(n => pane.appendChild(n));
     return pane;
   });
 
   const nav = document.createElement("div");
-  nav.className = "s-nav";
-  const host = document.createElement("div");
-  host.className = "s-panes";
-  panes.forEach(p => host.appendChild(p));
+  nav.className = "pane-nav";
+  const box = document.createElement("div");
+  box.className = "panes";
+  panes.forEach(p => box.appendChild(p));
 
   panes.forEach(p => {
     const b = document.createElement("button");
     b.textContent = p.dataset.name;
-    b.onclick = () => showSettingsPane(p.dataset.name);
+    b.onclick = () => showPane(host, p.dataset.name, key, opts);
     nav.appendChild(b);
   });
 
   const split = document.createElement("div");
-  split.className = "s-split";
+  split.className = "pane-split";
   split.appendChild(nav);
-  split.appendChild(host);
-  body.appendChild(split);
-  body.dataset.split = "1";
+  split.appendChild(box);
+  host.appendChild(split);
+  host.dataset.split = "1";
 
-  showSettingsPane(localStorage.getItem(SETTINGS_PANE) || panes[0].dataset.name);
+  let want = "";
+  try { want = localStorage.getItem(key) || ""; } catch (e) {}
+  showPane(host, want || panes[0].dataset.name, key, opts);
 }
 
-function showSettingsPane(name) {
-  const body = document.querySelector("#settings .dlg-body");
-  if (!body) return;
-  const panes = Array.from(body.querySelectorAll(".s-pane"));
+function showPane(host, name, key, opts) {
+  if (!host) return;
+  opts = opts || {};
+  const panes = Array.from(host.querySelectorAll(".pane"));
   // A remembered name that no longer exists falls back to the first, so
-  // renaming a section does not open an empty dialog.
+  // renaming a section does not open an empty screen.
   if (!panes.some(p => p.dataset.name === name)) {
     name = panes.length ? panes[0].dataset.name : "";
   }
   panes.forEach(p => { p.hidden = p.dataset.name !== name; });
-  body.querySelectorAll(".s-nav button").forEach(b => {
+  host.querySelectorAll(".pane-nav button").forEach(b => {
     b.classList.toggle("on", b.textContent === name);
   });
   // Scrolled back to the top, since the panes share one scroll box and
   // arriving halfway down a short pane reads as a rendering fault.
-  body.scrollTop = 0;
-  try { localStorage.setItem(SETTINGS_PANE, name); } catch (e) {}
+  (opts.scroller || host).scrollTop = 0;
+  try { localStorage.setItem(key, name); } catch (e) {}
+  if (opts.onShow) opts.onShow(name);
 }
+
+function settingsBody() { return document.querySelector("#settings .dlg-body"); }
+function buildSettingsNav() { splitIntoPanes(settingsBody(), "s-section", SETTINGS_PANE); }
+function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE); }
 
 function paintSettings() {
   buildSettingsNav();
@@ -10986,7 +11624,10 @@ function connect() {
   // A share is one thing for the machine, so two tabs must not disagree about
   // whether it is up.
   es.addEventListener("overlays", e => {
-    try { overlays = JSON.parse(e.data) || []; } catch (err) { return; }
+    let next;
+    try { next = JSON.parse(e.data) || []; } catch (err) { return; }
+    noticeSharesThatDied(overlays, next);
+    overlays = next;
     paintOverlays();
   });
   es.addEventListener("settings", e => {
@@ -11502,6 +12143,16 @@ function openTerm(task) {
   const findbar = document.getElementById("t-find");
   if (findbar) findbar.hidden = true;
   termWait("");
+  // A different card means the runner again. A shell belongs to the card it
+  // was opened in, so carrying the choice across would either attach to the
+  // wrong card's shell or, more likely, to nothing at all.
+  //
+  // Compared against a REMEMBERED ID rather than against `termTask`, because
+  // switching terminals within one card tears the old socket down first and
+  // `closeTerm` clears `termTask` on the way. Reading it here would say "a
+  // different card" every time and put the pane straight back on the runner.
+  if (termKindFor !== task.id) termKind = "runner";
+  termKindFor = task.id;
   termTask = task;
   // Written down so a reload comes back here. Only in the board: a solo
   // window is addressed by its hash and has no business voting on where the
@@ -11533,6 +12184,7 @@ function openTerm(task) {
          onclick="event.stopPropagation();copyPath(this.parentNode)"
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
   paintCopyMode();
+  paintTermKind();
 
   const screen = document.getElementById("t-screen");
   screen.innerHTML = "";
@@ -12060,12 +12712,33 @@ async function termMenu(e, id) {
   showMenu(e, [
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     { label: "attach", act: () => attachTask(id) },
+    // The point of the whole feature, offered where you are when you need it:
+    // the agent has stopped answering and you want to look at the directory
+    // it is sitting in. Only for a card atrium owns a runner for, since a
+    // window mode session has no terminal here to sit beside.
+    t.supervised
+      ? { label: t.shell ? "go to its shell" : "open a shell here", act: () => openShellFor(id) }
+      : null,
     { sep: true },
     { label: "what did it do?", act: () => { current = t; openReview(); } },
     { label: "details…", act: () => openTask(id) },
     { sep: true },
     t.pid > 0 ? { label: "terminate", danger: true, act: () => killById(id) } : null
   ].filter(Boolean));
+}
+
+// Attach to a card and land on its shell, from anywhere that offers it.
+//
+// Two steps rather than one, and in this order: attach first so the pane is on
+// the right card, then switch. Asking for the shell before attaching would
+// leave the toggle describing a card the pane is not showing.
+async function openShellFor(id) {
+  await attachTask(id);
+  // `attachTask` raises a popped-out window instead of attaching here, and in
+  // that case this pane is showing something else entirely. Switching would
+  // move the wrong terminal.
+  if (!termTask || termTask.id !== id) return;
+  await showTerminal("shell");
 }
 
 // The name is an override, so it survives the runner reconnecting and
@@ -12470,9 +13143,71 @@ function waitName(t) {
   return (t && (shortLabel(t) || t.display_title)) || "the session";
 }
 
+// WHICH OF THE ATTACHED CARD'S TWO TERMINALS THE PANE IS SHOWING.
+//
+// `runner` or `shell`. Reset to `runner` whenever the pane attaches to a
+// different card, because a shell belongs to the card it was opened in and
+// carrying the choice across would attach to the wrong thing or to nothing.
+let termKind = "runner";
+// Which card `termKind` is an answer about. See `openTerm`.
+let termKindFor = "";
+
+// The toggle, shown only when there is a choice to make.
+//
+// A card with no runner atrium owns has no terminal here at all, so offering
+// `agent` and `shell` on it would be two buttons where one leads nowhere. The
+// pair appears with the runner, which is also the only case where a wedged
+// agent is a thing that can happen.
+function paintTermKind() {
+  const wrap = document.getElementById("t-kind");
+  if (!wrap) return;
+  wrap.hidden = !(termTask && termTask.supervised);
+  const agent = document.getElementById("t-kind-agent");
+  const shell = document.getElementById("t-kind-shell");
+  if (agent) agent.classList.toggle("on", termKind !== "shell");
+  if (shell) shell.classList.toggle("on", termKind === "shell");
+}
+
+// Switch the pane between the runner's terminal and the card's shell.
+//
+// ASKING FOR THE SHELL IS WHAT CREATES IT. The board does not track which
+// cards have one: a shell outlives a reload and is closed by an idle sweep the
+// browser knows nothing about, so anything the page remembered would be wrong
+// within the hour. `POST .../shell` is idempotent, so pressing this twice is
+// the same as pressing it once.
+async function showTerminal(kind) {
+  if (!termTask) return;
+  if (kind === termKind) return;
+  if (kind === "shell") {
+    try {
+      await api(`/v1/tasks/${termTask.id}/shell`, { method: "POST" });
+    } catch (e) {
+      // The failures here are readable ones: the directory is gone, the
+      // configured shell is not installed. This is the whole reason opening a
+      // shell is a POST rather than something the websocket does on the way
+      // up: a close code cannot say either of those.
+      toast("no shell here", e.message);
+      return;
+    }
+  }
+  const task = termTask;
+  termKind = kind;
+  termKindFor = task.id;
+  paintTermKind();
+  // Tear the socket down and dial the other terminal. Not two sockets: one
+  // pane shows one thing, and both writing into one screen is the situation
+  // popping out exists to avoid.
+  closeTerm(true);
+  openTerm(task);
+}
+
 function connectTerm(taskID) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach`);
+  // Absent means the runner, which is what the daemon assumes too, so the
+  // parameter is only ever added rather than always sent. That keeps the
+  // ordinary URL identical to what it was before shells existed.
+  const kind = termKind === "shell" ? "?kind=shell" : "";
+  termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the
   // next disconnect thinking it never opened.
@@ -12870,7 +13605,48 @@ async function renderTerms() {
 let allHarnesses = [];
 let launchTarget = null;
 
+// Which pane of the runners page was last open, remembered the same way the
+// settings dialog remembers its own. Per browser: it is about this screen.
+const RUNNERS_PANE = "atrium.runnersPane";
+
+// Cut into panes ONCE, on the first render, and never again.
+//
+// `splitIntoPanes` moves elements into new parents, so calling it twice would
+// re-parent the panes into a pane. It guards on `dataset.split` for that, and
+// this is the call site that would otherwise test the guard on every refresh.
+//
+// It runs here rather than at boot because `#runners` starts hidden, and the
+// nav is measured against a sticky position that a hidden element has no
+// answer for.
+// Going to the runners page AND landing on the right pane.
+//
+// Both callers arrive with a reason: one pressed `configure` in the launch
+// dialog, the other was told nothing is switched on. Dropping either on
+// whichever pane was open last means arriving somewhere that does not answer
+// the sentence that sent you.
+//
+// The split happens in `renderRunners`, which `switchView` calls, so the pane
+// is asked for after that rather than before: there are no panes to show yet
+// on the first visit.
+function goRunners(pane) {
+  switchView("runners");
+  const host = document.getElementById("runners");
+  if (pane && host && host.dataset.split) {
+    showPane(host, pane, RUNNERS_PANE, { scroller: document.querySelector("main") });
+  }
+}
+
+function splitRunners() {
+  splitIntoPanes(document.getElementById("runners"), "r-section", RUNNERS_PANE, {
+    // The page scrolls in `main`, not in the pane, so switching panes has to
+    // scroll the thing that actually moved. Without this, changing pane on a
+    // long list leaves you halfway down a short one.
+    scroller: document.querySelector("main")
+  });
+}
+
 async function renderRunners() {
+  splitRunners();
   try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) { return; }
   // Before the list is drawn: the claude row carries the count.
   await loadHooks();
@@ -13997,7 +14773,7 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   const enabled = allHarnesses.filter(h => h.enabled);
   if (!enabled.length) {
     tellUser("atrium", "no runner is enabled yet. turn one on in the runners tab.");
-    switchView("runners");
+    goRunners("runners");
     return;
   }
   const picking = !id;
@@ -15038,6 +15814,12 @@ document.querySelectorAll("dialog").forEach(d => {
 // looking fine.
 //
 // Starting the page from the bottom means every declaration above it has run.
+// What the board is wearing, before anything else, and in EVERY window rather
+// than only the board. A popped-out terminal has its own document and its own
+// body, so it wears the skin or it does not, and one window in the old colours
+// beside one in the new reads as a bug in both.
+bootSkin();
+
 if (termOnly()) {
   // The same stream and the same interval as the board. `refresh` sends a
   // popped-out window down `soloRefresh`, so this costs one card's worth of

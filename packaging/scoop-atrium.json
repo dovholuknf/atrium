@@ -1,0 +1,57 @@
+{
+  "$comment": [
+    "A scoop manifest, and the easiest of the five packaging targets by a long way.",
+    "No account, no review, no signing: a JSON file in a bucket pointing at a release",
+    "asset and its hash. That is why it is first in docs/packaging.md, and why this",
+    "file exists before any of the others: it proves the release SHAPE is right",
+    "before anything harder depends on it.",
+    "",
+    "TO PUBLISH: put this in a bucket repository as bucket/atrium.json, with version",
+    "and hash filled in from scripts/release.sh output, then:",
+    "  scoop bucket add dovholuknf https://github.com/dovholuknf/scoop-bucket",
+    "  scoop install atrium",
+    "",
+    "UNVERIFIED. This has never been installed. It is written from scoop's schema",
+    "and the URL it names does not exist yet, because nothing has been released.",
+    "",
+    "autoupdate is what makes a bucket worth having: scoop rewrites version, url",
+    "and hash itself when a new tag appears, so publishing a release becomes one",
+    "commit rather than three edits somebody gets wrong."
+  ],
+  "version": "0.0.0",
+  "description": "Organizes coding agents. A daemon with durable state, a permission gate, a web board, and a pseudo terminal per runner you can attach to from a browser.",
+  "homepage": "https://github.com/dovholuknf/atrium",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/dovholuknf/atrium/releases/download/v0.0.0/atrium_v0.0.0_windows_amd64.zip",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "extract_dir": "atrium_v0.0.0_windows_amd64"
+    }
+  },
+  "bin": "atrium.exe",
+  "notes": [
+    "Nothing starts on its own. `atrium daemon` runs it, and scripts\\atrium-autostart.ps1",
+    "in the repository registers it as a logon task.",
+    "",
+    "A logon task rather than a Windows service, deliberately: a service runs in session 0",
+    "and cannot open a pseudo terminal you can attach to, which is most of what atrium is for.",
+    "",
+    "Hooks: `atrium hook install` writes them into your Claude Code settings, naming the",
+    "binary the RUNNING daemon reports. Start the daemon first, then install the hooks."
+  ],
+  "checkver": {
+    "github": "https://github.com/dovholuknf/atrium"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/dovholuknf/atrium/releases/download/v$version/atrium_v$version_windows_amd64.zip",
+        "extract_dir": "atrium_v$version_windows_amd64"
+      }
+    },
+    "hash": {
+      "url": "$baseurl/checksums.txt"
+    }
+  }
+}

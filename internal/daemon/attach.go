@@ -33,8 +33,48 @@ type attachIn struct {
 	S    string `json:"s"`
 }
 
+// WHICH OF A CARD'S TWO TERMINALS.
+//
+// A card may hold the runner's terminal and one shell (`shell.go`). They are
+// told apart by a query parameter rather than by a second route, because the
+// route already carries a second dimension this way: `attachReadOnly` is the
+// same terminal with the keyboard taken away. A kind and a mode are the same
+// shape of question and belong in the same place, and a second route would
+// duplicate the upgrade, the read limit, the backlog replay and the write loop,
+// which is the copy that drifts.
+//
+// ABSENT MEANS THE RUNNER. Every caller written before shells existed sends
+// nothing, and their meaning must not move. Making attach prefer a shell when
+// one exists would silently repoint all of them.
+const shellKind = "shell"
+
 func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
-	d.attach(w, r, r.PathValue("id"), true)
+	d.attach(w, r, r.PathValue("id"), true, r.URL.Query().Get("kind") == shellKind)
+}
+
+// handleShellOpen starts a card's shell, or answers that it already has one.
+//
+// A POST rather than spawning inside the websocket upgrade, and the reason is
+// what happens when it fails. A shell can fail to start in ways worth reading:
+// the directory is gone, the configured shell is not installed. A websocket
+// close code cannot say either, so the board would show a terminal that
+// appeared and vanished. This answers with the sentence.
+func (d *Daemon) handleShellOpen(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	if err := d.EnsureShell(taskID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// handleShellClose ends it, for an operator who is done rather than for one who
+// navigated away. The idle sweep covers the second case.
+func (d *Daemon) handleShellClose(w http.ResponseWriter, r *http.Request) {
+	d.CloseShell(r.PathValue("id"))
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // attachReadOnly is the same terminal with the keyboard taken away.
@@ -43,19 +83,44 @@ func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
 // something in the page, because the page belongs to whoever is looking at it:
 // a guest can open dev tools and send whatever frame they like, and the only
 // thing that decides what happens is the end that reads them.
+// A LENT SESSION IS THE RUNNER'S TERMINAL AND NEVER THE SHELL.
+//
+// Not an oversight and not a policy that could be relaxed. The point of lending
+// one session is that the guest sees that session and nothing else, and the
+// guest handler is an allowlist for exactly that reason. A shell in the card's
+// directory is a general purpose command line on this machine, so a share that
+// could reach one would be a share of the machine.
 func (d *Daemon) attachReadOnly(w http.ResponseWriter, r *http.Request, taskID string) {
-	d.attach(w, r, taskID, false)
+	d.attach(w, r, taskID, false, false)
 }
 
-func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, writable bool) {
-	run := d.sup.get(taskID)
-	if run == nil {
-		// Being explicit beats an empty terminal. A window mode runner owns
-		// its own terminal and there is nothing here to show.
-		http.Error(w, "nothing to attach to: this task has no runner atrium owns. "+
-			"only a harness in pty mode can be attached to.", http.StatusNotFound)
-		return
+func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, writable, shell bool) {
+	var run *runner
+	if shell {
+		run = d.sup.getShell(taskID)
+		if run == nil {
+			// Distinct from the runner's message below, because the fix is
+			// different: this one is "ask for it first", not "this card cannot
+			// be attached to at all".
+			http.Error(w, "this card has no shell open. ask for one first.",
+				http.StatusNotFound)
+			return
+		}
+	} else {
+		run = d.sup.get(taskID)
+		if run == nil {
+			// Being explicit beats an empty terminal. A window mode runner owns
+			// its own terminal and there is nothing here to show.
+			http.Error(w, "nothing to attach to: this task has no runner atrium owns. "+
+				"only a harness in pty mode can be attached to.", http.StatusNotFound)
+			return
+		}
 	}
+	// The idle sweep closes a shell nobody is looking at, and this is both
+	// ends of "looking at it": the clock is reset on arrival, and again on the
+	// way out so the window runs from when the last person left.
+	run.touch()
+	defer run.touch()
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// Loopback only, and the board is served from the same origin. A
@@ -147,11 +212,17 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, w
 			return
 		case chunk, ok := <-updates:
 			if !ok {
-				// The runner exited. Say so in the terminal rather than just
-				// going quiet, then close.
+				// Exited. Say so in the terminal rather than just going quiet,
+				// then close. Worded for whichever of the two this is: "the
+				// runner has exited" over a shell somebody typed `exit` into
+				// would read as the agent having died.
+				gone := "[atrium] this runner has exited"
+				if shell {
+					gone = "[atrium] this shell has closed"
+				}
 				_ = c.Write(ctx, websocket.MessageBinary,
-					[]byte("\r\n\x1b[38;5;244m[atrium] this runner has exited\x1b[0m\r\n"))
-				c.Close(websocket.StatusNormalClosure, "runner exited")
+					[]byte("\r\n\x1b[38;5;244m"+gone+"\x1b[0m\r\n"))
+				c.Close(websocket.StatusNormalClosure, "exited")
 				return
 			}
 			if err := c.Write(ctx, websocket.MessageBinary, chunk); err != nil {

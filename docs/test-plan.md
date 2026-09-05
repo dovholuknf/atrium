@@ -963,6 +963,150 @@ path must NOT be under `build.claude`.
 
 **Then** log out and back in, and confirm no console window appears.
 
+## K. What landed on 2026-09-05, the second batch
+
+The shell is the one to run first: it is a new process on the machine, it is the only thing here that could
+leave something behind, and nothing about it has ever been seen rendered.
+
+### K1. A shell beside the agent
+
+**Steps**
+
+1. Attach to a supervised card. The terminal bar shows `agent | shell`.
+2. Press `shell`. Type `pwd` on Linux or `cd` on Windows.
+3. Press `agent`. Press `shell` again.
+4. Right-click the same card on the board. Read the entry.
+5. Attach to a DIFFERENT card. Look at the toggle.
+
+**Expect** the shell opens in the CARD'S directory, not the daemon's. Step 3 returns to the same shell with the
+`pwd` still on screen rather than a fresh one. At step 4 the card menu says `go to its shell` rather than
+`open a shell here`. At step 5 the pane is on `agent`, because a shell belongs to the card it was opened in.
+
+**Also expect** the card does not move. Its status, its column and its timeline are exactly as they were.
+
+### K2. Closing a shell does not kill a card
+
+**The failure this exists for.** The obvious implementation puts shells in the same map as runners, and then
+closing one runs the runner's exit path: an exit event, and the card filed as `dead`.
+
+**Steps**
+
+1. Open a shell on a card whose agent is running.
+2. Type `exit`.
+3. Look at the card, its column, and its timeline.
+
+**Expect** nothing happened to the card. The agent is still running, the status has not moved, and there is no
+new entry in the timeline. The terminal says `[atrium] this shell has closed`, not `this runner has exited`.
+
+### K3. A shell does not outlive its card
+
+**Steps**
+
+1. Open a shell on a card you are willing to delete.
+2. Delete the card.
+3. On Windows, try to remove the card's directory.
+
+**Expect** the removal works. A shell left holding that directory open is the failure, and on Windows it
+presents as a permission error on the delete rather than as anything to do with atrium.
+
+### K4. A lent session is not a command line
+
+**The one to actually run, because it is the security claim.**
+
+**Steps**
+
+1. Share a card with `share this session`, WRITABLE.
+2. Open the share's address. Confirm the terminal works.
+3. In that page's dev tools, open the same socket with `?kind=shell` appended:
+   `new WebSocket(location.origin.replace(/^http/, "ws") + "/v1/tasks/<id>/attach?kind=shell")`
+4. Try `fetch("/v1/tasks/<id>/shell", {method: "POST"})` in the same console.
+
+**Expect** step 3 fails with 403 and a sentence saying a shared session is the agent's terminal. Step 4 also
+fails with 403 and no shell appears on the card.
+
+**Why by hand as well as in a test.** The Go test asserts the handler refuses. This asserts the SHARE refuses,
+end to end, over the real address, which is what somebody actually has.
+
+### K5. The skins
+
+**Steps**
+
+1. Settings, the board, `how the board looks`. Change it. Do not close the dialog.
+2. Try `noir`, then `sandstone`, then back to the first entry in the list.
+3. Pop a terminal out into its own window, then change the skin on the board.
+4. Reload the board.
+5. Open the board in a second browser, or a private window.
+
+**Expect** it repaints as you pick, without closing the dialog. The popped-out window changes at the same
+moment rather than at its next reload. The reload comes back in the chosen skin with no flash of navy. The
+second browser is also in the chosen skin, because it is a daemon setting and not a browser one.
+
+**Look for the failure this is really about:** any element still wearing the old palette. A chip, an inset, a
+scrollbar, the recessed box behind an input. That is a colour that was written as a literal instead of a
+variable, and `scripts/check-skins.sh` cannot see it.
+
+### K6. A skin nobody ships
+
+**Steps**
+
+```powershell
+curl.exe -s -X POST http://localhost:7778/v1/settings `
+  -H "Content-Type: application/json" -d '{\"board_skin\":\"hot-pink\"}'
+```
+
+**Expect** a 400 naming the skins that would have worked. Not a 200: a skin that saves and does nothing is the
+worst answer available, because the setting looks like it took.
+
+### K7. The runners page has five panes
+
+**Steps**
+
+1. Runners tab. Read the spine on the left.
+2. Move between panes. Note the scroll position.
+3. Reload, go back to the runners tab.
+4. Launch dialog, press `configure`.
+
+**Expect** five panes: start, runners, fixtures, sources, actions. Switching scrolls to the top rather than
+landing halfway down. The reload comes back on the pane you left. `configure` lands on `runners` rather than on
+whichever pane was last open.
+
+### K8. A share that dies says so
+
+**Hard to stage deliberately, so this is the honest version.**
+
+**Steps**
+
+1. Start a zrok share.
+2. Take the machine's network away, or stop the zrok environment from elsewhere, and wait.
+
+**Expect** a toast and a desktop notification naming what stopped and why, without the gear being open.
+
+**What does NOT alert:** pressing `stop sharing`, and a board that opens onto a share that died an hour ago.
+Both are correct. The alert is for a share ending while you were not looking.
+
+### K9. Reserve and share in one press
+
+**Steps**
+
+1. Settings, expose the board, configure zrok. Set the mode to `public`.
+2. Type a name in `the address to keep`. Press `reserve and share`.
+
+**Expect** it asks the public-share confirmation first, then reserves and starts, and the address appears. The
+convenient path must NOT skip the warning that this puts a board with no login on the internet.
+
+### K10. A grouping expression cannot be stored on the daemon
+
+**Steps**
+
+```powershell
+curl.exe -s -X POST http://localhost:7778/v1/settings `
+  -H "Content-Type: application/json" -d '{\"group_by\":\"return task.repo\"}'
+```
+
+**Expect** a 400 that explains WHY, not just that it refused: the expression is compiled and run by whichever
+browser loads the board. If this ever answers 200, the rule has been broken and the thing to read is the
+comment above it in `internal/api/settings.go`.
+
 ## Notes for future automation
 
 - The simple stdin mode (`atrium hub --simple`) is a single-process script-friendly target. A Go-test could

@@ -57,7 +57,7 @@ if (topLevel.length < 2) {
 // Every id the settings code reaches for has to still be inside the body.
 const wanted = ["s-vol", "s-input", "s-perm", "s-expiry", "s-debounce",
   "s-cardsize", "s-density", "s-sweep", "s-prune", "overlays",
-  "s-notify-state", "s-group-by", "s-group-order", "s-group-toggle"];
+  "s-notify-state", "s-group-by", "s-group-order", "s-group-toggle", "s-skin"];
 const missing = wanted.filter(id => !body.includes(`id="${id}"`));
 if (missing.length) {
   console.error("\nFAIL: these are reached for but not inside the dialog body: " + missing.join(", "));

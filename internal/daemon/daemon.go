@@ -147,6 +147,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
+	d.ap.OpenShell = d.handleShellOpen
+	d.ap.ShutShell = d.handleShellClose
 	d.ap.Message = d.handleMessage
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
@@ -175,6 +177,12 @@ func New(opts Options) (*Daemon, error) {
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
+	// Whether this card has a shell open, so the board can offer `open a shell`
+	// or `go to the shell` rather than guessing. Asked rather than remembered
+	// in the page, because a shell outlives a reload and a board that tracked
+	// it itself would be wrong after every restart.
+	api.HasShell = func(taskID string) bool { return d.sup.getShell(taskID) != nil }
+	api.CloseShellFor = d.CloseShell
 	// What a runner is doing right now. Held in the daemon, never written down.
 	api.ActivityOf = d.activityFor
 	// Starting a fixture is spawning a process, which the daemon owns.
@@ -710,6 +718,12 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// closes underneath them. Ten seconds because an agent mid-turn may be
 	// writing a file, and losing that costs far more than a slow shutdown.
 	d.stopSupervised(10 * time.Second)
+
+	// Shells get no grace period, and the difference from the line above is the
+	// point. A runner may be mid-turn writing a file. A shell is a prompt
+	// somebody was reading, and there is nothing in it to lose that ten seconds
+	// of waiting would save.
+	d.stopShells()
 
 	if n := d.blockedAgents(); n > 0 {
 		log.Printf("[atrium] %d agent connection(s) still parked. they will retry against the "+
