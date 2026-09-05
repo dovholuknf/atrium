@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -138,7 +139,7 @@ func (d *Daemon) startFixture(f *store.Fixture) error {
 		TaskID:  onto,
 	}
 	if f.Resume {
-		req.Resume = d.resumeIDFor(onto)
+		req.Resume = d.fixtureResume(f, onto)
 	}
 
 	task, err := d.Launch(req)
@@ -186,6 +187,46 @@ func (d *Daemon) StartFixtureNow(id string) error {
 		return err
 	}
 	return d.startFixture(f)
+}
+
+// fixtureResume is WHICH conversation this fixture picks back up.
+//
+// The mode exists because the boolean answered the wrong question. `resume` on
+// meant "the id recorded on the card I started last time", and a fixture does
+// not want a particular conversation, it wants the terminal it had. That id
+// goes stale the moment anything else starts a session in the directory, and
+// points at nothing once the transcript is deleted, and both fail the same
+// silent way: a fresh conversation, no error, repeated every restart.
+//
+// Anything that does not exist on disk is dropped rather than passed on, and
+// said out loud. Handing a runner an id it cannot find is how this was
+// invisible: the runner starts fresh and reports nothing wrong.
+func (d *Daemon) fixtureResume(f *store.Fixture, onto string) string {
+	cwd := strings.TrimSpace(f.Cwd)
+
+	if strings.EqualFold(strings.TrimSpace(f.ResumeMode), "card") {
+		id := d.resumeIDFor(onto)
+		if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
+			log.Printf("[atrium] fixture %q resumes card %s, whose conversation %s is gone. "+
+				"starting fresh", fixtureName(f), onto, id)
+			return ""
+		}
+		return id
+	}
+
+	// The default, and what `resume` on has always meant to a person.
+	if cwd != "" {
+		if id := api.LatestSession(cwd); id != "" {
+			return id
+		}
+	}
+	// Nothing on disk to go back to. The card's own id is the last thing worth
+	// trying, and it is checked like everything else.
+	id := d.resumeIDFor(onto)
+	if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
+		return ""
+	}
+	return id
 }
 
 // resumeIDFor is the conversation to pick back up, when there is one.

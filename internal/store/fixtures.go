@@ -32,6 +32,16 @@ type Fixture struct {
 	// Resume picks the conversation back up where a resume id is known. Off
 	// means start fresh every time, which is what a plain shell wants.
 	Resume bool `json:"resume"`
+	// ResumeMode is WHICH conversation, which is a different question and the
+	// one that was getting the wrong answer.
+	//
+	//   ""/"latest"  the newest conversation in that directory
+	//   "card"       the id recorded on the card this fixture started last
+	//
+	// `latest` is the default because it is what a fixture means: give me back
+	// the terminal I had. `card` pins it to one conversation, which is right
+	// only when that card is the only thing ever run in the directory.
+	ResumeMode string `json:"resume_mode,omitempty"`
 	// Enabled is whether this one starts. Off keeps the definition without
 	// the behavior, so a fixture can be parked without being retyped.
 	Enabled bool `json:"enabled"`
@@ -58,7 +68,7 @@ type Fixture struct {
 }
 
 const fixtureColumns = `id, label, harness, cwd, resume, enabled, sort, theme, task_id, created_at,
-	last_error, last_run_at`
+	last_error, last_run_at, resume_mode`
 
 func scanFixture(sc interface{ Scan(...any) error }) (*Fixture, error) {
 	var (
@@ -66,7 +76,8 @@ func scanFixture(sc interface{ Scan(...any) error }) (*Fixture, error) {
 		resume, enabled int
 	)
 	if err := sc.Scan(&f.ID, &f.Label, &f.Harness, &f.Cwd, &resume, &enabled,
-		&f.Sort, &f.Theme, &f.TaskID, &f.CreatedAt, &f.LastError, &f.LastRunAt); err != nil {
+		&f.Sort, &f.Theme, &f.TaskID, &f.CreatedAt, &f.LastError, &f.LastRunAt,
+		&f.ResumeMode); err != nil {
 		return nil, err
 	}
 	f.Resume = resume != 0
@@ -119,13 +130,13 @@ func (s *Store) SaveFixture(f *Fixture) (*Fixture, error) {
 	}
 	err := s.guard(func() error {
 		_, err := s.db.Exec(`INSERT INTO fixture (`+fixtureColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, harness = excluded.harness, cwd = excluded.cwd,
 				resume = excluded.resume, enabled = excluded.enabled, sort = excluded.sort,
-				theme = excluded.theme`,
+				theme = excluded.theme, resume_mode = excluded.resume_mode`,
 			f.ID, f.Label, f.Harness, f.Cwd, resume, enabled, f.Sort, f.Theme,
-			f.TaskID, f.CreatedAt, f.LastError, f.LastRunAt)
+			f.TaskID, f.CreatedAt, f.LastError, f.LastRunAt, f.ResumeMode)
 		return err
 	})
 	if err != nil {
