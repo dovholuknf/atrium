@@ -202,6 +202,62 @@ func (s *Server) zitiServices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Capabilities())
 }
 
+// Lending one session, over a share that reaches nothing else.
+//
+// Separate endpoints from the overlay ones on purpose. `POST /v1/overlays/zrok/
+// start` publishes THE BOARD, with every card on it, and putting both behind
+// one verb is how somebody ends up handing over the whole machine when they
+// meant to hand over one terminal.
+
+func (s *Server) listGuestShares(w http.ResponseWriter, r *http.Request) {
+	if s.GuestShares == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"shares": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shares": s.GuestShares()})
+}
+
+func (s *Server) shareCard(w http.ResponseWriter, r *http.Request) {
+	if s.ShareCard == nil {
+		writeErr(w, http.StatusNotImplemented, errNoOverlays)
+		return
+	}
+	var body struct {
+		// public is a link anyone with it can open. private needs zrok on the
+		// other end, which is a different audience entirely.
+		Mode string `json:"mode"`
+		// Writable decides whether the guest can type or only watch. Named in
+		// the affirmative and defaulted to false by JSON's own rules, so a
+		// caller that forgets it gets the safe answer.
+		Writable bool `json:"writable"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := s.ShareCard(r.PathValue("id"), body.Mode, body.Writable)
+	if err != nil {
+		// 400 rather than 500. Everything that fails here is a thing to fix:
+		// no zrok environment, an account at its limit, a card with no
+		// terminal. A 500 would read as atrium being broken.
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) unshareCard(w http.ResponseWriter, r *http.Request) {
+	if s.StopCardShare == nil {
+		writeErr(w, http.StatusNotImplemented, errNoOverlays)
+		return
+	}
+	if err := s.StopCardShare(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type overlayErr string
 
 func (e overlayErr) Error() string { return string(e) }

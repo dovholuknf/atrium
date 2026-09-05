@@ -109,6 +109,13 @@ type Server struct {
 	// SetApiEndpoint points this machine at a zrok instance other than the
 	// public one. Empty puts it back on zrok's default.
 	SetApiEndpoint func(endpoint string) error
+
+	// Lending ONE session to one person, which is a different thing from
+	// publishing the board and is deliberately not built on it: the board
+	// share hands over every card, and this hands over a single terminal.
+	ShareCard     func(taskID, mode string, writable bool) (any, error)
+	StopCardShare func(taskID string) error
+	GuestShares   func() any
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -161,6 +168,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/overlays/{kind}/setup", s.setupOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/teardown", s.teardownOverlay)
 	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
+	mux.HandleFunc("GET /v1/shares", s.listGuestShares)
+	mux.HandleFunc("POST /v1/tasks/{id}/share", s.shareCard)
+	mux.HandleFunc("DELETE /v1/tasks/{id}/share", s.unshareCard)
 	if s.ReserveName != nil {
 		mux.HandleFunc("POST /v1/overlays/zrok/reserve", s.reserveName)
 	}

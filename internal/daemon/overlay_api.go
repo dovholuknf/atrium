@@ -305,4 +305,8 @@ func (d *Daemon) closeOverlays() {
 	for _, k := range []overlayKind{OverlayZrok, OverlayZiti} {
 		d.nat(k).stop(d.zrokRoot(k))
 	}
+	// Every lent session too. Each is its own share on the account, and one
+	// left behind is an address that answers nothing and has to be cleared out
+	// by hand later.
+	d.stopAllGuestShares()
 }

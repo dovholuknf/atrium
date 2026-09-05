@@ -34,7 +34,20 @@ type attachIn struct {
 }
 
 func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
-	taskID := r.PathValue("id")
+	d.attach(w, r, r.PathValue("id"), true)
+}
+
+// attachReadOnly is the same terminal with the keyboard taken away.
+//
+// For a session lent to somebody to WATCH. Enforced here rather than by hiding
+// something in the page, because the page belongs to whoever is looking at it:
+// a guest can open dev tools and send whatever frame they like, and the only
+// thing that decides what happens is the end that reads them.
+func (d *Daemon) attachReadOnly(w http.ResponseWriter, r *http.Request, taskID string) {
+	d.attach(w, r, taskID, false)
+}
+
+func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, writable bool) {
 	run := d.sup.get(taskID)
 	if run == nil {
 		// Being explicit beats an empty terminal. A window mode runner owns
@@ -92,6 +105,14 @@ func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if typ != websocket.MessageText {
+				continue
+			}
+			// A viewer sends nothing that has an effect. Not a keystroke, not
+			// a resize (which would reshape the owner's grid under them), not
+			// an interrupt. Dropped silently rather than refused: there is no
+			// useful reply, and closing the socket would make watching look
+			// broken every time somebody rested a hand on the keyboard.
+			if !writable {
 				continue
 			}
 			var in attachIn
