@@ -117,6 +117,10 @@ func controlServer() *mcp.Server {
 			"`force`. Sessions atrium does not own are unaffected by a restart and are ignored.",
 	}, restartHandler)
 
+	// The other agents on this board: finding them, talking to them, starting
+	// one, and asking one to leave. See control_peers.go.
+	addPeerTools(s)
+
 	return s
 }
 
@@ -137,7 +141,7 @@ type StatusOutput struct {
 	Cards  int    `json:"cards,omitempty"`
 	// Waiting is how many want you right now, which is the only number worth
 	// reading without opening the board.
-	Waiting int `json:"waiting,omitempty"`
+	Waiting int    `json:"waiting,omitempty"`
 	Note    string `json:"note,omitempty"`
 }
 

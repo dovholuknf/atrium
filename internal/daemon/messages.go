@@ -277,7 +277,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
 	if run := d.sup.get(taskID); run != nil {
-		if err := run.Write([]byte(body.Text + "\r")); err != nil {
+		if err := run.Say(body.Text); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -327,7 +327,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 
 	delivered := "queued"
 	if run := d.sup.get(taskID); run != nil {
-		if err := run.Write([]byte(note + "\r")); err != nil {
+		if err := run.Say(note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}

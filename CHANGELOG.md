@@ -5,6 +5,193 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Atrium can keep its own zrok environment, against its own instance.**
+
+  **The problem.** A machine has one zrok environment, `~/.zrok2`, holding an account token and the identity it
+  was issued. Pointing atrium at a different instance meant disabling the environment that the `zrok` command
+  and every other tool on the machine depend on, enabling against the other one, and doing it again to go back.
+  That is a large price for atrium wanting to talk somewhere else, and it is paid by everything that was not
+  asking.
+
+  So there are two roots now. The machine's, which is the default and unchanged, or atrium's own, kept beside
+  the database so a second daemon on a second database gets a second environment. Turning it on and giving an
+  address is one decision and one request: the endpoint is written to whichever root is now selected, and only
+  while that root is not enabled, because moving an enabled environment leaves a token issued by one instance
+  being sent to another and fails in a way that reads as a broken token.
+
+  **Every zrok call goes through one loader.** The SDK finds the environment through a package-level global,
+  `environment.SetRootDirName`, not a parameter. A direct `LoadRoot` is correct exactly until something else
+  moves that global, and the failure is silent: the call succeeds against the wrong account. All eight call
+  sites now go through `zrokRoot`, which holds a mutex across the load and puts the global back afterwards.
+
+  **Enabling and disabling are native.** They used to shell out to `zrok`. The command can only ever write to
+  the machine's root, so driving it could never enable atrium's own. Both are now the same API calls the command
+  makes, four for enable and two for disable, which also means zrok no longer has to be installed for either.
+  The environment is described as `atrium@<host>` rather than `<user>@<host>`, because two environments from one
+  machine sit next to each other in `zrok overview` and the new one has to be identifiable without counting
+  rows.
+
+  **The readiness the panel shows is the environment atrium will actually use.** It read the machine's, which
+  after this would be the wrong one in the direction that matters: offering to share from an environment the
+  daemon is not going to touch. The refusal when nothing is enabled says which one, because `zrok enable` at a
+  terminal enables the machine's and following that advice would leave the panel saying the same thing after the
+  command appeared to work.
+
+- **A shared session keeps its address. A restart no longer takes the link with it.**
+
+  **What was wrong.** A share lived exactly as long as the process that made it. The daemon released every one
+  during wind-down, so the link you handed somebody stopped working the next time atrium restarted, and nothing
+  said so. The code defended this at length: the address IS the credential, since a lent session has no login,
+  so reserving one would mean handing out the same guessable address forever.
+
+  That defence conflated two independent properties. **Unguessable and durable are not the same thing.** A name
+  generated once at random, held by the controller, and asked for again on every start is both.
+
+  **What happens now.** Sharing a card reserves `atrium-<twelve random characters>` in the public namespace and
+  records it. Sixty bits, from an alphabet with no `l`, `o`, `0` or `1`, because the address gets read aloud
+  and a confusable character turns an unguessable link into a support question. The `atrium-` prefix buys
+  recoverability: a leftover share is identifiable on an account that also holds shares from four other tools.
+
+  **A shutdown unbinds. Stopping stops.** These used to be one operation, which is why every share died at the
+  restart. Wind-down releases the SHARE and keeps the NAME, leaving a row that says this card should be lent
+  out. Stopping releases both and is the only thing that gives an address up, so it now asks first and says
+  plainly that it cannot be undone.
+
+  **Three ways back up, one function.** `bindCardShare` is the only place a share is put up: first time, again
+  after a stop, on the way back from a restart, and when a runner starts on a card that was already lent out.
+  They differ in what they have already decided, not in what they do, and the one time they were separate the
+  restart path forgot to record the new token.
+
+  **A share with no terminal is shown, not hidden.** `/v1/shares` merges what is served with what is recorded
+  and marks each `live` or not. A card waiting for its runner used to look identical to a card that had never
+  been shared, while somebody was holding an address for it.
+
+  **Orphans are swept, and only atrium's own.** A pruned card leaves a name reserved on the account that nothing
+  will ever ask for again, and nobody can see it, because the board draws cards and the card is what went. The
+  sweep joins the share table against `task` and releases what is left. It never reads the account and deletes
+  what it does not recognise: this machine's zrok account is not atrium's.
+
+  The private mode is weaker on purpose and says so. A private share has no name, its token is the address, and
+  deleting the share puts the token back on the shelf, so the rebind asks for the same one and usually gets it.
+  Nothing holds it in the meantime, so `usually` is the accurate word and it is not dressed up as a guarantee.
+
+- **Sharing says what it is doing, and offers only the ways out this machine has.**
+
+  **The wait had no shape.** Creating a zrok share is several seconds inside somebody else's API, and for all of
+  them the board showed the button unchanged. When the instance answered `500 shareInternalServerError` with an
+  empty body, what arrived was a paragraph about a call the operator had no idea was being made, attached to a
+  control that had looked inert since it was pressed.
+
+  So the daemon narrates it. `shareStep` broadcasts each stage as it reaches it, and a dialog opens the moment
+  the request leaves, listing the three real steps with the one in progress spinning: reading the zrok
+  environment, asking the instance for the share, opening the listener that answers it. A failure marks the step
+  it died on and keeps the message whole, with `try again` beside `close`, because the usual cause of a 500 from
+  the instance is the instance.
+
+  **The dialog does not depend on the events.** The POST still carries the answer, so a window that receives
+  none of them ends in the same place with less to read on the way. The events make a slow step legible, they do
+  not make the flow work. Escape is refused while one is in flight: there is no way to cancel a call already
+  inside the SDK, and a share that landed after the window was dismissed would be live, unlisted, and news.
+
+  **The address lands in that same dialog** rather than in a second one, under the finished steps, which are
+  worth a glance in the moment the link appears as much as they were while it was awaited.
+
+  **One section per overlay, and only the ones that are ready.** `share this session` is a flyout now: a zrok
+  group when the zrok overlay is ready, holding the public link, the private command, or `stop sharing` when one
+  is up, and an OpenZiti group when that one is. Offering a zrok link on a machine with no zrok account was
+  offering a button whose only outcome was a paragraph about accounts. Lending one session over OpenZiti is
+  named there and not built: there is no link to send, a guest needs an identity, and issuing one is the line
+  `docs/overlays.md` says atrium does not cross. Named rather than omitted, because a machine with ziti up and a
+  menu that mentions only zrok is a machine whose operator cannot tell whether they missed a setting.
+
+  The mode is picked in the menu instead of in the dialog. Public and private are two different things to hand
+  somebody, not two settings of one thing, and a select inside a confirmation made them read as a detail of a
+  decision already taken.
+
+  **The board's own share button gets the same treatment.** `start sharing` under the gear had the identical
+  problem and produced the identical complaint: press it, watch nothing happen, and eventually receive a toast
+  about a 500. `overlayStep` narrates that one too, and the button is REPLACED by the step it is on rather than
+  disabled, because a greyed-out button says you may not and what is true is that you already have. The busy
+  state is set when the request leaves rather than on the first event, so a window that receives no events still
+  looks like it heard the click. Both endings are left to the POST, which carries the new state and the error
+  text, and clearing the line on the event would blank the panel a beat before there is anything to replace it
+  with. The ziti path has two steps rather than three: a ziti listener is bound rather than created, so there is
+  nothing to ask a controller for and nothing to release afterwards.
+
+- **Atrium starts by itself on all three operating systems, and the packages that carry it were actually
+  built.** `docs/packaging.md`, rewritten.
+
+  **The packaging groundwork had been written and never run, and running it broke most of it.** Four things were
+  wrong, and none of them was findable by reading.
+
+  `scripts/atrium-autostart.ps1` could not execute at all. It had `[CmdletBinding()]` and a parameter named
+  `$Db`, and CmdletBinding adds the common parameters, one of which is `-Debug` carrying the alias `db`.
+  PowerShell refused to bind every invocation of the script, including `-Remove`, with a message about an alias
+  nobody had written. The script had been written, reviewed and documented, and had never once been run.
+  `[Parameter(Position = 0)]` does the same damage for the same reason, because either attribute turns a script
+  into an advanced function, so neither is used now and a parameter's position comes from where it is declared.
+
+  The nfpm config had three defects, all found by building the real `.deb` and unpacking it. `type: doc` is not
+  an nfpm content type and an unrecognised type is dropped in silence, so both documentation files were missing
+  from a package that reported success. nfpm expands environment variables nearly everywhere and NOT in
+  `contents.src`, which fails as `glob failed: ${BINARY}: no matching files` and reads as a wrong path, so the
+  binary is staged to one fixed name instead. And `type: config` on a file under `/usr/lib` would have made
+  dpkg stop and ask about a conffile on every single upgrade.
+
+  **The daemon now starts at login on Linux, macOS and Windows, as you, in your session.** That last part is the
+  whole design and it is one decision in three spellings: a systemd USER unit, a launchd LaunchAGENT, and a
+  logon task. A system unit, a LaunchDaemon or a Windows service has none of your PATH, shell configuration, ssh
+  agent or Claude Code configuration, and it cannot open a pseudo terminal you can attach to. It would install a
+  version of atrium that comes up, serves the board, and supervises sessions that are useless, with nothing
+  anywhere to say so.
+
+  Windows was the one worth writing down rather than asserting. A real service running as the logged-in user
+  needs a password in the LSA secret store, still runs in session 0 where it is not really you, and would need a
+  service control handler compiled into `cmd/atrium` or a third-party wrapper to answer the SCM at all. A gMSA
+  removes the password by being a different account, which defeats the reason to run as the user. So it stays a
+  logon task, and the cost is said out loud instead of hidden: it stops when you log out, and Windows has no
+  equivalent of `loginctl enable-linger`. Linux can buy its way out of that trade. Windows and macOS cannot.
+
+  **A deb or an rpm now enables the unit for the person who ran the install,** which reverses what this
+  repository said when nothing had ever been installed. Three obvious ways to enable a user unit from a root
+  postinstall are all wrong and `packaging/postinstall.sh` names each: `systemctl enable` reaches for a system
+  unit that does not exist, `systemctl --user enable` talks to root's own manager, and `systemctl --global
+  enable` decides for every account on somebody's server. What is correct is `SUDO_USER`, then lingering, then
+  `runuser` into that account with `XDG_RUNTIME_DIR` and the bus address named explicitly, and a fallback that
+  writes the enable symlink by hand and admits it will only start at the next login. An unattended install with
+  no human to name enables nothing and says why. `ATRIUM_NO_ENABLE=1` and `ATRIUM_NO_LINGER=1` are the ways out.
+
+  The old rule, that installing says put this here and starting a daemon is a different sentence, is a good rule
+  and is wrong for atrium. Atrium's job is to still be running when you come back to it, and an install that
+  leaves you to start it by hand leaves you exactly where this repository started, with a daemon somebody ran
+  once by hand months ago that nothing would bring back.
+
+  **`scripts/atrium-service.ps1` and `scripts/atrium-service.sh` are the one obvious command,** with install,
+  uninstall, start, stop, restart and status, every verb idempotent. Stopping calls `atrium stop` before it
+  touches the init system, because a kill is not a stop: closing the daemon's pseudo terminals takes every
+  attached runner with them. Status asks the daemon over `/v1/health` rather than believing the scheduler, since
+  a task reporting Running with `conhost --headless` in front is reporting conhost.
+
+  The Windows script carries a `selftest` verb that registers a second task under its own name, on its own
+  ports, against its own database, recording itself in its own location file. Every one of those four would
+  otherwise be shared with the daemon somebody is actually using, and sharing any of them turns a test into two
+  daemons on one database or a stolen location file that every hook on the machine reads to find a port.
+
+  **Linux publishing goes to GitHub Releases carrying the deb and the rpm.** An apt and yum repository is the
+  thing that buys `apt upgrade`, and it costs a GPG signing key that has to be generated, stored outside a
+  repository, put in CI, published for people to trust, and eventually rotated by somebody who remembers how.
+  GHCR was considered and is a poor fit twice over: a container image of the daemon cannot supervise the user's
+  own sessions, which is the same constraint as the LaunchDaemon one, and an OCI artefact holding a `.deb` is a
+  channel with no clients, because nothing on a Linux machine reaches for `oras` to install software. All three
+  are built from the same artefacts, so overruling this changes only the last step.
+
+  **There is a `.github/workflows/` now, and there is no logic in it.** Two files that check out code, install a
+  toolchain and call a script. Everything they run runs here, today, with `bash scripts/ci.sh`, which covers
+  gofmt, vet, build, tests, the board, the skins and a parse of every packaging script in both shells. The
+  release workflow checks out with full history, because `git describe --tags --exact-match` on a shallow clone
+  fails and silently stamps the binary `dev`, and a release that calls itself `dev` is one no package manager
+  will ever offer an upgrade over.
+
 - **`atrium version`, and everything packaging needs that does not need a certificate.** `docs/packaging.md`.
 
   **The binary can say what it is.** Nothing could answer that before, which is the first question every

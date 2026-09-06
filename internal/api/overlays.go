@@ -173,23 +173,30 @@ func (s *Server) reserveName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"name": sel})
 }
 
-// setApiEndpoint points this machine at a zrok instance.
+// setApiEndpoint chooses which zrok environment atrium uses and points it at
+// an instance.
 //
-// Sent as a field that may be empty rather than as a delete, because clearing
-// it is a real instruction: go back to zrok's own default.
+// Both fields in one request because they are one decision, and answering with
+// the whole overlay state because both of them change what the panel should
+// show: a different environment has a different account, a different address
+// and a different answer to whether anything is enabled.
+//
+// Sent as fields that may be empty rather than as a delete, because clearing
+// the endpoint is a real instruction: go back to zrok's own default.
 func (s *Server) setApiEndpoint(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
+		Own      bool   `json:"own"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.SetApiEndpoint(body.Endpoint); err != nil {
+	if err := s.SetApiEndpoint(body.Own, body.Endpoint); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	s.afterOverlayChange(w)
 }
 
 // zitiServices reports what this identity may bind on its network.
@@ -226,16 +233,12 @@ func (s *Server) shareCard(w http.ResponseWriter, r *http.Request) {
 		// public is a link anyone with it can open. private needs zrok on the
 		// other end, which is a different audience entirely.
 		Mode string `json:"mode"`
-		// Writable decides whether the guest can type or only watch. Named in
-		// the affirmative and defaulted to false by JSON's own rules, so a
-		// caller that forgets it gets the safe answer.
-		Writable bool `json:"writable"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	out, err := s.ShareCard(r.PathValue("id"), body.Mode, body.Writable)
+	out, err := s.ShareCard(r.PathValue("id"), body.Mode)
 	if err != nil {
 		// 400 rather than 500. Everything that fails here is a thing to fix:
 		// no zrok environment, an account at its limit, a card with no

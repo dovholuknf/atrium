@@ -43,6 +43,23 @@ type ZrokConfig struct {
 	// Extra is anything else, split on spaces, for options atrium has never
 	// heard of rather than a release that needs a new field here.
 	Extra string `json:"extra"`
+
+	// OwnEnvironment puts atrium on its own zrok environment rather than the
+	// machine's, so it can be enabled against a different instance while the
+	// `zrok` command and everything else on the machine carry on unchanged.
+	//
+	// See `overlay_root.go`, which is where the consequence lives: every zrok
+	// call goes through one loader so there is no path that reaches the
+	// machine's environment by forgetting to ask which one to use.
+	OwnEnvironment bool `json:"own_environment"`
+	// ApiEndpoint is the zrok instance that environment talks to. Empty means
+	// zrok's own default, which is the hosted service.
+	//
+	// Recorded here as well as in zrok's config file, which is not redundant:
+	// this is what the operator TYPED, and zrok's copy is what is in effect.
+	// They differ exactly when a change was refused, and a board that showed
+	// only the second would silently drop what was asked for.
+	ApiEndpoint string `json:"api_endpoint"`
 }
 
 // ZitiConfig is what serving the board on an OpenZiti network needs.

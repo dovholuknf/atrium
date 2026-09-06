@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openziti/zrok/v2/environment"
+	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/zrok/v2/environment/env_core"
+	restEnvironment "github.com/openziti/zrok/v2/rest_client_zrok/environment"
 )
 
 // The setup half: getting to the point where a share can start.
@@ -75,7 +76,7 @@ func firstLines(s string, n int) string {
 // a real choice rather than an omission, so it is not treated as "no change".
 func (d *Daemon) SetZrokApiEndpoint(endpoint string) error {
 	endpoint = strings.TrimSpace(endpoint)
-	root, err := environment.LoadRoot()
+	root, err := d.zrokRoot()
 	if err != nil {
 		return fmt.Errorf("could not read the zrok environment: %w", err)
 	}
@@ -106,43 +107,141 @@ func (d *Daemon) SetZrokApiEndpoint(endpoint string) error {
 // from. The second value is zrok's own account of it: a config file, an
 // environment variable, or the built-in default.
 func (d *Daemon) ZrokApiEndpoint() (string, string) {
-	root, err := environment.LoadRoot()
+	root, err := d.zrokRoot()
 	if err != nil {
 		return "", ""
 	}
 	return root.ApiEndpoint()
 }
 
-// EnableZrok turns an account token into a zrok environment on this machine.
+// EnableZrok turns an account token into a zrok environment.
+//
+// NATIVE, not the `zrok` command, and that is what makes a second environment
+// possible at all. The CLI writes to whichever root ITS global says, which is
+// always the machine's `~/.zrok2`: driving it could never enable atrium's own.
+//
+// It is also four calls, which is the whole of `zrok enable` minus its
+// terminal drawing. See `cmd/zrok2/enable.go` in the zrok source: ask the
+// controller, write the environment, write the identity it issued. Enabling no
+// longer needs zrok on the PATH.
 func (d *Daemon) EnableZrok(token, description string) (string, error) {
-	if strings.TrimSpace(token) == "" {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return "", fmt.Errorf("no token: paste the one from your zrok account")
 	}
-	name := lookPath(overlayCommand(OverlayZrok))
-	if name == "" {
-		return "", fmt.Errorf("zrok is not installed, or not on the daemon's PATH")
+	root, err := d.zrokRoot()
+	if err != nil {
+		return "", fmt.Errorf("could not read that zrok environment: %w", err)
 	}
-	if zrokEnv().Enabled {
-		return "", fmt.Errorf("this machine already has a zrok environment. disable it first")
+	if root.IsEnabled() {
+		return "", fmt.Errorf("%s is already enabled. disable it first", d.zrokWhere())
 	}
-	log.Printf("[atrium] enabling a zrok environment")
-	return runSetup(name, zrokEnableArgs(token, description))
+
+	// What the account will call this environment.
+	//
+	// Built here rather than with `zrok/util.GetHostDetails`, which is two
+	// lines of the same thing behind a package that also imports a profanity
+	// filter. A dependency for a hostname is a dependency to keep updated
+	// forever.
+	//
+	// The description says ATRIUM. Two environments from one machine appear
+	// side by side in `zrok overview`, and telling them apart afterwards is
+	// the whole reason somebody made the second one.
+	hostDetail, description := d.describeEnvironment(description)
+
+	zrok, err := root.Client()
+	if err != nil {
+		return "", zrokSays("could not reach the zrok api", err)
+	}
+	auth := httptransport.APIKeyAuth("X-TOKEN", "header", token)
+	req := restEnvironment.NewEnableParams()
+	req.Body.Description = description
+	req.Body.Host = hostDetail
+
+	api, _ := root.ApiEndpoint()
+	log.Printf("[atrium] enabling %s", d.zrokWhere())
+	resp, err := zrok.Environment.Enable(req, auth)
+	if err != nil {
+		return "", zrokSays("could not enable an environment on "+api, err)
+	}
+
+	// The token is written down as well as the identity. It is what every
+	// later call authenticates with, and losing it means the environment
+	// exists on the account and cannot be used from here.
+	if err := root.SetEnvironment(&env_core.Environment{
+		AccountToken: token, ZitiIdentity: resp.Payload.Identity, ApiEndpoint: api,
+	}); err != nil {
+		return "", fmt.Errorf("the environment was created on %s but could not be "+
+			"saved here: %w", api, err)
+	}
+	if err := root.SaveZitiIdentityNamed(root.EnvironmentIdentityName(), resp.Payload.Cfg); err != nil {
+		return "", fmt.Errorf("the environment was created on %s but its identity "+
+			"could not be written: %w", api, err)
+	}
+	return "enabled against " + api + ".\nthis is " + d.zrokWhere() + ".", nil
 }
 
-// DisableZrok removes the environment. zrok's own command cleans up the
-// account side too, which is why this runs the command rather than deleting
-// the directory.
+// DisableZrok removes the environment, from the account as well as from disk.
+//
+// Native for the same reason as enabling: the CLI only ever reaches the
+// machine's environment. The two steps are in this order deliberately. The
+// account is told first, because that is the call that needs the token, and
+// deleting the local copy first would leave an environment on the account with
+// nothing here able to authenticate against it.
 func (d *Daemon) DisableZrok() (string, error) {
-	name := lookPath(overlayCommand(OverlayZrok))
-	if name == "" {
-		return "", fmt.Errorf("zrok is not installed, or not on the daemon's PATH")
+	root, err := d.zrokRoot()
+	if err != nil {
+		return "", fmt.Errorf("could not read that zrok environment: %w", err)
+	}
+	if !root.IsEnabled() {
+		return "", fmt.Errorf("%s is not enabled", d.zrokWhere())
 	}
 	// A listener bound against an environment that is about to be removed
 	// would keep answering nothing and report itself as working. Released
 	// first, while the environment that owns the share still exists.
-	d.nat(OverlayZrok).stop(d.zrokRoot(OverlayZrok))
-	log.Printf("[atrium] disabling the zrok environment")
-	return runSetup(name, []string{"disable"})
+	d.nat(OverlayZrok).stop(d.rootToReleaseAgainst(OverlayZrok))
+
+	api, _ := root.ApiEndpoint()
+	log.Printf("[atrium] disabling %s", d.zrokWhere())
+	zrok, err := root.Client()
+	if err != nil {
+		return "", zrokSays("could not reach the zrok api", err)
+	}
+	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
+	req := restEnvironment.NewDisableParams()
+	// WHICH ENVIRONMENT, and it is not optional.
+	//
+	// The account token says who you are and this says which of that account's
+	// environments to remove. Sending the request without it answers `401
+	// disableUnauthorized`, which reads as a revoked token and is not: the
+	// controller could not find an environment to check the token against.
+	req.Body.Identity = root.Environment().ZitiIdentity
+
+	// A REFUSAL FROM THE ACCOUNT DOES NOT STOP THE LOCAL REMOVAL, which is what
+	// the zrok command does and it is right. An environment the account will
+	// not take off is one that cannot be used from here either, and stopping
+	// would mean it can never be got rid of: every retry sends the same
+	// credential to the same refusal.
+	//
+	// So it is reported and stepped over. What is left on the account is
+	// visible in `zrok overview` and removable from the console.
+	note := ""
+	if _, err := zrok.Environment.Disable(req, auth); err != nil {
+		log.Printf("[atrium] %s would not remove this environment: %v", api, err)
+		note = "\n\n" + api + " would not remove it: " + err.Error() +
+			"\nit is gone from this machine either way. if it is still listed on the " +
+			"account, remove it from the zrok console."
+	}
+	if err := root.DeleteEnvironment(); err != nil {
+		return "", fmt.Errorf("the environment could not be removed from disk: %w", err)
+	}
+	// The identity goes too. Leaving it behind means the next enable writes a
+	// second one beside a key that authenticates as an environment that no
+	// longer exists.
+	if err := root.DeleteZitiIdentityNamed(root.EnvironmentIdentityName()); err != nil {
+		log.Printf("[atrium] could not remove the zrok backend identity: %v", err)
+	}
+	return "disabled, and removed from this machine." + note, nil
 }
 
 // EnrollZiti turns an enrollment token into an identity file.

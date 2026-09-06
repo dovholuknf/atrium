@@ -104,8 +104,7 @@ func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 	d.publishTask(task.ID)
 
 	log.Printf("[atrium] %s says it is finished%s", task.DisplayTitle(),
-		map[bool]string{true: ", and left a recap", false: " and said nothing about what it did"}[
-			strings.TrimSpace(in.Recap) != ""])
+		map[bool]string{true: ", and left a recap", false: " and said nothing about what it did"}[strings.TrimSpace(in.Recap) != ""])
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

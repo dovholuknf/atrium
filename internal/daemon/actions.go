@@ -70,7 +70,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 	// will not until the session makes its next tool call or ends its turn.
 	run := d.sup.get(taskID)
 	if run != nil {
-		if err := run.Write([]byte(action.Prompt + "\r")); err != nil {
+		if err := run.Say(action.Prompt); err != nil {
 			return nil, err
 		}
 		out.Delivered = "terminal"

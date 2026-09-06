@@ -14,7 +14,20 @@
 # supervision is most of what the daemon is for. A logon task runs as you, in
 # your session, with your PATH, which is what a runner needs.
 
-[CmdletBinding()]
+# NO [CmdletBinding()], AND THAT IS NOT AN OVERSIGHT. It was here, and it meant
+# this script could not run at all:
+#
+#   The parameter 'Db' cannot be specified because it conflicts with the
+#   parameter alias of the same name for parameter 'Debug'.
+#
+# CmdletBinding adds the common parameters, and -Debug carries the alias `db`.
+# A parameter named $Db collides with it and PowerShell refuses to bind ANY
+# invocation, including `-Remove`, with a message about an alias nobody wrote.
+# The script was written, reviewed and documented and had never been executed.
+#
+# The alternative is renaming the parameter to $Database, which changes the
+# thing every doc and every muscle memory says. Dropping CmdletBinding costs
+# -Verbose and -WhatIf, neither of which this uses.
 param(
     # Where the atrium binary is.
     #
@@ -39,6 +52,22 @@ param(
     [string] $Db = (Join-Path $env:USERPROFILE '.atrium\atrium.db'),
 
     [string] $TaskName = 'atrium',
+
+    # The two listen addresses, and where this daemon records itself.
+    #
+    # ALL THREE DEFAULT TO EMPTY, which means the flag is not passed at all and
+    # the daemon uses its own defaults. That is deliberate: writing `--addr
+    # :7777` into the task would freeze today's default into a registration
+    # that outlives it.
+    #
+    # They exist because a SECOND registration has to be possible without
+    # damaging the first. Testing this script otherwise means registering a task
+    # that starts a daemon on the ports the real one is already using, against
+    # the same database, and stealing the location file every hook reads to find
+    # a port. `scripts/atrium-service.ps1 selftest` uses all three.
+    [string] $Addr,
+    [string] $Http,
+    [string] $LocationFile,
 
     # Remove the task instead of creating it.
     [switch] $Remove
@@ -117,13 +146,18 @@ $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 # --headless`, which is the documented way to run a console program with no
 # window on Windows 10 1809 and later, and falls back to the plain invocation
 # where that is not available.
+$daemonArgs = "daemon --db `"$Db`""
+if ($Addr)         { $daemonArgs += " --addr `"$Addr`"" }
+if ($Http)         { $daemonArgs += " --http `"$Http`"" }
+if ($LocationFile) { $daemonArgs += " --location-file `"$LocationFile`"" }
+
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 if (Test-Path $conhost) {
     $action = New-ScheduledTaskAction -Execute $conhost `
-        -Argument "--headless `"$Exe`" daemon --db `"$Db`""
+        -Argument "--headless `"$Exe`" $daemonArgs"
 } else {
     Write-Warning "conhost.exe is not on this machine, so the daemon will have a console window."
-    $action = New-ScheduledTaskAction -Execute $Exe -Argument "daemon --db `"$Db`""
+    $action = New-ScheduledTaskAction -Execute $Exe -Argument $daemonArgs
 }
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $me
@@ -165,7 +199,7 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
     -Settings $settings -Principal $principal -Force | Out-Null
 
 Write-Host "registered '$TaskName' to start at logon."
-Write-Host "  runs:     $Exe daemon --db `"$Db`""
+Write-Host "  runs:     $Exe $daemonArgs"
 Write-Host "  as:       $me"
 Write-Host "  database: $Db"
 Write-Host ""

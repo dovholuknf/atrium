@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/openziti/sdk-golang/ziti"
-	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 )
@@ -181,17 +180,19 @@ func (n *native) stop(root env_core.Root) {
 
 // startZrokNative creates a share and serves the board on it.
 func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
-	root, err := environment.LoadRoot()
+	d.overlayStep("zrok", "env", "reading this machine's zrok environment")
+	root, err := d.zrokRoot()
 	if err != nil {
-		return fmt.Errorf("could not read the zrok environment: %w", err)
+		return d.overlayFailed("zrok", fmt.Errorf("could not read the zrok environment: %w", err))
 	}
 	if !root.IsEnabled() {
-		return fmt.Errorf("this machine has no zrok environment yet")
+		return d.overlayFailed("zrok", fmt.Errorf("this machine has no zrok environment yet"))
 	}
 
 	mode := strings.TrimSpace(cfg.Mode)
 	if mode != "public" && mode != "private" {
-		return fmt.Errorf("share mode must be public or private, not %q", mode)
+		return d.overlayFailed("zrok",
+			fmt.Errorf("share mode must be public or private, not %q", mode))
 	}
 
 	req := &zroksdk.ShareRequest{
@@ -218,21 +219,26 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 	} else if n := strings.TrimSpace(cfg.Name); n != "" {
 		sel, err := zroksdk.ParseNameSelection(n)
 		if err != nil {
-			return fmt.Errorf("that name selection is not one zrok understands: %w", err)
+			return d.overlayFailed("zrok",
+				fmt.Errorf("that name selection is not one zrok understands: %w", err))
 		}
 		req.NameSelections = []zroksdk.NameSelection{sel}
 	}
 
+	// The slow one, and the one that fails. Everything above this is local.
+	d.overlayStep("zrok", "create", "asking the zrok instance for a "+mode+" share")
 	shr, err := zroksdk.CreateShare(root, req)
 	if err != nil {
-		return zrokSays("could not put the board on a zrok share", err)
+		return d.overlayFailed("zrok", zrokSays("could not put the board on a zrok share", err))
 	}
 
+	d.overlayStep("zrok", "listen", "opening the listener that answers it")
 	ln, err := zroksdk.NewListener(shr.Token, root)
 	if err != nil {
 		// The share exists and nothing is answering it, so it goes.
 		_ = zroksdk.DeleteShare(root, shr)
-		return zrokSays("the share was created but nothing could answer it", err)
+		return d.overlayFailed("zrok",
+			zrokSays("the share was created but nothing could answer it", err))
 	}
 
 	// The address as data. A public share carries its frontend URLs; a private
@@ -242,6 +248,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 		address = shr.FrontendEndpoints[0]
 	}
 
+	d.overlayStep("zrok", "done", address)
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
 	d.nat(OverlayZrok).serveOn(ln, d.ap.Handler(), address, shr.Token)
 	return nil
@@ -262,19 +269,25 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 		return fmt.Errorf("no service: name the ziti service this board answers")
 	}
 
+	// Two steps rather than three, because a ziti listener is bound rather than
+	// created: there is nothing to ask a controller for and nothing to release
+	// afterwards. The authenticate is the one that reaches the network.
+	d.overlayStep("ziti", "identity", "loading the ziti identity")
 	zcfg, err := ziti.NewConfigFromFile(id)
 	if err != nil {
-		return fmt.Errorf("could not load that identity: %w", err)
+		return d.overlayFailed("ziti", fmt.Errorf("could not load that identity: %w", err))
 	}
 	ctx, err := ziti.NewContext(zcfg)
 	if err != nil {
-		return fmt.Errorf("could not use that identity: %w", err)
+		return d.overlayFailed("ziti", fmt.Errorf("could not use that identity: %w", err))
 	}
+	d.overlayStep("ziti", "bind", "binding the service "+service)
 	ln, err := ctx.Listen(service)
 	if err != nil {
-		return fmt.Errorf("could not bind %q: %w", service, err)
+		return d.overlayFailed("ziti", fmt.Errorf("could not bind %q: %w", service, err))
 	}
 
+	d.overlayStep("ziti", "done", "ziti service "+service)
 	log.Printf("[atrium] serving the board on the ziti service %q", service)
 	// A ziti service has no address. Who may reach it is a policy on the
 	// network, and the service name is the whole identifier.

@@ -854,6 +854,41 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN priority_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A card's share, so it survives the process that made it.
+		//
+		// One row per card, which is why `task_id` is the key rather than a
+		// column: two addresses reaching one terminal is two things to
+		// remember to stop, and the second one is the one you forget.
+		//
+		// NO FOREIGN KEY to task, deliberately. The row has to outlive the
+		// card: a pruned card leaves a NAME reserved on somebody's zrok
+		// account, and a cascade would delete the only record of a name that
+		// nothing is ever going to ask for again. `StaleCardShares` is the
+		// join that finds them, and it only works because the row is still
+		// there to find.
+		//
+		// `wanted` is the whole feature. A shutdown releases the share and
+		// leaves this set, so the next start puts it back. Stopping a share
+		// clears it. Those two used to be the same operation, which is why a
+		// restart took every share with it.
+		name: "0037_card_share",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_share (
+				task_id    TEXT PRIMARY KEY,
+				kind       TEXT NOT NULL DEFAULT 'zrok',
+				mode       TEXT NOT NULL CHECK (mode IN ('public','private')),
+				namespace  TEXT NOT NULL DEFAULT '',
+				name       TEXT NOT NULL DEFAULT '',
+				token      TEXT NOT NULL DEFAULT '',
+				address    TEXT NOT NULL DEFAULT '',
+				wanted     INTEGER NOT NULL DEFAULT 1,
+				created_at TEXT NOT NULL,
+				bound_at   TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_card_share_wanted ON card_share(wanted)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

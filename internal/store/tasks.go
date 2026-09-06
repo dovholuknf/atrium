@@ -705,56 +705,17 @@ func (s *Store) SetTags(id string, tags []string) error {
 	})
 }
 
-// Priority levels. Empty is normal and is what almost everything should be.
-const (
-	PriorityHigh = "high"
-	PriorityLow  = "low"
-)
-
-// ValidPriority reports whether a value is one atrium stores, and normalizes
-// it.
+// PRIORITY WAS REMOVED, and the columns stayed.
 //
-// The guard lives here rather than in a CHECK constraint, because SQLite cannot
-// add one by ALTER and this file uses CHECK only inside CREATE TABLE. Both
-// writers go through it, which is the same protection with a better error.
-func ValidPriority(p string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(p)) {
-	case "", "normal":
-		// `normal` spelled out is accepted and stored as empty. A caller
-		// clearing a priority reasonably sends either.
-		return "", true
-	case PriorityHigh:
-		return PriorityHigh, true
-	case PriorityLow:
-		return PriorityLow, true
-	}
-	return "", false
-}
-
-// SetPriority records how much a card matters, and when that was decided.
+// It was three levels, a chip, a filter and a fade. What it was not was a fact:
+// every other field on a card is observed, and this one was an opinion that
+// went stale faster than the fade could hide it. Tags already group the work
+// you care about and the columns already say what is blocked.
 //
-// The timestamp is read at display time and nothing ever expires it. Nothing
-// acts on priority, so a sweep for it would be a third timer doing no work
-// beside the two in sweep.go that are already easy to confuse.
-//
-// last_activity_at is deliberately NOT touched, for the same reason `SetTags`
-// does not: this is the operator filing a card, not the session doing anything,
-// and bumping it would move a silent card to the top of an activity sort.
-func (s *Store) SetPriority(id, priority string) error {
-	clean, ok := ValidPriority(priority)
-	if !ok {
-		return fmt.Errorf("priority is high, low or normal, not %q", priority)
-	}
-	at := ""
-	if clean != "" {
-		at = ts(now())
-	}
-	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET priority = ?, priority_at = ? WHERE id = ?`,
-			clean, at, id)
-		return err
-	})
-}
+// `priority` and `priority_at` are still on `task`. Dropping a column in SQLite
+// means rebuilding the largest table in the database, a migration already
+// recorded cannot be un-run, and nothing reads or writes these. They cost two
+// empty strings per row. See migration `0036_task_priority`.
 
 // SetPinned marks a card as a fixture, or stops.
 func (s *Store) SetPinned(id string, on bool) error {

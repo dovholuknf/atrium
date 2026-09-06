@@ -95,18 +95,18 @@ var ErrHalted = errors.New("store is halted")
 
 // Task is one card on the board.
 type Task struct {
-	ID             string            `json:"id"`
-	Title          string            `json:"title"`
-	Why            string            `json:"why"`
-	Repo           string            `json:"repo"`
-	Worktree       string            `json:"worktree"`
-	Runner         string            `json:"runner"`
-	Hostname       string            `json:"hostname"`
-	PID            int               `json:"pid"`
-	Status         string            `json:"status"`
-	CreatedAt      time.Time         `json:"created_at"`
-	LastActivityAt time.Time         `json:"last_activity_at"`
-	WaitingSince   *time.Time        `json:"waiting_since,omitempty"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	Why            string     `json:"why"`
+	Repo           string     `json:"repo"`
+	Worktree       string     `json:"worktree"`
+	Runner         string     `json:"runner"`
+	Hostname       string     `json:"hostname"`
+	PID            int        `json:"pid"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastActivityAt time.Time  `json:"last_activity_at"`
+	WaitingSince   *time.Time `json:"waiting_since,omitempty"`
 	// WaitingReason is why this card is in a waiting column, which is a
 	// different question from how long it has been there.
 	//
@@ -115,10 +115,10 @@ type Task struct {
 	// that finished a turn is ready because it did what was asked. Empty means
 	// a turn ended, which is what every card written before this column
 	// existed was.
-	WaitingReason string `json:"waiting_reason,omitempty"`
-	WireName       string            `json:"wire_name"`
-	Overrides      map[string]string `json:"overrides"`
-	Rank           float64           `json:"rank"`
+	WaitingReason string            `json:"waiting_reason,omitempty"`
+	WireName      string            `json:"wire_name"`
+	Overrides     map[string]string `json:"overrides"`
+	Rank          float64           `json:"rank"`
 	// ExternalID ties a card to a session atrium did not start, using the
 	// identifier its owner already uses. ResumeID is what the runner needs to
 	// pick that conversation back up.
@@ -147,7 +147,7 @@ type Task struct {
 	// so that uniqueness applies to a poller and not to a person. Two poll
 	// ticks reporting one ticket are one card; two deliberate launches naming
 	// one ticket are two pieces of work somebody asked for twice.
-	IntakeKey string `json:"intake_key,omitempty"`
+	IntakeKey  string `json:"intake_key,omitempty"`
 	Branch     string `json:"branch,omitempty"`
 	WindowName string `json:"window_name,omitempty"`
 	// Gated is whether this session has joined atrium. It is state rather than

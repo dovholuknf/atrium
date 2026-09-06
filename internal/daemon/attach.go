@@ -36,12 +36,9 @@ type attachIn struct {
 // WHICH OF A CARD'S TWO TERMINALS.
 //
 // A card may hold the runner's terminal and one shell (`shell.go`). They are
-// told apart by a query parameter rather than by a second route, because the
-// route already carries a second dimension this way: `attachReadOnly` is the
-// same terminal with the keyboard taken away. A kind and a mode are the same
-// shape of question and belong in the same place, and a second route would
-// duplicate the upgrade, the read limit, the backlog replay and the write loop,
-// which is the copy that drifts.
+// told apart by a query parameter rather than by a second route, because a
+// second route would duplicate the upgrade, the read limit, the backlog replay
+// and the write loop, which is the copy that drifts.
 //
 // ABSENT MEANS THE RUNNER. Every caller written before shells existed sends
 // nothing, and their meaning must not move. Making attach prefer a shell when
@@ -49,7 +46,7 @@ type attachIn struct {
 const shellKind = "shell"
 
 func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
-	d.attach(w, r, r.PathValue("id"), true, r.URL.Query().Get("kind") == shellKind)
+	d.attach(w, r, r.PathValue("id"), r.URL.Query().Get("kind") == shellKind)
 }
 
 // handleShellOpen starts a card's shell, or answers that it already has one.
@@ -77,24 +74,40 @@ func (d *Daemon) handleShellClose(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-// attachReadOnly is the same terminal with the keyboard taken away.
+// whyClosed says what to put on screen and what to put in the close reason.
 //
-// For a session lent to somebody to WATCH. Enforced here rather than by hiding
-// something in the page, because the page belongs to whoever is looking at it:
-// a guest can open dev tools and send whatever frame they like, and the only
-// thing that decides what happens is the end that reads them.
-// A LENT SESSION IS THE RUNNER'S TERMINAL AND NEVER THE SHELL.
+// THE REASON IS LOAD-BEARING, not decoration. Three things end an attach and
+// they want three different answers from the board:
 //
-// Not an oversight and not a policy that could be relaxed. The point of lending
-// one session is that the guest sees that session and nothing else, and the
-// guest handler is an allowlist for exactly that reason. A shell in the card's
-// directory is a general purpose command line on this machine, so a share that
-// could reach one would be a share of the machine.
-func (d *Daemon) attachReadOnly(w http.ResponseWriter, r *http.Request, taskID string) {
-	d.attach(w, r, taskID, false, false)
+//	a session ended     stop, say so, do not retry
+//	a shell closed      go back to the agent
+//	a restart           wait, it is coming back
+//
+// From the browser all three are a socket closing, and it cannot tell them
+// apart. Asking `/v1/health` afterwards gives the WRONG answer for the third,
+// because a wind-down stops supervised runners while the listener is still up,
+// so the daemon answers yes while every runner is being taken down. A board
+// that trusted that tore its pane down a second before the session came back,
+// and in a popped-out window it took the window's whole reason for existing.
+//
+// Without the first answer the board waits out a session that somebody ended
+// on purpose: five minutes of failed connections after typing `exit`.
+//
+// The stop channel closes before any runner is touched, so the wind-down test
+// is never a race.
+func (d *Daemon) whyClosed(shell bool) (say, reason string) {
+	select {
+	case <-d.stop.ch:
+		return "[atrium] atrium is restarting", "restarting"
+	default:
+	}
+	if shell {
+		return "[atrium] this shell has closed", "shell closed"
+	}
+	return "[atrium] this runner has exited", "runner exited"
 }
 
-func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, writable, shell bool) {
+func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, shell bool) {
 	var run *runner
 	if shell {
 		run = d.sup.getShell(taskID)
@@ -172,14 +185,6 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, w
 			if typ != websocket.MessageText {
 				continue
 			}
-			// A viewer sends nothing that has an effect. Not a keystroke, not
-			// a resize (which would reshape the owner's grid under them), not
-			// an interrupt. Dropped silently rather than refused: there is no
-			// useful reply, and closing the socket would make watching look
-			// broken every time somebody rested a hand on the keyboard.
-			if !writable {
-				continue
-			}
 			var in attachIn
 			if err := json.Unmarshal(data, &in); err != nil {
 				continue
@@ -216,13 +221,10 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, w
 				// then close. Worded for whichever of the two this is: "the
 				// runner has exited" over a shell somebody typed `exit` into
 				// would read as the agent having died.
-				gone := "[atrium] this runner has exited"
-				if shell {
-					gone = "[atrium] this shell has closed"
-				}
+				gone, why := d.whyClosed(shell)
 				_ = c.Write(ctx, websocket.MessageBinary,
 					[]byte("\r\n\x1b[38;5;244m"+gone+"\x1b[0m\r\n"))
-				c.Close(websocket.StatusNormalClosure, "exited")
+				c.Close(websocket.StatusNormalClosure, why)
 				return
 			}
 			if err := c.Write(ctx, websocket.MessageBinary, chunk); err != nil {

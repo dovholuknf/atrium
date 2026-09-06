@@ -49,7 +49,7 @@ func TestAWritableGuestCannotReachTheShell(t *testing.T) {
 	defer cancel()
 
 	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID, true)
+	h := d.guestHandler(task.ID)
 
 	rec := guestGet(h, "/v1/tasks/"+task.ID+"/attach?kind=shell")
 	if rec.Code != http.StatusForbidden {
@@ -57,21 +57,17 @@ func TestAWritableGuestCannotReachTheShell(t *testing.T) {
 	}
 }
 
-// The same for a read-only guest, which reaches a different branch: it never
-// consults the query at all. Asserted anyway, because "it happens not to look"
-// is exactly the kind of protection that goes away in a refactor.
-func TestAReadOnlyGuestCannotReachTheShell(t *testing.T) {
-	d, _, cancel, _ := startDaemon(t)
-	defer cancel()
-
-	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID, false)
-
-	rec := guestGet(h, "/v1/tasks/"+task.ID+"/attach?kind=shell")
-	if rec.Code == http.StatusSwitchingProtocols || rec.Code == http.StatusOK {
-		t.Fatalf("a read-only guest reached the shell, answered %d", rec.Code)
-	}
-}
+// THERE IS NO READ-ONLY GUEST any more, which is why the test that used to be
+// here is gone rather than renamed.
+//
+// It existed, defaulted to on, and was a lie about what a share is: the address
+// is the whole credential, there is no login, and a guest owns their copy of
+// the page. Enforcing "watch only" on the socket was real as far as it went,
+// and what it bought was a checkbox that made handing out a link feel safer
+// than it is.
+//
+// Anything reaching this handler drives the session. The tests above and below
+// are about what it CANNOT reach, which is the part that still means something.
 
 // Nothing a guest sends may CREATE a shell either. The POST is not on the
 // allowlist, and this asserts that rather than trusting the list to stay short.
@@ -80,7 +76,7 @@ func TestAGuestCannotOpenAShell(t *testing.T) {
 	defer cancel()
 
 	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID, true)
+	h := d.guestHandler(task.ID)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+task.ID+"/shell", nil))
@@ -100,7 +96,7 @@ func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
 
 	task := sharedCard(t, d, "lent")
 	other := sharedCard(t, d, "not-lent")
-	h := d.guestHandler(task.ID, true)
+	h := d.guestHandler(task.ID)
 
 	for _, path := range []string{
 		"/v1/tasks",

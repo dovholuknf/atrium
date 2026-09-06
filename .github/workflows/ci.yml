@@ -1,0 +1,48 @@
+# Check out, install the two toolchains, call one script.
+#
+# THERE IS NO LOGIC IN THIS FILE and there must never be. Everything it checks
+# lives in `scripts/ci.sh`, which runs on a developer's machine exactly as it
+# runs here. A check that exists only inside a YAML file can only be debugged by
+# pushing, and every push to debug it is a five minute round trip to discover a
+# quoting mistake.
+#
+# The two `setup-` steps are the exception the rule allows: they are how a
+# runner acquires a toolchain and they are GitHub-specific by nature. They
+# configure the environment. They do not decide anything.
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Read from go.mod rather than pinned here. Two places naming a Go
+          # version is two places to forget, and the one in go.mod is the one
+          # that is actually true.
+          go-version-file: go.mod
+          cache: true
+
+      # node is not optional here even though scripts/ci.sh treats it as such.
+      # The board's checks parse a script block out of one HTML file, and they
+      # skip themselves rather than fail when node is missing, which is right on
+      # a laptop and wrong on a build machine: a skipped check that reads as
+      # green is worse than a red one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: everything
+        run: bash scripts/ci.sh

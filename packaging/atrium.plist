@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  A launchd LaunchAgent, and a template rather than a finished file.
+
+  `scripts/atrium-service.sh install` substitutes the five @PLACEHOLDERS@ and
+  writes the result to ~/Library/LaunchAgents/io.github.dovholuknf.atrium.plist.
+  It is a template because a plist cannot expand a variable: launchd reads it as
+  data, so every path in it has to be absolute and already correct, and there is
+  no equivalent of systemd's %h.
+
+  A LaunchAGENT, NOT A LaunchDAEMON, and this is the decision to read before
+  changing anything here.
+
+  A LaunchDaemon runs as root in the system context before anybody logs in. It
+  has none of your PATH, your shell configuration, your ssh agent, your keychain
+  or your Claude Code configuration, and every runner it started would inherit
+  none of them. Supervision is most of what atrium is for, so a LaunchDaemon
+  installs a version of atrium with its main feature missing and nothing to say
+  so.
+
+  It is the same decision `packaging/atrium.service` makes on Linux in being a
+  user unit, and the same one `scripts/atrium-autostart.ps1` makes on Windows in
+  being a logon task rather than a service. The three are one design on three
+  platforms and should be changed together.
+
+  The trade, stated rather than hidden: a LaunchAgent belongs to your GUI login
+  session and goes away when you log out. macOS has no equivalent of
+  `loginctl enable-linger`. The nearest thing is a LaunchDaemon, which is the
+  thing this file exists not to be.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.dovholuknf.atrium</string>
+
+  <!--
+    STARTED THROUGH A LOGIN SHELL, ON PURPOSE, and this is the part most likely
+    to look like an unnecessary indirection.
+
+    A LaunchAgent does not inherit your shell's environment. It gets the PATH
+    launchd was configured with, which is /usr/bin:/bin:/usr/sbin:/sbin plus
+    whatever /etc/paths.d holds. `claude` is usually in none of those: it lands
+    in ~/.local/bin, or a node prefix, or Homebrew. A daemon that starts fine
+    and then cannot spawn a single runner is the failure this avoids, and it is
+    a failure that looks like atrium being broken rather than like a PATH.
+
+    `-l` reads the login files, which is where PATH is set on a machine that
+    works at all. `exec` so that launchd supervises atrium itself and not a
+    shell holding it, which matters for the SIGTERM below: without it the
+    signal reaches the shell and atrium is killed rather than wound down.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>@SHELL@</string>
+    <string>-l</string>
+    <string>-c</string>
+    <string>exec "@EXE@" daemon --db "@DB@"</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!--
+    RESTARTED ON FAILURE, NOT UNCONDITIONALLY.
+
+    A bare <true/> here means `launchctl stop` starts it straight back up, and
+    `atrium stop` becomes a command that appears to do nothing. SuccessfulExit
+    false says: bring it back when it died badly, leave it down when it exited
+    cleanly, which is what a wind-down is. It matches Restart=on-failure in the
+    systemd unit.
+  -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!--
+    Ten seconds, matching the daemon's own grace period for supervised runners
+    plus room for the listeners. launchd sends SIGTERM, waits this long, then
+    sends SIGKILL. Too short and a stop becomes a kill, which takes every
+    supervised runner down at the moment atrium was trying to wind them up.
+  -->
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
+
+  <!--
+    Not throttled. The default process type lets macOS deprioritise a process it
+    decides is background work, and a terminal a person is typing into is not
+    that. Interactive keeps the ptys responsive.
+  -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <!--
+    launchd has no journal. Without these two, everything the daemon prints goes
+    nowhere and the first sign of a problem is a board that is not there.
+  -->
+  <key>StandardOutPath</key>
+  <string>@LOGDIR@/atrium.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOGDIR@/atrium.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>@HOME@</string>
+</dict>
+</plist>

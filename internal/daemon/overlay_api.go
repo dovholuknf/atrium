@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 )
 
@@ -60,7 +59,7 @@ func overlayCommand(kind overlayKind) string {
 func (d *Daemon) overlayViews() any {
 	zrokCfg := d.zrokConfig()
 	zitiCfg := d.zitiConfig()
-	env := zrokEnv()
+	env := d.zrokEnvOf()
 	// An enabled environment records the instance it was enabled against. A
 	// machine that is not enabled yet has none, and that is exactly when
 	// somebody needs to see and change where enabling will point, so the
@@ -191,6 +190,33 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 	return fmt.Errorf("no overlay called %q", kind)
 }
 
+// overlayStep says how far starting a share has got, over the event stream.
+//
+// The same problem the card shares had, on the button above them: creating a
+// share is several seconds inside somebody else's API and the panel showed
+// nothing at all until it either worked or produced a paragraph. When the zrok
+// instance answers `500` with an empty body, that paragraph is the first
+// evidence the button did anything.
+//
+// Best effort, and the POST still carries the answer. This makes the wait
+// legible, it is not what makes the start work.
+func (d *Daemon) overlayStep(kind, step, text string) {
+	d.ap.Broadcast("overlay-progress", map[string]any{
+		"kind": kind, "step": step, "text": text,
+	})
+}
+
+// overlayFailed ends the sequence with the reason.
+//
+// Returned rather than just broadcast, so a call site is one line and cannot
+// report a failure over the stream while returning something else.
+func (d *Daemon) overlayFailed(kind string, err error) error {
+	d.ap.Broadcast("overlay-progress", map[string]any{
+		"kind": kind, "step": "failed", "error": err.Error(),
+	})
+	return err
+}
+
 // startOverlay serves the board on an overlay listener.
 //
 // Refusals here are the operator's to fix, and each one names the field that
@@ -233,8 +259,19 @@ func (d *Daemon) startOverlay(kind string) error {
 func (d *Daemon) readyToShare(k overlayKind) error {
 	switch k {
 	case OverlayZrok:
-		env := zrokEnv()
+		env := d.zrokEnvOf()
 		if !env.Enabled {
+			if env.Own {
+				// A different sentence, because the fix is different. Running
+				// `zrok enable` at a terminal enables THE MACHINE'S, which is
+				// not the environment this daemon is set to use, and following
+				// that advice here would leave the panel saying the same thing
+				// after the command appeared to work.
+				return fmt.Errorf("atrium's own zrok environment is not enabled yet, so a " +
+					"share has nothing to attach to. paste an account token for it in the " +
+					"gear. `zrok enable` at a terminal enables the machine's, which is not " +
+					"the one atrium is set to use")
+			}
 			return fmt.Errorf("this machine has no zrok environment yet, so a share has " +
 				"nothing to attach to. enable it from the gear with an account token, " +
 				"or run `zrok enable` yourself")
@@ -268,18 +305,25 @@ func (d *Daemon) stopOverlay(kind string) error {
 		return fmt.Errorf("no overlay called %q", kind)
 	}
 	log.Printf("[atrium] closing the %s listener", k)
-	d.nat(k).stop(d.zrokRoot(k))
+	d.nat(k).stop(d.rootToReleaseAgainst(k))
 	return nil
 }
 
-// zrokRoot is the environment a share has to be released against, and nil for
-// anything that is not zrok. A ziti listener has nothing to release.
-func (d *Daemon) zrokRoot(k overlayKind) env_core.Root {
+// rootToReleaseAgainst is the environment a share has to be released against,
+// and nil for anything that is not zrok. A ziti listener has nothing to
+// release: the service is administered on the network and atrium never made it.
+//
+// Nil is also the answer when the environment cannot be read at all. Stopping
+// the listener still has to happen, and a stop that refused because the
+// account was unreachable would leave the board served on an overlay the
+// operator has already asked to close.
+func (d *Daemon) rootToReleaseAgainst(k overlayKind) env_core.Root {
 	if k != OverlayZrok {
 		return nil
 	}
-	root, err := environment.LoadRoot()
+	root, err := d.zrokRoot()
 	if err != nil {
+		log.Printf("[atrium] could not read the zrok environment to release against: %v", err)
 		return nil
 	}
 	return root
@@ -303,7 +347,7 @@ func (d *Daemon) sharing() bool {
 // outliving the board it answers for would be an address that hangs.
 func (d *Daemon) closeOverlays() {
 	for _, k := range []overlayKind{OverlayZrok, OverlayZiti} {
-		d.nat(k).stop(d.zrokRoot(k))
+		d.nat(k).stop(d.rootToReleaseAgainst(k))
 	}
 	// Every lent session too. Each is its own share on the account, and one
 	// left behind is an address that answers nothing and has to be cleared out
