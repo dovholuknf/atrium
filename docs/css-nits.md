@@ -8,10 +8,7 @@ cannot be reproduced. Twenty skins is twenty chances for a value that was tuned 
 
 ## Open
 
-| # | Where | Skin | What is wrong |
-| --- | --- | --- | --- |
-| 1 | Stack page, grouped by `when`, hovering `today` | `paper` | far too light. Reads as yellow on a pale background, so the hover barely registers |
-| 2 | Copy icon in a popped-out terminal's bar | all | `.term-bar button` gives it `padding: 6px 13px`, which is right for a word and far too wide for a glyph. It wants icon padding, the way `.chip.icon` does |
+Nothing.
 
 ## The check that would catch these
 
@@ -37,4 +34,25 @@ against the surface it actually sits on before the ratio means anything. A check
 
 ## Fixed
 
-Nothing yet.
+| # | Where | Skin | What it was, and what it is now |
+| --- | --- | --- | --- |
+| 1 | Hovering a group heading, stack and board | `paper`, and every light skin | see below |
+| 2 | Glyph buttons in a terminal's bar | all | see below |
+
+**1.** The hover raised the name's LIGHTNESS to 85%, which reads as more prominent on a dark board and nearly
+invisible on a light one. It now blends toward `--head`, so it goes darker on a light skin and lighter on a
+dark one: the same intention, expressed in a way that survives both, and needing no new per-skin variable.
+
+**2.** `.term-bar button` is tuned for `ctrl-c` and `exit`, which is roughly twice the padding a single
+character wants. `.term-bar button.icon` squares them off. The `copy` button the original nit named is gone
+from the bar, and the same defect had moved to the folder, the cog and the up arrow.
+
+## The check that would catch these
+
+Nit 1 is exactly what `scripts/check-contrast.js` would have found without anybody hovering anything, and it
+is still worth building for the same reason: twenty skins is twenty chances for a value tuned against navy to
+be invisible. The design for it is below and is unchanged.
+
+Worth noting what the fix taught, because it generalises: **a hover that changes lightness in a fixed
+direction is wrong on half the skins.** Anything that means "more prominent" has to move toward or away from
+the skin's own text colour rather than toward white.

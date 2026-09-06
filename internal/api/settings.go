@@ -64,6 +64,10 @@ func globalAutoView(s *Server) map[string]any {
 		// Where the directory picker may look. Empty means the default set,
 		// which is the home directory plus every directory a card names.
 		SettingBrowseRoots: "browse_roots",
+		// A second address file, for callers running as another account.
+		// Empty means only the per-user one, which is right when the daemon
+		// and its callers are the same person.
+		SettingSharedLocation: "shared_location",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -148,6 +152,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where the picker may look. A pointer, because clearing it back to
 		// the default set is a request.
 		BrowseRoots *string `json:"browse_roots"`
+		// Where to publish the address for other accounts, and clearing it
+		// back to nowhere is a request like the rest of these.
+		SharedLocation *string `json:"shared_location"`
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
@@ -340,6 +347,19 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// at save time would stop somebody preparing a list for a drive that
 		// is not plugged in.
 		if err := s.st.SetSetting(SettingBrowseRoots, *body.BrowseRoots); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.SharedLocation != nil {
+		// Stored as typed, and it TAKES EFFECT ON THE NEXT START rather than
+		// now. Writing the file from here would mean a daemon that publishes
+		// its address to wherever the last save named, including a directory
+		// somebody typed halfway. Restarting is a thing the operator does
+		// anyway and the board says so beside the box.
+		if err := s.st.SetSetting(SettingSharedLocation,
+			strings.TrimSpace(*body.SharedLocation)); err != nil {
 			s.fail(w, err)
 			return
 		}

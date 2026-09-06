@@ -103,8 +103,12 @@ type runner struct {
 	// is nothing to fall back to.
 	spec *launchSpec
 
-	mu        sync.Mutex
-	buf       *ringBuffer
+	mu  sync.Mutex
+	buf *ringBuffer
+	// views is what size each attached viewer can draw. See `setViewport`:
+	// the pty gets the smallest of them, because a shared terminal has one
+	// size and several windows.
+	views     map[any]viewport
 	watchers  map[chan []byte]struct{}
 	done      chan struct{}
 	exitOnce  sync.Once
@@ -191,7 +195,78 @@ func (r *runner) Write(p []byte) error {
 	return err
 }
 
-func (r *runner) Resize(cols, rows int) error { return r.pty.Resize(cols, rows) }
+// A pseudo terminal has ONE size and a shared session has several viewers.
+//
+// This used to be a pass-through, so the last browser to resize won and every
+// other viewer kept drawing at its own width. The result is not a cosmetic
+// mismatch: the runner wraps its output for the size it was told, the wider
+// viewer renders those already-wrapped lines against a wider grid, and the
+// screen fills with torn text, duplicated status lines and rows that never
+// clear. Dragging a shared window resized somebody else's terminal.
+//
+// THE SMALLEST VIEWER DECIDES, which is what every multiplexer settled on for
+// the same reason. Every attached viewer can then render what it is sent
+// correctly, and the cost is unused margin in the larger window rather than
+// a screen nobody can read. First attach and last detach are both just
+// recomputes.
+type viewport struct{ cols, rows int }
+
+// setViewport records one viewer's size and applies the agreed one.
+//
+// Keyed by the attachment rather than counted, because a viewer that goes away
+// has to stop constraining the others: a phone that attached once and closed
+// its tab would otherwise hold the session at eighty columns forever.
+func (r *runner) setViewport(id any, cols, rows int) error {
+	if cols <= 0 || rows <= 0 {
+		return nil
+	}
+	r.mu.Lock()
+	if r.views == nil {
+		r.views = map[any]viewport{}
+	}
+	r.views[id] = viewport{cols, rows}
+	agreed := smallestViewport(r.views)
+	r.mu.Unlock()
+	return r.pty.Resize(agreed.cols, agreed.rows)
+}
+
+// dropViewport forgets a viewer that has detached and gives the size back.
+func (r *runner) dropViewport(id any) {
+	r.mu.Lock()
+	if r.views == nil {
+		r.mu.Unlock()
+		return
+	}
+	if _, had := r.views[id]; !had {
+		r.mu.Unlock()
+		return
+	}
+	delete(r.views, id)
+	agreed := smallestViewport(r.views)
+	left := len(r.views)
+	r.mu.Unlock()
+	// Nothing to grow back to when the last viewer leaves. Resizing to zero
+	// would be a resize to nothing, and the size a detached session keeps is
+	// the one it had, which is what a runner reading it expects.
+	if left == 0 {
+		return
+	}
+	_ = r.pty.Resize(agreed.cols, agreed.rows)
+}
+
+// smallestViewport is the largest size every viewer can draw.
+func smallestViewport(all map[any]viewport) viewport {
+	out := viewport{}
+	for _, v := range all {
+		if out.cols == 0 || v.cols < out.cols {
+			out.cols = v.cols
+		}
+		if out.rows == 0 || v.rows < out.rows {
+			out.rows = v.rows
+		}
+	}
+	return out
+}
 
 // subscribe returns the retained output plus a channel of everything after it.
 func (r *runner) subscribe() ([]byte, chan []byte) {

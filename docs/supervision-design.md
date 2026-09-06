@@ -94,6 +94,25 @@ Any build that owns a pty calls `os.Exit` rather than returning from `main`. See
 `docs/architecture-v2.md`: returning normally after a pty teardown leaves the process with status 127, which
 would make every clean shutdown look like a failure to a service manager.
 
+### One terminal, several windows, one size
+
+A pseudo terminal has a single size and a session can have several viewers: the board on this machine, a
+popped-out window, and whoever holds a share.
+
+**The smallest attached viewer decides.** Every viewer reports its own size on attach and on every resize, the
+daemon keeps them per attachment, and the pty gets the smallest width and the smallest height. A viewer that
+detaches gives its constraint back.
+
+Passing each resize straight to the pty is the obvious implementation and it is wrong in a way that is hard to
+read as a size problem. The runner wraps its output for the size it was last told. A second viewer at a
+different width draws those already-wrapped lines against its own grid, so the symptom is torn text,
+duplicated status lines and rows that never clear, in the window that did NOT do anything. Dragging a shared
+window resizes somebody else's terminal.
+
+The cost is unused margin in the larger window. That is the trade every multiplexer makes, and it is the right
+one: a margin is legible and a mis-wrapped screen is not.
+
+
 ## Open questions for review
 
 1. **Buffer size.** Fixed per task, or a global budget divided among live runners? A fixed size per task is
@@ -110,5 +129,6 @@ would make every clean shutdown look like a failure to a service manager.
 4. **Whether a supervised runner still needs the permission hook.** It does, because owning the terminal says
    nothing about which tool calls are about to happen. Worth confirming rather than assuming.
 
-5. **Resize authority.** Several attachers with different window sizes cannot all be right. Last writer wins is
-   simplest and will occasionally reflow someone else's terminal.
+5. ~~**Resize authority.**~~ Answered, after last writer wins shipped and turned out to be worse than
+   "occasionally reflow someone else's terminal": it made the other viewer's screen unreadable rather than
+   merely differently sized. See "One terminal, several windows, one size" above.

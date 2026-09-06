@@ -79,6 +79,28 @@ if (sendInputAt < 0) {
     "which is the case that matters: a paste is what happens when you are scrolled up.");
 }
 
+// And the scroll has to OUTLIVE the send, which is the half that was missing.
+//
+// The rule above passed the whole time a paste was landing short. Scrolling
+// when the bytes are sent scrolls a buffer the runner has not answered yet: the
+// echo comes back afterwards, the prompt redraws, and the bottom moves without
+// the view. So the write path has to keep the view down for a moment too, and
+// it has to do it in write's CALLBACK, because `term.write` parses later than
+// it is called.
+if (!/followScroll/.test(html)) {
+  fail("nothing follows the output down after input is sent. `sendInput` scrolling by " +
+    "itself scrolls before the runner has echoed anything, so a multi-line paste lands " +
+    "with the view short by however many lines it was.");
+} else {
+  const onmsgAt = html.indexOf("termSock.onmessage");
+  const onmsg = html.slice(onmsgAt, onmsgAt + 600);
+  if (!/term\.write\([^)]*,\s*followScroll\)/.test(onmsg)) {
+    fail("the follow-scroll is not passed as term.write's callback. Called after the " +
+      "write instead, it runs before the bytes have been parsed and scrolls a buffer " +
+      "that has not grown yet.");
+  }
+}
+
 // Rule 5: a paste is framed as a paste.
 //
 // atrium intercepts `ctrl-v` so the clipboard's files are reachable, which
@@ -114,6 +136,59 @@ if (wantsDecorations && !proposedOn) {
   fail("the search options ask for `decorations` and the terminal is built without " +
     "`allowProposedApi: true`. registerDecoration throws on that, from inside findNext, " +
     "so EVERY search reports zero matches. Set it in the Terminal constructor.");
+}
+
+// Rule 7: the teardown for a dead terminal has a caller.
+//
+// `markTermDead` strips the bar down to a close button and is the only caller
+// of `offerSoloClose`, which is what closes a popped-out window when its runner
+// exits. It was defined, correct, and CALLED FROM NOWHERE for months. The
+// branch that runs on exit wrote a line of text and returned.
+//
+// Three separate fixes were made downstream of it, all of them to code that
+// could not run. Nothing caught it: the file parses, the function is
+// syntactically fine, and a diff reader sees a definition and assumes a caller.
+// A count is the whole check.
+const deadCalls = (html.match(/markTermDead\(\)/g) || []).length;
+const deadDef = /function markTermDead\(/.test(html);
+if (deadDef && deadCalls < 2) {
+  fail("markTermDead is defined and never called. It is the teardown for a terminal " +
+    "whose runner exited, and the only caller of offerSoloClose, so a popped-out " +
+    "window will sit there forever with a live-looking toolbar.");
+}
+
+// Rule 8: Tab is the runner's unless atrium is confident.
+//
+// Path completion works from outside somebody else's input line, which is only
+// safe because it gives up early. Two properties keep it safe and neither is
+// visible in a diff:
+//
+// The tracked buffer must be ABANDONED on anything ambiguous. An arrow key
+// moves the cursor, so the tail of what atrium sent is no longer the token
+// under it, and completing against it would insert text in the wrong place.
+//
+// Tab must PASS THROUGH when there is nothing to complete, or claude's own
+// completion stops working everywhere this does not apply.
+if (/completePath/.test(html)) {
+  if (!/typedSure\s*=\s*false/.test(html)) {
+    fail("path completion never abandons its tracked buffer. An arrow key or an escape " +
+      "sequence moves the cursor, and completing against a stale buffer types into the " +
+      "wrong place.");
+  }
+  if (!/if \(!done\) sendInput\("\\t"\)/.test(html)) {
+    fail("Tab is swallowed without being passed through when nothing was completed, so the " +
+      "runner's own completion stops working everywhere atrium cannot help.");
+  }
+  // And there has to be a way back other than Enter.
+  //
+  // A passed-through Tab arrives at the tracker as `\t`, which abandons it. If
+  // Enter is the only reset, then one Tab that completes nothing turns the
+  // feature off until the next submitted line, and every Tab after that keeps
+  // it off. The trigger disables the trigger.
+  if (!/d === " " && !typedSure/.test(html)) {
+    fail("nothing re-arms path tracking except Enter. A passed-through Tab abandons it, so " +
+      "one unproductive Tab disables completion until the next submitted line.");
+  }
 }
 
 if (bad) {

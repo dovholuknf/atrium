@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -404,13 +405,32 @@ func TestInstallCreatesTheFileWhenThereIsNone(t *testing.T) {
 
 // A path with spaces is the normal case on Windows. Written unquoted, the
 // shell reads the first word as the whole command.
+//
+// The quoting is platform neutral and is checked everywhere. The BACKSLASH
+// half is not: `HookCommandFor` slashes the path with `filepath.ToSlash`,
+// which is a no-op on Linux because the separator is already a slash. So a
+// Windows path handed to a Linux build keeps its backslashes, correctly, and
+// asserting otherwise fails on a build machine for a reason that has nothing
+// to do with hooks.
 func TestHookCommandQuotesAPathWithSpaces(t *testing.T) {
-	got := HookCommandFor(`C:\Program Files\atrium\atrium.exe`, "tool-start")
-	if !strings.HasPrefix(got, `"C:/Program Files/atrium/atrium.exe"`) {
+	got := HookCommandFor("/opt/atrium bin/atrium", "tool-start")
+	if !strings.HasPrefix(got, `"/opt/atrium bin/atrium"`) {
 		t.Fatalf("a spaced path was written unquoted: %s", got)
 	}
-	if plain := HookCommandFor("C:/tools/atrium.exe", "tool-start"); strings.Contains(plain, `"`) {
+	if plain := HookCommandFor("/opt/atrium/atrium", "tool-start"); strings.Contains(plain, `"`) {
 		t.Fatalf("a path with no spaces was quoted anyway: %s", plain)
+	}
+}
+
+// A Windows path is written with forward slashes, so what lands in
+// `settings.json` is a string every shell on that machine reads the same way.
+func TestHookCommandSlashesAWindowsPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("filepath.ToSlash only converts backslashes on Windows")
+	}
+	got := HookCommandFor(`C:\Program Files\atrium\atrium.exe`, "tool-start")
+	if !strings.HasPrefix(got, `"C:/Program Files/atrium/atrium.exe"`) {
+		t.Fatalf("a windows path was not slashed: %s", got)
 	}
 }
 

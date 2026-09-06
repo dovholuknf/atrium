@@ -168,6 +168,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	// rather than an empty box waiting for the next keystroke.
 	backlog, updates := run.subscribe()
 	defer run.unsubscribe(updates)
+	// And give the size back when this viewer goes. A window that attached
+	// once and was closed would otherwise hold the session at its width
+	// forever, which is worse than the bug this pairs with: at least a
+	// last-writer-wins resize could be undone by dragging something.
+	defer run.dropViewport(c)
 	if len(backlog) > 0 {
 		if err := c.Write(ctx, websocket.MessageBinary, backlog); err != nil {
 			return
@@ -195,10 +200,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					return
 				}
 			case "resize":
-				if in.Cols > 0 && in.Rows > 0 {
-					if err := run.Resize(in.Cols, in.Rows); err != nil {
-						log.Printf("[atrium] resize %s: %v", taskID, err)
-					}
+				// THIS VIEWER'S SIZE, not the terminal's. Several browsers can
+				// be on one session, a pty has one size, and passing each
+				// resize straight through meant the last window dragged set
+				// the width for everybody. See `runner.setViewport`.
+				if err := run.setViewport(c, in.Cols, in.Rows); err != nil {
+					log.Printf("[atrium] resize %s: %v", taskID, err)
 				}
 			case "signal":
 				// A browser cannot press ctrl-c the way a terminal does, so

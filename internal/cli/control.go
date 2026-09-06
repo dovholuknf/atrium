@@ -460,19 +460,14 @@ func swapStaged(exe string) error {
 
 // ── plumbing ────────────────────────────────────────────────────────────────
 
-// readLocation reads the running daemon's recorded address.
+// readLocation reads the running daemon's recorded address, from this
+// account's file or from the shared one. See `daemon.SharedLocationPath`.
 func readLocation() (daemon.Location, error) {
-	var loc daemon.Location
-	path, err := daemon.LocationPath()
-	if err != nil {
-		return loc, err
+	loc, ok := daemon.ReadLocation()
+	if !ok {
+		return loc, fmt.Errorf("no daemon has recorded an address")
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return loc, err
-	}
-	err = json.Unmarshal(raw, &loc)
-	return loc, err
+	return loc, nil
 }
 
 // lastDatabase reads which database the last daemon opened, for when none is

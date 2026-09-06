@@ -189,9 +189,12 @@ func (d *Daemon) describeEnvironment(description string) (string, string) {
 func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 	endpoint = strings.TrimSpace(endpoint)
 
+	// WHICH ENVIRONMENT IS SAVED FIRST AND ON ITS OWN. Switching between the
+	// two is always legal, and `zrokRoot` reads this setting to decide which
+	// one to load, so the address below has to be checked against the root that
+	// is now selected rather than the one that was.
 	cfg := d.zrokConfig()
 	cfg.OwnEnvironment = own
-	cfg.ApiEndpoint = endpoint
 	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
 		return err
 	}
@@ -200,19 +203,39 @@ func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 	if err != nil {
 		return fmt.Errorf("could not read that zrok environment: %w", err)
 	}
-	if endpoint == "" && !own {
-		// Back on the machine's environment with nothing to say about where it
-		// points. Its config is the machine's business and atrium does not
-		// clear it on the way past.
-		log.Printf("[atrium] zrok: using %s", d.zrokWhere())
-		return nil
-	}
+
+	// AN ENABLED ENVIRONMENT OWNS ITS OWN ADDRESS, so the setting follows it
+	// rather than the other way round.
+	//
+	// The address used to be written before any of this was checked, which
+	// meant a refused change was stored anyway and a no-op change cleared it.
+	// That is what made the instance toggle look dead: pressing the public zrok
+	// on an enabled environment recorded the public zrok, the environment went
+	// on answering the instance it was enabled against, and the panel redrew
+	// from the environment showing no change at all.
 	if root.IsEnabled() {
 		current, _ := root.ApiEndpoint()
 		if endpoint != "" && current != endpoint {
 			return fmt.Errorf("that environment is already enabled against %s. "+
 				"disable it first, then set the address, then enable again", current)
 		}
+		cfg.ApiEndpoint = current
+		if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+			return err
+		}
+		log.Printf("[atrium] zrok: using %s", d.zrokWhere())
+		return nil
+	}
+
+	// Nothing is enabled here yet, so the address is atrium's to set.
+	cfg.ApiEndpoint = endpoint
+	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+		return err
+	}
+	if endpoint == "" && !own {
+		// Back on the machine's environment with nothing to say about where it
+		// points. Its config is the machine's business and atrium does not
+		// clear it on the way past.
 		log.Printf("[atrium] zrok: using %s", d.zrokWhere())
 		return nil
 	}

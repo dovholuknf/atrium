@@ -23,7 +23,17 @@ func TestHelperSourceProcess(t *testing.T) {
 	if os.Getenv("ATRIUM_TEST_SOURCE") == "" {
 		t.Skip("not the helper")
 	}
-	fmt.Fprint(os.Stdout, os.Getenv("ATRIUM_TEST_SOURCE_OUT"))
+	// From a FILE, not from the environment. See `helperSource`.
+	if p := os.Getenv("ATRIUM_TEST_SOURCE_OUT_FILE"); p != "" {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "helper could not read its payload: %v", err)
+			os.Exit(4)
+		}
+		os.Stdout.Write(raw)
+	} else {
+		fmt.Fprint(os.Stdout, os.Getenv("ATRIUM_TEST_SOURCE_OUT"))
+	}
 	fmt.Fprint(os.Stderr, os.Getenv("ATRIUM_TEST_SOURCE_ERR"))
 	if os.Getenv("ATRIUM_TEST_SOURCE_FAIL") != "" {
 		os.Exit(3)
@@ -32,10 +42,26 @@ func TestHelperSourceProcess(t *testing.T) {
 }
 
 // helperSource builds a Source that re-runs this test binary as the helper.
+//
+// THE PAYLOAD GOES IN A FILE, and the environment carries only the path.
+//
+// It used to be the value of an environment variable, which worked on Windows
+// and failed on Linux the first time CI ran: `MAX_ARG_STRLEN` caps a single
+// environment string at 128KB, and the bounds tests hand over a megabyte on
+// purpose. The spawn died with `argument list too long` before the limit under
+// test was ever reached, so the two tests that check the output bound were
+// failing for a reason that had nothing to do with the bound.
+//
+// A file has no such ceiling on either platform, and the tests that pass a
+// short string are unaffected by going through it.
 func helperSource(t *testing.T, id, out string) store.Source {
 	t.Helper()
 	t.Setenv("ATRIUM_TEST_SOURCE", "1")
-	t.Setenv("ATRIUM_TEST_SOURCE_OUT", out)
+	path := filepath.Join(t.TempDir(), "payload")
+	if err := os.WriteFile(path, []byte(out), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATRIUM_TEST_SOURCE_OUT_FILE", path)
 	return store.Source{
 		ID: id, Label: id, Enabled: true,
 		Cmd:          os.Args[0],

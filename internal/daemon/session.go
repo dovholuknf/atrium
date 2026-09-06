@@ -162,7 +162,15 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			return err
 		}
 		task = t
-	} else if _, _, err := d.st.Register(obs); err != nil {
+	} else if _, err := d.st.Observe(task.ID, obs); err != nil {
+		// ONTO THE CARD IT WAS LAUNCHED ON, never `Register`.
+		//
+		// This called Register here, which matches on the wire name, falls
+		// back to the pid, and CREATES a card when neither matches. For a
+		// session atrium launched that is a coin toss on a name atrium already
+		// knows: the card id came in on the request, so the answer is not in
+		// doubt and nothing should be able to make a second card out of it.
+		// `Observe` binds the report to that id and cannot create anything.
 		return err
 	}
 

@@ -39,6 +39,53 @@ type LaunchRequest struct {
 	Source     string `json:"source,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`
 	URL        string `json:"url,omitempty"`
+	// SourceKind and SourceURL are the same two under the names a launcher
+	// resolving a URL calls them.
+	//
+	// TWO NAMES FOR ONE THING, on purpose and only here. `source` and `url`
+	// are what the store and the intake path have always called them, and
+	// renaming those would touch every source ever configured. A caller that
+	// turned `github.com/o/r/pull/9` into a worktree is thinking in the other
+	// vocabulary, and refusing it over a word is a round trip for nothing.
+	// The explicit pair wins when both are sent.
+	SourceKind string `json:"source_kind,omitempty"`
+	SourceURL  string `json:"source_url,omitempty"`
+	// What a launcher knows about the work that the directory cannot say.
+	//
+	// ATRIUM IS NOT LEARNING GIT. None of this is derived here and none of it
+	// is checked: whoever resolved the URL and made the worktree already knows
+	// the answers, and a daemon that re-derives them is a second implementation
+	// to disagree with the first. Every one of them is optional, and a session
+	// that joined on its own leaves them all empty.
+	Repo   string `json:"repo,omitempty"`
+	Org    string `json:"org,omitempty"`
+	Host   string `json:"host,omitempty"`
+	Branch string `json:"branch,omitempty"`
+	// Window is which pile this card belongs to, and it is the board's
+	// grouping key. `active-work`, `pull-requests`, `tangent`, `discourse`, a
+	// repo name, or anything else: atrium stores the string and groups by it
+	// without knowing what any of them mean.
+	Window string `json:"window,omitempty"`
+	// Theme is the terminal palette this session comes up in. A launcher that
+	// keeps a repo-to-color map sends the answer rather than atrium keeping a
+	// second copy of that map. Empty leaves it to the board.
+	Theme string `json:"theme,omitempty"`
+	// IfRunning is what to do when this directory already has a card.
+	//
+	// FOR CALLERS THAT ARE NOT A PERSON. A human pressing start in the launch
+	// dialog is looking at the board and means it. A script is not: `gwt new`
+	// run twice, or run on a worktree that already has a pinned session, would
+	// otherwise put a second runner in a directory that has one, and the two
+	// write to the same files while neither knows about the other.
+	//
+	//	""       start anyway, which is what the board does and the default
+	//	"skip"   hand back the card that is there and start nothing
+	//	"adopt"  start onto that card, unless something is already running on it
+	//
+	// The same question `startFixture` answers, moved to where every caller
+	// can ask it. It lived in that one caller, which is why the endpoint under
+	// it never asked.
+	IfRunning string `json:"if_running,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -181,6 +228,40 @@ func (d *Daemon) resumeIsFree(resume string) error {
 	return nil
 }
 
+// What to do about a card that is already in this directory.
+type runningVerdict int
+
+const (
+	// startAnyway is the board's behaviour and the default. Two sessions in
+	// one repo is something an operator does deliberately.
+	startAnyway runningVerdict = iota
+	// handBack returns the card that is there and starts nothing.
+	handBack
+	// startOnto continues that card rather than making a second one.
+	startOnto
+)
+
+// handOverTo decides, given what the caller asked for and whether a runner is
+// live on the card that is already here.
+//
+// A LIVE RUNNER OVERRIDES `adopt`. Adopting means continuing the work filed
+// here, and a second process on one card is not that: both write to the same
+// directory and the card ends up describing whichever spoke last. So `adopt`
+// with something running degrades to `skip` rather than to `start anyway`,
+// which is the direction that cannot surprise anybody.
+func handOverTo(ifRunning string, live bool) runningVerdict {
+	switch ifRunning {
+	case "skip":
+		return handBack
+	case "adopt":
+		if live {
+			return handBack
+		}
+		return startOnto
+	}
+	return startAnyway
+}
+
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
@@ -230,6 +311,34 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	cwd = filepath.FromSlash(cwd)
 	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", cwd)
+	}
+
+	// ONE SESSION PER DIRECTORY, when the caller asks for it. See `IfRunning`.
+	if req.TaskID == "" && req.IfRunning != "" {
+		here, err := d.st.AdoptableTask(filepath.ToSlash(cwd))
+		if err != nil {
+			return nil, err
+		}
+		if here != "" {
+			t, err := d.st.Get(here)
+			if err != nil {
+				return nil, err
+			}
+			// A LIVE RUNNER ENDS IT EITHER WAY. `adopt` means continue the
+			// work already filed here, and starting a second process onto one
+			// card is not that: both would write to the same directory and the
+			// card would describe whichever spoke last.
+			switch handOverTo(req.IfRunning, d.sup.get(here) != nil) {
+			case handBack:
+				log.Printf("[atrium] not starting a second runner in %s, %s is already there",
+					cwd, t.DisplayTitle())
+				return t, nil
+			case startOnto:
+				task = t
+				agentName = t.WireName
+				req.TaskID = t.ID
+			}
+		}
 	}
 
 	// A card's own prompt is the fallback, not an override. Whoever pressed
@@ -382,13 +491,28 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 	}
-	if err := d.st.SetOrigin(created.ID, req.Source, req.ExternalID, req.URL); err != nil {
+	// What the launcher knew. See `store.SetPlace`: empty never overwrites, so
+	// a caller that sends three of six leaves the other three alone.
+	if err := d.st.SetPlace(created.ID, store.Place{
+		Repo: req.Repo, Org: req.Org, Host: req.Host,
+		Branch: req.Branch, Window: req.Window, Theme: req.Theme,
+	}); err != nil {
+		return nil, err
+	}
+	source, url := req.Source, req.URL
+	if req.SourceKind != "" {
+		source = req.SourceKind
+	}
+	if req.SourceURL != "" {
+		url = req.SourceURL
+	}
+	if err := d.st.SetOrigin(created.ID, source, req.ExternalID, url); err != nil {
 		return nil, err
 	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "",
-		"source": req.Source, "external_id": req.ExternalID,
+		"source": source, "external_id": req.ExternalID, "window": req.Window,
 	}); err != nil {
 		return nil, err
 	}

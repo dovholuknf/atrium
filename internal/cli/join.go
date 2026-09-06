@@ -107,16 +107,8 @@ func hubAddressFrom(override string) (addr, source string) {
 // recordedAgentAddr reads the address the running daemon wrote down. Any
 // failure returns empty, so the caller falls back to the default.
 func recordedAgentAddr() string {
-	path, err := daemon.LocationPath()
-	if err != nil {
-		return ""
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var loc daemon.Location
-	if err := json.Unmarshal(raw, &loc); err != nil {
+	loc, ok := daemon.ReadLocation()
+	if !ok {
 		return ""
 	}
 	return strings.TrimRight(loc.Agent, "/")

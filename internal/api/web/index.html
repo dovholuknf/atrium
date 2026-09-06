@@ -571,7 +571,10 @@
     font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .cardgroup.project > summary::before { color: hsl(var(--ghue) 65% 60%); }
-  .cardgroup.project > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
+  /* The same correction as the stack's, for the same reason. See there. */
+  .cardgroup.project > summary:hover .gname {
+    color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head));
+  }
   /* Nested inside a status group, the indent would stack. */
   .cardgroup .cardgroup.project { margin-left: 0; }
   /* The pinned group. Louder than a project group on purpose: it is the one
@@ -994,6 +997,46 @@
     padding: 11px 0; border-bottom: 1px solid var(--stroke-dim);
   }
   .sharerow:last-child { border-bottom: none; }
+  /* A machine reporting into this one. One panel per room, its cards listed
+     rather than drawn as cards: they cannot be acted on from here, so giving
+     them a card's affordances would be a promise this board cannot keep. */
+  .roomrow { margin-bottom: var(--vs-3); }
+  .roomcards { display: flex; flex-direction: column; gap: 2px; }
+  .roomcard {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--row-y-sm) 0; font-size: var(--fs-sm); color: var(--body);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .roomcard:last-child { border-bottom: none; }
+  /* Path candidates, over the terminal. Positioned at the bottom because that
+     is where the prompt is, and it covers output rather than the line being
+     typed. */
+  #t-complete {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 30;
+    display: flex; flex-wrap: wrap; gap: var(--sp-2);
+    max-height: 40%; overflow: auto;
+    padding: 8px 10px; border-radius: var(--r-md);
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: var(--shadow-pop);
+  }
+  #t-complete[hidden] { display: none; }
+  #t-complete .cand {
+    font: var(--fs-sm)/1.3 var(--mono); color: var(--body);
+    padding: 2px 7px; border-radius: var(--r-sm); background: var(--lift);
+  }
+  /* A full-width heading, so the list below it wraps as its own block rather
+     than flowing around a first item that happens to be a sentence. */
+  #t-complete .candhead {
+    flex: 0 0 100%; font-size: var(--fs-sm); color: var(--dim);
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    padding-bottom: 4px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  #t-complete .candhead code { font: var(--fs-sm) var(--mono); color: var(--head); }
+  #t-complete .candmore { color: var(--dimmest); }
+  /* Pushed right, because it is the same line every time and belongs where the
+     eye stops rather than where it starts. */
+  #t-complete .candhint { margin-left: auto; color: var(--dimmest); }
   /* Sharing, while it is happening.
      Creating a share is several seconds of somebody else's server, and for all
      of them the board showed the button unchanged. A failure then arrived as a
@@ -1845,7 +1888,16 @@
   .stackgroup > summary .gname {
     color: hsl(var(--ghue) 70% 72%); font: 600 var(--fs-base) var(--mono);
   }
-  .stackgroup > summary:hover .gname { color: hsl(var(--ghue) 80% 85%); }
+  /* TOWARDS THE SKIN'S OWN TEXT COLOUR, not towards white.
+     Hovering used to raise the lightness to 85%, which is more prominent on a
+     dark board and nearly invisible on a light one: on `paper` the group name
+     went pale yellow against near-white paper and the hover barely registered.
+     Blending toward `--head` moves it darker on a light skin and lighter on a
+     dark one, which is the same intention expressed in a way that survives
+     both, and it needs no new per-skin variable. */
+  .stackgroup > summary:hover .gname {
+    color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head));
+  }
   .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
   /* The same block treatment the board's groups get, from the same two
      variables. It had only the bar down the left, so the two views coloured
@@ -1969,6 +2021,12 @@
   .picker select:focus { outline: none; border-color: var(--blue); }
   input[type=range] { width: 100%; accent-color: var(--teal); }
   .hintline { display: block; font-size: var(--fs-sm); color: var(--dimmest); margin-top: 7px; }
+  /* Beside a label, not under the field. A requirement discovered by pressing
+     the button and being refused is a requirement stated too late. */
+  .req {
+    font-size: var(--fs-xs); letter-spacing: .04em; text-transform: none;
+    color: var(--warn); margin-left: 6px; font-weight: 500;
+  }
   .toolbar { display: flex; gap: var(--sp-3); margin-top: 12px; flex-wrap: wrap; align-items: center; }
 
   /* The terminal wants room. A cramped terminal is worse than no terminal,
@@ -2284,6 +2342,13 @@
   .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
   .term-pane.dead .term-bar strong { color: var(--dim); }
   .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
+  /* A GLYPH IS NOT A WORD. The padding above is tuned for `ctrl-c` and `exit`
+     and is roughly twice as wide as it should be around a single character, so
+     the folder and the cog sat in buttons with more air than content. Squared
+     off instead: equal padding on all four sides, sized from the glyph. */
+  .term-bar button.icon {
+    padding: 6px 8px; min-width: 0; line-height: 1.15;
+  }
   /* No height of its own. The bar and the help line take what they need and
      this takes the rest, so nothing has to guess how tall they are. */
   /* THE HORIZONTAL GAP IS A MARGIN, NOT PADDING. Do not put it back.
@@ -2503,6 +2568,10 @@
   .seg button.on {
     background: var(--chip); color: var(--head); border-color: var(--stroke);
   }
+  /* A `?` riding on a segment button, for a choice whose two sides need a
+     paragraph each. The button has to become a flex line for it, or the circle
+     sits on the text baseline and drags the row taller. */
+  .seg button:has(.help) { display: inline-flex; align-items: center; gap: 7px; }
   /* A multi-select segment. Its pills add up rather than replacing each other,
      so an on one is marked more strongly: with an exclusive segment the single
      highlight is unambiguous, and with several on at once it has to read as
@@ -3535,7 +3604,7 @@ Exports honor whatever filter is applied.">?</span>
             title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
           <button id="t-popout" onclick="popOutTerm()"
             title="open this terminal in its own window, so alt-tab reaches it">pop out</button>
-          <button id="t-files" onclick="openTermFiles()"
+          <button id="t-files" class="icon" onclick="openTermFiles()"
             title="the files in this session's directory, on the machine running it">&#128193;</button>
           <button class="no" onclick="exitTerm()"
             title="ask this runner to quit, the way its own harness says to">exit</button>
@@ -3546,7 +3615,7 @@ Exports honor whatever filter is applied.">?</span>
                A button for it was a decision offered where there was none.
                The cog is LAST because it is the only control here that opens
                something rather than doing something. -->
-          <button id="t-cog" onclick="termSettings(event)"
+          <button id="t-cog" class="icon" onclick="termSettings(event)"
             title="how this terminal looks and behaves">&#9881;</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
@@ -3560,7 +3629,7 @@ Exports honor whatever filter is applied.">?</span>
              what may be reached. -->
         <div class="term-files" id="t-files-panel" hidden>
           <div class="filebar">
-            <button id="t-files-up" onclick="termFilesUp()" title="up one directory">&#8593;</button>
+            <button id="t-files-up" class="icon" onclick="termFilesUp()" title="up one directory">&#8593;</button>
             <span class="crumbs" id="t-files-where"></span>
             <a class="chip go" id="t-files-zip" download hidden></a>
             <span class="chip no" id="t-files-del" hidden></span>
@@ -3750,6 +3819,21 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     </div>
     <div id="action-list"></div>
 
+    <div class="col-head r-section" data-pane="rooms" style="margin:0 0 10px">
+      <span>rooms</span>
+      <span class="help" tabindex="0" data-tip="Other machines running their own atrium, reporting what is on them.
+
+Each room keeps its own daemon, its own database and its own terminals. This hub holds nothing durable about them: what you see here is a summary, replaced every time that room checks in, that goes stale and then disappears when it stops.
+
+TERMINALS DO NOT TRAVEL. A pseudo terminal cannot leave the machine that made it, so attaching to a runner on a room means opening that room's own board. That is the link on each row.
+
+A room is started with 'atrium room' on that machine.">?</span>
+    </div>
+    <p class="pane-lead">Other machines running their own atrium and reporting into this one. This
+      board holds nothing about them that survives a restart, and their terminals stay where
+      they are.</p>
+    <div id="room-list"></div>
+
   </div>
 </main>
 
@@ -3927,6 +4011,54 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         card.</span>
     </div>
 
+    <h3 class="s-section">who may open it</h3>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="auth-on" onchange="saveAuth()">
+        <span>the published board asks people to sign in</span>
+      </label>
+      <span class="hintline">Only the PUBLISHED board. This machine's own
+        <code>localhost:7778</code> is untouched, and so are the hooks, the CLI and a session you
+        have lent to somebody: a lent link is the credential by design, and making a guest sign in
+        would defeat it.<br><br>
+        Atrium holds no passwords. Signing in happens at your own provider and atrium checks what
+        it signed.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-issuer">provider</label>
+      <input type="text" id="auth-issuer" spellcheck="false" onchange="saveAuth()"
+        placeholder="https://keycloak.example/realms/yours">
+      <span class="hintline">The realm URL, not the admin console. Everything else is read from
+        its <code>/.well-known/openid-configuration</code>.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-client">client id</label>
+      <input type="text" id="auth-client" spellcheck="false" onchange="saveAuth()"
+        placeholder="atrium">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-secret">client secret</label>
+      <input type="password" id="auth-secret" spellcheck="false" autocomplete="off"
+        onchange="saveAuth()" placeholder="leave empty to keep the one already set">
+      <span class="hintline" id="auth-secret-said"></span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-redirect">where the provider sends people back</label>
+      <input type="text" id="auth-redirect" spellcheck="false" onchange="saveAuth()"
+        placeholder="https://your-board-address/auth/callback">
+      <span class="hintline">The PUBLISHED address with <code>/auth/callback</code> on the end,
+        and it has to match what the provider was registered with exactly.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-allow">who may in</label>
+      <input type="text" id="auth-allow" spellcheck="false" onchange="saveAuth()"
+        placeholder="you@example.com, someone-else@example.com">
+      <span class="hintline">Email addresses or subjects, comma separated. <b>Empty means
+        nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
+        with open registration, the whole internet with an extra step.</span>
+      <span class="hintline" id="auth-said"></span>
+    </div>
+
     <h3 class="s-section">alerts</h3>
     <div class="field">
       <label class="eyebrow">volume</label>
@@ -3993,6 +4125,26 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
          one takes a card off a screen and keeps every word of its history, the
          other destroys that history. They sit next to each other so the
          difference is read rather than assumed. -->
+    <h3 class="s-section">back it up</h3>
+    <div class="field">
+      <p class="pane-lead">Atrium's configuration as one file a repository can hold: harnesses, fixtures,
+        sources, actions, rules, the skin, the timers and the sharing options. Enough to rebuild this
+        machine from a checkout.</p>
+      <div class="toolbar">
+        <button class="go" onclick="exportConfig()">save the configuration</button>
+        <button onclick="document.getElementById('import-file').click()">read one back…</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden
+          onchange="importConfig(this)">
+      </div>
+      <span class="hintline"><b>No credentials are in it</b>, and that is not a best effort: the export
+        REFUSES rather than redacting if anything in your configuration looks like one, and says where.
+        So a restored machine still has to be enabled against zrok and still has to enroll a ziti
+        identity.</span>
+      <span class="hintline">Reading one back tells you what it WOULD change before it changes anything,
+        and never overwrites something already set here unless you say so.</span>
+      <span class="hintline" id="config-said"></span>
+    </div>
+
     <h3 class="s-section">housekeeping</h3>
     <div class="field">
       <label class="eyebrow" for="s-sweep">take dead cards off the board</label>
@@ -4091,6 +4243,27 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
         every directory a card already uses, which is where work already is. Anything outside is refused
         whether or not it exists, so the refusal cannot be used to find out what is on the machine.
         <b id="s-browseroots-now"></b></span>
+    </div>
+
+    <!-- Where to leave the address for somebody else.
+         The daemon already writes where it is listening, into this account's
+         own state directory, which is the right place and unreadable to
+         anybody else. A script running as another user cannot find it, so it
+         either gets told the port or gets a profile path hardcoded into it,
+         and both are the thing the file was written to prevent. -->
+    <div class="field">
+      <label class="eyebrow" for="s-shared-loc">also leave my address at</label>
+      <div class="picker">
+        <input id="s-shared-loc" spellcheck="false"
+          placeholder="empty means only this account can find the daemon">
+        <button onclick="saveSharedLocation()">save</button>
+      </div>
+      <span class="hintline">A file a <b>different account</b> can read, so a script running as somebody
+        else finds the board without being told the port. A directory you both already reach is the
+        answer: <code>D:/worktrees/atrium/daemon.json</code> if that is where the work is. It holds a
+        loopback address, a pid and two paths, and nothing secret.<br>
+        Written on start, so this takes effect at the next restart.
+        <b id="s-shared-loc-now"></b></span>
     </div>
 
     <!-- Two buffers, one question. Kept side by side because the smaller of
@@ -5319,6 +5492,19 @@ function compiled(body, fallback, ...args) {
   }
 }
 
+// The project rule as a callable, for the modes that want it as a FALLBACK
+// rather than as the whole answer.
+//
+// Compiled from the same source the settings dialog shows and cached, so there
+// is one project rule on the board and not a second copy written in JavaScript
+// beside the one written as a string.
+let projectRule;
+function defaultProjectOf(task) {
+  if (projectRule === undefined) projectRule = compiled("", DEFAULT_GROUP_BY, "task");
+  if (!projectRule) return "";
+  try { return String(projectRule(task) ?? ""); } catch (e) { return ""; }
+}
+
 // Builds the grouper and the sorter for one render, each already wrapped so a
 // throw on one card cannot stop the board drawing the rest.
 // The buckets, newest first. Dormant last, which is where it belongs both in
@@ -5386,6 +5572,27 @@ function grouper() {
       of: t => [recencyBucket(t)],
       cmp: (a, b) => RECENCY_ORDER.indexOf(a) - RECENCY_ORDER.indexOf(b)
     };
+  }
+
+  // BY THE PILE THE LAUNCHER PUT IT IN. `window_name` is a string somebody
+  // else decided: `pull-requests`, `tangent`, `discourse`, a repo name,
+  // anything. Atrium stores it and groups by it without knowing what any of
+  // them mean, which is why this needs no list of valid answers.
+  //
+  // A card with no window falls back to its PROJECT rather than to one heap
+  // called "none". Most cards on any board were never launched with a window,
+  // and a mode that put all of them together would be unusable on the day it
+  // was turned on.
+  if (p.mode === "window" && !String(p.by || "").trim()) {
+    const of = t => {
+      const w = String(t.window_name || "").trim();
+      return [w || defaultProjectOf(t)];
+    };
+    return { many: false, of, cmp: (a, b) => {
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.localeCompare(b);
+    } };
   }
 
   // Grouping by tag needs no compiled function. A card can carry several, so
@@ -8489,6 +8696,22 @@ function inForeground() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
+// Whether this document is on a screen at all, without asking whether it has
+// the keyboard.
+//
+// The two questions are different and the difference is the whole of a bug
+// somebody hit: a popped-out terminal on a second monitor is VISIBLE and not
+// FOCUSED, so `inForeground` said no and the window announced, out loud, a
+// thing the operator was watching happen.
+//
+// Which test to use depends on what the document is FOR. The board is a tab
+// among many and being visible does not mean you are reading it, so it keeps
+// `inForeground`. A popped-out window holds one session and exists to be
+// looked at, so for that one, visible is enough.
+function onScreen() {
+  return document.visibilityState === "visible";
+}
+
 // ── who owns an alert when a terminal is popped out ──────
 //
 // `inForeground` answers "can you see THIS document". Once a terminal is in
@@ -9127,14 +9350,21 @@ const modalStack = [];
 //
 // Position is fixed either way, so moving does not change where they appear.
 function raiseToasts() {
-  const host = document.getElementById("toasts");
-  if (!host) return;
   let top = null;
   for (let i = modalStack.length - 1; i >= 0; i--) {
     if (modalStack[i].open) { top = modalStack[i]; break; }
   }
   const parent = top || document.body;
-  if (host.parentElement !== parent) parent.appendChild(host);
+  // THE TOOLTIP TRAVELS WITH THEM, for exactly the same reason and it was
+  // missed the first time. Every `?` in the settings dialog and on the runners
+  // page drew its panel UNDERNEATH the dialog, so hovering one did nothing
+  // visible: the text was rendered, positioned correctly, and in the wrong
+  // layer. Those are the bubbles carrying the longest explanations on the
+  // board, which is to say the ones that had to work.
+  ["toasts", "tip"].forEach(id => {
+    const host = document.getElementById(id);
+    if (host && host.parentElement !== parent) parent.appendChild(host);
+  });
 }
 
 // Typing in a guarded dialog marks it as holding something not yet saved.
@@ -9440,6 +9670,9 @@ function paintGroupSegs() {
   const mode = p.on ? (p.mode || "project") : "off";
   const opts = [
     ["project", "by project", "cut the cards into projects, read from the worktree path"],
+    ["window", "by pile",
+      "cut the cards the way whatever launched them said to: pull requests, tangents, " +
+      "support threads. a card that was not told falls back to its project"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
     ["recency", "by when",
       "today, yesterday, this week, this month, and everything older, which is dormant"],
@@ -9602,31 +9835,33 @@ const OVERLAY_UI = {
   // A stable address is a different flag per mode in zrok v2, so both fields
   // are here and each says which mode it belongs to.
   zrok: [
-    { key: "mode", label: "share", type: "select",
-      options: [["private", "private — needs zrok on the other end"],
-                ["public", "public — anyone with the link"]],
-      hint: "A public share is a link with no login in front of it." },
+    // TWO CHECKBOXES, NOT ONE SELECT, and both can be on.
+    //
+    // The select was a leftover from when a share was one thing. A machine may
+    // reasonably want a public link for the board and a private share for a
+    // lent session, and the select could not express that: it made two
+    // independent capabilities look like one exclusive choice.
+    { key: "public", label: "share publicly", type: "check",
+      check: "a link anyone who has it can open",
+      hint: "A public share is a link with no login in front of it. Whoever opens it " +
+            "sees every card and can answer permission requests." },
+    { key: "private", label: "share privately", type: "check",
+      check: "they need zrok on the other end too",
+      hint: "The safer one. Reaching it needs zrok and the share token, not just a URL." },
     { key: "share_token", label: "share token (private)", type: "text",
       placeholder: "optional",
       hint: "Reuses a reserved private share so the address survives a restart." },
-    // Reserving is two facts, not one. Asking for the name when the share
-    // starts is what this field does. The name also has to BE reserved on
-    // your account, or zrok deletes it the moment the share stops and the
-    // address you handed out is gone. The button does that half.
-    { key: "name", label: "the address to keep (public)", type: "text",
-      placeholder: "optional, or namespace/name",
-      actions: [
-        { label: "reserve it", fn: "reserveZrokName",
-          title: "claim the name without publishing anything yet" },
-        // The common case, and the one the three-step version buried. Hidden
-        // while a share is already up, where it would mean nothing, and before
-        // the machine is enabled, where it cannot work.
-        { label: "reserve and share", fn: "reserveAndShare", go: true,
-          title: "claim the name and start the share",
-          when: o => o.ready && !o.running && (o.config || {}).mode === "public" }
-      ],
-      hint: "Keeps one address for a public share, so the link you hand out survives a restart. " +
-            "Empty means a new address every time." }
+    // NO RESERVE BUTTON ANY MORE. Reserving used to be three presses: type a
+    // name, press `reserve it`, press `start sharing`, and skipping any of
+    // them meant zrok invented an address, the board handed it out, and the
+    // controller deleted it at the next stop. Starting a public share now
+    // reserves whatever is here, or invents and remembers one, so this field
+    // is only for choosing the hostname rather than for making it durable.
+    { key: "name", label: "what share name would you like to use?", type: "text",
+      placeholder: "atrium-xxxxxxxx, picked for you",
+      hint: "Public shares only, and it becomes the hostname somebody types. Left empty, " +
+            "atrium invents one and keeps it. Either way it is reserved, so the link you " +
+            "hand out survives a restart." }
   ],
   ziti: [
     { key: "identity", label: "identity file", type: "text",
@@ -9724,7 +9959,8 @@ function overlayCard(o) {
        </div>`
     : !o.ready
       ? overlaySetup(o)
-      : zrokWhoseAccount(o) + (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
+      : lockedNote(o) + zrokWhoseAccount(o) +
+        (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
 
   // The address, once there is one. This is the thing you came for, so it gets
   // its own line and a copy button rather than being read out of the log.
@@ -9824,6 +10060,10 @@ function overlayCard(o) {
 // steps. Held per overlay in localStorage so opening one to change a field and
 // coming back does not fold it again mid-edit.
 function overlayBody(o, body) {
+  // OPEN UNLESS IT WAS CLOSED. It defaulted the other way and that was wrong:
+  // the choice of which zrok account and which instance lives in here, so a
+  // machine that was already enabled opened the gear onto a summary with no
+  // visible way to change any of it.
   const open = !o.found || !o.ready || overlayOpen(o.kind);
   return `<details class="ov-fold"${open ? " open" : ""}
       ontoggle="setOverlayOpen('${esc(o.kind)}', this.open)">
@@ -9834,8 +10074,12 @@ function overlayBody(o, body) {
 
 const OV_OPEN_KEY = "atrium.overlays.open";
 function overlayOpen(kind) {
-  try { return !!JSON.parse(localStorage.getItem(OV_OPEN_KEY) || "{}")[kind]; }
-  catch (e) { return false; }
+  try {
+    const v = JSON.parse(localStorage.getItem(OV_OPEN_KEY) || "{}")[kind];
+    // Undefined is "never said", which is open. Only an explicit close closes
+    // it, so the settings are there the first time somebody looks.
+    return v === undefined ? true : !!v;
+  } catch (e) { return true; }
 }
 function setOverlayOpen(kind, open) {
   let all = {};
@@ -9886,6 +10130,18 @@ const OVERLAY_SETUP = {
   }
 };
 
+// Why every field below is greyed out, said once at the top.
+//
+// A row of disabled inputs with no explanation reads as broken. The rule is
+// simple and worth one line: a running share is serving what it was started
+// with, so changing the settings means stopping it first.
+function lockedNote(o) {
+  if (!o.running) return "";
+  return `<div class="ov-note">These are what the share running right now was started
+    with, so they cannot be changed while it is up. Press
+    <b>stop sharing</b> below to edit them.</div>`;
+}
+
 // WHOSE ZROK ACCOUNT, and which instance it talks to.
 //
 // Drawn in the panel rather than in the setup block, and that placement is the
@@ -9903,36 +10159,199 @@ const OVERLAY_SETUP = {
 // Both are shown even while enabled, where the daemon will refuse to move
 // them. The refusal names the instance and says to disable first, which is a
 // better answer than a control that is not there.
+// The address of the zrok everybody gets by default.
+//
+// Named rather than left as a placeholder, because the instance toggle below
+// has to be able to SAY "the public one" and mean a specific host. An empty
+// endpoint and this string are the same choice, and the daemon stores the empty
+// one so zrok's own resolution keeps working.
+const ZROK_PUBLIC = "https://api.zrok.io";
+
+// Which side of the instance toggle is showing, while it is being changed.
+//
+// `null` means "whatever the daemon says", which is the state after every
+// repaint. It is only set by pressing a side, so choosing `somewhere else`
+// reveals the box BEFORE anything is saved: saving first would mean pressing a
+// button, watching nothing appear, and having no idea what to do next.
+let zrokInstanceCustom = null;
+
 function zrokWhoseAccount(o) {
   if (o.kind !== "zrok") return "";
   const setup = o.setup || {};
+  // Locked while a share is up, for the reason `lockedNote` gives. Moving an
+  // environment out from under a running share is the one edit here that could
+  // break something already working.
+  const lock = o.running ? " disabled" : "";
+  const own = !!setup.own;
+
+  // TWO WAYS TO USE ZROK, and the difference is who owns the credential.
+  //
+  // Written as a question with two answers rather than as "whose account",
+  // which named the mechanism to somebody who already understood it. What
+  // anybody arriving here actually wants to decide is whether atrium reuses
+  // what `zrok enable` already did on this machine, or keeps a second
+  // environment of its own that nothing else touches.
+  //
+  // The long version of each is a tooltip. A settings row cannot afford two
+  // paragraphs, and the paragraphs are what make the choice answerable, so
+  // they go where they can be asked for.
+  const tipMachine =
+    "Atrium shares from the environment `zrok enable` already made on this machine, the same " +
+    "one the zrok command uses. Nothing to paste and nothing new to manage. The instance is " +
+    "whatever that environment was enabled against, so atrium cannot point somewhere else " +
+    "without disabling the environment every other tool here shares.";
+  const tipOwn =
+    "Atrium keeps a second zrok environment in its own directory and manages it: you paste an " +
+    "enable token once, atrium enables it, reserves its own share names and releases them. The " +
+    "zrok command and everything else on this machine are untouched, and this is the only way " +
+    "to run atrium against a different zrok instance than the rest of the machine.";
+
+  // ONLY A CHOICE WHEN THERE IS ONE. On a machine with no zrok environment the
+  // left-hand answer is a button whose only outcome is a refusal, so the toggle
+  // collapses to the statement of what is going to happen.
+  const whose = setup.machine_enabled
+    ? `<div class="seg" id="ovs-zrok-whose">
+         <button class="${own ? "" : "on"}"${lock} onclick="pickZrokAccount(false)"
+           >use this machine's zrok<span class="help" tabindex="0"
+             onclick="event.stopPropagation()" data-tip="${esc(tipMachine)}">?</span></button>
+         <button class="${own ? "on" : ""}"${lock} onclick="pickZrokAccount(true)"
+           >give atrium its own<span class="help" tabindex="0"
+             onclick="event.stopPropagation()" data-tip="${esc(tipOwn)}">?</span></button>
+       </div>
+       <span class="hintline">${own
+         ? esc("Atrium's own, kept at " + (setup.root || "its own directory") + ".")
+         : "Atrium shares from the same account as the zrok command."}</span>`
+    : `<div class="hintline">This machine has no zrok environment, so atrium keeps its
+         own. Paste an enable token below and atrium manages it from there.</div>`;
+
   return `
     <div class="ov-field">
-      <label class="eyebrow">whose zrok account</label>
-      <label class="check">
-        <input type="checkbox" id="ovs-zrok-own" ${setup.own ? "checked" : ""}>
-        <span>atrium keeps its own, separate from this machine's</span>
-      </label>
-      <span class="hintline">${setup.own
-        ? esc("Atrium is on its own environment at " + (setup.root || "its own directory") +
-            ". The zrok command and everything else on this machine are untouched by " +
-            "anything done here.")
-        : "Off means atrium shares from the same account as the zrok command. Turn it " +
-          "on to enable atrium against a different instance while this machine's stays " +
-          "exactly as it is."}</span>
+      <label class="eyebrow">how do you want to use zrok?</label>
+      ${whose}
     </div>
+    ${zrokInstanceField(o, own, lock)}`;
+}
+
+// WHICH ZROK, as a toggle rather than as a text box that is usually right.
+//
+// The box asked everybody to know an address to leave alone. Almost every
+// machine wants the public zrok and should press nothing; the ones that do not
+// want a specific private instance and know its URL. So the common answer is a
+// button and the box only exists once the uncommon one is chosen.
+//
+// NOT OFFERED FOR THE MACHINE'S OWN ENVIRONMENT. That environment was enabled
+// against an instance and moving it means disabling the one every other tool
+// on this machine shares, which is not a thing to offer as a toggle. It is
+// reported instead, with the sentence that says how to change it.
+function zrokInstanceField(o, own, lock) {
+  const setup = o.setup || {};
+  const at = (setup.api_endpoint || "").trim();
+
+  // AN ENABLED ENVIRONMENT IS NOT A TOGGLE, and offering one is what made this
+  // look broken. Enabling issues a token against one instance and sending it
+  // to another fails as if the token were revoked, so the daemon refuses to
+  // move an enabled environment. The board offered two buttons anyway: one was
+  // already selected and did nothing, the other was refused, and the refusal
+  // was a toast that had already gone by the time anybody looked.
+  //
+  // So while it is enabled this states what is true and what the way out is.
+  // Both environments end up here, by different routes: the machine's belongs
+  // to every other tool on it, and atrium's own has to be disabled first.
+  if (setup.enabled) {
+    return `
+      <div class="ov-field">
+        <label class="eyebrow">which zrok</label>
+        <div class="hintline"><b>${at ? esc(at) : "zrok's own default"}</b>, which is what
+          ${own ? "atrium's own environment" : "this machine"} was enabled against. An enable
+          token belongs to one instance, so this cannot move while it is enabled:
+          ${own
+            ? "press <b>disable</b> below, set the address, then enable again."
+            : "give atrium its own environment above, which leaves this machine alone."}</div>
+      </div>`;
+  }
+
+  const custom = zrokInstanceCustom === null
+    ? !!at && at !== ZROK_PUBLIC
+    : zrokInstanceCustom;
+
+  return `
     <div class="ov-field">
-      <label class="eyebrow" for="ovs-zrok-api">zrok instance</label>
-      <div class="picker">
-        <input type="text" id="ovs-zrok-api" spellcheck="false"
-          value="${esc(setup.api_endpoint || "")}"
-          placeholder="https://api.zrok.io">
-        <button onclick="saveZrokEndpoint()">use this one</button>
+      <label class="eyebrow">which zrok</label>
+      <div class="seg" id="ovs-zrok-where">
+        <button class="${custom ? "" : "on"}"${lock} onclick="pickZrokInstance(false)"
+          >the public zrok</button>
+        <button class="${custom ? "on" : ""}"${lock} onclick="pickZrokInstance(true)"
+          >somewhere else</button>
       </div>
-      <span class="hintline" id="ovs-zrok-api-said">${esc(setup.api_endpoint_from
-        ? "from " + setup.api_endpoint_from
-        : "leave it alone for the public zrok. change it to run against your own.")}</span>
+      ${custom ? `
+        <div class="picker">
+          <input type="text" id="ovs-zrok-api" spellcheck="false"${lock}
+            value="${esc(at === ZROK_PUBLIC ? "" : at)}"
+            placeholder="https://zrok.example.com">
+          <button onclick="saveZrokEndpoint()"${lock}>use this one</button>
+        </div>` : ""}
+      <span class="hintline" id="ovs-zrok-api-said">${custom
+        ? "The API address of your own zrok. An enable token from one instance does not work " +
+          "on another, so set this before enabling."
+        : esc(ZROK_PUBLIC + ", which is what an account from zrok.io uses.")}</span>
     </div>`;
+}
+
+// Picking one side of the how-do-you-want-to-use-zrok toggle.
+//
+// It SAVES rather than only painting, because the two sides are different
+// environments and everything below reads from whichever is selected: the
+// instance, whether anything is enabled, and which token the box wants. A
+// toggle that only changed its own colour would leave the rest of the panel
+// describing the other one.
+//
+// The endpoint travels with it, unchanged, because the daemon treats the pair
+// as one decision and would otherwise be told about a switch with no address.
+async function pickZrokAccount(own) {
+  const el = document.getElementById("ovs-zrok-api");
+  zrokInstanceCustom = null;
+  try {
+    await api("/v1/overlays/zrok/endpoint", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ own: !!own, endpoint: ((el && el.value) || "").trim() })
+    });
+  } catch (e) {
+    toast("could not switch account", e.message);
+  }
+  loadOverlays();
+}
+
+// Picking the public zrok, or revealing the box for anything else.
+//
+// The two sides are not symmetrical and that is on purpose. `the public zrok`
+// is a complete answer, so it saves at once. `somewhere else` is half an
+// answer: nothing is saved until an address is typed and `use this one` is
+// pressed, because saving an empty custom endpoint would silently mean the
+// public one again.
+async function pickZrokInstance(custom) {
+  zrokInstanceCustom = !!custom;
+  if (custom) { paintOverlays(); return; }
+  try {
+    await api("/v1/overlays/zrok/endpoint", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ own: zrokIsOwn(), endpoint: "" })
+    });
+  } catch (e) {
+    toast("could not switch instance", e.message);
+  }
+  zrokInstanceCustom = null;
+  loadOverlays();
+}
+
+// Whether atrium is on its own environment, read from the last view rather
+// than from the DOM.
+//
+// It used to be read off a hidden input, which has no `checked`, so it was
+// always false: saving an endpoint on a machine with no zrok of its own moved
+// atrium OFF its own environment and back onto one that does not exist.
+function zrokIsOwn() {
+  const o = (overlays || []).find(v => v.kind === "zrok");
+  return !!((o && o.setup && o.setup.own) || !(o && o.setup && o.setup.machine_enabled));
 }
 
 function overlaySetup(o) {
@@ -9966,10 +10385,29 @@ function overlaySetup(o) {
       <p>${esc(s.what)}</p>
       ${where}
       <div class="ov-field">
-        <label class="eyebrow" for="ovs-${esc(o.kind)}-token">${esc(s.label)}</label>
-        <textarea id="ovs-${esc(o.kind)}-token" rows="3" spellcheck="false"
-          placeholder="${esc(s.placeholder)}"
-          oninput="tokenTyped('${esc(o.kind)}')"></textarea>
+        <label class="eyebrow" for="ovs-${esc(o.kind)}-token">${esc(s.label)}${
+          // Said in the label, where somebody looking at an empty box looks
+          // first, rather than only in a refusal after they press the button.
+          o.kind === "zrok" ? ` <span class="req">required</span>` : ""}</label>
+        ${o.kind === "zrok"
+          // A PASSWORD FIELD, because that is what it is. A zrok account token
+          // is reusable on every machine and grants everything that account
+          // can do, and it was sitting in a plain textarea on a board that gets
+          // screenshotted, shared and popped out into windows on other
+          // monitors.
+          //
+          // An input rather than a textarea for the same reason: a token is one
+          // line, and a textarea cannot be masked.
+          ? `<input type="password" id="ovs-zrok-token" spellcheck="false"
+               autocomplete="off"
+               placeholder="${esc(s.placeholder)}"
+               oninput="tokenTyped('zrok')">`
+          // The ziti side stays a textarea. An enrollment JWT is three long
+          // base64 segments that people paste and want to see, and it is
+          // single use rather than an account credential.
+          : `<textarea id="ovs-${esc(o.kind)}-token" rows="3" spellcheck="false"
+               placeholder="${esc(s.placeholder)}"
+               oninput="tokenTyped('${esc(o.kind)}')"></textarea>`}
         <span class="hintline" id="ovs-${esc(o.kind)}-claims"></span>
       </div>
       <div class="ov-field">
@@ -10092,15 +10530,24 @@ async function teardownOverlay(kind) {
 function overlayField(o, f) {
   const v = (o.config || {})[f.key] || "";
   const id = `ov-${o.kind}-${f.key}`;
-  const input = f.type === "select"
-    ? `<select id="${id}" onchange="saveOverlay('${esc(o.kind)}')">${
-        f.options.map(([val, label]) =>
-          `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(label)}</option>`
-        ).join("")}</select>`
-    // Saved on blur rather than on every keystroke, so a half-typed path is
-    // not stored and read back under the cursor.
-    : `<input type="text" id="${id}" spellcheck="false" value="${esc(v)}"
-        placeholder="${esc(f.placeholder || "")}" onchange="saveOverlay('${esc(o.kind)}')">`;
+  // LOCKED WHILE THE SHARE IS UP. The daemon refuses the write, and a form that
+  // takes an edit and then reports a refusal has taught the operator nothing
+  // twice: once when they typed it and once when it came back. What a running
+  // share was started with is what it is, so the fields say so.
+  const lock = o.running ? " disabled" : "";
+  const input = f.type === "check"
+    ? `<label class="check"><input type="checkbox" id="${id}"${lock}
+         ${v ? "checked" : ""} onchange="saveOverlay('${esc(o.kind)}')">
+       <span>${esc(f.check || f.label)}</span></label>`
+    : f.type === "select"
+      ? `<select id="${id}"${lock} onchange="saveOverlay('${esc(o.kind)}')">${
+          f.options.map(([val, label]) =>
+            `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(label)}</option>`
+          ).join("")}</select>`
+      // Saved on blur rather than on every keystroke, so a half-typed path is
+      // not stored and read back under the cursor.
+      : `<input type="text" id="${id}"${lock} spellcheck="false" value="${esc(v)}"
+          placeholder="${esc(f.placeholder || "")}" onchange="saveOverlay('${esc(o.kind)}')">`;
   // A field can carry actions that act on what is typed in it. The buttons sit
   // beside the input rather than under the section, because what they do is
   // about that one value and a button further away would be about the overlay.
@@ -10120,6 +10567,183 @@ function overlayField(o, f) {
   </div>`;
 }
 
+// Atrium's configuration, out to a file and back.
+//
+// A DOWNLOAD RATHER THAN A FETCH, so the browser's own save dialog puts it
+// where the operator wants it. The daemon already names it and dates it, and a
+// file called `export` in a repository is one nobody can identify in six
+// months.
+//
+// A refusal comes back as a 400 with a sentence, because the export stops when
+// something in the configuration looks like a credential. That sentence is the
+// whole product of the failure, so it is shown rather than summarised.
+async function exportConfig() {
+  const said = document.getElementById("config-said");
+  said.className = "hintline";
+  said.textContent = "asking…";
+  try {
+    // Fetched rather than navigated to, so a refusal can be read. A plain link
+    // would show the operator a page of JSON error text in a new tab.
+    const res = await fetch("/v1/config/export");
+    if (!res.ok) {
+      let why = await res.text();
+      try { why = (JSON.parse(why) || {}).error || why; } catch (e) {}
+      said.textContent = why;
+      said.className = "hintline bad";
+      return;
+    }
+    const blob = await res.blob();
+    const named = (res.headers.get("Content-Disposition") || "").split("filename=")[1];
+    const name = named ? named.replace(/"/g, "") : "atrium-config.json";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    said.textContent = "saved as " + name + ". no credentials are in it.";
+    said.className = "hintline ok";
+  } catch (e) {
+    said.textContent = e.message;
+    said.className = "hintline bad";
+  }
+}
+
+// Reading one back. A DRY RUN FIRST, always.
+//
+// The list of what would change is the question somebody restoring a machine
+// actually has, and answering it by doing it is not an answer. Applying is a
+// second press, made after reading it.
+async function importConfig(input) {
+  const said = document.getElementById("config-said");
+  const file = input.files && input.files[0];
+  // Cleared so choosing the same file twice fires the event both times.
+  input.value = "";
+  if (!file) return;
+
+  let text;
+  try {
+    text = await file.text();
+  } catch (e) {
+    said.textContent = e.message;
+    said.className = "hintline bad";
+    return;
+  }
+
+  let dry;
+  try {
+    dry = await api("/v1/config/import", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: text
+    });
+  } catch (e) {
+    said.textContent = e.message;
+    said.className = "hintline bad";
+    return;
+  }
+
+  const changes = dry.changes || [];
+  const doing = changes.filter(c => c.action !== "keep");
+  if (!doing.length) {
+    tellUser("nothing to change", esc(dry.note || "this machine already matches that file."));
+    said.textContent = "nothing to change.";
+    said.className = "hintline";
+    return;
+  }
+  const rows = changes.map(c =>
+    `<div class="sharerow"><div class="grow"><b>${esc(c.action)}</b> ${esc(c.kind)}
+       <code>${esc(c.name)}</code>${c.why ? `<span class="hintline">${esc(c.why)}</span>` : ""}
+     </div></div>`).join("");
+
+  const go = await askUser({
+    title: "apply this configuration?",
+    body: `${doing.length} thing(s) would change. Anything already set here is kept unless you
+      choose to overwrite it.<br><br>${esc(dry.note || "")}${rows}`,
+    choices: [
+      { value: "safe", label: "add what is missing, keep what is here" },
+      { value: "force", label: "overwrite what is already set too" }
+    ],
+    buttons: [{ label: "cancel", value: null }, { label: "apply", value: true, style: "go" }]
+  });
+  if (!go) return;
+
+  try {
+    const res = await api("/v1/config/import?apply=1" + (go === "force" ? "&force=1" : ""), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: text
+    });
+    said.textContent = (res.changes || []).filter(c => c.action !== "keep").length +
+      " applied. " + (res.note || "");
+    said.className = "hintline ok";
+    // Everything on this screen may have moved.
+    loadOverlays();
+    paintSettings();
+    refresh();
+  } catch (e) {
+    said.textContent = e.message;
+    said.className = "hintline bad";
+  }
+}
+
+// The login in front of the published board.
+//
+// Read on open and written on every change, like the rest of the gear. The
+// SECRET is never read back: the daemon reports whether one is set and nothing
+// more, so an empty box means "keep what is there" rather than "clear it".
+// This board gets screenshotted and popped out into windows, and a secret that
+// round-trips through a form is a secret in all of those.
+async function loadAuth() {
+  let a;
+  try {
+    a = await api("/v1/auth");
+  } catch (e) {
+    // An older daemon has no login support. Nothing to draw and not an error.
+    return;
+  }
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v || "";
+  };
+  const on = document.getElementById("auth-on");
+  if (on) on.checked = !!a.enabled;
+  set("auth-issuer", a.issuer);
+  set("auth-client", a.client_id);
+  set("auth-redirect", a.redirect);
+  set("auth-allow", (a.allow || []).join(", "));
+  const said = document.getElementById("auth-secret-said");
+  if (said) {
+    said.textContent = a.has_client_secret
+      ? "a secret is set. typing here replaces it, and leaving it empty keeps it."
+      : "no secret set. leave it empty if your provider registered a public client.";
+  }
+}
+
+async function saveAuth() {
+  const val = id => (document.getElementById(id) || {}).value || "";
+  const said = document.getElementById("auth-said");
+  const body = {
+    enabled: !!(document.getElementById("auth-on") || {}).checked,
+    issuer: val("auth-issuer").trim(),
+    client_id: val("auth-client").trim(),
+    redirect: val("auth-redirect").trim(),
+    allow: val("auth-allow").split(",").map(s => s.trim()).filter(Boolean),
+    client_secret: val("auth-secret")
+  };
+  try {
+    await api("/v1/auth", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (said) { said.textContent = "saved."; said.className = "hintline ok"; }
+    // Cleared after a successful save, so the secret is not sitting in the DOM
+    // for the rest of the session.
+    const s = document.getElementById("auth-secret");
+    if (s) s.value = "";
+    loadAuth();
+  } catch (e) {
+    // The daemon refuses a configuration that could not let anybody in, and
+    // that refusal is the useful sentence.
+    if (said) { said.textContent = e.message; said.className = "hintline bad"; }
+  }
+}
+
 // Chooses whose zrok account atrium uses, and points it at an instance.
 //
 // One request for both, because the daemon treats them as one decision and
@@ -10128,17 +10752,23 @@ function overlayField(o, f) {
 // service and reports the address somebody typed.
 async function saveZrokEndpoint() {
   const el = document.getElementById("ovs-zrok-api");
-  const own = document.getElementById("ovs-zrok-own");
   const said = document.getElementById("ovs-zrok-api-said");
   const endpoint = (el.value || "").trim();
+  if (!endpoint) {
+    said.textContent = "type the address, or press `the public zrok` above.";
+    return;
+  }
   try {
     await api("/v1/overlays/zrok/endpoint", {
+      // WHOSE ENVIRONMENT COMES FROM THE VIEW, not from the DOM. This read a
+      // hidden input's `checked`, which a hidden input does not have, so it
+      // was always false: saving an address on a machine with no zrok of its
+      // own moved atrium off its own environment every time.
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint, own: !!(own && own.checked) })
+      body: JSON.stringify({ endpoint, own: zrokIsOwn() })
     });
-    said.textContent = endpoint
-      ? "saved. enabling will talk to that one."
-      : "cleared. back on zrok's own default.";
+    said.textContent = "saved. enabling will talk to that one.";
+    zrokInstanceCustom = null;
     loadOverlays();
   } catch (e) {
     // The daemon refuses to move an environment that is already enabled, and
@@ -10192,77 +10822,34 @@ function useZitiService(kind, key, name) {
     `using ${name}.`;
 }
 
-// Reserves the name typed in the field, then puts back what zrok agreed to.
-//
-// Two calls behind one button: the name has to exist and then be marked
-// reserved, and a name that exists but is ephemeral is deleted the moment the
-// share stops, which looks exactly like never having reserved it. The daemon
-// does both every time for that reason.
-async function reserveZrokName(kind, key) {
-  const el = document.getElementById(`ov-${kind}-${key}`);
-  const said = document.getElementById(`ov-${kind}-${key}-said`);
-  const raw = (el.value || "").trim();
-  if (!raw) {
-    said.textContent = "type a name first. it is the address people will use.";
-    return;
-  }
-  // `namespace/name` or a bare name, matching what the field accepts when the
-  // share starts, so one string works in both places.
-  const cut = raw.lastIndexOf("/");
-  const namespace = cut > 0 ? raw.slice(0, cut) : "";
-  const name = cut > 0 ? raw.slice(cut + 1) : raw;
-  said.textContent = "reserving...";
-  try {
-    const res = await api(`/v1/overlays/${kind}/reserve`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ namespace, name })
-    });
-    // Written back fully qualified, since the daemon resolved the namespace
-    // and leaving the short form would make the next start depend on that
-    // default not changing.
-    el.value = res.name;
-    said.textContent = `reserved. ${res.name} stays yours when the share stops.`;
-    // Awaited, so starting below cannot race the daemon reading a name it has
-    // not stored yet.
-    await saveOverlay(kind);
-    return res.name;
-  } catch (e) {
-    said.textContent = e.message || String(e);
-    return "";
-  }
-}
-
-// RESERVING AND STARTING ARE ONE INTENTION, so they are one press.
-//
-// Reserving and sharing are separate calls on zrok's side, which is zrok's
-// business rather than the operator's. `reserve it` stays beside this because
-// claiming a name for later without publishing anything now is a real thing to
-// want: a public share is a board with no login on the open internet.
-//
-// It goes through `startOverlay`, not around it, so the confirmation about
-// that is asked here too. The convenient path must not be the one that skips
-// the warning.
-async function reserveAndShare(kind, key) {
-  const name = await reserveZrokName(kind, key);
-  if (!name) return;
-  await startOverlay(kind);
-}
-
 // Reads the whole form back rather than patching one field, so what is stored
 // is always what is on screen.
 async function saveOverlay(kind) {
   const body = {};
   (OVERLAY_UI[kind] || []).forEach(f => {
     const el = document.getElementById(`ov-${kind}-${f.key}`);
-    if (el) body[f.key] = el.value;
+    if (!el) return;
+    // A checkbox's `value` is the string "on" whether or not it is ticked, so
+    // reading it the same way as a text field stores every checkbox as true
+    // forever. `checked` is the one that means anything.
+    body[f.key] = f.type === "check" ? el.checked : el.value;
   });
   try {
     await api(`/v1/overlays/${kind}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+    // Read back rather than assumed. The daemon reconciles the two share
+    // checkboxes with the single mode the start path uses, and refuses the
+    // whole write while a share is up, so what is on screen after a save
+    // should be what was stored and not what was typed.
+    loadOverlays();
   } catch (e) {
+    // The refusal is the useful sentence. Repainting puts the fields back to
+    // what is actually stored, so a rejected edit does not sit on screen
+    // looking saved.
     toast("that did not stick", e.message);
+    loadOverlays();
   }
 }
 
@@ -11013,6 +11600,8 @@ async function loadHousekeeping() {
 
   const roots = document.getElementById("s-browseroots");
   if (roots) roots.value = s.browse_roots || "";
+  const shared = document.getElementById("s-shared-loc");
+  if (shared) shared.value = s.shared_location || "";
   const now = document.getElementById("s-browseroots-now");
   if (now) {
     const list = s.browse_roots_now || [];
@@ -11367,6 +11956,27 @@ async function saveBrowseRoots() {
     ((pastePrefs.browse_roots_now || []).length || 0) + " place(s)");
 }
 
+async function saveSharedLocation() {
+  const el = document.getElementById("s-shared-loc");
+  if (!el) return;
+  try {
+    await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ shared_location: el.value })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  loadHousekeeping();
+  // Says the part that is easy to miss. The file is written when the daemon
+  // starts, so saving this changes nothing until it does, and somebody who
+  // saves it and immediately looks for the file finds nothing there.
+  toast("saved", el.value.trim()
+    ? "written at the next restart"
+    : "the shared address file is off");
+}
+
 // Both halves together, since they are one decision in two units.
 async function saveScrollback() {
   const mb = document.getElementById("s-sbmb");
@@ -11609,6 +12219,9 @@ function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE);
 
 function paintSettings() {
   buildSettingsNav();
+  // Not awaited. The gear opens on what the browser already knows and the
+  // login section fills itself in a moment later, the same way the overlays do.
+  loadAuth();
   const p = alerting.get();
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
@@ -12768,13 +13381,21 @@ const REPO_THEMES = {
 // The card wins, since that is what was chosen for it. Failing that the
 // project name picks one, so two worktrees of the same repo look alike and a
 // different repo does not, which is the whole reason to color them.
+// NOT THE CURRENT GROUPING. This asked `grouper()` for the card's group and
+// treated it as the project, which was true only while grouping was by
+// project. Switch the board to piles and every group name is `pull-requests`
+// or `tangent`, the repo map matches none of them, and every terminal on the
+// board turns default at once. How you are slicing the board right now is not
+// a fact about which repository a session is in.
+//
+// `repo` when the card has one, since a launcher that resolved a URL knows it
+// outright, and the path rule otherwise.
 function themeFor(t) {
   if (!t) return TERM_THEMES.atrium;
   const named = TERM_THEMES[t.theme];
   if (named) return named;
 
-  const g = grouper();
-  const project = g ? (g.of(t)[0] || "") : "";
+  const project = String(t.repo || "").trim() || defaultProjectOf(t);
   return TERM_THEMES[REPO_THEMES[repoLeaf(project)]] || TERM_THEMES.atrium;
 }
 
@@ -13272,6 +13893,52 @@ function openTerm(task) {
     if (e.type !== "keydown") return true;
     const ctrl = e.ctrlKey || e.metaKey;
 
+    // Anything typed puts the candidate list away. It sits over the terminal
+    // and a list that outstays its welcome is in the way.
+    //
+    // Escape is SWALLOWED when the list is up, and passed through otherwise.
+    // The hint on the list offers escape, and letting it reach the runner as
+    // well would dismiss the list and cancel whatever the runner was doing,
+    // which is one keypress doing two things the operator only asked for one
+    // of.
+    if (e.key === "Escape") {
+      const list = document.getElementById("t-complete");
+      if (list && !list.hidden) {
+        hideCompletions();
+        e.preventDefault();
+        return false;
+      }
+    }
+    if (e.key !== "Tab") hideCompletions();
+
+    // TAB IS THE RUNNER'S UNLESS ATRIUM IS CONFIDENT.
+    //
+    // Confident means: the tracked buffer is still believable, the token under
+    // the cursor looks like a path, and the daemon found something matching.
+    // Any of those failing passes Tab straight through, so claude's own
+    // completion keeps working everywhere this does not apply.
+    //
+    // The check is asynchronous and the handler is not, so the decision is made
+    // optimistically: swallow the key, and if nothing could be completed, send
+    // the Tab afterwards. A Tab arriving a few milliseconds late is invisible.
+    // Sending it first and completing afterwards would be two inputs for one
+    // press, which is the doubled-keystroke class of bug.
+    if (e.key === "Tab" && !ctrl && !e.altKey) {
+      const token = pathToken();
+      // SAID, on Tab only, because this is invisible by design and that makes
+      // it undebuggable. The rule is silence rather than a wrong guess, so a
+      // Tab that atrium declines looks identical to one it never saw. One line
+      // in the console names which of the two it was.
+      console.debug("[atrium] tab:", JSON.stringify({
+        typed, typedSure, token, kind: termKind
+      }));
+      if (token) {
+        e.preventDefault();
+        completePath().then(done => { if (!done) sendInput("\t"); });
+        return false;
+      }
+    }
+
     // ctrl-shift-c is Chrome's inspect-element shortcut and the browser takes
     // it before the page ever sees it, so binding copy there both copied and
     // opened dev tools. The insert pair is the older terminal convention and
@@ -13416,6 +14083,28 @@ function wireTerminalPaste(screen) {
     const text = dt.getData("text/plain");
     if (text) sendPasteText(text);
   }, true);
+
+  // RIGHT CLICK PASTES, the way every terminal emulator on Windows does.
+  //
+  // The clipboard is loaded and the hand is already on the mouse, so the
+  // browser's own menu is the wrong thing to get: nothing on it applies to a
+  // terminal, and reaching for `ctrl-v` instead means leaving the mouse for one
+  // keystroke.
+  //
+  // SHIFT OR CTRL LETS THE BROWSER HAVE IT, which is the convention every site
+  // that overrides this menu already follows, so `inspect` and `save image as`
+  // are one modifier away rather than gone.
+  //
+  // Goes through `pasteIntoTerm` rather than reading the clipboard here,
+  // because that is the one path that tries FILES first: right clicking with a
+  // screenshot on the clipboard uploads it and hands the runner a path, the
+  // same as `ctrl-v` does.
+  screen.addEventListener("contextmenu", e => {
+    if (!termTask || e.shiftKey || e.ctrlKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pasteIntoTerm();
+  });
 }
 
 // A PASTE IS NOT A BURST OF TYPING, and the runner has to be told which it is.
@@ -14418,8 +15107,12 @@ function connectTerm(taskID) {
   // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
     if (termSock !== sock || !term) return;
-    if (typeof e.data === "string") { term.write(e.data); return; }
-    term.write(new Uint8Array(e.data));
+    // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
+    // is asynchronous: it queues the bytes and parses them later, so scrolling
+    // on the next line scrolls a buffer that has not grown yet, which is the
+    // same off-by-one-echo mistake `sendInput` was making on its own.
+    if (typeof e.data === "string") { term.write(e.data, followScroll); return; }
+    term.write(new Uint8Array(e.data), followScroll);
   };
   termSock.onclose = async ev => {
     if (!term) return;
@@ -14474,12 +15167,20 @@ function connectTerm(taskID) {
       attachSince = 0;
       attachSaidGone = false;
       termWait("");
-      // A window that IS this session says so and stops. It has nothing else
-      // to show and nothing to wait for, and the scrollback still holds
-      // whatever the session said on its way out.
+      // A window that IS this session says so and tears itself down.
+      //
+      // THE `markTermDead` CALL IS THE POINT, and its absence was the bug. This
+      // branch used to write the line below and return, so the entire
+      // teardown, the countdown, and the close were unreachable: `markTermDead`
+      // was defined, was the only caller of `offerSoloClose`, and was called
+      // from nowhere at all. Three separate attempts fixed things downstream of
+      // a function that never ran.
+      //
+      // The scrollback is untouched by it, which is what the operator wants
+      // left: the exit, and for claude the resume id.
       if (termOnly()) {
-        term.write("\r\n\x1b[38;5;244m[atrium] this session has ended. " +
-          "you can close this window\x1b[0m\r\n");
+        term.write("\r\n\x1b[38;5;244m[atrium] this session has ended\x1b[0m\r\n");
+        markTermDead();
         return;
       }
       term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
@@ -14604,7 +15305,10 @@ function connectTerm(taskID) {
   if (termData) { try { termData.dispose(); } catch (e) {} }
   // `sendInput` rather than `send`: it is the one place every kind of input
   // goes through, and it is what puts the view back at the bottom.
-  termData = term.onData(d => sendInput(d));
+  // Watched before it is sent, so path completion knows what has been typed.
+  // See `noteTyped`: it tracks atrium's OWN keystrokes and gives up the moment
+  // anything could have moved the cursor.
+  termData = term.onData(d => { noteTyped(d); sendInput(d); });
   // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.
 }
@@ -14643,9 +15347,326 @@ function send(msg) {
 // intercepted before xterm sees it so the clipboard's files are reachable, and
 // a dropped file writes its path in the same way. Those were exactly the
 // inputs that left the view where it was.
+// ── completing a path in the terminal ───────────────────
+//
+// Tab belongs to whatever is running in the pty. There is no way to add
+// completion to somebody else's input line by asking nicely, so this works from
+// the outside, and the whole design is about giving up early rather than being
+// clever.
+//
+// WHAT CANNOT BE KNOWN: where the cursor is, or what the line currently holds.
+// The runner redraws, wraps, recalls history and rewrites the line whenever it
+// likes. Anything that inserts text on an assumption about cursor position will
+// eventually corrupt what somebody typed, which is far worse than no
+// completion.
+//
+// WHAT CAN BE KNOWN EXACTLY: what atrium itself has sent. Every keystroke goes
+// through one place. `typed` is a record of what left since the last Enter, not
+// an inference about the screen.
+//
+// So the rule is: track what we sent, ABANDON the moment anything ambiguous
+// happens, and offer nothing while abandoned. Silence beats wrong text.
+let typed = "";
+// Whether the tracked buffer is still believable. Anything that could have
+// moved the cursor or rewritten the line sets this false until the next Enter.
+let typedSure = true;
+
+// noteTyped follows the keystrokes atrium sends.
+//
+// The list of things that abandon tracking is the load-bearing part. An arrow
+// key moves the cursor, so the tail of the buffer is no longer the token under
+// it. A control sequence can do anything. Anything multi-character is a paste
+// or an escape sequence rather than a keystroke.
+function noteTyped(d) {
+  if (d === "\r" || d === "\n") {
+    // A new line, and a fresh start. This is the only thing that restores
+    // confidence, which is why an abandoned buffer stays abandoned until the
+    // operator submits something.
+    typed = "";
+    typedSure = true;
+    return;
+  }
+  if (d === "\x7f" || d === "\b") {
+    // Backspace is the one edit that can be followed exactly.
+    typed = typed.slice(0, -1);
+    return;
+  }
+  // A TAB WE PASSED THROUGH IS NOT A REASON TO STOP TRACKING, and treating it
+  // as one is what made this feature disable itself.
+  //
+  // Tab arrives here as `\t`, a control character, so the rule below abandoned
+  // on it. Since Tab is the TRIGGER, one press that completed nothing turned
+  // completion off until the next Enter, and every press after that kept it
+  // off. In practice that was almost every abandon.
+  //
+  // It is safe to ignore because a Tab does not move the cursor. If the runner
+  // does something with it the buffer goes stale, and the next completion
+  // finds a directory that does not match and stays silent, which is the same
+  // outcome as not offering.
+  if (d === "\t") return;
+  if (d.length !== 1 || d < " ") {
+    // An escape sequence, a control character, or a paste. Any of them can put
+    // the cursor somewhere this has no way to know about.
+    //
+    // The buffer is CLEARED as well as doubted. Leaving it meant the next
+    // keystrokes appended onto text that no longer describes the line, so the
+    // tracker held a plausible-looking string that was missing whatever
+    // happened during the abandon.
+    typedSure = false;
+    typed = "";
+    return;
+  }
+  // THREE WAYS BACK, not just Enter, because a tracker that can only be
+  // re-armed by submitting a line spends most of its life switched off.
+  //
+  // A SPACE starts a fresh token. A token is bounded by whitespace, so
+  // whatever follows one is a whole token this will have seen every character
+  // of, whatever happened before. The buffer is cleared with it.
+  if (d === " " && !typedSure) {
+    typedSure = true;
+    typed = "";
+    return;
+  }
+  // A SEPARATOR re-arms without clearing, which is a weaker claim and a
+  // deliberate one. `/` and `\` are only typed while writing a path, so the
+  // characters before them in this token were typed in sequence and are very
+  // likely what is on the line. That is not a guarantee, which is why the
+  // buffer is kept rather than trusted: a prefix that turns out to be wrong
+  // names a directory that does not exist, the daemon refuses it, and nothing
+  // is offered. Silence is still the failure mode.
+  //
+  // Without this, `cat \worktrees\` could never re-arm mid-path, which is
+  // exactly when somebody wants Tab.
+  if ((d === "/" || d === "\\") && !typedSure) {
+    typedSure = true;
+  }
+  typed += d;
+}
+
+// pathToken is the token being typed, when it looks like a path.
+//
+// A `/` or a `\` in it is what makes it a path rather than a word, which is the
+// operator's own suggestion and is the right test: on Windows both separators
+// turn up and a token may mix them.
+//
+// Empty when there is nothing to complete or when tracking was abandoned.
+function pathToken() {
+  if (!typedSure) return "";
+  const tail = typed.split(/[\s"']/).pop() || "";
+  if (!tail || !/[\\/]/.test(tail)) return "";
+  return tail;
+}
+
+// completePath is Tab, when atrium is confident enough to answer it.
+//
+// Returns true when it handled the key. FALSE MEANS PASS TAB THROUGH, which is
+// what keeps the runner's own completion working everywhere this does not
+// apply, and it is the answer in every uncertain case.
+async function completePath() {
+  const token = pathToken();
+  if (!token) return false;
+
+  // Split at the last separator: everything before it is the directory to
+  // list, and what follows is the prefix to match.
+  const cut = Math.max(token.lastIndexOf("/"), token.lastIndexOf("\\"));
+  let dir = token.slice(0, cut) || "/";
+  const prefix = token.slice(cut + 1);
+  // `d:\wo` cuts to `d:`, which is a drive and not a directory. The daemon
+  // refuses it, so without this every from-scratch Windows path failed at the
+  // first separator and Tab looked dead.
+  if (/^[a-zA-Z]:$/.test(dir)) dir += "/";
+
+  let entries;
+  try {
+    const r = await api("/v1/browse?path=" + encodeURIComponent(dir));
+    entries = (r.entries || []).filter(e =>
+      e.name.toLowerCase().startsWith(prefix.toLowerCase()));
+  } catch (e) {
+    // OUTSIDE THE BROWSE ROOTS, which is the ordinary case rather than an
+    // error, and it is why this feature looked like it did nothing at all.
+    //
+    // The picker is deliberately bounded to the home directory plus every
+    // directory a card already uses, because unbounded it is a recursive
+    // listing of the whole machine the moment the board is published. Nothing
+    // about completion is worth widening that.
+    //
+    // But a bound on what may be LISTED is not a bound on what may be
+    // OFFERED. The roots themselves are already public to this board, so a
+    // token that resolves to nothing listable falls back to matching the
+    // roots, which is what makes `cd d:\wo` useful from an empty line.
+    entries = await rootsMatching(token);
+    if (!entries.length) return false;
+    if (entries.length === 1) {
+      sendCompletion(token, entries[0]);
+      return true;
+    }
+    // Named for what they ARE rather than as generic matches. These are not
+    // the contents of a directory: they are the places this board already
+    // knows about, which is why they can be offered when the directory itself
+    // cannot be listed.
+    showCompletions(entries, "places atrium knows");
+    return true;
+  }
+  if (!entries.length) return false;
+
+  if (entries.length === 1) {
+    sendCompletion(prefix, entries[0]);
+    return true;
+  }
+  // The longest prefix every candidate shares. Completing that much is what a
+  // shell does and it is the half of Tab that needs no interface.
+  let common = entries[0].name;
+  for (const e of entries) {
+    while (common && !e.name.toLowerCase().startsWith(common.toLowerCase())) {
+      common = common.slice(0, -1);
+    }
+  }
+  if (common.length > prefix.length) {
+    sendCompletion(prefix, { name: common, dir: false });
+    return true;
+  }
+  // Nothing more is unambiguous, so show what is there. Drawn rather than
+  // sent: printing a list into the terminal would be atrium writing into a
+  // runner's screen, which it has no business doing.
+  showCompletions(entries);
+  return true;
+}
+
+// rootsMatching offers the browse roots that start with what has been typed.
+//
+// `/v1/browse` with no path answers with the roots, which is how the picker
+// opens. Matched case-insensitively and on either separator, because a Windows
+// path gets typed with backslashes and the daemon reports forward ones.
+//
+// The NAME is the whole remaining path rather than one segment, so completing
+// a root jumps straight to it. That is the right behaviour here: a root is a
+// place the operator already works, and offering it one directory at a time
+// through directories that are not themselves listable would offer nothing.
+async function rootsMatching(token) {
+  let roots;
+  try {
+    roots = (await api("/v1/browse")).entries || [];
+  } catch (e) {
+    return [];
+  }
+  const want = token.replace(/\\/g, "/").toLowerCase();
+  return roots
+    .filter(r => (r.path || "").toLowerCase().startsWith(want))
+    .map(r => ({ name: r.path, dir: true }));
+}
+
+// sendCompletion types only the characters that are MISSING.
+//
+// Never a whole line, never a backspace-and-retype. Both assume the line is
+// what atrium thinks it is, and that assumption is the one thing this design
+// refuses to make.
+function sendCompletion(prefix, entry) {
+  let add = entry.name.slice(prefix.length);
+  if (entry.dir) add += "/";
+  if (!add) return;
+  noteTyped(add.length === 1 ? add : "");
+  if (add.length !== 1) {
+    // Sent as one frame, which noteTyped cannot follow character by character,
+    // so the buffer is caught up by hand rather than abandoned.
+    typed += add;
+  }
+  sendInput(add);
+}
+
+// showCompletions puts the candidates on screen, over the terminal.
+//
+// TWO THINGS MAKE THIS READABLE and the first version had neither.
+//
+// It says what it is. A list appearing over a terminal with no heading is a
+// thing that just happened TO you, and the first reaction is to work out what
+// broke rather than to read it.
+//
+// And it shows what DIFFERS. Twenty three roots under `D:/worktrees/` rendered
+// as twenty three full paths is a wall in which every line begins with the
+// same forty characters, so the eye has nothing to sort on. The shared part is
+// said once, in the heading, and each row carries only its own tail.
+function showCompletions(entries, what) {
+  const host = document.querySelector(".term-pane") || document.body;
+  let el = document.getElementById("t-complete");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "t-complete";
+    host.appendChild(el);
+  }
+  const shown = entries.slice(0, 60);
+  const shared = sharedPrefix(shown.map(e => e.name));
+  const more = entries.length > shown.length
+    ? ` <span class="candmore">and ${entries.length - shown.length} more</span>` : "";
+
+  setHTML(el,
+    `<div class="candhead">${esc(entries.length)} ${esc(what || "matches")}${
+      shared ? ` under <code>${esc(shared)}</code>` : ""}${more}
+      <span class="candhint">keep typing to narrow, or press escape</span></div>` +
+    shown.map(e =>
+      `<span class="cand">${esc(e.name.slice(shared.length))}${e.dir ? "/" : ""}</span>`
+    ).join(""));
+  el.hidden = false;
+  clearTimeout(el._t);
+  // Dismissed on a timer as well as on the next keystroke, because it sits
+  // over a terminal and a list that outstays its welcome is in the way.
+  el._t = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+// sharedPrefix is the longest run every candidate starts with, cut back to a
+// separator so the heading names a DIRECTORY rather than half a word.
+//
+// Without the cut back, `posture-bug` and `posture-check-proof` would share
+// `posture-` and the heading would end mid-name, which reads as a truncation
+// bug rather than as a common parent.
+function sharedPrefix(names) {
+  if (names.length < 2) return "";
+  let p = names[0];
+  for (const n of names) {
+    while (p && !n.startsWith(p)) p = p.slice(0, -1);
+  }
+  const cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return cut < 0 ? "" : p.slice(0, cut + 1);
+}
+
+function hideCompletions() {
+  const el = document.getElementById("t-complete");
+  if (el) el.hidden = true;
+}
+
+// followScrollUntil is when to stop dragging the view down with the output.
+//
+// SCROLLING WHEN THE INPUT LEAVES IS NOT ENOUGH, and believing it was is why
+// this read as fixed while still being wrong. The scroll below happens at the
+// moment the bytes are SENT. The runner has not seen them yet. What moves the
+// bottom of the buffer is the echo that comes back and the prompt redrawing
+// around it, and by then the scroll has already been and gone. A twenty line
+// paste lands with the view about twenty lines short, which is worse than not
+// scrolling at all, because it looks like it worked.
+//
+// So the view follows the output for a moment afterwards, and then stops. It
+// has to stop: a terminal that scrolls to the bottom on every write can never
+// be scrolled up while a runner is producing output, which is the whole reason
+// xterm does not do this by default.
+let followScrollUntil = 0;
+
+// followScrollFor is how long that moment is.
+//
+// It covers the round trip and the redraw, not the work. A runner that thinks
+// for a minute and then prints is not still being followed, and should not be.
+const followScrollFor = 1200;
+
 function sendInput(text) {
   send({ t: "in", d: String(text == null ? "" : text) });
   if (term) term.scrollToBottom();
+  followScrollUntil = Date.now() + followScrollFor;
+}
+
+// followScroll keeps the view at the bottom while the echo of what was just
+// sent arrives. Called after every write, and a no-op for all the ones that are
+// not answering something the operator did.
+function followScroll() {
+  if (!term || Date.now() > followScrollUntil) return;
+  term.scrollToBottom();
 }
 
 function sendResize() {
@@ -14952,8 +15973,81 @@ function splitRunners() {
   });
 }
 
+// Other machines reporting into this one.
+//
+// Read rather than remembered, and drawn as a summary rather than as cards. A
+// remote card is not something this board can act on: its terminal is on that
+// machine and cannot leave it, so the useful thing per row is a link to that
+// room's own board rather than a menu of things that would fail.
+async function renderRooms() {
+  const el = document.getElementById("room-list");
+  if (!el) return;
+  let rooms;
+  try {
+    rooms = (await api("/v1/rooms")).rooms || [];
+  } catch (e) {
+    // An older daemon has no rooms endpoint, and that is not an error worth
+    // drawing. Nothing has ever been in this list on that machine.
+    setHTML(el, "");
+    return;
+  }
+  if (!rooms.length) {
+    setHTML(el, `<div class="panel"><div class="empty">
+      No other machines are reporting in. Run <code>atrium room</code> on one, pointing it
+      at this board, and it appears here.
+    </div></div>`);
+    return;
+  }
+  setHTML(el, rooms.map(r => {
+    // STALE IS SAID, not hidden. A room that has stopped checking in is the
+    // thing worth noticing, and dropping it from the list would make a machine
+    // that died look like one that was never there.
+    const when = r.stale
+      ? `<span class="chip warn">not heard from since ${esc(shortTime(r.last_seen))}</span>`
+      : `<span class="chip live idle">checked in ${esc(shortTime(r.last_seen))}</span>`;
+    const cards = (r.cards || []).length
+      ? `<div class="roomcards">` + r.cards.map(c =>
+          `<div class="roomcard">
+             <span class="grow">${esc(c.title || c.id)}</span>
+             ${c.doing ? `<span class="by">${esc(c.doing)}</span>` : ""}
+             <span class="chip ${c.status === "needs-input" || c.status === "needs-permission"
+               ? "warn" : ""}">${esc(c.status)}</span>
+           </div>`).join("") + `</div>`
+      : `<div class="empty">nothing running there right now</div>`;
+    return `<div class="panel roomrow">
+      <div class="col-head" style="margin:0 0 8px">
+        <span>${esc(r.name)}</span>
+        ${when}
+        ${r.waiting ? `<span class="chip warn">${r.waiting} waiting</span>` : ""}
+        <span class="grow"></span>
+        <span class="by">${esc(r.host || "")}${r.version ? " &middot; " + esc(r.version) : ""}</span>
+      </div>
+      ${cards}
+      ${r.board
+        // The link is the point of the row. Terminals do not federate, so
+        // everything this board cannot do for a remote card is done there.
+        ? `<div class="hintline">Its terminals stay on that machine.
+             <a href="${esc(r.board)}" target="_blank" rel="noreferrer">open ${esc(r.name)}'s
+             own board</a> to attach to one.</div>`
+        : `<div class="hintline">That room did not say where its own board is, so there is
+             no way to attach to anything on it from here.</div>`}
+    </div>`;
+  }).join(""));
+}
+
+// A timestamp as something short enough to sit in a chip.
+function shortTime(iso) {
+  if (!iso) return "never";
+  const t = Date.parse(iso);
+  if (isNaN(t)) return iso;
+  return ago(Math.max(0, Math.round((Date.now() - t) / 1000)));
+}
+
 async function renderRunners() {
   splitRunners();
+  // Not awaited. A room list that is slow, or a daemon too old to have the
+  // endpoint, must not hold up the rest of this page.
+  renderRooms();
   try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) { return; }
   // Before the list is drawn: the claude row carries the count.
   await loadHooks();
@@ -16952,7 +18046,18 @@ function soloAlert(kind, now, item) {
     : readyBecause(soloTask || {});
 
   alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
-  if (inForeground()) {
+  // VISIBLE IS ENOUGH HERE, and `inForeground` is the wrong test for this
+  // window.
+  //
+  // `inForeground` is visible AND focused, which is right for the board: it is
+  // a tab among many and being visible does not mean you are reading it.
+  //
+  // A popped-out terminal is not that. It exists to be looked at and holds one
+  // session, so a second monitor with it open on it is exactly the case the
+  // operator complained about: the window was telling them, out loud, about a
+  // thing they were watching happen. Focus is about which window takes the
+  // keyboard, and that is a different question from whether you can see it.
+  if (onScreen()) {
     // In front of you, so the toast is the whole message. No `goTo`: there is
     // nowhere in this window to go, and clicking through to a board is the
     // thing this window refuses to become.

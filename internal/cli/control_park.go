@@ -51,11 +51,27 @@ type cardView struct {
 	DisplayTitle string `json:"display_title"`
 	Status       string `json:"status"`
 	Supervised   bool   `json:"supervised"`
-	Activity     *struct {
+	// Idle is how long since this card last did anything, in seconds. What
+	// makes stale activity distinguishable from live activity, which is the
+	// difference between a session that is working and one that stopped
+	// without saying so.
+	Idle     int `json:"idle_seconds"`
+	Activity *struct {
 		What string `json:"what"`
 		Tool string `json:"tool"`
 	} `json:"activity"`
 }
+
+// parkIdleAfter is how long without activity means a session is not working.
+//
+// Activity is reported by a PreToolUse hook, so it is written when a tool
+// STARTS and nothing writes when the turn ends. A session that stopped an hour
+// ago therefore still reads as `thinking` forever, and a restart that treats
+// that as busy waits for something that already finished.
+//
+// Two minutes is longer than any single tool call that is not a build, and
+// short enough that it does not hold up a restart for a session that has gone.
+const parkIdleAfter = 120
 
 // meID is the card this control server belongs to, when it belongs to one.
 //
@@ -105,12 +121,31 @@ func busyAgents(board string) ([]busyCard, error) {
 		if t.Status == "needs-input" || t.Status == "needs-permission" {
 			continue
 		}
+		// A SESSION THAT SAID IT WAS OVER IS NOT WORKING.
+		//
+		// `done` and `dead` are terminal, and `shelved` is the operator having
+		// put the work down. None of them is a session mid-tool, and a card in
+		// one of them never moves back to `needs-input` on its own, so
+		// counting them as busy made them busy FOREVER: the restart asked them
+		// to stop, they replied, replying is a turn, a turn sets activity, and
+		// activity is what the check reads. Asking a session to stop was the
+		// thing keeping it busy.
+		if t.Status == "done" || t.Status == "dead" || t.Status == "shelved" {
+			continue
+		}
 		doing := ""
 		if t.Activity != nil && t.Activity.What != "" {
 			doing = t.Activity.What
 			if t.Activity.Tool != "" {
 				doing = t.Activity.What + " " + t.Activity.Tool
 			}
+		}
+		// STALE ACTIVITY IS NOT ACTIVITY. It is written when a tool starts and
+		// nothing writes when a turn ends, so a session that stopped an hour
+		// ago still reads as `thinking`. Waiting on that is waiting for
+		// something that already happened.
+		if t.Idle > parkIdleAfter {
+			continue
 		}
 		// No activity and not waiting means atrium has heard nothing recently.
 		// Counted as busy rather than idle: the whole point is to not kill
@@ -160,6 +195,21 @@ func tellToPark(board, id, why string) error {
 // Returns whoever was still busy when the wait ran out, so the caller can
 // decide. It does NOT decide: refusing to restart and restarting anyway are
 // both reasonable and the difference is whether somebody said `force`.
+//
+// ONCE TOLD, ONLY A TOOL COUNTS. This is the rule that stops the wait from
+// being self-defeating, and it took an hour of a restart refusing to notice.
+//
+// Telling a session to stop MAKES IT THINK. It reads the message, writes a
+// sentence saying it has stopped, and that turn is activity, and activity is
+// what the check reads. So the more politely a session obeys, the more it looks
+// like it is working, and each retry sends another message and starts the loop
+// again.
+//
+// After a session has been told, the question narrows to the one that matters:
+// is anything HALF WRITTEN. A session mid-tool may have a file open. A session
+// thinking has nothing on disk it would lose, and the message it was sent says
+// in as many words not to start another tool, so a session that obeyed is
+// exactly one that is not mid-tool.
 func parkAgents(board, why string, wait time.Duration) ([]busyCard, []string, error) {
 	busy, err := busyAgents(board)
 	if err != nil {
@@ -192,11 +242,30 @@ func parkAgents(board, why string, wait time.Duration) ([]busyCard, []string, er
 			// waited for is already over.
 			return nil, told, nil
 		}
+		busy = stillHoldingSomething(busy)
 		if len(busy) == 0 {
 			return nil, told, nil
 		}
 	}
-	return busy, told, nil
+	return stillHoldingSomething(busy), told, nil
+}
+
+// stillHoldingSomething keeps only the sessions that have work in flight,
+// which after a park message means mid-tool.
+//
+// See the header on `parkAgents` for why thinking stops counting once a
+// session has been asked to stop. A session with no activity reported at all
+// still counts, because "I cannot tell" is not "it is safe" and that direction
+// has not changed.
+func stillHoldingSomething(busy []busyCard) []busyCard {
+	var out []busyCard
+	for _, b := range busy {
+		if b.Doing == "thinking" {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // describe is the list of who is busy, as one readable line per session.

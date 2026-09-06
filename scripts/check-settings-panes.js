@@ -57,7 +57,12 @@ if (topLevel.length < 2) {
 // Every id the settings code reaches for has to still be inside the body.
 const wanted = ["s-vol", "s-input", "s-perm", "s-expiry", "s-debounce",
   "s-cardsize", "s-density", "s-sweep", "s-prune", "overlays",
-  "s-notify-state", "s-group-by", "s-group-order", "s-group-toggle", "s-skin"];
+  "s-notify-state", "s-group-by", "s-group-order", "s-group-toggle", "s-skin",
+  // The login in front of the published board. `loadAuth` reaches for every
+  // one of these, and one left outside a pane would be written into an element
+  // the split moved away from, so the field would silently never fill in.
+  "auth-on", "auth-issuer", "auth-client", "auth-secret", "auth-redirect",
+  "auth-allow"];
 const missing = wanted.filter(id => !body.includes(`id="${id}"`));
 if (missing.length) {
   console.error("\nFAIL: these are reached for but not inside the dialog body: " + missing.join(", "));

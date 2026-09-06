@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -39,12 +40,23 @@ func newStop() *cobra.Command {
 	return c
 }
 
+// boardAddress is where the board is, in order of how much somebody meant it.
+//
+// THE RECORDED ADDRESS BEATS THE DEFAULT PORT, which it did not before. The
+// last step here was a hardcoded 7778, so every command that did not take a
+// flag was wrong the moment a daemon ran anywhere else, and wrong in the way
+// that reads as the daemon being down. `ReadLocation` reads this account's file
+// and then the shared one, so this also answers for a caller running as
+// somebody other than the daemon.
 func boardAddress(override string) string {
 	if override != "" {
 		return strings.TrimRight(override, "/")
 	}
 	if v := os.Getenv("ATRIUM_BOARD_URL"); v != "" {
 		return strings.TrimRight(v, "/")
+	}
+	if loc, ok := daemon.ReadLocation(); ok && strings.TrimSpace(loc.Board) != "" {
+		return strings.TrimRight(loc.Board, "/")
 	}
 	return "http://localhost:7778"
 }

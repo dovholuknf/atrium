@@ -6,6 +6,11 @@ from another machine is an overlay's job.
 
 The gap that left is that "use an overlay" was advice rather than a feature. Atrium now drives one.
 
+**Since 2026-09-06 the PUBLISHED board can ask who you are.** Read the section at the end, "A login, and only
+in front of the published board", before assuming the paragraph above still describes everything. The short
+version: loopback still has no login, atrium still owns no credentials, and what changed is that a board on a
+public address can require an OIDC sign-in.
+
 ## What atrium does, and what it does not
 
 Atrium keeps the configuration, opens the listener, and shows what came back. That is all.
@@ -251,3 +256,51 @@ the account rather than from its own records would eventually release somebody e
 
 `OVERLAY_UI` in the board describes the fields and `overlayViews` describes the panel. A third overlay is an
 entry in each plus a way to get a `net.Listener`, not a branch through the rendering.
+
+## A login, and only in front of the published board
+
+This reverses part of the rule at the top of this file, and the reversal is narrower than it sounds.
+
+**Why it moved.** The rule held while the board was only ever on loopback or behind a private share. It stopped
+holding when a reserved public address made handing out a link comfortable. A public URL with no login, in
+front of something that reads files, answers permission prompts and types into terminals, is not a line worth
+defending on principle.
+
+**What did not move, and it is the part the rule was protecting.** Atrium owns no credentials. There is no user
+table, no password and nothing to hash. Identity is delegated to an OIDC provider, atrium verifies what that
+provider signed, and the session cookie proves a completed verification rather than standing in for a password.
+A design review flagged the first version of this plan, which included username and password, as contradicting
+the settled decision. It was right, and the password half was dropped rather than argued for.
+
+### Where it applies, which is what makes it safe
+
+The published board is a different `net.Listener` served by a different `http.Server`. The guard wraps THAT
+handler and nothing else, so the boundary is structural rather than a rule somebody has to remember:
+
+- **Loopback is untouched.** No login, exactly as before.
+- **Every hook, the CLI and the MCP server keep working**, because they talk to loopback and were never going
+  to carry a credential. `TestTheLocalBoardIsNotWrapped` fails if this stops being true, and it would otherwise
+  break quietly: a hook that fails is designed never to fail a session.
+- **A lent session keeps its own rule.** It has its own handler and its own allowlist, and the address IS the
+  credential there by design. Making a guest sign in would defeat the feature.
+
+### The decisions inside it
+
+- **Empty allow list means nobody**, and the configuration is refused at save time rather than discovered at
+  sign-in. The tempting default is "anybody the provider authenticated", which on a provider with open
+  registration is the whole internet with an extra step.
+- **The id token is verified against the provider's published keys**, not decoded. A token that is merely
+  parsed is a claim anybody can write, and skipping the signature turns a login into a form where you type your
+  own subject.
+- **The cookie is signed and not encrypted.** Nothing in it is secret: a subject is not a credential and an
+  expiry is public. What has to be impossible is editing it.
+- **An API call is refused rather than redirected.** Bouncing one through a login page produces an HTML
+  document where JSON was expected, which reads as a corrupt response rather than as a missing session.
+- **A login state is single use**, or a callback can be replayed.
+
+### What is not built
+
+- No PKCE. A confidential client with a secret is what the demo provider offers, and adding PKCE for a public
+  client is the next thing if a provider needs it.
+- No refresh. A session lasts twelve hours and then you sign in again.
+- No roles. Everybody who gets in gets the whole board, which is the same grant a share has always been.

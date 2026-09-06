@@ -1,59 +1,47 @@
 package daemon
 
-import (
-	"reflect"
-	"testing"
-)
+import "testing"
 
-// The runner's command and each of its arguments have to become separate argv
-// entries. Joining them into one string makes Windows Terminal look for an
-// executable literally named `cmd.exe /c echo hi`, which fails with
-// "the system cannot find the file specified".
-func TestExpandTemplateKeepsArgumentsSeparate(t *testing.T) {
-	tmpl := []string{"wt.exe", "-w", "atrium", "new-tab", "--title", "{title}", "-d", "{cwd}", "{cmd}"}
-	got := expandTemplate(tmpl, `D:\work`, "smoke", "cmd.exe", []string{"/c", "echo", "hello there"})
-	want := []string{
-		"wt.exe", "-w", "atrium", "new-tab", "--title", "smoke", "-d", `D:\work`,
-		"cmd.exe", "/c", "echo", "hello there",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv wrong.\n got: %#v\nwant: %#v", got, want)
-	}
-}
+// One session per directory, for callers that are not a person.
+//
+// The board's launch dialog means it: somebody is looking at the card list and
+// pressed start. A script is not, and the case this exists for is `gwt new`
+// run twice on a worktree that already has a session, which used to put two
+// claudes in one directory with neither aware of the other.
 
-func TestExpandTemplateWithNoArguments(t *testing.T) {
-	tmpl := []string{"wt.exe", "-d", "{cwd}", "{cmd}"}
-	got := expandTemplate(tmpl, `D:\work`, "t", "claude", nil)
-	want := []string{"wt.exe", "-d", `D:\work`, "claude"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv wrong.\n got: %#v\nwant: %#v", got, want)
-	}
-}
-
-// A template that embeds {cmd} inside a longer string wants the joined form,
-// because that is a shell being handed a command line.
-func TestExpandTemplateJoinsWhenEmbedded(t *testing.T) {
-	tmpl := []string{"bash", "-lc", "cd {cwd} && {cmd}"}
-	got := expandTemplate(tmpl, "/d/work", "t", "claude", []string{"--resume", "abc def"})
-	want := []string{"bash", "-lc", `cd /d/work && claude --resume "abc def"`}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv wrong.\n got: %#v\nwant: %#v", got, want)
-	}
-}
-
-func TestShellJoinQuotesWhatNeedsIt(t *testing.T) {
-	cases := []struct {
-		in   []string
-		want string
-	}{
-		{[]string{"claude"}, "claude"},
-		{[]string{"claude", "--resume", "abc"}, "claude --resume abc"},
-		{[]string{"C:/Program Files/x.exe", "-a"}, `"C:/Program Files/x.exe" -a`},
-		{[]string{"echo", `say "hi"`}, `echo "say \"hi\""`},
-	}
-	for _, c := range cases {
-		if got := shellJoin(c.in); got != c.want {
-			t.Errorf("shellJoin(%#v) = %q, want %q", c.in, got, c.want)
+func TestTheDefaultIsStillToStart(t *testing.T) {
+	for _, live := range []bool{true, false} {
+		if got := handOverTo("", live); got != startAnyway {
+			t.Fatalf("an unasked launch was interfered with (live=%v): %v", live, got)
 		}
+	}
+}
+
+func TestSkipHandsBackWhateverIsThere(t *testing.T) {
+	for _, live := range []bool{true, false} {
+		if got := handOverTo("skip", live); got != handBack {
+			t.Fatalf("skip started something (live=%v): %v", live, got)
+		}
+	}
+}
+
+// THE ONE THAT MATTERS. Adopting a card that has a runner on it would mean two
+// processes on one card, writing to one directory, and the card describing
+// whichever spoke last. It degrades to skip rather than to start.
+func TestAdoptWillNotJoinALiveRunner(t *testing.T) {
+	if got := handOverTo("adopt", true); got != handBack {
+		t.Fatalf("adopt put a second runner on a live card: %v", got)
+	}
+	if got := handOverTo("adopt", false); got != startOnto {
+		t.Fatalf("adopt made a second card instead of continuing the one here: %v", got)
+	}
+}
+
+// A value nobody implemented is not a licence to guess. It means the same as
+// asking for nothing, so a typo in a script starts one session rather than
+// silently skipping every launch it ever makes.
+func TestAnUnknownAnswerIsTheDefault(t *testing.T) {
+	if got := handOverTo("SKIP", false); got != startAnyway {
+		t.Fatalf("an unrecognised if_running was acted on: %v", got)
 	}
 }
