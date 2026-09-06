@@ -23,7 +23,20 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # BOTH, and Windows is not the afterthought. It is atrium's primary
+    # platform: ConPTY, the rename-aside binary swap, the logon task, and every
+    # path rule are Windows behaviour, and a Linux-only matrix builds none of
+    # it. The first run of this workflow found four tests that had never left
+    # Windows, and a Windows runner is what finds the reverse of each.
+    #
+    # `fail-fast: false` so one platform failing still reports the other. The
+    # interesting case is exactly when they disagree, and cancelling the second
+    # job hides which way.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,4 +58,9 @@ jobs:
           node-version: "22"
 
       - name: everything
-        run: bash scripts/ci.sh
+        # `shell: bash` rather than the default, which on a Windows runner is
+        # PowerShell. GitHub maps this to Git Bash there, which is the same
+        # shell `scripts/ci.sh` is written for and the same one a developer on
+        # Windows runs it in.
+        shell: bash
+        run: scripts/ci.sh

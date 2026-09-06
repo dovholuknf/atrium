@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at`
+	icon, priority, priority_at, org, host`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -36,7 +36,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
-		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt); err != nil {
+		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -175,6 +175,54 @@ func (s *Store) refreshObserved(t *Task, obs Observed) error {
 	return nil
 }
 
+// Observe records an observation against a card that is already known,
+// without matching and without ever creating one.
+//
+// THE DIFFERENCE FROM `Register` IS WHO DECIDES WHICH CARD. Register is for a
+// session that identified itself and has to be found: it matches on the wire
+// name, falls back to the pid, and CREATES a card when neither matches. That
+// last step is right for a session atrium has never heard of and wrong for one
+// atrium launched, which already carries the card id in its environment. A
+// session whose reported name drifts by one character would get a second card
+// beside the one it was started on, and the board would show the same terminal
+// twice under two names.
+//
+// A card that has since been deleted is not an error. The caller is a hook,
+// and a hook must never fail a session.
+func (s *Store) Observe(taskID string, obs Observed) (*Task, error) {
+	obs.WireName = s.Qualify(obs.WireName)
+	var out *Task
+	err := s.guard(func() error {
+		t, err := s.getBy(`id = ?`, taskID)
+		if err != nil {
+			return err
+		}
+		// Observed never overwrites with nothing. A hook that did not know the
+		// directory is not reporting that there is no directory.
+		if obs.Worktree == "" {
+			obs.Worktree = t.Worktree
+		}
+		if obs.Runner == "" {
+			obs.Runner = t.Runner
+		}
+		if obs.WireName == "" {
+			obs.WireName = t.WireName
+		}
+		if obs.Repo == "" {
+			obs.Repo = t.Repo
+		}
+		if obs.Hostname == "" {
+			obs.Hostname = t.Hostname
+		}
+		if err := s.refreshObserved(t, obs); err != nil {
+			return err
+		}
+		out = t
+		return nil
+	})
+	return out, err
+}
+
 func (s *Store) create(obs Observed) (*Task, error) {
 	n := now()
 	// What repository this is, asked of the directory rather than guessed from
@@ -240,12 +288,17 @@ func (s *Store) insertTask(t *Task) error {
 	//
 	// A card is created with NO priority. Empty is normal, and a source
 	// suggesting one does not get to skip a human agreeing with it.
+	// THE THEME IS WRITTEN HERE NOW. It was a hardcoded empty string, so a
+	// caller that knew which palette this session should wear had to create
+	// the card and then call `SetTheme`, and everything that forgot the second
+	// call produced a card that came up in the default and stayed there.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
-		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, "", "", "",
-		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "")
+		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
+		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "",
+		t.Org, t.Host)
 	return err
 }
 
@@ -548,6 +601,52 @@ func (s *Store) SetOrigin(id, source, externalID, url string) error {
 			url         = CASE WHEN ? = '' THEN url         ELSE ? END
 			WHERE id = ?`,
 			source, source, externalID, externalID, url, url, id)
+		return err
+	})
+}
+
+// Place is where a card's work sits, as a launcher already knows it.
+//
+// One struct rather than six arguments, because the call site fills in only
+// some of them and a positional list of six strings is where the org and the
+// host get swapped.
+type Place struct {
+	Repo, Org, Host, Branch, Window, Theme string
+}
+
+// SetPlace records what a launcher knew and the directory could not say.
+//
+// EMPTY NEVER OVERWRITES, which is the same rule `SetOrigin` beside it follows
+// and the reason both are written as a CASE per column. A caller that knows
+// the repo and not the branch must not blank the branch a session reported for
+// itself, and a launcher that omits a field is saying nothing about it rather
+// than saying it is empty.
+//
+// NOT DERIVED HERE. Atrium does not open the directory to check whether the
+// repo it was handed is the repo that is there. Whoever made the worktree
+// knows, and a second implementation here is only a second answer to
+// disagree with.
+func (s *Store) SetPlace(id string, p Place) error {
+	p.Repo = strings.TrimSpace(p.Repo)
+	p.Org = strings.TrimSpace(p.Org)
+	p.Host = strings.TrimSpace(p.Host)
+	p.Branch = strings.TrimSpace(p.Branch)
+	p.Window = strings.TrimSpace(p.Window)
+	p.Theme = strings.TrimSpace(p.Theme)
+	if p == (Place{}) {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET
+			repo        = CASE WHEN ? = '' THEN repo        ELSE ? END,
+			org         = CASE WHEN ? = '' THEN org         ELSE ? END,
+			host        = CASE WHEN ? = '' THEN host        ELSE ? END,
+			branch      = CASE WHEN ? = '' THEN branch      ELSE ? END,
+			window_name = CASE WHEN ? = '' THEN window_name ELSE ? END,
+			theme       = CASE WHEN ? = '' THEN theme       ELSE ? END
+			WHERE id = ?`,
+			p.Repo, p.Repo, p.Org, p.Org, p.Host, p.Host,
+			p.Branch, p.Branch, p.Window, p.Window, p.Theme, p.Theme, id)
 		return err
 	})
 }

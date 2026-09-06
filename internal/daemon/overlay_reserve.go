@@ -6,6 +6,7 @@ import (
 
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/zrok/v2/rest_client_zrok/share"
+	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 )
 
 // Reserving an address, so the link you gave somebody still works tomorrow.
@@ -165,4 +166,69 @@ func notThere(err error) bool {
 func alreadyThere(err error) bool {
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "conflict") || strings.Contains(s, "already")
+}
+
+// boardShareName is the reserved address the BOARD's public share answers on.
+//
+// THE BOARD'S SHARE IS ALWAYS RESERVED, whether or not anybody typed a name.
+// This used to be three manual steps: type a name, press `reserve it`, press
+// `start sharing`. Skipping any of them meant zrok invented an address, the
+// board handed it out, and the controller deleted it at the next stop. The
+// link was dead and nothing said so.
+//
+// The name is generated once and WRITTEN BACK TO THE CONFIG, which is what
+// makes a restart land on the same address rather than on a fresh reservation
+// nobody asked for. `newShareName` is sixty bits of randomness, so an address
+// nobody chose is still not one anybody guesses.
+//
+// Reserved on every start rather than only when it is created, because the two
+// failures are indistinguishable from here: a name that was never created and
+// a name created ephemeral both end up gone after the first stop.
+// `ReserveZrokName` is idempotent for exactly that reason.
+// boardShareNameLen is how long an invented board address is.
+//
+// Eight rather than the twelve a lent session gets. This one is read off a
+// screen and typed, and it is not the secret: the board behind it is either
+// deliberately public or behind the sign-in. A lent session's address IS the
+// credential, which is why the two differ.
+const boardShareNameLen = 8
+
+func (d *Daemon) boardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) {
+	var sel zroksdk.NameSelection
+
+	if n := strings.TrimSpace(cfg.Name); n != "" {
+		parsed, err := zroksdk.ParseNameSelection(n)
+		if err != nil {
+			return sel, fmt.Errorf("that name selection is not one zrok understands: %w", err)
+		}
+		sel = parsed
+	} else {
+		name, err := newShareNameOf(boardShareNameLen)
+		if err != nil {
+			return sel, err
+		}
+		sel = zroksdk.NameSelection{NamespaceToken: publicNamespace, Name: name}
+		// STORED BARE, without the namespace. `public/atrium-4pcddxxx9aez` is
+		// what zrok wants and not what anybody wants to read in a settings box,
+		// and the namespace is the default one anyway: the parse above fills it
+		// in when it is missing, so the short form is complete.
+		//
+		// SAVED BEFORE IT IS RESERVED, on purpose. A name reserved on the
+		// account and not written down here is a leak: nothing on this machine
+		// knows it exists, so nothing ever releases it. Saved and not reserved
+		// is the harmless direction, since the next start reserves it.
+		cfg.Name = name
+		if err := d.saveOverlayConfig(SettingOverlayZrok, *cfg); err != nil {
+			return sel, fmt.Errorf("could not remember the address: %w", err)
+		}
+	}
+
+	if sel.NamespaceToken == "" {
+		sel.NamespaceToken = publicNamespace
+	}
+	d.overlayStep("zrok", "name", "reserving the address "+sel.Name)
+	if _, err := d.ReserveZrokName(sel.NamespaceToken, sel.Name); err != nil {
+		return sel, err
+	}
+	return sel, nil
 }

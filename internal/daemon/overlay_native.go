@@ -216,11 +216,10 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 		if t := strings.TrimSpace(cfg.ShareToken); t != "" {
 			req.PrivateShareToken = t
 		}
-	} else if n := strings.TrimSpace(cfg.Name); n != "" {
-		sel, err := zroksdk.ParseNameSelection(n)
+	} else {
+		sel, err := d.boardShareName(&cfg)
 		if err != nil {
-			return d.overlayFailed("zrok",
-				fmt.Errorf("that name selection is not one zrok understands: %w", err))
+			return d.overlayFailed("zrok", err)
 		}
 		req.NameSelections = []zroksdk.NameSelection{sel}
 	}
@@ -250,7 +249,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 
 	d.overlayStep("zrok", "done", address)
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
-	d.nat(OverlayZrok).serveOn(ln, d.ap.Handler(), address, shr.Token)
+	d.nat(OverlayZrok).serveOn(ln, d.authGuard(d.ap.Handler()), address, shr.Token)
 	return nil
 }
 
@@ -293,6 +292,6 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	// network, and the service name is the whole identifier.
 	// A ziti service is administered on the network and atrium never created
 	// it, so there is nothing here to release.
-	d.nat(OverlayZiti).serveOn(ln, d.ap.Handler(), "ziti service "+service, "")
+	d.nat(OverlayZiti).serveOn(ln, d.authGuard(d.ap.Handler()), "ziti service "+service, "")
 	return nil
 }

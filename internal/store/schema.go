@@ -889,6 +889,24 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS idx_card_share_wanted ON card_share(wanted)`,
 		},
 	},
+	{
+		// Where a card's work came from, above the repo.
+		//
+		// `repo` and `branch` were already here and answer most of it. What
+		// they cannot answer is WHICH `zrok`: two forks, or an internal mirror
+		// beside the public one, are the same repo name under different orgs
+		// on different hosts, and a board that groups by name alone puts them
+		// in one pile.
+		//
+		// Filled in by whoever knows. A launcher that resolved a URL knows all
+		// three; a session that joined on its own knows none of them and stays
+		// empty, which is the same posture every other observed field takes.
+		name: "0038_task_origin",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN org TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN host TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

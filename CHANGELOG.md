@@ -5,6 +5,353 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Two windows on one terminal fought over its size, and the loser was unreadable.**
+
+  A pseudo terminal has one size. Every attached browser sent its own, and the daemon passed each straight
+  through, so the last window resized set the width for everybody. That is not a cosmetic mismatch: the runner
+  wraps its output for the size it was told, the other viewer draws those already-wrapped lines against a
+  different grid, and the screen fills with torn text, duplicated status lines and rows that never clear.
+  Dragging a shared window resized somebody else's terminal.
+
+  The smallest attached viewer now decides, which is what every multiplexer settled on for the same reason.
+  Sizes are held per attachment and given back when one detaches, so a phone that opened the board once does
+  not hold the session at forty columns for the rest of the day. The cost is unused margin in the larger
+  window instead of a screen nobody can read.
+
+- **`POST /v1/launch` can be told there is already a session in that directory.**
+
+  The guard existed and lived in the wrong place. `startFixture` adopts a card already in its directory and
+  refuses outright when a runner is up on it, so a fixture never doubles. `Launch` underneath it asked
+  nothing, so anything else calling the endpoint would put a second runner in a directory that had one, and
+  the two write to the same files while neither knows about the other.
+
+  `if_running` on the launch body now answers it, and the question moved into `Launch` where every caller
+  reaches it. `skip` hands back the card that is there and starts nothing. `adopt` continues that card
+  instead of making a second one. Absent means start anyway, which is what the board's launch dialog does
+  and has to keep doing: two sessions in one repo is something an operator asks for on purpose.
+
+  `adopt` with a live runner degrades to `skip` rather than to starting. A second process on one card is not
+  continuing the work, it is two processes in one directory with the card describing whichever spoke last.
+
+- **Every help bubble inside a dialog drew its tooltip underneath the dialog.**
+
+  A modal dialog renders in the browser's top layer, so nothing outside it draws over it at any z-index.
+  `#tip` is a top-level element, so hovering a bubble in settings or on the runners page rendered the panel,
+  positioned it correctly, and put it in the wrong layer. The board already solved this for toasts by moving
+  the host into the open dialog. The tooltip now travels with them.
+
+- **The zrok instance toggle could not work, and said nothing about it.**
+
+  Enabling issues a token against one instance, so the daemon refuses to move an enabled environment. The
+  board offered the toggle anyway: one side was already selected and did nothing, the other was refused into
+  a toast that had gone by the time anybody looked. An enabled environment now states what it is enabled
+  against and how to change it, and the toggle is only there before enabling.
+
+  Underneath it, the address was written to the settings BEFORE any of that was checked, so a refused change
+  was stored anyway and a no-op change cleared it. The setting said one instance while the environment
+  answered another.
+
+- **The zrok panel asks a question instead of naming a mechanism, and a public board share is always
+  reserved.**
+
+  `whose zrok account` described the implementation to somebody who already understood it. It is now **how do
+  you want to use zrok?** with two answers, `use this machine's zrok` and `give atrium its own`, and a `?` on
+  each carrying the paragraph that makes the choice answerable.
+
+  `zrok instance` was a text box that almost everybody had to know to leave alone. It is a toggle: **the
+  public zrok**, or **somewhere else**, which reveals the box. Nothing is saved for the second until an
+  address is typed, because an empty custom endpoint silently means the public one again. The toggle is not
+  offered for the machine's own environment, where moving it means disabling the one every other tool here
+  shares. That case is reported instead.
+
+  The configuration fold now opens by default. It held the account and instance choice, so a machine that was
+  already enabled opened the gear onto a summary with no visible way to change any of it.
+
+  **The board's public share reserves its own address.** It used to be three presses in order, and skipping
+  any of them meant zrok invented an address, the board handed it out, and the controller deleted it at the
+  next stop: a dead link with nothing saying so. Starting a public share now reserves whatever name is
+  configured, or invents one, writes it back, and reserves it again on every start. The `reserve it` and
+  `reserve and share` buttons are gone, and the name field is only for choosing a memorable hostname.
+
+  One bug fell out of reading it back: saving a zrok instance read `own` off a hidden input's `checked`, which
+  a hidden input does not have. It was always false, so saving an address on a machine with no zrok of its own
+  moved atrium off its own environment every time.
+
+- **Right click in a terminal pastes.**
+
+  The clipboard is loaded and the hand is already on the mouse, so the browser's context menu is the wrong
+  thing to get: nothing on it applies to a terminal, and `ctrl-v` means leaving the mouse for one keystroke.
+  Shift or ctrl with the right button still gives you the browser's menu, which is the convention every site
+  that overrides it already follows.
+
+  It goes through `pasteIntoTerm`, the same path `ctrl-v` takes, so a screenshot on the clipboard is uploaded
+  and the runner is handed a path rather than nothing.
+
+
+- **A restart could refuse forever, and asking a session to stop was what kept it busy.**
+
+  `busyAgents` treated a supervised card as working unless it was `needs-input` or `needs-permission`. A card
+  that is `done` is neither, and never moves back to `needs-input` on its own, so it counted as busy for the
+  rest of the daemon's life.
+
+  The loop that made is worse than the miscount. Each attempt asks every busy session to stop. The session
+  replies, replying is a turn, a turn writes activity, and activity is what the check reads. **Asking it to
+  stop is what made it busy**, so three attempts produced three park messages, three polite acknowledgements,
+  and three refusals.
+
+  Three guards now, and the deadlock needs all three to fail.
+
+  `done`, `dead` and `shelved` are terminal and are not sessions mid-tool. **Stale activity is not activity**:
+  it is written when a tool STARTS and nothing writes when a turn ends, so a session that stopped an hour ago
+  still reads as `thinking`. And **once a session has been told, thinking stops counting**, which is the guard
+  that actually breaks the loop: after a park message the question narrows to whether anything is HALF
+  WRITTEN. A session mid-tool may have a file open. A session thinking has nothing on disk it would lose, and
+  the message it was sent says in as many words not to start another tool, so a session that obeyed is exactly
+  one that is not mid-tool.
+
+  The conservative case is unchanged and still deliberate: a supervised card that is running with no activity
+  at all is still counted, because "I cannot tell" is not "it is safe".
+
+- **`atrium ask`: a session can say it is stuck, and what would unstick it.**
+
+  The other half of `atrium finish`. That one let a session say its work was over. This lets it say the
+  opposite and say WHY, which is the part nothing else could carry.
+
+  A stuck session already reached `needs-input`, but by INFERENCE: a hook fires at the end of a turn and atrium
+  concludes nobody is typing. That answers "this session stopped" and never "what for", so the board could say
+  a card was waiting and not what it was waiting on, and the operator had to open the terminal and read back
+  through the scrollback. The ask lands on the card's `why`, which the board already draws under a title.
+
+  **Stopped and working are different and are treated differently.** By default an ask means the session has
+  stopped and the card moves to waiting. `--working` records the question without filing the card, because the
+  status column is a bucket of human attention and putting a working session in it makes the count that drives
+  every alert lie.
+
+  A command rather than a tool, for the reason `finish` gives: it is the one channel every runner already has,
+  and it has to work for a bare shell as well as for something with an MCP surface. A shelved card is not
+  dragged back, a long ask is truncated rather than refused, and an agent atrium has never heard of gets `ok`
+  and nothing recorded, because failing here would mean a session could fail at the moment it asked for help.
+
+- **A popped-out window stops announcing what you are watching.**
+
+  It was testing `inForeground`, which is visible AND focused. A popped-out terminal on a second monitor is
+  visible and not focused, so the window fired a desktop notification about a session the operator was looking
+  at while it happened.
+
+  Focus answers which window has the keyboard. That is a different question from whether you can see it, and
+  WHICH ONE TO ASK depends on what the document is for. The board is a tab among many, so being visible does
+  not mean you are reading it and it keeps the stricter test. A popped-out window holds one session and exists
+  to be looked at, so visible is enough.
+
+- **The configuration export has a button, and both open CSS nits are fixed.**
+
+  `back it up` in the gear saves the file and reads one back. Reading back is a DRY RUN first, always: it lists
+  what would change, and applying is a second press made after reading it. A refusal, which is what happens
+  when something in the configuration looks like a credential, is shown whole rather than summarised, because
+  that sentence is the entire product of the failure.
+
+  **The group-heading hover was wrong on every light skin, and the reason generalises.** It raised the name's
+  lightness to 85%, which reads as more prominent on a dark board and nearly invisible on a light one: on
+  `paper` it went pale yellow against near-white. It blends toward `--head` now, so it goes darker on a light
+  skin and lighter on a dark one. A hover that changes lightness in a FIXED direction is wrong on half of
+  twenty skins, and anything meaning "more prominent" has to move relative to the skin's own text colour.
+
+  **Glyph buttons in a terminal's bar stopped wearing word-sized padding.** `.term-bar button` is tuned for
+  `ctrl-c` and `exit`. The `copy` button the nit originally named is long gone from that bar and the same
+  defect had moved to the folder, the cog and the up arrow.
+
+- **Tab completes a path in the browser terminal, and gets out of the way when it cannot.**
+
+  Tab belongs to whatever is running in the pty, so this works from outside somebody else's input line, and
+  the whole design is about giving up early rather than being clever.
+
+  **What cannot be known is where the cursor is.** The runner redraws, wraps, recalls history and rewrites the
+  line whenever it likes, so anything that inserts text on an assumption about cursor position eventually
+  corrupts what somebody typed. **What can be known exactly is what atrium sent**: every keystroke goes through
+  one place, so the buffer is a record rather than an inference.
+
+  So: track what was sent, ABANDON the moment anything ambiguous happens, and offer nothing while abandoned. An
+  arrow key, an escape sequence or a paste sets it back, and only Enter restores it. A `/` or a `\` in the token
+  is what makes it a path rather than a word, which handles Windows mixing both separators.
+
+  **Tab passes through unless atrium is confident**, so claude's own completion keeps working everywhere this
+  does not apply. Confident means a believable buffer, a token that looks like a path, and candidates found.
+  The key is swallowed optimistically and the Tab sent afterwards if nothing could be completed, because doing
+  it the other way round is two inputs for one press, which is the doubled-keystroke class of bug.
+
+  **Only the missing characters are sent.** Never a whole line, never backspace-and-retype: both assume the
+  line is what atrium thinks it is, which is the assumption this refuses to make. Candidates come from
+  `/v1/browse`, which lists the daemon's filesystem and is already bounded to the browse roots, and that is the
+  correct source because the paths being typed are on the runner's machine rather than the browser's.
+
+  Two invariants added, both of which fail if the give-up or the pass-through is removed.
+
+- **The published board can ask who you are. This reverses a documented rule, narrowly.**
+
+  `CLAUDE.md` and `docs/overlays.md` both said authentication is out of scope and that reaching the board from
+  elsewhere is an overlay's job. That held while the board was only ever on loopback or behind a private share,
+  and stopped holding when a reserved public address made handing out a link comfortable. A public URL with no
+  login, in front of something that reads files, answers permission prompts and types into terminals, is not a
+  line worth defending on principle.
+
+  **Atrium still owns no credentials, which is the part that rule was protecting.** No user table, no
+  passwords, nothing to hash. Identity is delegated to an OIDC provider, atrium verifies what that provider
+  signed against its published keys, and the session cookie proves a completed verification rather than
+  standing in for a password. A design review flagged the first plan, which included username and password, as
+  contradicting the settled decision. It was right and that half was dropped.
+
+  **It wraps the published handler and nothing else**, which makes the boundary structural rather than a rule
+  somebody has to remember. The overlay listener is a different `net.Listener` on a different `http.Server`, so
+  loopback is untouched, every hook and the CLI and the MCP server keep working, and a lent session keeps its
+  own rule that the address is the credential. `TestTheLocalBoardIsNotWrapped` fails if that stops being true,
+  and it would otherwise break quietly, because a hook that fails is designed never to fail a session.
+
+  Decisions worth knowing: an empty allow list means NOBODY and is refused at save time, because "anybody the
+  provider authenticated" on a provider with open registration is the whole internet with an extra step. The id
+  token is verified rather than decoded. The cookie is signed and not encrypted, since nothing in it is secret
+  and what must be impossible is editing it. An API call is refused rather than redirected, because a login
+  page where JSON was expected reads as a corrupt response. A login state is single use.
+
+  Not built: PKCE, refresh, and roles. Everybody who gets in gets the whole board, which is the same grant a
+  share has always been.
+
+- **`atrium room`: one board, many machines. Stage one of `docs/federation-design-v2.md`.**
+
+  A room keeps its own daemon, its own database and its own terminals, and tells a hub what is on it. The hub
+  holds that IN MEMORY AND NOWHERE ELSE, which is the design rather than a shortcut: a room's cards are that
+  room's state, and a second durable copy on the hub would be a source of truth that is wrong whenever the room
+  is unreachable. What is held is a cache with a timestamp, and a room that stops talking goes stale, and then
+  disappears rather than persisting as a claim about a machine nobody can reach.
+
+  Every check-in REPLACES that room's cards rather than merging them, or a card deleted on the room would live
+  forever on the hub.
+
+  **Terminals do not federate and the row says so.** A pseudo terminal cannot leave the machine that made it.
+  What travels is cards, their status, and what each is waiting for. Each room reports where its own board is,
+  and that link is the row's main affordance: everything the hub cannot do for a remote card is done there.
+  Remote cards are drawn as a list rather than as cards, because giving them a card's menu would promise
+  actions that would fail.
+
+  **Which end dials is a reachability question, not a design one.** The design assumes the leaf is behind NAT.
+  On these machines it is inverted: the rooms are public cloud instances and the hub is a desktop behind NAT.
+  So `--service` and `--identity` dial the hub over an OpenZiti service and neither end has to be reachable
+  from the other, and `--hub` remains for the ordinary case.
+
+  **Proved on two real machines**, `cdzrok` and `cdaws`, cross-compiled and copied over: both ran their own
+  daemon, both dialled the hub over ziti with no port forwarding at either end, and both appeared on the hub
+  with a live card on them.
+
+- **Atrium's configuration goes out to a repository and comes back, and no credential goes with it.**
+
+  `GET /v1/config/export` writes harnesses, fixtures, sources, actions, rules, the skin, the timers and the
+  sharing options as one indented JSON document, named and dated so a file in a checkout is identifiable in
+  six months. `POST /v1/config/import` reads one back.
+
+  **What must not leave is defended twice, and the two fail differently on purpose.**
+
+  The allowlist is the STRUCTURE. Nothing marshals a stored struct and strips fields out of it: every value is
+  copied across by name into a type declared in `export.go`. A field added to `ZrokConfig` next year is absent
+  because nobody wrote a line to include it, which is the safe direction and needs no rule to remember. A test
+  compares the two types by reflection and fails when the stored one grows a field nobody has decided about.
+
+  The result is then SEARCHED. An allowlist cannot help with a credential typed into a field that is
+  legitimately exported, and a source is an operator-authored command line, which is exactly where a token
+  goes. The finished document is scanned for the shapes credentials have and a hit refuses the whole export,
+  naming the field without echoing the value. Refusing rather than redacting: an export that silently drops
+  something is one somebody restores from and finds half a configuration.
+
+  Never exported: the zrok account token, share tokens, reserved addresses, the ziti identity path, and the two
+  overlay blobs wholesale. `global_auto` is on that list for a different reason, and it is the interesting one.
+  It is not a secret, it is a STATE. Whether this machine is approving everything right now is not
+  configuration to restore onto another one, and an import that silently turned it on is the worst thing an
+  import could do.
+
+  **Importing never overwrites silently.** Anything already set is kept and reported with how to override it,
+  and the default is a dry run that answers what WOULD change. The overlay configuration is merged rather than
+  replaced, which is the subtle one: the exported shape has no token in it, so writing it over the stored
+  config would erase the account token with a value that was deliberately absent, and the machine would look
+  configured and refuse to share.
+
+  Proved against a COPY of the operator's live database rather than against fixtures. It exported cleanly, with
+  no secret-shaped content, and the legacy `mode` on that real configuration migrated to the new flags
+  correctly.
+
+- **The zrok panel stops offering edits it cannot make, and public and private stop being one choice.**
+
+  **Enabled means locked.** While the board is on a zrok share, every setting is what that share started with
+  and the fields say so. Half of this was already true and unsayable: the endpoint refused to move an enabled
+  environment, so the form accepted the edit and reported a failure about something the operator could not
+  see. The rest was worse, because it was accepted, stored, and then ignored until the next start. One rule
+  now, stated at the top of the panel: stop sharing to change it.
+
+  **Public and private are two checkboxes and both can be on.** The select was a leftover from when a share
+  was one thing, and it made two independent capabilities look like one exclusive choice. A machine may
+  reasonably want a public link for the board and a private share for a lent session.
+
+  `mode` survives as the thing the start path reads, because a listener is one thing and has to pick, and it
+  is derived rather than typed. `normalise` reconciles the two in both directions, and the upgrade is the part
+  that mattered: every install that exists holds a `mode` and neither flag, and reading that as "neither" would
+  have silently switched sharing off on every configured machine. Five tests cover it, including that
+  normalising twice changes nothing, since it now runs on both the read and the write path.
+
+  **Whose account is a real toggle, and it only offers what exists.** The left-hand option is the token already
+  on this machine, which is not a choice on a machine that has none: offering it there is a button whose only
+  outcome is a refusal. The daemon reports whether the machine has an environment separately from whether the
+  selected one does, which is what makes the difference sayable.
+
+  **The account token is a password field and says it is required.** It is reusable on every machine, it grants
+  everything that account can do, and it was sitting unmasked in a textarea on a board that gets screenshotted
+  and popped out into windows on other monitors. The ziti side stays a textarea: an enrollment JWT is single
+  use and people want to see it.
+
+  **`the address to keep` is now `what share name would you like to use to access the dashboard`.** It
+  described the mechanism to somebody who already knew it and said nothing to anybody else. What it answers is
+  which hostname people type.
+
+- **A popped-out window closes itself when its runner exits, which it has never actually done.**
+
+  Three fixes were made to this and none of them ran. `markTermDead` tears the terminal bar down to a single
+  close button and is the only caller of the countdown that closes the window. It was defined, it was correct,
+  and **nothing called it**. The branch that runs when a runner exits wrote `you can close this window` and
+  returned, so the teardown, the countdown, the broadcast that has the board close the window through the
+  handle `window.open` returned, and the fallback button were all unreachable.
+
+  That branch calls it now. `check-terminal.js` gains the rule that would have caught it: a teardown function
+  that is defined and never called fails the check. Nothing else could have. The file parses, the function is
+  syntactically fine, and a diff reader sees a definition and assumes a caller.
+
+- **A paste scrolls all the way to the bottom, not to where the bottom was.**
+
+  `sendInput` scrolled when the bytes were SENT, which is before the runner has seen them. What moves the
+  bottom of the buffer is the echo coming back and the prompt redrawing around it, and by then the scroll had
+  already happened. A twenty line paste landed about twenty lines short, which is worse than not scrolling,
+  because it looks like it worked.
+
+  The view now follows the output down for a moment after input is sent, and then stops. It has to stop: a
+  terminal that scrolls to the bottom on every write can never be scrolled up while a runner is producing
+  output, which is why xterm does not do this by default. The follow goes in `term.write`'s CALLBACK rather
+  than after the call, because `write` queues the bytes and parses them later, so scrolling on the next line
+  scrolls a buffer that has not grown yet.
+
+  The invariant that was supposed to cover this passed throughout. It asserted that `sendInput` scrolls, which
+  was true and insufficient, so it has been replaced rather than added to.
+
+- **CI runs on Windows as well as Linux, and four tests that had never left Windows now pass on both.**
+
+  The workflow landed and failed on its first run, which is CI earning its place on day one. Two of the
+  failures were assertions encoding Windows path semantics: `filepath.ToSlash` is a no-op on Linux and a
+  backslash is a legal filename character there, so the production answers were right on both platforms and
+  only the tests were wrong. Those are gated on Windows now.
+
+  The other two delivered a megabyte of test payload in an environment variable. Linux caps a single
+  environment string at 128KB, so the spawn died with `argument list too long` before the output bound they
+  exist to check was ever reached. The payload moves to a file, which has no such ceiling on either platform,
+  so the bound is checked everywhere rather than skipped where it is cheapest to skip.
+
+  **The matrix now includes `windows-latest`,** which matters more than any of the above: ConPTY, the
+  rename-aside binary swap, the logon task and every path rule are Windows behaviour, and a Linux-only matrix
+  built none of it.
+
 - **Atrium can keep its own zrok environment, against its own instance.**
 
   **The problem.** A machine has one zrok environment, `~/.zrok2`, holding an account token and the identity it

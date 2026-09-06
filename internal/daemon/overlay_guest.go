@@ -216,12 +216,21 @@ const shareNameLen = 12
 // entropy is entirely in the suffix, and it is what makes a leftover share
 // identifiable on an account that also holds shares from four other tools.
 // The operator who has to clean one up by hand should not have to guess.
-func newShareName() (string, error) {
-	b := make([]byte, shareNameLen)
+func newShareName() (string, error) { return newShareNameOf(shareNameLen) }
+
+// newShareNameOf is the same with the length said out loud.
+//
+// The board's own share uses a shorter one. It is a name somebody reads off a
+// screen and types, and it is not the secret: the board behind it is either
+// deliberately public or behind the sign-in in `auth.go`, so length here buys
+// tidiness rather than security. A LENT SESSION IS THE OPPOSITE and keeps the
+// full twelve, because there the address IS the credential.
+func newShareNameOf(n int) (string, error) {
+	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("could not generate an address: %w", err)
 	}
-	out := make([]byte, shareNameLen)
+	out := make([]byte, n)
 	for i, v := range b {
 		out[i] = shareNameAlphabet[int(v)%len(shareNameAlphabet)]
 	}

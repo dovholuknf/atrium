@@ -78,6 +78,12 @@ type Daemon struct {
 	// wrong answer.
 	guests guestShares
 
+	// rooms holds the other machines reporting into this hub. In memory and
+	// nowhere else: a room's cards are that room's state, and a second durable
+	// copy here would be a source of truth that is wrong whenever the room is
+	// unreachable. See rooms.go.
+	rooms rooms
+
 	// peerLimit bounds how often one session may message others. In memory,
 	// because the thing it bounds is a runaway session and a session does not
 	// outlive the daemon either.
@@ -177,6 +183,65 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.ShareCard = d.ShareCard
 	d.ap.StopCardShare = d.StopCardShare
 	d.ap.GuestShares = d.GuestShares
+	// The secret is NEVER sent back, only whether there is one. This board is
+	// itself something people open and screenshot.
+	d.ap.AuthConfig = func() any {
+		c := d.authConfig()
+		return map[string]any{
+			"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
+			"redirect": c.Redirect, "allow": c.Allow,
+			"has_client_secret": strings.TrimSpace(c.ClientSecret) != "",
+		}
+	}
+	d.ap.SaveAuth = func(body []byte) error {
+		// The stored secret is carried over when the form sends none, so
+		// saving any other field does not silently blank it. A form that has
+		// never been shown the secret cannot send it back.
+		next := d.authConfig()
+		var in struct {
+			Enabled      *bool    `json:"enabled"`
+			Issuer       *string  `json:"issuer"`
+			ClientID     *string  `json:"client_id"`
+			ClientSecret *string  `json:"client_secret"`
+			Redirect     *string  `json:"redirect"`
+			Allow        []string `json:"allow"`
+		}
+		if err := json.Unmarshal(body, &in); err != nil {
+			return err
+		}
+		if in.Enabled != nil {
+			next.Enabled = *in.Enabled
+		}
+		if in.Issuer != nil {
+			next.Issuer = *in.Issuer
+		}
+		if in.ClientID != nil {
+			next.ClientID = *in.ClientID
+		}
+		if in.Redirect != nil {
+			next.Redirect = *in.Redirect
+		}
+		if in.Allow != nil {
+			next.Allow = in.Allow
+		}
+		// Empty means "leave it alone". Clearing one means sending a single
+		// space, which is odd and is the safer way round: the alternative
+		// blanks a working secret every time somebody edits the allow list.
+		if in.ClientSecret != nil && strings.TrimSpace(*in.ClientSecret) != "" {
+			next.ClientSecret = strings.TrimSpace(*in.ClientSecret)
+		}
+		return d.SaveAuth(next)
+	}
+	d.ap.Rooms = d.Rooms
+	d.ap.RoomCheckIn = d.handleRoomCheckIn
+	d.ap.BuildExport = func() (any, error) { return d.BuildExport() }
+	d.ap.ApplyImport = func(body []byte, apply, force bool) (any, error) {
+		var in Export
+		if err := json.Unmarshal(body, &in); err != nil {
+			return nil, fmt.Errorf("that is not an atrium configuration: %w", err)
+		}
+		return d.ApplyImport(&in, apply, force)
+	}
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
@@ -593,6 +658,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/activity", d.handleActivity)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
+	// The other half of finish: a session saying it is stuck and what it needs.
+	agentMux.HandleFunc("/help", d.handleHelp)
 	// Sessions addressing each other. On the AGENT listener, because that is
 	// what a session can already reach, and `docs/overlays.md` says never to
 	// publish this port. A peer bus is the first feature that gives anybody a

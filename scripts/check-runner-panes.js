@@ -77,7 +77,7 @@ for (const n of topLevel) {
 // outside would be drawn into an element the split moved away from, so it
 // would silently never appear.
 const filled = ["launchers", "harness-list", "discovered", "fixture-list", "source-list",
-  "action-list"];
+  "action-list", "room-list"];
 const missing = filled.filter(id => !inner.includes(`id="${id}"`));
 if (missing.length) {
   console.error("\nFAIL: these are filled by renderRunners but are not on the page: " +

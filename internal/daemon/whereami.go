@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/api"
 )
 
 // Where atrium is, written down for anything that needs to reach it.
@@ -90,6 +93,94 @@ func LocationPath() (string, error) {
 	return filepath.Join(dir, "atrium", "daemon.json"), nil
 }
 
+// SharedLocationPath is the SECOND place the address is written, for callers
+// running as somebody else.
+//
+// `LocationPath` is per-user by design and that design has a hole in it: the
+// daemon runs as one account and the things that call it do not. A script
+// running as the human cannot read the daemon account's `%LocalAppData%`, so
+// discovery fails and the caller is left hardcoding a path into somebody's
+// profile, which is the thing the file existed to prevent.
+//
+// `%WORKTREE_ROOT%` is the answer because it is already the shared ground
+// between those accounts: it is where the worktrees a caller is launching
+// against live, so a caller that has one has this. NOT a fixed path, and not a
+// second guess if the variable is unset: no shared file is written, and the
+// per-user one is still there for anything running as the daemon's account.
+//
+// `ATRIUM_SHARED_LOCATION` names the file outright, for a machine that shares
+// something other than a worktree root.
+func SharedLocationPath() string {
+	if p := strings.TrimSpace(os.Getenv("ATRIUM_SHARED_LOCATION")); p != "" {
+		return p
+	}
+	root := strings.TrimSpace(os.Getenv("WORKTREE_ROOT"))
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "atrium", "daemon.json")
+}
+
+// sharedLocation is where THIS daemon publishes its address for other
+// accounts.
+//
+// THE SETTING WINS over the environment. The variable is the right answer for
+// a caller, which is a script somebody just ran in a configured shell, and the
+// wrong one for the daemon, which is a long-lived process started by a logon
+// task or a service and inherits nothing anybody exported. So the answer an
+// operator can give from the machine that is already running takes precedence.
+// See `api.SettingSharedLocation`.
+func (d *Daemon) sharedLocation() string {
+	// THE STORE MAY BE GONE. This runs from `clearLocation` on the way out,
+	// and a daemon that halted or was never fully built has no store to ask.
+	// Reaching into it there is a nil dereference during shutdown, which is
+	// the worst moment to panic: the address file is exactly what gets left
+	// behind pointing at a process that is no longer listening.
+	if d.st != nil {
+		if v, err := d.st.Setting(api.SettingSharedLocation); err == nil {
+			if p := strings.TrimSpace(v); p != "" {
+				return p
+			}
+		}
+	}
+	return SharedLocationPath()
+}
+
+// ReadLocation finds a running daemon, wherever it wrote itself down.
+//
+// THE PER-USER FILE FIRST, then the shared one. Order matters on a machine
+// where both exist: the per-user file is written by the daemon this account is
+// running, and preferring the shared copy would send a caller to somebody
+// else's daemon on a box where two people each have one.
+//
+// Every failure is an absent Location rather than an error to report. Nothing
+// that calls this is entitled to fail because atrium is not running: the whole
+// posture of the hooks is that an unreachable daemon is normal.
+func ReadLocation() (Location, bool) {
+	tries := make([]string, 0, 2)
+	if p, err := LocationPath(); err == nil {
+		tries = append(tries, p)
+	}
+	if p := SharedLocationPath(); p != "" {
+		tries = append(tries, p)
+	}
+	for _, p := range tries {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var loc Location
+		if err := json.Unmarshal(raw, &loc); err != nil {
+			continue
+		}
+		if strings.TrimSpace(loc.Agent) == "" && strings.TrimSpace(loc.Board) == "" {
+			continue
+		}
+		return loc, true
+	}
+	return Location{}, false
+}
+
 // locationPath is where THIS daemon records its address.
 //
 // The machine's one true place unless the options name another. A test names
@@ -136,15 +227,52 @@ func (d *Daemon) writeLocation() {
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		log.Printf("[atrium] could not record my address: %v", err)
-		return
-	}
-	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+	if err := putLocation(path, body, 0o600); err != nil {
 		log.Printf("[atrium] could not record my address: %v", err)
 		return
 	}
 	log.Printf("[atrium] address  -> %s", filepath.ToSlash(path))
+
+	// AND WHERE SOMEBODY ELSE CAN READ IT. See `SharedLocationPath`. Only when
+	// this daemon is on the machine's real location file: a test pointing
+	// `LocationFile` somewhere else must not also write a real shared one and
+	// send every caller on the box to a daemon that is about to stop.
+	shared := d.sharedLocation()
+	if shared == "" || d.opts.LocationFile != "" {
+		return
+	}
+	// READABLE, unlike the one above. The whole point is another account, and
+	// a mode nobody else can open is the bug this is fixing. There is nothing
+	// secret in it: a loopback port, a pid, and two paths. On Windows the mode
+	// is mostly advisory and the directory's own permissions decide, which is
+	// why the shared root is the operator's choice rather than a path atrium
+	// invents.
+	if err := putLocation(shared, body, 0o644); err != nil {
+		log.Printf("[atrium] could not record my address where others can read it: %v", err)
+		return
+	}
+	log.Printf("[atrium] shared   -> %s", filepath.ToSlash(shared))
+}
+
+// putLocation writes one copy of the address file.
+//
+// THROUGH A TEMPORARY FILE AND A RENAME, because a caller may read this at any
+// moment and a half-written file parses as nothing. A rename is atomic on both
+// filesystems atrium runs on, so a reader sees the old address or the new one
+// and never a truncated document.
+func putLocation(path string, body []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, append(body, '\n'), perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // daemonBinary is this process's own path, resolved.
@@ -206,8 +334,20 @@ func (d *Daemon) clearLocation() {
 	if err != nil {
 		return
 	}
-	// Only if it is still describing this process. A second daemon that
-	// started while this one was winding down owns the file now.
+	removeIfMine(path)
+	// The shared copy goes with it, under the same rule, or a caller running
+	// as somebody else keeps being sent to a daemon that has stopped. Guarded
+	// the same way as the write: a test with its own location file never wrote
+	// a shared one, so it must not delete the real one either.
+	if shared := d.sharedLocation(); shared != "" && d.opts.LocationFile == "" {
+		removeIfMine(shared)
+	}
+}
+
+// removeIfMine deletes an address file only while it still describes this
+// process. A second daemon that started while this one was winding down owns
+// the file now, and taking it would unhook every session on the machine.
+func removeIfMine(path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return

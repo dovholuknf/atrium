@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -146,17 +147,32 @@ func TestTheRecordIsIsolatedByTheLocationOption(t *testing.T) {
 // Slash direction and case are noise on Windows. Warning about them would
 // train the reader to skip the warning.
 func TestSpellingTheSamePathDifferentlyIsNotADifference(t *testing.T) {
-	for _, tc := range [][2]string{
-		{`C:\Users\x\.atrium\atrium.db`, `C:/Users/x/.atrium/atrium.db`},
-		{`C:/Users/X/.atrium/atrium.db`, `c:/users/x/.atrium/atrium.db`},
-		{`C:/a/b/../b/atrium.db`, `C:/a/b/atrium.db`},
-		{` C:/a/atrium.db `, `C:/a/atrium.db`},
-	} {
+	// True everywhere: `..` is resolved and surrounding whitespace is not part
+	// of a path.
+	same := [][2]string{
+		{`/a/b/../b/atrium.db`, `/a/b/atrium.db`},
+		{` /a/atrium.db `, `/a/atrium.db`},
+	}
+	// TRUE ONLY ON WINDOWS, and the test has to say so or it fails on a Linux
+	// build machine for the right reason.
+	//
+	// A backslash is a legal character in a Linux filename and case is
+	// significant there, so `C:\Users\x` and `C:/Users/x` genuinely are two
+	// different files. `sameDBPath` normalises through `filepath.FromSlash` and
+	// `strings.ToLower`, both of which mean something different per platform,
+	// and the answer it gives on each is the correct one for that platform.
+	if runtime.GOOS == "windows" {
+		same = append(same,
+			[2]string{`C:\Users\x\.atrium\atrium.db`, `C:/Users/x/.atrium/atrium.db`},
+			[2]string{`C:/Users/X/.atrium/atrium.db`, `c:/users/x/.atrium/atrium.db`},
+		)
+	}
+	for _, tc := range same {
 		if !sameDBPath(tc[0], tc[1]) {
 			t.Fatalf("%q and %q were treated as different databases", tc[0], tc[1])
 		}
 	}
-	if sameDBPath("C:/a/atrium.db", "C:/b/atrium.db") {
+	if sameDBPath("/a/atrium.db", "/b/atrium.db") {
 		t.Fatal("two genuinely different paths were treated as one")
 	}
 }

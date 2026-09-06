@@ -50,6 +50,15 @@ type ZrokEnv struct {
 	// costs atrium's shares, and disabling the machine's costs every tool on
 	// it.
 	Own bool `json:"own"`
+	// MachineEnabled is whether THE MACHINE has an environment, whichever one
+	// atrium is currently set to use.
+	//
+	// A separate fact from everything above it, and the panel cannot work
+	// without it. The choice offered is "use the token already on this machine"
+	// or "atrium keeps its own", and the first of those is only a choice when
+	// there IS a token already on this machine. Offering it otherwise is
+	// offering an option whose only outcome is a refusal.
+	MachineEnabled bool `json:"machine_enabled"`
 }
 
 // zrokEnvFile is the shape on disk. Only the fields atrium reports are named:
@@ -91,13 +100,21 @@ func zrokEnv() ZrokEnv {
 // report the machine's as its readiness, so the panel would offer to share
 // from an environment it is not going to use.
 func (d *Daemon) zrokEnvOf() ZrokEnv {
+	// Asked whichever root is selected, because the panel offers "use the one
+	// already here" and has to know whether there is one. It is the machine's
+	// environment either way, so this is not the same question as `Enabled`.
+	machine := zrokEnv().Enabled
+
 	dir := d.zrokRootDir()
 	if dir == "" {
-		return zrokEnv()
+		env := zrokEnv()
+		env.MachineEnabled = machine
+		return env
 	}
 	env, _ := readZrokEnv(dir)
 	env.Own = true
 	env.Root = filepath.ToSlash(dir)
+	env.MachineEnabled = machine
 	return env
 }
 

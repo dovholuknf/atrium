@@ -147,8 +147,26 @@ type Task struct {
 	// so that uniqueness applies to a poller and not to a person. Two poll
 	// ticks reporting one ticket are one card; two deliberate launches naming
 	// one ticket are two pieces of work somebody asked for twice.
-	IntakeKey  string `json:"intake_key,omitempty"`
-	Branch     string `json:"branch,omitempty"`
+	IntakeKey string `json:"intake_key,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	// Org and Host are which one, above the repo name.
+	//
+	// `openziti/zrok` on `github.com` and a fork of it under another org are
+	// the same `Repo`, and a board that groups on the name alone puts them in
+	// one pile. Filled in by a launcher that resolved a URL and empty for a
+	// session that joined on its own, which is the posture every observed
+	// field here takes.
+	Org  string `json:"org,omitempty"`
+	Host string `json:"host,omitempty"`
+	// WindowName is which pile of work this card belongs to.
+	//
+	// The board's grouping key, and it exists because "what repo" is not the
+	// only question somebody sorts by. A pull request, a tangent, a support
+	// thread and the main line of work in one repo are four different piles,
+	// and only the last of them is answered by the path.
+	//
+	// Free text, like Tags and for the same reason: a fixed list would be
+	// atrium deciding what kinds of work exist.
 	WindowName string `json:"window_name,omitempty"`
 	// Gated is whether this session has joined atrium. It is state rather than
 	// an environment variable so a running session can opt in or out without

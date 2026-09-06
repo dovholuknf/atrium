@@ -179,6 +179,26 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		if err := json.Unmarshal(body, &c); err != nil {
 			return err
 		}
+		// Reconciled on the way IN as well as on the way out, so what is stored
+		// is already consistent. A board that sends two flags and a stale mode,
+		// which is exactly what an older tab does, would otherwise write a row
+		// whose mode disagrees with its flags until something reads it back.
+		c.normalise()
+		// EVERY SETTING IS REFUSED WHILE A SHARE IS UP.
+		//
+		// Half of this was already true and unsayable: the endpoint refuses to
+		// move an enabled environment, so a form that accepted the edit
+		// reported a failure about something the operator could not see. The
+		// rest of the fields were worse, because they were accepted, stored,
+		// and then ignored until the next start.
+		//
+		// One rule instead: while the board is being served on zrok, the
+		// configuration is what that share was started with. Stop it to change
+		// it. The panel says so rather than making somebody discover it.
+		if d.nat(OverlayZrok).running() {
+			return fmt.Errorf("the board is on a zrok share right now, so its settings are " +
+				"what that share started with. stop sharing first, then change them")
+		}
 		return d.saveOverlayConfig(SettingOverlayZrok, c)
 	case OverlayZiti:
 		var c ZitiConfig

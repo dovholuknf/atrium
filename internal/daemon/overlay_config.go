@@ -29,7 +29,28 @@ type ZrokConfig struct {
 	// Mode is public or private. Public gives anyone with the link the board;
 	// private needs zrok access on the other end, which is the safer default
 	// for something with no login.
+	//
+	// STILL THE FIELD EVERYTHING READS, and now derived rather than typed. See
+	// `Public` and `Private` below and `normalise`, which reconciles them.
+	// Keeping one string as the answer to "what does starting a share do"
+	// means the start path did not have to learn about a second axis.
 	Mode string `json:"mode"`
+
+	// Public and Private are what the operator ticked, and they are NOT
+	// exclusive.
+	//
+	// A machine may reasonably want a public link for the board and a private
+	// share for a lent session, or the reverse, or both. The single `mode`
+	// select could not say that: it was a leftover from when a share was one
+	// thing, and it forced a choice that the two features do not actually
+	// share.
+	//
+	// `Mode` remains what the BOARD's own share starts as, because a listener
+	// is one thing and has to be one of the two. These decide what is OFFERED,
+	// and the board's share follows public when both are on, since that is the
+	// one somebody enabling both is reaching for.
+	Public  bool `json:"public"`
+	Private bool `json:"private"`
 	// ShareToken reuses an existing private share, from `zrok create share`,
 	// so the address survives a restart. Private only: `share public` has no
 	// such flag.
@@ -98,13 +119,49 @@ func (d *Daemon) zrokConfig() ZrokConfig {
 	if err == nil && raw != "" {
 		_ = json.Unmarshal([]byte(raw), &c)
 	}
-	if c.Mode == "" {
-		c.Mode = "private"
-	}
+	c.normalise()
 	if c.Backend == "" {
 		c.Backend = d.defaultBackend()
 	}
 	return c
+}
+
+// normalise reconciles the two checkboxes with the one mode, in both
+// directions.
+//
+// THE UPGRADE PATH IS THE POINT. Every install that exists was written before
+// the booleans, so it holds a `mode` string and neither flag. Reading that as
+// "nothing is enabled" would silently switch off sharing on every machine that
+// already had it configured, and the operator would find out by pressing start
+// and being refused.
+//
+// So: no flags and a legacy mode means derive the flags from it. Flags and no
+// usable mode means derive the mode from them. Both present and agreeing is
+// the ordinary case and nothing moves.
+//
+// Public wins when both are ticked, because the board's own share is one
+// listener and has to pick, and somebody who ticked both is reaching for the
+// link rather than the command.
+func (c *ZrokConfig) normalise() {
+	mode := strings.TrimSpace(c.Mode)
+	known := mode == "public" || mode == "private"
+
+	if !c.Public && !c.Private {
+		if known {
+			// An install from before the flags existed.
+			c.Public, c.Private = mode == "public", mode == "private"
+		} else {
+			// A fresh one. Private is the safer default for a board with no
+			// login in front of it, and it stays the default.
+			c.Private = true
+		}
+	}
+	switch {
+	case c.Public:
+		c.Mode = "public"
+	case c.Private:
+		c.Mode = "private"
+	}
 }
 
 func (d *Daemon) zitiConfig() ZitiConfig {

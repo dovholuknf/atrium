@@ -127,6 +127,30 @@ type Server struct {
 	ShareCard     func(taskID, mode string) (any, error)
 	StopCardShare func(taskID string) error
 	GuestShares   func() any
+
+	// BuildExport hands back this atrium's configuration as something a
+	// repository can hold, or REFUSES and says why. Refusing is the interesting
+	// case: it means something in the configuration looks like a credential,
+	// and a secret pushed to a repository is still in its history after it is
+	// deleted. See `internal/daemon/export.go`.
+	// AuthConfig reports the login in front of the PUBLISHED board, WITHOUT
+	// its client secret, and SaveAuth stores one. See `internal/daemon/auth.go`
+	// for what this does and does not apply to.
+	AuthConfig func() any
+	SaveAuth   func(body []byte) error
+
+	// Rooms is the other machines reporting into this hub, and RoomCheckIn is
+	// how one does it. Held by the daemon, in memory, because a room's cards
+	// belong to that room's database and a durable copy here would be a second
+	// source of truth. See `internal/daemon/rooms.go`.
+	Rooms       func() any
+	RoomCheckIn func(w http.ResponseWriter, r *http.Request)
+
+	BuildExport func() (any, error)
+	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
+	// is the question somebody restoring a machine actually has, and is the
+	// default for that reason.
+	ApplyImport func(body []byte, apply, force bool) (any, error)
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -179,6 +203,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/overlays/{kind}/setup", s.setupOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/teardown", s.teardownOverlay)
 	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
+	if s.Rooms != nil {
+		mux.HandleFunc("GET /v1/rooms", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, s.Rooms())
+		})
+	}
+	if s.RoomCheckIn != nil {
+		mux.HandleFunc("POST /v1/rooms", s.RoomCheckIn)
+	}
+	mux.HandleFunc("GET /v1/auth", s.getAuth)
+	mux.HandleFunc("PUT /v1/auth", s.putAuth)
+	mux.HandleFunc("GET /v1/config/export", s.exportConfig)
+	mux.HandleFunc("POST /v1/config/import", s.importConfig)
 	mux.HandleFunc("GET /v1/shares", s.listGuestShares)
 	mux.HandleFunc("POST /v1/tasks/{id}/share", s.shareCard)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/share", s.unshareCard)
@@ -217,6 +253,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/tasks/{id}/icon", s.deleteIcon)
 	mux.HandleFunc("GET /v1/tasks/{id}/sessions", s.taskSessions)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/sessions/{session}", s.forgetSession)
+	mux.HandleFunc("POST /v1/tasks/{id}/files/probe", s.probeFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/text", s.readText)
 	mux.HandleFunc("PUT /v1/tasks/{id}/files/text", s.writeText)
 	mux.HandleFunc("GET /v1/sources", s.listSources)

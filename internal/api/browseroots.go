@@ -31,6 +31,23 @@ import (
 // old behaviour and there is no good reason to keep that reachable.
 const SettingBrowseRoots = "browse_roots"
 
+// SettingSharedLocation is a second file the daemon writes its address to, for
+// callers running as another account.
+//
+// The per-user location file is unreadable to anybody but the account the
+// daemon runs as, so a script running as the human cannot find the board and
+// ends up with somebody's profile path hardcoded in it. Naming a directory
+// both accounts can reach fixes that. `%WORKTREE_ROOT%\atrium\daemon.json` is
+// the obvious one, since a caller launching against a worktree already has it.
+//
+// Empty means only the per-user file is written, which is right for a machine
+// where the daemon and its callers are the same person.
+//
+// It lives in this package rather than beside `whereami.go` because the
+// settings endpoint is here and the daemon already imports this. See
+// `daemon.sharedLocation`, which reads it.
+const SettingSharedLocation = "shared_location"
+
 // browseRootsFor is the allowed set, resolved.
 //
 // Resolved rather than compared as text, because the whole point of the check

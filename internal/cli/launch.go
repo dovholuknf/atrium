@@ -29,8 +29,12 @@ import (
 type launchOpts struct {
 	boardURL, harness, cwd, title, why, resume string
 	prompt, source, externalID, itemURL        string
-	tags                                       []string
-	quiet                                      bool
+	// What the caller already knows about the work. See `LaunchRequest`:
+	// atrium derives none of it, and every one is optional.
+	repo, org, host, branch, window, theme string
+	ifRunning                              string
+	tags                                   []string
+	quiet                                  bool
 }
 
 func newLaunch() *cobra.Command {
@@ -65,6 +69,18 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.externalID, "external", "",
 		"that system's own identifier for this work, such as openziti/ziti#4211")
 	c.Flags().StringVar(&o.itemURL, "item-url", "", "the way back to the thing itself")
+	c.Flags().StringVar(&o.repo, "repo", "", "which repository this work is in")
+	c.Flags().StringVar(&o.org, "org", "", "which organisation owns it, so two forks are told apart")
+	c.Flags().StringVar(&o.host, "host", "", "which forge it is on, such as github.com")
+	c.Flags().StringVar(&o.branch, "branch", "", "which branch this directory is on")
+	c.Flags().StringVar(&o.window, "window", "",
+		"which pile this belongs to, and what the board groups by. free text: "+
+			"active-work, pull-requests, tangent, a repo name, anything")
+	c.Flags().StringVar(&o.theme, "theme", "",
+		"the terminal palette this session comes up in, when the caller keeps that map")
+	c.Flags().StringVar(&o.ifRunning, "if-running", "",
+		"what to do when this directory already has a card: skip to hand it back and "+
+			"start nothing, adopt to continue it. empty starts another one")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -106,6 +122,13 @@ func launchAgent(o launchOpts) error {
 		"source":      o.source,
 		"external_id": o.externalID,
 		"url":         o.itemURL,
+		"repo":        o.repo,
+		"org":         o.org,
+		"host":        o.host,
+		"branch":      o.branch,
+		"window":      o.window,
+		"theme":       o.theme,
+		"if_running":  o.ifRunning,
 	})
 	if err != nil {
 		return err
