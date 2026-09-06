@@ -155,6 +155,34 @@ func (r *runner) watching() bool {
 	return len(r.watchers) > 0
 }
 
+// Say types text into the runner and then presses Enter, as two separate
+// writes.
+//
+// NOT ONE WRITE, and the difference is the whole function.
+//
+// A TUI decides whether input is TYPED or PASTED from how it arrives, and a
+// burst is a paste. `text + "\r"` in a single write is one burst, so the
+// trailing carriage return is read as part of the pasted text rather than as
+// the key that submits it. The message lands in the prompt, a newline appears,
+// and nothing is sent: the operator ends up switching to the terminal and
+// pressing Enter themselves, which is the whole thing they were avoiding.
+//
+// The pause is what separates them. It is short enough not to be felt and long
+// enough to end the burst.
+//
+// Every path that says something to a session goes through here: a message, a
+// note being sent, and an action's prompt.
+func (r *runner) Say(text string) error {
+	if err := r.Write([]byte(text)); err != nil {
+		return err
+	}
+	time.Sleep(sayThenEnter)
+	return r.Write([]byte("\r"))
+}
+
+// How long between the text and the Enter that sends it.
+const sayThenEnter = 140 * time.Millisecond
+
 // Write sends keystrokes to the runner. Nothing arbitrates between two
 // attachers typing at once, which is the same situation as two hands on one
 // keyboard.
@@ -318,6 +346,13 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		done:     make(chan struct{}),
 	}
 	d.sup.add(r)
+
+	// A card that was lent out gets its address back the moment it has a
+	// terminal to serve. Cheap and silent for the overwhelming majority that
+	// were never shared, which is why it can sit on the path every runner
+	// takes rather than being remembered at each of the several places one
+	// starts.
+	d.EnsureCardShare(taskID)
 
 	// One reader owns the pty. Everything else subscribes to it.
 	go func() {

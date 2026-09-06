@@ -10,7 +10,9 @@ import (
 
 // How much of a session you can scroll back through.
 //
-// TWO NUMBERS, because there are two buffers and the smaller one wins.
+// TWO NUMBERS, because there are two buffers and whichever runs out first is
+// what you get. Not "the smaller of the two": they are in different units and
+// there is no comparing them without guessing a line length.
 //
 // The daemon keeps the last N bytes of every supervised runner's output and
 // writes the whole lot down the socket when a browser attaches. Nothing older

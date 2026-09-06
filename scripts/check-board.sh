@@ -80,6 +80,15 @@ if ! node "$here/scripts/check-runner-panes.js" "$page"; then
   fail=1
 fi
 
+# The terminal pane's invariants. Every one of these is a bug that has already
+# been hit, and all of them are invisible until somebody types: a keystroke
+# arriving twice, a paste arriving as one Enter per line, output from a socket
+# that should have been closed. None of it is reachable from a parser.
+if ! node "$here/scripts/check-terminal.js" "$page"; then
+  echo "a terminal invariant is broken. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

@@ -55,6 +55,35 @@ if grep -q '^  body\[data-skin=' "$board"; then
   exit 1
 fi
 
+# EVERY VALUE HAS TO BE A COLOUR. A malformed one is not an error anywhere:
+# CSS drops the declaration, the variable falls back to its `:root` default, and
+# the result is one element wearing the wrong palette. Which is the same symptom
+# as a missing variable, arrived at a different way.
+#
+# Typing twenty palettes by hand produced a `#2C4468` written as `#2C4husband`
+# and a `5` that was a full-width one. Both parse as text and neither is a
+# colour.
+awk '
+  /^  :root\[data-skin=/ { inblock = 1 }
+  inblock && /^  }/ { inblock = 0 }
+  inblock {
+    n = split($0, parts, ";")
+    for (i = 1; i <= n; i++) {
+      if (match(parts[i], /--[a-z0-9-]+[ ]*:[ ]*#[^ ]*/)) {
+        v = substr(parts[i], RSTART, RLENGTH)
+        sub(/^.*#/, "", v)
+        if (v !~ /^[0-9A-Fa-f]{6}$/ && v !~ /^[0-9A-Fa-f]{3}$/) print FILENAME ": #" v
+      }
+    }
+  }
+' "$board" > "$work/badhex"
+
+if [ -s "$work/badhex" ]; then
+  echo "these are not colours:" >&2
+  sed 's/^/  /' "$work/badhex" >&2
+  exit 1
+fi
+
 skins=$(cut -d' ' -f1 "$work/pairs" | sort -u)
 count=$(echo "$skins" | wc -l | tr -d ' ')
 

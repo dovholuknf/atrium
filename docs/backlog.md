@@ -25,91 +25,104 @@ The sections below are grouped by subject rather than by rank, because each one 
 written as the questions came up. This is the rank. It is short on purpose: a list of twenty priorities is a
 list of none.
 
-**The whole of the previous top six shipped.** Themes, sharing one agent, the event log, `/v1/browse`, priority
-and notes are all built and their sections say so. What follows is what is left, re-ranked.
+**Shipped since this table was last written:** the shell beside a wedged agent, the grouping expression rule,
+the overlay panel, board skins, the runners page, the test-plan sections, and atrium starting by itself as a
+managed thing on all three operating systems. Each has its own entry saying so. What follows is what is left.
 
-| # | Item | Size |
-| --- | --- | --- |
-| 1 | Proper packaging: scoop, choco, homebrew, deb and rpm, and the Store | a week, unevenly |
-| 2 | Starting a card from a ticket, an issue or a pull request | two days |
-| 3 | Hooks for runners that are not Claude Code | two days |
-| 4 | `docs/test-plan.md` predates v2 and does not cover permissions diff or overlays | a day |
-| 5 | The overlay panel is a configuration screen pretending to be a switch | a day |
-| 6 | Themes you can edit, and themes you can bring | a day |
-| 7 | A shell beside a wedged agent, in the same card | a day |
-| 8 | The grouping expression rule, before anything stores one daemon-side | half day |
-| 9 | Approvals from a phone (deprioritized: auto mode makes it moot for now) | a day |
+| # | Item | Size | Where it stands |
+| --- | --- | --- | --- |
+| 1 | Publish a release, then scoop, homebrew, choco, the Store | a week, unevenly | it builds and runs. Publishing is left |
+| 2 | Starting a card from a ticket, an issue or a pull request | two days | designed in `docs/scm-design.md`, reviewed, not built |
+| 3 | Atrium's own settings as files a repository can hold | two days | designed in the same document, not built |
+| 4 | Hooks for runners that are not Claude Code | two days | untouched |
+| 5 | Themes you can edit, and themes you can bring | a day | untouched. TERMINAL themes, not the board's skins |
+| 6 | A window you are looking at should not tell you what you can see | half day | untouched |
+| 7 | zrok limits, before you press a button that fails | a day | refused once already: it needs another API shape |
+| 8 | `zrok enable` still shells out | half day | the only executable left. No SDK equivalent has been checked |
+| 9 | Approvals from a phone | a day | deprioritized: auto mode makes it moot for now |
 
-Below that, in no particular order: the forum, Postgres, stage 5, and multi-tenant.
+Below that, in no particular order: the forum, Postgres, stage 5, multi-tenant, ziti with OIDC, a NetFoundry
+front door, governed calls from sterling, a runner that can ask for help, working directories from a repo URL,
+and status inference for runners that cannot speak.
 
 ## Next
 
-### Proper packaging. Groundwork built, publishing is yours.
+### Packaging. It builds, it installs, it starts by itself. Only publishing is left.
 
-**Moved to `docs/packaging.md`,** which has the five targets, what each costs, and a table of what is written
-against what needs a human. The entry below is kept for the reasoning.
+**All of it moved to `docs/packaging.md`,** which now has the per-platform service decision, the publishing
+choice with what the alternatives would have cost, what was proved by running it, and the ordered list of
+commands to publish for the first time. This entry keeps only what is outstanding.
 
-Built and verified tonight: `atrium version`, stamped by the linker; `scripts/release.sh`, which builds five
-platforms, archives each in its ecosystem's shape and writes one checksum file. The Linux build off this
-Windows machine is a statically linked ELF, which is the property a deb and an rpm rest on.
+**Closed.** Atrium starts by itself on Linux, macOS and Windows, as you, in your session: a systemd user unit
+enabled by the deb and rpm postinstall, a launchd LaunchAgent, and a Windows logon task. Install, uninstall,
+start, stop, restart and status are one command on each, all idempotent, in `scripts/atrium-service.sh` and
+`scripts/atrium-service.ps1`. Both packages have been built for both architectures and unpacked and checked.
+There is a CI workflow and a release workflow, and neither contains any logic. `scripts/publish-release.sh`
+uploads to GitHub Releases and refuses to do it without being told twice.
 
-Written and NOT verified: `packaging/nfpm.yaml`, `packaging/atrium.service`, `packaging/scoop-atrium.json`.
-Each says so at the top of itself.
+This also closes **"atrium on PATH"** under Parked, which was parked for want of exactly this: a deb or an rpm
+puts the binary in `/usr/bin`, and scoop puts a shim on PATH.
 
-**The one unsolved thing, named so it is not discovered later:** `restart_atrium` renames a staged binary over
-the running one, and under a package manager that file belongs to the manager. The rule is probably that a
-packaged atrium refuses the swap and names the upgrade command, which means the build has to know how it was
-installed. `docs/reload-design.md` assumes the swap always works.
+**Still open, in the order they matter.**
 
-### Proper packaging, on every platform atrium runs on
+1. **Nothing has been published,** which is the only thing between here and somebody else installing atrium. It
+   is six commands and they are written out at the end of `docs/packaging.md`. Scoop first, because it proves
+   the release shape end to end before anything harder depends on it.
+2. **No package has been installed on a Linux machine and no LaunchAgent has been loaded on a Mac,** because
+   neither machine exists here. The postinstall's live path, `KillMode=mixed`, and every `launchctl` call are
+   the untested parts, and `docs/packaging.md` lists them one by one rather than implying they are fine.
+3. **Self-update against a package manager is still unsolved.** `restart_atrium` renames a staged binary over
+   the running one, and under scoop, choco, a deb or a Homebrew formula that file belongs to the manager. A
+   rename behind its back leaves the manager reporting a version that is not installed, and the next `scoop
+   update` quietly puts the old one back. The rule to land on is probably that a packaged atrium refuses the
+   swap and names the upgrade command for whoever owns it, which means the build has to know how it was
+   installed: one more linker variable, set by each packaging path. `docs/reload-design.md` assumes the swap
+   always works and will need a section when this is decided.
+4. **An apt and yum repository, which is the thing that buys `apt upgrade`.** Costed in `docs/packaging.md`
+   and deliberately not built. It needs a GPG signing key generated, stored outside a repository, put in CI,
+   published for people to trust, and rotated eventually by somebody who remembers how. That is the same class
+   of cost as the code signing certificate that gates Chocolatey, and it is worth paying when there are users
+   to upgrade rather than before.
+5. **Where the database lives** is still `~/.atrium/atrium.db`, keyed off `WORKTREE_ROOT`. Both the systemd
+   unit and the Windows task name it explicitly so a daemon started at login cannot open a different database
+   from the one you get by hand, which was the original symptom: a board that had lost every card. What is not
+   decided is whether `~/.atrium` is right at all, and MSIX will move it whether or not anybody decides.
+6. **Homebrew, Chocolatey and the Microsoft Store are untouched** and each needs a certificate, an account or
+   both. The Store additionally has a design consequence rather than only a cost, which is item 5 arriving
+   from another direction.
+7. **A real Windows service, eventually.** What ships is a logon task, and the operator has said plainly that
+   this is not what he wants long term. The gap is not cosmetic: a logon task **stops when you log out**, so a
+   daemon whose whole point is outliving the sessions it supervises does not outlive the login. Linux buys out
+   of this with `loginctl enable-linger`. Windows and macOS have no equivalent, so on those two the choice is
+   the task or a service.
 
-There is no way to install atrium. You build it and copy the binary somewhere, and every machine ends up with a
-different somewhere. An `atrium install` subcommand was written for this and **removed before it shipped**,
-because copying a file to a fixed path is the shallow half of the problem and doing it in-tree makes the deep
-half harder to reach later.
+   What a service costs, so the decision is not made twice. It runs in session 0 with no loaded user profile,
+   which is the same objection that made the systemd unit a USER unit: no PATH, no shell configuration, no ssh
+   agent, no credential helper, and every runner it started would inherit none of them. Running it as the
+   interactive user instead needs that account's password stored in the SCM database, or a gMSA, which removes
+   the password by being a different account and therefore reintroduces the profile problem. It also needs a
+   service control handler compiled into `cmd/atrium`, which is the first thing in this repository that would
+   be Windows-only code in the binary rather than in a script.
 
-What it did not do is the list of what installing actually means: report a version, uninstall cleanly, land on
-PATH, upgrade in place, tell you an upgrade exists, and be signed so the operating system does not warn about
-it. It also invented `~/.atrium/bin` as a convention that no packaging format would have agreed with, which is
-one more path for atrium to be wrong about.
+   So the shape to aim at is probably a service that starts the daemon as the logged-in user and gets out of
+   the way, which is what a wrapper such as WinSW does, rather than a daemon that is itself a service. Not
+   started, deliberately, until there is a user who is losing work to a logout.
 
-**The targets, easiest first.**
+**A rule worth keeping.** Registration lives in packaging scripts and package scriptlets, never in the binary.
+An `atrium install` subcommand was written for this and removed before it shipped, because copying a file to a
+fixed path is the shallow half of the problem and doing it in-tree makes the deep half harder to reach: no
+version, no uninstall, no PATH entry, no upgrade, no way to be told an upgrade exists, and a `~/.atrium/bin`
+convention invented here that no packaging format would have agreed with.
 
-- **Scoop.** A JSON manifest in a bucket, pointing at a GitHub release asset and its hash. No signing, no
-  review, no account. This is close to free once releases carry checksums, and it is the one to do first
-  because it proves the release shape is right before anything harder depends on it.
-- **Homebrew.** A tap of our own to start, since core has criteria atrium does not meet yet. A formula that
-  installs the binary and a `brew services` plist for the daemon. Unsigned means macOS quarantines the download
-  and the first run is a right-click-open, so this wants a Developer ID and notarization to be pleasant rather
-  than merely possible.
-- **deb and rpm.** One `nfpm` config emits both from the same built binary, plus a systemd **user** unit. It
-  has to be a user unit, not a system one, for the reason `scripts/atrium-autostart.ps1` is a logon task and
-  not a Windows service: a daemon in a system context cannot open a pseudo terminal a person can attach to, and
-  supervision is most of what atrium is for. That script and the systemd unit are the same design decision on
-  two platforms and should be written together, so neither drifts into starting a second daemon on one
-  database.
-- **Chocolatey.** A nuspec, an install script, and moderation on the community feed. Wants a code-signed exe,
-  which is the real cost here and is shared with the next one.
-- **Microsoft Store.** MSIX, a package identity, and a certificate. Also the strictest: an MSIX-packaged app
-  runs with a virtualized filesystem and registry, which will move where the database lives and needs deciding
-  before packaging rather than discovered after. Last, and possibly never, since the audience for atrium is
-  people who already have a terminal open.
+### Two scripts had never been run, and one could not have been
 
-**Three things this has to get right, because they are the reason the fixed path existed at all.**
+Not a backlog item so much as a warning about the rest of this list. `scripts/atrium-autostart.ps1` was written,
+reviewed, documented at length, and could not execute: `[CmdletBinding()]` plus a parameter named `$Db` collides
+with the `db` alias on `-Debug`, and PowerShell refused every invocation including `-Remove`. `packaging/nfpm.yaml`
+built packages that were quietly missing files, because nfpm drops an unrecognised content type in silence.
 
-1. **Which binary is running.** Every hook in `settings.json` names one, the logon task names one, and
-   `restart_atrium` swaps onto one. The daemon already records its own binary in the location file
-   (`internal/claudeconf/whichexe.go`), and that is the part of the removed change that was correct and stayed.
-   It is correct however the binary arrived, which is why packaging does not disturb it.
-2. **Self-update against a package manager.** `restart_atrium` renames a staged binary over the running one.
-   Under scoop or choco or a deb, the package manager owns that file and a rename behind its back leaves it
-   reporting a version that is not installed. The rule to land on is probably that a packaged atrium refuses
-   the swap and tells you the upgrade command for the manager that owns it, which means the build has to know
-   how it was installed. See `docs/reload-design.md`, which assumes the swap always works.
-3. **Where the database lives.** Currently `~/.atrium/atrium.db`, keyed off `WORKTREE_ROOT`. Packaging is the
-   moment to decide whether that is right, because MSIX will change it whether or not anybody decides.
-
-This also closes **"atrium on PATH"** under Parked, which was parked for want of exactly this.
+Both were found in the first ten minutes of actually running them, and neither was findable by reading. Anything
+in this backlog described as written rather than run should be assumed to be in the same state.
 
 ### The event log answers with the wrong end of itself. Fixed.
 
@@ -1204,10 +1217,14 @@ channel triple, the solid is derived from it, and a skin sets one value per colo
   that does not exist yet is a list somebody is preparing; an unknown skin saves, gets worn, matches no rule and
   changes nothing, which is the worst answer available.
 
-**Still open: a light board.** Wanted eventually and deliberately not attempted. It needs `--lift`,
-`--hairline` and the shadows to become part of the skin rather than constants, and it needs somebody to decide
-what the terminal does underneath, since xterm draws its own background and a light board around a black
-terminal is worse than either.
+**A light board is built.** It was deferred once with a reason, and the reason was the work: `--lift`,
+`--lift-strong` and `--hairline` were white at low alpha, which is invisible on pale paper, and the shadows
+were near black. All four are part of a skin now, so a light one uses black at low alpha and a hover reads as a
+press rather than a glow. Four ship: `paper`, `daylight`, `linen` and `frost`.
+
+The thing that was NOT decided is still not decided: the terminal draws its own background, so a light board
+sits around whatever theme that terminal wears. Pick a light terminal theme to match, or accept the contrast.
+Nothing makes them agree and nothing should: a terminal theme is per card on purpose.
 
 ### Themes you can edit, and themes you can bring
 

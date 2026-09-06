@@ -59,7 +59,6 @@ type sessionInput struct {
 	Trigger string `json:"trigger"`
 }
 
-
 func newSession() *cobra.Command {
 	var event, name, hubURL string
 	c := &cobra.Command{

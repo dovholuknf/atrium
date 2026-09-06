@@ -1,0 +1,73 @@
+# Build every platform, package the Linux ones, and publish the release.
+#
+# THERE IS NO LOGIC IN THIS FILE. Three scripts, in order, each runnable by hand
+# on the machine that wrote them:
+#
+#   scripts/release.sh       five platforms, five archives, one checksum file
+#   scripts/package-linux.sh the deb and the rpm, both architectures
+#   scripts/publish-release.sh  the upload, which refuses unless told twice
+#
+# The last one is where the GitHub-specific values enter, and they enter as
+# parameters rather than as behaviour: a token in the environment and the tag
+# name as an argument. That is the whole of what this workflow adds.
+#
+# TRIGGERED BY A TAG, NEVER BY A BRANCH. A release is a decision somebody made
+# by typing `git tag`, and `publish-release.sh` passes `--verify-tag` so it
+# cannot invent one off whatever HEAD happens to be. A release cut from an
+# untagged commit is a release nobody can find again.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "tag to publish, which must already exist"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # The tag, from whichever of the two triggers fired. Expressed here rather
+      # than repeated in three `run:` lines, because a version computed twice is
+      # a version that will eventually be computed differently.
+      ATRIUM_VERSION: ${{ inputs.version || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history and every tag. release.sh stamps the binary with
+          # `git describe --tags --exact-match`, and a shallow clone with no
+          # tags makes that fail and the version silently become `dev`. A
+          # release that reports itself as `dev` is one a package manager will
+          # never offer an upgrade over.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build every platform
+        run: bash scripts/release.sh "$ATRIUM_VERSION"
+
+      - name: the deb and the rpm
+        run: bash scripts/package-linux.sh "$ATRIUM_VERSION"
+
+      - name: publish
+        run: bash scripts/publish-release.sh "$ATRIUM_VERSION" --publish
+
+      # Kept whether or not the publish worked. When it did, this is how you
+      # check a hash without downloading a release; when it did not, it is the
+      # only copy of what was built.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atrium-${{ env.ATRIUM_VERSION }}
+          path: build.claude/release/${{ env.ATRIUM_VERSION }}/

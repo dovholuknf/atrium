@@ -72,6 +72,7 @@
     /* Where a button goes when the pointer is over it. Named so a skin can
        move it: an unnamed hex here gives every skin the same hover. */
     --btn-hover: #1D4666;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
     /* One tone for text on a danger surface. Spelling near-identical pinks out
        per rule is one chance each to skin nine tenths of a panel. */
     --danger-text: #FFC3C9;
@@ -115,17 +116,39 @@
        on screen". Shrinking the type to fit more work in view makes the work
        harder to read, which is backwards: the names stay legible and the room
        between them goes. So spacing carries a second multiplier that nothing
-       in the type ladder above uses. */
+       in the type ladder above uses.
+
+       DENSITY IS VERTICAL ONLY. The question it answers is "how many rows fit
+       on this screen", and the answer to that has nothing to do with the gap
+       between a chip and the chip beside it. Applying it to both axes made
+       `tightest` jam a toolbar's controls into each other and clip the labels
+       at the left of a bar, while barely moving the row heights, because most
+       of a row's height was hardcoded padding that was not on any ladder.
+
+       So: `--sp-*` is horizontal and general, and scales with the text only.
+       `--vs-*` is vertical, and is the one density moves. */
     --density: 1;
-    --sp-1: calc(4px * var(--uiscale) * var(--density));
-    --sp-2: calc(6px * var(--uiscale) * var(--density));
-    --sp-3: calc(9px * var(--uiscale) * var(--density));
-    --sp-4: calc(13px * var(--uiscale) * var(--density));
-    --sp-5: calc(17px * var(--uiscale) * var(--density));
-    --sp-6: calc(24px * var(--uiscale) * var(--density));
-    /* A row's own padding, which is most of the height of a stack row and was
-       the one number not on the ladder. */
+    --sp-1: calc(4px * var(--uiscale));
+    --sp-2: calc(6px * var(--uiscale));
+    --sp-3: calc(9px * var(--uiscale));
+    --sp-4: calc(13px * var(--uiscale));
+    --sp-5: calc(17px * var(--uiscale));
+    --sp-6: calc(24px * var(--uiscale));
+
+    --vs-1: calc(4px * var(--uiscale) * var(--density));
+    --vs-2: calc(6px * var(--uiscale) * var(--density));
+    --vs-3: calc(9px * var(--uiscale) * var(--density));
+    --vs-4: calc(13px * var(--uiscale) * var(--density));
+    --vs-5: calc(17px * var(--uiscale) * var(--density));
+    --vs-6: calc(24px * var(--uiscale) * var(--density));
+
+    /* A row's own padding, which is most of the height of a list.
+       Three of them, because a board card, a stack row and a one-line history
+       entry are different amounts of content and were three different
+       hardcoded numbers before any of this was adjustable. */
     --row-y: calc(15px * var(--uiscale) * var(--density));
+    --row-y-sm: calc(8px * var(--uiscale) * var(--density));
+    --row-y-xs: calc(5px * var(--uiscale) * var(--density));
     --row-x: calc(20px * var(--uiscale));
 
     /* Corners. Fixed, not scaled: a corner is a style, and a 12px radius on a
@@ -191,8 +214,12 @@
      row on screen whose shape people navigate by.
      The tabs give up their width first, since they can scroll; the actions on
      the right keep theirs. */
+  /* THE HEADER ANSWERS TO DENSITY TOO. It is on screen in every view, so it
+     is the one strip whose height is paid on every tab, and it was the last
+     thing still using fixed padding while everything under it tightened. */
   .bar {
-    display: flex; align-items: center; gap: var(--sp-6); padding: 16px 28px;
+    display: flex; align-items: center; gap: var(--sp-5);
+    padding: calc(11px * var(--uiscale) * var(--density)) var(--row-x);
     flex-wrap: nowrap; min-width: 0;
   }
   .bar > * { flex: none; }
@@ -207,7 +234,8 @@
   }
   nav::-webkit-scrollbar { display: none; }
   .tab {
-    padding: 10px 20px; border-radius: var(--r-md); cursor: pointer; color: var(--label);
+    padding: calc(6px * var(--uiscale) * var(--density)) calc(13px * var(--uiscale));
+    border-radius: var(--r-md); cursor: pointer; color: var(--label);
     border: 1px solid transparent; font-size: var(--fs-2xl); font-weight: 500;
     transition: color .15s, background .15s, border-color .15s; user-select: none;
     white-space: nowrap; flex: none;
@@ -565,8 +593,13 @@
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     /* No group hue here. See the rule under `.cardgroup.project .card`. */
     border: 1px solid var(--stroke); border-radius: var(--r-md);
-    padding: calc(8px * var(--density)) 12px;
-    margin-bottom: calc(7px * var(--density)); cursor: pointer;
+    /* ON THE LADDER, both axes. The vertical was `8px * density` and the
+       horizontal a bare `12px`, so neither answered to text size: turning the
+       type up grew the chips and the name inside the card and left the room
+       around them where it was, which reads as a card that has run out of
+       space rather than as one with tight padding. */
+    padding: var(--row-y-sm) calc(12px * var(--uiscale));
+    margin-bottom: var(--vs-2); cursor: pointer;
     box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
   }
@@ -625,7 +658,11 @@
     0%, 100% { opacity: 1; }
     50% { opacity: .55; }
   }
-  .chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  /* `align-items: center`, because the default is `stretch` and a row of chips
+     is a row of different heights: one carries a glyph, the rest carry text.
+     Stretched, the shortest was pulled to the tallest and gained padding it
+     was never given. */
+  .chips { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .chip {
     font: 500 var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border-radius: var(--r-sm);
     background: var(--chip); color: var(--label); border: 1px solid transparent;
@@ -654,6 +691,14 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* Published. Danger rather than warn, and the same mark as the header, so a
+     card that is reachable from outside this machine says so in the colour
+     that means it. */
+  .chip.shared {
+    background: rgba(var(--danger-rgb),.16); border-color: var(--danger);
+    color: var(--danger-text);
+  }
+  .chip.shared::before { content: "\26D4 "; }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;
@@ -768,6 +813,21 @@
   #cardmenu button .help { margin-left: 7px; }
   #cardmenu .subitem:hover { background: var(--lift); color: var(--head); }
   #cardmenu .subitem svg { flex: none; }
+  /* A group inside a flyout, and a line saying what a group cannot do.
+     Neither is a target: no hover, no pointer, nothing to press. A heading
+     that lights up under the pointer is a heading somebody will click. */
+  #cardmenu .subhead {
+    display: block; padding: 8px 11px 4px; white-space: nowrap;
+    font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase;
+    color: var(--dimmest);
+  }
+  /* The first one needs no gap above it: the flyout's own padding is enough,
+     and a heading floating below the top edge reads as a dropped row. */
+  #cardmenu .subhead:first-child { padding-top: 3px; }
+  #cardmenu .subnote {
+    display: block; padding: 5px 11px 7px; white-space: nowrap;
+    font-size: var(--fs-sm); color: var(--dimmest); font-style: italic;
+  }
   /* Off the right edge, the flyout goes left instead. */
   #cardmenu.flip .sub { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
   #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
@@ -794,10 +854,10 @@
     font: var(--fs-sm)/1.5 var(--mono); color: var(--dim); margin-top: 4px;
     word-break: break-all;
   }
-  .dirlist { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: 10px; }
+  .dirlist { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-3); }
   .dirlist .dir {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%;
-    text-align: left; padding: 8px 10px; border-radius: var(--r-sm);
+    text-align: left; padding: var(--row-y-sm) 10px; border-radius: var(--r-sm);
     background: transparent; border: 1px solid transparent; color: var(--label);
     font-size: var(--fs-base); cursor: pointer;
   }
@@ -806,7 +866,7 @@
   /* A checkout, so a folder of thirty shows which few are repositories. */
   .dirlist .dir.repo .ic { color: var(--teal); }
   .dirlist .dir.repo .nm { color: var(--head); font-weight: 600; }
-  .quickdirs { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: 7px; }
+  .quickdirs { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-2); }
   /* Full width rows rather than pills. A path is long, and a row of truncated
      pills is a row of buttons you have to hover to tell apart. */
   .quickdir {
@@ -885,18 +945,90 @@
      tell you nobody is being asked. */
   .gauto {
     font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
-    text-transform: uppercase; padding: 8px 12px; white-space: nowrap;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
     color: var(--dimmest); border-color: var(--stroke-dim); background: transparent;
   }
-  .gauto::before { content: "\25CF"; margin-right: 6px; font-size: .9em; }
+  /* INLINE-BLOCK AND ALIGNED TO THE MIDDLE, not left on the baseline.
+     A filled circle's baseline is its bottom edge, so beside uppercase letters
+     with no descenders it rode low. `vertical-align` fixes that where it sits
+     rather than making the button a flex container, which is a bigger change
+     than a dot being 1px out is worth. */
+  .gauto::before {
+    content: "\25CF"; display: inline-block; vertical-align: middle;
+    font-size: .9em; line-height: 1; margin-right: 6px;
+    position: relative; top: -1px;
+  }
   /* Narrow: the label goes, the dot and its color stay. What matters is
      whether it is on, and the color says that on its own. */
   @media (max-width: 1150px) {
-    .gauto { font-size: 0; padding: 8px 10px; }
+    .gauto { font-size: 0; padding: 7px 10px; }
     .gauto::before { margin-right: 0; font-size: var(--fs-md); }
   }
   .gauto.on {
     color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
+  }
+  /* PUBLISHED, and it wears the danger colour rather than the accent.
+     Sharing is not a state to be pleased about at a glance: it is one to
+     notice and decide about, and the thing it is closest to is a warning that
+     something is reachable from outside this machine. The stop sign reads
+     before the words do. */
+  .sharing {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--danger-text); border-color: var(--danger);
+    background: rgba(var(--danger-rgb),.14);
+  }
+  .sharing[hidden] { display: none; }
+  .sharing::before { content: "\26D4"; font-size: 1.05em; line-height: 1; }
+  .sharing:hover { border-color: var(--danger); background: rgba(var(--danger-rgb),.24); }
+  /* An address beside the button that copies it. */
+  .copyrow { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; }
+  .copyrow input {
+    flex: 1 1 auto; min-width: 0;
+    font: var(--fs-sm)/1.4 var(--mono); padding: 7px 8px;
+  }
+  .copyrow button { flex: none; }
+  .sharerow {
+    display: flex; align-items: flex-start; gap: var(--sp-3);
+    padding: 11px 0; border-bottom: 1px solid var(--stroke-dim);
+  }
+  .sharerow:last-child { border-bottom: none; }
+  /* Sharing, while it is happening.
+     Creating a share is several seconds of somebody else's server, and for all
+     of them the board showed the button unchanged. A failure then arrived as a
+     paragraph about something that had never appeared to start. These are the
+     real steps, in order, and the one in progress is the only moving thing on
+     the screen. */
+  .shsteps { margin: 2px 0 4px; }
+  .shstep {
+    display: flex; align-items: flex-start; gap: var(--sp-3);
+    padding: 7px 0; font-size: var(--fs-md); color: var(--dimmest);
+  }
+  .shstep .mark {
+    flex: none; width: 1.15em; height: 1.15em; margin-top: .14em;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .92em; line-height: 1;
+  }
+  .shstep.now { color: var(--head); }
+  .shstep.ok { color: var(--body); }
+  .shstep.ok .mark { color: var(--chip-accent-text); }
+  .shstep.bad { color: var(--danger); }
+  .shspin {
+    width: 1em; height: 1em; border-radius: 50%;
+    border: 2px solid rgba(var(--stroke-rgb),.85);
+    border-top-color: var(--teal);
+    animation: shspin .7s linear infinite;
+  }
+  @keyframes shspin { to { transform: rotate(360deg); } }
+  /* Slowed rather than stopped. The whole job of this element is to say the
+     wait is atrium's and not a dead button, and a frozen spinner says the
+     opposite of that. */
+  @media (prefers-reduced-motion: reduce) { .shspin { animation-duration: 2.6s; } }
+  .shwhy {
+    margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm);
+    background: rgba(var(--danger-rgb),.13); border: 1px solid var(--danger);
+    font-size: var(--fs-sm); line-height: 1.55; color: var(--body);
   }
   /* ── overlays ────────────────────────────────────────── */
   /* One panel per way out, each carrying its own mark, its own color and its
@@ -1036,6 +1168,12 @@
   .hintline.ok { color: var(--chip-accent-text); }
   .hintline.bad { color: var(--warn); }
   .ov-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
+  /* Stands where the start button stood, at the same height, so pressing it
+     does not make the panel jump under the pointer. */
+  .ov-busy {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 7px 2px; font-size: var(--fs-sm); color: var(--head);
+  }
   .ov-actions .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The configuration, folded. Matches the log's summary so the two rows at
      the bottom of an overlay read as the same kind of thing. */
@@ -1131,26 +1269,6 @@
     background: hsl(160 50% 40% / .16); border: 1px solid hsl(160 45% 45% / .4);
     color: hsl(160 45% 72%); cursor: help;
   }
-  /* HOW MUCH THIS MATTERS, and the only chip on the board that is a judgement
-     rather than a fact.
-     High is loud and low is quiet, which is the entire visual argument: a
-     priority that reads at the same weight as everything else has not said
-     anything. Neither reorders a column. */
-  .chip.prio { cursor: pointer; font-weight: 600; letter-spacing: .04em; }
-  .chip.prio.high {
-    background: hsl(4 65% 48% / .18); border: 1px solid hsl(4 70% 58% / .55);
-    color: hsl(4 80% 76%);
-  }
-  .chip.prio.low {
-    background: transparent; border: 1px solid var(--stroke-dim);
-    color: var(--dimmest); font-weight: 500;
-  }
-  /* Marked and then left. A week without being touched and it is drawn as an
-     old opinion rather than a current one, because high-and-forgotten is not
-     high and a field where everything is high says nothing. */
-  .chip.prio.faded { opacity: .45; }
-  .chip.prio.faded:hover { opacity: 1; }
-
   /* Something you wrote and have not sent. Amber, like everything else on this
      board that is waiting on you, because that is exactly what it is: an
      instruction that goes nowhere until you send it. Quieter than a waiting
@@ -1276,7 +1394,7 @@
   .filelist .frow {
     display: grid; grid-template-columns: 1fr auto auto auto;
     gap: var(--sp-3); align-items: center;
-    padding: 5px 10px; font-size: var(--fs-xs);
+    padding: var(--row-y-xs) 10px; font-size: var(--fs-xs);
     border-bottom: 1px solid var(--stroke-dim);
   }
   .filelist .frow:last-child { border-bottom: none; }
@@ -1396,7 +1514,7 @@
   .row .who span { font-size: var(--fs-sm); color: var(--dim); }
   /* Rule and decision rows are list entries, not cards. They get read in bulk,
      so they stay tight enough to scan a screenful at a time. */
-  .row.compact { padding: 8px 15px; gap: var(--sp-4); align-items: center; }
+  .row.compact { padding: var(--row-y-sm) 15px; gap: var(--sp-4); align-items: center; }
   .row.compact .who b { font-size: var(--fs-lg); font-weight: 500; }
   .row.compact .who b code { font-family: var(--mono); color: var(--head); }
   .row.compact .who span { font-size: var(--fs-base); color: var(--dimmest); }
@@ -1407,7 +1525,7 @@
   /* One line per entry: everything on a single row, the wide field truncates. */
   .row.line {
     display: flex; align-items: baseline; gap: var(--sp-4); cursor: default;
-    padding: 8px 16px; font-size: var(--fs-md);
+    padding: var(--row-y-sm) 16px; font-size: var(--fs-md);
   }
   .row.line:hover { background: rgba(var(--chip-rgb),.5); }
   .row.line .stamp { font: var(--fs-base)/1 var(--mono); color: var(--dim); flex: none; }
@@ -1539,12 +1657,44 @@
      beside it and change the terminal's box under a fitted grid. */
   .themepicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
   .themepicker[hidden] { display: none; }
-  /* The same control in the header. Same shape as the terminal's, because it
-     is the same act. Narrower: a skin name is one word and a theme name is
-     frequently three. */
-  .skinpicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
-  .skinpicker[hidden] { display: none; }
-  .skinpicker .themepick { width: 14ch; }
+  /* The floating panel for trying skins.
+     Above the dialogs, because it is opened FROM one and the dialog closes
+     behind it, and a panel that ended up underneath would look like the button
+     did nothing. */
+  #skinlab {
+    position: fixed; z-index: 400; width: 288px;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog);
+  }
+  #skinlab[hidden] { display: none; }
+  /* The handle. The whole strip, not a corner: a small target on a small panel
+     is a panel people give up on moving. */
+  .lab-grip {
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    padding: 10px 12px; cursor: grab; touch-action: none;
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .lab-grip:active { cursor: grabbing; }
+  /* NOWRAP, so the strip is one line at every text size. A title that wraps at
+     one setting and not another changes the panel's height, and a panel that
+     changes height while you are stepping through a list moves under the
+     pointer you are clicking with. */
+  .lab-title {
+    font: 600 var(--fs-xxs)/1.2 var(--sans); letter-spacing: .16em;
+    text-transform: uppercase; color: var(--label);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lab-body { padding: 12px; display: flex; flex-direction: column; gap: var(--vs-3); }
+  .lab-row { display: flex; align-items: center; gap: var(--sp-2); }
+  .lab-row select {
+    flex: 1 1 auto; min-width: 0; font: var(--fs-sm) var(--mono);
+    background: var(--shell-0); color: var(--head);
+    border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 5px 6px;
+  }
+  .lab-step { flex: none; padding: 5px 10px; font-size: var(--fs-lg); line-height: 1; }
+  .lab-answers button { flex: 1 1 auto; padding: 7px 6px; font-size: var(--fs-xs); }
+  .lab-hint { font: var(--fs-xxs)/1.45 var(--sans); color: var(--dim); }
   /* Which of a card's two terminals. A segmented pair rather than two loose
      buttons: they are one choice, and spacing them apart would read as two
      unrelated things to press. */
@@ -1652,10 +1802,17 @@
      next to `attach` instead of a very short label, and the svg is centred by
      the grid rather than by the line height it does not have.
      Not scoped to the stack: the same mark sits on a board card. */
+  /* SIZED FROM THE TEXT, like every chip beside it. It was 22 by 19 fixed
+     pixels, so it matched its neighbours at one text size and at no other:
+     bigger text grew the chips around it and left this one a different height,
+     and the pop-out mark ended up the odd one out on the row.
+
+     `1em` on the glyph ties it to the chip's own font size, which is where the
+     neighbours get their height from too. */
   .chip.icon {
-    display: grid; place-items: center; padding: 0; width: 22px; height: 19px;
+    display: inline-grid; place-items: center; padding: 1px 7px;
   }
-  .chip.icon svg { display: block; }
+  .chip.icon svg { display: block; width: 1em; height: 1em; }
   /* The harness, on the left where the eye starts, instead of a word among the
      chips on the right. Same colors as the runner chip so the two agree. */
   .rmark {
@@ -1674,7 +1831,7 @@
 
   /* A project group in the stack. Its panel carries the color down the left
      edge, the same as a group on the board. */
-  .stackgroup { margin-bottom: var(--sp-4); }
+  .stackgroup { margin-bottom: var(--vs-4); }
   .stackgroup > summary {
     display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
     list-style: none; padding: var(--sp-2) 3px; user-select: none;
@@ -1853,15 +2010,24 @@
      Nine pixels wide with a two pixel line painted down the middle: a handle
      you can see is not the same as a handle you can hit, and a 2px target is
      one you miss. */
+  /* Six pixels of track, not nine. The line inside it is 2px, and the rest was
+     dead space either side that read as a gap between the list and the
+     terminal rather than as something to grab. The hit area is widened by the
+     ::before below instead, so it is easy to catch without looking wide. */
   .term-grip {
-    flex: 0 0 9px; align-self: stretch; position: relative; cursor: col-resize;
+    flex: 0 0 6px; align-self: stretch; position: relative; cursor: col-resize;
     background: none; border: 0; padding: 0; border-radius: 0;
+  }
+  /* Pointer target, invisible, wider than the line. A 2px control is honest
+     about how much room it takes and miserable to hit. */
+  .term-grip::before {
+    content: ""; position: absolute; inset: 0 -4px; z-index: 1;
   }
   /* In the attached terminal's colours, since it sits against that terminal.
      `--term-line` and `--term-thumb-hi` are set on the layout by paintPaneBg
      and fall back to the board's own when nothing is attached. */
   .term-grip::after {
-    content: ""; position: absolute; inset: 8px 3px;
+    content: ""; position: absolute; inset: 8px 2px;
     background: var(--term-line, var(--stroke-dim)); border-radius: 2px;
     transition: background .14s;
   }
@@ -1877,6 +2043,11 @@
      The edge is what actually carries "this one wants you", so the mode that
      drops everything else keeps that. */
   .tl-mini .term-list { flex-basis: 104px; }
+  /* NO GRIP IN MINI. The width is fixed here, so the grip took the pointer,
+     showed a resize cursor, lit up on hover and then did nothing at all, which
+     reads as broken rather than as unavailable. It is hidden in `off` for the
+     same reason and always was. */
+  .tl-mini .term-grip { display: none; }
   /* ONE ROW, not three. Stacking the star, the mark and the name gave each of
      them a line of its own, so the mode that exists to take less room took
      more of it: a collapsed entry was taller than the full one it replaced.
@@ -1888,8 +2059,12 @@
   .tl-mini .term-list .card .title {
     display: flex; align-items: center; justify-content: center; gap: 4px;
   }
+  /* STILL A GRID. `.rmark` centres its glyph with `display: grid` and
+     `place-items: center`, and overriding the display to `block` threw that
+     away, so an 12px mark sat in the top left corner of an 18px box. Only the
+     size changes here. */
   .tl-mini .term-list .card .title .rmark {
-    display: block; margin: 0; width: 18px; height: 18px;
+    margin: 0; width: 18px; height: 18px;
   }
   .tl-mini .term-list .card .title .rmark svg { width: 12px; height: 12px; }
   /* The SORT goes, the collapse button stays. Hiding both took away the only
@@ -1912,12 +2087,16 @@
      Nothing reflows, so a pointer crossing the left edge never re-fits xterm,
      which measures itself in characters and repaints the whole grid to do it. */
   .term-layout.tl-off { position: relative; }
+  /* STARTS AFTER THE RAIL, not on top of it. The rail is the thing holding
+     this open: it is 18px of always-present strip on the left, and a flyout
+     anchored at `left: 0` laid its cards over it, so the first column of every
+     entry was under a control that stays lit on purpose. */
   .tl-off .term-list {
-    position: absolute; left: 0; top: 0; bottom: 0; z-index: 40;
+    position: absolute; left: 18px; top: 0; bottom: 0; z-index: 40;
     flex-basis: auto; width: var(--termw, 260px);
     background: var(--shell-0); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-lg); box-shadow: 0 18px 40px rgba(var(--shadow-rgb),.45);
-    padding: 8px; transform: translateX(calc(-100% - 10px));
+    padding: 8px; transform: translateX(calc(-100% - 28px));
     transition: transform .16s ease;
   }
   .tl-off .term-rail:hover ~ .term-list,
@@ -1928,11 +2107,17 @@
      the list is over the terminal. */
   .term-rail { display: none; }
   .tl-off .term-rail {
-    display: block; flex: 0 0 10px; align-self: stretch; z-index: 41;
+    display: flex; align-items: flex-start; justify-content: center;
+    flex: 0 0 18px; align-self: stretch; z-index: 41;
     padding: 0; border: 0; border-radius: 3px; cursor: pointer;
     background: linear-gradient(180deg, var(--stroke-dim), transparent 60%);
+    color: var(--dim); font-size: var(--fs-sm); line-height: 1;
   }
-  .tl-off .term-rail:hover { background: var(--blue); }
+  /* SAYS WHAT IT DOES. The list carries a `»` for this, and in this mode the
+     list is the thing that is hidden, so the only way back was a bare strip
+     nobody could tell was a control. */
+  .tl-off .term-rail::before { content: "\00BB"; padding-top: 10px; }
+  .tl-off .term-rail:hover { background: var(--blue); color: var(--head); }
   /* AN ENTRY IS A BOARD CARD. Same element, same class, same rules, so the
      density setting, the hover, the group hue and the waiting edge all arrive
      here for free and cannot drift from the board.
@@ -1990,23 +2175,67 @@
     box-sizing: border-box;
   }
   .tabbridge[hidden] { display: none; }
-  /* The title WRAPS here and truncates on the board. A board column is wide
-     and this one is 260px, so the same label came out as
-     `github/dovholuknf/dotfil…`: every entry cut in the org name, which is the
-     part they all share. Two lines say it, one line said nothing. */
+  /* ONE LINE, CUT AT THE FRONT.
+     A board column is wide and this one is a few hundred pixels, so cutting at
+     the end gave `github/dovholuknf/dotfil…`: every entry truncated inside the
+     org name, which is the part they all share, and the leaf, which is the
+     part that tells them apart, was the part thrown away.
+
+     Wrapping to two lines said it and cost the row height. Cutting at the
+     FRONT says it in one: `…holuknf/dotfiles`. The last characters are the
+     answer to which session this is.
+
+     `direction: rtl` is how that is done. `text-overflow` clips at the END of
+     the line, and in an rtl box the end is the left, so the ellipsis lands
+     there and the tail survives. It is on `.tname` alone rather than on the
+     title, because on the title it would send the star and the runner mark to
+     the right of the name. */
   .term-list .card .title {
-    white-space: normal; overflow-wrap: anywhere; line-height: 1.3; flex: 1 1 auto;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    display: flex; align-items: center; gap: 4px; line-height: 1.3;
+    flex: 1 1 auto; min-width: 0; white-space: nowrap;
   }
-  /* Clamped text is a box, so the star and the mark cannot be flex children of
-     it. They are inline, sized to the line rather than to a heading. */
-  .term-list .card .title .pin { font-size: var(--fs-md); cursor: pointer; }
-  .term-list .card .title .rmark { display: inline-block; vertical-align: -5px; margin-right: 4px; }
+  .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
+  .term-list .card .title .rmark { flex: none; }
+  .term-list .card .title .tname {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    direction: rtl; text-align: left;
+  }
+  /* THE POP-OUT MARK IS NEVER SQUEEZED.
+     It says this session is showing in a window of its own, and it is the one
+     thing on the entry that changes what a click does. Narrowing the list used
+     to shrink it to nothing, so the click that would have raised that window
+     landed on the card and did something else. The name gives way instead,
+     which it can afford to: it is already truncating. */
+  .term-list .card .card-line > .chips { flex: none; overflow: visible; }
+  /* MINI, after the single-line rules above so they do not undo it.
+     The entry is an icon and a short name and nothing else, so both are
+     centred in the column rather than left-aligned against an edge that is
+     only a few pixels away. `.tname` stops being rtl here: a short name is not
+     truncated, and an rtl box left-aligns it in a way that looks like a
+     rendering fault next to a centred icon. */
+  .tl-mini .term-list .card .card-line { justify-content: center; }
+  .tl-mini .term-list .card .title {
+    flex: 0 1 auto; justify-content: center; gap: 3px;
+  }
+  .tl-mini .term-list .card .title .tname { direction: ltr; text-align: center; }
+  .tl-mini .term-list .card .title .tshort { text-align: center; }
   button.termsort {
     align-self: flex-start; font-size: var(--fs-sm); padding: 5px 11px;
     background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
   }
   button.termsort:hover { color: var(--head); border-color: var(--blue); }
+  /* The pair sits together, so they read as one control with two directions
+     rather than as two unrelated buttons that happen to be adjacent.
+     `align-self: center` undoes the `flex-start` above: the sort button beside
+     them is a pill of text and these are single glyphs, so anchoring all three
+     to the top left the chevrons riding high against it. */
+  button.tlcycle {
+    align-self: center; padding: 4px 8px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 26px;
+  }
+  button.tlcycle + button.tlcycle { margin-left: -1px; }
 
   /* The pane behind the terminal, in the terminal's own color once one is
      attached. The margin around `#t-screen` and the pane's rounded corners
@@ -2213,6 +2442,8 @@
   details > summary.col-head .help { margin-left: 2px; }
   /* The bubble sits against its label. The panel itself is positioned in JS,
      because CSS alone cannot know whether it would fall off the window. */
+  dialog#sharedlg { width: min(640px, 94vw); }
+  dialog#sharedlg .toolbar { justify-content: flex-end; margin-top: 14px; }
   dialog#ask { width: min(700px, 94vw); }
   dialog#ask .dlg-head { border-bottom: none; padding-bottom: 0; }
   .asktext {
@@ -2430,6 +2661,17 @@
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-radius: var(--r-lg);
     box-shadow: var(--shadow-dialog);
+    /* PINNED, NOT CENTRED. A browser centres a dialog on its own size, so a
+       dialog whose content changes height moves. The settings panes are five
+       different heights, and switching between them slid the whole window up
+       and down under the pointer, which put the control you were reaching for
+       somewhere else by the time you got there.
+
+       Top is fixed and the horizontal centring is done here, on the VIEWPORT
+       rather than on the dialog, so the width can change without moving it
+       either. */
+    position: fixed; top: 5vh; margin: 0 auto; max-height: 90vh;
+    inset-inline: 0;
   }
   /* For rows read down as a table, or content that is commands. A wrapped
      command has to be reassembled before it can be trusted. */
@@ -2438,7 +2680,7 @@
   /* One command, with its own heading and its own copy button. Separated
      rather than run together, because they are pasted one at a time into
      different places. */
-  .step { margin-bottom: var(--sp-4); }
+  .step { margin-bottom: var(--vs-4); }
   .steptop {
     display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: 6px;
   }
@@ -2752,6 +2994,7 @@
     --head: #F5F7FA; --body: #B6BFCB; --label: #949FAD; --dim: #6B7583; --dimmest: #515A67;
     --chip-accent: #0F2E31; --chip-accent-stroke: #1C5257; --chip-accent-text: #93E0EA;
     --btn-hover: #2C3540; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Warm charcoal and copper. Reads like a workshop rather than a console. */
@@ -2765,6 +3008,7 @@
     --head: #FBF4EF; --body: #CDB6A4; --label: #AC9583; --dim: #806B5C; --dimmest: #635144;
     --chip-accent: #3A2411; --chip-accent-stroke: #6B4120; --chip-accent-text: #F2C39A;
     --btn-hover: #4A3325; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Forest black and lime. The only skin where the accent is louder than the
@@ -2779,6 +3023,7 @@
     --head: #F2FBF4; --body: #A7C9B2; --label: #86AC94; --dim: #63866F; --dimmest: #4B6955;
     --chip-accent: #17330F; --chip-accent-stroke: #2E5C1C; --chip-accent-text: #C7EE8F;
     --btn-hover: #2A5238; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Aubergine and orchid. Danger goes pink here so it still separates from
@@ -2793,6 +3038,7 @@
     --head: #F9F2FF; --body: #C0AFD0; --label: #A18FB3; --dim: #7A6890; --dimmest: #5D4E70;
     --chip-accent: #2E1240; --chip-accent-stroke: #572270; --chip-accent-text: #E0B4F5;
     --btn-hover: #45276B; --danger-text: #FFC3D2;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Brown-black and gold. The warmest, and the one that survives a bright
@@ -2807,6 +3053,7 @@
     --head: #FFF7EC; --body: #D0BBA1; --label: #B09B80; --dim: #85705A; --dimmest: #665443;
     --chip-accent: #3A2708; --chip-accent-stroke: #6B4712; --chip-accent-text: #F5CE8A;
     --btn-hover: #4C3418; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Cold slate and ice blue, at the highest contrast of the ten. The one to
@@ -2821,6 +3068,7 @@
     --head: #F8FBFF; --body: #B9C9D8; --label: #98AABC; --dim: #718799; --dimmest: #566A7B;
     --chip-accent: #0C2B3A; --chip-accent-stroke: #185066; --chip-accent-text: #A5DFF5;
     --btn-hover: #2A4560; --danger-text: #FFC3CC;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* True black, one white accent, one red. For an OLED panel, and for the
@@ -2835,6 +3083,7 @@
     --head: #FFFFFF; --body: #B8B8B8; --label: #989898; --dim: #6E6E6E; --dimmest: #545454;
     --chip-accent: #1C1C1C; --chip-accent-stroke: #3C3C3C; --chip-accent-text: #E8E8E8;
     --btn-hover: #333333; --danger-text: #FFC0C0;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Indigo, magenta and cyan. The loud one, and the only one where the two
@@ -2849,6 +3098,7 @@
     --head: #F7F2FF; --body: #B6ABDA; --label: #9589C0; --dim: #6F639C; --dimmest: #564C7C;
     --chip-accent: #33104A; --chip-accent-stroke: #5E1F80; --chip-accent-text: #F0AFFB;
     --btn-hover: #3C2E78; --danger-text: #FFC3CF;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* Warm taupe and terracotta. Paper-coloured text on earth, which is the
@@ -2863,6 +3113,7 @@
     --head: #FBF6F0; --body: #CBBBA9; --label: #AB9B89; --dim: #7F7161; --dimmest: #625649;
     --chip-accent: #3D2415; --chip-accent-stroke: #703F22; --chip-accent-text: #F0B78E;
     --btn-hover: #4E3A29; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
   }
 
   /* The default, taken further down. Same family, less light, for a dark room
@@ -2877,6 +3128,169 @@
     --head: #EFFAFF; --body: #93B4C4; --label: #7597A8; --dim: #567585; --dimmest: #405A68;
     --chip-accent: #073730; --chip-accent-stroke: #0E6155; --chip-accent-text: #7FE3D3;
     --btn-hover: #17495C; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* ── the light ones ────────────────────────────────────
+     WHAT MADE THESE POSSIBLE is `--lift`, `--lift-strong` and `--hairline`
+     becoming part of a skin. They are white at low alpha on every dark skin,
+     which is how a hovered row lifts off its background. On a light one that
+     is invisible, so light skins use BLACK at low alpha and a hover reads as a
+     press rather than a glow.
+
+     The shadows follow the same rule through `--shadow-rgb`: near-black under
+     a dark board is right, and under a light one it wants to be the tinted
+     grey of the paper rather than a hole.
+
+     The recess is INVERTED here, and it is the thing most likely to look wrong
+     if a colour is edited by eye. On a dark skin `--sink-rgb` is darker than
+     the page, so an input reads as a hole. On a light skin it is darker too,
+     which still reads as a hole. It is the CARDS that flip: they go lighter
+     than the page rather than darker. */
+
+  /* Warm white and ink. The one that reads like a printed page. */
+  :root[data-skin="paper"] {
+    --sink-rgb: 238,234,226; --bg1-rgb: 247,244,238;
+    --shell0-rgb: 252,250,246; --shell1-rgb: 243,240,233;
+    --chip-rgb: 226,221,211; --stroke-rgb: 176,168,154; --stroke-dim-rgb: 209,202,190;
+    --teal-rgb: 0,140,112; --warn-rgb: 176,110,0; --danger-rgb: 190,45,45;
+    --path-rgb: 82,82,190; --shadow-rgb: 120,110,90;
+    --bg-0: #FBF9F4; --blue: #2A6FB0; --card-0: #FFFFFF; --card-1: #F7F4EE; --grid: #E4DFD4;
+    --head: #1C1A16; --body: #4A463E; --label: #6A6459; --dim: #8A8377; --dimmest: #A9A294;
+    --chip-accent: #D7EFE6; --chip-accent-stroke: #8FCBB8; --chip-accent-text: #0B5B47;
+    --btn-hover: #E8E3D8; --danger-text: #8A1F1F;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cool white and a strong blue. The brightest of the set. */
+  :root[data-skin="daylight"] {
+    --sink-rgb: 233,237,242; --bg1-rgb: 244,247,250;
+    --shell0-rgb: 251,252,254; --shell1-rgb: 240,243,247;
+    --chip-rgb: 219,226,235; --stroke-rgb: 160,174,190; --stroke-dim-rgb: 202,211,222;
+    --teal-rgb: 0,132,150; --warn-rgb: 168,116,0; --danger-rgb: 198,40,60;
+    --path-rgb: 70,90,200; --shadow-rgb: 90,105,125;
+    --bg-0: #F8FAFC; --blue: #1D63C4; --card-0: #FFFFFF; --card-1: #F3F6FA; --grid: #DDE4EC;
+    --head: #101823; --body: #3D4956; --label: #5C6875; --dim: #7C8794; --dimmest: #9BA5B1;
+    --chip-accent: #D3ECF2; --chip-accent-stroke: #85C2D2; --chip-accent-text: #0A4C58;
+    --btn-hover: #E1E8F0; --danger-text: #8C1526;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cream and brown. Warmest, lowest contrast, easiest at night with the
+     lights on. */
+  :root[data-skin="linen"] {
+    --sink-rgb: 236,229,216; --bg1-rgb: 245,239,228;
+    --shell0-rgb: 251,247,239; --shell1-rgb: 242,236,224;
+    --chip-rgb: 227,217,199; --stroke-rgb: 178,163,138; --stroke-dim-rgb: 210,199,178;
+    --teal-rgb: 150,92,30; --warn-rgb: 168,120,20; --danger-rgb: 176,58,48;
+    --path-rgb: 108,92,180; --shadow-rgb: 130,112,84;
+    --bg-0: #FAF5EB; --blue: #8A6A34; --card-0: #FFFDF8; --card-1: #F5EFE3; --grid: #E6DDC9;
+    --head: #241E14; --body: #52483A; --label: #6F6454; --dim: #8E8271; --dimmest: #ADA391;
+    --chip-accent: #EFE0C8; --chip-accent-stroke: #C9AC79; --chip-accent-text: #5E4415;
+    --btn-hover: #EBE2D0; --danger-text: #7C2019;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Pale blue-grey and indigo. Light without being white. */
+  :root[data-skin="frost"] {
+    --sink-rgb: 226,232,240; --bg1-rgb: 238,243,249;
+    --shell0-rgb: 247,250,253; --shell1-rgb: 235,240,247;
+    --chip-rgb: 214,223,235; --stroke-rgb: 152,168,190; --stroke-dim-rgb: 196,208,224;
+    --teal-rgb: 30,110,168; --warn-rgb: 160,112,10; --danger-rgb: 192,52,72;
+    --path-rgb: 88,80,200; --shadow-rgb: 82,98,120;
+    --bg-0: #EEF3F9; --blue: #4657C8; --card-0: #FBFDFF; --card-1: #E9EFF7; --grid: #D6DFEC;
+    --head: #16202E; --body: #3F4B5C; --label: #5D6A7C; --dim: #7C8798; --dimmest: #9AA4B4;
+    --chip-accent: #D8E3F5; --chip-accent-stroke: #8FA6D4; --chip-accent-text: #1E3468;
+    --btn-hover: #DCE5F1; --danger-text: #86192E;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* ── the lighter darks ─────────────────────────────────
+     Not light, and not as deep as the first ten. For a room with a window in
+     it, where true black reads as a hole and full contrast is tiring. */
+
+  /* Mid blue-grey. Graphite with the lights on. */
+  :root[data-skin="slate"] {
+    --sink-rgb: 26,32,40; --bg1-rgb: 34,41,51;
+    --shell0-rgb: 46,55,68; --shell1-rgb: 37,45,56;
+    --chip-rgb: 58,69,85; --stroke-rgb: 96,111,132; --stroke-dim-rgb: 74,87,105;
+    --teal-rgb: 94,214,205; --warn-rgb: 240,190,80; --danger-rgb: 246,120,120;
+    --path-rgb: 160,178,250; --shadow-rgb: 12,16,22;
+    --bg-0: #2A323E; --blue: #7FB2F0; --card-0: #333C4A; --card-1: #262E39; --grid: #43505F;
+    --head: #F4F7FB; --body: #C2CBD7; --label: #A3AEBD; --dim: #8391A2; --dimmest: #6B7889;
+    --chip-accent: #1D4A45; --chip-accent-stroke: #2F7A70; --chip-accent-text: #A5E8DF;
+    --btn-hover: #465365; --danger-text: #FFD3D7;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Muted purple-grey. Plum without the saturation. */
+  :root[data-skin="dusk"] {
+    --sink-rgb: 32,27,40; --bg1-rgb: 41,35,51;
+    --shell0-rgb: 54,46,67; --shell1-rgb: 44,37,55;
+    --chip-rgb: 66,57,82; --stroke-rgb: 110,96,134; --stroke-dim-rgb: 85,74,105;
+    --teal-rgb: 200,160,246; --warn-rgb: 240,196,96; --danger-rgb: 246,124,150;
+    --path-rgb: 150,178,250; --shadow-rgb: 16,12,22;
+    --bg-0: #322A3E; --blue: #9BC0F2; --card-0: #3B3349; --card-1: #2C2637; --grid: #4E4460;
+    --head: #F7F3FC; --body: #CBC0D8; --label: #ADA0BD; --dim: #8E82A0; --dimmest: #756A86;
+    --chip-accent: #3A2450; --chip-accent-stroke: #5F3E80; --chip-accent-text: #DEC2F4;
+    --btn-hover: #4F4363; --danger-text: #FFD5DE;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Mid green-grey and sage. Moss with the volume down. */
+  :root[data-skin="fern"] {
+    --sink-rgb: 25,34,29; --bg1-rgb: 33,44,37;
+    --shell0-rgb: 44,58,49; --shell1-rgb: 36,48,40;
+    --chip-rgb: 55,72,60; --stroke-rgb: 96,124,104; --stroke-dim-rgb: 73,95,79;
+    --teal-rgb: 150,206,120; --warn-rgb: 236,196,90; --danger-rgb: 240,126,120;
+    --path-rgb: 146,182,236; --shadow-rgb: 10,16,12;
+    --bg-0: #29352C; --blue: #86C7B4; --card-0: #323F35; --card-1: #242E27; --grid: #405142;
+    --head: #F3F8F3; --body: #BFCEC1; --label: #A0B3A3; --dim: #829685; --dimmest: #6B7D6E;
+    --chip-accent: #24401C; --chip-accent-stroke: #3E6B31; --chip-accent-text: #BFE3A6;
+    --btn-hover: #435743; --danger-text: #FFD5D2;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Warm mid grey. Sandstone lifted out of the dark. */
+  :root[data-skin="clay"] {
+    --sink-rgb: 38,32,28; --bg1-rgb: 48,41,36;
+    --shell0-rgb: 62,53,46; --shell1-rgb: 51,44,38;
+    --chip-rgb: 76,66,57; --stroke-rgb: 124,108,92; --stroke-dim-rgb: 96,84,72;
+    --teal-rgb: 236,150,104; --warn-rgb: 240,198,110; --danger-rgb: 238,120,112;
+    --path-rgb: 168,172,240; --shadow-rgb: 20,15,12;
+    --bg-0: #3A322C; --blue: #E3B48C; --card-0: #453B33; --card-1: #332C26; --grid: #574A40;
+    --head: #FAF5F0; --body: #D2C5B9; --label: #B4A597; --dim: #948779; --dimmest: #7B6F63;
+    --chip-accent: #4A2E1B; --chip-accent-stroke: #7A4F2E; --chip-accent-text: #F0C3A0;
+    --btn-hover: #5A4C41; --danger-text: #FFD4D0;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Brighter blue. The default family, lifted and louder. */
+  :root[data-skin="cobalt"] {
+    --sink-rgb: 18,30,48; --bg1-rgb: 24,40,62;
+    --shell0-rgb: 33,54,82; --shell1-rgb: 27,44,68;
+    --chip-rgb: 41,67,102; --stroke-rgb: 72,116,172; --stroke-dim-rgb: 55,90,136;
+    --teal-rgb: 80,224,208; --warn-rgb: 252,200,80; --danger-rgb: 250,116,124;
+    --path-rgb: 150,180,255; --shadow-rgb: 6,12,22;
+    --bg-0: #16263D; --blue: #56A8FF; --card-0: #1E3252; --card-1: #142339; --grid: #2C4468;
+    --head: #F3F8FF; --body: #B9CCE2; --label: #97AEC9; --dim: #7791AE; --dimmest: #617A94;
+    --chip-accent: #12463F; --chip-accent-stroke: #1E7568; --chip-accent-text: #92E9DC;
+    --btn-hover: #2E4C74; --danger-text: #FFD2D5;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Airy teal-grey and mint. The lightest of the darks. */
+  :root[data-skin="mint"] {
+    --sink-rgb: 24,36,36; --bg1-rgb: 32,47,47;
+    --shell0-rgb: 43,62,62; --shell1-rgb: 35,51,51;
+    --chip-rgb: 53,76,76; --stroke-rgb: 92,128,128; --stroke-dim-rgb: 70,99,99;
+    --teal-rgb: 110,226,196; --warn-rgb: 240,198,92; --danger-rgb: 242,124,124;
+    --path-rgb: 148,180,240; --shadow-rgb: 8,16,16;
+    --bg-0: #283A3A; --blue: #6FC5D6; --card-0: #314646; --card-1: #223232; --grid: #3F5A5A;
+    --head: #F2FAF8; --body: #BDD0CC; --label: #9DB4B0; --dim: #7F9793; --dimmest: #697E7A;
+    --chip-accent: #16413A; --chip-accent-stroke: #276B5E; --chip-accent-text: #A3E7D6;
+    --btn-hover: #3F5C5C; --danger-text: #FFD3D3;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
   }
 </style>
 </head>
@@ -2901,6 +3315,11 @@
     <!-- In the header, not the gear. Nothing on this machine is asking you
          while it is on, and a switch that broad has to be visible from every
          tab without going looking for it. -->
+    <!-- Only there when something is published. A share is the one piece of
+         atrium's state visible from outside this machine, and it had no
+         indicator at all: two shares and one `stop sharing` left a live
+         address with nothing on screen pointing at it. -->
+    <button id="sharing" class="sharing" onclick="openSharing()" hidden></button>
     <button id="gauto" onclick="toggleGlobalAuto()"></button>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>
     <!-- Trying a skin is the same act as trying a terminal theme, so it is the
@@ -2912,16 +3331,6 @@
 
          The gear still has one. That is where you go when you are changing a
          setting. This is where you go when you are trying them. -->
-    <span class="skinpicker" id="skin-wrap" hidden>
-      <select id="skin-pick" class="themepick"
-        onchange="previewSkin(this.value)"
-        onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelSkin(); }
-                   else if (event.key === 'Enter') { event.preventDefault(); keepSkin(); }"></select>
-      <button class="go" onclick="keepSkin()" title="keep this one">use it</button>
-      <button onclick="cancelSkin()" title="put back what was there">cancel</button>
-    </span>
-    <button id="skin" class="icon" onclick="pickSkin()"
-      title="how the board looks">&#9673;</button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
@@ -2955,7 +3364,7 @@
            you ask for it. Filled in by paintStackShow. -->
       <div class="seg multi" id="stack-seg"></div>
       <input type="search" id="stack-q"
-        placeholder="name, path, runner or tag. #tag for one tag, !high or !low for priority"
+        placeholder="name, path, runner or tag. #tag for one tag"
         spellcheck="false">
       <span class="matchcount" id="stack-match"></span>
     </div>
@@ -3066,8 +3475,11 @@ Exports honor whatever filter is applied.">?</span>
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps
            the whole reveal in CSS and out of a mousemove handler. -->
+      <!-- No tooltip. It carries a `»`, it is the only thing on that edge, and
+           a hint that follows the pointer over the list it just revealed is in
+           the way of the thing you opened it to read. -->
       <button class="term-rail" id="term-rail" onclick="showTermList()"
-        title="hover to peek at the sessions, click to dock the list again"></button>
+        aria-label="show the session list"></button>
       <aside class="term-list" id="term-list"></aside>
       <!-- Drag to set the width. Also a button: keyboard arrows move it, since
            a control that only answers to a pointer is one some people do not
@@ -3420,6 +3832,21 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
   </div>
 </dialog>
 
+<!-- Sharing, narrated. The steps arrive over the event stream as the daemon
+     reaches them, and the POST carries the answer, so this dialog is correct
+     with no events at all: it opens on the request leaving and is finished by
+     the response either way. -->
+<dialog id="sharedlg">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="share-title"></h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="share-steps" class="shsteps"></div>
+    <div id="share-out"></div>
+    <div class="toolbar" id="share-actions"></div>
+  </div>
+</dialog>
+
 <div id="tip"></div>
 
 <button id="held" onclick="applyHeld()"
@@ -3436,6 +3863,39 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
 <!-- Moved into whichever modal is on top while one is open. See raiseToasts:
      a popover renders above a modal but cannot be clicked, because a modal
      makes everything outside itself inert. -->
+<!-- TRYING THE BOARD'S COLOURS, WITHOUT A DIALOG IN THE WAY.
+     Deliberately not a `<dialog>`. A modal darkens and blocks the board, and
+     the board is the thing being judged: you have to be able to walk the tabs,
+     open a card and look at a terminal while it is up. So it floats, it is
+     draggable, and everything behind it stays live.
+
+     It also cannot live in the settings dialog for the same reason. The gear
+     covers most of the screen, which is why the button in there closes it. -->
+<div id="skinlab" hidden>
+  <!-- The title is the only thing on this strip. What is selected is already
+       on the control below it, and putting the current name up here made the
+       row wrap for a long one and not for a short one, so stepping through the
+       list changed the panel's height and it bounced under the pointer. -->
+  <div class="lab-grip" id="skinlab-grip" onpointerdown="startLabDrag(event)"
+    title="drag me anywhere">
+    <span class="lab-title">how the board looks</span>
+  </div>
+  <div class="lab-body">
+    <div class="lab-row">
+      <button class="lab-step" onclick="stepSkin(-1)" title="the one before">&#8249;</button>
+      <select id="skinlab-pick" onchange="previewSkin(this.value)"></select>
+      <button class="lab-step" onclick="stepSkin(1)" title="the next one">&#8250;</button>
+    </div>
+    <div class="lab-row lab-answers">
+      <button class="go" onclick="keepSkin()" title="keep this one">use it</button>
+      <button onclick="useDefaultSkin()" title="back to the one it came with">use the default</button>
+      <button onclick="cancelSkin()" title="put back what was there">cancel</button>
+    </div>
+    <span class="lab-hint">Arrow keys walk the list. Nothing is saved until you press
+      <b>use it</b>.</span>
+  </div>
+</div>
+
 <div id="toasts"></div>
 
 <!-- Wide, and titled for what it holds. It was called "sound", which is what
@@ -3648,9 +4108,11 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       </div>
       <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
         the lot over when you attach, so nothing older than that can reach the page at all. The browser
-        then keeps that many lines of it. <b>The smaller of the two is what you get.</b> Megabytes are
-        resident per running session and lines are resident per open terminal, so ten sessions at 64MB is
-        640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
+        then keeps that many lines of it. <b>Whichever runs out first is what you get</b>, and which one
+        that is depends on how long the lines are: fifty thousand ordinary lines is about four megabytes,
+        but one progress bar redrawing itself is a single line and can be megabytes on its own. Megabytes
+        are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
+        is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
         empty for the default.</span>
     </div>
 
@@ -3663,10 +4125,16 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <label class="eyebrow" for="s-skin">how the board looks</label>
       <div class="picker">
         <select id="s-skin" onchange="saveSkin()"></select>
+        <!-- The dialog covers the board, and the board is what you are judging.
+             This closes it and leaves a small panel you can drag anywhere and
+             walk the list with, against the real thing. -->
+        <button onclick="openSkinLab()" title="close this and try them against the real board"
+          >try them &#9673;</button>
       </div>
-      <span class="hintline">Changes as you pick, so you can see it before you leave the dialog.
-        Not the terminal's colours: those are on the terminal's own bar, and each terminal keeps
-        its own.</span>
+      <span class="hintline">Changes as you pick. <b>try them</b> closes this dialog and leaves a
+        small panel you can move anywhere, so you can walk every tab and open a card while you
+        decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
+        keeps its own.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
@@ -3710,7 +4178,10 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <label class="eyebrow">group cards</label>
       <div class="picker">
         <button id="s-group-toggle" onclick="toggleGrouping()"></button>
-        <button onclick="resetGrouping()">use the defaults</button>
+        <!-- Says what it resets. `use the defaults` sat under a pane that now
+             opens with a skin picker and a text size, and read as a reset for
+             all of it. It only ever touched the two grouping expressions. -->
+        <button onclick="resetGrouping()">reset the grouping rule</button>
       </div>
       <span class="hintline">Groups cards inside every column. The default reads a project out of
         the worktree path.</span>
@@ -4699,7 +5170,6 @@ function cardHTML(t) {
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
       ${tagChips(t)}
-      ${priorityChip(t)}
       ${noteChip(t)}
       ${originChip(t)}
       ${recapChip(t)}
@@ -4720,12 +5190,10 @@ function cardHTML(t) {
       ${t.auto_approve ? `<span class="chip auto"
         title="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
-      ${sharedCards.has(t.id) ? `<span class="chip warn"
+      ${sharedCards.has(t.id) ? `<span class="chip shared"
         title="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
-          ". anyone with that link can " +
-          (sharedCards.get(t.id).writable ? "type into it" : "watch it") +
-          ". right click to stop.")}"
-        >shared${sharedCards.get(t.id).writable ? "" : ", read only"}</span>` : ""}
+          ". anyone with that address types into it as you would. right click to stop.")}"
+        >shared</span>` : ""}
       ${t.status === "shelved" ? `<span class="chip attach"
         title="${cannotResume(t)
           ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
@@ -5684,6 +6152,11 @@ async function cardMenu(e, id) {
       label: t.shell ? "go to its shell" : "open a shell here",
       act: () => openShellFor(id)
     } : null,
+    // Offered only when there is one to close. `exit` in the shell does the
+    // same thing, and this is for the case where it is open on a card you are
+    // not looking at: a shell holds a process and a working directory, and the
+    // idle sweep will not get to it for half an hour.
+    t.shell ? { label: "close its shell", act: () => closeShellFor(id) } : null,
     { sep: true },
     // Running something in this card's directory, which is the answer to
     // "adopt": a session atrium started in a terminal cannot be taken over,
@@ -5739,21 +6212,6 @@ async function cardMenu(e, id) {
     { sep: true },
     actionItems(t),
     shareItem(t),
-    // A flyout rather than three rows, which would be most of the menu spent
-    // on one decision.
-    {
-      label: "how much it matters",
-      note: t.priority || "normal",
-      help: "Your judgement, not the session's. It does not reorder anything: a " +
-        "blocked agent is blocked whatever you think of the work. It is weight " +
-        "on the card and a filter, and it fades after a week so that high and " +
-        "forgotten stops reading as high.",
-      sub: [
-        prioItem(id, t, "high", "high"),
-        prioItem(id, t, "", "normal"),
-        prioItem(id, t, "low", "low")
-      ]
-    },
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
@@ -5841,93 +6299,347 @@ async function loadShares() {
     (r.shares || []).forEach(s => next.set(s.task_id, s));
     sharedCards = next;
   } catch (e) { /* an older daemon has no shares. not worth saying. */ }
+  paintSharing();
+}
+
+// WHAT IS PUBLISHED RIGHT NOW, in the header, whenever anything is.
+//
+// A share is the one piece of atrium's state that is visible from outside this
+// machine, and it was the one with no indicator: the only way to find out what
+// was published was to right-click each card in turn and read what the menu
+// offered. Two shares and one `stop sharing` leaves a live address with nothing
+// on screen pointing at it.
+//
+// In the header rather than the gear, and only when there is something to say,
+// for the reason the auto-mode switch is: nothing else tells you, and it is
+// true on every tab.
+function paintSharing() {
+  const el = document.getElementById("sharing");
+  if (!el) return;
+  const n = sharedCards.size;
+  el.hidden = n === 0;
+  if (!n) return;
+  el.textContent = n === 1 ? "1 session shared" : n + " sessions shared";
+  el.title = "click to see what is published, and stop it";
+}
+
+// The list, and a way to stop each one.
+//
+// Every entry can be stopped from here, because the failure this exists for is
+// a share whose card you can no longer find: pruned, renamed, or on a tab you
+// are not looking at. The token is shown because it is what releases a share by
+// hand if one is ever left on the account.
+async function openSharing() {
+  await loadShares();
+  if (!sharedCards.size) {
+    tellUser("nothing is shared", "no session is published right now.");
+    return;
+  }
+  const rows = [...sharedCards.values()].map(s => {
+    const t = (cards || []).find(c => c.id === s.task_id);
+    const name = t ? (t.display_title || t.id) : s.task_id;
+    // An address that is recorded but not currently served. The card has no
+    // terminal, so the link somebody holds reaches nothing until a runner
+    // starts there. Said plainly rather than hidden: it is still an address
+    // they have, and it is going to start working again on its own.
+    const waiting = s.live === false
+      ? `<span class="hintline warn">waiting for a terminal on this card. the address
+           is still yours and comes back when one starts.</span>`
+      : "";
+    return `<div class="sharerow">
+      <div class="grow">
+        <b>${esc(name)}</b>
+        <span class="hintline">${esc(s.mode || "")}${s.token ? " &middot; " + esc(s.token) : ""}</span>
+        <div class="copyrow">
+          <input readonly value="${esc(s.address || "")}" onclick="this.select()">
+          <button onclick="copyText(this, ${
+            JSON.stringify(s.address || "").replace(/'/g, "&#39;")})">copy</button>
+        </div>
+        ${waiting}
+      </div>
+      <button class="no" onclick="stopSharingById('${esc(s.task_id)}')">stop</button>
+    </div>`;
+  }).join("");
+  tellUser("what is published",
+    "Each of these is reachable from outside this machine by anyone holding its " +
+    "address, and each SURVIVES A RESTART: the address is reserved, so it comes " +
+    "back up with the daemon rather than dying with it. Stopping one is the only " +
+    "thing that gives the address up, and it cannot be got back." + rows);
+}
+
+// Stopping by id rather than by card, so a share outlives finding its card.
+async function stopSharingById(id) {
+  try {
+    await api(`/v1/tasks/${id}/share`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not stop the share", e.message);
+    return;
+  }
+  sharedCards.delete(id);
+  paintSharing();
+  toast("stopped sharing", "the address is released");
+  refresh();
 }
 
 // What the menu offers for one card: share it, or stop.
+// Sharing, as a flyout of the ways out this machine actually has.
+//
+// One section per overlay, and A SECTION ONLY APPEARS WHEN THAT OVERLAY IS
+// READY, which is the same condition the gear uses to decide whether sharing
+// is possible at all. Offering a zrok link on a machine with no zrok account
+// is offering a button whose only outcome is a paragraph about accounts,
+// arriving after a confirmation and a wait.
+//
+// The mode is chosen HERE rather than in the dialog. Public and private are
+// two different things to hand somebody, not two settings of one thing, and a
+// select inside a confirmation made them look like a detail of a decision
+// already taken.
+//
+// OpenZiti gets a section and no options in it. Lending one session over ziti
+// is not the same shape as a zrok share: there is no link to send, a guest
+// needs an identity, and issuing one is the line `docs/overlays.md` says
+// atrium does not cross. It is named rather than omitted, because a machine
+// with ziti up and a menu that only mentions zrok is a machine whose operator
+// has no idea whether they missed a setting.
 function shareItem(t) {
   if (!t || !t.supervised) return null;
   const live = sharedCards.get(t.id);
-  if (live) {
-    return {
-      label: "stop sharing", note: live.writable ? "" : "read only",
-      help: "The link stops working and the share is released. " +
-        "Its address was single-use, so sharing again gives a different one.",
-      act: () => stopSharing(t)
-    };
+  const ready = k => (overlays || []).some(o => o.kind === k && o.ready);
+  const sub = [];
+
+  if (ready("zrok")) {
+    sub.push({ head: "with zrok" });
+    if (live) {
+      // Every share is a zrok share today, so it is listed here. A share will
+      // have to say which overlay made it before there is a second kind for
+      // this row to be wrong about.
+      // The wording is a warning. Stopping is the only thing that gives the
+      // address up, and it does not come back, so the row should not read like
+      // the reversible half of a toggle. A flyout row cannot carry a help
+      // bubble, so the explanation is in the confirmation instead.
+      sub.push({ label: "stop sharing, for good", act: () => stopSharing(t) });
+    } else {
+      sub.push({ label: "a link anyone can open", act: () => confirmShare(t, "public") });
+      sub.push({ label: "private, they need zrok too", act: () => confirmShare(t, "private") });
+    }
   }
+  if (ready("ziti")) {
+    sub.push({ head: "with openziti" });
+    sub.push({ quiet: "lending one session is not built yet" });
+  }
+  if (!sub.length) {
+    sub.push({ quiet: "no overlay is set up yet" });
+    sub.push({ quiet: "see the gear, expose the board" });
+  }
+
   return {
-    label: "share this session…",
+    label: live ? "sharing" : "share this session",
+    on: live ? true : undefined,
     help: "Publishes THIS terminal, and nothing else, at its own address. " +
       "The rest of the board, your other sessions and your files are not " +
       "reachable through it.",
-    act: () => shareSession(t)
+    sub
   };
 }
 
-async function shareSession(t) {
-  const pick = await askUser({
+// The warning, once the way out has been picked.
+//
+// Still a stop, because what it says is the part people get wrong: the address
+// is the whole credential and there is no watch-only. What it no longer does
+// is ask a question that has already been answered.
+async function confirmShare(t, mode) {
+  const ok = await askUser({
     title: "share " + (t.display_title || "this session") + "?",
     body: "Publishes <b>this terminal only</b>, at an address of its own. The board, " +
       "your other sessions, your files and your settings are not reachable through " +
       "it: the daemon serves a handler that answers for this one card and refuses " +
       "everything else." +
-      "<br><br><b>The link is the key.</b> There is no login, so anyone who has it can " +
-      "open it while the share is up. It is a fresh address every time and it dies " +
-      "when you stop sharing or when atrium restarts." +
-      "<br><br><b>Let them type</b> means they drive the session as you would. " +
-      "Permission prompts still come to you, on this board, whichever you pick.",
-    choices: [
-      { value: "public-ro", label: "a link anyone can open, they watch only" },
-      { value: "public-rw", label: "a link anyone can open, they can type" },
-      { value: "private-ro", label: "zrok private, they watch only" },
-      { value: "private-rw", label: "zrok private, they can type" }
-    ],
+      "<br><br><b>Whoever has the address drives the session.</b> There is no login, " +
+      "so the link is the whole credential, and anyone holding it types into this " +
+      "terminal as you would. There is no watch-only: it was a checkbox that made " +
+      "handing out a link feel safer than it is." +
+      (mode === "public"
+        ? "<br><br>Anyone who opens the link is in. They need nothing installed."
+        : "<br><br>They need zrok themselves, and the command to run rather than a link.") +
+      "<br><br><b>The address is durable.</b> It is reserved, unguessable, and this " +
+      "card's from now on: it survives a restart, and it comes back when this card " +
+      "next has a terminal. Handing it over once is enough. Only stopping the share " +
+      "gives it up, and it does not come back. Permission prompts still come to you, " +
+      "on this board.",
     buttons: [{ label: "cancel", value: null }, { label: "share it", value: true, style: "go" }]
   });
-  if (!pick) return;
-  const [mode, rw] = pick.split("-");
+  if (!ok) return;
+  await runShare(t, mode);
+}
+
+// ── sharing, narrated ───────────────────────────────────
+//
+// The POST blocks for however long the zrok instance takes, which is seconds
+// on a good day and longer on a bad one. What the operator saw for all of them
+// was the button they had pressed, unchanged, and then either an address or a
+// paragraph about a 500 from a call they had no idea was being made.
+//
+// So the wait gets a shape. These are the daemon's real steps, in its order,
+// and it broadcasts each one as it reaches it. See `shareStep` in
+// `overlay_guest.go`.
+//
+// THE DIALOG DOES NOT DEPEND ON THE EVENTS. It opens when the request leaves
+// and is finished by the response, so a window that receives none of them
+// still ends up in the right place, just with less to read on the way. The
+// events are what makes a slow step legible, not what makes the flow work.
+// PER MODE, because the two do not do the same work. A public share reserves
+// a name and a private one has none: it asks for its old token back instead,
+// which is not a step, it is a field on the request.
+//
+// One list for both would mean showing a step that never runs, and the paint
+// below ticks everything above the current step, so it would tick a step that
+// never happened.
+const SHARE_STEPS_BY_MODE = {
+  public: [
+    ["env", "checking this machine's zrok environment"],
+    ["name", "reserving the address"],
+    ["create", "asking the zrok instance for the share"],
+    ["listen", "opening the listener that answers it"]
+  ],
+  private: [
+    ["env", "checking this machine's zrok environment"],
+    ["create", "asking the zrok instance for the share"],
+    ["listen", "opening the listener that answers it"]
+  ]
+};
+let SHARE_STEPS = SHARE_STEPS_BY_MODE.public;
+
+const shareDlg = document.getElementById("sharedlg");
+// Which card the open dialog is about, how far it has got, and whether it has
+// finished. The last one exists because an event can arrive after the answer
+// did, and repainting a finished dialog with a spinner would be a lie.
+let shareFor = null, shareAt = 0, shareEnded = true;
+
+// Escape does not abandon a share in flight.
+//
+// There is no way to cancel one: the daemon is inside a call to somebody
+// else's API and closing the dialog would not stop it. A share that arrived
+// after the operator had dismissed the window would be live, unlisted on this
+// screen, and news to them.
+shareDlg.addEventListener("cancel", e => { if (!shareEnded) e.preventDefault(); });
+
+function sharePaintSteps(at, bad) {
+  setHTML(document.getElementById("share-steps"), SHARE_STEPS.map(([key, label], i) => {
+    let cls = "", mark = "&#183;";
+    if (i < at) { cls = "ok"; mark = "&#10003;"; }
+    else if (i === at && bad) { cls = "bad"; mark = "&#10005;"; }
+    else if (i === at) { cls = "now"; mark = `<span class="shspin"></span>`; }
+    return `<div class="shstep ${cls}"><span class="mark">${mark}</span>` +
+      `<span>${esc(label)}</span></div>`;
+  }).join(""));
+}
+
+function shareButtons(list) {
+  const bar = document.getElementById("share-actions");
+  bar.innerHTML = "";
+  list.forEach(b => {
+    const el = document.createElement("button");
+    el.textContent = b.label;
+    if (b.style) el.className = b.style;
+    el.onclick = b.act;
+    bar.appendChild(el);
+  });
+}
+
+async function runShare(t, mode) {
+  shareFor = t.id;
+  shareAt = 0;
+  shareEnded = false;
+  SHARE_STEPS = SHARE_STEPS_BY_MODE[mode] || SHARE_STEPS_BY_MODE.public;
+  document.getElementById("share-title").textContent =
+    "sharing " + (t.display_title || "this session");
+  setHTML(document.getElementById("share-out"), "");
+  shareButtons([]);
+  sharePaintSteps(0, false);
+  if (!shareDlg.open) shareDlg.showModal();
 
   let out;
   try {
     out = await api(`/v1/tasks/${t.id}/share`, {
       method: "POST",
-      body: JSON.stringify({ mode, writable: rw === "rw" })
+      body: JSON.stringify({ mode })
     });
   } catch (e) {
-    // The message is the product here. zrok's limits are the usual failure and
-    // the daemon turns them into a sentence, so it is shown whole rather than
-    // summarised into "could not share".
-    tellUser("could not share it", esc(e.message));
+    shareFailed(t, mode, e.message);
     return;
   }
+  shareEnded = true;
   sharedCards.set(t.id, out);
   showShareLink(t, out);
   refresh();
 }
 
+// A failure, attached to the step it happened on.
+//
+// The message is the product here. zrok's own errors are the usual cause and
+// the daemon turns each into a sentence, so it is shown whole rather than
+// summarised into "could not share". Which step died is the part that was
+// missing: "the instance answered 500" means something different against
+// asking for the share than against opening the listener.
+function shareFailed(t, mode, why) {
+  shareEnded = true;
+  sharePaintSteps(shareAt, true);
+  setHTML(document.getElementById("share-out"),
+    `<div class="shwhy">${esc(why || "it did not say why")}</div>`);
+  shareButtons([
+    { label: "close", act: () => shareDlg.close() },
+    { label: "try again", style: "go", act: () => runShare(t, mode) }
+  ]);
+}
+
 // The address, big enough to read and one press to copy.
 //
-// A toast is the wrong shape: this is the whole output of the action, it needs
-// to survive being looked away from, and it is going to be pasted into a
-// message to somebody.
+// It lands in the dialog that has been open since the button was pressed,
+// rather than in a second one. The steps stay above it: they are the answer to
+// "what did that just do", and they are worth a glance in the moment the link
+// appears as much as they are while it is being waited for.
 function showShareLink(t, s) {
-  tellUser("sharing " + (t.display_title || "this session"),
+  sharePaintSteps(SHARE_STEPS.length, false);
+  setHTML(document.getElementById("share-out"),
+    `<div class="asktext" style="margin:14px 0 0">` +
     (s.mode === "public"
       ? "Send them this link. It opens straight into the terminal."
       : "They need zrok. This is the command they run.") +
-    `<br><br><input readonly id="share-link" value="${esc(s.address)}"
-       style="width:100%;font:var(--fs-sm)/1.4 var(--mono);padding:8px"
-       onclick="this.select()">` +
-    `<br><br><b>${s.writable ? "They can type." : "They can watch, not type."}</b> ` +
-    "The share stops when you say so, or when atrium restarts.");
-  // Selected, so the next thing that happens is a copy.
+    // A copy button, not just a selected field. This is the whole output of
+    // the action and it is going into a message to somebody, and selecting
+    // text in a dialog is one fumbled click away from losing the selection.
+    `<div class="copyrow">
+       <input readonly id="share-link" value="${esc(s.address)}" onclick="this.select()">
+       <button class="go" onclick="copyText(this, ${
+         JSON.stringify(s.address).replace(/'/g, "&#39;")})">copy</button>
+     </div>` +
+    `<br><b>Whoever has this drives the session.</b> ` +
+    "It survives a restart and stops only when you say so." +
+    // The token, because it is what releases the share if one is ever left
+    // behind on the account. Small, and only useful in that one moment.
+    (s.token ? `<br><span class="hintline">zrok token <code>${esc(s.token)}</code></span>` : "") +
+    `</div>`);
+  shareButtons([{ label: "done", style: "go", act: () => shareDlg.close() }]);
   setTimeout(() => {
     const el = document.getElementById("share-link");
     if (el) { el.focus(); el.select(); }
   }, 60);
 }
 
+// Stopping gives the address up, and that is not reversible.
+//
+// Asked for now, because it did not used to be worth asking: every address was
+// single use and a restart took it anyway, so stopping one cost nothing you
+// were not about to lose. A reserved address is the opposite. Somebody is
+// holding this link, it survives restarts, and stopping is the one thing that
+// destroys it.
 async function stopSharing(t) {
+  if (!await confirmUser("stop sharing, and give up the address?",
+    "This card's link stops working and <b>cannot be got back</b>. The address is " +
+    "released from your zrok account, and sharing this card again gives a different " +
+    "one that whoever you sent this to will not have." +
+    "<br><br>A restart does not do this. If you only want it down for now, leave it: " +
+    "it comes back by itself.", "stop it for good")) return;
   try {
     await api(`/v1/tasks/${t.id}/share`, { method: "DELETE" });
   } catch (e) {
@@ -6047,9 +6759,16 @@ function showMenu(e, items) {
         // A flyout, drawn inside the row that owns it so hovering across the
         // gap between the two does not close it. Two destinations for one
         // intention: attaching here, or attaching in its own window.
-        it.sub ? `<span class="sub">${it.sub.map((s, j) =>
-          `<span class="subitem" data-i="${i}" data-j="${j}"
-            >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
+        // A flyout can be grouped. `head` labels a group and `quiet` states
+        // something the group cannot do, and NEITHER IS CLICKABLE: only
+        // `.subitem` carries a `data-j`, so a heading has nothing to run and
+        // cannot be reached by the handler below.
+        it.sub ? `<span class="sub">${it.sub.map((s, j) => s.head
+          ? `<span class="subhead">${esc(s.head)}</span>`
+          : s.quiet
+            ? `<span class="subnote">${esc(s.quiet)}</span>`
+            : `<span class="subitem" data-i="${i}" data-j="${j}"
+                >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
   cardMenuEl.querySelectorAll("button").forEach(b => b.onclick = ev => {
     ev.stopPropagation();
@@ -6084,7 +6803,10 @@ function showMenu(e, items) {
   // A flyout opens to the right unless there is no right left. Measured
   // against the widest one this menu holds rather than a guess, so a long
   // destination name does not hang off the screen.
-  const widest = items.reduce((w, it) => it.sub ? Math.max(w, 190) : w, 0);
+  // A guess, but a generous one. The sharing flyout carries section headings
+  // and a full sentence, so the old 190 flipped too late and hung it off the
+  // right edge on a window that was only just too narrow.
+  const widest = items.reduce((w, it) => it.sub ? Math.max(w, 230) : w, 0);
   cardMenuEl.classList.toggle("flip",
     widest > 0 && Math.max(8, x) + r.width + widest > window.innerWidth);
 }
@@ -6330,19 +7052,34 @@ function toggleStackShow(id) {
   setStackShow(on);
 }
 
+// WHICH COLUMNS GET A PILL HERE, which is not all of them.
+//
+// `inbox` and `needs permission` are board words. On the board they are
+// columns you can see, so their names are explained by where they sit and by
+// the help bubble above them. Here they are two pills in a row of pills, with
+// nothing around them to say what either means, and `inbox` in particular
+// means nothing at all unless you already know a source filled it.
+//
+// Both are still reachable: `all` shows every card whatever state it is in,
+// which is what somebody looking for one of these is doing anyway.
+const STACK_PILL_SKIP = ["backlog", "needs-permission"];
+
 function paintStackShow() {
   const on = stackShow();
   const all = on.size === 0;
+  // `all` FIRST. It is the answer most of the time and the way back from any
+  // filter, and it was last in a row long enough that finding it meant reading
+  // to the end.
   document.getElementById("stack-seg").innerHTML =
-    COLUMNS.map(c =>
-      `<button class="${on.has(c.id) ? "on" : ""}" data-v="${esc(c.id)}"
-        onclick="toggleStackShow('${esc(c.id)}')"
-        title="${esc(c.label)}: click to add or remove"
-        >${esc(c.label)} <i class="pillcount"></i></button>`).join("") +
     `<button class="${all ? "on" : ""}" data-v=""
        onclick="setStackShow(new Set())"
        title="every card, whatever state it is in"
-       >everything <i class="pillcount"></i></button>`;
+       >all <i class="pillcount"></i></button>` +
+    COLUMNS.filter(c => !STACK_PILL_SKIP.includes(c.id)).map(c =>
+      `<button class="${on.has(c.id) ? "on" : ""}" data-v="${esc(c.id)}"
+        onclick="toggleStackShow('${esc(c.id)}')"
+        title="${esc(c.label)}: click to add or remove"
+        >${esc(c.label)} <i class="pillcount"></i></button>`).join("");
 }
 
 // Activity by default. This is the "what has been going on" view, and the
@@ -6411,21 +7148,10 @@ function paintStack() {
   COLUMNS.forEach(c => { if (show.has(c.id)) c.statuses.forEach(s => wanted.add(s)); });
 
   // `#tag` means that tag exactly, so filtering to `#prs` does not also drag
-  // in a card whose path happens to contain the letters. `!high` and `!low`
-  // are the same idea for priority: an exact match on a small closed set,
-  // rather than a substring that would also find every card with the word
-  // `high` in its path.
-  //
-  // `!` rather than `#` because the two are different kinds of thing and
-  // sharing a prefix would make `#high` ambiguous the day somebody makes a tag
-  // called high. Anything else is a plain substring across everything a card
-  // carries, tags included.
+  // in a card whose path happens to contain the letters. Anything else is a
+  // plain substring across everything a card carries, tags included.
   const matchesText = t => {
     if (!q) return true;
-    if (q.startsWith("!")) {
-      const want = q.slice(1).trim();
-      return want ? (t.priority || "").toLowerCase() === want : true;
-    }
     if (q.startsWith("#")) {
       const want = q.slice(1).trim();
       return want ? (t.tags || []).includes(want) : true;
@@ -6595,7 +7321,6 @@ function stackRow(t) {
     </div>
     <div class="chips">
       ${tagChips(t)}
-      ${priorityChip(t)}
       ${noteChip(t)}
       ${originChip(t)}
       ${recapChip(t)}
@@ -6753,58 +7478,6 @@ function recapChip(t) {
   return `<span class="chip recap" title="${esc(t.recap)}">recap</span>`;
 }
 
-// One entry in the priority flyout.
-//
-// The level already set is ticked and clears itself when picked. Without that
-// there is no way back to normal from a list of three, and a fourth entry
-// called `none` would be a fourth way of saying the thing `normal` says.
-function prioItem(id, t, level, label) {
-  const on = (t.priority || "") === level;
-  return {
-    label: (on ? "✓ " : " ") + label,
-    act: () => setPriority(id, on ? "" : level)
-  };
-}
-
-async function setPriority(id, level) {
-  try {
-    await patchTask(id, { priority: level });
-  } catch (e) {
-    toast("could not set that", e.message);
-    return;
-  }
-  refresh();
-}
-
-// How much a card matters, as a chip.
-//
-// IT DOES NOT SORT, and nothing here should make it. Sorting by priority would
-// bury a `needs-permission` card under a high-priority one that is doing
-// nothing, which inverts the point of the first column: a blocked agent is
-// blocked whatever you think of the work.
-//
-// The fade is computed here and written nowhere. See `SetPriority` for why
-// there is no server-side expiry.
-const priorityStaleAfter = 7 * 24 * 3600;
-
-function priorityChip(t) {
-  const p = (t.priority || "").toLowerCase();
-  if (p !== "high" && p !== "low") return "";
-
-  const age = t.priority_at ? (Date.now() - Date.parse(t.priority_at)) / 1000 : 0;
-  const stale = age > priorityStaleAfter;
-  const said = t.priority_at ? ` ${ago(age)} ago` : "";
-  const why = p === "high"
-    ? `you marked this high${said}.` +
-      (stale ? " it has not been touched since, so it is drawn faded: high and forgotten is not high."
-             : "")
-    : `you marked this low${said}. worth keeping, not worth looking at now.`;
-
-  return `<span class="chip prio ${p}${stale ? " faded" : ""}"
-    title="${esc(why + " click to see only these.")}"
-    onclick="event.stopPropagation();filterByPriority('${p}')"
-    >${p}</span>`;
-}
 
 // A note written and held, said on the card.
 //
@@ -6883,16 +7556,6 @@ function filterByTag(tag) {
   const q = document.getElementById("stack-q");
   if (!q) return;
   q.value = "#" + tag;
-  paintStack();
-}
-
-// The same motion for priority. Seeing `high` on a card and wanting only those
-// is one thought, and it should be one click.
-function filterByPriority(level) {
-  switchView("stack");
-  const q = document.getElementById("stack-q");
-  if (!q) return;
-  q.value = "!" + level;
   paintStack();
 }
 
@@ -7881,6 +8544,13 @@ if (soloBus) {
       applySkin(m.name);
       return;
     }
+    // A restart, learned from whichever window heard it first. A popped-out
+    // window's own stream may be the one that drops before the message lands,
+    // and the board is the window most likely to still be listening.
+    if (m.type === "going-down") {
+      if (!restartComing()) restartAt = Date.now();
+      return;
+    }
     // A solo window keeps no ledger. It alerts for its own card and nothing
     // else, so it has no use for other windows' claims, and answering its own
     // roll call would have it suppress itself.
@@ -7895,6 +8565,34 @@ if (soloBus) {
     }
     if (m.type === "solo-claim" && m.task) soloHeld.set(m.task, Date.now());
     if (m.type === "solo-release" && m.task) soloHeld.delete(m.task);
+    // A popped-out window asking to be closed, because it cannot reliably
+    // close itself.
+    //
+    // SAME ASYMMETRY AS RAISING, and it went unnoticed for the same reason:
+    // `window.close()` is refused silently in every case where the browser
+    // does not agree the script opened that window, and "does not agree" is
+    // broader than it sounds. A window opened from a pasted URL was never
+    // script-opened. One whose opener has been closed or has reloaded through
+    // a build change may no longer count either, and none of that raises an
+    // error, so the countdown finishes and the window simply stays.
+    //
+    // The board holds the handle it got from `window.open`, and closing
+    // through that handle is the case every browser does allow. So the window
+    // asks and the board acts, exactly as it does for focus.
+    if (m.type === "solo-close" && m.task) {
+      soloHeld.delete(m.task);
+      // By handle, or by NAME when there is no handle. The board reloads
+      // itself whenever the daemon serves a new build, and a reload empties
+      // `popOuts` while leaving every popped window open. Without the second
+      // route the close would fail on exactly the boards that have been up
+      // longest, which is most of them.
+      let held = popOuts.get(m.task);
+      if (!held || held.closed) held = reopenByName(m.task);
+      if (held && !held.closed) {
+        try { held.close(); } catch (e) {}
+      }
+      popOuts.delete(m.task);
+    }
   };
 }
 
@@ -8992,16 +9690,19 @@ function overlayCard(o) {
   const mark = OVERLAY_MARKS[o.kind] || "";
   // The executable is NOT what shares. Both overlays are driven by an embedded
   // SDK, and the board answers the overlay listener itself rather than being
-  // proxied to by a child process. The binary is needed for setup and for
-  // nothing else: `zrok enable` and `ziti edge enroll` are one-time account
-  // operations with no SDK equivalent atrium uses.
+  // proxied to by a child process.
+  //
+  // For ZROK the binary is now needed for nothing at all: enabling and
+  // disabling are the same API calls the command makes, done natively, because
+  // the command can only ever reach the machine's environment and atrium may
+  // be on its own. For ZITI it is still needed to enroll an identity.
   //
   // So a machine that is already set up shares perfectly well with no
   // executable anywhere. Treating a missing binary as "not installed" hid the
   // whole overlay from exactly that machine and offered a download instead of
   // a start button.
   const missing = !o.found;
-  const stuck = missing && !o.ready;
+  const stuck = missing && !o.ready && o.kind !== "zrok";
 
   // What it is doing, in the one place somebody looks to find out.
   const state = o.running
@@ -9023,7 +9724,7 @@ function overlayCard(o) {
        </div>`
     : !o.ready
       ? overlaySetup(o)
-      : (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
+      : zrokWhoseAccount(o) + (OVERLAY_UI[o.kind] || []).map(f => overlayField(o, f)).join("");
 
   // The address, once there is one. This is the thing you came for, so it gets
   // its own line and a copy button rather than being read out of the log.
@@ -9057,24 +9758,34 @@ function overlayCard(o) {
   // own button and a second one would be two things to press.
   // Ready is the whole condition. A missing executable does not stop a share,
   // only the disable button below, which says so for itself.
+  // Starting takes seconds and used to show nothing for all of them, so the
+  // button becomes the progress line while it runs rather than sitting there
+  // looking unpressed. Replaced rather than disabled: a greyed-out button says
+  // you may not, and what is true is that you already have.
+  const busy = overlayBusy[o.kind];
   const actions = !o.ready ? "" : `
     <div class="ov-actions">
-      ${o.running
-        ? `<button class="no" onclick="stopOverlay('${esc(o.kind)}')">stop sharing</button>`
-        : `<button class="go" onclick="startOverlay('${esc(o.kind)}')">start sharing</button>`}
-      <!-- Disabling zrok runs its own command, which cleans up the account
-           side too. With no executable there is nothing to run, and offering
-           a button that cannot work is worse than saying why. Forgetting a
-           ziti identity is atrium's own bookkeeping and always works. -->
-      ${(o.kind === "zrok" && missing)
-        ? `<button disabled title="disabling removes the environment from your zrok
-             account as well as this machine, which only zrok's own command can do.
-             it is not on this machine's PATH.">disable</button>`
-        : `<button onclick="teardownOverlay('${esc(o.kind)}')"
-             title="${o.kind === "zrok"
-               ? "remove the zrok environment from this machine"
-               : "stop using this identity"}">${
-             o.kind === "zrok" ? "disable" : "forget identity"}</button>`}
+      ${busy
+        ? `<span class="ov-busy"><span class="shspin"></span>${esc(busy)}</span>`
+        : o.running
+          ? `<button class="no" onclick="stopOverlay('${esc(o.kind)}')">stop sharing</button>`
+          : `<button class="go" onclick="startOverlay('${esc(o.kind)}')">start sharing</button>`}
+      <!-- Disabling zrok no longer needs the executable. It is the same two
+           API calls the zrok command makes, so it works on a machine that has
+           never had zrok installed. What the button MEANS still differs: on
+           atrium's own environment it costs atrium's shares, and on the
+           machine's it costs every tool on the machine.
+           NO BACKTICKS IN HERE. This comment sits inside a template literal,
+           so a backtick ends the string and the rest of the file becomes
+           nonsense. See web/CLAUDE.md, and check-board.sh, which caught
+           exactly that when this comment was first written. -->
+      <button onclick="teardownOverlay('${esc(o.kind)}')"
+        title="${o.kind === "zrok"
+          ? ((o.setup || {}).own
+              ? "remove atrium's own zrok environment. nothing outside atrium is affected."
+              : "remove THIS MACHINE's zrok environment, which every other tool here shares")
+          : "stop using this identity"}">${
+        o.kind === "zrok" ? "disable" : "forget identity"}</button>
       <span class="grow"></span>
       <!-- Where the executable is, when there is one, and what shares when
            there is not. The SDK is the answer in both cases. -->
@@ -9175,6 +9886,55 @@ const OVERLAY_SETUP = {
   }
 };
 
+// WHOSE ZROK ACCOUNT, and which instance it talks to.
+//
+// Drawn in the panel rather than in the setup block, and that placement is the
+// whole point. The setup block only appears while the overlay is NOT ready, so
+// on a machine with zrok already enabled these controls did not exist, and
+// that machine is precisely the one that needs them: somebody with a working
+// public account who wants atrium on a different instance.
+//
+// Which environment sits above which instance because the second only makes
+// sense once the first is decided. Pointing the machine's environment
+// somewhere else means disabling the one every other tool on the machine
+// shares. Atrium having its own means nothing outside atrium changes at all.
+// That is too large a difference to leave implied by a text box.
+//
+// Both are shown even while enabled, where the daemon will refuse to move
+// them. The refusal names the instance and says to disable first, which is a
+// better answer than a control that is not there.
+function zrokWhoseAccount(o) {
+  if (o.kind !== "zrok") return "";
+  const setup = o.setup || {};
+  return `
+    <div class="ov-field">
+      <label class="eyebrow">whose zrok account</label>
+      <label class="check">
+        <input type="checkbox" id="ovs-zrok-own" ${setup.own ? "checked" : ""}>
+        <span>atrium keeps its own, separate from this machine's</span>
+      </label>
+      <span class="hintline">${setup.own
+        ? esc("Atrium is on its own environment at " + (setup.root || "its own directory") +
+            ". The zrok command and everything else on this machine are untouched by " +
+            "anything done here.")
+        : "Off means atrium shares from the same account as the zrok command. Turn it " +
+          "on to enable atrium against a different instance while this machine's stays " +
+          "exactly as it is."}</span>
+    </div>
+    <div class="ov-field">
+      <label class="eyebrow" for="ovs-zrok-api">zrok instance</label>
+      <div class="picker">
+        <input type="text" id="ovs-zrok-api" spellcheck="false"
+          value="${esc(setup.api_endpoint || "")}"
+          placeholder="https://api.zrok.io">
+        <button onclick="saveZrokEndpoint()">use this one</button>
+      </div>
+      <span class="hintline" id="ovs-zrok-api-said">${esc(setup.api_endpoint_from
+        ? "from " + setup.api_endpoint_from
+        : "leave it alone for the public zrok. change it to run against your own.")}</span>
+    </div>`;
+}
+
 function overlaySetup(o) {
   const s = OVERLAY_SETUP[o.kind];
   if (!s) return "";
@@ -9193,19 +9953,12 @@ function overlaySetup(o) {
   // them. It has to be set BEFORE enabling, because enabling talks to whatever
   // this names, so it is here rather than in the settings below: those are for
   // a machine that is already set up.
-  const where = o.kind === "zrok" ? `
-      <div class="ov-field">
-        <label class="eyebrow" for="ovs-zrok-api">zrok instance</label>
-        <div class="picker">
-          <input type="text" id="ovs-zrok-api" spellcheck="false"
-            value="${esc(setup.api_endpoint || "")}"
-            placeholder="https://api.zrok.io">
-          <button onclick="saveZrokEndpoint()">use this one</button>
-        </div>
-        <span class="hintline" id="ovs-zrok-api-said">${esc(setup.api_endpoint_from
-          ? "from " + setup.api_endpoint_from
-          : "leave it alone for the public zrok. change it to run against your own.")}</span>
-      </div>` : "";
+  // Which environment and which instance are drawn by `zrokWhoseAccount`, in
+  // the panel itself rather than here. They were here first and it was wrong:
+  // this block is only rendered while the overlay is NOT ready, so on a machine
+  // that already had zrok enabled the controls for pointing atrium somewhere
+  // else were invisible, which is exactly the machine that needs them.
+  const where = zrokWhoseAccount(o);
 
   return `${gone}${bad}
     <div class="ov-setup">
@@ -9367,20 +10120,29 @@ function overlayField(o, f) {
   </div>`;
 }
 
-// Points this machine at a zrok instance, before it is enabled against one.
+// Chooses whose zrok account atrium uses, and points it at an instance.
+//
+// One request for both, because the daemon treats them as one decision and
+// two requests would let the board reach a state the daemon refuses: atrium's
+// own environment saved, the address not, so it enables against the public
+// service and reports the address somebody typed.
 async function saveZrokEndpoint() {
   const el = document.getElementById("ovs-zrok-api");
+  const own = document.getElementById("ovs-zrok-own");
   const said = document.getElementById("ovs-zrok-api-said");
+  const endpoint = (el.value || "").trim();
   try {
     await api("/v1/overlays/zrok/endpoint", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: (el.value || "").trim() })
+      body: JSON.stringify({ endpoint, own: !!(own && own.checked) })
     });
-    said.textContent = el.value.trim()
+    said.textContent = endpoint
       ? "saved. enabling will talk to that one."
       : "cleared. back on zrok's own default.";
     loadOverlays();
   } catch (e) {
+    // The daemon refuses to move an environment that is already enabled, and
+    // that refusal is the useful sentence rather than an error to summarise.
     said.textContent = e.message || String(e);
   }
 }
@@ -9506,6 +10268,13 @@ async function saveOverlay(kind) {
 
 // Turning on a public share is the one option here that puts a board with no
 // login on the open internet, so it says so before it does it.
+// What the panel shows instead of its start button while one is running.
+//
+// Keyed by overlay, because the two are independent and starting one must not
+// make the other look busy. The value is the text of the step it is on, which
+// arrives over the event stream from `overlayStep`.
+const overlayBusy = {};
+
 async function startOverlay(kind) {
   const o = overlays.find(x => x.kind === kind);
   const publicShare = kind === "zrok" && o && (o.config || {}).mode === "public";
@@ -9515,12 +10284,18 @@ async function startOverlay(kind) {
     "<br><br>A private share needs zrok on the other end and is the safer choice.",
     "share it publicly")) return;
 
+  // Set before the request leaves, not on the first event. The events may
+  // never arrive, and the one thing that must be true the instant the button
+  // is pressed is that the board looks like it heard.
+  overlayBusy[kind] = "starting";
+  paintOverlays();
   await saveOverlay(kind);
   try {
     overlays = (await api(`/v1/overlays/${kind}/start`, { method: "POST" })).overlays || overlays;
   } catch (e) {
     toast("could not start it", e.message);
   }
+  delete overlayBusy[kind];
   paintOverlays();
   // The address arrives on the share's own output a moment after it starts.
   setTimeout(loadOverlays, 1500);
@@ -9552,9 +10327,16 @@ function setGroupMode(mode) {
 }
 
 function resetGrouping() {
+  const wasOff = !groupingPrefs().on;
   setGrouping({ by: "", order: "" });
   paintGrouping();
-  toast("grouping reset", "back to reading a project out of the worktree path");
+  // Said differently when grouping is switched off, because otherwise this
+  // button reports success for something with no visible effect and reads as
+  // broken. It DID reset the rule. There is just nothing using it.
+  toast("grouping rule reset",
+    wasOff
+      ? "back to reading a project out of the worktree path. grouping is off, so nothing moved"
+      : "back to reading a project out of the worktree path");
 }
 
 // Saved on blur rather than on every keystroke, so a half-typed function is
@@ -10299,24 +11081,176 @@ function applySkin(name) {
 // window you are in would be judging it against half the evidence.
 let skinBefore = null;
 
-function pickSkin() {
-  const wrap = document.getElementById("skin-wrap");
-  const sel = document.getElementById("skin-pick");
-  if (!wrap || !sel) return;
-  // A second press closes it, so the button is a toggle rather than a way to
-  // open something you then have to answer.
-  if (!wrap.hidden) { cancelSkin(); return; }
+// Where the panel was left, so it comes back there. Per browser: it is about
+// this screen and where the operator does not mind something sitting.
+const SKINLAB_AT = "atrium.skinlab.at";
+
+function openSkinLab() {
+  const lab = document.getElementById("skinlab");
+  const sel = document.getElementById("skinlab-pick");
+  if (!lab || !sel) return;
+  // A second press closes it, so the header button is a toggle rather than a
+  // way to open something you then have to answer.
+  if (!lab.hidden) { cancelSkin(); return; }
 
   const names = (pastePrefs && pastePrefs.board_skins) || [];
   if (!names.length) {
-    toast("no skins", "the daemon has not said which ones it has yet");
+    toast("no skins yet", "the daemon has not said which ones it has. open the gear once");
     return;
   }
+  // The gear covers most of the board, and the board is what is being judged.
+  const gear = document.getElementById("settings");
+  if (gear && gear.open) gear.close();
+
   skinBefore = currentSkin();
   sel.innerHTML = names.map(n =>
     `<option value="${esc(n)}"${n === skinBefore ? " selected" : ""}>${esc(n)}</option>`).join("");
-  wrap.hidden = false;
+  // Shown before it is placed, because placing it measures it and a hidden
+  // element measures as nothing.
+  lab.hidden = false;
+  placeSkinLab();
   sel.focus();
+}
+
+// Wherever it was left, clamped back into view.
+//
+// A remembered position outlives the window it was chosen in: a panel put in
+// the bottom right of a wide monitor is off screen entirely on a laptop, with
+// no way to reach it and nothing to say where it went.
+// ANCHORED TO THE NEAREST EDGE, NOT TO A COORDINATE.
+//
+// A panel positioned by `left` and `top` keeps those numbers when the window
+// gets smaller, so one parked in the top right slides off the right edge and
+// there is nothing left to grab. Storing which edges it was NEAR and how far
+// from them means the browser holds it there for free: `right: 24px` stays
+// 24px from the right whatever the window does.
+//
+// Which edge is decided by which half it sits in, per axis, on the drag that
+// put it there. That matches what somebody meant: a panel tucked top right is
+// a panel that belongs top right.
+function labAt() {
+  try {
+    const at = JSON.parse(localStorage.getItem(SKINLAB_AT) || "null");
+    if (at && typeof at.x === "number" && typeof at.y === "number") return at;
+  } catch (e) {}
+  // Under the header, out of the way of the tabs, on the side the gear is.
+  return { side: "right", x: 24, vside: "top", y: 88 };
+}
+
+function placeSkinLab() {
+  const lab = document.getElementById("skinlab");
+  if (!lab) return;
+  const at = labAt();
+  const box = lab.getBoundingClientRect();
+  const w = box.width || 288;
+  const h = box.height || 170;
+
+  // Clamped even when anchored, because a remembered offset can be larger than
+  // the window it is being restored into.
+  const maxX = Math.max(8, window.innerWidth - w / 2);
+  const maxY = Math.max(8, window.innerHeight - h / 2);
+  const x = Math.min(Math.max(at.x, 8 - w / 2), maxX);
+  const y = Math.min(Math.max(at.y, 8 - h / 2), maxY);
+
+  if (at.side === "right") {
+    lab.style.right = x + "px";
+    lab.style.left = "auto";
+  } else {
+    lab.style.left = x + "px";
+    lab.style.right = "auto";
+  }
+  if (at.vside === "bottom") {
+    lab.style.bottom = y + "px";
+    lab.style.top = "auto";
+  } else {
+    lab.style.top = y + "px";
+    lab.style.bottom = "auto";
+  }
+}
+
+// Where it ended up, as a distance from whichever edge it is nearer.
+function rememberLabAt(lab) {
+  const box = lab.getBoundingClientRect();
+  const midX = box.left + box.width / 2;
+  const midY = box.top + box.height / 2;
+  const at = midX > window.innerWidth / 2
+    ? { side: "right", x: Math.round(window.innerWidth - box.right) }
+    : { side: "left", x: Math.round(box.left) };
+  Object.assign(at, midY > window.innerHeight / 2
+    ? { vside: "bottom", y: Math.round(window.innerHeight - box.bottom) }
+    : { vside: "top", y: Math.round(box.top) });
+  try { localStorage.setItem(SKINLAB_AT, JSON.stringify(at)); } catch (e) {}
+  placeSkinLab();
+}
+
+// A window that shrank past a remembered offset still has to leave something
+// to grab. The anchoring above handles the ordinary case on its own.
+addEventListener("resize", () => {
+  const lab = document.getElementById("skinlab");
+  if (lab && !lab.hidden) placeSkinLab();
+});
+
+// Walk the list without opening the select. The whole point of the panel is
+// seeing each one against the real board, and that reads better as a step than
+// as a dropdown covering the thing you are looking at.
+function stepSkin(by) {
+  const sel = document.getElementById("skinlab-pick");
+  if (!sel || !sel.options.length) return;
+  sel.selectedIndex = (sel.selectedIndex + by + sel.options.length) % sel.options.length;
+  previewSkin(sel.value);
+}
+
+// DRAGGING. The element is held in a local rather than read off the event,
+// because `currentTarget` is null by the time a later handler runs, and the
+// listeners then never come off and the panel follows the pointer with no
+// button held. That exact bug cost an evening on the terminal list's grip.
+let labFrom = null;
+function startLabDrag(e) {
+  const lab = document.getElementById("skinlab");
+  const grip = e.currentTarget;
+  if (!lab || !grip) return;
+  const box = lab.getBoundingClientRect();
+  labFrom = { dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, h: box.height };
+  grip.setPointerCapture(e.pointerId);
+
+  // Dragged in `left` and `top`, because a pointer gives an absolute position
+  // and doing the edge arithmetic on every frame buys nothing. It is converted
+  // to an edge anchor once, on release.
+  const move = ev => {
+    if (!labFrom) return;
+    const x = ev.clientX - labFrom.dx;
+    const y = ev.clientY - labFrom.dy;
+    lab.style.right = "auto";
+    lab.style.bottom = "auto";
+    // Half of it has to stay reachable. Clamping fully inside is worse: it
+    // snaps a panel somebody deliberately tucked against an edge.
+    lab.style.left = Math.min(Math.max(x, 8 - labFrom.w / 2),
+      window.innerWidth - labFrom.w / 2) + "px";
+    lab.style.top = Math.min(Math.max(y, 8 - labFrom.h / 2),
+      window.innerHeight - labFrom.h / 2) + "px";
+  };
+  const done = () => {
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", done);
+    grip.removeEventListener("pointercancel", done);
+    try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+    labFrom = null;
+    rememberLabAt(lab);
+  };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", done);
+  grip.addEventListener("pointercancel", done);
+  e.preventDefault();
+}
+
+// The third answer, and the reason there are three rather than two. Getting
+// back to the palette the board shipped with means finding it in a list of
+// twenty, and it is the one choice somebody makes without wanting to browse.
+async function useDefaultSkin() {
+  const sel = document.getElementById("skinlab-pick");
+  if (sel) sel.value = defaultSkin;
+  previewSkin(defaultSkin);
+  await keepSkin();
 }
 
 // What is on screen right now, which is the attribute rather than the setting.
@@ -10334,10 +11268,10 @@ function previewSkin(name) {
 }
 
 async function keepSkin() {
-  const wrap = document.getElementById("skin-wrap");
-  const sel = document.getElementById("skin-pick");
-  if (!sel || !wrap || wrap.hidden) return;
-  wrap.hidden = true;
+  const lab = document.getElementById("skinlab");
+  const sel = document.getElementById("skinlab-pick");
+  if (!sel || !lab || lab.hidden) return;
+  lab.hidden = true;
   const name = sel.value;
   if (name === skinBefore) return;
   // Through the same path the settings dialog uses, so there is one place that
@@ -10348,9 +11282,9 @@ async function keepSkin() {
 }
 
 function cancelSkin() {
-  const wrap = document.getElementById("skin-wrap");
-  if (!wrap || wrap.hidden) return;
-  wrap.hidden = true;
+  const lab = document.getElementById("skinlab");
+  if (!lab || lab.hidden) return;
+  lab.hidden = true;
   previewSkin(skinBefore);
 }
 
@@ -10697,14 +11631,29 @@ function paintSettings() {
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
   const perm = ("Notification" in window) ? Notification.permission : "unsupported";
-  state.textContent = perm === "default" ? "not asked yet" : perm;
-  state.className = "chip" + (perm === "granted" ? " accent" : perm === "denied" ? " warn" : "");
-
   // Once granted, an enable button can do nothing, and a page cannot revoke
   // its own permission. What atrium can control is whether it sends any, so
   // that is what the button becomes.
   const toggle = document.getElementById("s-notify-toggle");
   const on = alerting.get().desktop !== false;
+
+  // THE CHIP REPORTS WHAT WILL HAPPEN, NOT WHAT THE BROWSER ALLOWS.
+  //
+  // Those are two facts and the chip only has room for one. Reading the
+  // browser's permission out loud meant it said `granted`, in the positive
+  // colour, beside a button offering to `turn on` and a note explaining that
+  // nothing was being sent. The status said fine and the two controls beside
+  // it said otherwise.
+  //
+  // Permission is a precondition. Whether atrium sends any is the answer, so
+  // the answer is what shows, and the precondition is still readable in the
+  // buttons: `enable` appears when it has not been asked for, and the toggle
+  // only appears once it has been granted.
+  const said = (perm === "granted" && !on) ? "off"
+    : perm === "default" ? "not asked yet"
+    : perm;
+  state.textContent = said;
+  state.className = "chip" + (said === "granted" ? " accent" : perm === "denied" ? " warn" : "");
   ask.hidden = perm !== "default";
   toggle.hidden = perm !== "granted";
   toggle.textContent = on ? "turn off" : "turn on";
@@ -11623,12 +12572,59 @@ function connect() {
   // while the runners tab happens to be open.
   // A share is one thing for the machine, so two tabs must not disagree about
   // whether it is up.
+  // THE DAEMON SAYS IT IS GOING DOWN, before it takes anything down.
+  //
+  // This is the only reliable way a window learns the difference between a
+  // session that ended and a restart. Both are a socket closing, `/v1/health`
+  // answers yes during the wind-down because the listener outlives the
+  // runners, and waiting-and-hoping is what stranded a popped-out window on a
+  // dead terminal until F5.
+  //
+  // So the daemon announces it and every window arms itself. What arrives
+  // after this is the restart. What arrives without it is the session ending.
+  es.addEventListener("going-down", e => {
+    let why = "";
+    try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
+    armRestart(why);
+  });
   es.addEventListener("overlays", e => {
     let next;
     try { next = JSON.parse(e.data) || []; } catch (err) { return; }
     noticeSharesThatDied(overlays, next);
     overlays = next;
     paintOverlays();
+  });
+  // How far a share has got. Only ever painted into a dialog this window
+  // opened, and only while that dialog is still waiting: the daemon broadcasts
+  // to every window, and a share is one machine's business but it is this
+  // operator's action.
+  // The same narration for the board's own share, painted into the panel that
+  // holds the button. Only while this window is the one waiting: `overlayBusy`
+  // is set by the click, so a start from another tab does not turn this one's
+  // button into a spinner that nothing here will ever clear.
+  es.addEventListener("overlay-progress", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (!d.kind || !(d.kind in overlayBusy)) return;
+    // Both endings are left to the POST. It carries the new overlay state and
+    // the error text, and clearing the busy line here would blank the panel a
+    // beat before there is anything to put in its place.
+    if (d.step === "done" || d.step === "failed") return;
+    overlayBusy[d.kind] = d.text || "starting";
+    paintOverlays();
+  });
+  es.addEventListener("share-progress", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (shareEnded || !shareFor || d.task_id !== shareFor) return;
+    // `done` is ignored on purpose. The POST carries the object the dialog
+    // needs, so finishing here would race it and win with less information.
+    if (d.step === "done") return;
+    if (d.step === "failed") { sharePaintSteps(shareAt, true); return; }
+    const i = SHARE_STEPS.findIndex(s => s[0] === d.step);
+    if (i < 0) return;
+    shareAt = i;
+    sharePaintSteps(i, false);
   });
   es.addEventListener("settings", e => {
     try {
@@ -12031,6 +13027,38 @@ function cancelTheme() {
 // straight to xterm. Everything sent back is a JSON control frame, so a
 // keystroke and a resize stay distinguishable without inventing framing.
 let term = null, termFit = null, termSock = null, termTask = null;
+// The keystroke listener, held so a reconnect can replace it rather than stack
+// another one on top. See `connectTerm`.
+let termData = null;
+
+// WHEN THE DAEMON SAID IT WAS GOING DOWN.
+//
+// Set by the `going-down` event and read by every path that has to decide
+// whether a closed socket is worth waiting on. A timestamp rather than a flag,
+// because it has to expire: a daemon that announced a restart and never came
+// back would otherwise leave this window waiting forever, and a window left
+// open overnight must not treat this morning's disconnect as last night's
+// restart.
+let restartAt = 0;
+const restartWindow = 5 * 60 * 1000;
+
+function armRestart(why) {
+  restartAt = Date.now();
+  // Broadcast, so a popped-out window learns it from the board even if its own
+  // stream is the one that drops first.
+  try { soloBus && soloBus.postMessage({ type: "going-down" }); } catch (e) {}
+  if (term) {
+    term.write("\r\n\x1b[38;5;244m[atrium] atrium is restarting" +
+      (why ? ": " + why : "") + "\x1b[0m\r\n");
+  }
+  termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+}
+
+// Whether a restart was announced recently enough to explain what just
+// happened.
+function restartComing() {
+  return restartAt > 0 && Date.now() - restartAt < restartWindow;
+}
 
 // Copy on selection, off by default because it surprises people who drag to
 // scroll. Remembered, like the other preferences.
@@ -12198,6 +13226,20 @@ function openTerm(task) {
     lineHeight: 1.2,
     letterSpacing: 0.2,
     cursorBlink: true,
+    // REQUIRED BY SEARCH, and its absence is why find never found anything.
+    //
+    // `registerDecoration` is what paints a hit and puts a mark down the
+    // scrollbar, and in xterm 5.5 it is a proposed API that throws unless this
+    // is set. The search addon calls it from inside `findNext`, before it has
+    // searched anything, so passing `decorations` without this made the very
+    // first search throw and every subsequent one do the same. Every match in
+    // the buffer, reported as zero.
+    //
+    // It was invisible for months because the call site swallowed the
+    // exception into an empty result count, which is indistinguishable from a
+    // search that matched nothing. Do not remove this without also removing
+    // the `decorations` block in `findOpts`.
+    allowProposedApi: true,
     // The second of the two limits, and the smaller one wins. The daemon
     // keeps N megabytes of every runner's output and this decides how much of
     // it survives once it is here, so both are one setting in two units.
@@ -12372,8 +13414,40 @@ function wireTerminalPaste(screen) {
     // a text representation of it, and pasting that instead is how a paste
     // silently does nothing useful.
     const text = dt.getData("text/plain");
-    if (text) sendInput(text);
+    if (text) sendPasteText(text);
   }, true);
+}
+
+// A PASTE IS NOT A BURST OF TYPING, and the runner has to be told which it is.
+//
+// This path exists because atrium handles the clipboard itself: `ctrl-v` is
+// returned as unhandled to xterm so the browser's own `paste` event fires,
+// which is the only place a screenshot's bytes are reachable. The cost is that
+// xterm never sees the text, so the framing it would have applied has to be
+// applied here.
+//
+// Two things it does:
+//
+//   - CARRIAGE RETURNS. A clipboard gives `\n` or `\r\n`. A terminal delivers
+//     `\r` for a line break, and an application reading raw input treats `\n`
+//     as a line feed rather than as a key.
+//   - BRACKETED PASTE, when the application asked for it. Without the markers
+//     every newline in the pasted text is Enter, so pasting three lines into a
+//     prompt submits the first line and drops the rest into a prompt that is
+//     now busy. That is the whole bug: a big paste survived it because Claude
+//     Code detects a paste from the size of the burst, and a two line paste is
+//     not a big enough burst to be detected.
+//
+// `term.modes` is xterm's own record of what the application turned on, so
+// this asks rather than assumes: sending the markers to something that never
+// requested them would put `[200~` on screen.
+function sendPasteText(text) {
+  let body = String(text).replace(/\r\n/g, "\r").replace(/\n/g, "\r");
+  const bracketed = term && term.modes && term.modes.bracketedPasteMode;
+  if (bracketed) body = "\x1b[200~" + body + "\x1b[201~";
+  // ONE FRAME. Splitting it is what makes a paste look like typing, which is
+  // the thing the brackets exist to deny.
+  sendInput(body);
 }
 
 // The fallback, for a paste that did not arrive as an event: a button, or a
@@ -12383,7 +13457,7 @@ async function pasteIntoTerm() {
   if (await pasteFilesIntoTerm()) return;
   try {
     const text = await navigator.clipboard.readText();
-    if (text) sendInput(text);
+    if (text) sendPasteText(text);
   } catch (e) {
     toast("could not paste", "the browser refused clipboard access");
   }
@@ -12586,17 +13660,24 @@ function clampTermW(px) {
   return Math.max(TERMLIST_MIN, Math.min(TERMLIST_MAX, Math.round(px || 0)));
 }
 
-// What the button will do next, said as a sentence rather than as the name of
-// a mode. Nobody is holding "mini" in their head.
-function termListNext() {
-  if (termListMode === "full") return "shrink the list to just the names";
-  if (termListMode === "mini") return "hide the list, and hover the left edge to peek";
-  return "put the list back";
-}
+// TWO BUTTONS, NOT ONE CYCLE.
+//
+// It was one button that went full to mini to off and round again, which is
+// three states behind a control that only ever appeared to make things
+// smaller. Halfway along, in `mini`, there was no way to go back: the button
+// only shrank, and the way out was to shrink it AGAIN to `off` and find the
+// rail. Nobody works that out. They collapse it once, lose the list, and stop
+// using the mode.
+//
+// A pair says what it does, both directions are always reachable, and the end
+// of the range is a disabled button rather than a wrap-around that undoes what
+// you just did.
+const TERM_LIST_MODES = ["off", "mini", "full"];
 
-function cycleTermList() {
-  termListMode = termListMode === "full" ? "mini" : termListMode === "mini" ? "off" : "full";
-  localStorage.setItem("atrium.termlist.mode", termListMode);
+function setTermListMode(mode) {
+  if (!TERM_LIST_MODES.includes(mode) || mode === termListMode) return;
+  termListMode = mode;
+  try { localStorage.setItem("atrium.termlist.mode", mode); } catch (e) {}
   applyTermList();
   renderTermList();
   // The pane just changed width, and xterm only knows its size because
@@ -12605,9 +13686,37 @@ function cycleTermList() {
   requestAnimationFrame(onTermResize);
 }
 
+function stepTermList(by) {
+  const at = TERM_LIST_MODES.indexOf(termListMode);
+  const to = TERM_LIST_MODES[at + by];
+  if (to) setTermListMode(to);
+}
+
 // Called by the rail, which is the way back from `off`.
-function showTermList() {
-  if (termListMode === "off") cycleTermList();
+function showTermList() { setTermListMode("mini"); }
+
+// Only the directions that go anywhere.
+//
+// A disabled button at each end says "you cannot", which is a sentence nobody
+// needed: at full width there is obviously no wider, and the greyed control
+// is just something else in a header that has three things in it. What is
+// missing IS the answer.
+function termListButtons() {
+  const at = TERM_LIST_MODES.indexOf(termListMode);
+  let out = "";
+  if (at > 0) {
+    out += `<button class="termsort tlcycle" onclick="stepTermList(-1)"
+      title="${termListMode === "full"
+        ? "shrink it to just the names"
+        : "hide it, and hover the edge to peek"}">&laquo;</button>`;
+  }
+  if (at < TERM_LIST_MODES.length - 1) {
+    out += `<button class="termsort tlcycle" onclick="stepTermList(1)"
+      title="${termListMode === "off"
+        ? "put the list back"
+        : "show the whole name"}">&raquo;</button>`;
+  }
+  return out;
 }
 
 // ── dragging the width ──────────────────────────────────────────────────────
@@ -12719,6 +13828,7 @@ async function termMenu(e, id) {
     t.supervised
       ? { label: t.shell ? "go to its shell" : "open a shell here", act: () => openShellFor(id) }
       : null,
+    t.shell ? { label: "close its shell", act: () => closeShellFor(id) } : null,
     { sep: true },
     { label: "what did it do?", act: () => { current = t; openReview(); } },
     { label: "details…", act: () => openTask(id) },
@@ -12732,6 +13842,25 @@ async function termMenu(e, id) {
 // Two steps rather than one, and in this order: attach first so the pane is on
 // the right card, then switch. Asking for the shell before attaching would
 // leave the toggle describing a card the pane is not showing.
+// Ends a card's shell from outside it.
+//
+// `exit` in the shell does the same thing and is what you reach for when you
+// are looking at it. This is for a shell open on a card you are not: it holds a
+// process and its working directory, and the idle sweep is half an hour away.
+//
+// If the pane is showing that shell, it falls back to the runner on its own:
+// the socket closes and `connectTerm` handles it, the same as `exit`.
+async function closeShellFor(id) {
+  try {
+    await api(`/v1/tasks/${id}/shell`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not close it", e.message);
+    return;
+  }
+  toast("shell closed", "the agent's terminal is untouched");
+  refresh();
+}
+
 async function openShellFor(id) {
   await attachTask(id);
   // `attachTask` raises a popped-out window instead of attaching here, and in
@@ -12802,8 +13931,7 @@ async function renderTermList() {
         title="newest activity first, and anything waiting on you above that">
         ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
       <span class="grow"></span>
-      <button class="termsort tlcycle" onclick="cycleTermList()" title="${esc(termListNext())}"
-        >${termListMode === "full" ? "&laquo;" : termListMode === "mini" ? "&laquo;&laquo;" : "&raquo;"}</button>
+      ${termListButtons()}
     </div>`;
 
   setHTML(host, tasks.length
@@ -12959,7 +14087,15 @@ let findCase = false, findRe = false;
 
 function useSearch(t) {
   termSearch = null;
-  if (typeof SearchAddon === "undefined") return;
+  // Loudly, because everything downstream of this degrades to "finds nothing"
+  // rather than to an error. The vendored bundle sets `self.SearchAddon`, so
+  // an undefined global means the script tag did not load, which is a 404 or a
+  // build that dropped the file, not a search problem.
+  if (typeof SearchAddon === "undefined") {
+    console.error("the search addon did not load. /vendor/xterm-addon-search.js " +
+      "defines SearchAddon and nothing did. ctrl-f will find nothing.");
+    return;
+  }
   try {
     termSearch = new SearchAddon.SearchAddon();
     t.loadAddon(termSearch);
@@ -12977,7 +14113,15 @@ function useSearch(t) {
 
 // The colours are the theme's. A hit highlighted in board-blue on a dark green
 // terminal is the same mistake the rest of the chrome just stopped making.
-function findOpts(back) {
+//
+// `incremental` is what TYPING wants, not what stepping wants, and it was the
+// wrong way round. It means "search again from the start of the current match",
+// which is right while the word is still being typed, because it keeps the
+// first hit from running away as the pattern gets longer. Applied to Enter it
+// does the opposite of stepping: the search restarts at the match you are
+// already on and finds it again, so pressing next repeatedly never leaves the
+// first hit.
+function findOpts(typing) {
   const th = themeFor(termTask);
   return {
     caseSensitive: findCase,
@@ -12990,7 +14134,7 @@ function findOpts(back) {
       activeMatchBorder: th.cursor || "#00E3B0",
       activeMatchColorOverviewRuler: th.cursor || "#00E3B0"
     },
-    incremental: !back
+    incremental: !!typing
   };
 }
 
@@ -13020,7 +14164,16 @@ function closeFind() {
 // word gets longer.
 function runFind(step, back) {
   const q = document.getElementById("t-find-q");
-  if (!termSearch || !q) return;
+  if (!q) return;
+  // SAID, not returned silently. Without the addon there is no search at all,
+  // and the box still accepts typing and still looks like it is working, which
+  // is indistinguishable from a search that matches nothing. That ambiguity
+  // cost an evening: "it finds nothing" and "it is not searching" look the
+  // same from the outside and have nothing in common as bugs.
+  if (!termSearch) {
+    paintFindCount(null, "no search addon loaded");
+    return;
+  }
   const text = q.value;
   if (!text) {
     termSearch.clearDecorations();
@@ -13028,13 +14181,28 @@ function runFind(step, back) {
     return;
   }
   try {
-    if (step && back) termSearch.findPrevious(text, findOpts(true));
-    else termSearch.findNext(text, findOpts(!step));
+    const found = step && back
+      ? termSearch.findPrevious(text, findOpts(false))
+      : termSearch.findNext(text, findOpts(!step));
+    // The addon answers false for "no match" and reports the count on its own
+    // event. Both are needed: the event does not fire when the search found
+    // nothing at all, so a miss would otherwise leave the previous count on
+    // screen and read as a hit.
+    if (!found) paintFindCount(null, "no matches");
   } catch (e) {
-    // A half-typed regular expression is the ordinary case here, not an
-    // error worth a dialog: `(foo` is what `(foo|bar)` looks like on the way
-    // in.
-    paintFindCount(null, findRe ? "bad pattern" : "");
+    // A half-typed regular expression is the ordinary case here, not an error
+    // worth a dialog: `(foo` is what `(foo|bar)` looks like on the way in.
+    //
+    // ANYTHING ELSE IS SAID OUT LOUD. This catch used to swallow every failure
+    // into an empty count, so a search that threw on its first call looked
+    // exactly like a search that matched nothing, forever, with nothing in the
+    // console either.
+    if (findRe) {
+      paintFindCount(null, "bad pattern");
+      return;
+    }
+    console.error("the terminal search threw:", e);
+    paintFindCount(null, "search failed, see the console");
   }
 }
 
@@ -13203,6 +14371,18 @@ async function showTerminal(kind) {
 
 function connectTerm(taskID) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  // ONE SOCKET PER PANE, ALWAYS.
+  //
+  // Reconnecting is scheduled from several branches of `onclose`, and there is
+  // nothing stopping this being entered while an earlier socket is still open
+  // or still connecting. The old one is not closed by being replaced: it keeps
+  // receiving, keeps writing into the same terminal, and every byte from the
+  // runner lands twice. It reads as a broken keyboard rather than as two
+  // sockets, because the doubling shows up in what you type.
+  //
+  // Closed rather than trusted to have gone. `close()` on an already-closed
+  // socket does nothing.
+  if (termSock) { try { termSock.close(); } catch (e) {} }
   // Absent means the runner, which is what the daemon assumes too, so the
   // parameter is only ever added rather than always sent. That keeps the
   // ordinary URL identical to what it was before shells existed.
@@ -13217,6 +14397,10 @@ function connectTerm(taskID) {
   termSock.onopen = () => {
     opened = true;
     attachSince = 0;
+    // Back. The announcement has been spent, so the next close is judged on
+    // its own: leaving it armed would make a session ended half an hour from
+    // now look like the tail of this restart.
+    restartAt = 0;
     termWait("");
     if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
@@ -13225,12 +14409,19 @@ function connectTerm(taskID) {
     sendResize();
     term.focus();
   };
+  const sock = termSock;
+  // GUARDED BY IDENTITY, the same way `onclose` is.
+  //
+  // A socket that has stopped being the current one can still deliver a
+  // message: closing is asynchronous, and anything already in flight arrives
+  // afterwards. Writing it would put a runner's output into a terminal that is
+  // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
+    if (termSock !== sock || !term) return;
     if (typeof e.data === "string") { term.write(e.data); return; }
     term.write(new Uint8Array(e.data));
   };
-  const sock = termSock;
-  termSock.onclose = async () => {
+  termSock.onclose = async ev => {
     if (!term) return;
     // A close belonging to a socket that is no longer the one attached.
     //
@@ -13245,6 +14436,73 @@ function connectTerm(taskID) {
     // socket stops being the current one, including ways nobody has thought
     // of yet.
     if (termSock !== sock) return;
+
+    // A SHELL CLOSING IS NOT A SESSION GOING AWAY, and every branch below this
+    // one assumes it is.
+    //
+    // Typing `exit` in a shell ends it, the daemon forgets it, and the next
+    // attach with `?kind=shell` has nothing to attach to. Falling through meant
+    // retrying that for five minutes, and in a popped-out window the retry
+    // branch is unconditional, so the window sat saying it was waiting for a
+    // session to come back that had never left. The runner was up the whole
+    // time, one button away.
+    //
+    // So: go back to the runner, say so, and stop. Deliberately NOT reopening
+    // the shell. A shell is opened because somebody pressed a button, and one
+    // that respawns itself when closed is a shell you cannot get rid of.
+    // A RESTART WAS ANNOUNCED, so this close is expected and is not the end of
+    // anything. Ahead of every other branch because it is the one fact here
+    // rather than an inference: the daemon said so before it touched a single
+    // runner. See `armRestart`.
+    if (restartComing()) {
+      if (!attachSince) attachSince = Date.now();
+      if (Date.now() - attachSince < attachRetryFor) {
+        termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+        return;
+      }
+    }
+
+    // NOT A RESTART, AND THE DAEMON SAID WHY IT CLOSED.
+    //
+    // Everything below this treats a close as something to wait out, which is
+    // right for a dropped connection and wrong for a session that ended
+    // because somebody typed `exit`. The retry then hammers an attach for a
+    // card whose runner is deliberately gone: five minutes of failed
+    // connections in the console and a pane that will not settle.
+    if (ev && ev.reason === "runner exited") {
+      attachSince = 0;
+      attachSaidGone = false;
+      termWait("");
+      // A window that IS this session says so and stops. It has nothing else
+      // to show and nothing to wait for, and the scrollback still holds
+      // whatever the session said on its way out.
+      if (termOnly()) {
+        term.write("\r\n\x1b[38;5;244m[atrium] this session has ended. " +
+          "you can close this window\x1b[0m\r\n");
+        return;
+      }
+      term.write("\r\n\x1b[38;5;244m[atrium] detached\x1b[0m\r\n");
+      setTimeout(() => closeTerm(), 900);
+      return;
+    }
+
+    // The same answer whether it closed under you or was already gone when a
+    // reload asked for it. Both are "there is no shell", and neither is worth
+    // waiting on: the button makes another one.
+    if (termKind === "shell") {
+      termKind = "runner";
+      paintTermKind();
+      term.write("\r\n\x1b[38;5;244m[atrium] " +
+        (opened ? "shell closed. back to the agent"
+                : "that shell is gone. back to the agent") +
+        "\x1b[0m\r\n");
+      attachSince = 0;
+      termWait("");
+      setTimeout(() => { if (term && termTask) connectTerm(termTask.id); }, 120);
+      return;
+    }
+
     if (!attachSince) attachSince = Date.now();
     const within = Date.now() - attachSince < attachRetryFor;
 
@@ -13332,20 +14590,21 @@ function connectTerm(taskID) {
   // and `onclose` follows immediately with the one message worth reading.
   termSock.onerror = () => {};
 
-  term.onData(d => {
-    // `sendInput` rather than `send`: xterm delivers a bracketed paste here in
-    // one call, so this is the other path a large paste takes.
-    sendInput(d);
-    // TYPING PUTS YOU BACK AT THE BOTTOM. You cannot see what you are typing
-    // from three screens up, and the alternative is typing blind into a
-    // terminal that looks like it is ignoring you. This is what every real
-    // terminal does.
-    //
-    // Here rather than on xterm's `scrollOnUserInput`, which only covers keys
-    // xterm itself handled: a paste, a middle-click and anything atrium sends
-    // through `send` never touch it.
-    term.scrollToBottom();
-  });
+  // ONE KEYSTROKE LISTENER PER TERMINAL, NOT PER SOCKET.
+  //
+  // `onData` registers a listener and returns a disposable. This function runs
+  // again on every reconnect, and the terminal object survives a reconnect, so
+  // without disposing the previous one each attempt left another listener
+  // behind and every keypress was sent once per listener. It comes out as
+  // `eexxiitt` in the terminal, which reads like a broken keyboard rather than
+  // like a leak.
+  //
+  // Every reconnect path hits this: the restart retry, the popped-out window's
+  // wait, and falling back to the agent when a shell closes.
+  if (termData) { try { termData.dispose(); } catch (e) {} }
+  // `sendInput` rather than `send`: it is the one place every kind of input
+  // goes through, and it is what puts the view back at the bottom.
+  termData = term.onData(d => sendInput(d));
   // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.
 }
@@ -13372,8 +14631,21 @@ function send(msg) {
 // where it was fixed: `coder/websocket` reads 32KB per message by default and
 // CLOSES THE CONNECTION when one is bigger, which is why pasting a text file
 // said `detached`. See `internal/daemon/attach.go`.
+// Everything the operator sends to the runner goes through here.
+//
+// ANY INPUT PUTS YOU BACK AT THE BOTTOM. You cannot see what you are sending
+// from three screens up, and the alternative is typing into a terminal that
+// looks like it is ignoring you.
+//
+// HERE rather than in the keystroke handler, and rather than on xterm's own
+// `scrollOnUserInput`. Both of those only cover keys xterm itself handled, and
+// the paths that matter most do not go through xterm at all: a paste is
+// intercepted before xterm sees it so the clipboard's files are reachable, and
+// a dropped file writes its path in the same way. Those were exactly the
+// inputs that left the view where it was.
 function sendInput(text) {
   send({ t: "in", d: String(text == null ? "" : text) });
+  if (term) term.scrollToBottom();
 }
 
 function sendResize() {
@@ -13440,7 +14712,10 @@ function markTermDead() {
       close.title = termOnly()
         ? "close this window. its card and history stay on the board"
         : "clear this away. its card and history stay on the board";
-      close.onclick = () => termOnly() ? window.close() : forgetTerm();
+      // Through the same two routes as the countdown. A user gesture does not
+      // rescue `window.close()`: what the browser checks is whether a script
+      // opened this window, not whether somebody clicked.
+      close.onclick = () => termOnly() ? closeThisWindow(close) : forgetTerm();
       bar.appendChild(close);
     }
   }
@@ -13480,12 +14755,41 @@ function offerSoloClose() {
     left--;
     if (left > 0) { paint(); return; }
     clearInterval(tick);
-    window.close();
+    closeThisWindow(btn);
   }, 1000);
   btn.onclick = () => {
     clearInterval(tick);
     btn.remove();
   };
+}
+
+// Closes a popped-out window, by whichever of the two routes works.
+//
+// BOTH ARE TRIED because neither is reliable alone, and the failure mode of
+// each is silence. `window.close()` is refused unless the browser agrees this
+// script opened this window, and a window opened from a pasted URL never
+// qualifies. The board closing it through the handle `window.open` returned
+// always qualifies, and needs a board to be open.
+//
+// The broadcast goes FIRST, because it is the one that works in the case that
+// was failing, and a successful close makes everything after it moot.
+//
+// If both miss, the countdown is replaced by a button that says so. A window
+// that announced it was closing and then sat there is worse than one that
+// never offered, because it reads as the whole feature being broken rather
+// than as this browser refusing this one call.
+function closeThisWindow(btn) {
+  if (soloBus && soloID) soloBus.postMessage({ type: "solo-close", task: soloID });
+  try { window.close(); } catch (e) {}
+  // Still here a moment later means neither route landed. There is no event
+  // for "close was refused", so this is measured rather than caught.
+  setTimeout(() => {
+    if (!btn || !btn.isConnected) return;
+    btn.textContent = "close this window";
+    btn.title = "this browser will not let the page close itself, and no board " +
+      "window is open to close it. the runner has already exited.";
+    btn.onclick = () => window.close();
+  }, 700);
 }
 
 function closeTerm(switching) {
@@ -13497,6 +14801,9 @@ function closeTerm(switching) {
 function clearTermPane(switching) {
   const was = termTask ? termTask.id : "";
   if (termSock) { termSock.close(); termSock = null; }
+  // Before the terminal goes, so the disposable is not left holding a
+  // reference to a disposed one.
+  if (termData) { try { termData.dispose(); } catch (e) {} termData = null; }
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;

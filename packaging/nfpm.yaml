@@ -1,24 +1,42 @@
 # One config, a deb and an rpm out of it.
 #
-#   nfpm package -f packaging/nfpm.yaml -p deb -t build.claude/release/
-#   nfpm package -f packaging/nfpm.yaml -p rpm -t build.claude/release/
+#   scripts/package-linux.sh v0.4.1
+#
+# which is the thing to run rather than calling nfpm by hand, because it builds
+# both architectures and stages the binary each one needs. By hand it is:
+#
+#   cp build.claude/release/.../atrium build.claude/pkg/atrium
+#   VERSION=0.4.1 ARCH=amd64 \
+#     nfpm package -f packaging/nfpm.yaml -p deb -t build.claude/release/
 #
 # `nfpm` rather than `fpm` or hand-rolled `dpkg-deb`: it is one static Go binary
 # with no ruby and no build host of the target distribution, which matters
 # because the whole point of `CGO_ENABLED=0` here is that atrium does not need a
-# machine of the platform it is built for.
+# machine of the platform it is built for. Both packages are built on Windows,
+# and that is not a compromise: nfpm writes the ar and cpio archives itself.
 #
-# ENV VARS, not hardcoded values, so `scripts/release.sh` can drive this without
-# a templating step:
+# ENV VARS, so `scripts/package-linux.sh` can drive this without a templating
+# step:
 #
 #   VERSION   the version being packaged
 #   ARCH      amd64 or arm64
-#   BINARY    path to the built binary for that arch
 #
-# UNVERIFIED. This has never been run: `nfpm` is not installed on the machine it
-# was written on, and installing a package to test it is a change to a machine
-# that was not asked for. It is written from nfpm's documented schema and it is
-# the piece of tonight's work most likely to be wrong in a small way.
+# AND A STAGED BINARY RATHER THAN A THIRD ENV VAR, which is worth knowing
+# because the obvious version of this does not work. nfpm expands environment
+# variables through most of this file, and `arch: ${ARCH}` and `version:
+# ${VERSION}` both work. It does NOT expand them in `contents.src`: that value
+# goes straight to the globber, which reports `glob failed: ${BINARY}: no
+# matching files` and gives no hint that expansion was ever expected. Verified
+# against nfpm v2.43.0 with a two-line config, because the first guess was that
+# the path was wrong.
+#
+# So the binary is COPIED to a fixed path first and named here as a constant.
+# `scripts/package-linux.sh` does the copying, once per architecture.
+#
+# VERIFIED: both packages have been built from this file and their contents and
+# scriptlets inspected. Neither has been installed on a Linux machine, because
+# there is not one here. What that leaves untested is named in docs/packaging.md
+# rather than implied to be fine.
 
 name: atrium
 arch: ${ARCH}
@@ -36,8 +54,15 @@ homepage: https://github.com/dovholuknf/atrium
 license: MIT
 
 contents:
-  - src: ${BINARY}
+  # Staged here by scripts/package-linux.sh. See the note above about why this
+  # is not ${BINARY}.
+  - src: build.claude/pkg/atrium
     dst: /usr/bin/atrium
+    file_info:
+      # STATED, NOT INHERITED. These packages are built on Windows, where the
+      # source file's mode is whatever the filesystem invented, and a binary
+      # that unpacks as 0644 installs cleanly and then cannot be run.
+      mode: 0755
 
   # A USER unit, and this is the decision worth reading before changing it.
   #
@@ -47,33 +72,59 @@ contents:
   # install a version of atrium with its main feature removed.
   #
   # It is the same decision `scripts/atrium-autostart.ps1` makes on Windows,
-  # where it is a logon task rather than a Windows service, and for exactly the
-  # same reason. The two files are one design on two platforms and should be
-  # changed together.
+  # where it is a logon task rather than a Windows service, and the same one
+  # `packaging/atrium.plist` makes on macOS in being a LaunchAgent rather than a
+  # LaunchDaemon. The three files are one design on three platforms and should
+  # be changed together.
   - src: packaging/atrium.service
     dst: /usr/lib/systemd/user/atrium.service
-    type: config
+    file_info:
+      mode: 0644
+    # NOT `type: config`, which is what this said when it had never been run.
+    #
+    # A conffile is a file the administrator is expected to edit, and dpkg
+    # therefore stops an upgrade to ask about it. This one lives under /usr/lib,
+    # which is package-owned by policy and where systemd expects to find vendor
+    # units. Somebody who wants to change it puts an override in
+    # ~/.config/systemd/user/atrium.service.d/ and systemd merges it, which
+    # survives every upgrade instead of prompting about one.
 
+  # NO `type: doc`, which is what this said and is why neither of these files
+  # was in the first deb built from it.
+  #
+  # nfpm's content types are symlink, ghost, config, config|noreplace, dir and
+  # tree. `doc` is not one, and an unrecognised type is DROPPED SILENTLY: the
+  # package builds, reports success, and is missing the file. It was found by
+  # unpacking data.tar.gz and counting, which is the only way it could have
+  # been found.
   - src: README.md
     dst: /usr/share/doc/atrium/README.md
-    type: doc
+    file_info:
+      mode: 0644
+  - src: docs/packaging.md
+    dst: /usr/share/doc/atrium/packaging.md
+    file_info:
+      mode: 0644
 
-# NOT ENABLED ON INSTALL, and not started either.
-#
-# Installing a package is saying "put this here". Starting a daemon that opens
-# two listeners and begins supervising processes is a different sentence, and a
-# package that says the second when you asked for the first is a package people
-# uninstall.
-#
-# There is also a practical reason: a user unit cannot be enabled from a package
-# postinstall in any way that works. The postinstall runs as root, and which
-# user would it enable it for? The answer has to come from a person, and it is
-# one command.
-scripts: {}
+# ENABLED ON INSTALL, FOR ONE PERSON, and this reverses what this file used to
+# say. The reasoning is in packaging/postinstall.sh at length, along with the
+# three obvious ways to enable a user unit from a root postinstall that are all
+# wrong, and the two environment variables that turn it back off.
+scripts:
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh
 
+# `runuser` is how the postinstall reaches the installing user's systemd
+# manager, and it is not universally present: it is in util-linux on Debian and
+# in util-linux-user on Fedora, which is not always pulled in on a minimal
+# install. A RECOMMENDS rather than a DEPENDS, because the postinstall has a
+# fallback that needs none of it and says so when it takes it.
 deb:
   fields:
     Bugs: https://github.com/dovholuknf/atrium/issues
+
+recommends:
+  - systemd
 
 rpm:
   group: Applications/System

@@ -34,6 +34,7 @@ const DefaultSkin = "harbour"
 // cool alternating, so scrolling the picker does not read as a hue wheel.
 var Skins = []string{
 	DefaultSkin,
+	// The darks, deepest family first.
 	"graphite",
 	"glacier",
 	"abyss",
@@ -44,6 +45,20 @@ var Skins = []string{
 	"vapor",
 	"sandstone",
 	"noir",
+	// Lighter darks. Same idea, less depth, for a room with a window.
+	"slate",
+	"cobalt",
+	"dusk",
+	"fern",
+	"clay",
+	"mint",
+	// LIGHT. These carry their own `--lift` and `--hairline`, which is what
+	// made them possible: those are white at low alpha everywhere above, and
+	// invisible on a pale background.
+	"frost",
+	"daylight",
+	"paper",
+	"linen",
 }
 
 // KnownSkin says whether a name is one atrium ships.

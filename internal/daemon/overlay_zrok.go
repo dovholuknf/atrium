@@ -44,6 +44,12 @@ type ZrokEnv struct {
 	// HasAccountToken reports that a token is present WITHOUT reading it out.
 	// The value is a credential and the board has no reason to hold one.
 	HasAccountToken bool `json:"has_account_token"`
+	// Own is whether this is atrium's own environment rather than the
+	// machine's. The board says so, because every warning about disabling
+	// means something different depending on the answer: disabling atrium's
+	// costs atrium's shares, and disabling the machine's costs every tool on
+	// it.
+	Own bool `json:"own"`
 }
 
 // zrokEnvFile is the shape on disk. Only the fields atrium reports are named:
@@ -70,20 +76,47 @@ func zrokEnv() ZrokEnv {
 		return ZrokEnv{}
 	}
 	for _, name := range zrokRootNames {
-		root := filepath.Join(home, name)
-		raw, err := os.ReadFile(filepath.Join(root, "environment.json"))
-		if err != nil {
-			continue
+		if env, ok := readZrokEnv(filepath.Join(home, name)); ok {
+			return env
 		}
-		out := ZrokEnv{Enabled: true, Root: filepath.ToSlash(root)}
-		var f zrokEnvFile
-		if err := json.Unmarshal(raw, &f); err == nil {
-			out.ApiEndpoint = f.ApiEndpoint
-			out.HasAccountToken = strings.TrimSpace(f.AccountToken) != ""
-		}
-		return out
 	}
 	return ZrokEnv{}
+}
+
+// zrokEnvOf reports whichever environment THIS DAEMON is configured to use.
+//
+// The plain `zrokEnv` above answers for the machine, which is what the board
+// showed before atrium could have its own. Once it can, that answer is wrong
+// in the direction that matters: a daemon pointed at its own environment would
+// report the machine's as its readiness, so the panel would offer to share
+// from an environment it is not going to use.
+func (d *Daemon) zrokEnvOf() ZrokEnv {
+	dir := d.zrokRootDir()
+	if dir == "" {
+		return zrokEnv()
+	}
+	env, _ := readZrokEnv(dir)
+	env.Own = true
+	env.Root = filepath.ToSlash(dir)
+	return env
+}
+
+// readZrokEnv reads one environment directory. The second value is whether
+// there was one at all, which is not the same as the read failing: a directory
+// with no `environment.json` is a root that exists and is not enabled, and
+// that is the ordinary state of atrium's own before a token is pasted in.
+func readZrokEnv(root string) (ZrokEnv, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, "environment.json"))
+	if err != nil {
+		return ZrokEnv{}, false
+	}
+	out := ZrokEnv{Enabled: true, Root: filepath.ToSlash(root)}
+	var f zrokEnvFile
+	if err := json.Unmarshal(raw, &f); err == nil {
+		out.ApiEndpoint = f.ApiEndpoint
+		out.HasAccountToken = strings.TrimSpace(f.AccountToken) != ""
+	}
+	return out, true
 }
 
 // zrokEnableArgs builds the command that turns a token into an environment.

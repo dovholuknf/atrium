@@ -69,10 +69,13 @@ type Daemon struct {
 	natsMu sync.Mutex
 
 	// guests holds sessions lent out one at a time, each on its own share that
-	// reaches that session and nothing else. In memory, and gone on restart on
-	// purpose: a link handed to somebody should stop working when the machine
-	// serving it stops, rather than coming back hours later without anybody
-	// deciding it should. See overlay_guest.go.
+	// reaches that session and nothing else.
+	//
+	// In memory, and that is now only half the story: the ADDRESS is recorded
+	// in the store and comes back after a restart. What is here is the live
+	// listener, which cannot outlive the process. See overlay_guest.go, and
+	// `docs/overlays.md` for why an address that dies with the daemon was the
+	// wrong answer.
 	guests guestShares
 
 	// peerLimit bounds how often one session may message others. In memory,
@@ -170,7 +173,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.InspectToken = d.InspectToken
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
-	d.ap.SetApiEndpoint = d.SetZrokApiEndpoint
+	d.ap.SetApiEndpoint = d.SetZrokEnvironment
 	d.ap.ShareCard = d.ShareCard
 	d.ap.StopCardShare = d.StopCardShare
 	d.ap.GuestShares = d.GuestShares
@@ -654,6 +657,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// that is slow to start cannot delay the board answering: a board that is
 	// not up yet looks like a hang, a terminal that is not open yet does not.
 	go d.startFixtures()
+	// Sessions that were lent out when the last daemon went down. A restart is
+	// not the operator withdrawing a link, so the address comes back up rather
+	// than the link going dead. Anything whose runner is not up yet is left to
+	// `EnsureCardShare`, on the path a runner takes.
+	d.RestoreCardShares()
+	// And whatever is recorded against cards that have since been pruned,
+	// which nothing else can see: the board draws cards, and the card is what
+	// went. Only names atrium reserved and recorded, never anything else on
+	// the account.
+	go d.SweepDeadCardShares()
 	// Cards named before atrium asked git. Once, at startup, rather than on
 	// registration: registration runs on every hook of every session, and a
 	// directory in no repository would re-answer that question forever.
@@ -704,9 +717,35 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) shutdown(servers ...*http.Server) {
 	start := time.Now()
 
-	// Release the event streams first. Each open browser tab holds one, and
-	// Shutdown waits for in-flight requests, so leaving them open is what made
-	// the board listener sit out the whole grace period.
+	// SAY IT IS COMING, BEFORE ANYTHING GOES.
+	//
+	// Every window has to tell two things apart: a session that ended, and a
+	// daemon on its way down. They look identical from a browser, which is why
+	// this is announced rather than inferred.
+	//
+	// Inferring it afterwards cannot be made to work. Asking `/v1/health` gives
+	// the wrong answer, because the listener below is still up while every
+	// runner is being stopped. Timing out and hoping is what left a popped-out
+	// window sitting on a dead terminal until somebody pressed F5.
+	//
+	// One event, ahead of the teardown, and every window switches into "expect
+	// this, and come back" for itself. After it, a socket closing means the
+	// restart. Without it, a socket closing means that session ended.
+	//
+	// FIRST, because `d.ap.Close()` on the next line releases the streams this
+	// travels on. Nothing is stopped between here and there.
+	d.ap.Broadcast("going-down", map[string]any{
+		"why": d.stop.why(), "at": time.Now().UTC().Format(time.RFC3339),
+	})
+	// A moment for it to reach the sockets. Publishing is a channel send per
+	// subscriber and the write happens on their own goroutines, so without this
+	// the close below can beat the message onto the wire, which is the one
+	// ordering that makes the announcement pointless.
+	time.Sleep(120 * time.Millisecond)
+
+	// Release the event streams. Each open browser tab holds one, and Shutdown
+	// waits for in-flight requests, so leaving them open is what made the board
+	// listener sit out the whole grace period.
 	d.ap.Close()
 
 	// Any share goes with the board it publishes. An address that outlives

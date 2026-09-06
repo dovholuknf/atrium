@@ -205,8 +205,47 @@ This is the shape of hazard the allowlist exists for, and it is worth noticing t
 catch it: the route was already allowed, and what changed was what the route could mean. An endpoint that grows
 a parameter is a new endpoint.
 
-The address is deliberately not reserved. The board's address is one you keep; a lent session's address IS the
-credential, since there is no login, so it is fresh every time and dies when the share stops or atrium restarts.
+### The address is reserved, and that is not the same as guessable
+
+This was got wrong once and the reasoning is worth keeping, because it is a plausible mistake to make twice.
+
+The first version refused to reserve a name for a lent session, on the grounds that the board's address is one
+you keep while a lent session's address IS the credential: there is no login, so whoever holds the link drives
+the terminal. The conclusion drawn was that the address should be fresh every time and die when the share
+stops or atrium restarts.
+
+**Unguessable and durable are independent properties.** Reserving decides whether an address survives. It
+decides nothing at all about whether anybody can guess it. A name generated once, at random, and held by the
+controller is both unguessable and durable, and the first version threw the second one away for nothing.
+
+So a share reserves `atrium-` followed by twelve characters drawn from a thirty two symbol alphabet: sixty
+bits, which is not walkable at any rate a public frontend would serve. The alphabet excludes `l`, `o`, `0` and
+`1`, because an address gets read down a phone and a confusable character turns an unguessable link into a
+support question. The prefix is deliberate and it costs nothing: the entropy is entirely in the suffix, and it
+is what makes a leftover share identifiable on an account that also holds shares from other tools.
+
+**The two operations that used to be one.**
+
+- **Unbinding** stops the listener and releases the SHARE, keeping the name and the row that says this card
+  should be lent out. A share nothing is answering is a live address returning errors, so it does not stay up.
+  This is what a shutdown does.
+- **Stopping** releases the share, the name and the row. It is the operator saying this link should not work
+  any more, and it is the only path that gives an address up. It cannot be undone: sharing again reserves a
+  different name, which whoever you sent the first one to does not have.
+
+Conflating them is what made every share die at the moment the daemon came back, and it presented as the share
+inventory being empty for no visible reason.
+
+**A private share is weaker and says so.** It has no name at all, and its token is the address. Deleting the
+share puts the token back on the shelf, so the rebind asks for the same one and usually gets it. Nothing holds
+it in the meantime and another account may take it, so `usually` is the accurate word. The board is told when a
+rebind came back with a different token rather than being allowed to keep showing the old address.
+
+**Orphans are atrium's own, and nothing else's.** A pruned card leaves a name reserved on the account that
+nothing will ever ask for again, and nobody can see it: the board draws cards, and the card is what went. The
+sweep joins the share table against `task` and releases what is left over. It never reads the account and
+deletes what it does not recognise. This machine's zrok account is not atrium's, and a sweep that worked from
+the account rather than from its own records would eventually release somebody else's share.
 
 ## Adding another one
 

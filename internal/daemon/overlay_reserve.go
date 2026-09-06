@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/rest_client_zrok/share"
 )
 
@@ -46,7 +45,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 	}
 	namespace = strings.TrimSpace(namespace)
 
-	root, err := environment.LoadRoot()
+	root, err := d.zrokRoot()
 	if err != nil {
 		return "", fmt.Errorf("could not read the zrok environment: %w", err)
 	}
@@ -91,6 +90,69 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 	// What the start path wants in its config, so the answer can be pasted
 	// straight in rather than assembled by hand.
 	return namespace + "/" + name, nil
+}
+
+// ReleaseZrokName gives a reserved name back.
+//
+// The other half of reserving, and the half that was missing. A reserved name
+// is kept by the controller precisely so that unsharing does not delete it, so
+// nothing on the ordinary path ever gets rid of one. An account that reserves
+// a name per shared session and never releases any accumulates them for as
+// long as it is used.
+//
+// A name that is already gone is NOT an error. Both callers are cleaning up,
+// and there is exactly one state either of them wants: the name is not on the
+// account. Reporting a failure for having arrived at that state early would
+// leave the row behind and try again forever.
+func (d *Daemon) ReleaseZrokName(namespace, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	namespace = strings.TrimSpace(namespace)
+
+	root, err := d.zrokRoot()
+	if err != nil {
+		return fmt.Errorf("could not read the zrok environment: %w", err)
+	}
+	if !root.IsEnabled() {
+		// Nothing to release against. Not an error for the same reason as
+		// above: the name is not on an account this machine can reach.
+		return nil
+	}
+	if namespace == "" {
+		namespace, _ = root.DefaultNamespace()
+		if namespace == "" {
+			namespace = "public"
+		}
+	}
+
+	zrok, err := root.Client()
+	if err != nil {
+		return zrokSays("could not reach the zrok api", err)
+	}
+	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
+
+	del := share.NewDeleteShareNameParams()
+	del.Body = share.DeleteShareNameBody{NamespaceToken: namespace, Name: name}
+	if _, err := zrok.Share.DeleteShareName(del, auth); err != nil {
+		if notThere(err) {
+			return nil
+		}
+		return zrokSays(fmt.Sprintf("could not release the name %q", name), err)
+	}
+	return nil
+}
+
+// notThere reports whether an error means the thing was already gone.
+//
+// Matched on the message for the same reason as `alreadyThere`: the generated
+// client has a type per status code and a type switch would name several and
+// miss the one a later zrok adds.
+func notThere(err error) bool {
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "notfound") || strings.Contains(s, "not found") ||
+		strings.Contains(s, "404")
 }
 
 // alreadyThere reports whether an error means the name was there before.
