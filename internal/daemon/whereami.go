@@ -205,8 +205,8 @@ func (d *Daemon) writeLocation() {
 		return
 	}
 	loc := Location{
-		Agent: "http://localhost" + d.opts.AgentAddr,
-		Board: "http://localhost" + d.opts.HumanAddr,
+		Agent: addressOf(d.opts.AgentAddr),
+		Board: addressOf(d.opts.HumanAddr),
 		PID:   os.Getpid(),
 		Since: time.Now().Format(time.RFC3339),
 		DB:    d.opts.DBPath,
@@ -252,6 +252,24 @@ func (d *Daemon) writeLocation() {
 		return
 	}
 	log.Printf("[atrium] shared   -> %s", filepath.ToSlash(shared))
+}
+
+// addressOf turns a listen address into one somebody can open.
+//
+// `:7778` means every interface, so the host to reach it on is this machine,
+// and gluing `localhost` to the front is right. `127.0.0.1:53895`, which is
+// what `atrium preview` passes, ALREADY HAS A HOST, and gluing produced
+// `http://localhost127.0.0.1:53895` in the log and in the address file: an
+// address that is not wrong so much as unparseable.
+func addressOf(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
 }
 
 // putLocation writes one copy of the address file.
