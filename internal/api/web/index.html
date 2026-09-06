@@ -1255,6 +1255,18 @@
      of the list is obviously deliberate rather than a sort you do not
      recognize. */
   .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
+  /* Where the pinned cards stop and the sort starts. Two ranked lists were
+     drawn as one, so the only reading available was that the sort was broken.
+     A rule with a word on it, not a heading: it separates rather than titles,
+     and it must not compete with a group name. */
+  .pinbreak {
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: 6px 12px 2px; color: var(--label);
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .pinbreak::after {
+    content: ""; flex: 1; height: 1px; background: var(--hairline);
+  }
   /* On a card title it sits inline with the text, so it takes the title's
      size rather than the row's. */
   .card .title .pin {
@@ -7411,7 +7423,7 @@ function paintStack() {
   const g = grouper();
   setHTML(document.getElementById("stack-list"), g
     ? stackGroupsHTML(list, g)
-    : `<div class="panel">` + list.map(stackRow).join("") + `</div>`);
+    : `<div class="panel">` + stackRows(list) + `</div>`);
 
   if (groupingFault) {
     toast("grouping code", groupingFault);
@@ -7430,13 +7442,13 @@ function stackGroupsHTML(list, g) {
     }
   }
   if (byName.size < 2 && byName.has("")) {
-    return `<div class="panel">` + list.map(stackRow).join("") + `</div>`;
+    return `<div class="panel">` + stackRows(list) + `</div>`;
   }
 
   return [...byName.keys()].sort(g.cmp).map(name => {
     const mine = byName.get(name);
     if (!name) {
-      return `<div class="panel">` + mine.map(stackRow).join("") + `</div>`;
+      return `<div class="panel">` + stackRows(mine) + `</div>`;
     }
     const key = "stack:" + name;
     const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
@@ -7446,7 +7458,7 @@ function stackGroupsHTML(list, g) {
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      <div class="panel">${mine.map(stackRow).join("")}</div>
+      <div class="panel">${stackRows(mine)}</div>
     </details>`;
   }).join("");
 }
@@ -7509,6 +7521,26 @@ function bigNumberAtMeans(t) {
 // it twice and sometimes disagreed with themselves: a ready card read
 // "idle 30m" beside "waiting 31m", two clocks that start together, and a dead
 // one read "dead" beside "dead 1h".
+// The rows, with a line under the pinned ones.
+//
+// PINNING OUTRANKS THE SORT and nothing on screen said so. That is a real
+// answer to a real question, and it is drawn as one list ordered by one rule,
+// so the reading is that the sort is broken: three cards at 16m, 2m and 19s
+// sit above one at 4h17m, and the only thing saying why is a star twelve
+// pixels wide at the far left.
+//
+// It is two lists. So it gets a line, and the line says what it separates.
+// Only when there is something on both sides of it: a divider under an empty
+// set, or under everything, is a rule about nothing.
+function stackRows(list) {
+  const pinned = list.filter(t => t.pinned).length;
+  if (!pinned || pinned === list.length) return list.map(stackRow).join("");
+  return list.map((t, i) =>
+    (i === pinned ? `<div class="pinbreak"><span>the rest, ${
+      esc(STACK_SORTS[stackSort] ? STACK_SORTS[stackSort].label : "sorted")}</span></div>` : "")
+    + stackRow(t)).join("");
+}
+
 function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);

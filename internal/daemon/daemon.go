@@ -47,6 +47,26 @@ type Options struct {
 	// port anyway, which is exactly why it went unnoticed. On a non-default
 	// port it would have quietly unhooked every live session instead.
 	LocationFile string
+	// Passive means SERVE THE BOARD AND TOUCH NOTHING ELSE.
+	//
+	// For `atrium preview`, which opens a COPY of a database so a change to
+	// the board can be judged by using it. Everything in that copy is real:
+	// real fixtures, real shares, real cards. An ordinary start acts on all of
+	// them, so the first preview spawned the operator's runners and tried to
+	// take their zrok name off them, from a process that was supposed to be a
+	// window onto a copy.
+	//
+	// What it turns off is everything that reaches outside the process:
+	// fixtures, restoring lent shares, and sweeping dead ones. What stays on
+	// is the store, the API, the board, the event stream and the ability to
+	// attach to something you started HERE, because those are what is being
+	// looked at.
+	//
+	// Not a security boundary, and not a read-only mode. Somebody using a
+	// preview board can still launch a runner or shelve a card in the copy.
+	// The rule is narrower and it is about STARTUP: opening a database is not
+	// consent to act on what is in it.
+	Passive bool
 }
 
 // Daemon owns the store, the hub, and both listeners.
@@ -686,8 +706,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return fmt.Errorf("human listener: %w", err)
 	}
 
-	log.Printf("[atrium] agents  -> http://localhost%s", d.opts.AgentAddr)
-	log.Printf("[atrium] board   -> http://localhost%s", d.opts.HumanAddr)
+	// `addressOf`, not concatenation. An address that already names a host,
+	// which is what `atrium preview` passes, came out as
+	// `http://localhost127.0.0.1:53895`.
+	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
+	log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
 
 	// Before the address file is overwritten, since the previous one is what
@@ -720,20 +743,29 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// asks one question at one rate. Nothing here can halt anything: intake is
 	// a suggestion, and a source that fails says so on its row.
 	go d.sourceLoop(ctx)
-	// Terminals that come up with the daemon. In the background, so a runner
-	// that is slow to start cannot delay the board answering: a board that is
-	// not up yet looks like a hang, a terminal that is not open yet does not.
-	go d.startFixtures()
-	// Sessions that were lent out when the last daemon went down. A restart is
-	// not the operator withdrawing a link, so the address comes back up rather
-	// than the link going dead. Anything whose runner is not up yet is left to
-	// `EnsureCardShare`, on the path a runner takes.
-	d.RestoreCardShares()
-	// And whatever is recorded against cards that have since been pruned,
-	// which nothing else can see: the board draws cards, and the card is what
-	// went. Only names atrium reserved and recorded, never anything else on
-	// the account.
-	go d.SweepDeadCardShares()
+	// EVERYTHING BELOW THIS REACHES OUTSIDE THE PROCESS, and a passive daemon
+	// does none of it. See `Options.Passive`: a preview opened on a COPY of
+	// somebody's database inherits their fixtures and their shares, and the
+	// first thing it did was spawn their runners and try to take their zrok
+	// name off them. A board being looked at must not act on what it is
+	// drawing.
+	if !d.opts.Passive {
+		// Terminals that come up with the daemon. In the background, so a
+		// runner that is slow to start cannot delay the board answering: a
+		// board that is not up yet looks like a hang, a terminal that is not
+		// open yet does not.
+		go d.startFixtures()
+		// Sessions that were lent out when the last daemon went down. A
+		// restart is not the operator withdrawing a link, so the address comes
+		// back up rather than the link going dead. Anything whose runner is
+		// not up yet is left to `EnsureCardShare`, on the path a runner takes.
+		d.RestoreCardShares()
+		// And whatever is recorded against cards that have since been pruned,
+		// which nothing else can see: the board draws cards, and the card is
+		// what went. Only names atrium reserved and recorded, never anything
+		// else on the account.
+		go d.SweepDeadCardShares()
+	}
 	// Cards named before atrium asked git. Once, at startup, rather than on
 	// registration: registration runs on every hook of every session, and a
 	// directory in no repository would re-answer that question forever.
