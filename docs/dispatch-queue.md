@@ -308,6 +308,281 @@ they are one session and not five. Adding a fifth one here is cheaper than start
 
 ---
 
+## N. The board does not know things until the gear is opened
+
+- **`share this session` says `no overlay is set up yet` on a machine where zrok IS set up.** Reported with a
+  screenshot: the card menu says to go to the gear and expose the board, while the gear says
+  `enabled against https://api-v2.zrok.io/` and the API answers `ready: true`.
+
+  `shareItem` decides from `(overlays || []).some(o => o.kind === k && o.ready)`, and `overlays` is filled in
+  by `loadOverlays`, which runs when the SETTINGS DIALOG is opened. The card menu lives on the terminal bar and
+  is reachable without ever opening settings, so on a fresh page load the list is empty and the menu reports
+  the machine has no overlays. Opening the gear once fixes it until the next reload.
+
+  **`openSkinLab` has the identical bug and already says so out loud**: with no skins loaded it toasts
+  `no skins yet: the daemon has not said which ones it has. open the gear once`. That message is a workaround
+  written into the product, which is the tell. Two features now, and the next one that needs a daemon fact
+  outside settings will be the third.
+
+  The fix is not "call `loadOverlays` from `shareItem`", which makes the menu async and races the flyout. What
+  is missing is a place where facts the whole board needs are fetched once on load, beside the cards, and
+  refreshed by the SSE event that already fires when an overlay changes. Anything that gates a menu item on a
+  daemon fact reads from there.
+
+- **Pressing the side of a toggle that is already on says nothing.** Reported as `use this machine's zrok is
+  NOT working`. It is already selected, and the API is already `own: false`. Pressing it POSTs, succeeds,
+  changes nothing, and redraws the same thing, so a control that is behaving correctly is indistinguishable
+  from one that is broken.
+
+  The `.seg` toggles are drawn with the active side highlighted, which is enough when you are choosing and not
+  enough when you are checking. Two ways out, and the second is cheaper: make the on side non-interactive so
+  the press is visibly not a press, or acknowledge a no-op change the way every other save on this board does.
+  Whichever, the same reasoning applies to every `.seg` on the page, not just this one.
+
+- **Switching account there and back refuses, over a trailing slash.** Press `give atrium its own`, then press
+  `use this machine's zrok`, and it says:
+
+  > could not switch account: that environment is already enabled against https://api-v2.zrok.io/. disable it
+  > first, then set the address, then enable again
+
+  Operator: "which is dumb". It is, and the address in the message is the address being sent, which is the
+  tell.
+
+  **What is actually happening.** `pickZrokAccount` posts `{own, endpoint}` where the endpoint is whatever text
+  the instance box currently holds. Choosing WHICH ENVIRONMENT is not choosing WHICH INSTANCE, so that call
+  asks to change an address nobody touched.
+
+  Then the two addresses differ by one character. The machine's environment is enabled against
+  `https://api-v2.zrok.io/`, with a slash. Atrium's own environment is not enabled, so its endpoint is read
+  from the zrok binary's default, which comes back as `https://api-v2.zrok.io`, without one:
+  `api_endpoint_from: "binary"` in the overlays payload says so. Pressing `give atrium its own` repaints the
+  box with the unslashed form, and pressing back sends it at an environment holding the slashed form.
+  `SetZrokEnvironment` compares them with `!=`, they are not equal, and it refuses a change that was never
+  requested.
+
+  Two fixes and both are wanted:
+
+  1. **`pickZrokAccount` sends no endpoint at all.** The endpoint travels only when somebody presses `use this
+     one` on the instance field. `SetZrokEnvironment` already handles an empty endpoint as "nothing to say
+     about where it points", which is the correct meaning of a bare account switch, and the path is already
+     proven: posting `{"own":false,"endpoint":""}` succeeds against the same enabled environment that refuses
+     the same request with an address attached.
+  2. **Compare endpoints normalised, not by string.** A trailing slash makes two identical addresses unequal,
+     and so would a case difference in the host. Anything comparing two URLs for "is this the same instance"
+     has to do it after normalising, here and anywhere else it is done.
+
+  **The refusal message is also wrong to keep as written**, even after the above. It describes a three step
+  procedure for a thing atrium could do, and the operator reading it did not ask to change any address. If it
+  survives at all it should name what it thinks is being changed, from what to what, so a one character
+  difference is visible rather than invisible.
+
+- **A lent session's address, without its fragment, serves a board that can never work.** Operator, opening
+  `https://atrium-j4cf3nq8qv6q.shares.zrok.io/`: "the board ... is NOT correct at all.. is it a shadow/clone?"
+
+  It is not a clone and nothing leaked. `guestHandler` serves the same static `index.html` at `/` and refuses
+  `/v1/tasks`, `/v1/events`, `/v1/permissions` and `/v1/rooms` outright, so the page renders its own chrome
+  and every list in it stays empty. The address only becomes a terminal because of `#term=<id>`, which is a
+  fragment the server never sees and therefore cannot act on.
+
+  The containment is right. What is wrong is that the failure of a guest opening the wrong half of their own
+  link is indistinguishable from atrium being broken, and the person best placed to notice mistook it for a
+  clone of their own board.
+
+  The page is static and identical for everybody, so it cannot be built differently per share, which rules out
+  the obvious fix. What it CAN do is notice: it is already the guest page whenever `/v1/tasks` answers 403,
+  and that is a fact it can act on at load. Say what this address is for and what is missing from the link,
+  rather than drawing an empty board.
+
+- **Pasting a picture over a lent share fails with a message that hides the reason.** Operator, on the share:
+  "i was NOT able to take a screen cap and send it to you getting the 'that did not go up' (stupid error)".
+
+  `guestHandler` refuses `/v1/tasks/*/files` on purpose and says why in its own words: `this link is one
+  terminal. nothing else here is shared.` The page throws that away and shows `that did not go up`, so the one
+  refusal on this surface that is deliberate reads as a transfer that broke.
+
+  Two things, and they are separable:
+
+  1. **Say the daemon's reason.** The 403 already carries a sentence written for exactly this moment. Anything
+     that reports a failed upload should print what came back rather than a phrase of its own.
+  2. **Do not offer it at all over a share.** The paste target, the drop zone and the file drawer are drawn by
+     the same page whether it is the board or a guest, so a guest is invited to do something that cannot work.
+     The page can already tell it is a guest, from `/v1/tasks` answering 403, which is the same signal the
+     empty-board item above turns on.
+
+  **Do not "fix" this by opening files to a guest.** The refusal is the containment: `docs/overlays.md` says a
+  lent session is that session and not the machine, and the directory behind a card is the machine.
+
+  **AND THIS COLLIDES WITH A DECISION ALREADY TAKEN, which is the part to settle before writing anything.**
+  The rule for dragging a file onto a terminal, in the operator's words: "when dragging a file from THE SAME
+  COMPUTER then this should just be a 'hey look at this file' and provide the full path ... we should only copy
+  the file when the terminal is remote from the ui".
+
+  A lent share is the remote case. It is the one where copying is the wanted behaviour, and it is the one place
+  atrium refuses to copy at all. So the two rules meet head on:
+
+  - **The containment rule says no.** A guest holds one terminal, not the machine, and writing a file into the
+    card's directory is writing to the machine. `guestHandler` names `/v1/tasks/*/files` in its refusal list on
+    purpose.
+  - **The drag rule says this is exactly when to copy.** Same-machine drags do not need a copy, so refusing the
+    remote case refuses the only case the feature exists for.
+
+  They can both hold, and saying how is the work:
+
+  - A guest who was handed a terminal to DRIVE is not the same as a guest who may put files on the machine.
+    Those could be two things the operator grants separately when lending, and today there is one.
+  - A file dropped onto a terminal could go to the terminal rather than to the directory: written into the pty
+    as a paste, or into a scratch location that is not the card's worktree. `api.ScrapDir` already exists for
+    pasted files nobody is keeping, and it is not inside a card.
+
+  Decide which, and write it into `docs/overlays.md` beside the rule it qualifies. What must not happen is
+  somebody opening the file endpoints to guests because a drag failed.
+
+---
+
+## M. Scrollback does not survive a restart, and the restart is atrium's own
+
+Operator: "if i am in a terminal (here) and then you restart, and then i close this window and open it up again
+from the stack page my scrollback is only since i got here not 'forever' back". And: "same for viewing it in
+'terminals'". Both surfaces, one cause.
+
+**Where the scrollback actually lives, and why there is none of it afterwards.** There are two buffers and
+`internal/api/scrollback.go` says so at the top. The daemon keeps the last N bytes of a runner's output in a
+ring buffer, sized at spawn, held by the `runner` in the supervisor, in memory and nowhere else. The browser
+keeps the last N lines of what it was sent, in xterm, in the page.
+
+A restart destroys both. The daemon exits, so every ring goes with it. Every pty is closed, so every runner is
+killed, and a fixture that comes back is a NEW process with a NEW ring holding nothing. The only surviving copy
+of what came before was the xterm buffer in whatever page happened to be open, which is why the window that
+lived through the restart still shows everything and a window opened afterwards shows nothing: closing that
+window is the moment the last copy is discarded.
+
+So this is not attach losing the scrollback. It is that after a restart, atrium no longer has it to send.
+
+**Why it reads worse than it is.** The conversation itself survives: a fixture comes back on its resume id and
+the model still knows what it was doing. It is the RENDERING that is gone, and the operator's own words for
+what they expect are "forever back". A board whose whole premise is "what was I even doing" answering that with
+an empty buffer is the failure this contradicts most directly.
+
+**This is the concrete demand for the transcript on disk.** `CLAUDE.md` lists "per-agent transcript on disk"
+under things atrium might do later, unpromised and unmotivated. This is the motivation. Whoever takes it has to
+answer, in this order:
+
+1. **What is written down.** The raw bytes, escape sequences and all, is the only thing that replays into a
+   terminal correctly. That means the file contains everything the runner ever printed, including whatever it
+   printed a token into.
+2. **Where it lives and who can read it.** Beside the database, under the daemon's own directory, and NOT
+   reachable through the file endpoints, which are scoped to a card's own directory on purpose.
+3. **What bounds it.** The ring is bounded by construction; a file is not. A per-card cap and a sweep, and the
+   sweep has to be the one in `reaper.go` rather than a second timer.
+4. **What happens on replay at a different width.** The ring already has this problem and solves it with
+   `widthMark`: bytes composed at another width are not replayed, because replaying them is what makes an
+   attach unreadable. A file spanning many widths needs the same answer, and it is the harder version.
+5. **Whether a restart is special.** The cheapest useful version is not a full transcript: it is the daemon
+   writing its ring buffers out during the wind-down it already narrates, and reading them back on the way up.
+   That fixes exactly the case reported here, is bounded by construction, and does not put every session's
+   output on disk forever. It does nothing for a crash, which is the honest limit.
+
+Start with 5 and decide whether 1 through 4 are still wanted afterwards.
+
+---
+
+## L. Settings, the theme editor, and saying what to do next
+
+From walking round 5. Two of these are one bug wearing two faces: a refusal that describes a state instead of
+offering the way past it.
+
+- **`nothing was brought in` is a report where an offer belongs.** Importing a scheme whose name is already
+  here says that, with `already here. import again with overwrite to replace it` underneath. Operator:
+  "is a stupid error message. how about 'This theme already exists would you like to import it with a
+  different name' or something like that".
+
+  Overwrite is one of two ways past this and it is the destructive one. The other, keeping both under a
+  second name, is the one somebody trying out a palette actually wants, and it is not offered at all: the
+  name comes from the scheme and there is nowhere to change it.
+
+  So the refusal should carry a name box and two buttons, `import as <name>` and `overwrite`. And the top
+  line should say what happened to the batch rather than to nothing: importing forty schemes of which two
+  collided is not "nothing was brought in", and today it reads that way whenever every scheme in the file
+  collides, which is what re-importing your own `settings.json` always does.
+
+- **Save does not close the theme editor.** Pressing save leaves the modal open, so the way back to settings
+  is the close button, and the settings dialog it came from was closed on the way in. Save should close it and
+  return to settings, which is where it was opened from.
+
+  Note the asymmetry it creates today: `bring or edit a theme` closes settings to open the editor, and the
+  editor does not put it back. Anything that closes one dialog to open another owes the way back.
+
+- **The settings panes need a rule between their sections.** Operator: "each of the settings needs a
+  horizontal divider for the sections, the title is not sufficient". A pane is a run of `.field` blocks with
+  an eyebrow label each, and at a glance nothing says where one subject stops and the next starts. `the board`
+  is the worst of them: the switcher key, grouping, text size and the terminal's colours are four unrelated
+  decisions in one column.
+
+  The stack already solved this once with `.pinbreak`, which is a rule with a word on it that separates
+  without titling. Same idea here.
+
+- **The left-hand nav may need subgroups.** Seven panes with flat names, and finding the terminal's colours
+  means knowing it lives under `the board` rather than under `this machine`. Operator: "the LHN might need
+  subgroupings too to make it easier to find these things".
+
+  Recorded as an idea rather than a plan, and it is worth asking first whether the pane NAMES are the problem
+  before adding a level. A search box over the settings is the other shape, and it is the one that scales past
+  the next three panes.
+
+- **A brought theme is not offered under `how the board looks`, and the operator expected it to be.**
+  Reported as a bug: "it shows up in the theme editor but it does NOT allow me to see it and pick it from
+  'how the board looks'".
+
+  It is the documented separation, not a defect. A terminal theme is the sixteen ANSI colours xterm draws a
+  session in, it belongs to a card, and two side by side may differ. A skin is the board's own chrome, there
+  is one board so it cannot differ, and the list lives in `skins.go` with a check that fails when it and the
+  stylesheet disagree. `internal/api/CLAUDE.md` says so at length.
+
+  The finding is that the distinction does not survive contact. Both settings sit in the same pane, both are
+  called colours, and the hint under the skin picker already explains the difference, which is evidence the
+  labels are doing the work the layout should. The verdict-over-explanation rule from the zrok block applies:
+  say what each one paints before saying what it is not.
+
+  A brought terminal theme COULD seed a skin, and that is a different feature rather than this one: a skin is
+  twenty one CSS variables including hairlines, sinks and strokes, and sixteen ANSI colours do not contain
+  them. Anything that generated the rest would be inventing a palette and calling it yours.
+
+- **Edit the colours while looking at them.** Operator: "fucking sexy backlog idea ... know how the modal lets
+  you pick the theme from 'try them' it would be cool to allow that modal to have a toggle to extend to the
+  'edit the colors' and preview it all live".
+
+  `openSkinLab` already built the hard half: a small draggable panel that closes the dialog covering the thing
+  being judged, steps through the list, and has `use it` / `cancel`. The same shape is what the terminal theme
+  editor wants and does not have, because a palette edited in a modal is judged against a swatch grid rather
+  than against real output, which is the whole reason the terminal's own picker sits on the terminal bar.
+
+  So: a toggle on the lab that extends it into the sixteen colour wells, applying on input, with `use it` and
+  `cancel` already meaning the right things. Two notes for whoever takes it.
+
+  1. **Live means live on the terminal, not on a preview strip.** The value is seeing `git diff` in the colour
+     you are choosing. `previewTheme` already writes straight through to xterm, so the machinery exists.
+  2. **Cancel has to put back what was there,** including after twenty edits, which the lab already does for
+     skins by holding the value it opened on.
+
+- **The skin lab's hint explains its own design instead of saying what to press.** It reads `Arrow keys walk
+  the list. Nothing is saved until you press use it.` Operator: "stupid just 'Use the arrow keys to see
+  next|previous'".
+
+  Same shape as the switcher key hint above: the second sentence is reassurance about the implementation,
+  aimed at somebody worried they are about to break something, and the panel already answers that with three
+  buttons labelled `use it`, `use the default` and `cancel`. The one thing the panel does NOT say is that the
+  arrow keys work at all, which is the sentence worth keeping.
+
+- **The skin lab does not close on escape.** `cancelSkin` exists, puts the previous skin back, and has exactly
+  two callers: the cancel button, and `openSkinLab` toggling itself shut. Nothing is bound to escape, so the
+  one key everybody presses to back out of a floating panel does nothing.
+
+  It is a panel rather than a `<dialog>`, on purpose, because it has to sit over a board you are still using.
+  So it needs its own keydown while it is open, and that listener has to go when it closes: this board has
+  already been bitten by a listener that outlived its panel (see `check-terminal.js` rule 1).
+
+---
+
 ## K. The switcher, after using it
 
 Landed in round 4 and it works. Operator: "the switch works pretty well", and on the rebinder, "i like 'the

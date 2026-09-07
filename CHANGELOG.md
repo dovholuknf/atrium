@@ -5,6 +5,32 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Right click pasted into a terminal on loopback and did nothing at all on a share.**
+
+  Reading the clipboard from script is a permission, and a browser grants it per ORIGIN. Loopback is one
+  origin: the operator answered its prompt once and the browser remembered. Every share is a new origin with
+  no answer on file, so the prompt goes up and `navigator.clipboard.read()` and `readText()` NEVER SETTLE
+  while it stands there. Not a refusal, which would have been caught and said out loud. Nothing at all. The
+  `await` in `pasteIntoTerm` waited forever, and right click on a shared board looked like a dead menu.
+
+  Measured rather than guessed, on a real zrok share in Chrome and in Brave: the share is a secure context,
+  `navigator.clipboard` is present, zrok injects no policy header and serves the page byte for byte, and
+  `clipboard-read` reads `prompt` with neither call resolving. The same page on loopback in the same browser
+  pastes in about forty milliseconds. `ctrl-v` and `shift-insert` were never the problem and are unchanged:
+  those go through the browser's own `paste` event, which is a person handing the clipboard over rather than
+  a page reading it, and no browser has ever asked permission for that.
+
+  So the wait is now bounded, and what it ends in is a paste box. The box is a text field the operator
+  presses `ctrl-v` into, which is the same clipboard arriving by the door that is always open. It takes
+  files too, so a screenshot pasted into it uploads and hands the runner a path exactly as `ctrl-v` over the
+  terminal does, and what leaves it goes through `sendPasteText`, so a multi-line paste is still bracketed
+  rather than one Enter per line. `ctrl-shift-v` opens it on purpose. It is cleared when it closes, because
+  what gets pasted into a terminal is often a secret.
+
+  An origin that has been granted the permission never sees the box: the read resolves long inside the
+  bound, and loopback behaves exactly as it did.
+
+
 - **You can bring your own terminal theme, and edit any of them.**
 
   The sixteen ANSI colours per theme were a table baked into the board's page, so adding one was a code
