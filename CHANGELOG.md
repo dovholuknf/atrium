@@ -188,6 +188,64 @@ section heading is just "what landed in this iteration."
   an empty waiting reason means "a turn ended". So a session that deliberately stopped with a question landed
   in the same bucket as one that ran out of things to do, and the board could not rank them apart. It now
   records `asked`, which is the reason that constant exists and what the asking-tool path already wrote.
+- **Cards cannot be dragged any more, and the text on them can be selected.**
+
+  **What the board no longer does.** A card cannot be dragged between columns to change its status, and it
+  cannot be dragged within a column to reorder. There is no drag gesture on a card at all. If your gesture
+  stopped working, this is why, and the replacement is on the card's own menu.
+
+  **Why it went.** `draggable` on an element is not a hint that a drag is available. It takes the pointerdown,
+  which means a sweep across a card starts a drag instead of a selection. A card carries a path, a branch, a
+  wire name and an error, and every one of those is something you want on the clipboard. Copying one off a
+  card is a daily thing. Moving a card by hand is rare enough that a menu entry is the right weight for it,
+  and dragging things between swimlanes was the kanban idea rather than a thing this board turned out to need:
+  status changes come from the card menu and from the agents themselves.
+
+  **What replaced it, on the card menu.** **Move it to…** files the card in another column, and applies the
+  rule the drop target did: `needs permission` and `ready` are not offered, because a card is in them because
+  an agent said so, and filing one there by hand would claim a request or a wait that never happened. `done`
+  is reachable from the board again, which matters more than the rest of this: it is the one state only a
+  human declares, it was taken off the menu when dragging existed, and removing the drag without replacing it
+  would have left no way to declare it.
+
+  **Move it up or down** sets the card's place within its column. That is what `rank` is for, it is the
+  operator's own order, and dragging was the only thing that ever wrote it. Up and down move past exactly one
+  neighbour and take the midpoint of the two ranks either side, which is the arithmetic the drop used: a move
+  renumbers nothing else. Pin is still there for when what you want is the top.
+
+  **A card with text highlighted on it belongs to the browser, not to atrium.** Neither button opens the card
+  menu while a selection touches the card. The left one because a click is how a sweep across the text ends,
+  and a menu drawn over what you just highlighted is the same bug by another route. The right one because that
+  is where the browser keeps Copy: atrium's menu has no copy entry of its own, so drawing it over a highlighted
+  path takes the clipboard away at the moment you reached for it. Standing aside means returning before
+  `preventDefault`, which is what lets the native menu through. One click on empty space collapses the
+  selection and the card is a control again.
+
+  **A card group keeps its `data-status`,** which is now its reconciler key rather than a drop target's answer.
+  This is the trap in removing a gesture: the attribute was put there to say what status a card dropped on the
+  group becomes, and by the time the drag went it had quietly acquired a second job. `morphKey` matches a group
+  across a repaint by it, and a group with no key is destroyed and rebuilt on every paint, taking the scroll
+  position and any selection inside it along. So the entry above, about a selection surviving the poll, rests
+  on an attribute that reads like drag machinery and is not.
+
+  **`check-morph.js` rule 4 no longer names `wireDragging`.** It was the one pass that wired listeners onto
+  board nodes after a paint, and it carried a per-node flag so the reconciler could not double its handlers.
+  The pass is gone with the drag: every handler a card has is an attribute in its own markup now, which comes
+  back with the card and cannot double. The rule is kept and aimed at the shape instead, because the hazard
+  belongs to the reconciler and not to dragging: anything that walks `#board` after a render and calls
+  `addEventListener` with no per-node guard fails it.
+
+  **Dropping files onto a terminal is untouched.** Different target, different feature, in daily use. So is
+  the handle that sets the terminal list's width and the skin lab's floating panel, both of which are pointer
+  drags on a grip rather than a card being dragged.
+
+  **`scripts/check-cards.js` holds all of it,** nine rules, and runs as part of `scripts/check-board.sh`. It
+  fails if a card becomes `draggable` again, if anything wires `dragstart` to a card, if a `user-select: none`
+  rule lands on a card, if the menu's selection guard goes or is ordered after the `preventDefault` it has to
+  beat, if a card group loses its reconciler key, if there is no menu path to a status or to `rank`, and if the
+  terminal's file drop or either grip is deleted by a future pass at removing something named drag. The
+  ordering rule matters as much as the presence ones: a `preventDefault` ahead of the menu guard kills the
+  browser's Copy while leaving everything else looking right.
 
 - **Two windows on one terminal fought over its size, and the loser was unreadable.**
 
