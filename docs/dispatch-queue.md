@@ -308,6 +308,132 @@ they are one session and not five. Adding a fifth one here is cheaper than start
 
 ---
 
+## K. The switcher, after using it
+
+Landed in round 4 and it works. Operator: "the switch works pretty well", and on the rebinder, "i like 'the
+key that opens the switcher'!! nice". Four things, and the second one is a behaviour decision rather than a
+polish item.
+
+- **It is too narrow, and the titles are the thing being read.** At its current width a card reads
+  `github/openziti/zrok:...` and `github/dovholuknf/atri...`, which is the org and the repo, which every row
+  shares. The part that tells them apart is cut off.
+
+  Operator: "i want it to be wider though ... with some sort of width cap so that it's not 100% of the screen.
+  maybe 50vw?". So `min(50vw, ...)` with a floor, not a percentage on its own: on a phone 50vw is unusable and
+  on an ultrawide it is a stripe across the middle. The terminal list already solves the same problem.
+
+- **Switching to a card that is already popped out should RAISE that window.** It refuses instead: "atrium
+  will not put two views on one terminal. go to that window instead."
+
+  The refusal is the correct rule and the wrong answer. The board can already raise a window it opened, by
+  name, and `attachTask` does exactly that: `reopenByName` then `focus()`. The switcher declines and hands the
+  work back to the operator, who now has to find the window themselves, which is what the switcher exists to
+  avoid. Route it through the same path `attach` uses, so a popped-out card is a card the switcher can go to.
+
+  Keep the refusal for the case `attach` also cannot solve: a window this board did not open, which no page
+  may raise. That message is right, and it is not this one.
+
+- **A bound key that the browser swallows says nothing.** `ctrl-shift-l` bound and then did nothing, with no
+  message. Operator: "probably swallowed by the browser? but i didn't get any notification that it didn't
+  work :(".
+
+  `docs/switcher-design.md` has a theft detector, and it cannot cover this. It works by opening the switcher
+  and checking a quarter of a second later whether the document still has focus, which catches a key that is
+  delivered TWICE. A key that never reaches the page at all never runs the handler, so there is nothing to
+  detect from.
+
+  The place it IS detectable is the moment of binding, and the information is already there: the capture field
+  saw the keystroke, so that combination reaches the page under a dialog. Confirm it reaches the page with the
+  dialog CLOSED. Bind, close, ask for one confirming press, and refuse the binding if it does not arrive. That
+  covers every extension and every browser nobody anticipated, without a list.
+
+- **`ctrl-k` as the default.** Operator: "i was able to use ctrl-k... can that be the default?".
+
+  It was ruled out on purpose and the reason is in `docs/switcher-design.md`: `ctrl-k` is readline's
+  kill-line, this is a board of terminals, and the switcher's handler runs in the capture phase with
+  `stopPropagation`, so binding it takes kill-line away from every shell on the board. Something typed for
+  twenty years stops working in one application with nothing on screen to explain it.
+
+  That is a cost, not a veto, and it is the operator's to accept. Three shapes:
+
+  1. **Make it the default.** Kill-line goes. Say so in the setting rather than leaving it to be discovered.
+  2. **`ctrl-k` only when the terminal does not have focus.** Kill-line survives where it is used and the
+     shorter key works everywhere else. Harder to explain than to build, and a key that works in one half of
+     the window is its own complaint.
+  3. **Leave the default and make the rebinder easier to find.** It was found and liked, which is evidence
+     this is already close to sufficient.
+
+- **A switcher that looks like the stack, and possibly a choice of looks.** Operator: "i can see at some point
+  this actually having a 'stack' look/feel so it feels like that main page maybe ... or maybe even make the
+  switcher skinnable/themeable? default, look like stack etc".
+
+  Not polish. The switcher and the stack answer the same question, which is "which of these do I want", and
+  they answer it in two different vocabularies: the stack has the status colour, the activity badge, the idle
+  clock, the `ctx` chip and the pinned divider, and the switcher has a title and two chips. Somebody who reads
+  the stack all day arrives at the switcher and has to re-learn the same list.
+
+  The cheap version is one more row renderer over the same cards, since `stackRow` already exists and already
+  draws every one of those. The reason it is not a five minute change is the width: a stack row is written for
+  a full-width column and the switcher is a modal, so this and the width item above are one piece of work.
+
+  **The skinnable version is the one to be careful about.** A setting that offers `default` or `looks like the
+  stack` is two renderers to keep working, two things every future card field has to be added to, and a second
+  place for them to drift, which is the exact failure `termFilesCtx` exists to prevent on the file lists. Pick
+  ONE look unless there is a reason both must exist, and if both must, drive them from one row builder with a
+  density flag rather than from two.
+
+## J. The file viewer, once a path in the terminal became clickable
+
+Round 3 made a path a link, and the thing it opens turned out to be the part nobody had used. Six findings
+from one sitting. They are one session: all of them are the drawer, the editor, and the two functions that
+open them.
+
+- **Closing the editor should put you back where you came from.** Operator: "clicking on a file - on close -
+  should return me to here NOT to the file picker UNLESS of course i came FROM the file picker".
+
+  Opening a file from the TERMINAL is a detour, and the way back is the terminal. Opening one from the file
+  browser is a step, and the way back is the list. `openFromTerminal` and the browser's own `edit` chip both
+  end in `openEditor`, which knows nothing about which of the two it was, so closing always lands on the list.
+  The caller has to say, and `closeEditor` has to act on it.
+
+  Note that this is the second bug in as many hours caused by the editor being a panel INSIDE the drawer. The
+  first was that it opened invisibly. It may be worth asking whether it belongs there at all.
+
+- **A symlinked file cannot be opened.** `CLAUDE.md` in this repo is a symlink to
+  `dotagents/github/dovholuknf/atrium/CLAUDE.md`, which is outside the card, and `internal/safepath` follows
+  symlinks on BOTH sides on purpose: a link that leaves the card is how a card is escaped, and refusing it is
+  the rule that makes the file endpoints safe to expose. See `docs/file-transfer-design.md`.
+
+  So the refusal is correct and the behaviour is still wrong: `files/probe` says the path is a file and
+  underlines it, and `files/text` then refuses it. The link should not be drawn at all, which means `probe`
+  has to answer the same question `text` will, or the click has to say why in a sentence naming the symlink.
+  Eight CLAUDE.md files in this repo are symlinks, so this is not an edge case here.
+
+- **A line number is thrown away.** `internal/api/api.go:248:1` opens the file and lands at the END of it.
+  The suffix is already parsed off to find the name; nothing carries it through. It should scroll to that
+  line and mark it until the next keystroke or click. Operator: "i might be asking too much" — it is one
+  `scrollTop` and one background colour on a textarea, which cannot mark a line, so this probably decides the
+  next item.
+
+- **The editor is a textarea, and it is starting to show.** Asked for: line numbers, and "MAYBE a better
+  editor (vscode embedded into atrium?)". Monaco or CodeMirror would bring line numbers, a line to jump to, a
+  selection to highlight, and syntax colour, all four of which are now wanted.
+
+  Against it: the board is ONE FILE with no build step and vendored dependencies, and Monaco is neither
+  small nor a single file. CodeMirror 6 is modular and still wants a bundler. Whatever is picked has to
+  arrive as a vendored UMD build like xterm did, or the no-build-step rule goes, and that rule is why the
+  board works offline and over a share. Decide that before writing any of it.
+
+- **Escape closes the editor and not the drawer.** Every other panel on this board closes on escape. The
+  drawer is the one that does not, so the key does half of what it looks like it does.
+
+- **The up arrow in the file browser does not read as a button.** Operator: "needs to be more button esque.
+  it's not very obvious with the reskinning we did not long back". It is `<button class="icon">` with an
+  arrow glyph, and the icon class lost most of its affordance in the reskin. It is the commonest control in
+  that pane.
+
+---
+
 ## I. Two views on one terminal, which nothing arbitrates
 
 Found by walking round 1's own test P2, which was supposed to prove the board REFUSES to open a second view.

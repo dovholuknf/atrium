@@ -108,6 +108,13 @@ could beat it while a session was a pane inside a page. A popped-out window is t
 mode, titled with the session's whole address, marked in the title bar when that session wants you, and closing
 itself when its runner exits.
 
+**A switcher, on a keystroke.** `ctrl-shift-k` over anything on screen, a few letters against the title, the
+directory or the tags, and Enter. The last few you went to come first, so moving between two sessions is one
+key and one more. It works inside a popped-out window too, which moves that window to another card rather than
+opening a second one. The key is a setting because browsers keep different keys for themselves and refuse to
+hand one over without saying so: `docs/switcher-design.md` is the whole argument, and settings names the
+browser that takes the default.
+
 **Files, in both directions.** Drop or paste into a session to send a file in. Browse the session's directory to
 get one back out, a file at a time or the whole tree as a zip. Everything resolves through one containment check
 against that card's own directory, and anything outside answers `403` whether or not it exists. It works over an
