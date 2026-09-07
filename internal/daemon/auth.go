@@ -46,6 +46,13 @@ import (
 //
 // So this is not "atrium grew authentication". It is "the published board asks
 // who you are, using somebody else's identity provider".
+//
+// AND IT STILL HOLDS NOTHING, which is the reason there is no refresh token
+// anywhere in here. A refresh token is a long-lived credential belonging to
+// the person who signed in, and one sitting in atrium's database is atrium
+// holding somebody else's credential wearing a different word. A session that
+// runs out is renewed by asking the provider again with `prompt=none`, which
+// costs a redirect nobody sees and leaves nothing behind. See `auth_flow.go`.
 
 // SettingAuth is where the configuration lives.
 const SettingAuth = "auth_oidc"
@@ -66,6 +73,12 @@ const authCookie = "atrium_session"
 // Twelve hours. Long enough to not be a nuisance across a working day, short
 // enough that revoking somebody at the provider takes effect the same day
 // rather than whenever they next close their browser.
+//
+// Renewal did not change this number, on purpose. Renewal made the end of a
+// session silent rather than a login form, so a shorter one is now cheap to
+// try if somebody wants revocation to bite sooner. The cost is not zero: every
+// renewal is a full page load, and the board is one page that holds open
+// terminals.
 const authSessionFor = 12 * time.Hour
 
 // authStateFor bounds how long a login may take.
@@ -89,7 +102,9 @@ type AuthConfig struct {
 	// hangs off it, so nothing else about the provider has to be configured.
 	Issuer string `json:"issuer"`
 	// ClientID and ClientSecret identify this board to the provider. A public
-	// client leaves the secret empty and uses PKCE.
+	// client leaves the secret empty. PKCE is on either way and there is no
+	// switch for it, so a confidential client is a second factor on the
+	// exchange rather than the only one.
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret,omitempty"`
 	// Redirect is where the provider sends somebody back to. It has to be the

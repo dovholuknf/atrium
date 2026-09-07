@@ -232,6 +232,78 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   that was raised, which is where you are about to be looking. `raiseToasts` already moves the toast host
   between elements, so the machinery for putting a toast somewhere specific exists.
 
+- **The restart banner does not survive the restart.** `restart atrium` puts up "atrium is restarting", and
+  then the daemon comes back, the page reloads on the new build id, and the banner goes with it. So the one
+  moment it exists for, the gap between the old daemon dying and a runner actually being back, is the moment
+  it is not on screen. It should hold until the terminal is attached again, not until the page reloads.
+
+  Worse in a popped-out window, which is a terminal and nothing else: there is no board around it to read as
+  "something is happening", so a reloaded page with a dead terminal in it looks like the terminal broke.
+  It should be MODAL there, over the pane, until the socket is back.
+
+  The reload is the thing to work around rather than remove: reloading on a new build id is how a stale board
+  stops being served. So the state has to be written down somewhere a reload does not clear, and taken down by
+  the attach rather than by the load.
+
+- **The zrok account block does not say why anybody should care.** Operator, looking at it for the first
+  time: "seems fine. i'm not sure what i'm looking at". Three numbers in a row, environments, shares open,
+  reserved names, with a paragraph under them explaining that they are counts rather than fractions.
+
+  Every fact in it is right and none of it answers the question somebody has in front of it, which is whether
+  starting a share is about to fail. The counts are the evidence for that answer, drawn instead of the answer.
+  It reads as a readout because it is one.
+
+  What it is missing is a verdict on top: one line saying whether this account looks fine, and the counts
+  underneath as the working. The limited case already does exactly that, and it is the only branch of this
+  block anybody understands on sight.
+
+---
+
+## I. Two views on one terminal, which nothing arbitrates
+
+Found by walking round 1's own test P2, which was supposed to prove the board REFUSES to open a second view.
+It does refuse to open one. It does nothing about a second view that is already there, and getting one there
+takes ten seconds: paste `<board>/#term=<card id>` into a tab.
+
+**The rendering breaks in the bigger window, not the smaller one.** `setViewport` resizes the pty to
+`smallestViewport`, which is right, and the design comment beside it claims the cost is "unused margin in the
+larger window". It is not. Nothing tells the larger window's xterm to use the agreed size, so it stays at its
+own fit, and every cursor-positioning escape the runner emits is computed for a narrower line than the one it
+lands on. A wrapped input line redraws on top of itself: `accepting newlines for some reason` comes out as
+`acceptingenewlineshforisomewreason`, one character eating each space at what would have been a wrap column.
+The narrow window looks perfect the whole time, which is why this reads as "the window I am typing in is the
+broken one".
+
+**REFUSE THE SECOND VIEW. Decided, not open.** The operator's call, against the alternative below, and the
+reason is that one terminal with two people in it is not a feature anybody asked for. Sharing a session is
+what `docs/overlays.md` lends a card for, and that path hands out a share rather than a second cursor on the
+same line editor.
+
+`soloHeld` already records who holds a card and for how long, and `poppedOut` already asks the question. What
+is missing is anything acting on the answer. A `#term=` window that opens onto a card somebody else is already
+holding should say so and stop, rather than attach and quietly shrink the other window's terminal. The board's
+own `attach` already refuses; the pasted URL is the door left open.
+
+Two things it has to get right, because both are how a naive version of this becomes worse than the bug:
+
+- **A claim has to expire.** A window that was closed without releasing must not lock a card out. The roll call
+  exists for exactly this and is already used by `attach`.
+- **A refusal has to be recoverable in one click.** "That card is open in another window" with nothing next to
+  it strands somebody whose other window is behind fourteen others. It needs the raise, or a take-it-anyway
+  that detaches the other one.
+
+The alternative, recorded because it will be re-proposed:
+
+- **Let both views work.** The agreed viewport goes back down the socket on attach and on every recompute, and
+  a viewer whose own fit is bigger letterboxes to it rather than filling. The daemon already computes the
+  number; nothing sends it. More work, and it buys a shape nobody wants.
+
+**And the toast goes to every window holding the card.** `sayInSoloWindow` broadcasts `solo-toast` keyed on the
+card, and the receiver draws it if the card is its own. With two windows on one card that is two toasts, one
+of them in the window you are already looking at, saying the terminal is in this window. Round 1 fixed the
+wrong-window half of this. The already-here half is left: a window that is already showing the card and
+already has focus has nothing to be told.
+
 ---
 
 ## H. How to hand back a parallel run

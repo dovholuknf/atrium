@@ -5,6 +5,235 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room can now be added, read and forgotten from the board, without the board learning to store one.**
+
+  The rooms pane drew what turned up and nothing else. Adding a room meant knowing the flags, knowing this
+  hub's ziti service name and typing both on the other machine from memory. A room that had gone said
+  "not heard from since" and left you to work out whether that meant wait or go and look. A name left behind
+  by a test sat there for ten minutes with no way to clear it.
+
+  `add a room` writes the command out instead. It reads what this hub can say about how to be reached, which
+  is the ziti service it is answering on, a public zrok address when one is up, and this machine's hostname
+  and port, and builds an `atrium room` line with the service filled in and the identity path, the name and
+  the room's own board address as fields. Nothing is saved. There is no pending room and there cannot be,
+  because a room exists exactly when it checks in, so the dialog is a text generator and closing it loses
+  nothing.
+
+  A stale room now carries its deadline: what is listed is what it last said, and it drops off in so many
+  minutes unless it checks in. `GET /v1/rooms` reports `forget_in_seconds` per room so the page is not
+  holding a second copy of the constant and drifting from it.
+
+  `DELETE /v1/rooms/{name}` forgets one early, and it deliberately writes nothing. A machine still running
+  `atrium room` reappears on its next heartbeat, and the confirm says so. It is the same operation time
+  performs at ten minutes, done now, for the machine that was reimaged or renamed. Making it stick would
+  mean the hub holding a durable record of a refusal, which is the second source of truth the whole design
+  exists to not have, and there is a test named after that.
+
+
+- **A permission request on another machine is answered from one board, and the agent there carries on.**
+
+  Rooms landed as a status page. Another machine ran its own atrium, dialled this one, and its cards appeared
+  on one board. What it could not do was the thing the board exists for: an agent on a room that was frozen
+  mid-tool waiting to be allowed something was invisible unless somebody opened that room's own board, which
+  is exactly the trip having one board is supposed to save. On two machines that is a nuisance. On five it
+  means an agent waits an hour because nobody thought to go and look.
+
+  A room now reports what it is waiting to be allowed, and those requests are drawn in the same perms queue
+  as the local ones, ordered oldest first across both, because who has waited longest is the question and
+  which machine they are on has nothing to do with it. Every part of the alerting loop counts them: the badge,
+  the window title, the desktop notification and the widening nag. A frozen agent on a cloud instance now
+  rings the same bell as one in the next directory.
+
+  **The channel does not move, and that is the whole design.** The request is blocked on a channel held in
+  that room's own process. Nothing here can reach it, so nothing here tries: the decision is queued, the room
+  collects it on its next check-in, and the room posts it to its own daemon, which unblocks its own request.
+  The hub answers nothing on the room's behalf, records no decision, and never learns whether the agent moved.
+  Approving on a room's behalf from here would be a second source of truth about whether a command ran.
+
+  **Always and never work, and the rule is written on the machine that was asked.** That is the only place it
+  could mean anything, because that is the daemon that will be asked again and the only one whose rule table
+  is consulted when it is. The card says so, above the command, along with which machine the command would run
+  on. A queue that merges two machines and does not say which is a queue nobody can safely press approve in.
+
+  A room with somebody frozen on it checks in every two seconds instead of every twenty, because the reply to
+  a check-in is the only thing travelling in that direction and how often it asks is how fast an answer
+  arrives. At the ordinary heartbeat, approving something would take up to twenty seconds to release the
+  agent, which reads as a button that did nothing.
+
+  Nothing acknowledges, on purpose, and the failure that needed designing is the quiet one. A room can refuse
+  a decision: its own board may have answered first, or its store may have halted. So an answer that has been
+  handed over and has not made the request go away expires after two minutes and the request becomes
+  answerable again. A decision that hid a request forever would leave an agent frozen on another machine with
+  nothing on any board to say so, which is the failure this whole feature exists to remove.
+
+  The wait travels as seconds rather than as a timestamp, measured on the clock that recorded the request, for
+  the same reason `wait_seconds` on a card does: two machines that disagree by a minute would otherwise draw a
+  request as frozen before it was made. A report is cut to fifty requests and four kilobytes of diff each,
+  cut on the room and again on the hub, because a report refused for being too big would take that machine's
+  cards off the board with it.
+
+- **A remote card's terminal is one click away, on the board that owns it.**
+
+  A pseudo terminal cannot leave the machine that made it. That is a fact about ConPTY rather than a policy
+  and it is not going to change. What was missing was the link: the room already reports where its own board
+  is, and the board already opens a single terminal at `#term=<id>`, so a remote card's title is now a link
+  that joins the two. It goes to that machine's board with the right terminal already open, which is the
+  nearest thing to attaching that exists here.
+
+  Offered only for a card with a runner in one of the three states somebody would want to type into. A
+  finished or dead card has nothing behind it, and a link that opens an empty terminal pane reads as broken
+  rather than as a card with no session.
+
+
+- **A card can say how much context its session has burned, and how close the account is to a limit.**
+
+  The board could not tell which of sixteen agents was about to compact, and compacting is where a session
+  forgets what it was told at the start. That is the most useful single input to "which one do I interrupt",
+  and atrium could not see it: hooks carry which tool started and which subagent ended, never a token count.
+  Exactly one thing on the machine gets that number, and it is the statusline script Claude Code hands its
+  per-session payload to.
+
+  So there is now a `POST /telemetry` on the agent listener for it to post to, keyed by the harness's session
+  id, which atrium already stores as the card's resume id. The card grows a `ctx 92%` chip, quiet under sixty
+  and in the danger colour above eighty five, with the tokens and the model in its tooltip, plus a `5h` or
+  `week` chip when a rolling limit is at eighty percent or more.
+
+  Never stored, for the reason in `docs/activity-design.md`: it is a fact about a process that is running
+  right now, and written down it would outlive the session it described. It sits in memory beside the activity
+  and dies with the daemon. It expires more slowly than an activity does, thirty minutes against fifteen,
+  because context only grows, so an old figure is a floor on the current one, and an idle card is exactly the
+  one whose context decides whether you resume it.
+
+  The endpoint follows `/activity` line for line: it answers before it reads the body, it swallows a session
+  nobody has heard of, and nothing it can be sent produces a non-2xx. A statusline renders many times a
+  second, so it also enforces a two second floor per caller, well under the ten to fifteen seconds the
+  contract asks for. A statusline post is not activity and does not move the card's idle clock: a terminal
+  redraws when a human types in it.
+
+  The statusline script itself lives in another repository. `docs/statusline-telemetry.md` is the contract,
+  written to be implementable without a conversation.
+
+
+- **The zrok panel says what the account is already using, before you press a button that fails.**
+
+  A zrok account has a ceiling on environments, on shares open at once, on reserved names and on how much
+  traffic it carries in a period. The way you found out you were at one was a button that thought for several
+  seconds and then refused inside somebody else's API.
+
+  The panel now reads the account, above the configure fold, and counts the three things the zrok controller
+  compares before it refuses: environments, shares open everywhere, and reserved names. It says how many of
+  the shares are this machine's and how many of the reservations are atrium's, since atrium takes one per
+  board address and one per lent session and can fill an account on its own. When zrok reports the account as
+  limited the block turns into a warning, because that is not a forecast: the controller checks it before
+  allocating anything, so the next start is already refused. That flag is the TRANSFER allowance and nothing
+  else, which the warning says, because sending somebody to delete shares over a bandwidth block wastes their
+  time and does not lift it.
+
+  **There is no denominator and that is deliberate.** zrok does not tell an account token where its ceilings
+  are. They sit on a limit class only an admin may read, and an account with no class applied is measured
+  against the controller's own configuration, which no endpoint exposes at all. "6 of 10 shares" would be a
+  number atrium invented, and a number somebody plans around that is not real is worse than no number.
+
+- **A zrok account at its name limit was told to pick a longer name.**
+
+  The error messages were built on the belief that zrok answers a limit with `429`. It does not. Read from the
+  2.0.4 controller, a share limit and an environment limit both come back as `401` with no body, and a name
+  limit comes back as `409` carrying `names limit reached`.
+
+  So both branches pointed the wrong way. A share refused for a limit read as a revoked token and sent people
+  to re-enable an environment that was fine. Worse, reserving a name swallows a `409` on purpose, because a
+  name that already exists is the ordinary case on a second press, and it was swallowing the limit refusal
+  too: the second call refused for the same reason and the message that came out was "that name is taken, try
+  a longer one", to an account where no longer name would ever have worked.
+
+  A `409` carrying `limit reached` is no longer read as a name that was already there, and it now says to
+  release one. The `401` names both of its causes rather than picking one, and points at the account block,
+  which is the thing that tells them apart.
+
+- **The zrok demo instance's `POST /share` 500 is characterised, in `docs/zrok-share-500.md`.**
+
+  Not an atrium defect, and it is why the reserved-share work is built and unproven. Bisected against the live
+  instance: `POST /share` fails for every share, but the requests that stop earlier all answer correctly, and
+  one of those, the private-share-token availability check, is a READ against the ziti controller that returns
+  the right conflict. So the zrok controller authenticates to ziti and reads from it, and what fails is inside
+  resource allocation, which opens with `ziti.Configs.Create`. Which step inside allocation gave up needs the
+  controller's log, and the document says so. It is written to be filed upstream and has not been.
+
+  It also names a second, smaller upstream defect: the `500` on that operation carries no payload at any of
+  the eight places it is returned, though the spec declares one and the handler's own `409`s do carry a
+  sentence. That is why the body is `""` and why a client can report nothing.
+
+
+- **The published board's login now carries PKCE, and it renews itself without holding anything.**
+
+  Two of the three things the login shipped without. The third, roles, is a design question and there is now a
+  proposal for it in `docs/overlays.md` and no code.
+
+  **PKCE, on every login, with no switch.** The authorize request carries an S256 challenge and the exchange
+  carries the verifier behind it. State only ever proved that a callback belonged to a login this board
+  started. A code lifted out of a callback URL, a browser history, a referer or a proxy log was spendable by
+  whoever held it, because the token endpoint could not tell that the caller was not this board. Now spending
+  one needs a secret that never left the daemon's memory. It is on for a confidential client too, since a
+  provider that does not implement PKCE ignores the extra parameters, so there is nothing to configure and
+  nothing to forget.
+
+  **Renewal asks the provider rather than remembering.** A refresh token is a long-lived credential belonging
+  to the person who signed in, and keeping one would be atrium holding somebody else's credential, which is
+  the rule this feature was shaped around. So there is no stored token. A browser with no usable session goes
+  to `/auth/renew`, an ordinary authorize request with `prompt=none` on it, which asks the provider to answer
+  from the session it already has or refuse without showing anybody anything. A live provider session comes
+  back as a new cookie through a redirect nobody sees. A provider that has forgotten the browser answers
+  `login_required`, and that is a normal answer rather than an error: the callback recognises a declined
+  renewal and sends the browser to a real login form, carrying the page it was going to.
+
+  Two things follow. A first visit tries silent sign-on before it shows a form, so somebody already signed in
+  at the provider never types anything. And the board, which is one page that never navigates, now turns a
+  single `401` into one trip through the renewal endpoint, because a redirect is not something a `fetch`
+  follows and the page was otherwise just filling up with failures.
+
+  A session is still twelve hours, and where somebody lands after signing in is now the page they were on
+  rather than the front page. That value travels through the provider and back, so it is refused unless it is
+  a path on this board: `//elsewhere.example` looks like a path and is not.
+
+  The login states this board holds are also capped now. Starting a login is unauthenticated by definition, so
+  each one was an entry anybody who could reach the board could ask for, held for five minutes, with no bound.
+
+
+- **The board told you it had raised a window, in the window it had just taken you out of.**
+
+  Attaching to a card that is already popped out raises that window and says so. The toast was drawn in the
+  document that was clicked, which is the board, which is the one now going behind the window it raised. The
+  message was always over your shoulder by the time it appeared. It now crosses to the raised window on the
+  `atrium-solo` channel and is drawn there, which is where you are about to be looking. Locally only when the
+  browser has no `BroadcastChannel`, where behind you beats nowhere.
+
+- **The board cannot raise a window it did not open, and it used to claim otherwise.**
+
+  A popped-out window is found again by name, and only a window a script opened has one. Paste a `#term=<id>`
+  url into a tab and that window claims its card on the solo channel, so the board knows it exists, and can
+  never reach it. The board would then open a SECOND window onto the same terminal, which is the thing
+  `docs/supervision-design.md` says nothing arbitrates, and announce "it was not there any more" about a window
+  still on screen.
+
+  A failed lookup is now two situations rather than one, and they are told apart by asking. The board calls the
+  roll and waits a third of a second: a window that answers is out there and unreachable, and it says so and
+  opens nothing. Silence means the claim was a few seconds stale, and it opens one, which is what it always
+  should have meant.
+
+- **Clicking an alert for a popped-out card stole its terminal.**
+
+  `attachTask` refuses to attach a card that is in a window of its own, for the same reason popping out
+  detaches the board's pane. The path a toast and a desktop notification land on had no such guard: it attached
+  anyway, pulled the terminal out of the window holding it, and reported success. It now raises that window
+  instead, like every other route to a session.
+
+- **The notification test said nothing when the notification never appeared.**
+
+  With a service worker there is no object handed back and no `onerror`, so the button returned in silence
+  whether Windows drew the notification or swallowed it. Silence reads as working, and it was silent in exactly
+  the case the button exists for. It now asks the registration what is on screen and reports what it finds.
+
+
 - **A terminal you scrolled up jumped to the bottom when the window lost focus.**
 
   Nothing scrolled on purpose. `onTermResize` calls `fit()`, `fit()` hands new rows and columns to xterm's

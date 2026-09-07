@@ -117,6 +117,11 @@ type Server struct {
 	// Capabilities asks a ziti network what this identity may bind, so
 	// "is this going to work" is answerable without pressing start.
 	Capabilities func() any
+	// ZrokAccount reports what the zrok account behind this machine is already
+	// using, so an account at a limit is visible before a button is pressed
+	// rather than several seconds after. `internal/daemon/overlay_limits.go`
+	// has what zrok will and will not tell an account token.
+	ZrokAccount func() any
 	// SetApiEndpoint points this machine at a zrok instance other than the
 	// public one. Empty puts it back on zrok's default.
 	SetApiEndpoint func(own bool, endpoint string) error
@@ -145,6 +150,17 @@ type Server struct {
 	// source of truth. See `internal/daemon/rooms.go`.
 	Rooms       func() any
 	RoomCheckIn func(w http.ResponseWriter, r *http.Request)
+	// RoomDecide answers a permission request raised on one of those machines.
+	// It queues the decision for the room to collect, and nothing more: the
+	// blocked channel is in that room's process, so the room unblocks its own
+	// request. This is not `Decide`, which resolves a request in this store.
+	RoomDecide func(w http.ResponseWriter, r *http.Request)
+	// RoomJoin is what to run on another machine to make it a room. Read only,
+	// and pressing nothing here creates anything: a room exists exactly when
+	// it checks in. RoomForget drops one early, which is the same thing time
+	// does and is equally not durable.
+	RoomJoin   func() any
+	RoomForget func(w http.ResponseWriter, r *http.Request)
 
 	BuildExport func() (any, error)
 	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
@@ -211,6 +227,20 @@ func (s *Server) Handler() http.Handler {
 	if s.RoomCheckIn != nil {
 		mux.HandleFunc("POST /v1/rooms", s.RoomCheckIn)
 	}
+	if s.RoomDecide != nil {
+		mux.HandleFunc("POST /v1/rooms/{room}/permissions/{id}/decide", s.RoomDecide)
+	}
+	if s.RoomJoin != nil {
+		// Before the wildcard, or `join` is read as a room called join. Go's
+		// mux prefers the more specific pattern, but stating it here keeps the
+		// two lines in the order somebody reads them.
+		mux.HandleFunc("GET /v1/rooms/join", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, s.RoomJoin())
+		})
+	}
+	if s.RoomForget != nil {
+		mux.HandleFunc("DELETE /v1/rooms/{name}", s.RoomForget)
+	}
 	mux.HandleFunc("GET /v1/auth", s.getAuth)
 	mux.HandleFunc("PUT /v1/auth", s.putAuth)
 	mux.HandleFunc("GET /v1/config/export", s.exportConfig)
@@ -229,6 +259,11 @@ func (s *Server) Handler() http.Handler {
 		// press rather than riding the overlay poll, which runs every time the
 		// gear opens.
 		mux.HandleFunc("GET /v1/overlays/ziti/services", s.zitiServices)
+	}
+	if s.ZrokAccount != nil {
+		// Same reasoning as the services call above: it talks to somebody
+		// else's controller, so it does not ride the overlay poll.
+		mux.HandleFunc("GET /v1/overlays/zrok/account", s.zrokAccount)
 	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
@@ -380,6 +415,16 @@ type view struct {
 	// for a runner with no hooks and after a daemon restart. See
 	// docs/activity-design.md.
 	Activity any `json:"activity,omitempty"`
+	// Telemetry is how much context the session has burned and how close its
+	// account is to a limit, as its statusline last reported. Absent for a
+	// runner whose statusline does not post, which is every runner until one
+	// is wired up. See docs/statusline-telemetry.md.
+	//
+	// Its own field rather than part of Activity: the two expire on different
+	// clocks, and a session that has been idle for twenty minutes has no
+	// activity worth drawing and a context figure that still decides whether
+	// you resume it.
+	Telemetry any `json:"telemetry,omitempty"`
 }
 
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
@@ -397,6 +442,10 @@ var CloseShellFor func(taskID string)
 // since the activity is held in memory there rather than in the store.
 var ActivityOf func(taskID string) any
 
+// TelemetryOf returns a task's last statusline figure, or nil. Supplied by the
+// daemon for the same reason: it is held in memory there and never stored.
+var TelemetryOf func(taskID string) any
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -412,6 +461,9 @@ func toView(t *store.Task) view {
 	}
 	if ActivityOf != nil {
 		v.Activity = ActivityOf(t.ID)
+	}
+	if TelemetryOf != nil {
+		v.Telemetry = TelemetryOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())

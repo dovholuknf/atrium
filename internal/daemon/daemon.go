@@ -199,6 +199,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.InspectToken = d.InspectToken
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
+	d.ap.ZrokAccount = func() any { return d.ZrokAccount() }
 	d.ap.SetApiEndpoint = d.SetZrokEnvironment
 	d.ap.ShareCard = d.ShareCard
 	d.ap.StopCardShare = d.StopCardShare
@@ -254,6 +255,9 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.ap.Rooms = d.Rooms
 	d.ap.RoomCheckIn = d.handleRoomCheckIn
+	d.ap.RoomDecide = d.handleRoomDecide
+	d.ap.RoomJoin = d.RoomJoin
+	d.ap.RoomForget = d.handleRoomForget
 	d.ap.BuildExport = func() (any, error) { return d.BuildExport() }
 	d.ap.ApplyImport = func(body []byte, apply, force bool) (any, error) {
 		var in Export
@@ -273,6 +277,9 @@ func New(opts Options) (*Daemon, error) {
 	api.CloseShellFor = d.CloseShell
 	// What a runner is doing right now. Held in the daemon, never written down.
 	api.ActivityOf = d.activityFor
+	// How much context it has burned. Held the same way and for the same
+	// reason. See docs/statusline-telemetry.md.
+	api.TelemetryOf = d.telemetryFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	return d, nil
@@ -676,6 +683,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/stop", d.handleStop)
 	agentMux.HandleFunc("/activity", d.handleActivity)
+	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
 	// The other half of finish: a session saying it is stuck and what it needs.

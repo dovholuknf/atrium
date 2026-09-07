@@ -354,6 +354,34 @@ func (s *Store) GetByWireName(name string) (*Task, error) {
 	return t, err
 }
 
+// GetByResumeID returns the task whose conversation the harness calls
+// resumeID, which for Claude Code is its session id.
+//
+// The join a statusline needs. A statusline is handed the session id and
+// nothing else: no wire name, no card id, no way to be told one. See
+// `docs/statusline-telemetry.md`.
+//
+// An empty id matches NOTHING rather than the first card with a blank
+// resume_id. Most cards have one, since not every runner reports an id, so a
+// caller that forgot the field would otherwise be told it belongs to whichever
+// unrelated card the query happened to return.
+func (s *Store) GetByResumeID(resumeID string) (*Task, error) {
+	resumeID = strings.TrimSpace(resumeID)
+	if resumeID == "" {
+		return nil, sql.ErrNoRows
+	}
+	var t *Task
+	err := s.guard(func() error {
+		got, err := s.getBy(`resume_id = ?`, resumeID)
+		if err != nil {
+			return err
+		}
+		t = got
+		return nil
+	})
+	return t, err
+}
+
 // List returns tasks, newest activity first within each status, ordered by
 // rank. Pass an empty status set for everything.
 func (s *Store) List(statuses ...string) ([]*Task, error) {

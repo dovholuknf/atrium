@@ -193,6 +193,59 @@ Two things this does not cover, and both are yours to get right:
 - **whatever went wrong**, as a sentence about what to do next. `internal/daemon/overlay_zrok_errors.go` turns
   what zrok returns into an account limit, a revoked token, a name already taken, an unreachable instance or the
   instance's own error, and always appends the original, because the classification is a guess.
+- **what the zrok account is already using**, once there is an account to ask about. See below, because it is
+  the only thing in this panel that is about somebody else's account rather than about this machine.
+
+## The account block, and the number it deliberately does not show
+
+A zrok account has a ceiling on environments, on shares open at once, on reserved names and on how much traffic
+it will carry in a period. The way you used to find out you were at one was a button that thought for several
+seconds and then refused inside somebody else's API.
+
+`GET /v1/overlays/zrok/account` reads `GET /overview` with the token already on disk and counts three things:
+environments on the account, shares open across all of them, and reserved names. Those are exactly the three
+counters `controller/limits/agent.go` compares before it refuses, so counting them counts the thing that gets
+checked. It also carries `accountLimited`, which is not a warning about later: the controller reads it before
+allocating anything, so a true there means the next press of **start sharing** is already refused.
+
+**`accountLimited` is the transfer allowance and nothing else.** `isAccountLimited` in `controller/util.go`
+reads the bandwidth limit journal, so an account at its share or name ceiling does not set it. The warning says
+which it is, because "your account is at a limit" over a bandwidth block sends somebody to delete shares, and
+deleting shares does not lift it.
+
+**There is no denominator, on purpose.** zrok does not tell an account token where its own ceilings are. They
+live on a limit class, and the two endpoints that read one, `/limit-class/list` and `/applied-limit-class/list`,
+are tagged admin and answer 401 to an ordinary token. An account with no limit class applied is measured
+against the controller's own configuration, which no endpoint exposes at all, so even an admin token would not
+answer for the ordinary case. "6 of 10 shares" would be a denominator atrium invented, and a number somebody
+plans around that is not real is worse than no number.
+
+**Reserved names are counted separately, and atrium's share of them is named.** Atrium reserves one name per
+board address and one per lent session, and every name it invents starts with `atrium-`. An account that fills
+up with reservations may well be atrium's doing, so the block says how many are.
+
+Read when the gear opens and cached for a minute, with a **check again** button. It is a call to somebody
+else's instance, and what changes it is a share starting or stopping, which is a thing you do in this panel.
+
+### zrok v2 does not answer a limit with 429
+
+This was written down wrongly once and every error message was built on it. Read from the v2.0.4 controller, a
+refusal for a limit arrives as one of three things:
+
+| what was refused | status | body |
+| --- | --- | --- |
+| a share, `POST /share` | `401` | none |
+| an environment, `POST /enable` | `401` | none |
+| a reserved name, `POST /share/name` and its update | `409` | `names limit reached; cannot reserve additional names` |
+
+Two consequences, both of which were live bugs:
+
+- **A 401 is not proof of a revoked token.** It is the same answer a share limit gets, so the message names both
+  causes and points at the account block, which is what tells them apart.
+- **A 409 is not proof that a name is taken.** `alreadyThere` in `overlay_reserve.go` swallows conflicts,
+  because a name that already exists is the ordinary case on a second press. It now refuses to swallow one
+  carrying `limit reached`, which used to be reported as "that name is taken, try a longer one" to an account
+  where no longer name would ever have worked.
 
 ## Lending one session rather than publishing the board
 
@@ -308,10 +361,103 @@ handler and nothing else, so the boundary is structural rather than a rule someb
 - **An API call is refused rather than redirected.** Bouncing one through a login page produces an HTML
   document where JSON was expected, which reads as a corrupt response rather than as a missing session.
 - **A login state is single use**, or a callback can be replayed.
+- **Every login carries PKCE**, and there is no switch for it. See below.
+- **Where somebody lands after a login is a path on this board or it is the front page.** The value rides
+  through a redirect to the provider and back, so it is under an attacker's control from end to end, and
+  `//elsewhere.example` looks like a path and is not.
+
+### PKCE, on every login, with no way to turn it off
+
+The authorize request carries an S256 challenge and the token exchange carries the verifier behind it. The
+verifier is thirty two random bytes, it is held in memory beside the state, and it never goes to the browser.
+
+**What it buys, given that state already exists.** State proves that a callback belongs to a login this board
+started, and nothing more. A code lifted out of the callback URL, from a browser history, a referer or a proxy
+log, is still spendable by whoever holds it, because the token endpoint cannot tell that the caller is not this
+board. With PKCE, spending a code needs a secret that only ever existed in this process.
+
+It is on for a confidential client too. A provider that does not implement PKCE ignores the two extra
+parameters, which is what OAuth requires of it, so there is nothing to configure and nothing to forget to turn
+on. `TestASignInSpendsItsCodeWithTheVerifier` runs the whole round trip against a provider that refuses an
+exchange with no matching verifier, because a test that only reads atrium's own variables would pass with the
+verifier left out of the exchange, and that is exactly how PKCE gets shipped as decoration.
+
+### Refresh, which holds nothing
+
+A session still lasts twelve hours. What changed is what happens at the end of it.
+
+**Atrium stores no refresh token, and that is the design rather than an omission.** A refresh token is a
+long-lived bearer credential belonging to the person who signed in. Keeping one in atrium's database would be
+atrium holding somebody else's credential, which is the rule this whole feature was shaped around. The
+password half of the first plan was dropped for the same reason and a stored refresh token is the same thing
+wearing a different word.
+
+**So renewal asks the provider instead of remembering.** A browser with no usable session is sent to
+`/auth/renew`, which is an ordinary authorize request with `prompt=none` on it. That parameter says: answer
+from the session you already have, and refuse rather than show this person anything. A provider that still
+knows the browser sends a code straight back and the board mints a new cookie, so an expiry in the middle of a
+working day costs a redirect nobody sees. A provider that has forgotten the browser answers `login_required`,
+and that is the normal answer, not an error: the callback recognises a declined renewal and sends the browser
+to a real login form carrying the page it was going to.
+
+**The page does not navigate, so it says when it needs to.** Everything the board does is a fetch, and the
+guard's redirect is not something a fetch follows. One `401` sends the whole page through the renewal endpoint,
+once, with where it was in `back`.
+
+Two consequences worth knowing:
+
+- **A first visit tries silent sign-on before showing a form.** Somebody already signed in at the provider
+  reaches the board without typing anything, which is the point of having a provider.
+- **Signing out is still only local.** The cookie is cleared and the provider's session is not, so pressing
+  sign out and then opening the board signs you straight back in. That was already true before renewal
+  existed, since a plain authorize against a live provider session never shows a form either. Ending the
+  provider's session needs RP-initiated logout, which needs a `post_logout_redirect_uri` registered at the
+  provider, and it is not built.
 
 ### What is not built
 
-- No PKCE. A confidential client with a secret is what the demo provider offers, and adding PKCE for a public
-  client is the next thing if a provider needs it.
-- No refresh. A session lasts twelve hours and then you sign in again.
-- No roles. Everybody who gets in gets the whole board, which is the same grant a share has always been.
+- **No roles.** Everybody who gets in gets the whole board, which is the same grant a share has always been.
+  There is a proposal for the smallest honest version below and nothing has been built from it.
+- **No RP-initiated logout.** See above.
+- **No refresh tokens**, deliberately and permanently. See above.
+
+### Roles: a proposal, not a feature
+
+Everybody on the allow list gets everything: the terminals, the permission prompts, the file browser, the
+settings, the export with the overlay configuration in it. On a board where the allow list is one person that
+is honest. The moment a second name goes on it to let somebody watch a run, it is not.
+
+**The smallest thing that is not a lie is two roles and a default-deny list of what the smaller one may reach.**
+
+- Entries in `allow` grow an optional role. `"someone@example.com"` keeps meaning full access, so no existing
+  configuration changes meaning, and `{"who": "watcher@example.com", "role": "watcher"}` is the new shape.
+- A watcher may reach a NAMED SET of routes and nothing else. Not a set of routes computed from a rule, and
+  not everything except a deny list: an explicit list, so a route added next week is refused to watchers until
+  somebody puts it on the list on purpose.
+- The set is roughly: the board itself, `GET /v1/tasks`, `GET /v1/tasks/{id}`, `GET /v1/waiting`,
+  `GET /v1/history`, `GET /v1/tasks/{id}/events` and `GET /v1/events`. That is the board as something to look
+  at.
+- Everything else is `403` with a sentence saying which role the session has, because a button that silently
+  does nothing is worse than one that says no.
+
+**What the proposal rejects, and why each one is tempting.**
+
+- **Read-only defined as "the GET requests".** This is the version that writes itself and it is a lie in this
+  codebase. `GET /v1/tasks/{id}/attach` opens a terminal you can type into. `GET /v1/browse` and
+  `GET /v1/tasks/{id}/files/text` read any file the daemon can reach. `GET /v1/config/export` hands over the
+  configuration. The HTTP method has never described what these do and a role built on it would grant a
+  watcher a shell.
+- **Roles read from the token's claims, such as a groups or realm access claim.** This is how it is normally
+  done and it is wrong here first. It moves the grant into a directory the board's operator may not
+  administer, so somebody who can edit a group can hand out a terminal on this machine without touching
+  atrium. It also needs an answer for a token with no such claim, and both answers are bad. The allow list is
+  already local, already explicit and already the thing an operator edits. Claim-derived roles are a
+  reasonable LATER addition once there is a board with enough people on it to make editing a list annoying.
+- **Configurable roles, a permission matrix, anything with the shape of RBAC.** Two roles cover the case that
+  exists, which is "can drive" and "can watch". A matrix is a policy language, a UI for it, and a migration,
+  in service of a distinction nobody has asked for yet.
+- **Per-card visibility, so a role only sees some cards.** This is a real feature and it needs something that
+  does not exist: a card has no owner. Inventing one to serve a role is a schema change driven by a guess.
+- **A role that may answer permission prompts but not type.** It sounds like the careful middle and it is not
+  a boundary. Answering a permission prompt approves a command that runs on this machine, which is the same
+  power as typing with an extra step.

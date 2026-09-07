@@ -56,6 +56,10 @@ func TestTheLocalBoardIsNotWrapped(t *testing.T) {
 }
 
 // With a provider configured, a browser is sent to log in.
+//
+// To RENEW rather than to sign in, which is the same journey with one extra
+// question asked first: a browser the provider still knows comes back with a
+// session having seen nothing at all.
 func TestABrowserIsSentToTheProvider(t *testing.T) {
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
@@ -70,8 +74,8 @@ func TestABrowserIsSentToTheProvider(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("a browser with no session got %d, wanted a redirect", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); !strings.HasPrefix(got, authPrefix) {
-		t.Fatalf("redirected to %q", got)
+	if got := rec.Header().Get("Location"); !strings.HasPrefix(got, authPrefix+"renew") {
+		t.Fatalf("redirected to %q, wanted the renewal endpoint", got)
 	}
 }
 
@@ -206,18 +210,92 @@ func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 
 // A state is single use, or a callback can be replayed.
 func TestALoginStateCannotBeReplayed(t *testing.T) {
-	s, err := newState()
+	s, _, err := startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !takeState(s) {
+	if _, ok := takeLogin(s); !ok {
 		t.Fatal("a fresh state was not accepted")
 	}
-	if takeState(s) {
+	if _, ok := takeLogin(s); ok {
 		t.Fatal("a state was accepted twice, so a callback can be replayed")
 	}
-	if takeState("never issued") {
+	if _, ok := takeLogin("never issued"); ok {
 		t.Fatal("a state nobody issued was accepted")
+	}
+}
+
+// Every login carries its own verifier, or one stolen code opens every session
+// that board ever starts.
+func TestEveryLoginGetsItsOwnVerifier(t *testing.T) {
+	a, first, err := startLogin("/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, second, err := startLogin("/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { takeLogin(a); takeLogin(b) })
+	if first.verifier == "" || first.verifier == second.verifier {
+		t.Fatalf("two logins shared a verifier (%q)", first.verifier)
+	}
+	if a == b {
+		t.Fatal("two logins shared a state")
+	}
+	// The challenge is a hash and not the verifier itself. `plain` would send
+	// the secret in the same redirect an attacker would be watching anyway.
+	if pkceChallenge(first.verifier) == first.verifier {
+		t.Fatal("the challenge is the verifier, so pkce buys nothing")
+	}
+}
+
+// STARTING A LOGIN IS UNAUTHENTICATED, so anybody who can reach the published
+// board can ask it to hold a state for five minutes. Without a bound that is a
+// way to spend the daemon's memory from outside with no credential at all.
+func TestAFloodOfLoginsIsBounded(t *testing.T) {
+	// Emptied afterwards whatever happens. The map is package level, and a
+	// test that left it full would fail every login in every test after it.
+	t.Cleanup(func() {
+		pending.Lock()
+		pending.at = nil
+		pending.Unlock()
+	})
+	var refused error
+	for i := 0; i < pendingMost+10; i++ {
+		if _, _, err := startLogin("/", false); err != nil {
+			refused = err
+			break
+		}
+	}
+	if refused == nil {
+		t.Fatal("logins were started without limit, so the map grows on request")
+	}
+	pending.Lock()
+	held := len(pending.at)
+	pending.Unlock()
+	if held > pendingMost {
+		t.Fatalf("%d states are held, above the cap of %d", held, pendingMost)
+	}
+}
+
+// WHERE SOMEBODY LANDS AFTER A LOGIN IS UNDER AN ATTACKER'S CONTROL. It rides
+// through a redirect to the provider and back, so a link that sends somebody
+// to a page on another domain, having just signed in, is the oldest phishing
+// primitive there is.
+func TestALoginCannotSendSomebodyOffThisBoard(t *testing.T) {
+	for _, tc := range []struct{ back, want string }{
+		{"/", "/"},
+		{"/?card=7", "/?card=7"},
+		{"", "/"},
+		{"//elsewhere.example", "/"},
+		{"/\\elsewhere.example", "/"},
+		{"https://elsewhere.example", "/"},
+		{"javascript:alert(1)", "/"},
+	} {
+		if got := backTo(tc.back); got != tc.want {
+			t.Fatalf("backTo(%q) = %q, wanted %q", tc.back, got, tc.want)
+		}
 	}
 }
 
