@@ -863,6 +863,26 @@ delete shares over a block deleting shares does not lift.
 account at its name limit used to be told, and no longer name would have helped.
 
 
+### H7. Pasting into a terminal over a share
+
+**Steps** with the share up, open the board at the share address rather than at localhost, attach a terminal,
+and paste three ways. First `ctrl-v`. Then right click on the terminal. Then `ctrl-shift-v`.
+
+**Expect** `ctrl-v` pastes, exactly as it does on loopback: that path is the browser's own `paste` event and no
+permission is involved in it. Right click pauses for about a second and then opens a paste box in the middle of
+the pane. `ctrl-shift-v` opens the same box straight away. Press `ctrl-v` in the box and the clipboard lands in
+it. Press `ctrl-enter` or `send` and it reaches the runner, with a multi-line paste arriving as one paste rather
+than one Enter per line. Close it and the box is empty the next time it opens.
+
+**Then do the same on loopback.** Expect NO box: the paste goes straight in.
+
+**Failure mode** right click doing nothing at all, silently and forever, which is what shipped. Reading the
+clipboard from script is a permission granted per ORIGIN. Loopback was answered once and remembered, so it
+looked like it worked everywhere. Every share is a new origin, the prompt stands there unanswered, and
+`navigator.clipboard.read()` and `readText()` NEVER SETTLE. Not a rejection, which would have been caught and
+said out loud. The second failure mode is the box appearing on loopback, which means the bound is firing on an
+origin that had already granted the permission.
+
 ## I. Importing rules from Claude Code
 
 The one part of the permission surface with no scenario, named in Known gaps for months. It matters because it

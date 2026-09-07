@@ -2553,6 +2553,39 @@
     font: var(--fs-xs)/1.2 var(--mono); color: var(--term-fg, var(--dimmest));
     opacity: .7; min-width: 54px; text-align: right;
   }
+  /* The paste box, in the middle rather than in a corner, because it is
+     asking for something and the find bar is not. It has to be the thing you
+     are looking at, since the whole point is that the next ctrl-v goes here
+     instead of into the terminal. */
+  .pastebox {
+    position: absolute; z-index: 40; left: 50%; top: 18%;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+    width: min(560px, 88%); padding: 10px;
+    border-radius: var(--r-md);
+    background: var(--term-bg, var(--shell-0));
+    border: 1px solid var(--term-line, var(--stroke));
+    box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.6);
+  }
+  .pastebox[hidden] { display: none; }
+  .pastebox-say {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
+    opacity: .8;
+  }
+  .pastebox textarea {
+    background: rgba(var(--shadow-rgb),.25);
+    border: 1px solid var(--term-line, var(--stroke-dim));
+    color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
+    padding: 6px 8px; min-height: 96px; resize: vertical;
+    font: var(--fs-sm)/1.35 var(--mono);
+  }
+  .pastebox textarea:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }
+  .pastebox-row { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .pastebox button {
+    all: unset; cursor: pointer; padding: 3px 9px; border-radius: var(--r-sm);
+    color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
+  }
+  .pastebox button:hover { opacity: 1; background: rgba(255,255,255,.08); }
   /* Positioning context for the find bar. The pane already clips, which is
      what keeps the bar inside the terminal. */
   .term-pane { position: relative; }
@@ -3890,10 +3923,28 @@ Exports honor whatever filter is applied.">?</span>
             title="regular expression">.*</button>
           <button onclick="closeFind()" title="close (escape)">&times;</button>
         </div>
+        <!-- The paste that needs no permission.
+             Reading the clipboard from script is a permission, and it is
+             granted per ORIGIN. Loopback is one origin an operator has
+             answered the prompt for once; every share is a new one, so over a
+             share the prompt is up, unanswered, and `navigator.clipboard`
+             never settles. Pasting INTO a text box is the same clipboard
+             arriving by the other door: the browser hands it over because a
+             person pressed the key, and no permission is involved. -->
+        <div class="pastebox" id="t-paste" hidden>
+          <div class="pastebox-say" id="t-paste-say"></div>
+          <textarea id="t-paste-in" spellcheck="false" autocomplete="off"
+            placeholder="press ctrl-v here"></textarea>
+          <div class="pastebox-row">
+            <button onclick="sendPasteBox()" title="send it (ctrl-enter)">send</button>
+            <button onclick="closePasteBox()" title="close (escape)">&times;</button>
+          </div>
+        </div>
         <div id="t-screen"></div>
         <div class="term-help">
           ctrl-c copies when text is selected, interrupts otherwise &middot;
           ctrl-v or shift-insert pastes &middot; ctrl-insert copies &middot;
+          ctrl-shift-v opens a box to paste into, for a board on a share &middot;
           shift-enter or ctrl-enter writes a newline instead of sending &middot;
           ctrl-shift-c is not used, the browser takes it for dev tools
         </div>
@@ -15627,6 +15678,20 @@ function openTerm(task) {
     if (e.shiftKey && e.key === "Insert") return false;
     if (ctrl && !e.shiftKey && e.code === "KeyV") return false;
 
+    // CTRL-SHIFT-V OPENS THE PASTE BOX, which is the paste that always works.
+    //
+    // Everything above depends on the browser handing this page the clipboard.
+    // Over a share it will not, until somebody answers a permission prompt for
+    // an origin they have never seen before. This asks for nothing: the box
+    // takes a ctrl-v of its own and sends what lands in it. Bound here rather
+    // than left to the browser because nothing else claims it and it is the
+    // pair to ctrl-shift-c on a terminal.
+    if (ctrl && e.shiftKey && e.code === "KeyV") {
+      e.preventDefault();
+      openPasteBox();
+      return false;
+    }
+
     // A newline in the prompt, rather than sending it.
     //
     // xterm sends a plain carriage return for Enter, Shift-Enter and
@@ -15793,17 +15858,154 @@ function sendPasteText(text) {
   sendInput(body);
 }
 
-// The fallback, for a paste that did not arrive as an event: a button, or a
-// browser that refused the default action. Kept because those cases exist,
+// The fallback, for a paste that did not arrive as an event: right click, or
+// a browser that refused the default action. Kept because those cases exist,
 // and no longer the primary path.
+//
+// BOUNDED, and that is the fix for a share.
+//
+// `navigator.clipboard` is gated by a permission granted per ORIGIN. Loopback
+// is one origin, answered once and remembered; every share is a new origin
+// with no answer on file. What that looks like is not a refusal: the prompt
+// goes up and the promise NEVER SETTLES while it is unanswered, so `await`
+// here waited forever and right click did nothing at all, with no error and
+// nothing said. Measured on a zrok share in both Chrome and Brave, where
+// `clipboard-read` reads `prompt` and neither `read()` nor `readText()`
+// resolves. Loopback in the same browser pastes, because the grant is there.
+//
+// So the wait is bounded and whatever comes back that is not text opens the
+// paste box, which needs no permission at all.
 async function pasteIntoTerm() {
-  if (await pasteFilesIntoTerm()) return;
+  const mine = ++pasteAttempt;
+  const got = await Promise.race([
+    clipboardIntoTerm(mine),
+    new Promise(r => setTimeout(
+      () => r({ why: "the browser has not been told whether this page may read the clipboard" }),
+      pasteWaitMs)),
+  ]);
+  if (got.ok) return;
+  openPasteBox(got.why);
+}
+
+// How long to wait on the clipboard API before offering the box instead.
+//
+// Long enough that a granted origin never sees the box, short enough that an
+// ungranted one is not left looking at a terminal that did nothing. A grant
+// resolves in single-digit milliseconds; an unanswered prompt resolves never.
+const pasteWaitMs = 1200;
+
+// Which paste attempt is current.
+//
+// The bounded wait does not cancel the clipboard read, it only stops waiting
+// on it. If the operator answers the prompt a minute later that read resolves
+// and would paste on its own, on top of whatever went through the box. This
+// is how a late answer is told it lost the race.
+let pasteAttempt = 0;
+
+// The clipboard API attempt, files first and then text, unchanged in what it
+// does with either. Reports whether it got anywhere rather than toasting,
+// because the caller has somewhere better to go than an error.
+async function clipboardIntoTerm(mine) {
+  if (!navigator.clipboard) {
+    return { why: "this browser will not let a page read the clipboard here" };
+  }
+  try {
+    if (await pasteFilesIntoTerm()) return { ok: mine === pasteAttempt };
+  } catch (e) { /* text is still worth trying */ }
   try {
     const text = await navigator.clipboard.readText();
+    if (mine !== pasteAttempt) return { ok: true };
     if (text) sendPasteText(text);
+    return { ok: true };
   } catch (e) {
-    toast("could not paste", "the browser refused clipboard access");
+    return { why: "the browser refused clipboard access" };
   }
+}
+
+// THE PASTE BOX: the clipboard arriving by the door that is always open.
+//
+// `navigator.clipboard.readText()` is a page reading the clipboard, and that
+// is a permission. A `paste` event on a focused text box is a PERSON handing
+// the clipboard over, and no browser has ever asked permission for that. Same
+// bytes, same clipboard, and it works on an origin that has answered nothing,
+// which is every share.
+//
+// It carries files too, for the same reason `wireTerminalPaste` does: a
+// screenshot arrives on the event as an item of kind `file`, so pasting one
+// in here uploads it and hands the runner a path, exactly as ctrl-v over the
+// terminal would.
+function openPasteBox(why) {
+  const box = document.getElementById("t-paste");
+  const ta = document.getElementById("t-paste-in");
+  const say = document.getElementById("t-paste-say");
+  if (!box || !ta) {
+    toast("could not paste", why || "the browser refused clipboard access");
+    return;
+  }
+  // Any clipboard read still in flight has lost: the box is the answer now,
+  // and a late one arriving on top of it is a paste nobody asked for twice.
+  pasteAttempt++;
+  wirePasteBox();
+  if (say) say.textContent = why ? why + ", so paste it here" : "paste here";
+  box.hidden = false;
+  ta.value = "";
+  ta.focus();
+}
+
+function closePasteBox() {
+  const box = document.getElementById("t-paste");
+  const ta = document.getElementById("t-paste-in");
+  if (box) box.hidden = true;
+  // CLEARED ON THE WAY OUT. What gets pasted into a terminal is often a
+  // secret, and a hidden box still holds what was put in it.
+  if (ta) ta.value = "";
+  // Back to the terminal, or the next thing typed goes into a box nobody can
+  // see.
+  if (term) term.focus();
+}
+
+function sendPasteBox() {
+  const ta = document.getElementById("t-paste-in");
+  const text = ta ? ta.value : "";
+  closePasteBox();
+  // Through `sendPasteText`, so a multi-line paste from the box is bracketed
+  // and carriage-returned the same as one that came off the terminal. A box
+  // that skipped that would submit the first line and drop the rest.
+  if (text) sendPasteText(text);
+}
+
+// WIRED ONCE, for the same reason `wireTerminalPaste` is: the box outlives
+// every attach.
+function wirePasteBox() {
+  const box = document.getElementById("t-paste");
+  const ta = document.getElementById("t-paste-in");
+  if (!box || !ta || box.dataset.wired) return;
+  box.dataset.wired = "1";
+
+  ta.addEventListener("paste", e => {
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const files = [];
+    for (const item of dt.items || []) {
+      if (item.kind !== "file") continue;
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+    // Text is left alone and lands in the box, where it can be read before it
+    // is sent. Files have nothing to read and no text form worth sending, so
+    // they go straight up.
+    if (!files.length) return;
+    e.preventDefault();
+    closePasteBox();
+    uploadIntoTerm(files);
+  });
+
+  // Enter writes a newline, because this is a box for multi-line pastes and
+  // sending on Enter would make a two line paste impossible to hand over.
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Escape") { e.preventDefault(); closePasteBox(); return; }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPasteBox(); }
+  });
 }
 
 // Pasting a file, which over an overlay has no workaround at all.

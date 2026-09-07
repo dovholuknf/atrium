@@ -412,7 +412,55 @@ if (themeIndex) {
     `missing from the shipped one, and a name off the prototype chain answers a function.`);
 }
 
-// Rule 16: the thing a clicked path opens has to be ON SCREEN.
+// Rule 16: the clipboard API is never awaited without a bound, and there is
+// always the box.
+//
+// `navigator.clipboard.read` and `readText` are gated by a permission granted
+// per ORIGIN. Loopback is one origin, answered once and remembered. EVERY
+// SHARE IS A NEW ORIGIN, so the prompt goes up unanswered and the promise
+// NEVER SETTLES. Not a rejection, which would have been caught and said out
+// loud: nothing at all. Right click on a shared board did nothing, silently,
+// while the same board on loopback pasted.
+//
+// Two halves, and both are needed. The wait has to end, and what it ends in
+// has to be a paste that asks the browser for no permission at all: a text box
+// the operator presses ctrl-v into, which is the clipboard arriving as a
+// gesture rather than as a read.
+if (/function pasteIntoTerm\(/.test(html)) {
+  const at = html.indexOf("async function pasteIntoTerm(");
+  const body = html.slice(at, at + 700);
+  if (!/Promise\.race\(/.test(body)) {
+    fail("pasteIntoTerm awaits the clipboard without a bound. An unanswered permission " +
+      "prompt never settles, so right click on a shared board hangs forever and says " +
+      "nothing. Race it against a timeout.");
+  }
+  if (!/openPasteBox\(/.test(body)) {
+    fail("pasteIntoTerm has no fallback to the paste box. A board on a share cannot read " +
+      "the clipboard from script at all, so a bounded wait that ends in a toast leaves " +
+      "the operator with no way to paste from the page.");
+  }
+}
+if (/openPasteBox\(/.test(html)) {
+  for (const id of ["t-paste", "t-paste-in"]) {
+    if (!html.includes(`id="${id}"`)) {
+      fail(`the paste box calls for #${id} and the markup does not have it. The fallback ` +
+        `path falls back to nothing.`);
+    }
+  }
+  const sendAt = html.indexOf("function sendPasteBox(");
+  if (sendAt < 0 || !/sendPasteText\(/.test(html.slice(sendAt, sendAt + 400))) {
+    fail("the paste box does not send through sendPasteText. Skipping it means no " +
+      "bracketed paste and no carriage returns, so a multi-line paste out of the box " +
+      "submits its first line and drops the rest.");
+  }
+  const closeAt = html.indexOf("function closePasteBox(");
+  if (closeAt < 0 || !/ta\.value = ""/.test(html.slice(closeAt, closeAt + 400))) {
+    fail("closePasteBox does not clear the box. What gets pasted into a terminal is " +
+      "often a secret, and a hidden box still holds it.");
+  }
+}
+
+// Rule 17: the thing a clicked path opens has to be ON SCREEN.
 //
 // `#t-edit` is a panel INSIDE `#t-files-panel`, and the drawer starts hidden.
 // `openEditor` unhides the editor and knows nothing about the drawer around

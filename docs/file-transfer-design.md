@@ -141,6 +141,14 @@ The gesture is a paste onto the terminal pane. Charon's lesson, which is worth t
 and picker are one pipeline and not three (`app/ClaudeSessionView.tsx:1259-1264`). Whatever gesture produced the
 bytes, the bytes go to the upload endpoint, and what comes back is a path.
 
+There is a fourth door into the same pipeline, and over an overlay it is the only one some of them can use.
+Reading the clipboard from script is a permission a browser grants per ORIGIN, and every share is a new origin
+the operator has granted nothing. Loopback is granted once and remembered, which is why this looked like it
+worked everywhere. So `ctrl-shift-v` opens a paste box: a text field the operator presses `ctrl-v` into, which
+is a person handing the clipboard over rather than a page reading it, and no permission is involved. A file
+pasted in there goes up the same pipeline and comes back the same path. Right click falls into the box on its
+own when the clipboard read does not answer.
+
 Then the path has to reach the runner, and here atrium and Charon diverge on something already decided.
 
 Charon injects the path as though it were typed, because a Charon session is an SDK turn with no human at a
