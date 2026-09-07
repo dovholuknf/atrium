@@ -5,6 +5,27 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A switcher, on a keystroke.** `ctrl-shift-k` opens it over whatever is on screen. Type a few letters
+  against the title, the directory or the tags, Enter goes, Escape closes. The last few sessions come first, so
+  the common case is the key and Enter with nothing typed.
+
+  The keystroke is a setting with a default, not a constant, and that is the whole design. A browser keeps a
+  handful of accelerators for itself, the handful differs per browser, and a page asking to keep one is
+  sometimes refused SILENTLY, which ships a feature that works on the machine it was written on. The default
+  survives Chrome, Edge and Brave, and it is not `ctrl-k`: that one is readline's kill-line, and a board made
+  of terminals may not quietly take it. Firefox takes `ctrl-shift-k` for its Web Console, so settings says so
+  and offers to rebind. When a browser takes the bound key anyway, atrium notices, because the focus leaves
+  the document, and says which key to change.
+
+  **It works inside a popped-out window,** which is the half that is not a list. A solo window IS one card, so
+  switching there releases the old claim, claims the new one, renames the window and rewrites its address.
+  Skipping the release leaves the board believing a card is popped out in a window that has moved on, and
+  claims are fifteen second heartbeats, so that mistake heals itself and presents as a flicker somebody
+  diagnoses as something else. The board now yields its pane when another window claims the card it is
+  showing, and drops the window handle when a claim is released. `docs/switcher-design.md`, and
+  `scripts/check-switcher.js` holds every one of those as a rule.
+
+
 - **A path in the terminal is a link, and the daemon is what decides which words are paths.**
 
   `POST /v1/tasks/{id}/files/probe` has been there and unused since it was written. The board now calls it: on

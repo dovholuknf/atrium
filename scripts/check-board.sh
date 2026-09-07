@@ -129,6 +129,15 @@ if ! node "$here/scripts/check-path-tokens.js" "$page"; then
   fail=1
 fi
 
+# The switcher: one keystroke, and a popped-out window that can change which
+# card it is. Both halves fail silently. A browser that ignores preventDefault
+# says nothing, and a claim that is not released heals itself in fifteen
+# seconds, so the symptom is a flicker rather than an error.
+if ! node "$here/scripts/check-switcher.js" "$page"; then
+  echo "a switcher invariant is broken. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

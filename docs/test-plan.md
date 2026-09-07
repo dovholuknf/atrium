@@ -1654,3 +1654,77 @@ never-stored rule is about.
 That difference is deliberate: an activity goes wrong fast, a context figure only grows, and an idle card is
 exactly the one whose context decides whether you resume it.
 
+
+## S. The switcher
+
+Everything here is a browser question, which is why none of it is in `go test`. `scripts/check-switcher.js`
+holds the shapes. What is below is what only a person in front of two windows can answer.
+
+### S1. The key opens it, and the terminal never sees it
+
+**Steps**
+
+1. Attach to a supervised card and click INTO the terminal, so the runner has the focus.
+2. Press `ctrl-shift-k`.
+3. Press it again.
+
+**Expect** the switcher opens over the terminal with the field focused, and the runner receives NOTHING: no
+stray character, no cleared line, nothing in the scrollback. Pressing it again closes it.
+
+**The failure this catches** is a handler that does not stop the event: the switcher opens and a control
+character is typed into whatever the agent was doing.
+
+### S2. Filtering, and the order with nothing typed
+
+**Steps**
+
+1. Open the switcher with several sessions running. Note the order.
+2. Type part of a directory name. Then type part of a tag.
+3. Press Escape. Go to a session. Open the switcher again.
+
+**Expect** the filter matches the title, the worktree and the tags. At step 3 the session you just went to is
+at or near the top of the recents, and the card you are currently showing is listed LAST with `here` on it.
+
+### S3. Rebinding, and a browser that takes the key
+
+**Steps**
+
+1. Settings, `the board`, the switcher key. Press the button, then press `alt-k`. Try it.
+2. Press the button, then press `ctrl-t`.
+3. Press the button, then press `k` on its own.
+4. `use the default`.
+5. In FIREFOX, with the default bound, press `ctrl-shift-k`.
+
+**Expect** `alt-k` binds and works. `ctrl-t` is refused with a reason, and no tab opens after it is refused.
+A bare key is refused. At step 5 Firefox opens its Web Console, and atrium says the browser also took that key
+and points at the setting. That message is the whole reason the binding is a setting.
+
+### S4. Switching inside a popped-out window
+
+**The one that matters.** A solo window IS one card, so switching there is not attaching, it is moving.
+
+**Steps**
+
+1. Pop a card out into its own window. Leave the board open on another card.
+2. In the popped-out window, press `ctrl-shift-k` and go to a THIRD card.
+3. Look at the popped-out window: its title bar, and what is in the terminal.
+4. On the board, look at the session list.
+5. On the board, click the card the window used to be showing.
+6. In the popped-out window, press F5.
+
+**Expect** the window is now driving the third card and its title bar says so. In the list, the arrow that says
+"in a window of its own" has MOVED from the old card to the new one. Step 5 attaches in the board's pane
+normally, with no "raised it for you" toast and no second window. Step 6 comes back on the third card, not the
+one the window was opened on.
+
+### S5. Two windows never land on one terminal
+
+**Steps**
+
+1. Pop out card A. Pop out card B. Two windows.
+2. In window A, open the switcher and try to go to card B.
+3. On the board, attach to card C. In window A, switch to card C.
+
+**Expect** step 2 is refused, saying B already has a window. At step 3 the board LETS GO of card C, its pane
+goes back to nothing attached, and it says so. Neither case ends with two live views on one terminal.
+
