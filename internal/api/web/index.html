@@ -2010,7 +2010,10 @@
      text a block, which put every emphasised word on its own line. */
   pre.diff i b {
     display: inline; font-weight: 700; border-radius: var(--r-xs); padding: 0 2px;
-    background: rgba(255,255,255,.18); color: var(--head);
+    /* `--lift-strong` rather than a white tint, so this reads on a light skin
+       as well. A colour written as its own rgba literal is a second copy a
+       skin cannot reach, which is the palette rule in `web/CLAUDE.md`. */
+    background: var(--lift-strong); color: var(--head);
   }
   pre.diff i.hdr { color: var(--dimmest); margin-top: 8px; padding-left: 6px; }
 
@@ -2389,7 +2392,17 @@
     transform: translate(-50%, -50%);
     display: flex; align-items: center; gap: var(--sp-3);
     padding: 12px 18px; border-radius: var(--r-lg);
-    background: var(--shell-0); border: 1px solid var(--term-edge, var(--stroke));
+    /* THE PAIR COMES FROM ONE SYSTEM. This took its background from the board
+       and its text from the terminal, which is the exact confusion
+       `web/CLAUDE.md` warns about, and the two are chosen by different people:
+       a skin and a terminal theme. On a light skin with a light terminal theme
+       the restart banner was pale text on a white pill, unreadable.
+       Not a lightness test. A terminal theme's foreground and background are
+       designed to be legible together, so taking both from the same theme is
+       correct for every theme including ones nobody has written yet. Detecting
+       "is this light" would be a guess that needs revisiting per theme. */
+    background: var(--term-bg, var(--shell-0));
+    border: 1px solid var(--term-edge, var(--stroke));
     color: var(--term-fg, var(--head)); font: var(--fs-base)/1.4 var(--mono);
     box-shadow: 0 18px 44px rgba(var(--shadow-rgb),.55); max-width: 80%; text-align: left;
   }
@@ -2423,7 +2436,9 @@
     all: unset; cursor: pointer; padding: 3px 7px; border-radius: var(--r-sm);
     color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
   }
-  .findbar button:hover { opacity: 1; background: rgba(255,255,255,.08); }
+  /* The hover tint comes from the terminal too. A white tint is invisible on a
+     light theme, which is the same bug as the restart banner one rule up. */
+  .findbar button:hover { opacity: 1; background: var(--term-line, var(--lift)); }
   /* A toggle that is ON has to look different from one being hovered, or the
      only way to know whether case matters is to try it both ways. */
   .findbar button.findtog.on {
@@ -2450,6 +2465,21 @@
     background: var(--term-bg, transparent);
   }
   #t-screen .xterm { height: 100%; width: 100%; }
+  /* WHY A TERMINAL JUMPED TO THE BOTTOM WHENEVER IT WAS FOCUSED, and the fix
+     is one rule rather than the four attempts that came before it.
+     xterm parks a 20x20 textarea at the CURSOR to receive keystrokes, so an
+     input method draws its candidates in the right place. The cursor is at the
+     bottom. A browser scrolls a focused element into view, so every path that
+     focused that textarea took the viewport with it: clicking the terminal,
+     returning to the window, closing the find bar.
+     Nothing calls a scroll function, which is why patching every scroll API
+     found nothing and why preserving the position afterwards was a fight. The
+     browser is not going to stop scrolling to a focused element, so the answer
+     is to stop the element from being somewhere that requires scrolling.
+     Pinned to the top-left of the terminal, which is always in view. The cost
+     is that an input method composes at the corner instead of at the cursor,
+     which is the whole of what this position bought. */
+  #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
   .term-list .card .chip { white-space: nowrap; }
 
   /* NEVER set a width here. Color only.
@@ -14117,6 +14147,19 @@ function openTerm(task) {
     lineHeight: 1.2,
     letterSpacing: 0.2,
     cursorBlink: true,
+    // ATRIUM DECIDES WHEN INPUT SCROLLS, so xterm must not also decide.
+    //
+    // This defaults to true, which snaps the viewport to the bottom whenever
+    // xterm believes the user has interacted. That belief is broader than
+    // typing: it fires on focus and on a click into the terminal, so scrolling
+    // up and clicking anywhere put you back at the end.
+    //
+    // The board already does this deliberately in `sendInput`, and the comment
+    // there says why it is done there rather than here: the inputs that matter
+    // most, a paste and a dropped file, never reach xterm at all. So this
+    // option was a second mechanism covering less, firing on things that are
+    // not input, and it was the one nobody was controlling.
+    scrollOnUserInput: false,
     // REQUIRED BY SEARCH, and its absence is why find never found anything.
     //
     // `registerDecoration` is what paints a hit and puts a mark down the
@@ -14155,6 +14198,22 @@ function openTerm(task) {
   // gesture produced the bytes, the bytes go to the same place.
   wireTerminalDrops(screen);
   wireTerminalPaste(screen);
+  // A wheel or a drag on the scrollbar ends any position atrium is holding.
+  // See `holdScrollAt`: it re-asserts where you were while a runner repaints,
+  // and the one thing it must never do is fight the operator doing it by hand.
+  screen.addEventListener("wheel", () => {
+    noteScrollAct("wheel");
+    releaseScrollHold();
+  }, { passive: true });
+  // BEFORE the focus, which is the only moment the position is still true.
+  // Capture phase so it runs ahead of anything that might focus the textarea.
+  screen.addEventListener("pointerdown", () => {
+    noteScrollAct("click");
+    releaseScrollHold();
+  }, true);
+  screen.addEventListener("focusin", () => noteScrollAct("focus"));
+  screen.addEventListener("focusout", () => noteScrollAct("blur"));
+  watchScroll(term);
 
   // Copy and paste have to win over the terminal, or selecting text and
   // pressing ctrl-c interrupts the runner instead of copying. Returning false
@@ -15113,10 +15172,35 @@ function openFind() {
 function closeFind() {
   const bar = document.getElementById("t-find");
   if (bar) bar.hidden = true;
-  if (termSearch) termSearch.clearDecorations();
+  // THE SEARCH HAS TO BE FORGOTTEN, not just undecorated, and this is the
+  // whole of the terminal-jumps-to-the-bottom bug.
+  //
+  // The addon caches the last term and re-runs the search on EVERY chunk of
+  // output: `onWriteParsed` schedules `findPrevious` two hundred milliseconds
+  // later. Re-selecting a match calls the public `scrollLines` to bring it into
+  // view, so a search somebody ran once kept dragging the viewport to the same
+  // place forever, every time a runner printed and on every re-render a focus
+  // or a blur caused.
+  //
+  // It looked like a focus bug for hours. It is not: focus merely re-renders,
+  // and the re-render is what re-selected the stale match. Nothing in atrium
+  // scrolls, and both of xterm's own scroll-on-input paths are off.
+  //
+  // `clearDecorations()` with no argument drops `_cachedSearchTerm`, which is
+  // what stops the rescheduling. The argument means KEEP the term, so do not
+  // pass one here however tempting the name looks.
+  if (termSearch) {
+    termSearch.clearDecorations();
+    if (termSearch.clearActiveDecoration) termSearch.clearActiveDecoration();
+  }
+  // And the selection with it, since a selection left on a match is the other
+  // half of what makes the old result look live.
+  if (term) term.clearSelection();
   // Back to the terminal, or the next thing typed goes into a box nobody can
-  // see.
-  if (term) term.focus();
+  // see. WITHOUT SCROLLING: closing the find bar used to jump to the bottom,
+  // so searching for something above the fold and pressing escape lost the
+  // result you had just found. See `focusTerm`.
+  focusTerm();
 }
 
 // `step` means move to another hit. Typing searches from where you are without
@@ -15367,7 +15451,7 @@ function connectTerm(taskID) {
     }
     attachSaidGone = false;
     sendResize();
-    term.focus();
+    focusTerm();
   };
   const sock = termSock;
   // GUARDED BY IDENTITY, the same way `onclose` is.
@@ -15382,6 +15466,7 @@ function connectTerm(taskID) {
     // is asynchronous: it queues the bytes and parses them later, so scrolling
     // on the next line scrolls a buffer that has not grown yet, which is the
     // same off-by-one-echo mistake `sendInput` was making on its own.
+    noteScrollAct("output");
     if (typeof e.data === "string") { term.write(e.data, followScroll); return; }
     term.write(new Uint8Array(e.data), followScroll);
   };
@@ -15579,7 +15664,29 @@ function connectTerm(taskID) {
   // Watched before it is sent, so path completion knows what has been typed.
   // See `noteTyped`: it tracks atrium's OWN keystrokes and gives up the moment
   // anything could have moved the cursor.
-  termData = term.onData(d => { noteTyped(d); sendInput(d); });
+  // NOT EVERYTHING ON `onData` IS SOMETHING SOMEBODY TYPED, and believing it
+  // was is what made a scrolled-up terminal jump to the bottom on a click.
+  //
+  // A terminal user interface asks to be told about focus and about the mouse,
+  // and Claude Code asks for both. xterm answers by SENDING ESCAPE SEQUENCES
+  // AS INPUT: `ESC [ I` when the terminal is focused, `ESC [ O` when it is
+  // blurred, and a coordinate report on every click. They arrive here exactly
+  // like a keystroke, because to the application they are the same channel.
+  //
+  // They still have to be SENT, or the runner stops knowing where the pointer
+  // is and whether it has focus. What they must not do is count as the
+  // operator typing, which has two consequences that cost hours:
+  //
+  //   `sendInput` scrolls to the bottom on input, so clicking anywhere in a
+  //   terminal you had scrolled up threw your position away.
+  //
+  //   `noteTyped` abandons its buffer on anything that is not a printable
+  //   character, so every focus change silently switched off path completion.
+  termData = term.onData(d => {
+    const report = isAutoReport(d);
+    if (!report) noteTyped(d);
+    sendInput(d, report);
+  });
   // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.
 }
@@ -15926,10 +16033,35 @@ let followScrollUntil = 0;
 // for a minute and then prints is not still being followed, and should not be.
 const followScrollFor = 1200;
 
-function sendInput(text) {
+// `quiet` sends the bytes without treating them as something somebody typed.
+//
+// For the reports xterm generates on its own: focus, blur and the mouse. They
+// go to the runner like any other input and they must not move the view. See
+// `isAutoReport`, and the note on the `onData` handler for what this cost.
+function sendInput(text, quiet) {
   send({ t: "in", d: String(text == null ? "" : text) });
+  if (quiet) return;
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
+}
+
+// Did xterm generate this by itself, rather than a person producing it.
+//
+// Three shapes, and all three arrive on the same channel as a keystroke:
+//
+//	ESC [ I            the terminal gained focus
+//	ESC [ O            it lost focus
+//	ESC [ < b ; x ; y M/m   a mouse report, SGR encoding, one per click
+//	ESC [ M b x y      the older X10 mouse encoding
+//
+// Conservative on purpose. Anything not matched here is treated as typing,
+// which is the direction that merely scrolls when it should not have, rather
+// than swallowing a keystroke somebody meant.
+function isAutoReport(d) {
+  if (d === "\x1b[I" || d === "\x1b[O") return true;
+  if (/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(d)) return true;
+  if (/^\x1b\[M/.test(d)) return true;
+  return false;
 }
 
 // followScroll keeps the view at the bottom while the echo of what was just
@@ -15986,12 +16118,227 @@ function onTermResize() {
 
   termFit.fit();
 
-  if (term.cols === wasCols && term.rows === wasRows) return;
+  const changed = term.cols !== wasCols || term.rows !== wasRows;
+  noteScrollAct(changed ? "fit(changed)" : "fit(same)");
+  // TEMPORARY, and paired with `watchScroll`. See the note there: the point is
+  // to say WHO moved the viewport rather than to keep narrowing the field.
+  if (scrollDebugOn()) {
+    console.debug("[atrium] fit:", {
+      changed, wasCols, wasRows, cols: term.cols, rows: term.rows,
+      wasAtBottom, fromBottom,
+      viewportY: before.viewportY, baseY: before.baseY
+    });
+  }
+  if (!changed) return;
   sendResize();
   if (wasAtBottom) return;
-  const now = term.buffer.active;
-  term.scrollToLine(Math.max(0, now.baseY - fromBottom));
+  holdScrollAt(fromBottom);
 }
+
+// HOLDING A POSITION AGAINST THE RUNNER, not just against the renderer.
+//
+// A single restore after the fit was not enough and the reason is not in the
+// browser. Telling the runner its new size makes it REPAINT: a terminal user
+// interface redraws on being told its size, and it draws with absolute cursor
+// moves that put the view at the end. That output arrives over the websocket
+// milliseconds later, after any `requestAnimationFrame`, and drags the viewport
+// back down.
+//
+// So the position is re-asserted for as long as that repaint takes, rather
+// than once. `followScroll` is the same idea pointing the other way: after you
+// type, the view is pinned to the bottom for a moment because output is coming.
+// This pins it where you left it for a moment, because output is coming.
+//
+// It stops at the first sign the operator moved, so it cannot fight a scroll,
+// and it ends on its own so it can never hold a terminal that has been
+// legitimately scrolled by something else.
+const holdScrollFor = 600;
+let holdUntil = 0, holdFrom = 0, holdTimer = 0;
+
+
+// Focus the terminal WITHOUT the browser scrolling to it.
+//
+// `term.focus()` focuses xterm's hidden textarea, which sits at the cursor, and
+// a browser scrolls a focused element into view. `preventScroll` is the whole
+// answer for the focuses atrium performs itself, and closing the find bar is
+// the one that surprised the operator: search for something above the fold,
+// press escape, and the result you were reading is gone.
+function focusTerm() {
+  if (!term) return;
+  const ta = term.textarea;
+  if (ta && ta.focus) {
+    ta.focus({ preventScroll: true });
+    return;
+  }
+  term.focus();
+}
+
+// ── temporary: who moved the viewport ───────────────────
+//
+// TEMPORARY AND MEANT TO BE DELETED. Three fixes have been aimed at a terminal
+// that jumps to the bottom and the operator has watched all three fail, which
+// means the mechanism is not the one being guessed at.
+//
+// Guessing stops here. xterm fires an event every time the viewport moves, so
+// what is recorded is WHAT ATRIUM DID MOST RECENTLY, and the two are printed
+// together. That turns "it jumped" into "it jumped 4ms after output arrived",
+// which names the cause instead of narrowing the field.
+//
+// Quiet unless asked for, because this fires on every line of output from
+// every runner:
+//
+//     localStorage.atriumScroll = "1"   in the console, then reload
+let lastScrollAct = "none", lastScrollActAt = 0;
+function noteScrollAct(what) {
+  lastScrollAct = what;
+  lastScrollActAt = Date.now();
+}
+function scrollDebugOn() {
+  try { return localStorage.getItem("atriumScroll") === "1"; } catch (e) { return false; }
+}
+function watchScroll(t) {
+  if (!scrollDebugOn() || !t || !t.onScroll) return;
+  // TEN FRAMES IS CHROME'S DEFAULT and it cut the stack one frame short of the
+  // answer, twice. The chain into a scroll is public API, then core, then
+  // BufferService, then three emitters, so the caller is always further down
+  // than the default allows.
+  try { Error.stackTraceLimit = 60; } catch (e) {}
+  // THE BUFFER moving, which happens BEFORE the element follows. The frames
+  // here are the ones that matter: they name whatever inside xterm decided to
+  // scroll, which the element's own setter cannot say because by then the
+  // decision has already been made.
+  t.onScroll(y => {
+    const b = t.buffer.active;
+    console.debug("[atrium] viewport ->", y,
+      "| baseY", b.baseY, "| fromBottom", b.baseY - y,
+      "| after", lastScrollAct, (Date.now() - lastScrollActAt) + "ms",
+      "\n  " + callerFrames(14));
+  });
+  watchViewportElement();
+}
+
+// TELLING JAVASCRIPT APART FROM THE BROWSER.
+//
+// Every probe so far watched JavaScript, and every one came back empty:
+// nothing calls a scroll function, and both of xterm's `scrollToBottom` paths
+// are gated on `scrollOnUserInput`, which is off. That leaves the possibility
+// no JS instrument can see, which is the browser moving `scrollTop` itself
+// when an element is focused.
+//
+// So the element's own `scrollTop` setter is wrapped. A write through
+// JavaScript goes through it and gets a stack. A write by the browser does
+// NOT, and shows up only as a scroll event with no preceding setter call. Those
+// two need completely different fixes, and this is the only way to tell them
+// apart from inside the page.
+// The call stack as one line, minus this file's own frames.
+//
+// `console.trace` writes a collapsed group, and a collapsed group is not in the
+// text somebody copies out of a console, which is why four rounds of asking for
+// a stack produced none.
+function callerFrames(n) {
+  const raw = (new Error().stack || "").split("\n").slice(2);
+  return raw
+    .filter(l => !/callerFrames|watchViewportElement/.test(l))
+    // The emitter plumbing is noise and it is DEEP: xterm forwards a scroll
+    // through three nested emitters, so the frames that name the cause sit
+    // below all of them and a short stack shows only the forwarding.
+    .filter(l => !/EventEmitter\.fire/.test(l))
+    .slice(0, n)
+    .map(l => l.trim())
+    .join("\n  ");
+}
+
+function watchViewportElement() {
+  const vp = document.querySelector("#t-screen .xterm-viewport");
+  if (!vp) {
+    console.debug("[atrium] no .xterm-viewport to watch");
+    return;
+  }
+  const proto = Object.getPrototypeOf(vp);
+  const desc = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop") ||
+    Object.getOwnPropertyDescriptor(proto, "scrollTop");
+  if (!desc || !desc.set) {
+    console.debug("[atrium] cannot wrap scrollTop on this browser");
+    return;
+  }
+  let lastSetAt = 0;
+  Object.defineProperty(vp, "scrollTop", {
+    configurable: true,
+    get() { return desc.get.call(this); },
+    set(v) {
+      lastSetAt = Date.now();
+      // The frames INLINE rather than through `console.trace`, which files them
+      // in a collapsed group that never survives being copied out of a console.
+      console.debug("[atrium] JS set scrollTop ->", v, "| was", desc.get.call(this),
+        "\n  " + callerFrames(4));
+      desc.set.call(this, v);
+    }
+  });
+
+  vp.addEventListener("scroll", () => {
+    const sinceSet = Date.now() - lastSetAt;
+    const max = vp.scrollHeight - vp.clientHeight;
+    const top = desc.get.call(vp);
+    console.debug("[atrium] scrolled to", top, "of", max,
+      "| bottom?", max - top <= 4,
+      "| by", sinceSet < 50 ? "JAVASCRIPT" : "THE BROWSER",
+      "| after", lastScrollAct, (Date.now() - lastScrollActAt) + "ms");
+  }, true);
+
+  // The textarea, because the pin is meant to stop it being somewhere that
+  // needs scrolling to. If this reports anything other than the top left, the
+  // pin did not take and that is the whole answer.
+  const ta = document.querySelector("#t-screen .xterm-helper-textarea");
+  if (ta) {
+    const cs = getComputedStyle(ta);
+    console.debug("[atrium] helper textarea at", cs.top, cs.left,
+      "| inline", ta.style.top, ta.style.left);
+    ta.addEventListener("focus", () => {
+      const cs2 = getComputedStyle(ta);
+      console.debug("[atrium] TEXTAREA FOCUSED | at", cs2.top, cs2.left,
+        "| scrollTop", desc.get.call(vp), "of", vp.scrollHeight - vp.clientHeight);
+    }, true);
+    ta.addEventListener("blur", () => {
+      console.debug("[atrium] TEXTAREA BLURRED | scrollTop", desc.get.call(vp));
+    }, true);
+  } else {
+    console.debug("[atrium] no helper textarea found");
+  }
+
+  // Anything else in the pane that takes focus. `document` rather than the
+  // pane, so a focus landing outside it is visible too: that is what happens
+  // when the find box or the console takes it.
+  document.addEventListener("focusin", e => {
+    const t = e.target;
+    console.debug("[atrium] focusin ->", t && (t.className || t.nodeName),
+      "| scrollTop", desc.get.call(vp));
+  }, true);
+}
+
+function holdScrollAt(fromBottom) {
+  holdFrom = fromBottom;
+  holdUntil = Date.now() + holdScrollFor;
+  if (holdTimer) return;
+  const tick = () => {
+    if (!term || Date.now() > holdUntil) {
+      clearInterval(holdTimer);
+      holdTimer = 0;
+      return;
+    }
+    const b = term.buffer.active;
+    const want = Math.max(0, b.baseY - holdFrom);
+    // Only when something else moved us. Writing the position we are already
+    // at every frame would fight a scroll the operator is in the middle of.
+    if (b.viewportY !== want) term.scrollToLine(want);
+  };
+  holdTimer = setInterval(tick, 30);
+  tick();
+}
+
+// A deliberate scroll ends the hold. Whatever the operator does with the wheel
+// or the scrollbar wins immediately over a position atrium is preserving on
+// their behalf.
+function releaseScrollHold() { holdUntil = 0; }
 
 function sendSignal(s) { send({ t: "signal", s }); }
 
