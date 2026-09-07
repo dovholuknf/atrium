@@ -1,20 +1,25 @@
-# Build every platform, package the Linux ones, and publish the release.
+# Cut the release for a tag that was just pushed.
 #
-# THERE IS NO LOGIC IN THIS FILE. Three scripts, in order, each runnable by hand
-# on the machine that wrote them:
+# THERE IS NO LOGIC IN THIS FILE. One script, `scripts/cut-release.sh`, which
+# was run by hand on the machine that wrote it long before this ever ran here.
+# It builds five platforms, packages the Linux two, checks the binary agrees
+# with the tag, rebuilds the commit in a clean directory to prove nothing else
+# reached the compiler, verifies every hash, writes the scoop manifest, and
+# publishes.
 #
-#   scripts/release.sh       five platforms, five archives, one checksum file
-#   scripts/package-linux.sh the deb and the rpm, both architectures
-#   scripts/publish-release.sh  the upload, which refuses unless told twice
+# THE GITHUB-SPECIFIC VALUES ENTER AS PARAMETERS AND NOTHING ELSE: the tag as an
+# argument, the token in the environment. That is the whole of what this file
+# adds, which is the convention every script in scripts/ is written to allow. A
+# release path that only exists inside a YAML file can only ever be debugged by
+# cutting a release.
 #
-# The last one is where the GitHub-specific values enter, and they enter as
-# parameters rather than as behaviour: a token in the environment and the tag
-# name as an argument. That is the whole of what this workflow adds.
+# `--from-tag` is what makes the same script correct in both places. Run by
+# hand, it refuses a tag that already exists and creates the one you named. Run
+# here, the tag exists already because pushing it is what started this, so it
+# builds what the tag names and checks the tag really is the commit checked out.
 #
 # TRIGGERED BY A TAG, NEVER BY A BRANCH. A release is a decision somebody made
-# by typing `git tag`, and `publish-release.sh` passes `--verify-tag` so it
-# cannot invent one off whatever HEAD happens to be. A release cut from an
-# untagged commit is a release nobody can find again.
+# by typing `git tag`.
 
 name: release
 
@@ -35,18 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # The tag, from whichever of the two triggers fired. Expressed here rather
-      # than repeated in three `run:` lines, because a version computed twice is
-      # a version that will eventually be computed differently.
+      # than repeated in the `run:` line, because a version computed twice is a
+      # version that will eventually be computed differently.
       ATRIUM_VERSION: ${{ inputs.version || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # The whole history and every tag. release.sh stamps the binary with
-          # `git describe --tags --exact-match`, and a shallow clone with no
-          # tags makes that fail and the version silently become `dev`. A
-          # release that reports itself as `dev` is one a package manager will
-          # never offer an upgrade over.
+          # The whole history and every tag. cut-release.sh checks that the tag
+          # exists and points at HEAD, and a shallow clone with no tags cannot
+          # answer either question.
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -54,18 +57,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: build every platform
-        run: bash scripts/release.sh "$ATRIUM_VERSION"
+      # A checkout has a clean tree and every refusal is fast, so this costs
+      # nothing and turns "the tag is not what is checked out" into a failure
+      # before twenty minutes of building.
+      - name: what would stop this
+        run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --preflight
 
-      - name: the deb and the rpm
-        run: bash scripts/package-linux.sh "$ATRIUM_VERSION"
-
-      - name: publish
-        run: bash scripts/publish-release.sh "$ATRIUM_VERSION" --publish
+      # ci.yml already ran on the commit, so --skip-ci is the one waiver taken
+      # here and it is taken on purpose. Every other refusal is a fact about the
+      # artefact and cannot be waived at all.
+      - name: build, prove, and publish
+        run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --skip-ci --execute
 
       # Kept whether or not the publish worked. When it did, this is how you
-      # check a hash without downloading a release; when it did not, it is the
-      # only copy of what was built.
+      # check a hash without downloading a release. When it did not, it is the
+      # only copy of what was built, including the scoop manifest, which is the
+      # file a human has to carry to the bucket repository by hand.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

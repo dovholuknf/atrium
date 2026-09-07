@@ -5,6 +5,173 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board threw away where you were, on every event.**
+  Every update repainted wholesale. `setHTML` assigned `innerHTML` for a whole list, so every node under it was
+  destroyed and rebuilt, and a browser has nowhere to put the scroll position of an element that no longer
+  exists. The view went back to the top. That fired on every SSE event, and with sixteen live agents an event
+  arrives constantly, so scrolling down was something you could not finish doing. Scroll was the loudest
+  symptom and not the only one: the same swap dropped a text selection mid-drag, moved focus, and restarted
+  every CSS transition, which is why the board looked like it flickered under load.
+  `setHTML` reconciles now, and every list on the board goes through it, so the board, the stack, the terminal
+  switcher and every list in every dialog all changed at once. Two tiers, and the second is what makes it hold.
+  The container is never rebuilt: rows are matched by key, so anything untouched keeps its DOM and the scroll,
+  the selection and the focus survive with it. And a matched row is not rebuilt either. It is walked, and only
+  the attributes and the text that actually differ are written, so the age ticking on a card two chips away
+  does not kill a selection over its title.
+  Tier one on its own would have been a fix that looks complete and is not. The age changes every second, so
+  the card being destroyed is the card being read: the scroll survives and the selection dies anyway.
+  Preserving `scrollTop` around the swap was the previous answer here and it is gone. It fought the browser
+  every frame, did nothing for selection or focus, and went wrong whenever the content above the viewport
+  changed height.
+  Two consequences worth knowing. A card that was already there is now THE SAME ELEMENT after a repaint, with
+  its listeners still on it, so `wireDragging` guards against wiring a node twice: a `drop` handler added once
+  per event would file the same move repeatedly against ranks that had already changed. And the file picker's
+  ticks survive a repaint, because attributes are written and a dirty checkbox stops reflecting them.
+  `scripts/check-morph.js` and `scripts/test-morph.js` run from `check-board.sh`. The first checks that the
+  shape holds, including that every reconciled row still carries `data-id`. The second runs the reconciler
+  against a small DOM and asserts that a row nobody changed comes out the same object, never written to.
+  `docs/board-repaint.md` has the design.
+
+- **Multi-tenancy was decided rather than deferred again.** `docs/multi-tenant-decision.md`.
+  No behaviour change. Backlog 3 was parked on three objections and two of them moved, so it needed new reasons
+  or none. The answer is a fork rather than a flag, for a stronger reason than the standing note gave: a flag is
+  a `WHERE` clause, and the permission chain, the reaper and the supervisor all decide with no caller identity
+  to put in one. `authGuard` verifies an OIDC subject and discards it, the agent listener mints a card for any
+  name off the wire, and every runner starts from the daemon's own `os.Environ()` as the daemon's own user.
+  The smallest tenancy boundary that is not a lie is an operating system user, which is one whole atrium. The
+  recommendation is neither fork nor flag yet: one daemon per person, rooms aggregating them, which is backlog 1
+  and already half built. Postgres is sequenced after that decision rather than before it, because everything
+  two active daemons fight over is outside the database.
+- **The Postgres claim was checked, and it is the schema that survives.**
+  `internal/store/schema.go` has said since `0001` that it was written to stay Postgres portable, and nothing
+  had ever run it there. It has now run there. All 80 statements across all 38 migrations apply to PostgreSQL
+  17 unmodified and in slice order, and all 91 queries parse and type-check once `?` becomes `$n`. The claim
+  holds.
+  What does not hold is everything around the SQL. The migration runner tolerates a duplicate column by
+  matching a SQLite error string, and its `continue` cannot work inside a Postgres transaction at all, because
+  a failed statement there poisons the rest of the migration and the row that records its name. The halt
+  treats every error that is not lock contention as permanent, which is right for a file and wrong for a
+  socket that goes away and comes back in two seconds. Four read-then-write pairs depend on
+  `SetMaxOpenConns(1)` for correctness rather than throughput, and `Offer` racing would halt the daemon on a
+  unique violation raised by the index built to prevent exactly that.
+  No code changed and no driver was added. `docs/postgres-probe.md` is the writeup, with the error text for
+  each one and what backlog item 10 should say now.
+- **`atrium preview` was written down.** No code change.
+  A second board, on a copy of the cards, with its own ports and its own address file, so a change to
+  `index.html` can be judged by using it rather than by restarting the daemon every live session is attached to.
+  It shipped documented nowhere, which meant the next person to want two boards would have invented it again,
+  and the first version of this one spawned the operator's fixtures and went after their reserved zrok name from
+  a process that was supposed to be a window.
+  `docs/preview-design.md` has the feature and the two rules that make it safe: its own `--location-file`,
+  because every hook on the machine reads that file and the last daemon to write it takes all of them, and
+  `Options.Passive`, because everything in a copied database is real and an ordinary start acts on it.
+  The same file answers the question that produced it. Several atriums on one database is not blocked by sqlite,
+  which allows it. It is blocked by both of them ACTING: fixtures, overlay names, the address file, the
+  migrations and the pty are all machine-wide and none of them is mediated by a database, so Postgres changes
+  nothing about it. `Passive` is one writer and any number of readers, and that is exactly as far as it
+  generalises.
+  Pointers from the README subcommand table, `docs/user-guide.md` as pattern 11, `docs/overlays.md` where the
+  share is not re-bound, and `docs/supervision-design.md` where the terminal cannot be. `docs/test-plan.md`
+  gains section L, written as the damage a preview must not do.
+- **One command cuts a release, and it refuses by default.**
+  Everything needed to publish already existed as three scripts and a document with six commands in it, which
+  meant the release was six chances to run something out of order and a set of questions somebody had to
+  remember to ask at the worst moment. `scripts/cut-release.sh` is the one entry point and it asks them itself.
+  A dry run is the DEFAULT and it is not a preview: it compiles all five platforms, builds the deb and the rpm,
+  runs the binary it just built to check `atrium version` reports the tag rather than `dev`, rebuilds the
+  commit in a clean `git archive` export and compares the binaries byte for byte, re-hashes every artefact
+  against `checksums.txt`, and writes the scoop manifest with the version, URL and hash filled in. Then it
+  prints the `gh` command it did not run. Nothing leaves the machine without `--execute`.
+  Five refusals, each with its own exit code so a caller can tell them apart, and only one of them waivable. A
+  dirty working tree, because a release script that will happily publish uncommitted work is the one that
+  eventually does. A tag that already exists, because a tag is the only name a release has. A binary stamped
+  with a version that is not the one being released. A build the tagged commit does not reproduce, which is how
+  a file nobody committed gets into an artefact. A checksum that does not match. `--skip-ci` is the waiver, and
+  it exists because CI is the one gate that also runs somewhere else.
+  `scripts/check-release.sh` asserts every refusal against a throwaway git repository using `--preflight`, so
+  it needs no toolchain and no network and runs in about a second. It is in `scripts/ci.sh`. It compares the
+  exit CODE rather than checking for failure, because a test that only wants non-zero passes when the script
+  refuses for the wrong reason.
+  `.github/workflows/release.yml` now has one script in it instead of three, called with `--from-tag`, which is
+  the flag that makes the same code correct in both places: run by hand it creates the tag you named, run on a
+  runner it builds the tag whose push started it and checks that tag really is the commit checked out.
+- **Attaching to a session that had been running a while showed an unreadable screen.**
+  The cause is width, not corruption. A session launched with nobody attached composes its output for the size
+  its terminal was opened at: hard line breaks at that column count, boxes drawn to it, absolute cursor moves
+  worked out for it. Attach a wide window an hour later and the pty is resized, so everything drawn from then
+  on is right, but the daemon replayed the retained buffer first and those bytes were composed for the old
+  width. Against a wider grid they do not come out ragged, they come out on top of each other: sixty column
+  text in a two hundred column window, diff output overlapping itself, and two thirds of the window empty.
+  The width is now recorded with the bytes. Every change of the agreed size leaves a mark in the ring buffer,
+  and an attaching viewer is sent the trailing run of output composed at the width its terminal is at now.
+  Anything older is left out, and the terminal says so in one dim line rather than leaving a near empty screen
+  to explain itself. Nothing further is needed to fill it: output is only dropped when the width just changed,
+  and a width change is a resize the runner is told about, so it is already repainting.
+  The size is also read before the backlog is written. A viewer's size arrives as its first frame, which is
+  after the socket is up, so the daemon used to decide what to replay and then resize underneath what it had
+  just sent. An attach now waits briefly for that frame first.
+  A terminal is opened at 120x30 rather than at whatever the platform defaults to, which on Windows is 80x25.
+  Recording the width the first byte was composed at only works if that width is something atrium chose.
+- **A snapshot of a wrapped ring buffer could begin halfway through an escape sequence or a rune.**
+  The write cursor is a byte offset with no idea what is at it. Once the buffer had wrapped, the oldest
+  retained byte could be the middle of a cursor move, whose introducer is then gone, so its tail arrived at the
+  terminal as printable characters typed across the screen. A severed multi byte rune had the same shape.
+  A snapshot that does not start at the beginning of the stream now starts after the first line ending it
+  finds, which cannot fall inside either. Losing a line beats shipping a broken escape. Fixed on the way out
+  rather than on the way in, because the buffer has to keep taking bytes as fast as a runner produces them.
+- **A card could say `dead` while its runner was alive and working.**
+  A daemon restart kills every supervised runner and files its card dead, which is correct. The cards are then
+  started again ONTO, with `task_id` on `POST /v1/launch`, and the pid on the card was updated while the status
+  was not. So the board drew a dead card, the sweep archived it off the board a minute later, and the process
+  behind it went on posting activity and raising permission requests against a card nobody could see. Some of
+  those cards recovered because their SessionStart hook happened to fire and move them, and some did not, which
+  made the behaviour "it depends on whether a hook fired" rather than a rule.
+  There is a rule now. A launch onto an existing card moves it to `needs-input` with the reason `started`,
+  which is exactly where a session that has only just come up lands anyway, so the two paths agree instead of
+  racing. It applies to `dead`, to `done` and to `backlog`: an offered item being started is out of the inbox,
+  and a live runner under a `done` card is worse than under a dead one, because `done` is never swept and
+  nothing but a waiting status can be revived by the next turn. A card already in a running column is left
+  alone, so a session that got to work during the settle window is not dragged back to announce work it has
+  begun.
+  **A shelved card is refused.** Shelving is an operator putting the work down, and the permission chain
+  spends that: every request from a shelved card is refused unanswered. A launch onto one either freezes the
+  runner it just started, or quietly overturns the one status somebody chose by hand. So it is neither, and
+  the refusal names unshelving as the way through. Unshelving still works, because the board moves the card
+  out of shelved before it asks for the runner. This also closes the adopt path, which reached shelved cards
+  through `AdoptableTask` and started onto them silently.
+  Starting a second runner onto a card that already has one is refused for the reason `adopt` already refused
+  it: two processes in one directory, and the card describes whichever spoke last.
+  The reaper is the other half, and it now runs in both directions. A card filed `dead` while atrium still
+  owns its runner comes back, which catches every path that forgets, including ones written later. It asks the
+  supervisor rather than the card's pid, because the operating system recycles pids and a stale one on an old
+  dead card is true about somebody else's process. It also asks the supervisor rather than the board, because
+  the sweep archives a dead card within the minute and the board cannot see it any more, which was the
+  symptom. Liveness is now settled before the sweep runs, so a card about to be revived is not archived in the
+  same tick for a status one call away from being corrected.
+  One test came along for the ride. `TestALiveRequestIsNeverOrphaned` waited for the permission row to reach
+  the store and then deleted the orphan grace period, but the request handler writes that row before it
+  registers the waiter, and the grace period exists precisely to cover the gap between those two. So the test
+  raced its own subject and, under enough load, reported the ordinary case as an orphan. It now waits for the
+  hub to say somebody is parked on the request, which is what it was always claiming to test.
+- **`atrium peers` answers which of these want me.**
+  Sixteen agents ran for hours and the operator found out which had finished by asking them, one at a time.
+  Everything needed was already written down and nothing read it: `atrium finish` files a recap on a card,
+  `atrium ask` puts the question on it, `waiting_reason` records that a question was asked at all, and the
+  activity tracker knows whether atrium has heard from a session in the last quarter of an hour.
+  The list is now grouped by what each card wants from a human, most wanting first, with the four states that
+  kept being confused reading differently: a session that finished and filed a recap, one that stopped and
+  asked (with the question printed), one that asked with `--working` and is carrying on regardless, and one
+  that has gone quiet with nothing recorded, which is the one nobody knows to look at. `--fleet` adds the
+  sessions that have finished, which the plain list leaves out because they cannot be told anything.
+  No new state and no migration. The classification is a read of facts that already exist, and the quiet case
+  comes out of the in-memory activity tracker, so nothing live is written down. After a restart everything
+  running reads as quiet, which is true: atrium has not heard from any of them.
+- **A session that stopped to ask something was filed as a turn that merely ended.**
+  `atrium ask` moved the card to `needs-input` through `SetStatus`, which writes an empty waiting reason, and
+  an empty waiting reason means "a turn ended". So a session that deliberately stopped with a question landed
+  in the same bucket as one that ran out of things to do, and the board could not rank them apart. It now
+  records `asked`, which is the reason that constant exists and what the asking-tool path already wrote.
+
 - **Two windows on one terminal fought over its size, and the loser was unreadable.**
 
   A pseudo terminal has one size. Every attached browser sent its own, and the daemon passed each straight

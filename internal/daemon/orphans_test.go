@@ -126,19 +126,26 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 		}
 	}()
 
-	// Wait for it to reach the store, then take the grace period away.
+	// Wait for it to reach the store AND for the hub to know somebody is
+	// parked on it, then take the grace period away.
+	//
+	// Both, because the handler writes the store row first and registers the
+	// waiter a moment later, and this test then deletes the grace period whose
+	// entire job is to cover that gap. Waiting only for the store row made
+	// this test lose the race under load and report the ordinary case as an
+	// orphan, which is the one thing it exists to catch.
 	var id string
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		pend, err := d.st.PendingForTask(task.ID)
-		if err == nil && len(pend) > 0 {
+		if err == nil && len(pend) > 0 && d.hb.LiveStoreIDs()[pend[0].ID] {
 			id = pend[0].ID
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	if id == "" {
-		t.Fatal("the request never reached the store")
+		t.Fatal("the request never reached the store with an agent parked on it")
 	}
 	shrinkGrace(t)
 

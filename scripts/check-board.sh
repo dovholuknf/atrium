@@ -89,6 +89,25 @@ if ! node "$here/scripts/check-terminal.js" "$page"; then
   fail=1
 fi
 
+# The reconciler. Every list on the board paints through one function that no
+# longer replaces what it draws into, and what that rests on is a key on every
+# row. A row that loses its key is destroyed and rebuilt like it always was,
+# and nothing says so: the board looks right and the scroll goes to the top.
+if ! node "$here/scripts/check-morph.js" "$page"; then
+  echo "the board would throw away where you were. see above." >&2
+  fail=1
+fi
+
+# And the reconciler RUN, against a few hundred lines of DOM implemented in the
+# test. What it asserts is not that the board draws: it is that a row nobody
+# changed comes out the same object, never written to, because that object is
+# what holds the scroll and the selection. A reconciler that rebuilds a row it
+# could have kept looks identical on screen and has the original bug.
+if ! node "$here/scripts/test-morph.js"; then
+  echo "the reconciler does not keep what did not change. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

@@ -28,7 +28,13 @@ version="${1:-}"
 if [ -z "$version" ]; then
   version="$(git describe --tags --exact-match 2>/dev/null || echo dev)"
 fi
-commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+# The commit is read from git, and can be OVERRIDDEN by the environment. That
+# override exists for exactly one caller: the reproducibility probe in
+# scripts/cut-release.sh unpacks the commit being tagged into a directory with
+# no .git in it and builds there. Without the override it would have to repeat
+# the ldflags, and a binary stamped two different ways in two places is a probe
+# that proves nothing the day one of them is edited.
+commit="${ATRIUM_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 
 # Under build.claude like everything else. It is gitignored, which is what makes
 # it safe to fill with binaries.
@@ -45,7 +51,11 @@ echo
 # a target nobody tests is a target that is broken. linux/arm64 earns its place
 # because a small always-on box is a reasonable home for a daemon that outlives
 # sessions.
-targets="windows/amd64 linux/amd64 linux/arm64 darwin/arm64 darwin/amd64"
+#
+# Overridable for the same one caller. The probe rebuilds a SINGLE target and
+# compares it, because five would cost five times as much to prove the same one
+# thing: that nothing outside the commit reached the compiler.
+targets="${ATRIUM_TARGETS:-windows/amd64 linux/amd64 linux/arm64 darwin/arm64 darwin/amd64}"
 
 for target in $targets; do
   goos="${target%/*}"
@@ -62,8 +72,16 @@ for target in $targets; do
   # pure Go so there is no cgo anywhere, and cross-compiling is a matter of two
   # environment variables. Setting it explicitly keeps a machine with a C
   # toolchain from quietly producing a binary that needs one.
+  #
+  # `-buildvcs=false` because the version below is the only version. Go stamps
+  # the revision and a dirty flag into the binary by itself whenever it can see
+  # a .git, which means the SAME COMMIT builds two different binaries depending
+  # on whether it was built in a checkout or in an export of itself. The
+  # reproducibility probe in cut-release.sh does exactly that comparison and
+  # found this, which is the whole reason the probe exists.
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
     -trimpath \
+    -buildvcs=false \
     -ldflags "-s -w \
       -X github.com/dovholuknf/atrium/internal/cli.Version=$version \
       -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" \
@@ -112,7 +130,17 @@ echo
 # here rather than by hand later.
 (
   cd "$out"
-  sha256sum ./*.zip ./*.tar.gz 2>/dev/null | sed 's#\./##' | tee checksums.txt
+  # The archives are collected rather than globbed straight into sha256sum,
+  # because a glob that matches nothing is passed through literally and this
+  # script runs under `pipefail`. That is not hypothetical: the reproducibility
+  # probe in cut-release.sh builds ONE target, so one of the two globs is always
+  # empty, and the failure looked like the probe itself was broken.
+  archives=""
+  for f in ./*.zip ./*.tar.gz; do
+    [ -e "$f" ] && archives="$archives $f"
+  done
+  # shellcheck disable=SC2086
+  sha256sum $archives | sed 's#\./##' | tee checksums.txt
 )
 
 echo

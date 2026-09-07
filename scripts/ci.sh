@@ -64,6 +64,14 @@ check "board" bash scripts/check-board.sh
 step "the skins"
 check "skins" bash scripts/check-skins.sh
 
+step "what the release refuses"
+# The refusals, not the release. This runs `cut-release.sh --preflight` against
+# a throwaway repository, so it needs no network, builds nothing, and takes a
+# second. The refusals are the part of a release script that is only ever
+# exercised on the day it matters, which is the worst day to learn one of them
+# was wrong.
+check "release refusals" bash scripts/check-release.sh
+
 step "the packaging scripts parse"
 # A packaging script is run once, by a person, on the day it matters. A syntax
 # error in one is found at exactly the wrong moment, so both shells are asked to
@@ -71,7 +79,8 @@ step "the packaging scripts parse"
 # own parser for the Windows side.
 for f in packaging/postinstall.sh packaging/preremove.sh \
          scripts/atrium-service.sh scripts/package-linux.sh \
-         scripts/release.sh scripts/publish-release.sh; do
+         scripts/release.sh scripts/publish-release.sh \
+         scripts/cut-release.sh scripts/check-release.sh; do
   if ! bash -n "$f"; then
     echo "FAILED: $f does not parse" >&2
     fail=1

@@ -121,6 +121,17 @@ start asks for the same token and gets it as long as nobody took it in between.
 Either way the share is released when atrium stops. That is what frees the ziti resources underneath it, and
 keeping it alive instead would leave a share nothing answers and an address the next start could not claim.
 
+### A daemon that is only looking does not bind anything
+
+A reserved name is one name on one account, so the process that re-binds it on startup has to be the one the
+operator is using. `atrium preview` opens a COPY of a database and inherits every share row in it, and the first
+version of it restored those shares and swept the ones whose cards had gone, from a process meant to be a
+window. It took the operator's name off them.
+
+`Options.Passive` is the answer: a preview does not call `RestoreCardShares` and does not call
+`SweepDeadCardShares`. See `docs/preview-design.md`, which also says why two ordinary daemons cannot share a
+database, and why an overlay name is one of the reasons.
+
 ### What runs, and what does not
 
 Sharing is the embedded SDK. Atrium holds the listener and answers it with the same handler the local board

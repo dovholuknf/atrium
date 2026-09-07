@@ -447,42 +447,43 @@ parameter comes from the order it is declared in.
 
 ## Publishing for the first time, in order
 
-Nothing below has been run. Each step is one command, and the first four can be repeated harmlessly.
+There used to be six commands here, and six commands is six chances to run one out of order. There is now one,
+and the order lives in `scripts/cut-release.sh` instead of in this document.
 
 ```bash
-# 1. Prove the tree is releasable. This is what CI runs.
-bash scripts/ci.sh
+# 1. Say what would happen. This is the DEFAULT: it builds everything, proves
+#    everything, writes the scoop manifest, and touches nothing remote.
+bash scripts/cut-release.sh v0.1.0
 
-# 2. Decide the version and tag it. The tag keeps its v. The package version will not.
-git tag -a v0.1.0 -m "atrium v0.1.0"
-
-# 3. Build every platform, then the Linux packages. Both write to build.claude/release/v0.1.0/.
-bash scripts/release.sh v0.1.0
-bash scripts/package-linux.sh v0.1.0
-
-# 4. Look at what would be published, and let it check every hash against checksums.txt.
-bash scripts/publish-release.sh v0.1.0
-
-# 5. Push the tag. Nothing before this leaves the machine.
-git push origin v0.1.0
-
-# 6. Publish. Either let the workflow do it, which step 5 has already triggered, or do it here.
-bash scripts/publish-release.sh v0.1.0 --publish
+# 2. Do it. The tag is created and pushed, and the release is published.
+bash scripts/cut-release.sh v0.1.0 --execute
 ```
 
-Step 6 is a choice and not two steps. Pushing the tag fires `.github/workflows/release.yml`, which runs steps 3,
-4 and 6 on a runner. Running it locally as well would try to create a release that already exists. Pick one, and
-prefer the workflow once it has worked at least once.
+Step 1 is not a preview of step 2, it is the same run without the last stage. It compiles all five platforms,
+builds the deb and the rpm, runs the freshly built binary to check `atrium version` reports `v0.1.0` and not
+`dev`, rebuilds the commit in a clean export to prove nothing outside it reached the compiler, re-hashes every
+artefact against `checksums.txt`, and writes `build.claude/release/v0.1.0/scoop/atrium.json` with the version,
+the URL and the hash already filled in. Then it prints the `gh` command it did not run.
+
+`bash scripts/cut-release.sh v0.1.0 --preflight` is the cheaper question: it runs only the refusals and stops
+before building anything. Useful before you have decided on a version.
+
+**What it refuses, and none of these can be waived by a flag.** A dirty working tree, because a release nobody
+can rebuild is a release with no source. A tag that already exists, because a tag is the only name a release
+has. A binary whose stamped version is not the one being released, which is the `dev` failure that makes a
+package manager never offer an upgrade. A build the tagged commit does not reproduce. A checksum that does not
+match its artefact. `--skip-ci` is the one waiver, because CI is a gate that also runs elsewhere.
+
+Pushing the tag in step 2 fires `.github/workflows/release.yml`, which runs **the same script** with
+`--from-tag --skip-ci --execute` on a runner. So step 2 will race the workflow and one of the two will find the
+release already exists. Pick one. Prefer the workflow once it has worked at least once, and until then use
+`--execute` here where you can see it fail.
 
 Then, and only then, the scoop bucket:
 
 ```bash
-# In the bucket repository, not this one.
-# Copy packaging/scoop-atrium.json to bucket/atrium.json, then fill in from the release:
-#   version           0.1.0
-#   url               .../releases/download/v0.1.0/atrium_v0.1.0_windows_amd64.zip
-#   hash              the windows line from checksums.txt
-#   extract_dir       atrium_v0.1.0_windows_amd64
+# In the bucket repository, not this one. The manifest is already filled in:
+cp build.claude/release/v0.1.0/scoop/atrium.json <bucket>/bucket/atrium.json
 git add bucket/atrium.json && git commit -m "atrium 0.1.0" && git push
 
 # Then, on any Windows machine:

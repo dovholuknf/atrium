@@ -35,20 +35,64 @@ import (
 // event log, and writing every byte a runner emits to SQLite would grow
 // without bound to buy very little.
 
-// ringBuffer keeps the last N bytes written to it.
+// RETAINED OUTPUT IS ONLY MEANINGFUL AT THE WIDTH IT WAS WRITTEN AT.
+//
+// A terminal user interface does not emit text and leave the wrapping to
+// whoever reads it. It asks how wide the terminal is and then composes for
+// that number: hard line breaks at the column it was told, boxes drawn to it,
+// and absolute cursor moves to a row and column it has worked out itself.
+// Those bytes go into the ring exactly as sent.
+//
+// Replay them into a wider grid and they do not come out merely ragged. The
+// hard breaks land a third of the way across a two hundred column window, and
+// the absolute moves put the next paragraph on top of the last one. That is
+// the unreadable attach: sixty column text in a two hundred column window,
+// diffs overlapping themselves, and two thirds of the screen empty.
+//
+// So the width is recorded WITH the bytes. Every change of the agreed size
+// leaves a mark at the stream position where it took effect, and an attaching
+// viewer is only given the run of output that was composed at the width its
+// terminal is at now. What was composed at some earlier width is dropped and
+// said to be dropped, which loses history nobody could have read anyway.
+//
+// COLUMNS ONLY, not rows. Width is what decides how the bytes were composed:
+// wrapping, boxes and column positions are all a function of it. A height
+// mismatch moves a repaint up or down the screen and the runner's next draw
+// puts it right, so keying on rows as well would throw away history to buy
+// very little.
+
+// widthMark is where the terminal became `cols` wide, in stream position.
+type widthMark struct {
+	at   int64
+	cols int
+}
+
+// ringBuffer keeps the last N bytes written to it, and the widths they were
+// written at.
 type ringBuffer struct {
 	mu   sync.Mutex
 	data []byte
 	full bool
 	at   int
+	// written counts every byte ever handed to Write, including bytes long
+	// since overwritten. A stream position stays meaningful after the buffer
+	// has wrapped over what it names, which a ring index does not.
+	written int64
+	// marks is every width this output was composed at, oldest first, and is
+	// never empty: a buffer starts at the size its terminal was opened with.
+	marks []widthMark
 }
 
-func newRing(size int) *ringBuffer { return &ringBuffer{data: make([]byte, size)} }
+func newRing(size, cols int) *ringBuffer {
+	return &ringBuffer{data: make([]byte, size), marks: []widthMark{{at: 0, cols: cols}}}
+}
 
 func (r *ringBuffer) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := len(p)
+	r.written += int64(n)
+	defer r.forgetOldMarks()
 	// A write larger than the whole buffer keeps only its tail.
 	if n >= len(r.data) {
 		copy(r.data, p[n-len(r.data):])
@@ -68,19 +112,167 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// Snapshot returns the retained output, oldest first.
+// SetWidth records that everything written from here on was composed for a
+// terminal this many columns wide.
+//
+// A repeat of the width already in force is not a mark. Two viewers agreeing
+// on eighty columns must not split the run of output they can both read.
+func (r *ringBuffer) SetWidth(cols int) {
+	if cols <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if last := r.marks[len(r.marks)-1]; last.cols == cols {
+		return
+	}
+	r.marks = append(r.marks, widthMark{at: r.written, cols: cols})
+	r.forgetOldMarks()
+}
+
+// forgetOldMarks drops marks the buffer has wrapped past.
+//
+// Bounded on purpose. A session resized a thousand times over a day would
+// otherwise carry a thousand marks describing bytes that are long gone. The
+// mark covering the oldest retained byte is kept whatever its position, since
+// it is the one that says what that byte was composed for.
+func (r *ringBuffer) forgetOldMarks() {
+	start := r.retainedStart()
+	keep := 0
+	for i, m := range r.marks {
+		if m.at <= start {
+			keep = i
+		}
+	}
+	if keep > 0 {
+		r.marks = append(r.marks[:0], r.marks[keep:]...)
+	}
+}
+
+// retained is how many bytes are actually held.
+func (r *ringBuffer) retained() int {
+	if r.full {
+		return len(r.data)
+	}
+	return r.at
+}
+
+// retainedStart is the stream position of the oldest byte still held.
+func (r *ringBuffer) retainedStart() int64 { return r.written - int64(r.retained()) }
+
+// CurrentWidth is the width output is being composed at right now.
+//
+// The ring is asked rather than the viewports, because it is the same answer
+// from the same place the bytes were filed under. A session everybody has
+// detached from keeps the last size it was given, which no set of attached
+// viewports can say.
+func (r *ringBuffer) CurrentWidth() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.marks[len(r.marks)-1].cols
+}
+
+// Snapshot returns the retained output, oldest first, whatever width it was
+// composed at.
+//
+// For reading a runner's last words rather than for putting on a screen. An
+// attaching viewer wants SnapshotAt.
 func (r *ringBuffer) Snapshot() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.from(r.retainedStart())
+}
+
+// SnapshotAt returns the retained output that was composed for a terminal
+// `cols` wide, and whether anything older than that was left out.
+//
+// THE TRAILING RUN ONLY. A session that went eighty, then two hundred, then
+// eighty again holds two stretches of eighty column output with something
+// unreadable between them, and splicing the two together would join text
+// across a hole. The run that reaches the end of the stream is the one that
+// continues into what the runner draws next, so it is the only one worth
+// sending.
+func (r *ringBuffer) SnapshotAt(cols int) (out []byte, dropped bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	start := r.retainedStart()
+	last := r.marks[len(r.marks)-1]
+	if last.cols != cols {
+		// Everything held was composed for a terminal of another size.
+		return nil, r.retained() > 0
+	}
+	if last.at > start {
+		return r.from(last.at), true
+	}
+	return r.from(start), false
+}
+
+// from returns the retained bytes at and after a stream position, oldest
+// first, trimmed to somewhere it is safe to start reading.
+//
+// Callers hold the lock.
+func (r *ringBuffer) from(pos int64) []byte {
+	start := r.retainedStart()
+	if pos < start {
+		pos = start
+	}
+	n := int(r.written - pos)
+	if n <= 0 || len(r.data) == 0 {
+		return nil
+	}
+	out := make([]byte, 0, n)
+	// The oldest retained byte sits at `at` once the buffer has wrapped, and
+	// at zero before that.
+	begin := r.at
 	if !r.full {
-		out := make([]byte, r.at)
-		copy(out, r.data[:r.at])
+		begin = 0
+	}
+	begin = (begin + int(pos-start)) % len(r.data)
+	if begin+n <= len(r.data) {
+		out = append(out, r.data[begin:begin+n]...)
+	} else {
+		out = append(out, r.data[begin:]...)
+		out = append(out, r.data[:n-(len(r.data)-begin)]...)
+	}
+	if pos == 0 {
+		// The true start of the stream. Nothing was cut, so nothing is partial.
 		return out
 	}
-	out := make([]byte, 0, len(r.data))
-	out = append(out, r.data[r.at:]...)
-	out = append(out, r.data[:r.at]...)
-	return out
+	return fromLineStart(out)
+}
+
+// fromLineStart drops everything before the first line ending.
+//
+// A SNAPSHOT CAN BEGIN ANYWHERE. The write cursor is a byte offset with no
+// idea what is at it, and a mark lands between two writes of a pty read that
+// is itself an arbitrary 8KB of a stream. Either can fall halfway through an
+// escape sequence or halfway through a multi byte rune.
+//
+// Both are worse than losing text. A severed escape has its introducer eaten,
+// so its tail arrives as printable characters: `[2;34H` typed onto the screen.
+// A severed rune renders as a replacement character and, worse, can eat the
+// bytes after it.
+//
+// Fixed here rather than in Write, because Write has to keep taking bytes as
+// fast as the runner produces them and cannot afford to parse them. LOSING A
+// LINE BEATS SHIPPING A BROKEN ESCAPE.
+//
+// A line feed is the boundary because it cannot appear inside either: escape
+// sequence parameter and intermediate bytes are 0x20 to 0x3F, final bytes are
+// 0x40 to 0x7E, and every byte of a multi byte rune has its top bit set. The
+// exception is an operating system command carrying a newline inside a window
+// title, which no runner here sends.
+//
+// Nothing at all when there is no line ending in the whole snapshot. That is
+// megabytes of one redrawing line, which has no safe starting point in it and
+// is about to be redrawn again anyway.
+func fromLineStart(b []byte) []byte {
+	for i, c := range b {
+		if c == '\n' {
+			return b[i+1:]
+		}
+	}
+	return nil
 }
 
 // runner is one live supervised process.
@@ -227,6 +419,10 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	r.views[id] = viewport{cols, rows}
 	agreed := smallestViewport(r.views)
 	r.mu.Unlock()
+	// Marked BEFORE the resize, so the first byte drawn at the new width is
+	// already on the new side of the mark. The other order leaves a repaint
+	// filed under the width it replaced, which is the whole bug.
+	r.buf.SetWidth(agreed.cols)
 	return r.pty.Resize(agreed.cols, agreed.rows)
 }
 
@@ -251,6 +447,7 @@ func (r *runner) dropViewport(id any) {
 	if left == 0 {
 		return
 	}
+	r.buf.SetWidth(agreed.cols)
 	_ = r.pty.Resize(agreed.cols, agreed.rows)
 }
 
@@ -269,18 +466,27 @@ func smallestViewport(all map[any]viewport) viewport {
 }
 
 // subscribe returns the retained output plus a channel of everything after it.
-func (r *runner) subscribe() ([]byte, chan []byte) {
+//
+// The backlog is only ever the run of output composed at the width the
+// terminal is at now, and `dropped` says whether there was older output that
+// was not. See the ring buffer's own comment: replaying bytes composed for
+// another width is what makes an attach unreadable.
+//
+// Snapshot and subscription are taken together under the one lock, so a chunk
+// arriving between them can neither be lost nor sent twice.
+func (r *runner) subscribe() (backlog []byte, dropped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	buf, cut := r.buf.SnapshotAt(r.buf.CurrentWidth())
 	select {
 	case <-r.done:
 		close(ch)
-		return r.buf.Snapshot(), ch
+		return buf, cut, ch
 	default:
 	}
 	r.watchers[ch] = struct{}{}
-	return r.buf.Snapshot(), ch
+	return buf, cut, ch
 }
 
 func (r *runner) unsubscribe(ch chan []byte) {
@@ -371,6 +577,32 @@ func (s *supervisor) all() []*runner {
 	return out
 }
 
+// The size a terminal is opened at, before anybody has attached to it.
+//
+// CHOSEN RATHER THAN INHERITED. A pseudo terminal opens at whatever its
+// platform defaults to, which on Windows is eighty by twenty five. A session
+// launched with nobody watching then composes an hour of output for a width
+// nothing in atrium ever recorded, and the whole point of keeping the width
+// with the bytes is that the first byte's width is known.
+//
+// Wide rather than narrow, because a browser pane on an ordinary screen is
+// nearer a hundred and twenty columns than eighty, and output survives a
+// later attach only when the two agree.
+const (
+	launchCols = 120
+	launchRows = 30
+)
+
+// sizeAtLaunch puts a freshly opened terminal at the launch size.
+//
+// A refusal is not worth failing a launch over: the terminal still works at
+// whatever size it opened with, and the first viewer to attach resizes it.
+func sizeAtLaunch(p pty.Pty) {
+	if err := p.Resize(launchCols, launchRows); err != nil {
+		log.Printf("[atrium] could not set the launch terminal size: %v", err)
+	}
+}
+
 // launchSpec is enough to start the same runner again without its resume.
 //
 // Held so a stale resume id can be retried as a fresh start rather than
@@ -404,6 +636,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	if err != nil {
 		return 0, fmt.Errorf("could not open a pseudo terminal: %w", err)
 	}
+	sizeAtLaunch(p)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	c.Env = env
@@ -416,7 +649,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
 		resumed:  resumed,
 		spec:     fresh,
-		buf:      newRing(api.ScrollbackBytes(d.st)),
+		buf:      newRing(api.ScrollbackBytes(d.st), launchCols),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

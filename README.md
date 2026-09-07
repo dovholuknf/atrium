@@ -227,6 +227,7 @@ board having lost everything. The daemon says so loudly when the database is not
 | `atrium control` | MCP server with `atrium_status` and `restart_atrium`, for restarting the daemon from a session it is running. |
 | `atrium join` / `leave` | Put the session you are in on the board, or take it off, without a restart. |
 | `atrium launch` | Put a directory on the board and start a runner in it, for scripts that make worktrees. |
+| `atrium preview` | A throwaway second board, on a copy of your cards, for looking at a change before installing it. |
 | `atrium hook` / `session` / `turn` | The hook entry points. Wired for you from the runners tab. |
 | `atrium finish [recap]` | An agent saying its work is over, and what it did. |
 | `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
@@ -261,6 +262,8 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
 - `docs/auto-mode.md` -- approving without being asked, and reading the record afterwards.
 - `docs/supervision-design.md` -- pseudo terminals, attaching from the browser, and how a runner is stopped.
 - `docs/overlays.md` -- reaching the board from another machine, and the line atrium will not cross to do it.
+- `docs/preview-design.md` -- a second board on a copy of the cards, and why two ACTIVE atriums cannot share one
+  database.
 - `docs/intake-design.md` -- starting a card from an issue or a ticket, in layers.
 - `docs/file-transfer-design.md` -- moving files in and out of a session, and what containment means here.
 - `docs/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
