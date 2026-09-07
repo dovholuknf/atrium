@@ -108,6 +108,17 @@ if ! node "$here/scripts/test-morph.js"; then
   fail=1
 fi
 
+# The card's invariants. All of them are about one thing: the text on a card is
+# there to be copied. Dragging a card between columns made that impossible for
+# as long as it existed, and the same two attributes would do it again.
+#
+# The other half of that file guards the drop targets that are NOT cards, since
+# they are what a future pass at "remove the drag code" takes by accident.
+if ! node "$here/scripts/check-cards.js" "$page"; then
+  echo "a card invariant is broken. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi
