@@ -285,7 +285,7 @@ func (d *Daemon) rosterWithin(exclude string, finished bool, within time.Duratio
 		p := Peer{
 			Handle: t.WireName, Title: t.DisplayTitle(), Status: t.Status,
 			Runner: t.Runner, Worktree: t.Worktree, Why: t.Why,
-			Waiting: waiting[t.ID], Want: want, Note: why,
+			Waiting: waiting[t.ID], Want: want, Note: why, AskPeer: t.AskPeer,
 		}
 		if rep != nil && rep.Kind == store.ReportAsked {
 			p.Ask, p.Blocked, p.Since = rep.Ask, rep.Blocked, rep.At

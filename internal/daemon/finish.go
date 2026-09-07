@@ -80,6 +80,12 @@ func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	// A session whose work is over is not waiting on an answer any more, so
+	// the question comes off the card. Without this, a session that asked
+	// something, got unstuck on its own and then finished leaves a card in
+	// `done` still asking, and the one field that means "somebody owes this
+	// session something" starts collecting cards where nobody does.
+	d.askAnswered(task.ID, "the work finished")
 	// Recorded as coming from the session, so `done` that an agent declared
 	// and `done` that a human dragged are distinguishable afterwards. They are
 	// the same column and they are not the same claim.

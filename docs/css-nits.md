@@ -11,6 +11,8 @@ cannot be reproduced. Twenty skins is twenty chances for a value that was tuned 
 | # | Where | Skin | What is wrong |
 | --- | --- | --- | --- |
 | 4 | A project group's name, and a stack group's name, at rest | `paper`, `daylight`, `linen`, `frost` | see below |
+| 5 | The restart banner, with nothing attached | light skins | see below |
+| 6 | The group expander in the stack | every skin | see below |
 
 **4.** The name is `hsl(var(--ghue) 70% 72%)`, a fixed lightness, on a block washed with the same hue. On the
 four light skins there is a hue at which the name and the wash have the SAME luminance: a contrast ratio of
@@ -28,6 +30,30 @@ twenty one skins: blending 75% of `hsl(--ghue 70% 60%)` with `--head` gives 1.70
 gives 2.70, which is still under the floor the rest of the palette clears.
 
 `scripts/check-contrast.js` holds this one PINNED at 1.00 rather than failing on it: see below.
+
+**5.** `.termwait` takes its background from `--term-bg` and its text from `--term-fg`, falling back to
+`--shell-0` and `--head`. The comment above it explains why: a terminal theme's two colours are designed to be
+legible together, so taking BOTH from the same theme is right for every theme including ones nobody has
+written. That reasoning holds and the fallbacks break it.
+
+With nothing attached the pane has no terminal theme, and the two variables do not necessarily go missing
+together: whichever one is still set from a previous attach pairs with the other one's board fallback. The
+screenshot is that pair on a light skin, pale text on a near-white pill, saying `atrium is restarting. waiting
+for dotfiles to come back` in a colour you have to already know is there.
+
+The fix is to stop mixing systems in the fallback rather than to pick better colours. Either both come from
+the terminal theme or neither does, which means one fallback that sets both, applied when there is no theme,
+rather than two independent `var(--x, --y)` pairs that can resolve from different sides.
+
+Note that this is the SECOND time this banner has been wrong for this reason, and the first fix is quoted in
+the comment. A rule about pairs is not enforced by writing the pair down once.
+
+**6.** The expander on a stack group heading, the `▾` before `today 7`, is a few pixels of glyph. Operator:
+"the 'expando' icon in the titles is too small". It is the control for the one thing the heading does, it is
+the only affordance on that row, and it is smaller than the count beside it.
+
+Not a contrast defect, so `check-contrast.js` will never see it. Same category as nit 2: a control sized by
+the text it happens to sit in rather than by what it is for.
 
 ## The check that catches these
 

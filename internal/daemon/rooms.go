@@ -153,6 +153,29 @@ type RoomReport struct {
 	// Perms is every request on that machine still waiting for a human.
 	// Replaced on every check-in, like the cards and for the same reason.
 	Perms []RoomPerm `json:"permissions,omitempty"`
+
+	// Launches is whether this room will start work the hub queues for it.
+	//
+	// THE ROOM DECIDES, and it says so on every check-in rather than being
+	// configured here. Reporting cards and accepting processes are two
+	// different amounts of trust, and the machine granting the second one is
+	// the one that should be able to withdraw it by restarting with a flag.
+	//
+	// A room that says no is handed nothing, so its queue sits visible on the
+	// board instead of being spent on refusals. See `dispatch.go`.
+	Launches bool `json:"launches,omitempty"`
+	// Busy is that room starting things right now, which is a different fact
+	// from not taking work at all and is drawn differently.
+	//
+	// Kept apart from `Launches` for the board's sake rather than the hub's:
+	// both mean "hand me nothing this time round", and a room that says the
+	// standing no should not read as one that is merely mid-batch.
+	Busy bool `json:"busy,omitempty"`
+	// Workspace is the directory a queued launch may name on this room, when
+	// the room has one. Drawn on the board so the operator queueing work can
+	// see what a directory will be checked against instead of finding out from
+	// a refusal.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // RoomRequest is one remote request as the board reads it.
@@ -493,10 +516,24 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
+	// The stored copy is keyed on the trimmed name, so the handout has to look
+	// work up under the same one. Two spellings of one room is two queues, and
+	// only one of them is ever drawn.
+	rep.Name = strings.TrimSpace(rep.Name)
 	decisions, err := d.RoomCheckIn(rep)
 	if err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
+	}
+	// WORK RIDES THE REPLY TOO. This is the entire outward path: the hub never
+	// dials a room, so anything it wants to say has to travel back down a
+	// connection the room already made. See `dispatch.go`.
+	//
+	// After the check-in is recorded, not before, because the handout is
+	// decided from what this report just said about itself.
+	launches := d.handoutFor(rep)
+	if launches == nil {
+		launches = []dispatchHandout{}
 	}
 	// The heartbeat intervals come back, so a room does not have to be
 	// configured with something the hub already knows and the two cannot
@@ -512,6 +549,7 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 		"heartbeat_seconds":      int(roomHeartbeat / time.Second),
 		"busy_heartbeat_seconds": int(roomBusyHeartbeat / time.Second),
 		"decisions":              decisions,
+		"launches":               launches,
 	})
 }
 

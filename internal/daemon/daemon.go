@@ -259,6 +259,10 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.RoomDecide = d.handleRoomDecide
 	d.ap.RoomJoin = d.RoomJoin
 	d.ap.RoomForget = d.handleRoomForget
+	d.ap.Dispatches = d.Dispatches
+	d.ap.QueueDispatch = d.QueueDispatch
+	d.ap.CancelDispatch = d.CancelDispatch
+	d.ap.DispatchResult = d.handleDispatchResult
 	d.ap.BuildExport = func() (any, error) { return d.BuildExport() }
 	d.ap.ApplyImport = func(body []byte, apply, force bool) (any, error) {
 		var in Export
@@ -687,8 +691,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
-	// The other half of finish: a session saying it is stuck and what it needs.
+	// The other half of finish: a session saying it is stuck and what it needs,
+	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)
+	// And the return leg, which is the same bus carrying an answer back and
+	// taking the question off the card it was on.
+	agentMux.HandleFunc("/answer", d.handleAnswer)
 	// Sessions addressing each other. On the AGENT listener, because that is
 	// what a session can already reach, and `docs/overlays.md` says never to
 	// publish this port. A peer bus is the first feature that gives anybody a

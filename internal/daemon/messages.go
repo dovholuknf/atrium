@@ -287,6 +287,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
+		d.askAnswered(taskID, "the operator")
 		d.publishTask(taskID)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
@@ -298,6 +299,12 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	// Only once the message is somewhere. The operator saying something to a
+	// card that asked a question IS the answer to it, through the other
+	// channel, and a card left holding an answered question makes the one
+	// signal that says "somebody still owes this session something" mean
+	// nothing. See askAnswered in help.go.
+	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
@@ -342,6 +349,10 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	// The note reached the session, so a question it had outstanding has been
+	// answered through the operator's channel. Same rule as handleMessage.
+	d.askAnswered(taskID, "the operator")
 
 	// Only now.
 	if err := d.st.SetNote(taskID, ""); err != nil {

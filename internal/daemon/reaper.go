@@ -198,5 +198,15 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.pruneOld(); err != nil {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
+		// And settled items from the dispatch queue, which is the same job for
+		// a different table. Only settled ones: an item nobody has collected is
+		// a promise, and it ages out through its lease rather than through
+		// here. See `internal/store/dispatch.go`.
+		if n, err := d.st.SweepDispatch(DispatchKeepSettled); err != nil {
+			log.Printf("[atrium] sweeping the dispatch queue: %v", err)
+		} else if n > 0 {
+			log.Printf("[atrium] cleared %d settled dispatch item(s)", n)
+			d.ap.Broadcast("dispatch", nil)
+		}
 	}
 }

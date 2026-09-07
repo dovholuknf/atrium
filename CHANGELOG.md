@@ -5,6 +5,92 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Work can be sent to another machine, and the hub still never dials one.**
+
+  A room already dials this hub every twenty seconds and says what is on it. Cards travelled inward and there
+  was no way to say "start this there", which is the whole reason four idle machines stayed idle while one
+  desktop ran thirteen runners.
+
+  A queued launch is now a durable row on the hub with a room name on it, and it rides the reply to the
+  check-in that room was already making. Nothing new is dialled, nothing has to be reachable, and a machine
+  behind NAT needs no configuring. A room that is switched off is still a room you can queue for: it collects
+  the queue when it comes back.
+
+  Named, not offered. A laptop, an M1 mini and two cloud boxes are not interchangeable, and the operator
+  handing an item over already knows which one it belongs on. Two `atrium room` processes under one name
+  cannot both take an item, because a claim is a conditional state change and the winner is handed a token
+  that a result must carry back. A claim nobody answers goes back to the queue once and then gives up with
+  the reason on the row, so a permanently broken item does not start a permanently broken launch every time
+  that machine reappears.
+
+  `atrium dispatch to <room>`, `atrium dispatch list`, `atrium dispatch cancel`, and a `queued for other
+  machines` pane on the board beside the rooms. `docs/remote-launch.md`.
+
+- **A remote machine does not have the worktree, and atrium still does not make one.**
+
+  Every launch names a directory that already exists because something outside atrium made it, and a cloud box
+  has no `D:/worktrees/...`. The tempting answer was to let a dispatch carry a prepare command, since the
+  harness table already has one. That is refused: `Prepare` captures an environment, and turning it into the
+  thing that makes the workspace is where atrium starts holding somebody else's git commands.
+
+  So the room is the authority on its own filesystem. A dispatch that names no directory uses the working
+  directory on that room's own runner, which is the ordinary case and means the hub never learns a path on
+  another machine. A dispatch that names one is only honoured by a room started with `atrium room
+  --workspace`, and only inside it, resolved through `internal/safepath`. There is no third fallback: the
+  local launcher lands on the process's own directory here, and doing that for a remote instruction starts a
+  session somewhere plausible and wrong on a machine nobody is watching.
+
+  A directory that is not there is refused before anything starts, and the refusal travels back onto the queue
+  row in that machine's own words. `atrium room --no-launch` reports cards and takes no work at all, said on
+  every check-in so the machine granting the permission is the one that can withdraw it.
+
+
+- **A session can ask ANOTHER SESSION for help, and get an answer back.**
+
+  `atrium ask` could say a session was stuck and what would unstick it, and the only reader was a human.
+  `atrium ask --peer <handle>` now routes the question to another session over the bus `atrium tell` already
+  uses, and `atrium answer <handle> <text>` carries the reply back. Both directions are QUEUED and delivered by
+  a hook, never typed into anybody's terminal, which is the line `internal/daemon/peers.go` draws and the one
+  most likely to be simplified away by reusing the path that does type.
+
+  A routed question arrives saying it is a question, whether the asker has STOPPED or is carrying on, and the
+  exact command to answer it with. Without that last part a well behaved model writes a good answer into its own
+  transcript, where nobody will ever read it.
+
+  A handle nobody has REFUSES, and records nothing. Falling back to the board would be atrium deciding who
+  answers, and the card would then claim a peer was on the hook when nobody was. The refusal comes back with the
+  handles that would have worked, the same way a bad `tell` does. `atrium peers` now shows which sessions are
+  stuck asking something, so the one row worth acting on is the one you can see.
+
+  Asking a peer still moves a blocked card to waiting. It has genuinely stopped, and a stopped session hidden
+  from the board because somebody else owes it an answer is worse than one shown as waiting on a named peer.
+  What changes is what the card says.
+
+- **A question a session asked is no longer stored where the operator's note goes.**
+
+  `atrium ask` wrote into `why`, which is the field you write once and read in a week. So a question raised five
+  seconds ago and a note typed last Tuesday were the same italic line under the title, and the reading was that
+  somebody had left a strange note. Worse, the ask overwrote what the card was FOR, and nothing could put it
+  back.
+
+  They are two different claims. `why` is what this card is for and is still true tomorrow. An ask is what it
+  needs right now and stops being true the moment somebody answers. An ask now has its own column, its own
+  timestamp, and the handle of the peer it went to when it went to one.
+
+  On the card it is drawn as a question: labelled **this agent has a question**, or **asked `<handle>`** when it
+  went to a peer, in the warn tints everything else meaning "somebody is waiting" already wears, and never in
+  the italic voice `why` owns. The distinction is in the DATA and not only in the stylesheet, which is what lets
+  the rest of the board act on it: the waiting sort ranks a question you owe an answer to above one another
+  session owes, above cards that merely stopped, and a desktop alert names which of those it is interrupting you
+  for.
+
+  **What counts as answering it.** A peer's `atrium answer`, and the operator saying anything to the card, which
+  is the same act through the other channel. Both take the question off. Typing into the terminal does not:
+  atrium cannot see that and never could, so a question answered that way stays on the card until the session
+  finishes, which also clears it. A card in `done` that is still asking would make the one field meaning
+  "somebody owes this session something" collect cards where nobody does.
+
+
 - **The permissions queue on a phone, judged by narrowing a window rather than by reading the stylesheet.**
 
   The breakpoint that answers backlog item 11 was written and never watched. Opened at 390 pixels against a

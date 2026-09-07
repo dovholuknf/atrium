@@ -17,7 +17,7 @@ import (
 
 // Sessions that can address each other.
 //
-// Two commands rather than a tool, for the reason `atrium finish` is a command:
+// Commands rather than tools, for the reason `atrium finish` is a command:
 // it is the one channel every runner already has. An agent that can run `ls`
 // can run these, with no MCP server and no cooperation from the harness, which
 // matters because the sessions worth introducing to each other are not all
@@ -40,8 +40,9 @@ func newPeers() *cobra.Command {
 		Long: "Every session atrium knows about that is still going, grouped by what it wants " +
 			"from you: stopped and asking, held at the permission gate, asking while it " +
 			"carries on, or gone quiet with nothing recorded.\n\n" +
-			"Use the handle with `atrium tell`. A peer with things already waiting is one " +
-			"to leave alone.\n\n" +
+			"Use the handle with `atrium tell`, with `atrium ask --peer` to put a question " +
+			"to it, or with `atrium answer` if the row says it is asking one. A peer with " +
+			"things already waiting is one to leave alone.\n\n" +
 			"`--fleet` answers the dispatcher's question instead of the addressing one. It " +
 			"adds the sessions that have FINISHED, which are not addressable and are the " +
 			"ones you would otherwise find out about by asking them one at a time.\n\n" +
@@ -88,6 +89,34 @@ func newTell() *cobra.Command {
 	return c
 }
 
+func newAnswer() *cobra.Command {
+	var name, hubURL string
+	c := &cobra.Command{
+		Use:   "answer <handle> <answer>",
+		Short: "Answer a question another session asked you.",
+		Long: "The return leg of `atrium ask --peer`. Queues your answer for the session that " +
+			"asked, and takes the question off its card, which is the only thing telling " +
+			"anybody the ask is settled.\n\n" +
+			"It arrives on that session's next tool call or at the end of its turn, with the " +
+			"question quoted back to it: a session that asked an hour ago may not remember " +
+			"asking.\n\n" +
+			"Use this even when the answer is that you cannot help. A question left on a card " +
+			"reads as one nobody has looked at, and the session that asked is waiting.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			to := args[0]
+			text := strings.Join(args[1:], " ")
+			if strings.TrimSpace(text) == "" {
+				text = pipedRecap()
+			}
+			return answerPeer(cmd.OutOrStdout(), hubURL, name, to, text)
+		},
+	}
+	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
+	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
+	return c
+}
+
 // whoAmI works out this session's handle the same way every hook does, so a
 // session is one name everywhere.
 func whoAmI(name string) string {
@@ -110,6 +139,10 @@ type peerRow struct {
 	Worktree string `json:"worktree"`
 	Why      string `json:"why"`
 	Waiting  int    `json:"waiting"`
+	// Ask is the question this session has outstanding, and AskPeer is who it
+	// asked. Empty for a session that is not stopped on anything.
+	Ask     string `json:"ask"`
+	AskPeer string `json:"ask_peer"`
 	// What this card wants from a human, and the same thing in a sentence.
 	Want string `json:"want"`
 	Note string `json:"note"`
@@ -229,6 +262,15 @@ func printPeerRow(out io.Writer, width int, p peerRow) {
 	if what == "" {
 		what = p.Worktree
 	}
+	// WHO WAS ASKED, when the question went to a peer rather than to a human.
+	//
+	// `Note` already says a session is asking something. It cannot say who is
+	// on the hook for the answer, because the daemon writes that sentence
+	// without knowing who is reading it. In a list a model is scanning for
+	// work, "asking someone else" and "asking you" are different rows.
+	if p.AskPeer != "" {
+		what += " (asked " + p.AskPeer + ")"
+	}
 	if p.Recap != "" {
 		what += ": " + oneLine(p.Recap)
 	}
@@ -275,34 +317,44 @@ func shortAge(sec int64) string {
 	}
 }
 
-func tellPeer(out io.Writer, hubURL, name, to, text string) error {
+// peerAnswer is what every endpoint on this bus answers with.
+type peerAnswer struct {
+	Queued   bool      `json:"queued"`
+	Answered bool      `json:"answered"`
+	Note     string    `json:"note"`
+	Error    string    `json:"error"`
+	Peers    []peerRow `json:"peers"`
+}
+
+// sendToPeer posts one session's words to another and reports the refusal in
+// the one shape every caller wants.
+//
+// `verb` is what the caller was trying to do, so a handle that does not
+// resolve offers the list under the right heading rather than under a generic
+// one.
+func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb string) (*peerAnswer, error) {
 	from := whoAmI(name)
 	if from == "" {
-		return fmt.Errorf("could not work out which session this is. pass --name")
+		return nil, fmt.Errorf("could not work out which session this is. pass --name")
 	}
 	if strings.TrimSpace(text) == "" {
-		return fmt.Errorf("there is nothing to say. put the message after the handle")
+		return nil, fmt.Errorf("there is nothing to say. put the message after the handle")
 	}
 
 	body, err := json.Marshal(map[string]string{"from": from, "to": to, "text": text})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	url := hubAddress(hubURL) + "/tell"
+	url := hubAddress(hubURL) + route
 	client := &http.Client{Timeout: peerTimeout}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("no daemon answered at %s: %w", url, err)
+		return nil, fmt.Errorf("no daemon answered at %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var answer struct {
-		Queued bool      `json:"queued"`
-		Note   string    `json:"note"`
-		Error  string    `json:"error"`
-		Peers  []peerRow `json:"peers"`
-	}
+	var answer peerAnswer
 	_ = json.Unmarshal(raw, &answer)
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -310,19 +362,46 @@ func tellPeer(out io.Writer, hubURL, name, to, text string) error {
 		// the set that would have worked, in the same breath.
 		fmt.Fprintf(out, "%s\n", answer.Error)
 		if len(answer.Peers) > 0 {
-			fmt.Fprintln(out, "\nthese are the sessions you can tell:")
+			fmt.Fprintf(out, "\nthese are the sessions you can %s:\n", verb)
 			printPeers(out, answer.Peers)
 		}
-		return fmt.Errorf("nothing was sent")
+		return nil, fmt.Errorf("nothing was sent")
 	}
 	if resp.StatusCode >= 300 {
 		if answer.Error != "" {
-			return fmt.Errorf("atrium refused: %s", answer.Error)
+			return nil, fmt.Errorf("atrium refused: %s", answer.Error)
 		}
-		return fmt.Errorf("atrium refused: %s", strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("atrium refused: %s", strings.TrimSpace(string(raw)))
 	}
+	return &answer, nil
+}
 
+func tellPeer(out io.Writer, hubURL, name, to, text string) error {
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell")
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "told %s.\n", to)
+	if answer.Note != "" {
+		fmt.Fprintf(out, "  %s\n", answer.Note)
+	}
+	return nil
+}
+
+func answerPeer(out io.Writer, hubURL, name, to, text string) error {
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer")
+	if err != nil {
+		return err
+	}
+	// Whether a question came off a card is the part worth saying. An answer
+	// to a session that had nothing outstanding still arrives, and a session
+	// that believes it closed something it did not is the one wrong reading
+	// available here.
+	if answer.Answered {
+		fmt.Fprintf(out, "answered %s, and its card is no longer asking.\n", to)
+	} else {
+		fmt.Fprintf(out, "sent to %s.\n", to)
+	}
 	if answer.Note != "" {
 		fmt.Fprintf(out, "  %s\n", answer.Note)
 	}

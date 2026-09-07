@@ -25,6 +25,12 @@ import (
 // the permission hook and the Stop hook, so a peer message lands whether the
 // target is working or idle.
 //
+// Three things ride this bus now, and they are one mechanism: `tell` says
+// something, `ask --peer` routes a question, and `answer` carries the reply
+// back. The last two are in `help.go`, beside the verb they belong to, and use
+// the resolution and the limit below so that a handle, a refusal and a flood
+// mean the same thing whichever of the three is being attempted.
+//
 // What is NOT adopted is Charon's injection. It types into a session as though
 // the human had, which works there because its sessions are SDK turns with
 // nobody at a keyboard. Atrium owns a real terminal that a person may be
@@ -118,6 +124,13 @@ type Peer struct {
 	// anything, which is not the same as a `Why` the operator typed.
 	Ask     string `json:"ask,omitempty"`
 	Blocked bool   `json:"blocked,omitempty"`
+	// AskPeer is who it asked, when the question was routed to another session
+	// rather than left on the card for a human. Empty otherwise.
+	//
+	// Here because the most useful thing in a list of peers is the one that is
+	// stopped waiting on somebody. A session that can answer it can see that
+	// from the list rather than having to be told.
+	AskPeer string `json:"ask_peer,omitempty"`
 	// Recap is what a finished session said it did, and empty on a card that
 	// finished without saying.
 	Recap string `json:"recap,omitempty"`
@@ -168,6 +181,83 @@ func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"peers": list})
 }
 
+// checkPeerText applies the bounds one session's words have to fit in.
+//
+// Its own function because three endpoints now put text on the peer bus, and
+// a limit that only two of them enforce is not a limit.
+func checkPeerText(w http.ResponseWriter, text, nothing string) bool {
+	switch {
+	case text == "":
+		writeJSONErr(w, http.StatusBadRequest, errString(nothing))
+		return false
+	case len(text) > maxPeerMessage:
+		writeJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
+			"that is %d characters, over the %d limit. write it to a file and say where it is",
+			len(text), maxPeerMessage))
+		return false
+	}
+	return true
+}
+
+// resolvePeer answers "can this session reach that one", and says why not.
+//
+// Shared by everything on the peer bus: telling, routing an ask, and answering
+// one. It returns nil having ALREADY written the refusal, so a caller adds
+// nothing and cannot get the shape of one wrong. The rate limit is counted
+// here too, at the point every path has passed its own validation and is about
+// to send.
+//
+// `verb` is what the caller is trying to do, so the refusal reads as the thing
+// that was refused rather than as a generic message failure.
+func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *store.Task {
+	switch {
+	case from == "":
+		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
+		return nil
+	case to == "":
+		writeJSONErr(w, http.StatusBadRequest, errString("say which session to "+verb))
+		return nil
+	case from == to:
+		// Not an error worth a stack trace, but worth refusing: a model
+		// messaging itself is a loop with extra steps.
+		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
+		return nil
+	}
+
+	target, err := d.st.GetByWireName(to)
+	if err != nil {
+		// Discovery, rediscovered. A handle that does not resolve answers with
+		// the list rather than with "no", because the next thing the sender
+		// needs is the set of names that would have worked.
+		list, _ := d.peers(from)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "no session called " + to,
+			"peers": list,
+		})
+		return nil
+	}
+	switch target.Status {
+	case store.StatusDead, store.StatusDone:
+		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
+			"%s has ended, so nothing would read this", to))
+		return nil
+	}
+
+	if !d.peerLimit.allow(from) {
+		writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+			"%s has sent %d messages in the last minute, which is the limit",
+			from, peerSendsPerMinute))
+		return nil
+	}
+	return target
+}
+
+// queuedNote is what a sender needs to know next: this arrives when the target
+// makes its next tool call or ends its turn, and not now.
+const queuedNote = "queued. it arrives on that session's next tool call or at the end of its turn."
+
 // handleTell delivers a message from one session to another.
 func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -184,53 +274,11 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	to := d.st.Qualify(strings.TrimSpace(in.To))
 	text := strings.TrimSpace(in.Text)
 
-	switch {
-	case from == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
-		return
-	case to == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session to tell"))
-		return
-	case text == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("there is nothing to say"))
-		return
-	case len(text) > maxPeerMessage:
-		writeJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
-			"that is %d characters, over the %d limit. write it to a file and say where it is",
-			len(text), maxPeerMessage))
-		return
-	case from == to:
-		// Not an error worth a stack trace, but worth refusing: a model
-		// messaging itself is a loop with extra steps.
-		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot tell itself"))
+	if !checkPeerText(w, text, "there is nothing to say") {
 		return
 	}
-
-	target, err := d.st.GetByWireName(to)
-	if err != nil {
-		// Discovery, rediscovered. A handle that does not resolve answers with
-		// the list rather than with "no", because the next thing the sender
-		// needs is the set of names that would have worked.
-		list, _ := d.peers(from)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "no session called " + to,
-			"peers": list,
-		})
-		return
-	}
-	switch target.Status {
-	case store.StatusDead, store.StatusDone:
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
-			"%s has ended, so nothing would read this", to))
-		return
-	}
-
-	if !d.peerLimit.allow(from) {
-		writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
-			"%s has sent %d messages in the last minute, which is the limit",
-			from, peerSendsPerMinute))
+	target := d.resolvePeer(w, from, to, "tell")
+	if target == nil {
 		return
 	}
 
@@ -247,9 +295,6 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queued": true, "to": to,
-		// What the sender needs to know next: this arrives when the target
-		// makes its next tool call or ends its turn, not now.
-		"note": "queued. it arrives on that session's next tool call or at the end of its turn.",
+		"queued": true, "to": to, "note": queuedNote,
 	})
 }
