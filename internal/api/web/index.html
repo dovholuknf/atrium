@@ -15894,14 +15894,52 @@ function sendResize() {
   send({ t: "resize", cols: term.cols, rows: term.rows });
 }
 
+// A FIT MUST NOT MOVE YOU. Scrolling up and then changing window focus used to
+// put you back at the bottom.
+//
+// Nothing here scrolled on purpose. `fit()` works out rows and columns and
+// hands them to xterm's `resize()`, and xterm clamps the viewport to the bottom
+// whenever the row count changes. Anything producing a layout event runs this,
+// and a focus change is one of them: a scrollbar appearing, the window manager,
+// the board's own chrome settling. So a position the operator set by hand was
+// thrown away by an update nobody asked for, which is the same complaint as the
+// board repainting and losing the scroll, on the other surface.
+//
+// Two guards, and the first one covers most of it. A fit that changes nothing
+// is not a resize: focus moving does not usually change the size at all, so the
+// cheapest fix is to stop telling xterm about a size it already has.
+//
+// When the size DID change, where you were is restored, measured as DISTANCE
+// FROM THE BOTTOM rather than as an absolute line. A width change reflows the
+// buffer, so the line you were reading has a different index afterwards and
+// there is no exact answer. The rows between you and the end are few and the
+// rows above are many, so anchoring to the end is the approximation that lands
+// closest to where you were looking.
+//
+// Being at the bottom already is left alone, because following new output is
+// what anybody wants from there. `sendInput` handles the other deliberate
+// exception: after you TYPE, `followScroll` keeps the view down for a moment.
+// The rule the operator gave is exactly that, said from this side: stay put
+// until I type.
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached
   // terminal or not.
   placeTabBridge();
   if (!termFit || !term) return;
+
+  const before = term.buffer.active;
+  const wasAtBottom = before.viewportY >= before.baseY;
+  const fromBottom = before.baseY - before.viewportY;
+  const wasCols = term.cols, wasRows = term.rows;
+
   termFit.fit();
+
+  if (term.cols === wasCols && term.rows === wasRows) return;
   sendResize();
+  if (wasAtBottom) return;
+  const now = term.buffer.active;
+  term.scrollToLine(Math.max(0, now.baseY - fromBottom));
 }
 
 function sendSignal(s) { send({ t: "signal", s }); }

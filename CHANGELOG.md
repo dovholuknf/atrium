@@ -5,6 +5,23 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A terminal you scrolled up jumped to the bottom when the window lost focus.**
+
+  Nothing scrolled on purpose. `onTermResize` calls `fit()`, `fit()` hands new rows and columns to xterm's
+  `resize()`, and xterm clamps the viewport to the bottom whenever the row count changes. Every layout event
+  runs it, and a focus change is one: a scrollbar appearing, the window manager, the board's chrome settling.
+  A position set by hand was thrown away by an update nobody asked for, which is the board-repaint complaint
+  on the other surface.
+
+  Two guards. A fit that changes nothing is no longer treated as a resize, which covers most of it, since
+  moving focus does not usually change the size at all. A fit that did change something restores where you
+  were, measured as **distance from the bottom** rather than as an absolute line: a width change reflows the
+  buffer, so the line you were reading has a different index afterwards and there is no exact answer. The rows
+  between you and the end are few and the rows above are many, so anchoring to the end lands closest.
+
+  Being at the bottom already is left alone, and typing still pins the view down for a moment through
+  `followScroll`. Stay put until I type.
+
 - **The board threw away where you were, on every event.**
   Every update repainted wholesale. `setHTML` assigned `innerHTML` for a whole list, so every node under it was
   destroyed and rebuilt, and a browser has nowhere to put the scroll position of an element that no longer
