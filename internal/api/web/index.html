@@ -726,12 +726,17 @@
     .pulse, .chip.live.tool, .chip.auto, .gauto.on,
     button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
   }
-  /* Dragging a card. The insertion line is drawn on the neighbor rather than
-     as a floating element, so it cannot end up in the wrong place. */
-  .card.dragging { opacity: .4; }
-  .col.drop-into { background: rgba(var(--teal-rgb),.05); border-radius: var(--r-md); }
-  .card.drop-before { box-shadow: 0 -2px 0 0 var(--teal); }
-  .card.drop-after { box-shadow: 0 2px 0 0 var(--teal); }
+  /* A card's text is SELECTABLE, and there is nothing here that stops it.
+     This is the whole reason dragging a card is gone: a card carries a path, a
+     branch, a wire name and an error, and every one of those is something you
+     want on the clipboard. A drag gesture takes the pointer before a selection
+     can start, and no amount of care in the handler gives it back.
+
+     So three rules used to live here and are gone with it: the dragged card's
+     opacity, the insertion line drawn on its neighbor, and the tint on the
+     column being dropped into. No `user-select: none` replaced them. The ones
+     left on this page are on headings you click to fold, which select nothing
+     worth copying. */
 
   /* The card action menu. */
   #cardmenu {
@@ -4774,9 +4779,10 @@ A room is started with 'atrium room' on that machine.">?</span>
         tag.</span>
       <div id="d-tag-known" class="tagsuggest"></div>
     </div>
-    <!-- No "move to" here. A column is a bucket of human attention and the
-         board is where attention gets moved, by dragging. A second way to do
-         it from a dialog was a row of six buttons nobody pressed. -->
+    <!-- No "move to" here. It is on the card's own menu, one right click from
+         the card itself, which is where you are when you decide a card belongs
+         in another column. A second way to do it from this dialog was a row of
+         six buttons nobody pressed. -->
     <div class="field">
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
@@ -4917,8 +4923,9 @@ A room is started with 'atrium room' on that machine.">?</span>
 // it groups them: done and dead are both over, and separating them across the
 // board put two columns of things needing nothing next to each other.
 //
-// `drop` is where a card dragged onto the column lands, since a column holding
-// two statuses has to pick one.
+// `takes` is the status a card filed into the column by hand lands in, since a
+// column holding two statuses has to pick one. `accepts: false` means the
+// column is not offered as a destination at all.
 //
 // `backlog` is the inbox now. It used to be absent from this list, because
 // nothing ever created a card in it and an empty column on every screen is a
@@ -4933,7 +4940,7 @@ const COLUMNS = [
     // Last in the DOM, first here, because reading order is what this array
     // decides and an inbox is where you start. See docs/intake-design.md.
     //
-    // `accepts: false` for the usual reason plus one of its own: dragging a
+    // `accepts: false` for the usual reason plus one of its own: filing a
     // card back into the inbox would claim it had never been started, and the
     // session it already had would still be running.
     id: "backlog", label: "inbox", statuses: ["backlog"],
@@ -4943,10 +4950,10 @@ const COLUMNS = [
       "anything. Press start to give one a runner.\n\n" +
       "Hidden until you wire up a source."
   },
-  // `accepts: false` refuses a card dragged in. These two columns are reports,
-  // not buckets: a card is in them because an agent said so. Dropping one into
-  // needs-permission would claim a request that does not exist, and into
-  // needs-input would claim an agent is waiting when it is not.
+  // `accepts: false` keeps these two out of the move-to menu. They are
+  // reports, not buckets: a card is in them because an agent said so. Filing
+  // one into needs-permission would claim a request that does not exist, and
+  // into needs-input would claim an agent is waiting when it is not.
   {
     id: "needs-permission", label: "needs permission", statuses: ["needs-permission"],
     accepts: false,
@@ -4986,7 +4993,7 @@ const COLUMNS = [
       "back the moment the session says anything."
   },
   {
-    id: "finished", label: "finished", statuses: ["done", "dead"], drop: "done",
+    id: "finished", label: "finished", statuses: ["done", "dead"], takes: "done",
     why: "Over, in two kinds.\n\n" +
       "done: the session ended and its directory is still there, so the " +
       "conversation can be picked back up.\n" +
@@ -4995,7 +5002,7 @@ const COLUMNS = [
       "Clear deletes a group and its history."
   },
   {
-    id: "shelved", label: "shelved", statuses: ["shelved"], drop: "shelved",
+    id: "shelved", label: "shelved", statuses: ["shelved"], takes: "shelved",
     why: "Put down on purpose, to come back to.\n\n" +
       "Requests from a shelved session are refused until you unshelve it, and " +
       "clear never takes one."
@@ -5074,6 +5081,28 @@ const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
 //
 // Returns whether anything in the DOM actually moved. Callers that wire
 // listeners onto what they drew use that as their cue.
+// Whether a live selection touches this element.
+//
+// One caller, the card menu, which asks it whether a card is being READ rather
+// than pressed. It used to have a second: `setHTML` skipped a repaint that
+// would have destroyed a selection, which was the best that could be done
+// while a paint was an `innerHTML` assignment. The reconciler below settles it
+// properly by keeping the node the selection lives in, so the stall is gone
+// and this is only about the menu now.
+//
+// EITHER end counts. A sweep across a card overshoots its edge constantly, and
+// a selection that starts on a card and ends past it is held just as hard as
+// one that fits.
+//
+// Collapsed means a caret and nothing highlighted, which is every click on the
+// page, so it is not a selection worth standing a menu down for.
+function selectionTouches(el) {
+  if (!el) return false;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+  return el.contains(sel.anchorNode) || el.contains(sel.focusNode);
+}
+
 function setHTML(el, html) {
   if (!el) return false;
   // The string this element was last painted from. Compared rather than
@@ -5509,13 +5538,17 @@ const isOutOfContact = (t) =>
 function cardHTML(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
-  // Draggable for reordering, right-clickable for the actions done most. Both
-  // exist because the alternative was opening the detail dialog for every
-  // shelve and every attach.
+  // Clickable for the actions done most, because the alternative was opening
+  // the detail dialog for every shelve and every attach.
+  //
+  // NOT draggable. A card is text you copy off far more often than a thing you
+  // move, and `draggable` is not a hint: it takes the pointerdown, so the
+  // selection never starts. `data-rank` stays because the menu's up and down
+  // are computed from the ranks on screen.
   return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
       t.auto_approve ? " autoon" : ""}"
     onclick="cardMenu(event, '${t.id}')"
-    data-id="${t.id}" data-rank="${t.rank}" draggable="true"
+    data-id="${t.id}" data-rank="${t.rank}"
     oncontextmenu="cardMenu(event, '${t.id}')">
     <div class="card-line">
       <div class="title">${w ? '<span class="pulse"></span>' : ""}${
@@ -5978,9 +6011,9 @@ async function renderBoard() {
   const html = COLUMNS.filter(col => {
     // The inbox is the one column that should not be there when it is empty.
     //
-    // Every other column earns its header while empty: it is where you drop a
-    // card, or "nothing needs permission" is worth reading. Neither is true
-    // here. Nothing is dropped into the inbox, and nobody who has not wired up
+    // Every other column earns its header while empty: it is somewhere a card
+    // can be filed, or "nothing needs permission" is worth reading. Neither is
+    // true here. Nothing files into the inbox, and nobody who has not wired up
     // a source has anything to learn from an empty one.
     if (!col.hideWhenEmpty) return true;
     return all.some(t => col.statuses.includes(t.status));
@@ -5998,7 +6031,7 @@ async function renderBoard() {
     // you are not reading it, and the width should follow.
     //
     // The header stays either way. A column that vanished when it emptied
-    // would take the place you drop a card onto with it, and "nothing needs
+    // would take with it the answer to what is in it, and "nothing needs
     // permission" is worth being able to see.
     const shown = col.statuses.length === 1
       ? mine.length
@@ -6064,8 +6097,7 @@ async function renderBoard() {
     const weight = Math.min(2, Math.max(1, Math.round(Math.sqrt(mine.length))));
 
     return `<section class="col${folded}${vacant}" data-column="${col.id}"
-      ${vacant ? "" : `style="flex-grow:${weight}"`}
-      data-status="${esc(col.drop || col.statuses[0])}">
+      ${vacant ? "" : `style="flex-grow:${weight}"`}>
       <div class="col-head" onclick="toggleColumn('${col.id}')">
         <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
         <span class="help" tabindex="0" onclick="event.stopPropagation()"
@@ -6078,8 +6110,10 @@ async function renderBoard() {
       <div class="cards">${body}</div>
     </section>`;
   }).join("");
-  // Re-wired only when the markup was replaced, since the listeners go with it.
-  if (setHTML(document.getElementById("board"), html)) wireDragging();
+  // Nothing to re-wire. Every handler a card has is an attribute in its own
+  // markup, so it comes back with the card. The listeners this used to attach
+  // on every redraw were the drag ones, and there are none.
+  setHTML(document.getElementById("board"), html);
 
   // Reported after the render, so a broken function shows an error and a board
   // drawn with the defaults rather than a blank page.
@@ -6095,6 +6129,12 @@ const PRUNABLE = ["done", "dead"];
 
 // One status inside a column that holds several. Collapsible, so `dead` can be
 // shut away while `done` stays open.
+//
+// `data-status` is this element's RECONCILER KEY and nothing else reads it. It
+// used to be the drop target's answer to "what status is a card dropped here",
+// and it outlived that: `morphKey` matches a group across a repaint by it, and
+// a group with no key is destroyed and rebuilt every paint, which takes the
+// scroll position and any selection inside it along.
 function groupHTML(status, cards, g) {
   const shut = foldedColumns().includes("group:" + status) ? "" : " open";
   return `<details class="cardgroup" data-status="${esc(status)}"${shut}>
@@ -6128,126 +6168,106 @@ function rememberGroup(e, status) {
   refresh();
 }
 
-// ── dragging cards ──────────────────────────────────────
-// Dropping between two cards sets the new rank to their midpoint, so an insert
-// never renumbers the column. Dropping onto a column changes status.
-let dragging = null;
-
-// WIRED ONCE PER NODE, and the flag is not an optimisation.
+// ── moving a card by hand ───────────────────────────────
 //
-// The board is reconciled rather than replaced now, so a card that was already
-// there is the SAME ELEMENT after a repaint, with the listeners it was given
-// the first time still on it. Calling `addEventListener` again would add a
-// second copy of every one of them, and a `drop` handler running twice files
-// the same move twice, seconds apart, with the second one working from ranks
-// that have already changed.
+// There is no dragging. It was the kanban idea, it was the only way to change
+// a card's status by hand, and it cost more than it earned: `draggable` on a
+// card means a pointerdown starts a drag rather than a selection, so a path, a
+// branch, a wire name or an error printed on a card could not be selected to
+// be copied. Copying one of those off a card is a daily thing. Moving a card
+// by hand is not, and a menu entry is the right weight for it.
 //
-// The flag lives on the node, so it goes when the node does, which is the only
-// time a fresh set is wanted.
-function wireDragging() {
-  document.querySelectorAll("#board .card").forEach(card => {
-    if (card.__dragWired) return;
-    card.__dragWired = true;
-    card.addEventListener("dragstart", e => {
-      dragging = card.dataset.id;
-      card.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      // Firefox will not start a drag without payload, even unused payload.
-      e.dataTransfer.setData("text/plain", card.dataset.id);
-    });
-    card.addEventListener("dragend", () => {
-      dragging = null;
-      document.querySelectorAll(".dragging, .drop-before, .drop-after")
-        .forEach(el => el.classList.remove("dragging", "drop-before", "drop-after"));
-    });
-    card.addEventListener("dragover", e => {
-      if (!dragging || card.dataset.id === dragging) return;
-      const col = card.closest(".col");
-      if (!acceptsDrop(col)) {
-        // No preventDefault, so the browser draws the no-entry cursor and the
-        // drop never fires.
-        e.dataTransfer.dropEffect = "none";
-        return;
-      }
-      e.preventDefault();
-      // Above or below, from which half of the card the cursor is in.
-      const r = card.getBoundingClientRect();
-      const after = e.clientY > r.top + r.height / 2;
-      card.classList.toggle("drop-before", !after);
-      card.classList.toggle("drop-after", after);
-    });
-    card.addEventListener("dragleave", () =>
-      card.classList.remove("drop-before", "drop-after"));
-    card.addEventListener("drop", async e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const after = card.classList.contains("drop-after");
-      card.classList.remove("drop-before", "drop-after");
-      await dropCard(dragging, card, after);
-    });
-  });
+// What replaced it is below, and it is the same two operations the drop did: a
+// status change from `moveItem`, and a reorder from `nudgeCard`.
 
-  document.querySelectorAll("#board .col").forEach(col => {
-    if (col.__dragWired) return;
-    col.__dragWired = true;
-    col.addEventListener("dragover", e => {
-      if (!dragging) return;
-      if (!acceptsDrop(col)) { e.dataTransfer.dropEffect = "none"; return; }
-      e.preventDefault();
-      col.classList.add("drop-into");
-    });
-    col.addEventListener("dragleave", () => col.classList.remove("drop-into"));
-    col.addEventListener("drop", async e => {
-      col.classList.remove("drop-into");
-      if (!dragging || !acceptsDrop(col)) return;
-      e.preventDefault();
-      // Landing on empty space in a column: change status, leave rank alone.
-      await patchTask(dragging, { status: col.dataset.status });
-      refresh();
-    });
-  });
+// The columns a card can be filed into, as a flyout.
+//
+// Built from COLUMNS rather than from a list of statuses, so a column added to
+// the board turns up here without anybody remembering to, and `accepts: false`
+// keeps one out for the reason it always had.
+//
+// `shelved` is left out although it accepts a card, because shelving costs
+// something: it stops the runner, and the `shelve` entry is where that is
+// said. Two ways to shelve is how two descriptions of it drift apart.
+//
+// Labelled by STATUS rather than by column, because the status is what the
+// card becomes and `finished` is a column holding two of them. Filing into it
+// means `done`, and an entry reading `finished` would not say which.
+function moveItem(id, t) {
+  const to = COLUMNS
+    .filter(c => c.accepts !== false && c.id !== "shelved")
+    .map(c => c.takes || c.statuses[0])
+    .filter(s => s !== t.status);
+  if (!to.length) return null;
+  return {
+    label: "move it to…",
+    help: "Files this card in another column. The ones not offered are " +
+      "reports rather than buckets: a card is in needs permission or in ready " +
+      "because an agent said so, and filing one there by hand would claim " +
+      "something that never happened.",
+    sub: to.map(s => ({
+      label: statusLabel(s),
+      act: () => patchTask(id, { status: s }).then(refresh)
+    }))
+  };
 }
 
-// Whether a column takes a card dragged into it.
+// Up and down, one place at a time, within the list the card is drawn in.
 //
-// `needs input` and `needs permission` refuse. They are reports of what an
-// agent said, not buckets to file things in: dropping into needs-permission
-// would claim a request that does not exist, and into needs-input would claim
-// an agent is waiting when nothing is.
-function acceptsDrop(col) {
-  if (!col) return false;
-  const def = COLUMNS.find(c => c.id === col.dataset.column);
-  return !def || def.accepts !== false;
+// `rank` is the operator's own order inside a column, and dragging was the
+// only thing that ever wrote it. Without these two entries the field would
+// still sort every column and nothing could set it, which is a column ordered
+// by a number nobody can reach.
+//
+// Offered as a pair and never hidden. Pressing one at the end of a list does
+// nothing, which is what the end of a list is, and hiding the entry there
+// would move every row under the pointer between one card and the next.
+function nudgeItems(id) {
+  return {
+    label: "move it up or down",
+    help: "Its place in this column, which is yours to set: nothing else " +
+      "writes it. Pin it instead when what you want is the top.",
+    sub: [
+      { label: "up", act: () => nudgeCard(id, -1) },
+      { label: "down", act: () => nudgeCard(id, 1) }
+    ]
+  };
 }
 
-// Places a card relative to a neighbor, moving it between columns if needed.
-async function dropCard(id, neighbor, after) {
-  if (!id || !neighbor) return;
-  // The group when the column holds several, so dropping next to a dead card
-  // lands on dead rather than on whatever the column's default is. Rank is
-  // computed within the same scope, since that is what was dropped between.
-  const scope = neighbor.closest(".cardgroup") || neighbor.closest(".col");
-  const col = neighbor.closest(".col");
+// Moves a card one place, past exactly one neighbour.
+//
+// The neighbours come off the SCREEN rather than out of a fetch, because what
+// is on screen is the list somebody is looking at when they press this: a
+// column is split by status, then possibly by project or by pinned, and the
+// list that matters is the innermost one the card is drawn in.
+//
+// The new rank is the midpoint between the card it passes and whatever is on
+// the far side of that, which is the arithmetic the drop used and the reason
+// the column is ordered by a float: a move renumbers nothing else.
+async function nudgeCard(id, delta) {
+  const card = document.querySelector('#board .card[data-id="' + id + '"]');
+  // The board is not the only place this menu opens. From the stack or a
+  // terminal there is no card on screen to count neighbours against, and a
+  // rank computed from an empty list would file the card at one end.
+  if (!card) {
+    toast("cannot move it", "its column is not on screen. this works on the board");
+    return;
+  }
+  const scope = card.closest(".cardgroup") || card.closest(".col");
   const cards = [...scope.querySelectorAll(".card")];
-  const at = cards.indexOf(neighbor);
-  const idx = after ? at + 1 : at;
+  const at = cards.indexOf(card);
+  const to = at + delta;
+  if (at < 0 || to < 0 || to >= cards.length) return;
 
-  // Ranks come off the cards on screen rather than a fetch, so the midpoint is
-  // computed against what was actually dropped between.
   const rankOf = el => Number(el.dataset.rank);
-  const before = idx > 0 ? rankOf(cards[idx - 1]) : null;
-  const behind = idx < cards.length ? rankOf(cards[idx]) : null;
+  const past = rankOf(cards[to]);
+  // What is on the far side of the card being passed, or nothing when that
+  // card is the end of the list. Ranks ascend down the column, so a step off
+  // either end is one whole rank past it rather than a midpoint.
+  const beyond = cards[to + delta] ? rankOf(cards[to + delta]) : null;
+  const rank = beyond === null ? past + delta : (past + beyond) / 2;
 
-  let rank;
-  if (before === null && behind === null) rank = 0;
-  else if (before === null) rank = behind - 1;
-  else if (behind === null) rank = before + 1;
-  else rank = (before + behind) / 2;
-
-  const body = { rank };
-  const target = scope.dataset.status || (col && col.dataset.status);
-  if (target) body.status = target;
-  await patchTask(id, body);
+  await patchTask(id, { rank });
   refresh();
 }
 
@@ -6264,8 +6284,8 @@ async function patchTask(id, body) {
     if (res && res.resume_note) {
       // Nothing started. A card in `running` with no process is the lie this
       // whole board exists to avoid, so it is corrected here rather than left
-      // for the operator to notice. Handled in one place, so dragging, the
-      // menu and the dialog all end up somewhere true.
+      // for the operator to notice. Handled in one place, so the menu, the
+      // dialog and an agent's own call all end up somewhere true.
       if (body.status === "running") {
         await api(`/v1/tasks/${id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -6507,6 +6527,30 @@ function unshelveItem(id, t) {
 }
 
 async function cardMenu(e, id) {
+  // WITH TEXT SELECTED, THIS MENU STANDS ASIDE. Both buttons.
+  //
+  // Left click opens nothing, because a click is how a sweep across a card
+  // ends and a menu over the top of the thing you just highlighted is the drag
+  // bug arriving by another route.
+  //
+  // Right click opens NOTHING OF ATRIUM'S, which is the point: returning
+  // before `preventDefault` lets the browser's own menu through, and that is
+  // the one with Copy on it. A card menu that has no copy entry of its own,
+  // covering a selection, is the board taking the clipboard away at the exact
+  // moment somebody reached for it.
+  //
+  // So a card is two things depending on whether anything is highlighted: with
+  // nothing selected it is a control, and both buttons open this. With
+  // something selected it is text, and both buttons belong to the browser. One
+  // click on empty space collapses the selection and it is a control again.
+  //
+  // Both surfaces, because the stack draws the same card as a row and opens
+  // the same menu from it, and a title or a path is as worth copying there.
+  //
+  // Scoped to the card under the pointer rather than to the page. A selection
+  // left lying in a terminal or a dialog must not stop a card three columns
+  // away from opening, which is what testing the whole document would do.
+  if (selectionTouches(e.target.closest(".card, .stackrow"))) return;
   e.preventDefault();
   e.stopPropagation();
   const t = await api(`/v1/tasks/${id}`);
@@ -6617,6 +6661,13 @@ async function cardMenu(e, id) {
     { sep: true },
     actionItems(t),
     shareItem(t),
+    { sep: true },
+    // Where the card goes, and where it sits. These two are what dragging was,
+    // and they are here rather than in the settings dialog because a column is
+    // a bucket of attention and this menu is what you already have open when
+    // you decide a card belongs in another one.
+    moveItem(id, t),
+    nudgeItems(id),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
