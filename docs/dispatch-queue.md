@@ -382,6 +382,32 @@ polish item.
   ONE look unless there is a reason both must exist, and if both must, drive them from one row builder with a
   density flag rather than from two.
 
+- **The switcher key hint is too long and asserts what it cannot know.** Today it reads:
+
+  > Press the button, then press the keys you want. Needs ctrl, alt or cmd in it, or it would fire while you
+  > are typing into a session. ctrl-shift-k is the default: Chrome, Edge and Brave leave it alone, and a
+  > terminal does not use it. Firefox takes it for the Web Console and will not give it back, so rebind to
+  > alt-k there. ctrl-k works in every browser and costs you readline's kill-line in every session, which is
+  > the trade it looks like.
+
+  Operator: "the text is sorta stupid ... it asserts too much we don't KNOW they leave it alone. just simple
+  'bound to ctrl-shift-k'". And: "too wordy and too archeological".
+
+  Both complaints are the same complaint. Naming three browsers as leaving a key alone is a claim about every
+  version of three browsers on every platform with every extension installed, and the operator had just been
+  bitten by a binding a browser took without saying so. A hint that asserts something the page cannot check,
+  and is wrong once, teaches somebody to distrust the rest of it. The Firefox sentence is the same shape plus
+  a history lesson nobody in front of the control needs.
+
+  What the page actually knows: what it is bound to, what a binding must contain, and what to do when one does
+  nothing. Three short sentences at most. The browser-by-browser reasoning belongs in
+  `docs/switcher-design.md`, which already has it.
+
+  **The wider rule this is one instance of.** Several hintlines on this board are written like the commit
+  message of the change that added them. A hint is read by somebody with a decision in front of them, and the
+  reason a thing is the way it is only earns space when it changes the decision. Worth a pass over all of them
+  rather than fixing this one.
+
 ## J. The file viewer, once a path in the terminal became clickable
 
 Round 3 made a path a link, and the thing it opens turned out to be the part nobody had used. Six findings
@@ -431,6 +457,34 @@ open them.
   it's not very obvious with the reskinning we did not long back". It is `<button class="icon">` with an
   arrow glyph, and the icon class lost most of its affordance in the reskin. It is the commonest control in
   that pane.
+
+- **A clicked path could open in the LOCAL editor when the browser is on the daemon's machine.** Operator:
+  "given that i am local to this machine clicking on a file COULD choose to be opened in my local editor".
+
+  `files/open` already does this and is deliberately unreachable from a terminal link, for the reason
+  `check-terminal.js` rule 13 states: over a share it starts an editor where nobody is sitting. That rule
+  holds. What it over-corrected is the case where the two machines are the same machine, which is most of the
+  time for the person who wrote it.
+
+  So the answer is a CHOICE rather than a default, and the board can tell when the choice is available: the
+  daemon knows its own hostname and the board knows whether it is on loopback. Same-machine offers both, a
+  share offers only the in-page viewer, and nothing has to be configured. A modifier on the click, or a second
+  chip in the hover tip, rather than a setting.
+
+  Do NOT make local-editor the default even when it is safe. A default that changes with how the board was
+  reached is a default nobody can predict.
+
+- **A picture refuses instead of being shown.** Clicking an image gives `could not read it: that file is not
+  text. download it instead`, which is accurate and is the wrong outcome: the file browser already knows the
+  type, `files/download` already serves the bytes, and the pane is a browser.
+
+  An image opens as an image. Anything the browser can render inline (png, jpg, gif, webp, svg, pdf) goes in
+  the same panel the editor uses, read-only. Everything else keeps the refusal, and the refusal keeps the
+  download link it already offers.
+
+  **SVG is the one to think about before writing it.** It is text, it is a picture, and it executes script. It
+  belongs in the viewer as an `<img>` and never inlined into the page, or a file in somebody's worktree gets
+  to run on the board's origin.
 
 ---
 

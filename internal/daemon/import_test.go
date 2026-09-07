@@ -250,3 +250,64 @@ func TestExportThenImportCarriesTheConfiguration(t *testing.T) {
 		t.Fatalf("the source came back as %q", src.Label)
 	}
 }
+
+// A BROUGHT THEME IS CONFIGURATION. A machine rebuilt from a checkout that
+// restores every fixture and then draws them all in atrium's own blue has
+// restored the work and lost the thing the operator notices first.
+func TestABroughtThemeSurvivesTheRoundTrip(t *testing.T) {
+	from := testDaemon(t)
+	mine := store.TermTheme{Name: "mine", Palette: store.Palette{
+		Background: "#0c0c0c", Foreground: "#cccccc",
+		Black: "#0c0c0c", Red: "#c50f1f", Green: "#13a10e", Yellow: "#c19c00",
+		Blue: "#0037da", Magenta: "#881798", Cyan: "#3a96dd", White: "#cccccc",
+		BrightBlack: "#767676", BrightRed: "#e74856", BrightGreen: "#16c60c",
+		BrightYellow: "#f9f1a5", BrightBlue: "#3b78ff", BrightMagenta: "#b4009e",
+		BrightCyan: "#61d6d6", BrightWhite: "#f2f2f2",
+	}}
+	if _, err := from.st.SaveTermTheme(mine); err != nil {
+		t.Fatal(err)
+	}
+	out, err := from.BuildExport()
+	if err != nil {
+		// The export refuses itself when anything in it looks like a credential,
+		// and a theme is twenty one hex strings and a short name. If this ever
+		// fires, the name rule and the secret scanner have drifted into each
+		// other: see `themeName`.
+		t.Fatalf("exporting a machine with a brought theme on it failed: %v", err)
+	}
+
+	to := testDaemon(t)
+	if _, err := to.ApplyImport(out, true, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := to.st.TermThemeByName("mine")
+	if err != nil || got == nil {
+		t.Fatalf("the theme did not survive the round trip: %v", err)
+	}
+	if got.Palette.Magenta != "#881798" {
+		t.Fatalf("the palette came back as %+v", got.Palette)
+	}
+}
+
+// An imported configuration goes through the same validator the editor does, so
+// a file edited by hand cannot put something that is not a colour into the
+// table by arriving as configuration instead of through the editor.
+func TestAnImportedThemeIsStillValidated(t *testing.T) {
+	d := testDaemon(t)
+	in := &Export{
+		Version: ExportVersion,
+		Themes: []store.TermTheme{{Name: "bad", Palette: store.Palette{
+			Background: "#000000", Foreground: "url(javascript:alert(1))",
+		}}},
+	}
+	if _, err := d.ApplyImport(in, true, false); err == nil {
+		t.Fatal("a configuration file put a value that is not a colour into the theme table")
+	}
+	got, err := d.st.TermThemeByName("bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatal("the refused theme was written anyway")
+	}
+}

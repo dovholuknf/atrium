@@ -64,6 +64,19 @@ check "board" bash scripts/check-board.sh
 step "the skins"
 check "skins" bash scripts/check-skins.sh
 
+step "the contrast"
+# The skins check says every skin sets every variable. This one says the values
+# are legible: text against the surface it actually sits on, in all twenty one
+# palettes, with every rgba lift composited first.
+#
+# Skipped rather than failed with no node, like the board check above: it is a
+# lint over a stylesheet, not a build step.
+if command -v node >/dev/null 2>&1; then
+  check "contrast" node scripts/check-contrast.js internal/api/web/index.html
+else
+  echo "skipped: no node on PATH, so the palette's contrast was not checked."
+fi
+
 step "what the release refuses"
 # The refusals, not the release. This runs `cut-release.sh --preflight` against
 # a throwaway repository, so it needs no network, builds nothing, and takes a
