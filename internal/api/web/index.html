@@ -3184,6 +3184,22 @@
     /* Room to read the command, which is the thing being decided on. */
     .row.perm .cmd.edit { font-size: var(--fs-sm); }
     .row.perm .diff { max-height: 40vh; overflow: auto; }
+
+    /* THE QUESTION ABOVE THE ANSWER, AND THAT IS THE WHOLE POINT OF THESE TWO
+       LINES.
+
+       The 900px block puts `.actions` at order 1 and `.who` at order 2, which
+       is right where it was written for: a popped-out window is one card on
+       one screen, and the buttons are the only thing in it you came for.
+
+       On a phone the same two rules put `approve once` directly under the
+       header with the command it would approve below the fold. The first
+       thing your thumb finds is the decision, and nothing you have read is
+       above it. Everything else in this block is about not pressing the wrong
+       button; this is about not pressing any of them blind. */
+    .row.perm .who { order: 1; }
+    .row.perm .actions { order: 2; }
+
     /* Two by two, full width, and big enough to hit with a thumb. The four
        are deliberately not shrunk to fit one row: approve and never sitting
        side by side at eight millimetres is how the wrong one gets pressed. */
@@ -3191,9 +3207,21 @@
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
       width: 100%; margin-top: 10px;
     }
-    .row.perm .actions button { width: 100%; padding: 12px 8px; }
+    /* 44px is the floor every touch guideline agrees on, and padding alone did
+       not reach it: these came out at 42 and the scope chips at 37. */
+    .row.perm .actions button { width: 100%; min-height: 44px; padding: 12px 8px; }
     .row.perm .hints { gap: 6px; }
-    .row.perm .hints button { padding: 8px 10px; }
+    .row.perm .hints button { min-height: 44px; padding: 8px 12px; }
+
+    /* A toast is a strip here, not a panel.
+       Wrapped at this width a command runs to five lines, which made each
+       toast 194px tall, and three of them 69% of the screen, drawn on top of
+       the queue they were telling you about. The rest of the cap is in
+       `toast()`, which keeps one at a time at this width. */
+    #toasts .toast span {
+      display: -webkit-box; -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3; overflow: hidden;
+    }
   }
 
   /* ── the terminal theme editor ─────────────────────────
@@ -5522,6 +5550,19 @@ A room is started with 'atrium room' on that machine.">?</span>
 </dialog>
 
 <script>
+// A phone, in pixels.
+//
+// THIS NUMBER IS DECLARED TWICE, HERE AND AS `@media (max-width: 480px)`, AND
+// THE TWO HAVE TO AGREE. There is no way to have one: a media query cannot
+// read a constant and `matchMedia` would put the literal back on this side
+// anyway. What can be done is to notice when they drift, so
+// `scripts/check-phone.js` reads both out of this file and compares them.
+//
+// Two of them apart is not a crash. It is a toast cap that applies at a width
+// where the layout it was written for has not started yet, which looks like
+// nothing at all until somebody counts toasts on a phone.
+const PHONE = 480;
+
 // The columns, in the order you should read them: what is blocking an agent
 // right now, then what is waiting on you, then what is moving, then what is
 // over, then what you put down.
@@ -6013,6 +6054,10 @@ function switchView(name) {
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
   if (name === "history") renderHistory(false);
+  // A command box built while this view was hidden measured as zero, exactly
+  // as a detached one does, so it is sized on the way in rather than only on
+  // the way past a poll.
+  if (name === "perms") sizeCommands();
   // Where you were, so a reload puts you back. A restart of the daemon
   // reloads every board it is serving, and landing on the board every time
   // meant two clicks to get back to the terminal you were reading.
@@ -8879,7 +8924,17 @@ function permCard(p) {
   const cmd = el.querySelector(".cmd.edit");
   cmd.value = p.command;
   cmd.defaultValue = p.command;
-  autosize(cmd);
+  // NOT autosized here, and that is the fix rather than an omission.
+  //
+  // `el` is still detached at this point, and a detached element measures
+  // `scrollHeight` as 0, so `autosize` wrote `height: 2px` inline and left it
+  // there. What you saw was `min-height` doing the whole job: every command
+  // clipped to two lines, forever, with the inline height beating any rule
+  // that would have grown it. A six line command showed its first two.
+  //
+  // It cost nothing on a desktop, where two lines is most commands, and it
+  // made the phone unusable, where two lines is none of them. `sizeCommands`
+  // runs once the card is in the document.
 
   const view = el.querySelector(".patview");
   // The kind decides how the pattern is read: a command shape, or a directory.
@@ -8994,9 +9049,37 @@ async function renderPerms() {
     empty.remove();
   }
 
+  sizeCommands();
+
   renderRules();
   renderHistory();
 }
+
+// Grows every command box to hold its whole command.
+//
+// A textarea can only be measured where it is drawn, so this cannot live in
+// `permCard`, which builds a detached card, and it cannot run once and be
+// done either. THREE THINGS make a box the wrong size, and all three are
+// ordinary on a phone:
+//
+//   1. The card was just added, so nothing has measured it yet.
+//   2. The perms view was hidden when it was added. A hidden element measures
+//      as zero exactly like a detached one, so landing on the stack tab and
+//      then going to perms is enough to do it.
+//   3. The window changed width. Rotating a phone rewraps every command, and
+//      the phone breakpoint changes the font size on the way past 480, which
+//      rewraps them again.
+//
+// Cheap enough to be unconditional: it is one pass over a queue that is
+// normally empty and never long.
+function sizeCommands() {
+  if (document.getElementById("perms").hidden) return;
+  document.querySelectorAll("#perms-list .cmd.edit").forEach(autosize);
+}
+
+// Rotating a phone is a resize, and so is the desk monitor a popped-out window
+// gets dragged onto.
+addEventListener("resize", sizeCommands);
 
 // Everything already answered, newest first. Auto-approved requests never
 // appear in the pending queue, so this is the only place they are visible.
@@ -10036,6 +10119,12 @@ const alerting = (() => {
       const step = mins < 10 ? 1 : 5;
       const slot = Math.floor(mins / step);
       if (nagged[p.id] === slot) return;
+
+      // Asked before the slot is claimed, because an undecidable answer has to
+      // leave the slot alone. Claiming it and then bailing out would spend the
+      // minute's one alert on a tick that raised nothing.
+      const showing = permShowing(p.id);
+      if (showing === "unknown") return;
       nagged[p.id] = slot;
 
       play("permission", soundForAlert(p));
@@ -10043,6 +10132,17 @@ const alerting = (() => {
       const who = p.agent || "an agent";
       notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id,
         p.task_id || p.id, iconForAlert(p));
+      // The same rule `notify` applies one level up, applied one level down.
+      // Up there it is "if you can see the board, the toast has already told
+      // you". Here it is: if the request's own row is on screen, with its
+      // command and its four buttons, a floating copy of the first 120
+      // characters is not news. It is a panel drawn over the answer.
+      //
+      // On screen, not merely on the perms tab. A queue of six on a phone is
+      // taller than the phone, and the one that has been frozen twelve
+      // minutes may be well below the fold, where the toast is the only thing
+      // that would take you to it. Clicking it still does.
+      if (showing === "on-screen") return;
       toast(`${who} has waited ${mins}m`, body, "perms", p.id);
     });
     // Forget anything answered, so a later request with a fresh id starts over.
@@ -10609,8 +10709,44 @@ function toast(title, body, goTo, key, taskFor) {
   raiseToasts();
   // Never let the stack grow past what fits on screen. Three, not four: the
   // fourth was always half off the bottom on a laptop.
-  while (host.children.length > 3) host.firstChild.remove();
+  //
+  // One on a phone, and that number was measured rather than guessed. At 390
+  // pixels a toast carrying a command is 194px tall, so three is 582 of an
+  // 844 pixel screen, drawn over the permissions queue. The queue is the only
+  // reason the board is open on a phone at all, so the announcements about it
+  // do not get to bury it.
+  const cap = innerWidth <= PHONE ? 1 : 3;
+  while (host.children.length > cap) host.firstChild.remove();
   return el;
+}
+
+// Whether a pending request's own row is in front of you right now.
+//
+// Three things have to be true and each rules out a different way of being
+// wrong about it: the document has to be the one you are looking at, the
+// perms view has to be the one showing, and the row has to be inside the
+// viewport rather than merely somewhere in a list that is taller than the
+// screen. On a phone the third does most of the work, because two waiting
+// requests are already taller than the screen.
+//
+// THREE ANSWERS, NOT TWO, AND THE THIRD IS THE ONE THAT WAS WRONG.
+//
+// A missing row is not an absent row. `refresh` polls the permissions list
+// and repaints it from two separate requests, so on the first poll after a
+// reload the alerting pass runs while `renderPerms` has not appended anything
+// yet. Reading that as "not on screen" put a toast over the card you were
+// looking at, once, on every single reload, which is the one moment you are
+// most certainly looking at it. So say `unknown` and let the caller wait for
+// the poll five seconds later, by which time there is a list to measure.
+function permShowing(id) {
+  if (!inForeground() || !isViewing("perms")) return "off-screen";
+  const el = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+  if (!el) return "unknown";
+  const r = el.getBoundingClientRect();
+  // Some of it, not all of it. A card taller than the screen can never be
+  // fully inside one, and demanding that would make the tallest requests the
+  // ones that always toast.
+  return r.bottom > 0 && r.top < innerHeight ? "on-screen" : "off-screen";
 }
 
 // Scrolls a pending request into view and flashes it, so clicking a toast puts
