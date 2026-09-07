@@ -69,6 +69,14 @@ type Export struct {
 	// matches URLs and points nowhere.
 	Recognisers []*store.Recogniser `json:"recognisers"`
 	Overlays    ExportOverlays      `json:"overlays"`
+	// The terminal palettes somebody brought, which are configuration in the
+	// same sense the skin is: they say what this machine looks like and there
+	// is nothing in them but colours. A rebuilt machine that restores every
+	// fixture and then shows them in atrium's own blue has restored the work
+	// and lost the thing the operator notices first.
+	//
+	// Only the brought ones. The fifty two atrium ships come with the build.
+	Themes []store.TermTheme `json:"themes,omitempty"`
 }
 
 // ExportOverlays is the overlay configuration WITHOUT the parts that are
@@ -195,6 +203,9 @@ func (d *Daemon) BuildExport() (*Export, error) {
 		return nil, err
 	}
 	if out.Recognisers, err = d.st.Recognisers(); err != nil {
+		return nil, err
+	}
+	if out.Themes, err = d.st.TermThemes(); err != nil {
 		return nil, err
 	}
 

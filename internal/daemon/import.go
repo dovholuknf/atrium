@@ -24,7 +24,7 @@ import (
 // ImportChange is one thing an import would do, or did.
 type ImportChange struct {
 	// Kind is `setting`, `harness`, `fixture`, `source`, `action`, `rule`,
-	// `recogniser` or `overlay`.
+	// `recogniser`, `theme` or `overlay`.
 	Kind string `json:"kind"`
 	// Name is which one, in whatever way that kind is identified.
 	Name string `json:"name"`
@@ -177,6 +177,30 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			// than landing a row that can never match.
 			if _, err := d.st.SaveRecogniser(*rec); err != nil {
 				return nil, fmt.Errorf("recogniser %s: %w", rec.ID, err)
+			}
+		}
+	}
+
+	// The brought terminal palettes, by the same rule as everything else here:
+	// add what is missing, keep what is there, replace only when told.
+	//
+	// Every one goes through `SaveTermTheme`, which validates. A file edited by
+	// hand, or written by something that is not atrium, cannot put a value that
+	// is not a colour into this table by arriving as a configuration rather
+	// than through the editor.
+	for _, th := range in.Themes {
+		have, err := d.st.TermThemeByName(th.Name)
+		if err != nil {
+			return nil, err
+		}
+		change, do := decide("theme", th.Name, have != nil, force)
+		res.Changes = append(res.Changes, change)
+		if change.Action == "keep" {
+			res.Kept++
+		}
+		if apply && do {
+			if _, err := d.st.SaveTermTheme(th); err != nil {
+				return nil, fmt.Errorf("theme %s: %w", th.Name, err)
 			}
 		}
 	}

@@ -970,6 +970,36 @@ var migrations = []struct {
 			   WHERE id = 'codex' AND (resume_args = '[]' OR resume_args = '')`,
 		},
 	},
+	{
+		// A terminal palette somebody brought with them.
+		//
+		// `task.theme` has held the NAME since `0021_task_theme`, and the
+		// palette that name refers to was a table baked into the board's own
+		// page. So the only way to have the colours you have used for years was
+		// to edit the source, and the fifty two that shipped are one person's.
+		//
+		// A table rather than a settings key holding a blob, for the reason
+		// every other keyed row here is a table: they are added, edited and
+		// deleted one at a time, and a blob makes two people editing different
+		// themes into one write that loses one of them.
+		//
+		// `palette` is JSON rather than twenty one columns because a palette is
+		// read and written whole and never queried by colour. It is written by
+		// the validator in `termtheme.go` rather than by a caller, so what is
+		// in it is always twenty one hex strings and nothing else.
+		//
+		// NUMBERED 0041 rather than the 0039 it was written as, for the same
+		// reason 0040_codex_resume above was renumbered.
+		name: "0041_term_theme",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS term_theme (
+				name       TEXT PRIMARY KEY,
+				palette    TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

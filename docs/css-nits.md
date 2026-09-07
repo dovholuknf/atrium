@@ -8,29 +8,70 @@ cannot be reproduced. Twenty skins is twenty chances for a value that was tuned 
 
 ## Open
 
-Nothing.
+| # | Where | Skin | What is wrong |
+| --- | --- | --- | --- |
+| 4 | A project group's name, and a stack group's name, at rest | `paper`, `daylight`, `linen`, `frost` | see below |
 
-## The check that would catch these
+**4.** The name is `hsl(var(--ghue) 70% 72%)`, a fixed lightness, on a block washed with the same hue. On the
+four light skins there is a hue at which the name and the wash have the SAME luminance: a contrast ratio of
+1.00, which is not a low ratio, it is a heading that is not there until you point at it. Hovering it works,
+because hovering is the part that got fixed.
 
-Most of this class of defect is a contrast failure and can be found without looking, which is worth doing
-because nobody is going to open twenty skins and hover every element by hand.
+This is nit 1 again, one line above where nit 1 was. The fix moved the group name's HOVER off a fixed
+lightness and left the resting colour on one.
 
-**`scripts/check-contrast.js`,** run from `check-board.sh` like the other two:
+It is not fixed here because the fix is a choice rather than a value, and the choice is not obvious. The name
+has to stay identifiably its project's hue, that is its whole job, and the blends that clear a useful floor on
+`linen` are close enough to `--head` that the hover has nowhere left to go. Somebody has to decide what a
+project group's name is allowed to look like on a light board. Measured candidates, worst ratio across all
+twenty one skins: blending 75% of `hsl(--ghue 70% 60%)` with `--head` gives 1.70, 65% gives 2.12, and 55%
+gives 2.70, which is still under the floor the rest of the palette clears.
 
-1. Parse `:root` and every `:root[data-skin=...]` block out of `index.html`, resolving `rgb(var(--x-rgb))`
-   back to a colour. The stylesheet is already regular enough for this: the skins check parses it today.
-2. Hold a table of pairs that have to stay legible: body text on the page, a chip's text on its own
-   background, a hovered row against the surface under it, the accent against the card, the warn colour
-   against the warn tint.
-3. Compute the WCAG contrast ratio for each pair, in each of the twenty skins, and fail below a floor.
+`scripts/check-contrast.js` holds this one PINNED at 1.00 rather than failing on it: see below.
 
-**What it would and would not catch.** It catches "invisible" and "far too light", which is this whole list so
-far. It does not catch "ugly", and it does not catch a colour that is legible and wrong, such as a hover that
-reads as a warning. Those still need an eye.
+## The check that catches these
 
-**The hazard to avoid:** hovers and lifts are `rgba` over an unknown backdrop, so the pair has to be composited
-against the surface it actually sits on before the ratio means anything. A checker that compares the raw
-`--lift` value against the text colour will pass everything and prove nothing.
+**`scripts/check-contrast.js`** exists, and `scripts/ci.sh` runs it beside the skins check. It parses `:root`
+and every `:root[data-skin=...]` block, holds a table of pairs that have to stay legible, composites each
+`rgba` layer onto the surface under it, and scores the WCAG ratio in all twenty one palettes. 1176 pairs.
+
+**It reads the hue-derived colours out of the rules,** by selector, rather than keeping its own copy. A table
+that restates the stylesheet keeps checking the OLD colour after somebody edits the stylesheet, which was
+tested by putting nit 1 back into the file and watching a table of copies stay green. A selector it names and
+cannot find is an error and not a skipped check: the rule was renamed, so the pair describes a board that does
+not exist.
+
+**Three things it asserts, not one.**
+
+1. A floor per pair. The floors are set BELOW what the palette manages today and above what is unreadable, and
+   the worst current value is written next to each one. This is not a WCAG AA certificate: `--dim` and
+   `--dimmest` are under AA on purpose, and a floor of 4.5 on those would fail every skin and be switched off
+   within a week.
+2. **A hover may not read as less prominent than the colour it replaces.** This is the rule nit 1 taught, in
+   the only form a script can hold it. A fixed direction in lightness is wrong on half the skins, so what is
+   checked is not the direction but the loss: whichever way the skin points, the pointer has to make the thing
+   MORE legible against the surface it is on. A floor cannot find this. The hover that fails it in the self
+   test scores 4.1, comfortably over the floor, against a resting colour that scores 6.8.
+3. **A pinned pair,** for a defect that is written down and not fixed: it is held to the ratio it measures
+   today instead of to its floor. A pin is not a suppression. A suppression goes green whatever happens next,
+   and a pin fails in both directions: make the defect worse and it fails, FIX the defect and it also fails
+   and tells you to delete the pin. So the list above cannot end up describing a board that no longer has
+   the nit.
+
+**It tests itself, on every run.** Seven colours broken on purpose, in memory, each asserting that the check
+catches it and names the right pair, because a check that cannot fail is worse than no check: it is also a
+claim that the colours were looked at. This one passed on its first run against a palette that had two real
+defects in it, which is exactly what a broken checker looks like.
+
+**The hazard, which is why most of the file is compositing:** hovers and lifts are `rgba` over a backdrop, so
+the pair has to be composited against the surface it actually sits on before the ratio means anything. A
+checker that compares the raw `--lift` against the text colour passes everything and proves nothing. Deleting
+the compositing from the script turns 338 pairs red, so the compositing is load-bearing rather than decorative.
+
+**What it does not catch.** "Ugly", and a colour that is legible and wrong, such as a hover that reads as a
+warning. Those still need an eye. It also cannot follow a rule that stops using a palette variable: the pairs
+that name `var(--x)` trust that the rule still says `var(--x)`, and that is the reason a pair reads from the
+rule wherever the rule holds a colour of its own.
 
 ## Fixed
 
@@ -38,6 +79,7 @@ against the surface it actually sits on before the ratio means anything. A check
 | --- | --- | --- | --- |
 | 1 | Hovering a group heading, stack and board | `paper`, and every light skin | see below |
 | 2 | Glyph buttons in a terminal's bar | all | see below |
+| 3 | The pinned group's heading | `linen`, `paper`, `daylight`, `frost` | see below |
 
 **1.** The hover raised the name's LIGHTNESS to 85%, which reads as more prominent on a dark board and nearly
 invisible on a light one. It now blends toward `--head`, so it goes darker on a light skin and lighter on a
@@ -47,12 +89,28 @@ dark one: the same intention, expressed in a way that survives both, and needing
 character wants. `.term-bar button.icon` squares them off. The `copy` button the original nit named is gone
 from the bar, and the same defect had moved to the folder, the cog and the up arrow.
 
-## The check that would catch these
+**3.** Found by `scripts/check-contrast.js` on the day it was written, and not by anybody looking. The pinned
+group's heading was the raw `--warn`, a mid amber, on the loudest wash on the board: a ratio of 2.73 on
+`linen`, and 2.95 to 3.08 on `paper`, `daylight` and `frost`, which is over the floor and not by much. It is
+now `color-mix(in srgb, var(--warn) 60%, var(--head))`, about 4.9 on `linen`, which darkens it on a light skin
+and lightens it on a dark one and still reads as amber. Nit 1's rule, applied to a colour that is not a hover.
 
-Nit 1 is exactly what `scripts/check-contrast.js` would have found without anybody hovering anything, and it
-is still worth building for the same reason: twenty skins is twenty chances for a value tuned against navy to
-be invisible. The design for it is below and is unchanged.
+**And the check was wrong about it first.** It reported 1.96 on `linen` and about 2.15 on the other three,
+because it swept the pinned block through all twelve group hues. The pinned group is not a project and does
+not get a hashed hue: `pinnedGroupHTML` writes `--ghue:41` on it and always has. So the first numbers were
+taken at a hue that group cannot have, and described a heading nobody could ever see. The defect at hue 41 is
+real and smaller, on one skin instead of four.
 
-Worth noting what the fix taught, because it generalises: **a hover that changes lightness in a fixed
-direction is wrong on half the skins.** Anything that means "more prominent" has to move toward or away from
-the skin's own text colour rather than toward white.
+Worth keeping, because it is the failure mode of this kind of check: a pair that sweeps a value the MARKUP
+fixes will invent defects, and a check that cries wolf is a check somebody switches off. `PIN_HUE` in the
+script is that correction, and the pair now scores the hue the board draws.
+
+## What the fixes taught
+
+**A hover that changes lightness in a fixed direction is wrong on half the skins.** Anything that means "more
+prominent" has to move toward or away from the skin's own text colour rather than toward white. Nits 1 and 3
+are the same mistake made twice, and nit 4 is the same mistake sitting one line above the fix for nit 1, which
+is the argument for the check rather than for a careful eye: the eye had already been over those exact lines.
+
+Nits 1 and 3 are both what `scripts/check-contrast.js` finds without anybody hovering anything. Nit 2 is not
+a contrast failure and the check would never have found it.

@@ -387,7 +387,32 @@ if (/WebLinksAddon/.test(html)) {
   }
 }
 
-// Rule 15: the thing a clicked path opens has to be ON SCREEN.
+// Rule 15: a theme is looked up through a table that inherits nothing.
+//
+// `TERM_THEMES` was an object literal, so `TERM_THEMES["constructor"]` answered
+// a function rather than nothing, and the caller tested the answer for
+// truthiness. A card whose theme was set to `constructor`, `valueOf` or
+// `toString` therefore handed xterm a function to read colours off, and every
+// colour came back undefined. It needed no brought theme to do it: the fixture
+// dialog has always taken a theme name.
+//
+// The fix is `allThemes()` building the merged table with a null prototype, and
+// `themeNamed` being the only way the page looks one up. Both halves are
+// checked, because either alone brings it back: a null-prototype table read by
+// a new direct-index call site is the same bug.
+if (!/Object\.assign\(Object\.create\(null\), TERM_THEMES/.test(html)) {
+  fail("the merged theme table is not built with a null prototype, so a theme named " +
+    "`constructor` or `toString` resolves to a function and xterm is handed one instead " +
+    "of a palette.");
+}
+const themeIndex = (html.match(/TERM_THEMES\[(?!"[a-z-]+"\])/g) || []).length;
+if (themeIndex) {
+  fail(`a theme is indexed out of TERM_THEMES directly in ${themeIndex} place(s). Use ` +
+    `themeNamed(), which reads the merged null-prototype table: brought themes are ` +
+    `missing from the shipped one, and a name off the prototype chain answers a function.`);
+}
+
+// Rule 16: the thing a clicked path opens has to be ON SCREEN.
 //
 // `#t-edit` is a panel INSIDE `#t-files-panel`, and the drawer starts hidden.
 // `openEditor` unhides the editor and knows nothing about the drawer around

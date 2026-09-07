@@ -5,6 +5,89 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **You can bring your own terminal theme, and edit any of them.**
+
+  The sixteen ANSI colours per theme were a table baked into the board's page, so adding one was a code
+  change and the fifty two that shipped were one person's. People have a colour scheme they have used for
+  years, and the format they have it in is Windows Terminal's, which is where the shipped ones came from.
+
+  Paste a `settings.json`, or its `schemes` array, or one scheme out of it, and the schemes in it arrive as
+  themes. Comments and a trailing comma are read, because that is what the file Windows Terminal writes
+  actually looks like. `One Half Dark` arrives as `one-half-dark`. Windows Terminal calls magenta `purple`
+  and atrium moves it to the slot xterm reads, which is the one mistake in the conversion that looks like
+  nothing at all when it is made by hand.
+
+  The editor is twenty one boxes, each a swatch and a hex, and it paints the attached terminal as you type,
+  so a real session is the preview whenever there is one. When there is not, a block of the palette in the
+  dialog is. It is on the terminal bar beside the theme picker, and in the gear under **the board** for when
+  nothing is running yet.
+
+  A theme saved under a name atrium ships shadows it, which is how somebody gets THEIR dracula, and deleting
+  theirs puts atrium's back. Deleting a theme that cards are wearing leaves those cards on their project's
+  colour rather than rewriting them.
+
+  **Where a theme lives, and why it is not `localStorage`.** A grouping expression is refused daemon-side
+  storage because it is compiled and run by whichever browser loads the board. A colour is not code, and the
+  validator that keeps it that way is total: six hex digits behind a hash, no second grammar, checked at the
+  point of storage rather than at the HTTP boundary, so the editor, the import and a restored configuration
+  all go through it. The name was already stored on the card, so a palette kept in one browser would have
+  been a card with a colour there and the project default everywhere else.
+
+  Brought themes ride along in the configuration export, so a machine rebuilt from a checkout comes back
+  looking like itself.
+
+  One bug fell out of writing it: the theme table was an object literal, so a card whose theme was set to
+  `constructor`, `valueOf` or `toString` handed xterm a function to read colours off. Reachable from the
+  fixture dialog since there was one. The table now inherits nothing, and the daemon refuses those names as
+  well.
+
+
+- **A colour that is invisible on one of twenty one skins is now found by a script instead of by somebody
+  hovering it.**
+
+  `scripts/check-contrast.js` parses every palette out of the stylesheet, composites each `rgba` lift onto the
+  surface it actually sits on, and scores 1176 text-and-background pairs against a floor. `scripts/ci.sh` runs
+  it beside the skins check. The skins check says every skin sets every variable. This one says the values are
+  legible.
+
+  Compositing is the whole difficulty. A hover is `rgba` over a backdrop, so `rgba(255,255,255,.05)` compared
+  against a text colour scores wonderfully and describes no pixel on the screen. Deleting the compositing from
+  the script turns 338 pairs red, which is how you can tell it is doing the work.
+
+  It also asserts something a floor cannot: **a hover may not read as less prominent than the colour it
+  replaces.** A hover that changes lightness in a fixed direction is wrong on half the skins, so the rule is
+  not about the direction, it is that the pointer has to make the thing more legible against the surface it is
+  on, whichever way the skin points. The hover in the self test that fails this scores 4.1, well over its
+  floor, against a resting colour scoring 6.8.
+
+  The hue-derived colours are read out of their rules by selector rather than copied into the table, because a
+  table of copies keeps checking the old colour after somebody edits the stylesheet. A selector it names and
+  cannot find is an error, not a skipped check.
+
+  And it tests itself on every run: seven colours broken on purpose, each asserting the check catches it and
+  names the right pair. A check that cannot fail is worse than no check, because it is also a claim that the
+  colours were looked at. This one passed on its first run against a palette with two real defects in it.
+
+- **The pinned group's heading was under the floor on `linen`, and thin on the other three light skins.**
+
+  Found by the contrast check on the day it was written. The heading was the raw `--warn`, a mid amber, on the
+  loudest wash on the board: 2.73 on `linen`, and 2.95 to 3.08 on `paper`, `daylight` and `frost`. It is now
+  blended toward `--head`, about 4.9 on `linen`, which darkens it on a light skin and lightens it on a dark
+  one and still reads as amber.
+
+  The check was wrong about this first, and the correction is the more useful half. It reported 1.96 because
+  it swept the pinned block through all twelve group hues, and the pinned group does not have a hashed hue:
+  the markup fixes it at `--ghue:41`. So the first number came from a hue that group cannot have. A pair that
+  sweeps a value the markup pins will invent defects, and a check that cries wolf is a check somebody switches
+  off.
+
+  A second defect of the same kind is recorded and not fixed: at rest, a project or stack group's NAME hits a
+  ratio of 1.00 against its own block on those four skins. Fixing it is a choice about what a group name may
+  look like rather than a value, so it is `docs/css-nits.md` open nit 4, and the check holds it pinned at the
+  ratio it scores today. A pin fails in both directions: make it worse and it fails, fix it and it fails and
+  tells you to delete the pin.
+
+
 - **A switcher, on a keystroke.** `ctrl-shift-k` opens it over whatever is on screen. Type a few letters
   against the title, the directory or the tags, Enter goes, Escape closes. The last few sessions come first, so
   the common case is the key and Enter with nothing typed.
