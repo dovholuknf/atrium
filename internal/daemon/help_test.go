@@ -123,7 +123,7 @@ func TestAWorkingSessionIsNotFiledAsWaiting(t *testing.T) {
 	if got.Status != store.StatusRunning {
 		t.Fatalf("a working session's card moved to %q", got.Status)
 	}
-	// And the question is still recorded, or --working is a way to say nothing.
+	// And the question is still recorded, or --continue is a way to say nothing.
 	if !strings.Contains(got.Ask, "staging database") {
 		t.Fatalf("the ask was dropped: %q", got.Ask)
 	}
@@ -190,5 +190,43 @@ func TestAnUnknownSessionIsNotAnError(t *testing.T) {
 	}
 	if out["recorded"] != false {
 		t.Fatalf("an unknown session was recorded somewhere: %v", out)
+	}
+}
+
+// A SECOND QUESTION MUST NOT DESTROY THE FIRST.
+//
+// It did. The ask lived in one column, so this pair of commands left one
+// question on the card and no trace at all of the other:
+//
+//	atrium ask --continue "which of these two schemas is authoritative"
+//	atrium ask "which branch is base"
+//
+// A session that asked two things got one answered and never learned the
+// other had been dropped.
+func TestASecondAskDoesNotDestroyTheFirstOnTheCard(t *testing.T) {
+	d := testDaemon(t)
+	task := cardFor(t, d, "asks-twice")
+
+	askOf(t, d, HelpRequest{
+		Agent: "asks-twice", Ask: "which of these two schemas is authoritative",
+	})
+	askOf(t, d, HelpRequest{Agent: "asks-twice", Blocked: true, Ask: "which branch is base"})
+
+	outstanding, err := d.st.OpenAsks(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outstanding) != 2 {
+		t.Fatalf("asking twice left %d questions on the card", len(outstanding))
+	}
+
+	// The card draws the OLDEST, so answering what is on the board drains the
+	// queue in the order the questions were asked.
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Ask, "authoritative") {
+		t.Fatalf("the card is drawing %q rather than the question that has waited longest", got.Ask)
 	}
 }

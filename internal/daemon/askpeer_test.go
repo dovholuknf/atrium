@@ -327,3 +327,87 @@ func TestFinishingTakesTheQuestionOffTheCard(t *testing.T) {
 		t.Fatalf("a finished card is still asking: %q", got.Ask)
 	}
 }
+
+// A PEER'S ANSWER SETTLES WHAT THE PEER WAS ASKED, AND NOTHING ELSE.
+//
+// A card can be waiting on a peer for one thing and on you for another.
+// `ask_peer` is per question, so a reply from one peer cannot have answered a
+// question that was put to a human, and clearing the card wholesale would take
+// that question off the board without anybody ever answering it.
+func TestAPeerAnswerLeavesTheHumanQuestionStanding(t *testing.T) {
+	d := testDaemon(t)
+	asker := peerCard(t, d, "asker")
+	peerCard(t, d, "helper")
+
+	askOf(t, d, HelpRequest{
+		Agent: "asker", Peer: "helper", Ask: "which of these two schemas is authoritative",
+	})
+	askOf(t, d, HelpRequest{
+		Agent: "asker", Blocked: true, Ask: "do you want the postgres path stubbed",
+	})
+
+	_, out := answerOf(t, d, "helper", "asker", "the one in migrations, 0031 replaced it")
+	if out["answered"] != true {
+		t.Fatalf("the peer's answer did not settle the question it was asked: %v", out)
+	}
+
+	outstanding, err := d.st.OpenAsks(asker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outstanding) != 1 || !strings.Contains(outstanding[0].Text, "postgres") {
+		t.Fatalf("a peer's answer took the human's question with it: %v", outstanding)
+	}
+
+	got, err := d.st.Get(asker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Asking() {
+		t.Fatal("the card stopped asking while it was still waiting on a human")
+	}
+	if got.AskPeer != "" {
+		t.Fatalf("the card still names %q as owing it an answer", got.AskPeer)
+	}
+
+	// And the peer is quoted ITS OWN question, not whatever the card is
+	// drawing. An answer stapled to somebody else's question is a puzzle.
+	pending, err := d.st.PendingMessages(asker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := pending[len(pending)-1]
+	if !strings.Contains(last.Text, "authoritative") {
+		t.Fatalf("the answer quoted back the wrong question: %q", last.Text)
+	}
+}
+
+// The operator saying something to the card settles EVERY question on it. That
+// is the broad door on purpose: a message is not addressed to one question,
+// and a card left holding an answered one makes the field that says "somebody
+// still owes this session something" mean nothing.
+func TestAMessageFromTheOperatorSettlesEveryQuestion(t *testing.T) {
+	d := testDaemon(t)
+	asker := peerCard(t, d, "asker")
+	peerCard(t, d, "helper")
+
+	askOf(t, d, HelpRequest{Agent: "asker", Peer: "helper", Ask: "which schema is authoritative"})
+	askOf(t, d, HelpRequest{Agent: "asker", Blocked: true, Ask: "which branch is base"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+asker.ID+"/message",
+		strings.NewReader(`{"text":"base is main, and the migrations one is authoritative"}`))
+	req.SetPathValue("id", asker.ID)
+	d.handleMessage(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("saying something to the card answered %d: %s", rec.Code, rec.Body)
+	}
+
+	outstanding, err := d.st.OpenAsks(asker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outstanding) != 0 {
+		t.Fatalf("the operator answered and %d question(s) are still outstanding", len(outstanding))
+	}
+}

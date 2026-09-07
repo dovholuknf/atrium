@@ -275,6 +275,24 @@
   #halted strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: var(--fs-sm); }
   #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--danger-text); }
 
+  /* The whole page, for a share opened without its fragment. `body.guestonly`
+     takes the board away rather than leaving it empty behind this, because an
+     empty board is exactly what somebody read as a second copy of their own. */
+  #guestonly {
+    max-width: 46rem; margin: 12vh auto 0; padding: 0 var(--sp-5);
+    color: var(--body); font-size: var(--fs-md); line-height: 1.6;
+  }
+  #guestonly strong {
+    display: block; color: var(--teal); letter-spacing: .1em; text-transform: uppercase;
+    font-size: var(--fs-sm); margin-bottom: var(--sp-3);
+  }
+  #guestonly p { margin: 0 0 var(--sp-4); }
+  #guestonly .guest-how { color: var(--dim); font-size: var(--fs-sm); }
+  #guestonly code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--head); }
+  body.guestonly header,
+  body.guestonly main,
+  body.guestonly #halted { display: none !important; }
+
   /* Capped so a row's trailing buttons stay near its content. On an ultrawide
      an uncapped row puts the actions a foot away from what they act on. */
   /* Full width. A cap here left a third of a wide screen empty while a diff
@@ -1312,10 +1330,15 @@
      of the list is obviously deliberate rather than a sort you do not
      recognize. */
   .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
-  /* Where the pinned cards stop and the sort starts. Two ranked lists were
-     drawn as one, so the only reading available was that the sort was broken.
-     A rule with a word on it, not a heading: it separates rather than titles,
-     and it must not compete with a group name. */
+  /* THE TWO HEADINGS OVER THE STACK: `pinned`, and `the rest`. Two ranked
+     lists were drawn as one, so the only reading available was that the sort
+     was broken. Naming one side left the other as the unlabelled half, which
+     read as a caption for everything above it.
+
+     Still a rule with a word on it rather than a heading proper: it separates
+     two halves of one list, and it must not compete with a group name. The
+     first one has no line above it to sit under, which is what `:first-child`
+     takes off. */
   .pinbreak {
     display: flex; align-items: center; gap: var(--sp-2);
     padding: 6px 12px 2px; color: var(--label);
@@ -1324,6 +1347,7 @@
   .pinbreak::after {
     content: ""; flex: 1; height: 1px; background: var(--hairline);
   }
+  .pinbreak:first-child { padding-top: 2px; }
   /* On a card title it sits inline with the text, so it takes the title's
      size rather than the row's. */
   .card .title .pin {
@@ -1659,6 +1683,19 @@
     display: block; color: var(--warn); font-size: var(--fs-xxs);
     letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px;
   }
+  /* Pressing it answers it, so it says so under the pointer. The border is what
+     brightens rather than the text: the question is already the loudest thing
+     on the row and making it louder still reads as a state change. */
+  .ask.act { cursor: pointer; }
+  .ask.act:hover { background: var(--warn-bg); }
+  /* The same gesture in the card dialog. The textarea is read only, so a click
+     lands here rather than in a field that would take the caret and do
+     nothing, and the border on the left is what says this is the question
+     rather than another thing to fill in. */
+  .askfield {
+    cursor: pointer; border-left: 2px solid var(--warn); padding-left: 9px;
+  }
+  .askfield textarea { cursor: pointer; }
   .card .ask { font-size: var(--fs-xs); margin-top: 7px; }
   /* On a stack row it shares the line with everything else, so the label sits
      beside the question and the whole thing gets one line. */
@@ -2029,10 +2066,22 @@
     list-style: none; padding: var(--sp-2) 3px; user-select: none;
   }
   .stackgroup > summary::-webkit-details-marker { display: none; }
+  /* A REAL TARGET, not a few pixels of glyph.
+     It is the only control on this row and it was smaller than the count
+     beside it: eleven pixels wide, at whatever size the text around it
+     happened to be, which is a control sized by what it sits in rather than by
+     what it is for. Now a square with the glyph centred in it, so the thing
+     you press is the size of the thing it does. The whole summary still
+     toggles, so this is about it looking like a control and being findable
+     with a pointer, not about being the only way in. */
   .stackgroup > summary::before {
-    content: "\25B8"; color: hsl(var(--ghue) 65% 60%); width: 11px;
-    display: inline-block; transition: transform .15s;
+    content: "\25B8"; color: hsl(var(--ghue) 65% 60%);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 22px; height: 22px; border-radius: var(--r-sm);
+    font-size: var(--fs-xl); line-height: 1;
+    transition: transform .15s, background .12s;
   }
+  .stackgroup > summary:hover::before { background: var(--lift); }
   .stackgroup[open] > summary::before { transform: rotate(90deg); }
   .stackgroup > summary .gname {
     color: hsl(var(--ghue) 70% 72%); font: 600 var(--fs-base) var(--mono);
@@ -2524,26 +2573,53 @@
     transform: translate(-50%, -50%);
     display: flex; align-items: center; gap: var(--sp-3);
     padding: 12px 18px; border-radius: var(--r-lg);
-    /* THE PAIR COMES FROM ONE SYSTEM. This took its background from the board
-       and its text from the terminal, which is the exact confusion
-       `web/CLAUDE.md` warns about, and the two are chosen by different people:
-       a skin and a terminal theme. On a light skin with a light terminal theme
-       the restart banner was pale text on a white pill, unreadable.
-       Not a lightness test. A terminal theme's foreground and background are
-       designed to be legible together, so taking both from the same theme is
-       correct for every theme including ones nobody has written yet. Detecting
-       "is this light" would be a guess that needs revisiting per theme. */
-    background: var(--term-bg, var(--shell-0));
-    border: 1px solid var(--term-edge, var(--stroke));
-    color: var(--term-fg, var(--head)); font: var(--fs-base)/1.4 var(--mono);
+    /* THE PAIR COMES FROM ONE SYSTEM, AND SO DOES THE FALLBACK. That second
+       half is the part that was missing, and it is why this banner has now
+       been wrong twice.
+
+       The original defect: background from the board, text from the terminal.
+       Two colours chosen by two different people, a skin and a terminal theme,
+       and on a light skin with a light theme it was pale text on a white pill.
+       The fix quoted below is right and was written as `var(--term-x,
+       --board-x)` per property, which quietly reintroduced it. Two independent
+       `var()` fallbacks resolve INDEPENDENTLY: with nothing attached the two
+       variables do not necessarily go missing together, so whichever one was
+       left over from a previous attach paired with the other one's board
+       fallback and the banner was unreadable again.
+
+       THE RULE: a pair is chosen once, not per property. There is no fallback
+       here at all, and the whole pair comes from the board in one rule below
+       when there is no theme. `paintPaneBg` owns the `themed` class and clears
+       every theme variable together, so the two states are the only two
+       states.
+
+       The reasoning that still holds, from the first fix: a terminal theme's
+       foreground and background are designed to be legible together, so taking
+       both from the same theme is correct for every theme including ones
+       nobody has written yet. Detecting "is this light" would be a guess that
+       needs revisiting per theme. */
+    background: var(--term-bg);
+    border: 1px solid var(--term-edge);
+    color: var(--term-fg); font: var(--fs-base)/1.4 var(--mono);
     box-shadow: 0 18px 44px rgba(var(--shadow-rgb),.55); max-width: 80%; text-align: left;
+  }
+  /* NOTHING ATTACHED, so the whole banner is the board's. One rule setting
+     every colour on it, which is what makes it impossible for half of this to
+     resolve from a terminal theme and half from a skin. */
+  .term-pane:not(.themed) .termwait {
+    background: var(--shell-0);
+    border-color: var(--stroke);
+    color: var(--head);
   }
   .termwait[hidden] { display: none; }
   .termwait .spin {
     width: 13px; height: 13px; flex: none; border-radius: 50%;
-    border: 2px solid var(--term-line, var(--stroke));
-    border-top-color: var(--term-thumb-hi, var(--teal));
+    border: 2px solid var(--term-line);
+    border-top-color: var(--term-thumb-hi);
     animation: termspin 900ms linear infinite;
+  }
+  .term-pane:not(.themed) .termwait .spin {
+    border-color: var(--stroke); border-top-color: var(--teal);
   }
   @keyframes termspin { to { transform: rotate(360deg); } }
 
@@ -3694,6 +3770,16 @@
   <div class="rule"></div>
 </header>
 <div id="halted"><strong>halted</strong><span id="halt-t"></span></div>
+<!-- What a lent session says when it is opened without its fragment. Drawn
+     INSTEAD of the board rather than over it: an empty board underneath is
+     the thing that read as a broken copy of somebody else's atrium. -->
+<div id="guestonly" hidden>
+  <strong>one terminal</strong>
+  <p id="guest-word"></p>
+  <p class="guest-how">This address ends in <code>#term=&lt;card&gt;</code> and that fragment is what
+  picks the session. It never reaches the server, so a link with it trimmed off arrives here.
+  Ask for the whole link again.</p>
+</div>
 
 <main>
   <!-- The board has no sort: a column IS the order. Grouping is the one thing
@@ -5484,12 +5570,32 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <h2 id="d-title"></h2>
       <div class="chips" id="d-chips"></div>
     </div>
-    <button onclick="detail.close()">close</button>
+    <!-- SAVE AND CLOSE, because that is what it already did. See `patchOnChange`. -->
+    <button class="go" onclick="detail.close()"
+      title="every field here is written when you leave it, so this only closes">save and close</button>
   </div>
   <div class="dlg-body">
     <div class="field">
       <label class="eyebrow" for="d-why">why am I doing this</label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
+      <span class="hintline">Kept as soon as you leave the field. Nothing in here waits for a
+        button.</span>
+    </div>
+    <!-- WHAT IT IS STOPPED ON. The stack row and the card both draw this and
+         the dialog did not, so opening the card to answer a question took the
+         question off the screen. What a session SAID IT DID had a field here
+         and what it is BLOCKED ON did not, which is backwards.
+
+         Read only, unlike the recap beside it. The recap is an account the
+         operator may disagree with and correct; a question is a thing a
+         session is waiting on, and editing it here would change what the
+         board says was asked without changing anything the session knows. It
+         comes off by being answered, which is the box further down. -->
+    <div class="field askfield" id="d-ask-field" hidden
+         onclick="answerAsk(current && current.id)">
+      <label class="eyebrow" for="d-ask" id="d-ask-label">this agent has a question</label>
+      <textarea id="d-ask" rows="3" spellcheck="false" readonly></textarea>
+      <span class="hintline" id="d-ask-how"></span>
     </div>
     <!-- What the session said it did, in its own words. Shown only when there
          is one: an empty box on every card would read as a form to fill in,
@@ -5815,15 +5921,62 @@ const api = async (path, opts) => {
   const res = await fetch(path, opts);
   if (res.status === 401) signInAgain();
   if (!res.ok && res.status !== 204) {
-    let msg = res.statusText;
-    try { msg = (await res.json()).error || msg; } catch (e) {}
-    throw new Error(msg);
+    // THE BODY, WHATEVER SHAPE IT IS IN.
+    //
+    // Most of the daemon answers a failure as `{"error": "..."}`, and this read
+    // that field and fell back to `res.statusText` when the parse failed. Every
+    // refusal written with `http.Error` is a plain sentence, so it failed the
+    // parse and arrived here as the word `Forbidden` with the sentence thrown
+    // away. `guestHandler` is where that showed: a lent session refusing an
+    // upload says what the link is and what it is for, and the board printed
+    // "that did not go up: Forbidden".
+    let msg = "";
+    try { msg = await res.text(); } catch (e) {}
+    try { msg = JSON.parse(msg).error || msg; } catch (e) {}
+    throw new Error(String(msg).trim() || res.statusText);
   }
   return res.status === 204 ? null : res.json();
 };
 
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ── being a guest ───────────────────────────────────────
+//
+// A LENT SESSION SERVES THIS SAME FILE, and the page had no idea.
+//
+// `overlay_guest.go` is an allowlist over one card: the terminal, that card,
+// the icon, and health. `/v1/tasks`, `/v1/events`, `/v1/permissions`,
+// `/v1/rooms` and every file endpoint answer 403 with a sentence saying so.
+// The page caught all of those, carried on with what it had, and drew its own
+// chrome with every list empty. Nothing leaked. It looked broken, and the
+// operator opening the bare share address asked whether it was a shadow copy
+// of his own board.
+//
+// The refusal IS the signal, so nothing new has to be served to detect it and
+// a board that is not lent pays one request at boot for the answer.
+//
+// The daemon's own sentence is kept rather than replaced. It is the one place
+// that knows what was shared, it is already written, and a second wording here
+// would be a copy that goes stale.
+let guestWord = "";
+function isGuest() { return guestWord !== ""; }
+
+// Resolved with the daemon's sentence when this page is a guest, and with the
+// empty string otherwise. Started at boot and held, because two things ask:
+// the boot block, and every affordance that would post a file.
+let guestKnown = Promise.resolve("");
+
+// `fetch` rather than `api`, because the STATUS is the question. `api` turns a
+// 403 into an exception that reads the same as a network failure, and a network
+// failure must not put a board into guest mode.
+async function askIfGuest() {
+  try {
+    const res = await fetch("/v1/tasks", { cache: "no-store" });
+    if (res.status !== 403) return "";
+    return (await res.text()).trim() || "this link is one terminal.";
+  } catch (e) { return ""; }
+}
 
 // ── painting without repainting ─────────────────────────
 //
@@ -6473,17 +6626,44 @@ function cardHTML(t) {
 // A question put to another SESSION says so instead. That card is still
 // stopped and still counted, and you are not the one who owes it an answer,
 // which is a different thing to be looking at.
+// PRESSING IT ANSWERS IT, which is the other half of drawing it at all.
+//
+// A question you can read and not reply to sends you looking for the card, and
+// the reply box is on the card dialog, so the whole path was: read the
+// question, find the card, open it, scroll to the box. This is that path in
+// one press. Saying anything to a card already clears its ask, so nothing new
+// happens here: it is a way to reach something that was already there.
 function askLine(t) {
   if (!t.ask) return "";
   const peer = !!t.ask_peer;
   const label = peer ? `asked ${t.ask_peer}` : "this agent has a question";
   const tip = peer
     ? "it put this to " + t.ask_peer + " rather than to you. it is still stopped, "
-      + "so this is where you find out when no answer comes back"
-    : "the session raised this itself. saying anything to this card answers it, "
-      + "and the question comes off";
-  return `<div class="ask" title="${esc(tip)}"
+      + "so this is where you find out when no answer comes back. press to say "
+      + "something to this card anyway"
+    : "the session raised this itself. press to answer it: saying anything to "
+      + "this card answers it, and the question comes off";
+  // `stopPropagation`, because a card and a stack row are both clickable and
+  // the ask sits inside them. Without it this fires the row's own handler too,
+  // which opens the same dialog and takes the focus straight back off the box.
+  return `<div class="ask act" title="${esc(tip)}"
+    onclick="event.stopPropagation();answerAsk('${esc(t.id)}')"
     ><span class="asklabel">${esc(label)}</span>${esc(t.ask)}</div>`;
+}
+
+// Opens the card the question is on, with the cursor in the box that answers
+// it.
+//
+// Re-opening is skipped when that card's dialog is already up, since `openTask`
+// refetches the card and repaints the timeline, and doing that under somebody
+// who just pressed the question is a flash and a scroll for nothing.
+async function answerAsk(id) {
+  if (!id) return;
+  if (!(detail.open && current && current.id === id)) await openTask(id);
+  const box = document.getElementById("d-say");
+  if (!box) return;
+  box.scrollIntoView({ block: "center" });
+  box.focus();
 }
 
 // ── grouping cards by project ───────────────────────────
@@ -8681,15 +8861,22 @@ function bigNumberAtMeans(t) {
 // sit above one at 4h17m, and the only thing saying why is a star twelve
 // pixels wide at the far left.
 //
-// It is two lists. So it gets a line, and the line says what it separates.
-// Only when there is something on both sides of it: a divider under an empty
-// set, or under everything, is a rule about nothing.
+// It is two lists, so BOTH SIDES ARE NAMED. Only a divider was, which left the
+// block above it as the unlabelled half and made the label read as a caption
+// for the whole thing.
+//
+// The sort's name came off it. It said "the rest, most recently active", and
+// the sort control at the top of the screen already says which sort is on:
+// repeating it here made the line look like it was ABOUT the sort, which is the
+// opposite of what it is for. The line is about pinning outranking the sort.
+//
+// Only when there is something on both sides: a heading over an empty set, or
+// over everything, names nothing.
 function stackRows(list) {
   const pinned = list.filter(t => t.pinned).length;
   if (!pinned || pinned === list.length) return list.map(stackRow).join("");
-  return list.map((t, i) =>
-    (i === pinned ? `<div class="pinbreak"><span>the rest, ${
-      esc(STACK_SORTS[stackSort] ? STACK_SORTS[stackSort].label : "sorted")}</span></div>` : "")
+  return `<div class="pinbreak"><span>pinned</span></div>` + list.map((t, i) =>
+    (i === pinned ? `<div class="pinbreak"><span>the rest</span></div>` : "")
     + stackRow(t)).join("");
 }
 
@@ -10006,6 +10193,17 @@ const soloBus = ("BroadcastChannel" in window) ? new BroadcastChannel("atrium-so
 // in its temporal dead zone if a claim ever arrived first.
 let soloID = "", soloTask = null;
 
+// This window has HANDED ITS TERMINAL OVER to another window and must stop
+// behaving like a viewer of it.
+//
+// Set by `solo-yield`, which is how a second window onto one card is made
+// recoverable in a click rather than a dead end. Two things read it and both
+// have to: `soloRefresh` stops re-claiming, or the window that took the card
+// would be refused on its own next roll call, and the watchdog in the same
+// function stops re-attaching, or a window told to let go would put the
+// terminal straight back on the next poll.
+let soloYielded = false;
+
 if (soloBus) {
   soloBus.onmessage = e => {
     const m = e.data || {};
@@ -10043,7 +10241,14 @@ if (soloBus) {
     // nothing arbitrates. `soloSwitch` asks `poppedOut` the same question the
     // board asks, and it can only answer it if somebody wrote the claims down.
     if (termOnly()) {
-      if (m.type === "solo-who" && soloID) soloBus.postMessage({ type: "solo-claim", task: soloID });
+      // `soloYielded` silences the answer as well as the heartbeat. A window
+      // that has handed its card over still has `soloID` set, and answering a
+      // roll call with it would tell the window that just took the card that
+      // the holder is still there, which is the one question that answer is
+      // asked to settle.
+      if (m.type === "solo-who" && soloID && !soloYielded) {
+        soloBus.postMessage({ type: "solo-claim", task: soloID });
+      }
       if (m.task && m.task !== soloID) {
         if (m.type === "solo-claim") soloHeld.set(m.task, Date.now());
         if (m.type === "solo-release") soloHeld.delete(m.task);
@@ -10061,6 +10266,30 @@ if (soloBus) {
       // every broadcast.
       if (m.type === "solo-toast" && m.task && m.task === soloID) {
         toast(m.title || "", m.body || "");
+        return;
+      }
+      // ANOTHER WINDOW IS TAKING THIS CARD, and this one lets go.
+      //
+      // The other half of the refusal in `bootTerminalOnly`. A window opened on
+      // a card somebody else already holds is turned away, and turning it away
+      // with nothing beside it strands whoever cannot find the holder: the
+      // holding window may be behind fourteen others, on another desktop, or
+      // minimised. So the refusal offers to take the card instead, and this is
+      // what that costs the holder.
+      //
+      // The pane is torn down rather than the window closed. A window cannot
+      // reliably close itself (see `closeThisWindow`), and a window that
+      // announced it was closing and then sat there is worse than one that
+      // says plainly what happened to it.
+      //
+      // `clearTermPane(true)` rather than `closeTerm`: the switching form skips
+      // the restore loop, which would otherwise spend ninety seconds trying to
+      // reattach the terminal this window was just asked to give up.
+      if (m.type === "solo-yield" && m.task && m.task === soloID) {
+        soloYielded = true;
+        soloBus.postMessage({ type: "solo-release", task: soloID });
+        clearTermPane(true);
+        termWait("another window took this terminal. this one can be closed.");
         return;
       }
       // No `solo-raise` here any more, and it is worth saying why it went.
@@ -14004,6 +14233,20 @@ async function openTask(id) {
   filesField.hidden = !current.worktree;
   document.getElementById("d-files").hidden = true;
   document.getElementById("d-files-toggle").classList.remove("open");
+  // The question, when there is one, named the way the row names it: a card
+  // stopped on another SESSION reads differently from one stopped on you, and
+  // that difference is the whole reason `ask_peer` exists.
+  const askField = document.getElementById("d-ask-field");
+  askField.hidden = !current.ask;
+  document.getElementById("d-ask").value = current.ask || "";
+  document.getElementById("d-ask-label").textContent = current.ask_peer
+    ? "asked " + current.ask_peer
+    : "this agent has a question";
+  document.getElementById("d-ask-how").textContent = current.ask_peer
+    ? "it put this to " + current.ask_peer + " rather than to you. it is still stopped, so " +
+      "saying something here still reaches it."
+    : "say something below and this comes off. any message answers it.";
+
   const recapField = document.getElementById("d-recap-field");
   recapField.hidden = !current.recap;
   document.getElementById("d-recap").value = current.recap || "";
@@ -14425,9 +14668,37 @@ async function killTask() {
   refresh();
 }
 
-// Saving the note on blur keeps it out of the way: type it, click off, it is kept.
-document.getElementById("d-why").addEventListener("change", e => patch({ why: e.target.value }));
-document.getElementById("d-recap").addEventListener("change", e => patch({ recap: e.target.value }));
+// COMMITTING ON CHANGE IS THE ONLY WAY THIS DIALOG COMMITS, and the button at
+// the top says so rather than adding a second one.
+//
+// `patchOnChange` is what every field here does: `change` fires when focus
+// leaves the field, and pressing the button at the top of the dialog moves
+// focus, so the write lands on the way out. That is correct and it was
+// invisible, which made it indistinguishable from having lost the edit, and
+// `close` is the wrong word for a button that commits.
+//
+// TWO WAYS OUT OF THAT, and only one of them is whole.
+//
+// Holding the edits and committing on a button was the other, and it was
+// refused. This dialog is LIVE: it repaints, it polls the queue, it draws a
+// timeline, and the daemon changes the card underneath it while it is open. A
+// held draft would have to argue with all of that, and every other field in the
+// board (tags, sound, icon, recap, the settings screen) commits on change, so
+// this would become the one dialog on the board that behaves differently.
+//
+// Adding a save button while `change` still patched was refused for a simpler
+// reason: two ways to commit, one of them still invisible, which is the defect
+// with a button in front of it.
+//
+// So: commit on change, keep it the only path, and SAY SO. The button is named
+// for what it does and the field says the edit is already kept. Nothing here
+// can be lost by pressing the wrong thing, because there is no wrong thing to
+// press.
+const patchOnChange = (id, build) =>
+  document.getElementById(id).addEventListener("change", e => patch(build(e.target.value)));
+
+patchOnChange("d-why", v => ({ why: v }));
+patchOnChange("d-recap", v => ({ recap: v }));
 
 // Picked and heard in one place. Choosing a bell you cannot hear until the
 // next time that agent wants you is choosing blind, and by then it is too late
@@ -14444,9 +14715,7 @@ function previewCardSound() {
 
 // Saved on the way out of the field, not on every keystroke. An emoji arrives
 // a code unit at a time and half of one is not a mark worth storing.
-document.getElementById("d-icon").addEventListener("change", e => {
-  patch({ icon: e.target.value.trim() });
-});
+patchOnChange("d-icon", v => ({ icon: v.trim() }));
 
 // Enter sends, shift-enter is a newline. The chat convention, because this is
 // one: short things said to somebody, in a row. Escape would close the dialog
@@ -14465,9 +14734,7 @@ document.getElementById("d-say").addEventListener("keydown", e => {
 // Saved on change rather than on every keystroke, so a half-typed tag is not
 // stored and read straight back under the cursor. The daemon lower cases and
 // dedupes, so what comes back may differ from what was typed.
-document.getElementById("d-tags").addEventListener("change", e => {
-  patch({ tags: e.target.value.split(",").map(s => s.trim()).filter(Boolean) });
-});
+patchOnChange("d-tags", v => ({ tags: v.split(",").map(s => s.trim()).filter(Boolean) }));
 
 // Every tag already in use, so the second card gets the same spelling as the
 // first. Free text with no memory is how "discourse" and "discource" both end
@@ -15226,11 +15493,26 @@ function paintPaneBg(theme) {
   const pane = document.querySelector(".term-pane");
   if (!pane) return;
   const bg = (theme && theme.background) || "";
+  // A THEME GOES ON AND COMES OFF AS ONE THING.
+  //
+  // `--term-fg` and `--term-line` were left behind here while `--term-bg` and
+  // the rest were removed, so a pane with nothing attached kept the FOREGROUND
+  // of whatever was last on it. Anything drawing a pair with a fallback each
+  // then took one colour from a dead theme and the other from the board, which
+  // is how the restart banner ended up as pale text on a near-white pill for
+  // the second time. `.termwait` says the rest of it.
+  //
+  // The class is the switch every one of those rules reads. There are two
+  // states, themed and not, and nothing may be half way between them.
+  pane.classList.toggle("themed", !!bg);
   if (!bg) {
-    pane.style.removeProperty("--term-bg");
-    pane.style.removeProperty("--term-thumb");
-    pane.style.removeProperty("--term-thumb-hi");
-    pane.style.removeProperty("--term-edge");
+    ["--term-bg", "--term-fg", "--term-edge", "--term-line",
+     "--term-thumb", "--term-thumb-hi"].forEach(v => pane.style.removeProperty(v));
+    const bare = document.getElementById("term-layout");
+    if (bare) {
+      bare.style.removeProperty("--term-line");
+      bare.style.removeProperty("--term-thumb-hi");
+    }
     return;
   }
   // The pane's own outline, in the colour the tab beside it is using. Same
@@ -15984,17 +16266,28 @@ function openTerm(task) {
     if (e.shiftKey && e.key === "Insert") return false;
     if (ctrl && !e.shiftKey && e.code === "KeyV") return false;
 
-    // CTRL-SHIFT-V OPENS THE PASTE BOX, which is the paste that always works.
+    // CTRL-SHIFT-V ASKS THE CLIPBOARD FIRST, and opens the box only if it does
+    // not answer.
     //
-    // Everything above depends on the browser handing this page the clipboard.
-    // Over a share it will not, until somebody answers a permission prompt for
-    // an origin they have never seen before. This asks for nothing: the box
-    // takes a ctrl-v of its own and sends what lands in it. Bound here rather
-    // than left to the browser because nothing else claims it and it is the
-    // pair to ctrl-shift-c on a terminal.
+    // The box exists because `navigator.clipboard.read()` is a permission
+    // granted per ORIGIN: every share is an origin nobody has answered for, and
+    // an unanswered prompt makes the promise never settle. On loopback that
+    // permission was answered once and is remembered, so the read comes back in
+    // single-digit milliseconds and the box is a step for nothing. Pressed out
+    // of habit on the board, it was two keystrokes and a dialog to do what
+    // ctrl-v does on its own.
+    //
+    // So this is right click's path, which is `pasteIntoTerm`: race the read
+    // against `pasteWaitMs` and fall back to the box. There is deliberately no
+    // "am I on loopback" test anywhere here. WHETHER THE CLIPBOARD ANSWERS IS
+    // THE TEST, it is the thing actually being asked about, and it stays right
+    // on a browser, an overlay or a permission model nobody has anticipated.
+    //
+    // Bound here rather than left to the browser because nothing else claims it
+    // and it is the pair to ctrl-shift-c on a terminal.
     if (ctrl && e.shiftKey && e.code === "KeyV") {
       e.preventDefault();
-      openPasteBox();
+      pasteIntoTerm();
       return false;
     }
 
@@ -16100,7 +16393,10 @@ function wireTerminalPaste(screen) {
 
     e.preventDefault();
     e.stopPropagation();
-    if (files.length) { uploadIntoTerm(files); return; }
+    // A guest has no file endpoint, so a pasted picture is offered nothing and
+    // falls through to the text below it. Pasting TEXT is the terminal, which
+    // is the one thing this link does share.
+    if (files.length && !isGuest()) { uploadIntoTerm(files); return; }
 
     // Files first, because a clipboard holding a screenshot usually also holds
     // a text representation of it, and pasting that instead is how a paste
@@ -16301,6 +16597,10 @@ function wirePasteBox() {
     // is sent. Files have nothing to read and no text form worth sending, so
     // they go straight up.
     if (!files.length) return;
+    // A guest has no file endpoint. Left alone rather than refused: whatever
+    // text form the clipboard also carries lands in the box, which is the same
+    // thing this box does for every paste it cannot upload.
+    if (isGuest()) return;
     e.preventDefault();
     closePasteBox();
     uploadIntoTerm(files);
@@ -16325,6 +16625,10 @@ function wirePasteBox() {
 // Returns whether it handled the paste.
 async function pasteFilesIntoTerm() {
   if (!termTask || !navigator.clipboard || !navigator.clipboard.read) return false;
+  // A guest has no file endpoint, so this hands the paste back and the text
+  // branch behind it takes over. Not handled here means not handled, which is
+  // what the caller already knows how to do something with.
+  if (isGuest()) return false;
   let items;
   try { items = await navigator.clipboard.read(); } catch (e) { return false; }
 
@@ -16386,13 +16690,23 @@ async function uploadIntoTerm(files) {
 }
 
 // Dropping a file onto the terminal is the same gesture with a different hand.
+//
+// A GUEST GETS NO DROP TARGET. `guestHandler` refuses `/v1/tasks/*/files`, so
+// the highlight and the "uploading" toast were an invitation to something that
+// could only end in a refusal.
+//
+// The listeners are still attached, and only the invitation is withdrawn. A
+// page with no `drop` handler lets the browser have the file, which NAVIGATES
+// AWAY from the terminal to display it, so removing them would cost a guest the
+// session over a mis-aimed drag. So the drop is swallowed and answered with the
+// daemon's own sentence.
 function wireTerminalDrops(screen) {
   if (!screen || screen.dataset.drops) return;
   screen.dataset.drops = "1";
   screen.addEventListener("dragover", e => {
     if (!termTask) return;
     e.preventDefault();
-    screen.classList.add("dropping");
+    if (!isGuest()) screen.classList.add("dropping");
   });
   screen.addEventListener("dragleave", () => screen.classList.remove("dropping"));
   screen.addEventListener("drop", e => {
@@ -16401,6 +16715,7 @@ function wireTerminalDrops(screen) {
     const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
     if (!files.length) return;
     e.preventDefault();
+    if (isGuest()) { toast("files are not part of this link", guestWord); return; }
     uploadIntoTerm(files);
   });
 }
@@ -21477,11 +21792,100 @@ function termOnly() { return /^#term=/.test(location.hash); }
 // Everything else is hidden rather than removed, so the same code paths keep
 // working: the switcher, the card dialog and the settings all still exist and
 // are simply never shown.
+// Whether this window may have the card named in its address, asked of every
+// window that might already hold it.
+//
+// TWO THINGS A NAIVE VERSION GETS WRONG, and either one makes it worse than
+// the bug it closes.
+//
+// **A claim has to expire.** `soloHeld` is a heartbeat and it is up to
+// `soloClaimFor` stale, so believing it would lock a card out for fifteen
+// seconds after a window closed, and a browser that skipped `pagehide`
+// entirely would lock it out until something else corrected the ledger. So
+// this asks the way `attachTask` asks, through `stillOutThere`: a roll call,
+// and only a window that ANSWERS counts as a holder. A claim nobody speaks for
+// is not one.
+//
+// **The refusal has to be recoverable in one click.** A dialog saying the card
+// is open elsewhere and nothing more strands whoever cannot find that window,
+// and this page cannot help them: a page may only focus a window it opened
+// itself, and a window opened from a pasted url has no opener here. So the
+// dialog offers to TAKE the card, which asks the holder to let go and then
+// attaches.
+//
+// Taking rather than CLOSING the other window was the choice. Closing one is a
+// call browsers refuse silently unless they agree this script opened it, which
+// is exactly the case that is not true here, so a close button would have
+// claimed to do something it had not roughly half the time. See
+// `closeThisWindow`, which exists because of that.
+//
+// Returns whether to go ahead and attach.
+async function takeSoloCard(id) {
+  if (!id) return true;
+  if (!(await stillOutThere(id))) return true;
+
+  // Said in the title bar too, because this window may already be behind
+  // something by the time the dialog is up, and the title is what alt-tab
+  // shows.
+  document.title = "atrium: already open elsewhere";
+  const take = await askUser({
+    title: "that card is open in another window",
+    body: "atrium puts one view on a terminal. two of them and the daemon sizes the " +
+      "session to the smaller window, so the bigger one redraws every wrapped line on " +
+      "top of itself and eats a character at each wrap.<br><br>" +
+      "this page cannot bring the other window forward: a page may only raise a window " +
+      "it opened itself. so go to that window, or take the terminal from it here.",
+    buttons: [
+      { label: "leave it there", value: null },
+      { label: "take it anyway", value: true, style: "go" }
+    ]
+  });
+  if (take !== true) {
+    termWait("this card is already open in another window. close this one, or reload to ask again.");
+    return false;
+  }
+
+  if (soloBus) soloBus.postMessage({ type: "solo-yield", task: id });
+  // Asked again rather than assumed, because a broadcast has no delivery
+  // report and a window running an older build of this page has never heard of
+  // `solo-yield`. Going ahead either way is deliberate: this is the click that
+  // means "I want it here", and refusing after being told to take it would
+  // leave nowhere left to go.
+  const letGo = !(await stillOutThere(id));
+  // The ledger entry goes whatever the answer was. Left there, `poppedOut` in
+  // this document would go on saying this window's own card is somewhere else.
+  soloHeld.delete(id);
+  if (!letGo) {
+    toast("the other window did not let go",
+      "it may be an older build of this page. close it if this terminal draws wrong.");
+  }
+  return true;
+}
+
 async function bootTerminalOnly() {
-  soloID = decodeURIComponent(location.hash.slice("#term=".length));
+  const want = decodeURIComponent(location.hash.slice("#term=".length));
   document.body.classList.add("solo");
 
-  // THE CLAIM IS THE FIRST THING THIS WINDOW DOES.
+  // ONE VIEW PER TERMINAL, AND THIS IS THE DOOR THAT WAS LEFT OPEN.
+  //
+  // Every other route already refuses: `attachTask` raises the window instead
+  // of attaching, `soloSwitch` turns a switch onto a held card away, and
+  // `popOutTask` will not open a second one. A `#term=<id>` url pasted into a
+  // tab went round all three.
+  //
+  // What it costs is not cosmetic. The daemon sizes the pty to the SMALLEST
+  // viewer and nothing tells the larger window's xterm about the size that was
+  // agreed, so every cursor-positioning escape the runner emits is computed for
+  // a narrower line than the one it lands on. A wrapped input line redraws on
+  // top of itself and eats a character per wrap column. The narrow window looks
+  // perfect throughout, which is why the window being typed in reads as the
+  // broken one.
+  //
+  // So ask first, and do not attach if somebody answers.
+  if (!(await takeSoloCard(want))) return;
+  soloID = want;
+
+  // THE CLAIM IS THE FIRST THING THIS WINDOW DOES ONCE IT HAS THE CARD.
   //
   // It used to be posted after the card was fetched and the terminal opened,
   // which is a round trip and a WebGL context later. A restart reloads the
@@ -21494,6 +21898,11 @@ async function bootTerminalOnly() {
   // window is going to speak for it either way, and claiming a card that turns
   // out to be gone costs one alert the board skips for a session that has
   // nothing to alert about.
+  //
+  // The roll call above is the one thing now in front of it, and it fits: it
+  // waits `soloAnswerFor`, and the board waits `soloRollCall` before its first
+  // poll, which is nearly three times as long. The margin that stopped the two
+  // chimes is still there.
   if (soloBus) {
     soloBus.postMessage({ type: "solo-claim", task: soloID });
     // `pagehide` rather than `unload`, which a browser is free to skip when it
@@ -21556,7 +21965,11 @@ async function soloRefresh() {
   // The heartbeat behind every board's `soloHeld`. On the poll rather than a
   // timer of its own: it is the same question at the same rate, and a second
   // timer is a second thing to get wrong.
-  if (soloBus) soloBus.postMessage({ type: "solo-claim", task: soloID });
+  //
+  // Not while yielded. This window handed the card to another one, and a
+  // heartbeat for a card it no longer shows would have the board refuse to
+  // attach to it and "raise" a window with nothing in it.
+  if (soloBus && !soloYielded) soloBus.postMessage({ type: "solo-claim", task: soloID });
 
   const [task, waiting, perms] = await Promise.all([
     api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
@@ -21580,7 +21993,11 @@ async function soloRefresh() {
   // line of defence rather than the mechanism: reattaching costs the
   // scrollback, so the retry loop keeping one socket alive is still the good
   // outcome and this is the one that stops a window being useless.
-  if (!term && task && task.supervised) {
+  //
+  // Not while yielded, which is the one teardown that was a decision rather
+  // than an outage. Without that the watchdog would put back, five seconds
+  // later, the terminal this window was asked to give up.
+  if (!term && task && task.supervised && !soloYielded) {
     rlog("solo window has no terminal and the card does. attaching");
     openTerm(task);
   }
@@ -22157,6 +22574,10 @@ async function soloSwitch(id) {
   const was = soloID;
   soloID = id;
   soloTask = task;
+  // A window that gave its card away is a viewer again the moment it is given
+  // another one. Leaving this set would keep the heartbeat and the watchdog off
+  // for the new card, so the board would never learn this window holds it.
+  soloYielded = false;
   soloMark = "";
   soloKnown = { perm: null, ready: null };
   history.replaceState(null, "", location.pathname + "#term=" + encodeURIComponent(id));
@@ -22276,6 +22697,14 @@ bootSkin();
 // wearing a brought one repaints when this lands rather than waiting on it.
 loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); });
 
+// AM I A GUEST, asked before anything is drawn.
+//
+// Started here rather than awaited here. A popped-out or lent terminal has to
+// get its claim in and its socket open, and the answer only gates what may
+// POST a file, which is minutes away from boot in human terms. The board waits
+// for it, because the whole question there is whether to draw a board at all.
+guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
+
 if (termOnly()) {
   // The same stream and the same interval as the board. `refresh` sends a
   // popped-out window down `soloRefresh`, so this costs one card's worth of
@@ -22285,6 +22714,18 @@ if (termOnly()) {
     setInterval(refresh, 5000);
   });
 } else {
+  bootBoard();
+}
+
+// The board, once it is known to be a board.
+//
+// A lent session serves this same file at `/`, so the address a guest was given
+// WITHOUT its `#term=` fragment lands here. Everything the board polls is
+// refused, every list comes up empty, and what is on screen is an atrium with
+// nothing in it. Drawing that and then apologising is worse than not drawing
+// it, so the question is settled first.
+async function bootBoard() {
+  if (await guestKnown) { showGuestPage(); return; }
   connect();
   // THE ROLL CALL GOES FIRST, AND THE BOARD WAITS FOR THE ANSWERS.
   //
@@ -22312,6 +22753,25 @@ if (termOnly()) {
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.
   addEventListener("pagehide", rememberWhereYouAre);
+}
+
+// What a lent session says at its bare address.
+//
+// The daemon's own sentence, and then the one thing the guest can act on: the
+// fragment is missing. `#term=<card>` never reaches the server, so a link that
+// lost it is indistinguishable to atrium from a link that never had it, and
+// this page is the only place that can say so.
+//
+// Nothing is polled and nothing is connected after this. Every request the
+// board makes is refused here, and a page retrying them every five seconds
+// would be a share with a heartbeat and nothing to show for it.
+function showGuestPage() {
+  document.title = "atrium: one terminal";
+  document.body.classList.add("guestonly");
+  const box = document.getElementById("guestonly");
+  const word = document.getElementById("guest-word");
+  if (word) word.textContent = guestWord;
+  if (box) box.hidden = false;
 }
 </script>
 </body>

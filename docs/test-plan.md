@@ -1326,7 +1326,7 @@ steps. This is correct behaviour and it will waste ten minutes if you forget.
 **Steps**
 
 1. On a card whose session is running: `atrium ask "which schema is authoritative"`.
-2. On a second one: `atrium ask --working "should the postgres path be stubbed"`.
+2. On a second one: `atrium ask --continue "should the postgres path be stubbed"`.
 3. On a third: `atrium finish "wired the reaper to the pty"`.
 4. Leave a fourth alone, with no hooks reporting for it.
 5. `atrium peers --fleet`.
@@ -1759,10 +1759,10 @@ handle it prints is what these steps mean by `<them>` and `<you>`.
 **Steps**
 
 1. Put something in `why am I doing this` on a card, from the board. A sentence you will recognise.
-2. In that session: `atrium ask --working "which of these two schemas is authoritative"`
+2. In that session: `atrium ask --continue "which of these two schemas is authoritative"`
 
 **Expect** the card shows BOTH: the question labelled **this agent has a question**, and the `why` you typed,
-still there and unchanged. The card does NOT move, because `--working` says the session is carrying on. If the
+still there and unchanged. The card does NOT move, because `--continue` says the session is carrying on. If the
 `why` is gone, the ask is writing to the wrong field again.
 
 ### T2. A blocked ask moves the card and says what it is waiting for
@@ -1908,3 +1908,159 @@ curl.exe -s -X POST http://localhost:7778/v1/dispatch/<item>/result `
 identity to trust. If this ever answers 200, anything that can reach the board can mark somebody's queue item
 started.
 
+
+## V. What the round 1 to 8 review turned up, fixed
+
+Every scenario here is a defect the operator found by using the board, written up in `docs/dispatch-queue.md`
+and then fixed. They are the ones a Go test cannot answer: two browser windows, a restart, a light skin.
+
+### V1. Two windows on one terminal are refused
+
+**The failure this replaces.** A `#term=` url pasted into a tab attached a second viewer. The pty was then
+sized to the smaller window and the LARGER one drew every wrapped line on top of itself, so
+`accepting newlines for some reason` read as `acceptingenewlineshforisomewreason`. The small window looked
+perfect, so the window being typed in read as the broken one.
+
+**Steps**
+
+1. Attach to a supervised card in the board's own pane.
+2. Copy the board address, open a NEW TAB by hand, and paste `<address>/#term=<card id>` for that same card.
+
+**Expect** the new tab refuses to attach and says the card is open in another window. It offers **leave it
+there** and **take it anyway**.
+
+3. Press **take it anyway**.
+
+**Expect** the new tab attaches, and the ORIGINAL pane tears itself down saying another window took the
+terminal. One viewer, always.
+
+4. Close the tab that took it. Within a second or two, press `attach` on that card from the board.
+
+**Expect** it attaches with no refusal. The claim is answered by a roll call rather than by a fifteen second
+timer, so a window that was closed without releasing does not lock a card out.
+
+### V2. A lent session's address says what it is
+
+**Steps** share a session, then open the share address with the `#term=<id>` fragment REMOVED.
+
+**Expect** a page saying what the address is for and that the link needs its fragment back. Not an empty board.
+
+**The failure this replaces** is that it drew the board's own chrome with every list empty, because the guest
+handler refuses `/v1/tasks` on purpose. It looked exactly like atrium being broken, and the first person to see
+it asked whether it was a clone of his own board.
+
+5. On the terminal at the correct address, try to paste a picture, and try to drag a file onto it.
+
+**Expect** it says `this link is one terminal. nothing else here is shared.`, which is the daemon's own
+sentence. NOT `that did not go up`, and not the word `Forbidden`.
+
+### V3. Scrollback survives a restart
+
+**The one to run properly, because it is the reason the whole round exists.**
+
+**Steps**
+
+1. Attach to a supervised card and let real output pile up in it. Scroll up and confirm it is there.
+2. Stop the daemon PROPERLY with `atrium stop`, not a kill. The log says `saved scrollback for N card(s)`.
+3. Start it again. The log says `<card> starts with N bytes of scrollback from before the restart`.
+4. Open that card's terminal.
+
+**Expect** the output from before the restart is there, above a dim `atrium restarted here` divider.
+
+5. Close the window entirely and open the terminal again from the stack page.
+
+**Expect** it is STILL there. This is the half that failed before: the daemon holds the copy now, so closing
+the last open page no longer discards it.
+
+**Expect also**, if your window is at a very different width than the one that produced the output, that it is
+dropped rather than replayed. Bytes composed for another width are what make an attach unreadable.
+
+**What it does NOT do:** survive a kill. `taskkill` on the daemon never runs the wind-down, so nothing is
+written. That is a stated limit, not a defect.
+
+### V4. Two questions both survive
+
+**Steps** in a gated session:
+
+```powershell
+atrium ask --continue "which of these two schemas is authoritative"
+atrium ask "which branch is base"
+```
+
+**Expect** the card shows BOTH, and the `why` you wrote is still there and unchanged.
+
+**The failure this replaces** is that the second `ask` overwrote the first and nothing anywhere recorded that
+the first had ever been asked.
+
+3. Answer one of them from the board.
+
+**Expect** the other is still standing, and the card is still asking.
+
+4. Ask a peer as well: `atrium ask --peer <them> "..."`. Have that peer run `atrium answer <you> "..."`.
+
+**Expect** the peer's answer settles ONLY the question that was routed to it. A question left for a human is
+not answered by a peer who never saw it.
+
+5. Ask eleven things without answering any.
+
+**Expect** ten outstanding, and the OLDEST retired with a note saying it was dropped because there were too
+many. The newest survives, because it is the one the session is stopped on.
+
+### V5. The question is a control
+
+**Steps** with a card that is asking something, click the question on the stack row.
+
+**Expect** the card opens with the caret in the box for saying something to it.
+
+6. Open the card dialog directly.
+
+**Expect** the question is IN the dialog, beside what it says it did, read only, naming the peer when it was
+routed to one.
+
+### V6. The card dialog says that it saves
+
+**Steps** open a card, type into `why am I doing this`, and look at the buttons.
+
+**Expect** `save and close`, not `close`, and a line saying fields are kept when you leave them.
+
+### V7. `ctrl-shift-v` pastes straight through on loopback
+
+**Steps** on `localhost`, attach a terminal, copy some text, press `ctrl-shift-v`.
+
+**Expect** it pastes. NO box.
+
+7. Do the same over a share.
+
+**Expect** the box, after about a second. The clipboard permission is granted per origin and a share is a new
+origin, so the read never settles there and the box is the way through.
+
+### V8. The restart banner is readable
+
+**Steps** with a LIGHT skin, and with no terminal attached in the pane, trigger a restart.
+
+**Expect** the `atrium is restarting` banner is legible. It was pale text on a near-white pill.
+
+**The failure this replaces** is worth knowing because it was fixed once before and came back: detaching
+cleared one theme variable and left two behind, so the pane carried half of the last terminal theme.
+
+### V9. The zrok account toggle
+
+**Steps** gear, `expose the board`. Press `give atrium its own`, then press `use this machine's zrok`.
+
+**Expect** it switches. It used to refuse with `that environment is already enabled against
+https://api-v2.zrok.io/. disable it first...`, because the address it was comparing differed by a trailing
+slash.
+
+**Expect also** that a refusal for a REAL move still happens, and now names the environment and both addresses.
+
+### V10. A refusal is not buried
+
+**Steps** `atrium ask --peer nobody-here "anything"`.
+
+**Expect** the refusal, the list of handles that would have worked, and `nothing was asked.` Nothing else. No
+usage block, no repeated error line.
+
+8. Then `atrium ask --url http://localhost:9 "anything"`.
+
+**Expect** the usage block IS still printed, because that failure has no sentence of its own. Suppressing it
+everywhere would make a real failure silent.

@@ -11,8 +11,6 @@ cannot be reproduced. Twenty skins is twenty chances for a value that was tuned 
 | # | Where | Skin | What is wrong |
 | --- | --- | --- | --- |
 | 4 | A project group's name, and a stack group's name, at rest | `paper`, `daylight`, `linen`, `frost` | see below |
-| 5 | The restart banner, with nothing attached | light skins | see below |
-| 6 | The group expander in the stack | every skin | see below |
 
 **4.** The name is `hsl(var(--ghue) 70% 72%)`, a fixed lightness, on a block washed with the same hue. On the
 four light skins there is a hue at which the name and the wash have the SAME luminance: a contrast ratio of
@@ -31,29 +29,6 @@ gives 2.70, which is still under the floor the rest of the palette clears.
 
 `scripts/check-contrast.js` holds this one PINNED at 1.00 rather than failing on it: see below.
 
-**5.** `.termwait` takes its background from `--term-bg` and its text from `--term-fg`, falling back to
-`--shell-0` and `--head`. The comment above it explains why: a terminal theme's two colours are designed to be
-legible together, so taking BOTH from the same theme is right for every theme including ones nobody has
-written. That reasoning holds and the fallbacks break it.
-
-With nothing attached the pane has no terminal theme, and the two variables do not necessarily go missing
-together: whichever one is still set from a previous attach pairs with the other one's board fallback. The
-screenshot is that pair on a light skin, pale text on a near-white pill, saying `atrium is restarting. waiting
-for dotfiles to come back` in a colour you have to already know is there.
-
-The fix is to stop mixing systems in the fallback rather than to pick better colours. Either both come from
-the terminal theme or neither does, which means one fallback that sets both, applied when there is no theme,
-rather than two independent `var(--x, --y)` pairs that can resolve from different sides.
-
-Note that this is the SECOND time this banner has been wrong for this reason, and the first fix is quoted in
-the comment. A rule about pairs is not enforced by writing the pair down once.
-
-**6.** The expander on a stack group heading, the `▾` before `today 7`, is a few pixels of glyph. Operator:
-"the 'expando' icon in the titles is too small". It is the control for the one thing the heading does, it is
-the only affordance on that row, and it is smaller than the count beside it.
-
-Not a contrast defect, so `check-contrast.js` will never see it. Same category as nit 2: a control sized by
-the text it happens to sit in rather than by what it is for.
 
 ## The check that catches these
 
@@ -106,6 +81,8 @@ rule wherever the rule holds a colour of its own.
 | 1 | Hovering a group heading, stack and board | `paper`, and every light skin | see below |
 | 2 | Glyph buttons in a terminal's bar | all | see below |
 | 3 | The pinned group's heading | `linen`, `paper`, `daylight`, `frost` | see below |
+| 5 | The restart banner, with nothing attached | light skins | see below |
+| 6 | The group expander in the stack | every skin | see below |
 
 **1.** The hover raised the name's LIGHTNESS to 85%, which reads as more prominent on a dark board and nearly
 invisible on a light one. It now blends toward `--head`, so it goes darker on a light skin and lighter on a
@@ -130,6 +107,27 @@ real and smaller, on one skin instead of four.
 Worth keeping, because it is the failure mode of this kind of check: a pair that sweeps a value the MARKUP
 fixes will invent defects, and a check that cries wolf is a check somebody switches off. `PIN_HUE` in the
 script is that correction, and the pair now scores the hue the board draws.
+
+**5.** The nit said `.termwait` mixed two systems in its FALLBACKS, taking a background from `--term-bg` and a
+colour from `--term-fg` with a board-side fallback on each, so the two could resolve from different sides. That
+was the visible shape and it was not the cause.
+
+The cause is that detaching cleared `--term-bg` and left `--term-fg` and `--term-line` behind. So the pane was
+not carrying "no theme", it was carrying half of the last one, and the leftover foreground paired with the
+board's own background on the next light skin somebody looked at. Better fallbacks would have hidden that
+without fixing it, and the same leftovers were quietly reaching the file drawer and the find bar.
+
+`paintPaneBg` now owns a `themed` class on the pane and clears EVERY theme variable together, and one rule,
+`.term-pane:not(.themed) .termwait`, sets background, border and colour in one place. The rule the comment now
+states: a pair is chosen once, not per property.
+
+Worth keeping because the banner had already been fixed once for this, and the first fix is quoted in the
+comment above it. Both attempts treated a variable as missing when it was stale. A rule about pairs is not
+enforced by writing the pair down; it is enforced by there being one place that sets them.
+
+**6.** The stack group expander was an 11px glyph at body size, and it is the only control on that row. Now a
+22 by 22 centred square at `--fs-xl` with the standard `--lift` hover. Same category as nit 2: a control sized
+by the text it happens to sit in rather than by what it is for.
 
 ## What the fixes taught
 

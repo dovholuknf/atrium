@@ -44,7 +44,7 @@ const (
 	// WantPermission is a session held at the permission gate. Also stopped,
 	// and answered with a decision rather than with thought.
 	WantPermission = "permission"
-	// WantQuestion is `atrium ask --working`: a question from a session that
+	// WantQuestion is `atrium ask --continue`: a question from a session that
 	// is carrying on regardless. Worth an answer, never worth an interruption.
 	WantQuestion = "question"
 	// WantFinished is a session that declared its work over. It wants reading,

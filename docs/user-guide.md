@@ -392,13 +392,15 @@ never WHY, so the way to find out is to open its terminal and read back through 
 
 ```powershell
 atrium ask "which of these two schemas is authoritative"
-atrium ask --working "is the staging database safe to drop"
+atrium ask --continue "is the staging database safe to drop"
 ```
 
 The question goes on the card, labelled **this agent has a question**, and it is not the same line as `why`:
-that one is what the card is for and is still true next week. Without `--working` the session is saying it has
+that one is what the card is for and is still true next week. Without `--continue` the session is saying it has
 STOPPED, and the card moves to waiting. With it the session is carrying on and the card does not move, because
-a working session filed as waiting makes the count that drives every alert lie.
+a working session filed as waiting makes the count that drives every alert lie. The flag names the decision and
+not the state, so the pair reads as stop by default and carry on by request. `--working` is the old name for it
+and still works.
 
 **Saying anything to that card answers it.** The question comes off, whether you type it into the message box or
 press an action. Typing into the terminal does not: atrium cannot see that.

@@ -61,6 +61,13 @@ type HelpRequest struct {
 	// Two different things and the board treats them differently. A session
 	// that has stopped is worth interrupting somebody for. One that is still
 	// working and has a question is not.
+	//
+	// FALSE IS THE DEFAULT AND STOPPING IS THE DEFAULT, which reads backwards
+	// until you look at the flag: `atrium ask` stops, and `--continue` is how
+	// a session says it is carrying on. The field is named for the state and
+	// the flag is named for the decision, on purpose. A caller that omits this
+	// is saying nothing about what it is doing, and the safe reading of
+	// nothing is that the session is waiting.
 	Blocked bool `json:"blocked,omitempty"`
 	// Peer is the handle of another session to route this to, or empty to put
 	// it on the card for a human.
@@ -130,7 +137,12 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// field the operator writes once and reads in a week, so a question
 	// destroyed the standing answer to "what was I even doing" and the board
 	// drew both in the same line. See `store/ask.go`.
-	if err := d.st.SetAsk(task.ID, ask, peer); err != nil {
+	//
+	// AND IT IS APPENDED, NOT WRITTEN OVER. The columns that replaced `why`
+	// held exactly one question, so a second ask destroyed the first with
+	// nothing recording it had been asked. A row per question, and the oldest
+	// outstanding one is what the card draws.
+	if _, err := d.st.AddAsk(task.ID, ask, peer); err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -248,7 +260,12 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	// The question, quoted back. A session that asked an hour ago may have
 	// compacted its context since, and an answer to a question it no longer
 	// remembers asking is a puzzle rather than an answer.
-	asked := target.Ask
+	//
+	// ITS OWN QUESTION, NOT WHATEVER THE CARD HAPPENS TO BE DRAWING. A card
+	// can be waiting on this peer for one thing and on a human for another,
+	// and quoting back the human's question over a peer's answer tells the
+	// asker its human question was answered when it was not.
+	asked := d.oldestAskTo(target.ID, from)
 	body := text
 	if asked != "" {
 		body = "You asked: " + asked + "\n\n" + text
@@ -258,9 +275,18 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answered := asked != ""
+	// ONLY THE QUESTIONS THIS PEER WAS ASKED. `ask_peer` is per question, so a
+	// peer can only have settled the ones addressed to it. Clearing the card
+	// wholesale on the strength of one reply would take a question meant for a
+	// human off the board, which is the same silent disappearance the ask
+	// table exists to stop.
+	settled, err := d.st.AnswerAsksFrom(target.ID, from, from)
+	if err != nil {
+		log.Printf("[atrium] %s answered %s but the card could not be updated: %v", from, to, err)
+	}
+	answered := len(settled) > 0
 	if answered {
-		d.askAnswered(target.ID, from)
+		d.askSettled(target.ID, from, settled)
 	}
 	d.publishTask(target.ID)
 	log.Printf("[atrium] %s answered %s (%d chars)", from, to, len(text))
@@ -278,30 +304,57 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// askAnswered takes a settled question off a card.
+// askAnswered takes every outstanding question off a card.
 //
-// One function, because the ask is cleared from more than one direction and
-// they must agree: a peer answering through `atrium answer`, and the operator
-// sending the card a message from the board, which is the same act through the
-// other channel. Typing into the terminal is invisible to atrium and always
-// has been, so an ask answered that way stays on the card until the session
-// finishes or asks something else.
+// THE BROAD DOOR, and it is the right one for the two callers it has. The
+// operator saying something to the card, and the session declaring its work
+// over, are both the end of every question at once: neither is addressed to a
+// particular one, and neither leaves anybody owing an answer. A peer replying
+// is the opposite, and goes through `AnswerAsksFrom` above.
+//
+// Typing into the terminal is invisible to atrium and always has been, so an
+// ask answered that way stays on the card until the session finishes, is
+// spoken to through atrium, or asks something else.
 //
 // Best effort. A message that has already been queued is a message that
 // arrived, and reporting a failure for the bookkeeping after it would be
 // reporting a failure for something that happened.
 func (d *Daemon) askAnswered(taskID, by string) {
-	t, err := d.st.Get(taskID)
-	if err != nil || !t.Asking() {
-		return
-	}
-	if err := d.st.ClearAsk(taskID); err != nil {
+	settled, err := d.st.AnswerAllAsks(taskID, by)
+	if err != nil {
 		log.Printf("[atrium] answered %s but could not clear the ask: %v", taskID, err)
 		return
 	}
-	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-		"kind": "answered", "by": by, "ask": t.Ask,
-	}); err != nil {
-		log.Printf("[atrium] answered %s but could not record it: %v", taskID, err)
+	d.askSettled(taskID, by, settled)
+}
+
+// askSettled records questions that have just been answered.
+//
+// One event per question rather than one per act, because the event log is
+// where you go to find out what happened to a question, and a single line
+// saying three were settled cannot tell you which three.
+func (d *Daemon) askSettled(taskID, by string, settled []*store.Ask) {
+	for _, a := range settled {
+		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+			"kind": "answered", "by": by, "ask": a.Text, "peer": a.Peer,
+		}); err != nil {
+			log.Printf("[atrium] answered %s but could not record it: %v", taskID, err)
+			return
+		}
 	}
+}
+
+// oldestAskTo is the question this card has been waiting on ONE peer for the
+// longest, or empty when that peer owes it nothing.
+func (d *Daemon) oldestAskTo(taskID, peer string) string {
+	open, err := d.st.OpenAsks(taskID)
+	if err != nil {
+		return ""
+	}
+	for _, a := range open {
+		if a.Peer == peer {
+			return a.Text
+		}
+	}
+	return ""
 }

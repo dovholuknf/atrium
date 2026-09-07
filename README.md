@@ -237,7 +237,7 @@ board having lost everything. The daemon says so loudly when the database is not
 | `atrium preview` | A throwaway second board, on a copy of your cards, for looking at a change before installing it. |
 | `atrium hook` / `session` / `turn` | The hook entry points. Wired for you from the runners tab. |
 | `atrium finish [recap]` | An agent saying its work is over, and what it did. |
-| `atrium ask [--working] [--peer <handle>]` | A session saying it is stuck and what would unstick it, on its card or routed to another session. |
+| `atrium ask [--continue] [--peer <handle>]` | A session saying it is stuck and what would unstick it, on its card or routed to another session. |
 | `atrium answer <handle>` | The reply to one of those, which also takes the question off that card. |
 | `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |

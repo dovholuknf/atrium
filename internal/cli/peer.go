@@ -75,14 +75,14 @@ func newTell() *cobra.Command {
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
 			"not know the handle.",
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: speaksForItself(func(cmd *cobra.Command, args []string) error {
 			to := args[0]
 			text := strings.Join(args[1:], " ")
 			if strings.TrimSpace(text) == "" {
 				text = pipedRecap()
 			}
 			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text)
-		},
+		}),
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
@@ -103,14 +103,14 @@ func newAnswer() *cobra.Command {
 			"Use this even when the answer is that you cannot help. A question left on a card " +
 			"reads as one nobody has looked at, and the session that asked is waiting.",
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: speaksForItself(func(cmd *cobra.Command, args []string) error {
 			to := args[0]
 			text := strings.Join(args[1:], " ")
 			if strings.TrimSpace(text) == "" {
 				text = pipedRecap()
 			}
 			return answerPeer(cmd.OutOrStdout(), hubURL, name, to, text)
-		},
+		}),
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
@@ -365,7 +365,8 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb string) (*pee
 			fmt.Fprintf(out, "\nthese are the sessions you can %s:\n", verb)
 			printPeers(out, answer.Peers)
 		}
-		return nil, fmt.Errorf("nothing was sent")
+		fmt.Fprintf(out, "\nnothing was sent. run it again with one of those.\n")
+		return nil, alreadySaid("no session called %s", to)
 	}
 	if resp.StatusCode >= 300 {
 		if answer.Error != "" {

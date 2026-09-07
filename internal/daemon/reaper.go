@@ -198,6 +198,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.pruneOld(); err != nil {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
+		// And the scrollback saved for cards that are no longer here. Same
+		// tick and no second timer: it is the same question the two sweeps
+		// above ask, about a file instead of a row. See `carryover.go`.
+		d.sweepCarryover()
 		// And settled items from the dispatch queue, which is the same job for
 		// a different table. Only settled ones: an item nobody has collected is
 		// a promise, and it ages out through its lease rather than through

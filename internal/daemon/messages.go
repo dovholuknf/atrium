@@ -304,6 +304,12 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// channel, and a card left holding an answered question makes the one
 	// signal that says "somebody still owes this session something" mean
 	// nothing. See askAnswered in help.go.
+	//
+	// EVERY outstanding question, not just the one the card is drawing. A
+	// message is not addressed to a particular question, so there is no honest
+	// way to pick one, and leaving the rest standing would leave the card
+	// asking things the operator has already been told about. A peer's answer
+	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
 	w.Header().Set("Content-Type", "application/json")

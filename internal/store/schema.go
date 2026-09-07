@@ -1064,6 +1064,61 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS idx_dispatch_room_state ON dispatch(room, state, created_at)`,
 		},
 	},
+	{
+		// A card's questions, one row each. See `internal/store/ask.go`.
+		//
+		// 0042 gave the ask three COLUMNS on the task row, which fixed it
+		// destroying `why` and left it destroying the previous ASK instead: a
+		// session that asked two things had the first overwritten, with
+		// nothing anywhere recording that it had been asked. One column holds
+		// one value and questions arrive one at a time, so this is a table,
+		// keyed by card, the way `message` and `event` already are.
+		//
+		// `answered_at` is '' rather than NULL while the question stands, the
+		// same choice `dispatch.settled_at` makes: one empty test everywhere
+		// instead of a nullable column every reader has to remember.
+		//
+		// `peer` is per row because that is the whole point. A card can be
+		// waiting on a peer for one thing and on a human for another, and an
+		// answer settles the questions it was addressed to, not the card.
+		//
+		// The columns from 0042 STAY, as a mirror of the OLDEST outstanding
+		// ask. The board, `fleet.go` and `atrium peers` read them today.
+		// Nothing outside `ask.go` writes them, so they cannot disagree with
+		// the table that feeds them.
+		name: "0044_ask_table",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS ask (
+				id          TEXT PRIMARY KEY,
+				task_id     TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+				text        TEXT NOT NULL,
+				peer        TEXT NOT NULL DEFAULT '',
+				asked_at    TEXT NOT NULL,
+				answered_at TEXT NOT NULL DEFAULT '',
+				answered_by TEXT NOT NULL DEFAULT ''
+			)`,
+			// The query every read here runs: this card, still outstanding.
+			`CREATE INDEX IF NOT EXISTS ask_open ON ask (task_id, answered_at)`,
+			// CARRY WHAT IS ALREADY THERE. A card holding a live ask in the
+			// old columns keeps it, because dropping the outstanding question
+			// on upgrade is the exact loss this migration exists to stop.
+			//
+			// The id is derived from the card's rather than generated, since
+			// SQL has no newID(), and the NOT EXISTS guard makes a re-run a
+			// no-op without `INSERT OR IGNORE`, which Postgres does not have.
+			//
+			// `ask_at` can be empty on a row written before it was populated,
+			// so it falls back to last_activity_at rather than storing a
+			// timestamp that will not parse.
+			`INSERT INTO ask (id, task_id, text, peer, asked_at, answered_at, answered_by)
+			 SELECT '0044-' || task.id, task.id, task.ask, task.ask_peer,
+			        CASE WHEN task.ask_at = '' THEN task.last_activity_at ELSE task.ask_at END,
+			        '', ''
+			 FROM task
+			 WHERE task.ask != ''
+			   AND NOT EXISTS (SELECT 1 FROM ask WHERE ask.task_id = task.id)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
