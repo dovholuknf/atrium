@@ -5,6 +5,54 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The permissions queue on a phone, judged by narrowing a window rather than by reading the stylesheet.**
+
+  The breakpoint that answers backlog item 11 was written and never watched. Opened at 390 pixels against a
+  queue with three frozen agents in it, four things were wrong, and the first two were the kind that decide
+  what your thumb does.
+
+  **The four buttons sat above the question.** The 900px block puts `.actions` at order 1 and `.who` at order
+  2, which is right where it was written for: a popped-out window is one card on one screen and the buttons
+  are the only thing in it you came for. Inherited by a phone, the first thing under the header was `approve
+  once`, with the command it would approve below the fold. Everything else in that block is about not pressing
+  the wrong button. This was about not pressing any of them blind. The phone puts the question back on top.
+
+  **The command box never grew, and had not since it was written.** `permCard` builds a detached card and
+  autosized the box there, and a detached element reports `scrollHeight` as zero, so it wrote `height: 2px`
+  inline and left it. What you saw was `min-height` doing the whole job: every command clipped to two lines,
+  permanently, with the inline height beating any rule that would have grown it. A six line command showed its
+  first two. It cost nothing on a desktop, where two lines is most commands, and it made the phone unusable,
+  where two lines is none of them. Sizing now happens once the card is in the document, and again when the
+  perms view is switched to, and again on resize, because a hidden element measures as zero exactly like a
+  detached one and rotating a phone rewraps every command.
+
+  **The announcements buried the queue.** Three toasts is the cap, and at 390 pixels a toast carrying a
+  command wrapped to five lines and stood 194px tall, so the cap was 582 of an 844 pixel screen, drawn over
+  the permissions list. One at a time on a phone now, clamped to three lines.
+
+  **And a toast talked over the row it was about.** `notify` already refuses to raise an operating system
+  notification while you can see the board, on the grounds that the toast has already told you. The same
+  argument one level down: if the request's own row is in front of you, with its command and its four buttons,
+  a floating copy of the first 120 characters is a panel drawn over the answer. On screen, not merely on the
+  perms tab, because a queue of six on a phone is taller than the phone and the one frozen twelve minutes may
+  be below the fold, where the toast is the only thing that would take you to it.
+
+  That last one is three-valued and the third value is the whole of a bug. The alerting pass and the repaint
+  are two separate requests, so on the first poll after a reload there is no list to measure yet. Reading that
+  as "not on screen" put a toast over the card you were looking at, on every single reload, which is the one
+  moment you are most certainly looking at it. It says `unknown` and waits for the next poll, and it does not
+  claim the minute's alert on the way past.
+
+  Also **`sw.js` awaited a function nobody wrote.** Press approve on a notification for a request somebody had
+  already answered, and instead of the "too late" message, a `ReferenceError` inside a service worker and
+  nothing on screen at all: the same silence that message exists to prevent, reached by another route.
+
+  `scripts/check-phone.js` holds all of it, in the mould of `check-terminal.js`, and every rule names the
+  failure it prevents. None of this is reachable from a parser: the markup stays valid and the script keeps
+  running with every one of these broken, and what breaks instead is which button a thumb lands on. Each rule
+  was watched to fail with its own bug put back.
+
+
 - **Right click pasted into a terminal on loopback and did nothing at all on a share.**
 
   Reading the clipboard from script is a permission, and a browser grants it per ORIGIN. Loopback is one

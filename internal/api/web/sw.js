@@ -42,6 +42,23 @@ async function expireLater(ms) {
   await sweepExpired()
 }
 
+// expire closes ONE notification by tag, for the ones nothing else retires.
+//
+// The sweep above only knows about `expireAt`, which the page sets and the
+// page's own poll clears. A notification the worker raises by itself has
+// neither: no page put it there and no poll will take it away. There is
+// exactly one of those, the "too late" below, and it used to call a function
+// by this name that was never written. So the failure was: press approve on a
+// notification for a request somebody had already answered, and instead of
+// being told you were too late, get a ReferenceError inside a service worker
+// and nothing on screen at all. Which is the same silence the "too late"
+// message exists to prevent, reached by a different route.
+async function expire(tag, ms) {
+  await sleep(ms)
+  const list = await self.registration.getNotifications({ tag })
+  for (const n of list) n.close()
+}
+
 self.addEventListener("message", event => {
   const m = event.data || {}
   if (m.type !== "notify") return

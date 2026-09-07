@@ -138,6 +138,15 @@ if ! node "$here/scripts/check-switcher.js" "$page"; then
   fail=1
 fi
 
+# The permissions queue at phone width. Same reasoning as the terminal: the
+# markup stays valid and the script keeps running with every one of these
+# broken, and what breaks instead is which button a thumb lands on. Nobody
+# narrows a window to 390 pixels on the way past, so it is checked here.
+if ! node "$here/scripts/check-phone.js" "$page" "$sw"; then
+  echo "a phone invariant is broken. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

@@ -437,6 +437,33 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   Decide which, and write it into `docs/overlays.md` beside the rule it qualifies. What must not happen is
   somebody opening the file endpoints to guests because a drag failed.
 
+### Revisit the share once these land
+
+Round 6 was accepted with four of its six checks unrun, and the reason is worth writing down: every one of
+them needed a share, and the share is the surface with the most outstanding items against it. Testing them
+now would be testing around three known faults at once.
+
+What has to land before the share is worth walking again:
+
+- **Refuse the second view** (group I). Two windows on one terminal wrecked the rendering in the wider one
+  throughout this session, twice, and it is indistinguishable from the terminal itself being broken.
+- **The guest page knows it is a guest** (this group). An empty board at the bare address, and `that did not
+  go up` standing in for a deliberate refusal.
+- **The zrok account switch** (this group). Until it is fixed the board's OWN address cannot be set, so every
+  share test runs against a lent session's address instead, which is a different surface with different rules.
+
+Then re-run, on the board's own share and on loopback:
+
+- `ctrl-v` in the terminal pastes with no box (6.1)
+- right click pauses about a second and opens the box (6.2)
+- the box is empty the next time it opens (6.5)
+- NO box on loopback, the paste goes straight in (6.6)
+
+6.3 and 6.4 passed on a lent share and do not need redoing: `ctrl-shift-v` opened the box at once, and a
+multi-line paste arrived as one paste.
+
+---
+
 ---
 
 ## M. Scrollback does not survive a restart, and the restart is atrium's own
