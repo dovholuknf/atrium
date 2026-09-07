@@ -294,6 +294,129 @@ if (/function holdScrollAt\(/.test(html) && !/releaseScrollHold/.test(html)) {
     "obeyed.");
 }
 
+// Rule 13: a clicked path opens WHERE THE CLICK WAS.
+//
+// `files/open` runs a command on the daemon's machine. That is right for the
+// `open there` chip in the file browser, which says so, and wrong for every
+// path in the terminal: the board is meant to be driven from another machine
+// over a share, so opening there puts a window in front of nobody.
+//
+// It is an easy mistake to make and an impossible one to notice, because on
+// the developer's own machine both are the same machine and both look correct.
+// The only place it shows up is on somebody else's screen, not opening.
+if (/registerLinkProvider/.test(html)) {
+  const at = html.indexOf("function openFromTerminal(");
+  if (at < 0) {
+    fail("the terminal registers a link provider and there is no openFromTerminal. " +
+      "Clicking a path has to go through one place, or the next caller picks the " +
+      "wrong one of the two ways to open a file.");
+  } else {
+    const body = html.slice(at, at + 2000);
+    if (/openOnDaemon|files\/open/.test(body)) {
+      fail("a path clicked in the terminal opens through files/open, which starts an " +
+        "editor on the DAEMON'S machine. Over a share that window appears where " +
+        "nobody is sitting. Use openEditor, which opens in this browser.");
+    }
+    if (!/openEditor\(/.test(body)) {
+      fail("openFromTerminal never reaches openEditor, so clicking a path opens nothing " +
+        "the person who clicked can see.");
+    }
+  }
+  // And the answer has to be the daemon's, not a guess made by looking.
+  //
+  // Deciding locally is the version of this feature that gets written by
+  // accident, and it is wrong in the same way every time: `v2.1.263`,
+  // `zrok.io` and `foo.bar()` are all shaped like filenames, so a page of
+  // ordinary output comes out underlined half way across.
+  if (!/files\/probe/.test(html)) {
+    fail("the terminal's links are decided without asking files/probe. Anything that " +
+      "tells a filename from a version string by looking at it underlines half the " +
+      "words on the screen.");
+  }
+}
+
+// Rule 14: two link providers, and the URL one goes first.
+//
+// The terminal has two things that underline text: xterm's web-links addon,
+// which knows a URL by its scheme, and atrium's path provider, which asks the
+// daemon. They can both match inside one run of characters.
+//
+// xterm collects every provider's answer for a row and then DROPS the links
+// that overlap something an earlier provider already claimed. So registration
+// order is the whole tie-break, and getting it backwards does not fail: the
+// path matcher claims part of a URL, the link is still drawn, and clicking it
+// opens atrium's file viewer on something that was never a file. A link that
+// opens the wrong thing is worse than one that is missing, and nothing about
+// it looks wrong in a diff.
+if (/WebLinksAddon/.test(html)) {
+  if (!/vendor\/xterm-addon-web-links\.js/.test(html)) {
+    fail("WebLinksAddon is used and /vendor/xterm-addon-web-links.js is never loaded. " +
+      "The board has to work offline, so the addon is vendored, not fetched.");
+  }
+  if (!/typeof WebLinksAddon === "undefined"/.test(html)) {
+    fail("nothing says so when the web links addon is missing. A bundle that did not " +
+      "load looks exactly like URLs never having been clickable, which is the state " +
+      "this replaced.");
+  }
+  const web = html.indexOf("useWebLinks(term)");
+  const file = html.indexOf("useFileLinks(term");
+  if (web < 0 || file < 0) {
+    fail("useWebLinks or useFileLinks is not called from openTerm, so one of the two " +
+      "link providers is never registered on the terminal.");
+  } else if (web > file) {
+    fail("the file-path link provider is registered BEFORE the web-links addon. xterm " +
+      "gives a disputed run of text to whichever registered first, so a path matched " +
+      "inside a URL now wins and clicking it opens atrium's file viewer on something " +
+      "that is not a file.");
+  }
+  // And a URL is not a file, so it must not go anywhere near the file viewer.
+  const at = html.indexOf("function openTermURL(");
+  if (at < 0) {
+    fail("there is no openTermURL. A clicked URL has to go through one place, or the " +
+      "next caller picks the wrong one of the ways to open something.");
+  } else {
+    const body = html.slice(at, at + 600);
+    if (/openEditor|openOnDaemon|files\//.test(body)) {
+      fail("a clicked URL is routed through a file endpoint. It is not a file in the " +
+        "card, and the daemon has no business being asked about it.");
+    }
+    if (!/noreferrer/.test(body)) {
+      fail("a URL opened from the terminal carries a referrer. A published board's " +
+        "address is not something to hand to whatever an agent printed a link to.");
+    }
+  }
+}
+
+// Rule 15: the thing a clicked path opens has to be ON SCREEN.
+//
+// `#t-edit` is a panel INSIDE `#t-files-panel`, and the drawer starts hidden.
+// `openEditor` unhides the editor and knows nothing about the drawer around
+// it, so a path clicked in the terminal was read, filled into the box, and
+// drawn nowhere. Nothing failed and nothing said so.
+//
+// The way it surfaced is worth keeping: the file stayed invisible until
+// something else opened the drawer, and then a file clicked minutes earlier
+// appeared. So the click read as doing nothing, and the NEXT click read as
+// opening the wrong file. Neither symptom points at the container.
+if (/function openFromTerminal\(/.test(html)) {
+  const at = html.indexOf("function openFromTerminal(");
+  const body = html.slice(at, at + 1200);
+  if (!/setTermFiles\(true\)/.test(body)) {
+    fail("openFromTerminal opens a file without opening the drawer. The editor is a panel " +
+      "inside #t-files-panel, so unhiding it while the drawer is hidden puts the file on " +
+      "screen nowhere and says nothing about it.");
+  }
+  // Both branches, and this is the half that regresses: the directory branch
+  // opens the drawer on its own, so a fix that only covers that one looks
+  // right in a diff and leaves clicking a FILE silent.
+  const dirAt = body.indexOf("hit.dir");
+  const openAt = body.indexOf("setTermFiles(true)");
+  if (dirAt >= 0 && openAt > dirAt) {
+    fail("openFromTerminal opens the drawer inside the directory branch only, so clicking a " +
+      "FILE still opens an editor nobody can see. The drawer is opened for both.");
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);

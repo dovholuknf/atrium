@@ -9,6 +9,7 @@ The board has to work offline and over an overlay, so nothing here comes from a 
 | `xterm-addon-fit.js` | `@xterm/addon-fit` | 0.10.0 | `bdaefa370b1bfc42ee88d46fe6072400902a4d4b2d45cd93438dda9b23c97089` |
 | `xterm-addon-webgl.js` | `@xterm/addon-webgl` | 0.18.0 | `9ffa9ac3ff6d47d4e6216ed1972ca8e0b5336cef744f50ebdc3f67b0ed727cdb` |
 | `xterm-addon-search.js` | `@xterm/addon-search` | 0.15.0 | `3cf52d71d9deb4ba60125087434c53e3fb35bb2249db9b13987991fd2db1c7bd` |
+| `xterm-addon-web-links.js` | `@xterm/addon-web-links` | 0.11.0 | `f230a6c8211ce4614dda5441f27b603c7c1ca95151a655bc0efac6377ee643f0` |
 
 **They move together.** A renderer addon built against a different core than the one beside it fails at
 load, and the failure is silent: xterm falls back to its DOM renderer and everything still works, slowly. That
@@ -27,7 +28,7 @@ sha256sum package/lib/xterm.js internal/api/web/vendor/xterm.js
 
 ## Upgrading
 
-Take the core and every addon from the same release wave, replace all four files, and check the terminal
+Take the core and every addon from the same release wave, replace all five files, and check the terminal
 actually renders on the GPU afterwards. The check is not "does it work": the DOM fallback also works. Open dev
 tools and look for a `<canvas>` under `#t-screen` rather than rows of `<span>` with `xterm-dom-renderer-owner`
 on the container.

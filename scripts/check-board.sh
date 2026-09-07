@@ -119,6 +119,16 @@ if ! node "$here/scripts/check-cards.js" "$page"; then
   fail=1
 fi
 
+# Which words in the terminal get offered to `files/probe`, run against real
+# lines of output. The endpoint decides what is a file, so the board's own job
+# is the trim and a very small refusal, and both fail quietly: a path with a
+# comma stuck to it is simply never a link, and there is nothing on screen that
+# says why.
+if ! node "$here/scripts/check-path-tokens.js" "$page"; then
+  echo "the terminal's path candidates are wrong. see above." >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi
