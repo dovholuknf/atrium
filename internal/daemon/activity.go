@@ -105,15 +105,30 @@ type Activity struct {
 	Seconds int64 `json:"seconds"`
 }
 
-// activityTracker holds one Activity per task.
+// activityTracker holds one Activity per task, and one Telemetry beside it.
+//
+// Both live here rather than in two structures because they die together: a
+// session ending drops everything atrium believed about a running process, and
+// one `forget` that covers both cannot be half-remembered at a new call site.
+// They expire on different clocks, which is `telemetry` and not this.
 type activityTracker struct {
 	mu  sync.Mutex
 	now func() time.Time
 	by  map[string]*Activity
+	// tel is the statusline figure per task. See telemetry.go.
+	tel map[string]*Telemetry
+	// telAt is when each CALLER last got a post accepted, for the floor. Keyed
+	// by what the caller said it was, not by a card id.
+	telAt map[string]time.Time
 }
 
 func newActivityTracker() *activityTracker {
-	return &activityTracker{now: time.Now, by: map[string]*Activity{}}
+	return &activityTracker{
+		now:   time.Now,
+		by:    map[string]*Activity{},
+		tel:   map[string]*Telemetry{},
+		telAt: map[string]time.Time{},
+	}
 }
 
 // get returns a copy of a task's activity, or nil when no events have arrived
@@ -232,11 +247,18 @@ func (a *activityTracker) subagentStopped(taskID, id string) {
 	}
 }
 
-// forget drops a task's activity, for when a session ends.
+// forget drops everything known about a task's running process, for when a
+// session ends.
+//
+// The context figure goes with the activity. It described a conversation that
+// has ended, and a card that says "92% context" about a session that is no
+// longer there is worse than a card that says nothing: it is the number that
+// decides which agent you go and look at.
 func (a *activityTracker) forget(taskID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.by, taskID)
+	delete(a.tel, taskID)
 }
 
 // ActivityEvent is what a hook posts to /activity.

@@ -259,6 +259,8 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
 - `docs/user-guide.md` -- walkthroughs, including the hooks.
 - `docs/backlog.md` -- what is outstanding, why it matters, and what is out of scope.
 - `docs/activity-design.md` -- the live badge on a card, and why it is never written down.
+- `docs/statusline-telemetry.md` -- how much context a session has burned, posted by its statusline. The
+  contract for the other half, which lives in a different repository.
 - `docs/auto-mode.md` -- approving without being asked, and reading the record afterwards.
 - `docs/supervision-design.md` -- pseudo terminals, attaching from the browser, and how a runner is stopped.
 - `docs/overlays.md` -- reaching the board from another machine, and the line atrium will not cross to do it.

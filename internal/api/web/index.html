@@ -712,6 +712,19 @@
   /* .chip.live.tool: the teal color already marks a live tool; motion removed (CPU). */
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
   .chip.sub { background: rgba(var(--path-rgb),.12); color: var(--path); }
+  /* How much context a session has burned, from its statusline.
+     Quiet until it matters. Most of a session's life is spent under half a
+     window, and a chip that is lit the whole time is a chip you stop reading,
+     so the colour only arrives when the number starts deciding something. */
+  .chip.ctx { background: var(--hairline); color: var(--dim); }
+  .chip.ctx.warm { background: var(--warn-bg); color: var(--warn); }
+  .chip.ctx.hot {
+    background: rgba(var(--danger-rgb),.16); border-color: var(--danger);
+    color: var(--danger-text);
+  }
+  /* A rolling account limit, drawn only when it is close enough to change a
+     plan. Below that it is a fact about billing and not about this card. */
+  .chip.limit { background: var(--warn-bg); color: var(--warn); }
   /* Nothing heard, and no process id to check. Dimmed rather than warned
      about: it may be working, and a card that shouts is a card you distrust. */
   .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
@@ -1198,6 +1211,24 @@
     margin-top: 10px; font-size: var(--fs-xs); color: var(--chip-accent-text);
   }
   .ov-ready::before { content: "\2713"; margin-right: 6px; }
+  /* Above the configure fold on purpose. This is read with a finger over the
+     start button, and a panel you have to expand to see it in is one nobody
+     expands. */
+  .ov-acct {
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
+  }
+  .ov-acct-row { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .ov-acct-n { font: 600 var(--fs-sm)/1.4 var(--mono); color: var(--head); }
+  .ov-acct-n span { font-family: var(--sans); font-weight: 400; color: var(--dim); }
+  .ov-acct .hintline { margin-top: 6px; display: block; }
+  .ov-acct button {
+    font-size: var(--fs-xs); padding: 3px 9px; margin-left: auto;
+  }
+  /* Error weight, because the next press of start is already refused rather
+     than at risk. */
+  .ov-acct.stop { background: var(--warn-bg); border-color: var(--warn-stroke); }
+  .ov-acct.stop .ov-acct-n, .ov-acct.stop b { color: var(--warn); }
   /* The step that stands between a tool being installed and it being usable.
      Set apart, because it is a form with a verb rather than settings. */
   .ov-setup {
@@ -3879,6 +3910,11 @@ A room is started with 'atrium room' on that machine.">?</span>
     <p class="pane-lead">Other machines running their own atrium and reporting into this one. This
       board holds nothing about them that survives a restart, and their terminals stay where
       they are.</p>
+    <!-- "add a room" opens instructions, not a form. Worth being clear about,
+         since every other add button on this page creates something. -->
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="openRoomJoin()">add a room</button>
+    </div>
     <div id="room-list"></div>
 
   </div>
@@ -4478,6 +4514,67 @@ A room is started with 'atrium room' on that machine.">?</span>
   </div>
 </dialog>
 
+<!-- What to run on the OTHER machine, with the parts this hub knows already
+     filled in.
+     No data-guard, and no save button, because nothing here is stored. A room
+     is not created from this board and cannot be: it exists exactly when it
+     checks in, and the hub holds what it has been told and nothing else. This
+     is a text generator, and closing it without copying loses nothing. -->
+<dialog id="roomjoin" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><h2>add a room</h2></div>
+    <button onclick="document.getElementById('roomjoin').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline" style="margin:0 0 12px">
+      A room is a machine running its own atrium that tells this one what is on it. You add one by
+      running a command <b>there</b>, not by filling in a form here. Nothing is created by this
+      dialog: the room appears in the list the first time it checks in, and disappears again when
+      it stops.
+    </p>
+    <div class="field">
+      <label class="eyebrow" for="rj-reach">how that machine reaches this one</label>
+      <div class="picker"><select id="rj-reach" onchange="roomCommand()"></select></div>
+      <span class="hintline" id="rj-reach-hint"></span>
+    </div>
+    <div class="field" id="rj-identity-field">
+      <label class="eyebrow" for="rj-identity">the ziti identity file, on that machine</label>
+      <input type="text" id="rj-identity" spellcheck="false" oninput="roomCommand()"
+        placeholder="/opt/atrium/room.json">
+      <span class="hintline">A path on the room, not on this machine. Dialling a service means
+        being somebody on that network, and that identity is enrolled there.</span>
+    </div>
+    <div class="field" id="rj-hub-field">
+      <label class="eyebrow" for="rj-hub">this board's address, as that machine sees it</label>
+      <input type="text" id="rj-hub" spellcheck="false" oninput="roomCommand()">
+      <span class="hintline" id="rj-hub-hint"></span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="rj-name">what to call it here</label>
+      <input type="text" id="rj-name" spellcheck="false" oninput="roomCommand()"
+        placeholder="that machine's hostname">
+      <span class="hintline">The name is the key. Two rooms sharing one name are one room that
+        flaps, so leave it empty unless the hostname is not what you want to read.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="rj-board">where that machine's own board is</label>
+      <input type="text" id="rj-board" spellcheck="false" oninput="roomCommand()"
+        placeholder="http://that-machine:7778">
+      <span class="hintline">Terminals do not travel. A pseudo terminal cannot leave the machine
+        that made it, so attaching to a runner over there means opening that board. This is the
+        link on the room's row, and without it the row has nowhere to send you.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow">run this over there</label>
+      <div class="copyrow">
+        <input type="text" id="rj-cmd" readonly spellcheck="false">
+        <button class="go" id="rj-copy">copy</button>
+      </div>
+      <span class="hintline" id="rj-beat"></span>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="source" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="s-heading">source</h2></div>
@@ -5074,8 +5171,31 @@ function autosize(el) {
   el.style.height = (el.scrollHeight + 2) + "px";
 }
 
+// A session that ran out, on a page that never navigates.
+//
+// The published board asks who you are and that session expires. Every request
+// this page makes is a fetch, so the redirect the guard sends a browser is
+// never followed by anything: the board simply fills up with failures while
+// the answer, a login, is one navigation away.
+//
+// Sent to renew rather than to sign in. A provider that still knows this
+// browser answers without showing anybody anything, so an expiry in the middle
+// of a working day costs a page load and no typing. `back` is the page as it
+// stands, so a renewal puts somebody back where they were.
+//
+// ONCE. A board mid-poll has several requests in flight and they all come back
+// unauthorized together, and each one would otherwise start its own navigation.
+let signingInAgain = false;
+function signInAgain() {
+  if (signingInAgain) return;
+  signingInAgain = true;
+  location.assign("/auth/renew?back=" +
+    encodeURIComponent(location.pathname + location.search));
+}
+
 const api = async (path, opts) => {
   const res = await fetch(path, opts);
+  if (res.status === 401) signInAgain();
   if (!res.ok && res.status !== 204) {
     let msg = res.statusText;
     try { msg = (await res.json()).error || msg; } catch (e) {}
@@ -5536,6 +5656,89 @@ function toggleSubagents(chip) {
   chip.classList.add("open");
 }
 
+// How much of its context window a session has burned, from its statusline.
+//
+// The single most useful thing on a card when you are deciding which of
+// sixteen agents to interrupt. A session at ninety percent is about to
+// compact, and compacting is where it forgets what you told it, so the one to
+// go and look at is that one and not whichever asked most recently.
+//
+// Drawn while the card is WAITING as well, unlike the activity chip. That is
+// exactly the moment the number decides something: whether to answer this one
+// now or let it sit.
+//
+// Absent for every runner whose statusline does not post, which is all of them
+// until one is wired up. See docs/statusline-telemetry.md.
+const CTX_WARM = 60;
+const CTX_HOT = 85;
+
+function contextChip(t) {
+  const c = t.telemetry;
+  // Nothing a finished card burned is worth drawing. The daemon forgets a
+  // card's telemetry when its session ends, so this is a second line of
+  // defence rather than the fix, in the same shape as the activity chip.
+  if (!c || over(t) || t.status === "shelved") return "";
+  // The limits are drawn whether or not a context figure came with them. A
+  // session that has just started has burned nothing and the account it is
+  // running on can still be about to stop, which is the more urgent of the
+  // two facts.
+  const limits = limitChip("5h", c.five_hour) + limitChip("week", c.weekly);
+  if (!c.pct) return limits;
+  const heat = c.pct >= CTX_HOT ? " hot" : c.pct >= CTX_WARM ? " warm" : "";
+  return `<span class="chip ctx${heat}" title="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
+}
+
+// What is behind the percentage, for the tooltip. Tokens where the statusline
+// reported them, because the same percentage is a different amount of room on
+// a different window, and the model name is what says which window it is.
+function contextTitle(c) {
+  const parts = [];
+  if (c.used && c.window) {
+    parts.push(`${fmtTokens(c.used)} of ${fmtTokens(c.window)} tokens`);
+  } else {
+    parts.push(`${c.pct}% of the context window`);
+  }
+  if (c.model) parts.push(c.model);
+  for (const [label, lim] of [["5h limit", c.five_hour], ["weekly limit", c.weekly]]) {
+    if (!lim) continue;
+    parts.push(`${label} ${lim.pct}%${lim.resets_at ? `, resets ${resetsIn(lim.resets_at)}` : ""}`);
+  }
+  // Aged, because a figure is only ever about when it was taken and a
+  // statusline stops posting the moment its terminal stops drawing.
+  parts.push(`reported ${c.seconds > 5 ? ago(c.seconds) + " ago" : "just now"}`);
+  return parts.join(" · ");
+}
+
+// A rolling account limit, drawn only when it is close enough to change what
+// you do next.
+//
+// Below the threshold this is a fact about billing and not about this card,
+// and a chip that is always there is one nobody reads. Above it, it is the
+// reason the whole board is about to stop.
+const LIMIT_SHOW = 80;
+
+function limitChip(label, lim) {
+  if (!lim || lim.pct < LIMIT_SHOW) return "";
+  const when = lim.resets_at ? `, resets ${resetsIn(lim.resets_at)}` : "";
+  return `<span class="chip limit"
+    title="this account is at ${lim.pct}% of its ${label} limit${when}"
+    >${label} ${lim.pct}%</span>`;
+}
+
+// When a limit comes back, as a duration rather than a timestamp. "in 2h14m"
+// is a decision, "2026-09-06T18:00:00Z" is arithmetic.
+function resetsIn(iso) {
+  const at = new Date(iso);
+  if (isNaN(at)) return "";
+  const secs = Math.floor((at - Date.now()) / 1000);
+  return secs <= 0 ? "any moment" : `in ${ago(secs)}`;
+}
+
+// Tokens, short. A context window is six digits and a card is a thing you scan.
+function fmtTokens(n) {
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+}
+
 // A card atrium cannot vouch for: nothing heard from the session, and no
 // process id to ask the operating system about. It may be working, it may have
 // ended without a word, and the difference is not knowable from here.
@@ -5590,6 +5793,7 @@ function cardHTML(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${contextChip(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
@@ -7832,6 +8036,7 @@ function stackRow(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${contextChip(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
       ${stateChip(t, w)}
@@ -8127,6 +8332,12 @@ function permCard(p) {
   const el = document.createElement("div");
   el.className = "row perm";
   el.dataset.id = p.id;
+  // Where the answer goes. A request from a room is answered by that room's own
+  // daemon, so the address of it is kept on the card rather than being worked
+  // out again at the moment of the click, when the poll that produced this may
+  // have been replaced by one that no longer mentions it.
+  el.dataset.room = p.room || "";
+  el.dataset.perm = p.perm_id || p.id;
   el.style.cssText = "cursor:default;align-items:flex-start;flex-wrap:wrap";
   // One input only: the command. Editing it changes what actually runs.
   // The scope for always and never is chosen from the buttons underneath, so
@@ -8138,6 +8349,17 @@ function permCard(p) {
       <b>${esc(p.tool)}</b>
       <span>${p.agent ? `<span class="asker">${esc(p.agent)}</span> &middot; ` : ""}${
         waitedFor(p.requested_at)}</span>
+      <!-- WHICH MACHINE, said before the command. The command is what gets
+           read and approved, and a recursive delete of a build directory
+           means one thing on this machine and another on a cloud instance. A
+           queue that merges two machines and does not say which is a queue
+           you cannot safely press approve in. -->
+      ${p.room ? `<div class="hintline">
+        <span class="chip warn">on ${esc(p.room)}</span>
+        ${p.room_stale ? `<span class="chip warn">that room has gone quiet</span>` : ""}
+        This runs on <b>${esc(p.room)}</b>, not here. Your answer is handed to that
+        machine and it releases its own agent, so <b>always</b> and <b>never</b> write
+        the rule in <b>${esc(p.room)}</b>'s rule list rather than in this one.</div>` : ""}
       <label class="eyebrow" for="cmd-${p.id}">command</label>
       <span class="hintline">this is what runs. edit it to run something else</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="1" spellcheck="false"
@@ -8253,8 +8475,21 @@ function permCard(p) {
 }
 
 async function renderPerms() {
-  const { permissions } = await api("/v1/permissions");
-  const list = permissions || [];
+  // ONE QUEUE, BOTH MACHINES. A request on another machine that is only visible
+  // on that machine's own board is a frozen agent nobody is going to find, and
+  // a second panel for remote ones would be a second place to keep right and a
+  // second place to forget to look.
+  //
+  // Ordered oldest first across both, like the stack: whoever has waited
+  // longest is the one to answer, and which machine they are on has nothing to
+  // do with it. The seconds are comparable because each was measured by the
+  // daemon that owns the clock the request was recorded against.
+  const [permissions, remote] = await Promise.all([
+    api("/v1/permissions").then(r => r.permissions || []),
+    remoteRequests()
+  ]);
+  const list = permissions.concat(remote).sort((a, b) =>
+    (Date.parse(a.requested_at) || 0) - (Date.parse(b.requested_at) || 0));
   const host = document.getElementById("perms-list");
 
   let panel = host.querySelector(".panel.perms");
@@ -9079,6 +9314,21 @@ if (soloBus) {
     // roll call would have it suppress itself.
     if (termOnly()) {
       if (m.type === "solo-who" && soloID) soloBus.postMessage({ type: "solo-claim", task: soloID });
+      // Something the BOARD wants said, drawn HERE.
+      //
+      // The board raises this window and then says what it did. It was saying
+      // it in its own window, which is the one that no longer has the terminal
+      // and the one you are in the act of leaving, so the message was always
+      // behind you by the time it appeared.
+      //
+      // `raiseToasts` moves the toast host between elements and cannot cross a
+      // document, so the message crosses instead and the toast is built on
+      // this side. Guarded on the card because every popped-out window hears
+      // every broadcast.
+      if (m.type === "solo-toast" && m.task && m.task === soloID) {
+        toast(m.title || "", m.body || "");
+        return;
+      }
       // No `solo-raise` here any more, and it is worth saying why it went.
       // A window cannot raise itself: `window.focus()` in a background tab has
       // no user gesture behind it and every browser refuses it, silently. The
@@ -9604,11 +9854,35 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor) {
 
 // ── toasts ──────────────────────────────────────────────
 // Attaches to a task's terminal when atrium owns its runner. Returns whether
-// it did, so a caller can fall back to the tab it would otherwise have opened.
+// the click was DEALT WITH, so a caller can fall back to the tab it would
+// otherwise have opened.
+//
+// The popped-out guard is `attachTask`'s and it belongs here too. This is the
+// path a toast and a desktop notification land on, so without it clicking an
+// alert for a card that is in a window of its own pulled the terminal out of
+// that window and into the board's pane, silently, and answered `true` as
+// though attaching had been the right thing to do. Two views onto one terminal
+// is the situation `docs/supervision-design.md` says nothing arbitrates, which
+// is exactly why `attachTask` refuses it.
+//
+// Dealt with covers the raise: you asked to be taken to the session and you
+// are being taken to it, in the window that has it.
 async function attachIfSupervised(taskID) {
   try {
     const t = await api(`/v1/tasks/${taskID}`);
     if (!t.supervised) return false;
+    if (poppedOut(taskID)) {
+      const what = await popOutTask(taskID);
+      // Opened means the claim was stale and there is a new window, which is
+      // still where the terminal now is. Every other answer has already said
+      // what happened.
+      if (what !== "opened" && what !== "raised") return true;
+      if (what === "raised") {
+        sayInSoloWindow(taskID, "the board sent you here",
+          "you clicked an alert for this card. its terminal is in this window.");
+      }
+      return true;
+    }
     openTerm(t);
     return true;
   } catch (e) { return false; }
@@ -10181,6 +10455,94 @@ const OVERLAY_UI = {
 async function loadOverlays() {
   try { overlays = (await api("/v1/overlays")).overlays || []; } catch (e) { return; }
   paintOverlays();
+  // A count of nothing is noise on a panel that is still a box to paste a
+  // token into.
+  if (overlays.some(o => o.kind === "zrok" && o.ready)) loadZrokAccount(false);
+}
+
+// WHAT THE ZROK ACCOUNT IS ALREADY USING.
+//
+// NO DENOMINATOR. zrok does not give an account token its own ceilings: they
+// live on a limit class only an admin may read, and an account with no class
+// applied is measured against the controller's configuration, which no
+// endpoint exposes at all. So the block counts and never divides, and a "3 of
+// 5" added here would be a limit atrium made up. internal/daemon/
+// overlay_limits.go has the endpoints that were checked.
+//
+// Cached and not polled, because it is a call to somebody else's instance.
+// A minute is stale by design: another machine on the same account can open a
+// share atrium never sees, so `check again` is the button rather than a timer
+// nobody would want fired on every paint.
+let zrokAccount = null;
+let zrokAccountAt = 0;
+const ZROK_ACCOUNT_FRESH = 60000;
+
+async function loadZrokAccount(force) {
+  if (!force && zrokAccount && Date.now() - zrokAccountAt < ZROK_ACCOUNT_FRESH) return;
+  zrokAccountAt = Date.now();
+  zrokAccount = { checking: true };
+  paintOverlays();
+  try {
+    zrokAccount = await api("/v1/overlays/zrok/account");
+  } catch (e) {
+    zrokAccount = { err: "could not ask the daemon: " + (e && e.message ? e.message : e) };
+  }
+  zrokAccountAt = Date.now();
+  paintOverlays();
+}
+
+function zrokAccountBlock(o) {
+  if (o.kind !== "zrok" || !o.ready) return "";
+  const a = zrokAccount;
+  if (!a) return "";
+  if (a.checking) {
+    return `<div class="ov-acct"><span class="hintline"><span class="shspin"></span>
+      reading what this zrok account is using</span></div>`;
+  }
+  const again = `<button onclick="loadZrokAccount(true)">check again</button>`;
+  if (a.err) {
+    return `<div class="ov-acct">
+      <div class="ov-acct-row"><span class="hintline">${esc(a.err)}</span>${again}</div>
+    </div>`;
+  }
+
+  // Reserved names get a cell of their own because atrium grows that one by
+  // itself, one per board address and one per lent session, so an account
+  // filling up with them is usually atrium's doing.
+  const cell = (n, what) =>
+    `<span class="ov-acct-n">${n} <span>${esc(what)}</span></span>`;
+  const counts = [
+    cell(a.environments, a.environments === 1 ? "environment" : "environments"),
+    cell(a.shares, a.shares === 1 ? "share open" : "shares open"),
+    cell(a.reserved_names, a.reserved_names === 1 ? "reserved name" : "reserved names")
+  ].join("");
+
+  const mine = a.here
+    ? `${a.here_shares} of those shares ${a.here_shares === 1 ? "is" : "are"} this machine's`
+    : "this machine's environment is not listed on that account, which happens when the " +
+      "token is for a different zrok instance or the environment was disabled from the console";
+  const ours = a.atrium_names
+    ? ` ${a.atrium_names} of the reserved names ${a.atrium_names === 1 ? "is" : "are"} atrium's.`
+    : "";
+
+  // The transfer allowance and nothing else. zrok sets this flag off the
+  // bandwidth journal alone, so naming a count here would send somebody to
+  // delete shares over a block that deleting shares does not lift.
+  if (a.limited) {
+    return `<div class="ov-acct stop">
+      <div class="ov-acct-row">${counts}${again}</div>
+      <span class="hintline"><b>zrok has this account over its transfer allowance,</b> so
+        starting a share will fail until the period rolls over. The counts above are not the
+        cause. Check the account at ${esc(a.endpoint || "your zrok instance")}.</span>
+    </div>`;
+  }
+  return `<div class="ov-acct">
+    <div class="ov-acct-row">${counts}${again}</div>
+    <span class="hintline">On the account behind this machine, everywhere, not just here:
+      ${esc(mine)}.${esc(ours)} zrok does not tell an account token where its ceilings are,
+      so these are counts and not fractions. Every one of them is a thing a share can be
+      refused for.</span>
+  </div>`;
 }
 
 // A SHARE THAT STOPS ON ITS OWN HAS TO SAY SO.
@@ -10334,6 +10696,8 @@ function overlayCard(o) {
   // nothing left to do here.
   const ready = o.ready ? `<div class="ov-ready">${esc(readyLine(o))}</div>` : "";
 
+  const acct = zrokAccountBlock(o);
+
   return `<div class="ov ${o.running ? "live" : ""}" data-kind="${esc(o.kind)}">
     <div class="ov-head">
       <span class="ov-mark" data-kind="${esc(o.kind)}">${mark}</span>
@@ -10343,7 +10707,7 @@ function overlayCard(o) {
       </div>
       ${state}
     </div>
-    ${addr}${err}${note}${ready}
+    ${addr}${err}${note}${ready}${acct}
     ${overlayBody(o, body)}
     ${actions}${log}
   </div>`;
@@ -12640,7 +13004,9 @@ function testNotify() {
   }
   const n = showNotification("atrium", "click this notification to prove it works", "perms");
   alerting.preview(alerting.get().perm);
-  if (!n) return;
+  // Shown by the service worker, which hands nothing back. The button still
+  // has to answer, so the answer is looked for. See `confirmTestShown`.
+  if (!n) { confirmTestShown("atrium-perm"); return; }
   // Confirm in the page too, so a click is not a silent no-op.
   n.onclick = () => {
     window.focus();
@@ -12651,6 +13017,37 @@ function testNotify() {
   };
   n.onerror = () => toast("the browser could not show it",
     "Windows is blocking notifications for your browser. check Settings, System, Notifications.");
+}
+
+// Whether the test notification actually appeared, MEASURED rather than
+// assumed.
+//
+// With a service worker there is no object to hold and no `onerror` to hang
+// anything on: the notification is posted to the worker and the call returns
+// nothing whether Windows drew it or swallowed it. So pressing a button
+// labelled test said nothing at all, and it said nothing in precisely the case
+// the button exists for, which is notifications being suppressed somewhere
+// outside the browser. Silence reads as working.
+//
+// The registration knows. `getNotifications` lists what is on screen for this
+// origin, so the test asks a moment later and reports what it found. Same
+// shape as `closeThisWindow`: there is no event for refused, so the outcome is
+// looked at rather than listened for.
+//
+// The shortest expiry the settings offer is ten seconds, so a notification
+// that was shown is still up when this looks.
+const testShownAfter = 600;
+async function confirmTestShown(tag) {
+  if (!swReg || !swReg.getNotifications) return;
+  await new Promise(r => setTimeout(r, testShownAfter));
+  let shown = [];
+  try { shown = await swReg.getNotifications({ tag }); } catch (e) { return; }
+  if (shown.length) {
+    toast("it is on screen", "click it to prove the click gets you here too.");
+    return;
+  }
+  toast("nothing appeared", "the browser accepted it and no notification was shown. " +
+    "Windows is most likely blocking them for your browser: check Settings, System, Notifications.");
 }
 
 // Title carries the count so a background tab still tells you.
@@ -12665,7 +13062,14 @@ function badge(id, n) {
   el.classList.toggle("zero", !n);
 }
 
+// `id` is the key the card is drawn under, which for a request from a room is
+// the room's name and the request's own id together. The card carries the two
+// halves, because the decision has to be addressed to the machine that holds
+// the blocked channel and named in the terms that machine uses.
 async function decide(id, decision, forever) {
+  const onCard = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+  const room = (onCard && onCard.dataset.room) || "";
+  const perm = (onCard && onCard.dataset.perm) || id;
   let reason = "", prefix = "", kind = "command";
   if (decision === "block") {
     // A block includes guidance, so a refusal reads as "no, do it this way
@@ -12680,7 +13084,7 @@ async function decide(id, decision, forever) {
     // The scope lives on the card, set by the buttons underneath it. A `.value`
     // read here threw, because a <code> element has no value, and the click
     // silently did nothing.
-    const card = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
+    const card = onCard;
     const view = document.getElementById("pat-" + id);
     prefix = (card && card.dataset.pattern) || (view && view.textContent) || "";
     prefix = prefix.trim();
@@ -12721,8 +13125,14 @@ async function decide(id, decision, forever) {
       return decide(id, decision, forever);
     }
   }
+  // A request from a room goes to the room, and the daemon here only queues it.
+  // It cannot answer on that machine's behalf: the channel the agent is blocked
+  // on is held in that machine's process and does not move.
+  const where = room
+    ? `/v1/rooms/${encodeURIComponent(room)}/permissions/${encodeURIComponent(perm)}/decide`
+    : `/v1/permissions/${perm}/decide`;
   try {
-    await api(`/v1/permissions/${id}/decide`, {
+    await api(where, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision, reason, forever: !!forever, prefix, kind, command })
     });
@@ -13138,12 +13548,27 @@ async function attachTask(id) {
   // detaches the board's pane for exactly that reason. Attaching again from
   // the switcher would put it straight back, quietly.
   if (poppedOut(id)) {
-    const what = popOutTask(id);
+    const what = await popOutTask(id);
     // Said from what happened rather than from what was believed. A claim can
     // be a heartbeat stale, so "it is already open" is a guess until the
     // window has actually been found.
-    if (what === "raised") toast("it is in its own window", "raised it for you");
-    else if (what === "opened") toast("it was not there any more", "opened it again");
+    //
+    // The raised case is said IN THE RAISED WINDOW. That window is coming to
+    // the front as this line runs, so a toast drawn here appears in the one
+    // document that is on its way behind, and is gone by the time anybody
+    // looks back. Locally only when there is no channel to hand it over, in
+    // which case behind you is better than nowhere.
+    if (what === "raised") {
+      if (!sayInSoloWindow(id, "the board sent you here",
+            "this card's terminal is already in this window.")) {
+        toast("it is in its own window", "raised it for you");
+      }
+    } else if (what === "opened") {
+      toast("it was not there any more", "opened it again");
+    }
+    // `unreachable` and `blocked` have both already said so, and both say
+    // something this window is the right place for: they are the two answers
+    // where you are not going anywhere.
     return;
   }
   try { openTerm(await api(`/v1/tasks/${id}`)); }
@@ -13398,10 +13823,24 @@ async function refresh() {
   // Waiting and permissions are polled whichever view is open, because the
   // badges, the title, and the alert all have to work while you are looking at
   // something else.
+  // THE NAG COVERS EVERY MACHINE, which is the whole point of the room list
+  // being on this board at all. An agent frozen on a cloud instance is frozen
+  // for the same reason and costs the same hour, and the alerting loop is what
+  // makes a request impossible to miss. Left out, a remote request would sit
+  // in the perms tab silently and only be found by somebody who went looking.
+  //
+  // Merged into `perms` rather than alerted on separately, so the badge, the
+  // window title and the widening nag all count one queue and none of them can
+  // learn about rooms later.
   Promise.all([
     api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
-    api("/v1/permissions").then(r => r.permissions || []).catch(() => null)
-  ]).then(([waiting, perms]) => {
+    api("/v1/permissions").then(r => r.permissions || []).catch(() => null),
+    remoteRequests().catch(() => [])
+  ]).then(([waiting, local, remote]) => {
+    // A failed local fetch stays null, so the badge and the title keep saying
+    // what they said rather than dropping to zero. Remote requests are added
+    // to it only when there was something to add them to.
+    const perms = local ? local.concat(remote) : (remote.length ? remote : null);
     if (waiting) {
       badge("c-wait", waiting.length);
       // Who, and what they want. "is waiting on you" was neither: it named a
@@ -16635,22 +17074,101 @@ function splitRunners() {
 // remote card is not something this board can act on: its terminal is on that
 // machine and cannot leave it, so the useful thing per row is a link to that
 // room's own board rather than a menu of things that would fail.
-async function renderRooms() {
-  const el = document.getElementById("room-list");
-  if (!el) return;
-  let rooms;
+// The room list, read once per tick rather than once per reader.
+//
+// Three things want it now: this pane, the permission queue, and the alert loop
+// that runs whichever view is open. All three fire on the same five second
+// refresh, so without this they ask the daemon the same question three times
+// and can disagree about the answer within one frame.
+//
+// A failure is remembered as an empty list, not left as the last good one. An
+// older daemon has no rooms endpoint, and a room that has gone should stop
+// being drawn rather than staying on the board because the fetch that would
+// have removed it failed.
+let roomsRead = { at: 0, rooms: [], answered: false };
+async function loadRooms() {
+  if (Date.now() - roomsRead.at < 2000) return roomsRead.rooms;
+  let rooms = [], answered = true;
   try {
     rooms = (await api("/v1/rooms")).rooms || [];
   } catch (e) {
-    // An older daemon has no rooms endpoint, and that is not an error worth
-    // drawing. Nothing has ever been in this list on that machine.
+    answered = false;
+  }
+  roomsRead = { at: Date.now(), rooms, answered };
+  return rooms;
+}
+
+// Every request waiting for a human on another machine, in the shape the local
+// queue arrives in, so one panel and one alert path can draw both.
+async function remoteRequests() {
+  const out = [];
+  for (const r of await loadRooms()) {
+    for (const q of r.requests || []) out.push(remoteView(r, q));
+  }
+  return out;
+}
+
+// One remote request, made to look local.
+//
+// THE ID IS NAMESPACED BY THE ROOM, and that is not decoration. Every alert,
+// every toast, every nag slot and every node in the perms panel is keyed by the
+// request id, and each machine numbers its own requests, so an unqualified id
+// is a key two rooms could both claim. The unqualified one travels alongside,
+// because the decision has to be addressed to that room in its own terms.
+//
+// The task id is namespaced for a stronger reason: it is what decides whether a
+// card has a window of its own open, and a card on another machine never does.
+// Left bare, it could match a local card and hand the alert to the wrong
+// window.
+function remoteView(room, q) {
+  return Object.assign({}, q, {
+    id: room.name + "/" + q.id,
+    perm_id: q.id,
+    task_id: q.task_id ? room.name + "/" + q.task_id : "",
+    room: room.name,
+    room_board: room.board || "",
+    room_stale: !!room.stale
+  });
+}
+
+// A remote card's terminal, as a link to the board that owns it.
+//
+// THIS IS WHAT ATTACH ACROSS MACHINES IS. A pseudo terminal cannot leave the
+// machine that made it, and `docs/federation-design-v2.md` records that this is
+// a fact about ConPTY rather than a policy, so the closest thing available is
+// sending you to that machine's own board with the right terminal already open.
+// The room already reports where its board is, so what was missing was only the
+// fragment.
+//
+// The fragment REPLACES anything already on the address rather than being added
+// to it. A URL has one fragment, and appending a second produces one that says
+// the wrong thing.
+//
+// Offered only for the three states where somebody would want to type. A card
+// that is finished, dead or offered has nothing behind it to attach to, and a
+// link that opens an empty terminal pane reads as a broken link rather than as
+// a card with no session.
+const TERM_LINK_STATES = ["needs-input", "needs-permission", "running"];
+function termLinkTo(board, card) {
+  if (!board || !card || !card.id || !card.runner) return "";
+  if (!TERM_LINK_STATES.includes(card.status)) return "";
+  return String(board).split("#")[0] + "#term=" + encodeURIComponent(card.id);
+}
+
+async function renderRooms() {
+  const el = document.getElementById("room-list");
+  if (!el) return;
+  const rooms = await loadRooms();
+  if (!roomsRead.answered) {
+    // A daemon too old to have the endpoint. Not an error worth drawing:
+    // nothing has ever been in this list on that machine.
     setHTML(el, "");
     return;
   }
   if (!rooms.length) {
     setHTML(el, `<div class="panel"><div class="empty">
-      No other machines are reporting in. Run <code>atrium room</code> on one, pointing it
-      at this board, and it appears here.
+      No other machines are reporting in. <a href="#" onclick="openRoomJoin();return false;">Add
+      a room</a> to see what to run on one.
     </div></div>`);
     return;
   }
@@ -16659,17 +17177,46 @@ async function renderRooms() {
     // thing worth noticing, and dropping it from the list would make a machine
     // that died look like one that was never there.
     const when = r.stale
-      ? `<span class="chip warn">not heard from since ${esc(shortTime(r.last_seen))}</span>`
+      ? `<span class="chip warn">not heard from for ${esc(shortTime(r.last_seen))}</span>`
       : `<span class="chip live idle">checked in ${esc(shortTime(r.last_seen))}</span>`;
+    // A DEADLINE, not just a state. "Stale" on its own tells you something is
+    // wrong; stale with the time it drops off tells you whether to wait or go
+    // and look at that machine. The seconds come from the daemon so the page
+    // is not carrying a second copy of the constant.
+    const gone = r.stale
+      ? `<div class="hintline">Either that machine stopped or it cannot reach this one. What is
+           listed below is what it last said. It drops off this list in
+           ${esc(ago(r.forget_in_seconds))} unless it checks in again, and nothing here is kept
+           when it does.</div>`
+      : "";
     const cards = (r.cards || []).length
-      ? `<div class="roomcards">` + r.cards.map(c =>
-          `<div class="roomcard">
-             <span class="grow">${esc(c.title || c.id)}</span>
+      ? `<div class="roomcards">` + r.cards.map(c => {
+          // ATTACH BY REDIRECT. A pty cannot leave the machine that made it, so
+          // the card's title is a link to that machine's own board with this
+          // terminal already open, which is the nearest thing to attaching that
+          // exists and is one click rather than a board, a tab and a search.
+          //
+          // Offered only for a card with a runner on it. `#term=` opens the
+          // terminal pane, and a card with no session behind it would open an
+          // empty one, which reads as the link being broken.
+          const to = termLinkTo(r.board, c);
+          const name = esc(c.title || c.id);
+          return `<div class="roomcard">
+             <span class="grow">${to
+               ? `<a href="${esc(to)}" target="_blank" rel="noreferrer"
+                    title="open this terminal on ${esc(r.name)}'s own board">${name}</a>`
+               : name}</span>
              ${c.doing ? `<span class="by">${esc(c.doing)}</span>` : ""}
              <span class="chip ${c.status === "needs-input" || c.status === "needs-permission"
                ? "warn" : ""}">${esc(c.status)}</span>
-           </div>`).join("") + `</div>`
+           </div>`;
+        }).join("") + `</div>`
       : `<div class="empty">nothing running there right now</div>`;
+    // Requests are DRAWN HERE AS A COUNT AND ANSWERED IN THE PERMS TAB. Two
+    // places to press approve would be two places to keep right, and the perms
+    // tab is where the scope buttons, the command box and the history already
+    // are. What this row owes you is knowing they exist.
+    const asking = (r.requests || []).length;
     return `<div class="panel roomrow">
       <div class="col-head" style="margin:0 0 8px">
         <span>${esc(r.name)}</span>
@@ -16677,8 +17224,20 @@ async function renderRooms() {
         ${r.waiting ? `<span class="chip warn">${r.waiting} waiting</span>` : ""}
         <span class="grow"></span>
         <span class="by">${esc(r.host || "")}${r.version ? " &middot; " + esc(r.version) : ""}</span>
+        <!-- The name comes back through the DOM, not through the handler. A
+             room names ITSELF on check-in, so this string arrives from another
+             machine, and one containing an escaped quote closes an inline
+             handler no matter how the quote was escaped on the way in. -->
+        <button class="no" data-room="${esc(r.name)}"
+          onclick="forgetRoom(this.dataset.room)">forget</button>
       </div>
+      ${gone}
       ${cards}
+      ${asking ? `<div class="hintline"><b>${asking}</b> ${asking === 1
+          ? "agent there is frozen waiting to be allowed something"
+          : "agents there are frozen waiting to be allowed something"}.
+        <a href="#" onclick="switchView('perms');return false">answer ${asking === 1
+          ? "it" : "them"} here</a>, in the perms tab, without leaving this board.</div>` : ""}
       ${r.board
         // The link is the point of the row. Terminals do not federate, so
         // everything this board cannot do for a remote card is done there.
@@ -16689,6 +17248,125 @@ async function renderRooms() {
              no way to attach to anything on it from here.</div>`}
     </div>`;
   }).join(""));
+}
+
+// Drops a room from the list now rather than waiting for it to age out.
+//
+// IT IS NOT A BLOCK LIST and the dialog says so. The hub holds what it has been
+// told and nothing else, so a machine that is still running `atrium room` comes
+// straight back, and a durable record of a refusal would be exactly the second
+// source of truth rooms exist to not have. What this is for is the machine that
+// has gone: reimaged, renamed, or a test that left a name behind.
+async function forgetRoom(name) {
+  if (!await confirmUser("forget " + name + "?",
+    "It comes off this board now instead of aging out. Nothing on that machine changes and " +
+    "nothing is remembered here: if it is still running atrium room it reappears within a " +
+    "heartbeat. Use this for a machine that has actually gone.",
+    "forget it")) return;
+  try {
+    await api("/v1/rooms/" + encodeURIComponent(name), { method: "DELETE" });
+  } catch (e) { tellUser("could not forget it", e.message); return; }
+  renderRooms();
+}
+
+// What to run on the other machine, with the parts this hub knows filled in.
+//
+// Opening this creates NOTHING. There is no pending room and there cannot be:
+// the hub holds no durable record of a room, so a half-added one would be a
+// record of an intention, which is the thing this design does not keep. The
+// dialog reads what this machine can say about how to be reached and writes a
+// command line out of it.
+let roomJoinInfo = null;
+
+async function openRoomJoin() {
+  const dlg = document.getElementById("roomjoin");
+  try {
+    roomJoinInfo = await api("/v1/rooms/join");
+  } catch (e) { tellUser("could not work out the command", e.message); return; }
+
+  // The ways in, best first. Ziti leads when it is configured because it is
+  // the only one where neither machine has to be reachable from the other,
+  // which is the case this federation was designed around.
+  const ways = [];
+  if (roomJoinInfo.service) {
+    ways.push({ v: "ziti", label: "over the ziti service " + roomJoinInfo.service });
+  }
+  if (roomJoinInfo.share) {
+    ways.push({ v: "share", label: "at this board's zrok address" });
+  }
+  ways.push({ v: "hub", label: "at an address on your own network" });
+  const sel = document.getElementById("rj-reach");
+  sel.innerHTML = ways.map(w =>
+    `<option value="${esc(w.v)}">${esc(w.label)}</option>`).join("");
+  // A configured service nobody is answering on is a command that fails, so it
+  // is offered but not chosen. See the hint under the picker.
+  sel.value = (roomJoinInfo.service && roomJoinInfo.service_running) ? "ziti" : ways[0].v;
+
+  document.getElementById("rj-identity").value = "";
+  document.getElementById("rj-name").value = "";
+  document.getElementById("rj-board").value = "";
+  document.getElementById("rj-beat").textContent =
+    "It checks in every " + roomJoinInfo.heartbeat_seconds + "s, is called stale after " +
+    ago(roomJoinInfo.stale_seconds) + " of silence, and stops being listed after " +
+    ago(roomJoinInfo.forget_seconds) + ".";
+  roomCommand();
+  document.getElementById("rj-copy").onclick = e =>
+    copyText(e.target, document.getElementById("rj-cmd").value);
+  dlg.showModal();
+}
+
+// Builds the command from whatever is in the dialog, on every keystroke.
+function roomCommand() {
+  const info = roomJoinInfo || {};
+  const way = document.getElementById("rj-reach").value;
+  const hub = document.getElementById("rj-hub");
+  const identity = document.getElementById("rj-identity-field");
+  const hubField = document.getElementById("rj-hub-field");
+
+  identity.style.display = way === "ziti" ? "" : "none";
+  hubField.style.display = way === "ziti" ? "none" : "";
+
+  // Refilled when the way in changes, and only then: retyping over somebody's
+  // correction on every keystroke would make the field impossible to edit.
+  if (hub.dataset.way !== way) {
+    hub.dataset.way = way;
+    hub.value = way === "share" ? (info.share || "") : (info.address || "");
+  }
+  document.getElementById("rj-hub-hint").textContent = way === "share"
+    ? "The zrok share, which is a public link. Anyone who can open it can post to it, and this " +
+      "board has no login unless you put one in front of it."
+    : "Only works where that machine can already reach this one. This daemon listens on " +
+      (info.local || "this machine") + ", so a loopback address here reports nowhere.";
+  document.getElementById("rj-reach-hint").textContent = way !== "ziti"
+    ? "The room posts to this URL on a timer. It has to be reachable from over there."
+    : (info.service_running
+      ? "The board is being answered on that service now. Neither machine has to be reachable " +
+        "from the other, because both dial the network."
+      : "That service is configured but this board is NOT being answered on it. Start the " +
+        "OpenZiti overlay in settings first, or the room retries against nothing.");
+
+  const parts = ["atrium", "room"];
+  if (way === "ziti") {
+    parts.push("--service", quoteArg(info.service || ""));
+    parts.push("--identity", quoteArg(document.getElementById("rj-identity").value.trim() ||
+      "/path/to/identity.json"));
+  } else {
+    parts.push("--hub", quoteArg(hub.value.trim() || "http://this-board:7778"));
+  }
+  const name = document.getElementById("rj-name").value.trim();
+  // Left out when empty rather than sent blank. The room defaults to its own
+  // hostname, and an empty --name is refused by the hub.
+  if (name) parts.push("--name", quoteArg(name));
+  const board = document.getElementById("rj-board").value.trim();
+  if (board) parts.push("--board", quoteArg(board));
+  document.getElementById("rj-cmd").value = parts.join(" ");
+}
+
+// Quotes a value only when it needs it, because a command full of quotes reads
+// as a template rather than as something to run. Double quotes work in both a
+// POSIX shell and PowerShell, which is what the two ends of this can be.
+function quoteArg(v) {
+  return /[\s"']/.test(v) ? '"' + v.replace(/"/g, '\\"') + '"' : v;
 }
 
 // A timestamp as something short enough to sit in a chip.
@@ -18419,10 +19097,14 @@ function popOutTerm() {
 const popOuts = new Map();
 
 // Returns what it did: `raised` for a window that was already there, `opened`
-// for a new one, `blocked` when the browser refused. The caller says something
+// for a new one, `unreachable` for one that is out there and cannot be
+// reached, `blocked` when the browser refused. The caller says something
 // different about each, and saying the wrong one is how "raised it for you"
 // ended up pointing at a window nobody could find.
-function popOutTask(id) {
+//
+// Async because ONE of those four answers has to be asked for rather than
+// worked out. See `stillOutThere`.
+async function popOutTask(id) {
   const held = popOuts.get(id);
   if (held && !held.closed) { held.focus(); return "raised"; }
 
@@ -18443,8 +19125,30 @@ function popOutTask(id) {
   if (poppedOut(id)) {
     const found = reopenByName(id);
     if (found) { popOuts.set(id, found); found.focus(); return "raised"; }
-    // Nothing under that name. The claim was stale by up to one heartbeat, so
-    // fall through and open one rather than insisting it is already there.
+    // Nothing under that name, and that is TWO different situations wearing
+    // one face.
+    //
+    // The window may have gone in the last few seconds, leaving a claim that
+    // has not expired yet. Or it may be sitting right there and be
+    // unreachable: a window opened by pasting a `#term=<id>` url into a tab
+    // has no name, so `window.open("", name)` will never find it, no matter
+    // how alive it is.
+    //
+    // Falling through was right for the first and wrong for the second, where
+    // it opened a SECOND window onto one terminal, which is the thing
+    // `docs/supervision-design.md` says nothing arbitrates, and then said "it
+    // was not there any more" about a window still on screen.
+    //
+    // So the difference is asked for rather than guessed at. A window that
+    // answers is out there, and the honest answer is that this board cannot
+    // bring it forward.
+    if (await stillOutThere(id)) {
+      tellUser("it is in a window this board did not open",
+        "That window is still there and still has the terminal, and a page may only raise a " +
+        "window it opened itself, so this board cannot bring it forward. Alt-tab to it, or " +
+        "close it and pop the card out again from here.");
+      return "unreachable";
+    }
   }
 
   // The card id, so the new window resolves the session itself rather than
@@ -18488,6 +19192,54 @@ function reopenByName(id) {
   }
   w.close();
   return null;
+}
+
+// How long the board waits for one window to answer for one card.
+//
+// Shorter than `soloRollCall`, which is paid once at load and is sized for a
+// restart reloading every document at once. This one is paid on a click, with
+// a person watching, and it is asking a question a window that is already
+// running answers in the same frame it hears it.
+const soloAnswerFor = 350;
+
+// Whether a window claiming this card is STILL out there, asked rather than
+// assumed.
+//
+// `soloHeld` is a heartbeat and it is up to `soloClaimFor` stale, which is
+// long enough to be wrong about a window that has just gone. The roll call
+// turns that into a fresh answer: anything that replies stamps its claim now,
+// so a claim newer than the question is a window that spoke after being
+// asked.
+//
+// False when there is no BroadcastChannel at all. Without one the board never
+// hears from a window it did not open, so it has nothing to be sure about and
+// opening one is the better of the two mistakes.
+function stillOutThere(id) {
+  if (!soloBus) return Promise.resolve(false);
+  const asked = Date.now();
+  try { soloBus.postMessage({ type: "solo-who" }); } catch (e) { return Promise.resolve(false); }
+  return new Promise(done => {
+    setTimeout(() => done((soloHeld.get(id) || 0) >= asked), soloAnswerFor);
+  });
+}
+
+// Says something in the window that holds a card, rather than in the one that
+// was clicked.
+//
+// The board raises a popped-out window and then has something to say about
+// having done it. Saying it here draws it in the window you are leaving. It
+// belongs where you are going.
+//
+// Returns whether it was HANDED OVER, which is not the same as drawn: a
+// broadcast has no delivery report, and a window running an older build of
+// this page would ignore the message. The claim the caller makes on the back
+// of a `true` is only that this board said nothing itself, which is a fact
+// about this document and is verifiable here.
+function sayInSoloWindow(id, title, body) {
+  if (!soloBus) return false;
+  try { soloBus.postMessage({ type: "solo-toast", task: id, title, body }); }
+  catch (e) { return false; }
+  return true;
 }
 
 // How big a popped-out window opens.

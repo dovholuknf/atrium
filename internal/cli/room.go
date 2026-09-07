@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/spf13/cobra"
@@ -35,6 +38,20 @@ import (
 // machine that made it. What travels is cards, their status, and what each is
 // waiting for. Typing into a runner on this machine means opening this
 // machine's own board, which is why the report carries `--board`.
+//
+// WHAT DOES TRAVEL IS A PERMISSION REQUEST, AND THE ANSWER BACK. An agent here
+// that is blocked waiting for a human is invisible on the hub's board unless
+// somebody opens this machine's board, which defeats the point of one board.
+// So the report carries the pending requests, and the reply to a check-in
+// carries whatever was decided about them.
+//
+// THE DECISION COMES BACK AND THE CHANNEL STAYS HERE, which is the one thing
+// the design would not let go either way. `HandlePermission` blocks on a
+// channel in THIS machine's daemon, so this posts the decision to that daemon
+// and it unblocks its own request. The hub never answers on this machine's
+// behalf, never learns whether the agent moved, and holds no record of the
+// decision: the rule it may create and the history it lands in are both written
+// here, by the daemon that was asked and will be asked again.
 
 // roomBeat is how often to check in.
 //
@@ -42,6 +59,19 @@ import (
 // check-in, so the two cannot drift and a room does not need configuring with
 // something the hub already knows.
 const roomBeat = 20 * time.Second
+
+// roomBusyBeat is how often to check in while an agent on THIS machine is
+// frozen waiting for somebody.
+//
+// The reply to a check-in is the only thing travelling from the hub to here, so
+// it is what carries a decision, so how fast a decision arrives is how often
+// this asks. At the ordinary beat, approving something on the hub's board would
+// take up to twenty seconds to release the agent, which reads as a button that
+// did nothing.
+//
+// Matched to the hub's own constant and reported in every reply, like the
+// ordinary beat, so the two cannot drift.
+const roomBusyBeat = 2 * time.Second
 
 // roomBackoff is the wait after a failed check-in.
 //
@@ -131,7 +161,7 @@ func runRoom(ctx context.Context, o roomOpts) error {
 	beat := roomBeat
 	var lastMoan time.Time
 	for {
-		n, err := checkIn(ctx, client, hubURL, local, o)
+		res, err := checkIn(ctx, client, hubURL, local, o)
 		switch {
 		case err != nil:
 			// Rate limited, and never fatal. See `roomQuiet`.
@@ -145,9 +175,15 @@ func runRoom(ctx context.Context, o roomOpts) error {
 				log.Printf("[atrium] the hub is back")
 				lastMoan = time.Time{}
 			}
+			// A machine with somebody frozen on it asks more often, because
+			// asking is how a decision gets here. See `roomBusyBeat`.
 			beat = roomBeat
+			if res.perms > 0 {
+				beat = roomBusyBeat
+			}
 			if o.Once {
-				log.Printf("[atrium] checked in with %d card(s), and --once was asked for", n)
+				log.Printf("[atrium] checked in with %d card(s) and %d pending request(s), "+
+					"and --once was asked for", res.cards, res.perms)
 				return nil
 			}
 		}
@@ -194,8 +230,21 @@ func hubClient(o roomOpts) (*http.Client, string, error) {
 	return &http.Client{Transport: tr, Timeout: 30 * time.Second}, "http://" + svc, nil
 }
 
-// checkIn reads this machine's cards and tells the hub about them.
-func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o roomOpts) (int, error) {
+// checkInResult is what one check-in learned, which is only ever used to
+// decide how soon to do the next one.
+type checkInResult struct {
+	cards int
+	perms int
+}
+
+// checkIn reads this machine's cards and pending requests, tells the hub about
+// them, and applies whatever the hub decided in the meantime.
+//
+// One round trip for both directions, on purpose. A separate endpoint for
+// collecting decisions would be a second connection to keep working over an
+// overlay, a second thing to back off on, and a second place for the two ends
+// to disagree about whether a room is present.
+func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o roomOpts) (checkInResult, error) {
 	cards, err := localCards(ctx, local)
 	if err != nil {
 		// REPORTED WITHOUT CARDS rather than skipped. A room whose own daemon
@@ -203,29 +252,125 @@ func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o r
 		// silent makes it look like the room is gone instead.
 		log.Printf("[atrium] could not read this machine's cards: %v", err)
 	}
+	perms, err := localPerms(ctx, local)
+	if err != nil {
+		// Same posture, and it matters more here: the request this failed to
+		// read is one an agent is frozen on. Reporting the cards without it is
+		// still better than reporting nothing.
+		log.Printf("[atrium] could not read what this machine is waiting to be allowed: %v", err)
+	}
+	out := checkInResult{cards: len(cards), perms: len(perms)}
+
 	host, _ := os.Hostname()
 	body, err := json.Marshal(map[string]any{
 		"name": o.Name, "board": o.Board, "host": host,
-		"version": VersionLine(), "cards": cards,
+		"version": VersionLine(), "cards": cards, "permissions": perms,
 	})
 	if err != nil {
-		return 0, err
+		return out, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hubURL+"/v1/rooms",
 		bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return out, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
-		return 0, err
+		return out, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
-		return 0, fmt.Errorf("the hub answered %s", res.Status)
+		return out, fmt.Errorf("the hub answered %s", res.Status)
 	}
-	return len(cards), nil
+
+	var reply struct {
+		Decisions []roomDecision `json:"decisions"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&reply); err != nil {
+		// The report landed, so this is not a failed check-in, but a reply
+		// that cannot be read is a hub no decision can arrive from. Backing
+		// off on it is right and costs nothing: the cards are already there.
+		return out, fmt.Errorf("the hub's answer could not be read: %w", err)
+	}
+	for _, d := range reply.Decisions {
+		applyDecision(ctx, local, d)
+	}
+	return out, nil
+}
+
+// roomDecision is one answer the hub is handing over. It mirrors
+// `daemon.RoomDecision` and is the body of this machine's own decide endpoint,
+// because that is what happens to it.
+type roomDecision struct {
+	Perm     string `json:"permission_id"`
+	Decision string `json:"decision"`
+	Reason   string `json:"reason,omitempty"`
+	Command  string `json:"command,omitempty"`
+	Forever  bool   `json:"forever,omitempty"`
+	Prefix   string `json:"prefix,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+}
+
+// applyDecision posts a decision made on the hub's board to THIS machine's own
+// daemon.
+//
+// This is the hop that releases the agent, and there is no other one. The
+// request is blocked on a channel in that daemon's process, so a decision has
+// to be delivered to it and nothing the hub does can substitute.
+//
+// NOT RETRIED, and never fatal. The daemon may refuse it, and the interesting
+// refusal is the correct one: somebody answered the same request on this
+// machine's own board first, and it says so with a conflict. If the refusal was
+// something else and the request is still pending, the next report still
+// carries it and the hub offers it again once its own decision expires, so
+// retrying here would only race that.
+func applyDecision(ctx context.Context, local string, d roomDecision) {
+	if strings.TrimSpace(d.Perm) == "" || strings.TrimSpace(d.Decision) == "" {
+		log.Printf("[atrium] the hub sent a decision with nothing in it, ignoring")
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"decision": d.Decision, "reason": d.Reason, "command": d.Command,
+		"forever": d.Forever, "prefix": d.Prefix, "kind": d.Kind,
+	})
+	if err != nil {
+		log.Printf("[atrium] could not pass on the hub's decision: %v", err)
+		return
+	}
+	url := strings.TrimRight(local, "/") + "/v1/permissions/" + neturl.PathEscape(d.Perm) + "/decide"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("[atrium] could not pass on the hub's decision: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		log.Printf("[atrium] could not pass on the hub's decision: %v", err)
+		return
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		what, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		log.Printf("[atrium] this machine refused the hub's %s of %s: %s %s",
+			d.Decision, d.Perm, res.Status, strings.TrimSpace(string(what)))
+		return
+	}
+	// SAID EVERY TIME. One line per decision a human made is not noise, it is
+	// the only local record that something on another board released an agent
+	// here.
+	extra := ""
+	if d.Forever {
+		extra = fmt.Sprintf(", and made a standing rule for %q", d.Prefix)
+	}
+	// "approve" plus "d" is "approved" and "block" plus "d" is "blockd". Past
+	// tense is a lookup, not a suffix.
+	past := map[string]string{"approve": "approved", "block": "blocked"}[d.Decision]
+	if past == "" {
+		past = d.Decision
+	}
+	log.Printf("[atrium] the hub %s %s%s", past, d.Perm, extra)
 }
 
 // roomCard is the summary sent for one card. It mirrors `daemon.RoomCard` and
@@ -281,4 +426,108 @@ func localCards(ctx context.Context, local string) ([]roomCard, error) {
 		})
 	}
 	return out, nil
+}
+
+// roomPerm is one pending request as it is reported. It mirrors
+// `daemon.RoomPerm` and is declared here for the same reason `roomCard` is: so
+// this command does not pull the daemon package in.
+type roomPerm struct {
+	ID      string `json:"id"`
+	TaskID  string `json:"task_id,omitempty"`
+	Tool    string `json:"tool"`
+	Command string `json:"command"`
+	Agent   string `json:"agent,omitempty"`
+	Details string `json:"details,omitempty"`
+	Waiting int    `json:"waiting_seconds"`
+}
+
+// roomMaxPerms and roomMaxDetails bound what one report carries.
+//
+// The hub enforces the same two numbers, and this is the end that decides them:
+// a report has to fit in one POST, the hub reads at most a megabyte of it, and
+// a report refused for being too big takes this machine's CARDS off the board
+// with it. So a large diff is cut short here rather than being allowed to make
+// the whole machine look gone.
+//
+// The count matters for a different reason than the size. Fifty text boxes is
+// already more than anybody is going to read.
+const (
+	roomMaxPerms   = 50
+	roomMaxDetails = 4000
+)
+
+// localPerms asks this machine's own daemon what is frozen waiting for a human.
+//
+// Over loopback and through the same JSON API the board uses, exactly like
+// `localCards` and for the same reasons.
+//
+// THE WAIT IS SENT AS SECONDS, not as the timestamp this reads. The hub draws
+// it against ITS clock, and two machines that disagree by a minute would put a
+// request on the board as frozen a minute before it was made. Seconds computed
+// here, against the clock that recorded the request, cannot be wrong that way.
+// It is the same rule `wait_seconds` on a card already follows.
+func localPerms(ctx context.Context, local string) ([]roomPerm, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(local, "/")+"/v1/permissions", nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	var body struct {
+		Permissions []struct {
+			ID          string `json:"id"`
+			TaskID      string `json:"task_id"`
+			Tool        string `json:"tool"`
+			Command     string `json:"command"`
+			RequestedAt string `json:"requested_at"`
+			Details     string `json:"details"`
+			Agent       string `json:"agent"`
+		} `json:"permissions"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := make([]roomPerm, 0, len(body.Permissions))
+	for _, p := range body.Permissions {
+		if len(out) >= roomMaxPerms {
+			break
+		}
+		waited := 0
+		if at, err := time.Parse(time.RFC3339, p.RequestedAt); err == nil {
+			// Never negative. A request cannot have been made in the future,
+			// and sending a negative would only put the impossible number on
+			// the wire for the hub to clamp.
+			if d := now.Sub(at); d > 0 {
+				waited = int(d / time.Second)
+			}
+		}
+		out = append(out, roomPerm{
+			ID: p.ID, TaskID: p.TaskID, Tool: p.Tool, Command: p.Command,
+			Agent: p.Agent, Details: clip(p.Details, roomMaxDetails), Waiting: waited,
+		})
+	}
+	return out, nil
+}
+
+// clip cuts a string to at most n bytes without cutting a character in half.
+//
+// A diff is arbitrary text and a byte slice through a multi-byte character
+// produces invalid UTF-8, which `encoding/json` writes as a replacement
+// character. One of those at the end of a truncated diff is harmless, but it is
+// avoidable in two lines.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[:n]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }

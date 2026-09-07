@@ -209,6 +209,15 @@ func (s *Server) zitiServices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Capabilities())
 }
 
+// zrokAccount reports what the zrok account behind this machine is using.
+//
+// Always 200, for the same reason as `zitiServices`: "the zrok instance would
+// not answer" is a sentence to show in the panel beside the counters, and a
+// failing status would replace the whole panel with a generic error.
+func (s *Server) zrokAccount(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.ZrokAccount())
+}
+
 // Lending one session, over a share that reaches nothing else.
 //
 // Separate endpoints from the overlay ones on purpose. `POST /v1/overlays/zrok/

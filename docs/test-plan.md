@@ -824,6 +824,45 @@ service field offers, start, and reach the board from another machine on that ne
 Until somebody does that, `docs/overlays.md` says so rather than implying both halves are equally proved.
 
 
+### H5. The zrok account block counts what the account is holding
+
+**Steps**
+
+1. Gear, `expose the board`, with zrok enabled. The block sits under the `enabled against ...` line, above
+   `configure zrok`.
+2. Compare it against the account itself:
+
+```powershell
+$tok = (Get-Content ~/.zrok2/environment.json | ConvertFrom-Json).zrok_token
+curl.exe -s -H "x-token: $tok" https://api-v2.zrok.io/api/v2/overview
+```
+
+3. Press `check again`.
+
+**Expect** the same three counts: environments on the account, shares summed across all of them, and names
+with `reserved` true. Not just this machine's. The line underneath says how many shares are this machine's and,
+when there are any, how many reserved names start with `atrium-`.
+
+**Expect no fraction anywhere.** zrok does not tell an account token where its ceilings are, so a "3 of 5" in
+this block would mean somebody invented a denominator. `docs/overlays.md` has the reasoning.
+
+**Failure mode** counts that only cover this machine. The limit is per account, and every machine that ever ran
+`zrok enable` is an environment on it, so a count that stops at this one reads comfortable while the account is
+full.
+
+### H6. A limit says which limit
+
+Hard to stage deliberately. Do it the next time an account is actually at one.
+
+**Expect**, when zrok reports the account as limited, that the block keeps its counts and adds a warning naming
+the TRANSFER allowance. That flag is bandwidth only, so a warning that blames the counts sends somebody to
+delete shares over a block deleting shares does not lift.
+
+**Expect**, when a name reservation is refused for the name ceiling, a message that says to release a name.
+**The failure this replaces is the one to watch for:** "that name is taken, try a longer one", which is what an
+account at its name limit used to be told, and no longer name would have helped.
+
+
 ## I. Importing rules from Claude Code
 
 The one part of the permission surface with no scenario, named in Known gaps for months. It matters because it
@@ -1185,7 +1224,7 @@ from a new copy. A preview that silently re-copied would produce "why are these 
 one that silently kept them would produce the same question the other way round.
 
 
-## L. Cutting a release
+## M. Cutting a release
 
 Nothing here touches the board. It is in this document because a release is the one procedure that gets run
 rarely, by a person, under pressure, and the parts of it a script cannot check are the parts that reach a
@@ -1194,7 +1233,7 @@ stranger.
 `scripts/check-release.sh` already asserts every refusal in CI, so do not re-test those by hand. What is left
 below is what only a human and a network can answer.
 
-### L1. The dry run is the whole run
+### M1. The dry run is the whole run
 
 **Steps**
 
@@ -1209,7 +1248,7 @@ says linux/amd64 builds byte for byte the same from the commit alone, verifies e
 **Also expect** step 3 shows no new tag and no change to the tree. A dry run that created the tag would be a
 decision, and the default is meant to be the option that decides nothing.
 
-### L2. The version the binary reports
+### M2. The version the binary reports
 
 **The failure this exists for.** The version is stamped by the linker and is `dev` when it is not. A release
 that reports itself as `dev` is one a package manager will never offer an upgrade over, and it looks completely
@@ -1222,7 +1261,7 @@ normal until somebody runs it.
 
 **Expect** `atrium v0.1.0` and the commit the tag names. Not `dev`, and not a commit with `(dirty)` after it.
 
-### L3. The scoop bucket, which is the real test of the release shape
+### M3. The scoop bucket, which is the real test of the release shape
 
 **Steps**
 
@@ -1238,7 +1277,7 @@ normal until somebody runs it.
 failure the publish path re-hashes specifically to prevent, so it points at the bucket copy rather than the
 release. A "cannot find atrium.exe" means `extract_dir` and the archive layout disagree.
 
-### L4. The workflow and the local publish do not both win
+### M4. The workflow and the local publish do not both win
 
 **Steps**
 
@@ -1250,7 +1289,7 @@ the designed outcome and not a bug. Prefer the workflow once it has worked once,
 after that.
 
 
-## L. Which of these want me
+## N. Which of these want me
 
 `atrium peers` grouped by what each card wants. The states it separates are the ones that were repeatedly
 confused when sixteen agents were running: finished, stopped and asking, asking while still working, and gone
@@ -1262,7 +1301,7 @@ Run these against a preview (`atrium preview --http <port> --from live`) so the 
 so every ask typed from inside one lands on that session's own card whatever name you pass. Clear it for these
 steps. This is correct behaviour and it will waste ten minutes if you forget.
 
-### L1. The four states read differently
+### N1. The four states read differently
 
 **Steps**
 
@@ -1278,7 +1317,7 @@ third is under `FINISHED` with the first line of its recap. The fourth is under 
 
 **Also expect** the groups in that order, most wanting a human first, and the longest wait first inside each.
 
-### L2. A card in `done` is not a session that finished
+### N2. A card in `done` is not a session that finished
 
 **The failure this exists for.** Everything dragged to `done` by hand, adopted, or tidied by the sweep is in the
 same column as a session that ran `atrium finish`. Pointing the first version of this at a real board buried
@@ -1291,7 +1330,7 @@ nineteen recaps under twenty five rows of old cards nobody had claimed.
 
 **Expect** it is not listed at all. Only a card with a recap, or one an agent filed a `finished` for, appears.
 
-### L3. Finished work ages out and blocked work does not
+### N3. Finished work ages out and blocked work does not
 
 **Steps**
 
@@ -1304,7 +1343,7 @@ the window is on finished work only. A session that has been blocked since yeste
 exists to surface and must never age out. Step 3 refuses with a message naming the format, rather than quietly
 using the default and looking like an answer.
 
-### L4. A finished session is still not somebody to talk to
+### N4. A finished session is still not somebody to talk to
 
 **Steps**
 
@@ -1314,7 +1353,7 @@ using the default and looking like an answer.
 session that has ended wastes a turn and produces a message nobody reads. It is still grouped and ranked.
 
 
-## L. The board does not throw away where you were
+## O. The board does not throw away where you were
 
 **Read this before running any of it.** Every case here looks like it passes on a quiet board, because a quiet
 board was never the problem. The board only repaints when something changes or the poll lands, so a board with
@@ -1325,7 +1364,7 @@ The easiest way to get movement without launching anything: leave a card selecte
 watch the ages tick, or start one short-lived shell fixture. `atrium preview --from live` gives you a copy of
 the real cards to do it against.
 
-### L1. Scrolling down stays down
+### O1. Scrolling down stays down
 
 **Steps**
 
@@ -1341,7 +1380,7 @@ you would see as a jump: it does not move at all.
 **Also** repeat it on the stack and on the terminal switcher, which are separate lists and were separately
 broken.
 
-### L2. A selection survives a card ticking
+### O2. A selection survives a card ticking
 
 **The one that catches a half fix.** Reconciling rows by id but rewriting every matched row fixes the scroll
 and leaves this broken, because the age changes every second and the card being rewritten is the card being
@@ -1356,7 +1395,7 @@ read.
 **Expect** the selection is still there and still covers the same text, and the age beside it changed while you
 held it.
 
-### L3. Focus is not moved out from under you
+### O3. Focus is not moved out from under you
 
 **Steps**
 
@@ -1366,7 +1405,7 @@ held it.
 **Expect** the caret is where you left it and the text is what you typed. The list under it filters and
 redraws around the box.
 
-### L4. A drag files ONE move
+### O4. A drag files ONE move
 
 **The failure this exists for.** A reconciled board hands back the SAME card element after a repaint, with the
 listeners it already had. Wiring them again on every render adds a second `drop` handler, and then one drop
@@ -1381,7 +1420,7 @@ jumps to a second position by itself, seconds after you let go.
 
 **Expect** it lands once and stays. Check the card's timeline: one status change, not two.
 
-### L5. Ticks in the file picker survive a repaint
+### O5. Ticks in the file picker survive a repaint
 
 **Steps**
 
@@ -1392,7 +1431,7 @@ jumps to a second position by itself, seconds after you let go.
 one is a side effect of writing attributes rather than properties, and it is worth checking because it is the
 cheapest evidence that a repaint really is not rebuilding rows.
 
-### L6. Cards still arrive, leave and reorder
+### O6. Cards still arrive, leave and reorder
 
 **The regression the fix could cause.** A reconciler that matches too eagerly shows you a stale board, which is
 worse than one that flickers, and it will look calm while doing it.
@@ -1406,4 +1445,212 @@ worse than one that flickers, and it will look calm while doing it.
 
 **Expect** every one of those shows up on the board within a poll, in the right column, with the right text.
 A card that arrives in the wrong place, keeps an old title, or refuses to leave is this fix failing.
+
+
+## P. Saying only what was verified
+
+Four places where the board reported an outcome it had not checked. Every one of them looks fine on a board
+with one window open, so all four need a second window and one of them needs a pasted url.
+
+### P1. The toast about a raised window appears in the raised window
+
+**Steps**
+
+1. Pop a supervised card out with the icon on its row. A second window opens with the terminal in it.
+2. Go back to the board and press `attach` on that same card.
+3. Watch the window that comes to the front.
+
+**Expect** the popped-out window is raised, and the message `the board sent you here` is drawn IN THAT WINDOW.
+The board draws nothing. If a toast appears on the board instead, it is being said in the window you are
+leaving, which is the bug.
+
+### P2. A window the board did not open is admitted to, not lied about
+
+**The failure this exists for.** A window is found again by name, and only a script-opened window has one. The
+board would fail to find it, open a second window onto the same terminal, and say the first one was gone.
+
+**Steps**
+
+1. Copy the board's address, open a NEW TAB by hand, and paste `<address>/#term=<card id>` into it. Use a
+   supervised card. The terminal attaches.
+2. Go back to the board. Press `attach` on that card.
+
+**Expect** a dialog saying it is in a window this board did not open, and that a page may only raise a window it
+opened itself. **No second window opens.** Two views on one terminal is the situation `docs/supervision-design.md`
+says nothing arbitrates, so opening one here is a failure even though it looks helpful.
+
+### P3. A stale claim still opens a window
+
+**The other half of P2, and the reason it has to be asked rather than assumed.**
+
+**Steps**
+
+1. Pop a card out.
+2. Close the popped-out window and IMMEDIATELY, within a couple of seconds, press `attach` on that card.
+
+**Expect** a window opens, with `it was not there any more`. The claim was still inside its fifteen seconds, so
+the board had to call the roll to find out nobody was answering.
+
+### P4. An alert for a popped-out card raises it rather than stealing it
+
+**Steps**
+
+1. Pop a card out and leave the board on the terminals view with nothing attached.
+2. Make that card ask for a permission, so the board raises a toast for it.
+3. Click the toast.
+
+**Expect** the popped-out window comes forward and the message lands in it. The board's own pane stays empty.
+The failure is the terminal being pulled into the board's pane, leaving the popped-out window showing a
+terminal it no longer has.
+
+### P5. The notification test answers when nothing appeared
+
+**Steps**
+
+1. Turn OFF notifications for your browser in Windows Settings, System, Notifications. Leave the browser's own
+   permission granted.
+2. Open the gear, go to alerts, press the test button.
+
+**Expect** `nothing appeared`, naming Windows as the likely cause. Before, the button was silent, and silent
+reads as working. Turn notifications back on and press it again: `it is on screen`.
+
+
+## Q. The login on the published board
+
+Everything here needs a provider, which is what the Go tests cannot have. They run against a fake one that
+checks its own side of the exchange, and that is worth a lot, but a fake provider agrees with whatever atrium
+believes about the real ones. Nothing in this section has been run against a real provider yet.
+
+### Q1. A sign-in, end to end. NOT YET RUN.
+
+**Steps**
+
+1. Register a client at a provider you administer, a Keycloak realm for instance. Set its redirect URI to the
+   PUBLISHED address plus `/auth/callback`, which is not localhost.
+2. Settings, `who may open it`. Fill in the issuer, the client id, the redirect and your own email address.
+   Leave the secret empty if you registered a public client.
+3. Start the share. Open the published address in a browser that has never signed in to that provider.
+
+**Expect** the provider's login form, then the board. The authorize URL it sent you through carries
+`code_challenge` and `code_challenge_method=S256`, which you can read in the address bar on the way past.
+
+**Expect also** that the provider is happy with the exchange. A provider configured to REQUIRE PKCE and a
+provider that has never heard of it must both work, because atrium sends the challenge either way and has no
+switch to turn it off.
+
+### Q2. The loopback board still never asks. NOT YET RUN.
+
+**Steps** with the login configured and enabled, and a share running, open `http://localhost:7778` on the
+machine itself.
+
+**Expect** the board, immediately, with no login and no redirect. This is the one that breaks every hook on the
+machine if it is wrong, and it breaks them quietly, because a hook that fails is designed never to fail a
+session. `TestTheLocalBoardIsNotWrapped` asserts the construction. This asserts the machine.
+
+### Q3. A session that ran out renews without a form. NOT YET RUN.
+
+A session lasts twelve hours, which is a long time to sit and watch. To provoke it, sign in, then delete the
+`atrium_session` cookie in the browser's dev tools and press a button on the board.
+
+**Expect** the page to reload itself and come back signed in, with no login form, because the provider still
+has a session for that browser and answered `prompt=none`. What you must NOT see is the board filling up with
+red errors, which is what it did before it knew what a `401` meant.
+
+### Q4. A provider that has forgotten you gets a form, not an error page. NOT YET RUN.
+
+**Steps**
+
+1. Sign in to the board.
+2. Sign out AT THE PROVIDER, in another tab, so its session is gone and atrium's cookie is not.
+3. Delete the `atrium_session` cookie and press a button on the board.
+
+**Expect** the provider's login form. What you must NOT see is a page saying `the provider refused:
+login_required`. A declined silent renewal is the expected answer rather than an error, and showing it as one
+means every expired session lands on the word "refused" with no way forward.
+
+### Q5. A login cannot send you somewhere else. NOT YET RUN.
+
+**Steps** with the login enabled, open the published address with
+`/auth/renew?back=//example.com` on the end, and sign in.
+
+**Expect** to land on the board's own front page. The `back` value rides through a redirect to the provider and
+comes back, so it is under an attacker's control from end to end, and a link that drops somebody on another
+domain the moment they finish signing in is the oldest phishing primitive there is.
+`TestALoginCannotSendSomebodyOffThisBoard` covers the parsing. This covers the browser, which is the only thing
+that decides what `//example.com` means.
+
+
+## R. Statusline telemetry
+
+The endpoint is `POST /telemetry` on the agent listener. See `docs/statusline-telemetry.md` for the contract.
+
+Nothing here needs a statusline script: every step is a `curl` you can run yourself, which is the point of a
+contract precise enough to be implemented from.
+
+### R1. A context figure lands on the right card
+
+**Steps**
+
+1. Pick a card with a runner on it. Read its `resume_id` from `GET /v1/tasks`, or open the card and use its id
+   as `task_id`.
+2. Post a figure:
+
+```bash
+curl -s -X POST localhost:7777/telemetry -H 'content-type: application/json' -d '{
+  "session_id": "THE-RESUME-ID", "context_used": 184000, "context_window": 200000,
+  "model": "Opus 5", "five_hour": {"pct": 91, "resets_at": "2030-01-01T00:00:00Z"}
+}'
+```
+
+3. Watch the board for five seconds, which is its poll interval.
+4. Hover the chip.
+
+**Expect** the card grows a `ctx 92%` chip in the danger colour and an amber `5h 91%` beside it. The tooltip
+says `184k of 200k tokens`, the model, the limit and when it resets, and how long ago the figure arrived.
+
+**Also expect** the card did not move. Its status, its column and its idle clock are exactly as they were: a
+statusline redraws when a terminal does, including when a human types in it, so a post is not activity.
+
+### R2. A session atrium has never heard of
+
+**Steps**
+
+1. Post the same body with `"session_id": "not-a-real-id"`.
+2. Read the response and the daemon's log.
+
+**Expect** `{"ok":true}` and nothing recorded anywhere. No error, no log line, no card changed. A statusline
+runs in every session on the machine and most of them are not on the board.
+
+### R3. Nothing it is sent can fail it
+
+**Steps**
+
+1. Post `not json`, then `[]`, then `{"session_id":123}`, then an empty body.
+2. Check every status code.
+
+**Expect** `200` every time. A statusline that treats a non-2xx as a failure would surface one on every render,
+and a terminal that stops drawing is the failure this posture exists to prevent.
+
+### R4. It disappears on restart, and does not come back wrong
+
+**Steps**
+
+1. Post a figure to a card and see the chip.
+2. `atrium stop`, then start the daemon again.
+3. Look at the same card.
+
+**Expect** no chip. The figure was never written down, because it described a process that the restart ended.
+A card claiming `92% context` about a conversation that no longer exists is the failure mode the whole
+never-stored rule is about.
+
+### R5. It outlives the activity badge
+
+**Steps**
+
+1. Post a figure to a card whose session then goes quiet for twenty minutes.
+2. Look at the card.
+
+**Expect** the activity badge is gone, at fifteen minutes, and the `ctx` chip is still there, until thirty.
+That difference is deliberate: an activity goes wrong fast, a context figure only grows, and an idle card is
+exactly the one whose context decides whether you resume it.
 

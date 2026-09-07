@@ -47,6 +47,15 @@ without hedging. Atrium does not know what that session is doing, so it says not
 Cards, history and rules go the other way and are durable, because "how long has this been sitting" cannot be
 answered from memory that dies with the process. Activity is only ever about now.
 
+## The other live number
+
+How much context a session has burned sits beside this, in the same map, under the same never-stored rule, and
+posted by a caller with the same posture. It is not part of an `Activity`, because the two expire on different
+clocks: an activity goes wrong the moment a tool ends, and a context figure only grows, so an old one is a floor
+on the current one. A card idle for twenty minutes has no badge and still has its context.
+
+See `docs/statusline-telemetry.md`.
+
 ## Staleness
 
 A hook that never fires leaves an activity pinned forever. A session killed mid-tool would show `tool` until the

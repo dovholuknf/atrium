@@ -163,8 +163,18 @@ func notThere(err error) bool {
 // still miss whichever one a later zrok adds. A wrong answer costs one
 // misleading error message, and the reservation that follows is what the
 // caller is actually asking for.
+//
+// EXCEPT FOR THE NAME CEILING, which is the one 409 that must not be swallowed.
+// zrok answers a refusal for the account's reserved name limit with the same
+// status as a name that already exists, carrying `names limit reached`.
+// Swallowed, it reaches the update, which refuses for the same reason and gets
+// reported as a name collision, so somebody is told to try a longer name when
+// no name of any length would have worked.
 func alreadyThere(err error) bool {
 	s := strings.ToLower(err.Error())
+	if strings.Contains(s, "limit reached") {
+		return false
+	}
 	return strings.Contains(s, "conflict") || strings.Contains(s, "already")
 }
 

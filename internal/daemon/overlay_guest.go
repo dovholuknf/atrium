@@ -685,6 +685,11 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		//   /v1/permissions    answering a gate is YOUR decision. a guest
 		//                      driving a session hits the gate and you answer
 		//                      it, which is the correct division.
+		//   /v1/rooms          every other machine reporting in, and the gates
+		//                      they are waiting on. The same division, further
+		//                      out: a guest holding one terminal has no
+		//                      business knowing what else you run, let alone
+		//                      answering for it.
 		//   /v1/settings       machine settings, including paths.
 		//   /v1/browse         the directory picker. Bounded to a root set
 		//                      since `browseroots.go`, and still not a guest's
