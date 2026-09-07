@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,10 +25,53 @@ import (
 	"github.com/dovholuknf/atrium/internal/tui"
 )
 
+// errAlreadySaid marks a failure the command has already explained, in its own
+// words, on its own output.
+//
+// The failure it prevents: `atrium ask --peer nobody-here "x"` printed a
+// refusal that named every handle that WOULD have worked, and then cobra
+// printed `Error: ...`, twelve lines of flag usage, and the same sentence
+// again. The one paragraph somebody wrote scrolled off the top, replaced by
+// flag descriptions for a command that was typed correctly except for one
+// argument. So a path that has spoken wraps this, and both cobra and Execute
+// stay quiet.
+//
+// NOT a blanket silence. Only the paths that print a human sentence carry it,
+// because a command that fails without saying anything must still be reported
+// or a real failure becomes an exit code and nothing else.
+var errAlreadySaid = errors.New("already reported")
+
+// alreadySaid tags an error as one whose message was already printed. The text
+// is kept for tests and for anything that inspects the error, never for the
+// terminal.
+func alreadySaid(format string, a ...any) error {
+	return fmt.Errorf("%s: %w", fmt.Sprintf(format, a...), errAlreadySaid)
+}
+
+// speaksForItself wraps a RunE that MIGHT return an already-reported error.
+//
+// Cobra reads SilenceUsage and SilenceErrors AFTER RunE returns, so setting
+// them here scopes the silence to the one call that earned it. Setting them on
+// the command up front would also swallow the usage and the message for every
+// other way that command can fail.
+func speaksForItself(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		if errors.Is(err, errAlreadySaid) {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+		}
+		return err
+	}
+}
+
 // Execute runs the cobra root. Returns the exit code.
 func Execute() int {
 	if err := newRoot().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "atrium:", err)
+		// Still a failure, still exit 1. The command said why already.
+		if !errors.Is(err, errAlreadySaid) {
+			fmt.Fprintln(os.Stderr, "atrium:", err)
+		}
 		return 1
 	}
 	return 0

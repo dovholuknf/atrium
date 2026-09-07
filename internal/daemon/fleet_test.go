@@ -239,7 +239,7 @@ func TestABlockedAskRecordsThatItIsAQuestion(t *testing.T) {
 	}
 }
 
-// question. `atrium ask --working`: still going, and it would like an answer.
+// question. `atrium ask --continue`: still going, and it would like an answer.
 //
 // The line that matters: it must NOT read as blocked, and it must not have
 // moved the card. A working session filed as waiting makes the count that

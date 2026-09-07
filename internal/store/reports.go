@@ -58,7 +58,7 @@ type AgentReport struct {
 	// and carried here so a reader can tell an agent's question from a `why`
 	// the operator typed.
 	Ask string `json:"ask,omitempty"`
-	// Blocked is whether the session stopped. `atrium ask --working` is a
+	// Blocked is whether the session stopped. `atrium ask --continue` is a
 	// question from a session that is carrying on, and that is a different
 	// amount of hurry.
 	Blocked bool `json:"blocked,omitempty"`

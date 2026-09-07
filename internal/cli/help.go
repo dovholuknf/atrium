@@ -34,7 +34,7 @@ import (
 
 func newAsk() *cobra.Command {
 	var name, hubURL, peer string
-	var working bool
+	var carryOn, working bool
 
 	c := &cobra.Command{
 		Use:   "ask [what you need]",
@@ -47,7 +47,7 @@ func newAsk() *cobra.Command {
 			"Say what would unstick you, not what went wrong. \"which of these two schemas is " +
 			"authoritative\" is useful. \"the build failed\" is what the terminal already says.\n\n" +
 			"By default this means you have STOPPED, and the card moves to waiting. Pass " +
-			"--working if you are carrying on and would like an answer when somebody has one: " +
+			"--continue if you are carrying on and would like an answer when somebody has one: " +
 			"a session still working does not belong in a bucket of things needing attention.\n\n" +
 			"Pass --peer <handle> to ask ANOTHER SESSION rather than a human. The question is " +
 			"queued for it and arrives on its next tool call or at the end of its turn, and it " +
@@ -57,7 +57,7 @@ func newAsk() *cobra.Command {
 			"Which session this is comes from $ATRIUM_AGENT_NAME, or the current directory's " +
 			"name, exactly like the hooks.",
 		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: speaksForItself(func(cmd *cobra.Command, args []string) error {
 			ask := strings.TrimSpace(strings.Join(args, " "))
 			if ask == "" {
 				ask = pipedRecap()
@@ -65,11 +65,25 @@ func newAsk() *cobra.Command {
 			if ask == "" {
 				return fmt.Errorf("say what you need. an empty ask is what waiting already means")
 			}
-			return reportStuck(cmd.OutOrStdout(), hubURL, name, ask, peer, !working)
-		},
+			return reportStuck(cmd.OutOrStdout(), hubURL, name, ask, peer, !(carryOn || working))
+		}),
 	}
-	c.Flags().BoolVar(&working, "working", false,
+	// --continue NAMES THE DECISION, NOT THE STATE.
+	//
+	// This was `--working`, which named the state the session is already in and
+	// which the reader already knows, and which reads as a claim about being
+	// busy rather than as a choice about what happens next. The only thing the
+	// flag controls is whether the card is filed as waiting.
+	//
+	// It also fixes an asymmetry: `atrium ask "..."` and `atrium ask --working
+	// "..."` were the pair, and nothing about the first said it stops. The pair
+	// now reads as stop by default, carry on by request, which is what it is.
+	c.Flags().BoolVar(&carryOn, "continue", false,
 		"you are carrying on rather than stopping, so do not file the card as waiting")
+	// The old name still works and is hidden, because it is written down in
+	// prompts and scripts this repo cannot reach.
+	c.Flags().BoolVar(&working, "working", false, "deprecated name for --continue")
+	_ = c.Flags().MarkHidden("working")
 	// The backquoted word is the ARGUMENT NAME, not emphasis. Cobra takes the
 	// first one in a flag's usage and prints it beside the flag, so
 	// "`atrium peers` lists the handles" rendered as `--peer atrium peers`.
@@ -147,7 +161,7 @@ func reportStuck(out io.Writer, hubURL, name, ask, peer string, blocked bool) er
 		printPeers(out, answer.Peers)
 		fmt.Fprintln(out, "\nnothing was asked. run it again with one of those, "+
 			"or without --peer to ask a human.")
-		return fmt.Errorf("no session called %s", peer)
+		return alreadySaid("no session called %s", peer)
 	}
 	if resp.StatusCode >= 300 {
 		if answer.Error != "" {

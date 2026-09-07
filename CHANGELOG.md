@@ -5,6 +5,123 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Two windows on one terminal is refused, rather than quietly wrecking the wider one.**
+
+  A `#term=<id>` url pasted into a tab attached a second viewer to a terminal that already had one. The daemon
+  then sized the pty to the SMALLEST viewer, which is correct, and nothing told the larger window's xterm to use
+  the agreed size. So every cursor-positioning escape the runner emitted was computed for a narrower line than
+  the one it landed on, and a wrapped input line redrew on top of itself: `accepting newlines for some reason`
+  came out as `acceptingenewlineshforisomewreason`, one character eating each space at what would have been a
+  wrap column. The narrow window looked perfect throughout, so the window being typed in read as the broken one.
+
+  A solo window now asks, before it attaches, whether anybody already holds that card, using the same broadcast
+  roll call `attach` uses rather than the fifteen second heartbeat, so a window that was closed without
+  releasing does not lock a card out. The refusal offers **take it anyway**: the holder yields, releases its
+  claim and tears its own pane down. Taking rather than closing the other window, because `window.close()` on a
+  window this script did not open is refused silently, so a close button would have lied about half the time.
+
+  `docs/supervision-design.md` says nothing arbitrates two views onto one terminal. Something does now.
+
+- **The board no longer draws an empty board at a lent session's address.**
+
+  A share hands out a link ending `#term=<card>`, and the fragment is the part the server never sees. Open the
+  address without it and the page rendered its own chrome with every list empty, because `guestHandler` refuses
+  `/v1/tasks`, `/v1/events`, `/v1/permissions` and `/v1/rooms` on purpose. Nothing leaked and it looked exactly
+  like atrium being broken: the first person to try it asked whether it was a clone of his own board.
+
+  The page now recognises what it is. A 403 from `/v1/tasks` is the signal, and it says what the address is for
+  and that the link needs its fragment back. Paste and drop are withdrawn there too, because both post to an
+  endpoint a guest is refused, and offering somebody a thing that cannot work is worse than not offering it.
+
+- **A refusal reaches the page in the words the daemon chose.** `api()` read the body as JSON and threw away
+  anything that was not, so every `http.Error` sentence arrived as the single word `Forbidden`. That is what
+  made a refused upload say `that did not go up` instead of `this link is one terminal. nothing else here is
+  shared.` One layer, every refusal on the board.
+
+- **Scrollback survives a restart, which atrium does to itself constantly.**
+
+  The daemon keeps the last N bytes of a runner's output in a ring buffer, in memory, sized at spawn. A restart
+  exits the daemon and closes every pty, so every ring goes and a resumed fixture is a new process with an empty
+  one. The only surviving copy was whatever xterm held in a page that happened to be open, so closing that
+  window discarded the last copy of the morning. `docs/reload-design.md` is an entire document about installing
+  a new daemon from inside a session it is running, which is how often this happened.
+
+  Each ring is now written out during the wind-down the daemon already narrates, and handed back to the next
+  runner on the same card. Bounded by construction because a ring is bounded, and NOT a transcript: nothing is
+  appended as output is produced.
+
+  Keyed by the CARD, because a card outlives the process it describes and a pid is only a reconnect hint. One
+  width in the header rather than a list of marks, because the ring only ever replays the run composed at the
+  width in force now, and that rule is what keeps an attach readable. Offered once per card per daemon, so a
+  card relaunched by hand three hours later is new work rather than this morning's output. The join is drawn
+  rather than hidden: a dim `atrium restarted here` divider. Reading it back cannot fail a start, and writing
+  it out cannot delay a shutdown past the budget it already has.
+
+  **It does nothing for a crash.** A killed daemon never runs its wind-down. The file is deliberately kept when
+  claimed, so a kill at least comes back to the last clean stop.
+
+- **A second question no longer destroys the first.**
+
+  An ask used to be written into `why`, the sentence an operator writes once and reads in a week, so it
+  destroyed the standing answer to "what was I even doing". That got fixed by giving the ask its own columns,
+  which fixed the collision with `why` and left a worse one: one column holds one value, and
+
+      atrium ask --continue "which of these two schemas is authoritative"
+      atrium ask "which branch is base"
+
+  silently dropped the first, with nothing anywhere recording that it had been asked.
+
+  An ask is a row now, keyed by card, the way a message and an event already are. Each is answered on its own,
+  because `ask_peer` is per question and one card can be waiting on a peer for one thing and on you for another.
+  A peer's answer settles only what was routed to that peer. A message from the operator settles everything,
+  since it is addressed to nobody in particular. Ten outstanding per card, and the eleventh retires the OLDEST
+  with the drop recorded on the row and in the event log, because the original defect was never that a question
+  was lost: it was that it was lost silently.
+
+  The old columns stay as a mirror of the oldest outstanding question, recomputed after every change by the one
+  function allowed to write them, so the board, `fleet.go` and `atrium peers` see exactly what they saw before.
+
+- **The question is on the card, and it is a control.** The stack row drew it and the card dialog did not, so
+  what a session SAID IT DID had a field and what it is STOPPED ON had none. It has one now, beside the recap
+  and shaped like it, naming the peer when there is one. Pressing the question, on the row or in the dialog,
+  opens a box aimed at that card, since saying anything to a card is already what answers it.
+
+- **`atrium ask --working` is `--continue`.** The old name described the state the session was already in. The
+  new one describes the decision, which is the only thing the flag controls, and the pair now reads as stop by
+  default and carry on by request. `--working` still works and is hidden from help.
+
+- **A command that explains itself no longer prints the explanation, then the error, then the usage, then the
+  error again.** `atrium ask --peer nobody-here` wrote a refusal naming every handle that would have worked, and
+  cobra then buried it under twelve lines of flag descriptions. Suppressed for the paths that write their own
+  sentence, and only those: a failure with no message of its own still reports itself.
+
+- **Switching zrok account there and back stopped refusing over a trailing slash.** `https://api-v2.zrok.io` and
+  `https://api-v2.zrok.io/` are the same instance; `!=` disagreed. The board's environment toggle was also
+  sending the address box's contents as an address CHANGE, so choosing which account asked to move an instance
+  nobody had touched. Endpoints are compared normalised now, and the refusal that remains names the environment
+  and both addresses so a one character difference is visible.
+
+- **The card dialog says that it saves.** Every field committed on leaving it, and the only button said
+  `close`, which reads as the discard half of a pair. It says `save and close`, the fields say they are kept on
+  leaving them, and there is one commit path rather than two.
+
+- **The pinned cards are labelled.** A rule under them read `the rest, <whatever the sort is>`, naming the sort
+  the control at the top of the screen already names, and nothing labelled the block above it. `PINNED` and
+  `THE REST`.
+
+- **`ctrl-shift-v` pastes straight through where it can.** It opened the paste box unconditionally. The box
+  exists because reading the clipboard is a permission granted per origin and every share is a new origin whose
+  prompt never gets answered, so the read never settles. On loopback it settles at once. It now races the read
+  the way right click already did, and the box appears only when the read does not come back. No locality test:
+  whether the clipboard answers IS the test, and it stays right on a browser nobody anticipated.
+
+- **The restart banner was unreadable on a light skin, for the second time.** Detaching cleared `--term-bg` and
+  left `--term-fg` and `--term-line` behind, so the pane carried half of the last terminal theme and the
+  leftover foreground paired with the board's own background. The first fix treated the variables as missing
+  when they were stale. Every theme variable is cleared together now, and one rule sets the banner's background,
+  border and colour in one place. The same leftovers were quietly reaching the file drawer and the find bar.
+
+
 - **Work can be sent to another machine, and the hub still never dials one.**
 
   A room already dials this hub every twenty seconds and says what is on it. Cards travelled inward and there

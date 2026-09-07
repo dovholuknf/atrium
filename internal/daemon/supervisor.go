@@ -318,6 +318,16 @@ type runner struct {
 
 	mu  sync.Mutex
 	buf *ringBuffer
+	// carried is what the card's terminal held before the last restart, and
+	// the width it was composed at. See `carryover.go`: a restart destroys
+	// every ring, so without this a resumed fixture attaches to a terminal
+	// that starts at "just now".
+	//
+	// Kept beside the ring rather than loaded into it. The ring is a stream
+	// with one set of width marks and these bytes came from another process,
+	// so writing them in would file the new runner's first output under the
+	// old runner's width.
+	carried *carryover
 	// views is what size each attached viewer can draw. See `setViewport`:
 	// the pty gets the smallest of them, because a shared terminal has one
 	// size and several windows.
@@ -499,7 +509,25 @@ func (r *runner) subscribe() (backlog []byte, dropped bool, updates chan []byte)
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	buf, cut := r.buf.SnapshotAt(r.buf.CurrentWidth())
+	cols := r.buf.CurrentWidth()
+	buf, cut := r.buf.SnapshotAt(cols)
+	// And what the card held before the restart, WHEN THE WIDTH STILL AGREES.
+	//
+	// The same rule the ring applies to its own history, applied to bytes that
+	// outlived the process which produced them: output composed for another
+	// size cannot be redrawn here, so it is left out rather than replayed on
+	// top of itself.
+	//
+	// This is the one place a join is made across a gap, which the ring itself
+	// refuses to do. It is allowed here because the gap is a RESTART rather
+	// than a stretch of unreadable output: the two sides are two processes,
+	// the boundary is real, and it is drawn on screen instead of being hidden.
+	if r.carried != nil && r.carried.cols == cols {
+		joined := make([]byte, 0, len(r.carried.bytes)+len(carryDivider)+len(buf))
+		joined = append(joined, r.carried.bytes...)
+		joined = append(joined, carryDivider...)
+		buf = append(joined, buf...)
+	}
 	select {
 	case <-r.done:
 		close(ch)
@@ -560,10 +588,29 @@ type supervisor struct {
 	mu      sync.Mutex
 	runners map[string]*runner
 	shells  map[string]*runner
+	// claimed is every card that has already been offered the scrollback the
+	// last daemon left for it. See `adoptCarryover`: the offer is made once
+	// per card per daemon, and this is the record of it having been made,
+	// which has to outlive the runner that took it.
+	claimed map[string]bool
 }
 
 func newSupervisor() *supervisor {
-	return &supervisor{runners: map[string]*runner{}, shells: map[string]*runner{}}
+	return &supervisor{
+		runners: map[string]*runner{}, shells: map[string]*runner{},
+		claimed: map[string]bool{},
+	}
+}
+
+// claimCarry answers true exactly once per card.
+func (s *supervisor) claimCarry(taskID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.claimed[taskID] {
+		return false
+	}
+	s.claimed[taskID] = true
+	return true
 }
 
 func (s *supervisor) get(taskID string) *runner {
@@ -674,6 +721,10 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
+	// BEFORE `add`, which is the moment an attach can find this runner. A
+	// viewer that arrived between the two would be sent the new terminal's
+	// first bytes and nothing before them, which is the bug being fixed.
+	d.adoptCarryover(r)
 	d.sup.add(r)
 
 	// A card that was lent out gets its address back the moment it has a
@@ -819,6 +870,12 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 	}
 	wg.Wait()
 	log.Printf("[atrium] all supervised runners stopped")
+
+	// And their scrollback goes to disk, so the next daemon can hand it back.
+	// AFTER the wind-down, so whatever a session said on its way out is in it,
+	// and bounded by its own budget so it cannot extend a shutdown that is
+	// already bounded and narrated. See `carryover.go`.
+	d.saveCarryover(live)
 }
 
 // stopOne winds a single runner down and waits for it. Returns whether atrium

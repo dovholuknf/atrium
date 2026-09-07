@@ -1186,3 +1186,43 @@ The candidate rule, to be argued with rather than adopted:
 
 **Where it lives is also open.** In this repo it is a rule about atrium's own backlog. In `dotagents` it would
 apply to every repository the operator runs agents against, which is the direction this is going.
+---
+
+## DONE IN ROUND 9
+
+Fixed on 2026-09-07, straight after the round 1 to 8 review that found them. Kept here rather than deleted,
+because several of these were fixed once before and came back, and the write-up is the record of what the
+mistake actually was.
+
+- **Two views on one terminal** (was group I). A solo window now asks whether anybody holds the card before it
+  attaches, using the roll call rather than the heartbeat, and offers `take it anyway` rather than a close
+  button that would have lied. The letterboxing alternative was not built, as decided.
+- **The raise toast drawn by every window holding the card** (was group I). Falls out of the above: there is
+  only ever one.
+- **The guest page did not know it was a guest** (was group N). A 403 from `/v1/tasks` is the signal. Paste and
+  drop are withdrawn there, and `api()` now keeps the daemon's sentence instead of turning every `http.Error`
+  into the word `Forbidden`, which is what made `that did not go up` useless.
+- **The zrok account switch, over a trailing slash** (was group N). Endpoints compared normalised, the toggle
+  no longer sends an address change nobody asked for, and the surviving refusal names both addresses.
+- **Scrollback did not survive a restart** (was group M). Rings are written out during the wind-down and handed
+  back per card. Not a transcript. Does nothing for a kill, and says so.
+- **A second question destroyed the first** (was in the round 8 findings). An ask is a row now, answered
+  individually, capped at ten with the drop recorded.
+- **The card dialog did not show the question, and could not answer it** (was group J).
+- **The card dialog had no save and `close` saved anyway** (was group Q).
+- **`--working` renamed to `--continue`**, with the old name hidden rather than removed.
+- **A refusal printed itself three times and then the usage** (was group Q).
+- **`ctrl-shift-v` opened the box on loopback** (was group Q).
+- **The pinned block had no label and the divider named the sort** (was group Q).
+- **css nits 5 and 6**, the restart banner and the group expander. Nit 5's real cause was not the one the nit
+  was written about: detaching cleared one theme variable and left two behind. See `docs/css-nits.md`.
+
+**Also fixed, and neither was on any list.** Four sections of `docs/test-plan.md` were all called `L`, and five
+branches had numbered their migration `0039`. Renumbered L through U and 0040 through 0043.
+
+**And a test that was passing without running anything.** `TestSetZrokEnvironmentIgnoresATrailingSlash` and its
+pair assert that a call returns no error. The fixture wrote `environment.json` without `metadata.json`, so the
+zrok SDK loaded a default root, `IsEnabled()` was false, and `SetZrokEnvironment` returned early by a completely
+different path. Both tests passed without reaching the comparison they exist for. The fixture writes both files
+now and `requireEnabled` asserts the precondition, which is the part that stops it coming back.
+

@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -174,6 +175,72 @@ func (d *Daemon) describeEnvironment(description string) (string, string) {
 	return detail, description
 }
 
+// sameZrokInstance answers whether two endpoint strings name the same zrok
+// instance, rather than whether they are the same bytes.
+//
+// CONFIRMED BUG THIS EXISTS FOR: an environment enabled against
+// "https://api-v2.zrok.io/", exactly as the CLI wrote it, refused a request
+// naming "https://api-v2.zrok.io", which is the same instance read back out of
+// the binary's own compiled-in default with no trailing slash. Nobody asked to
+// change the address; the board sent whatever the instance box already held,
+// and that text differed from what was on disk by one character neither side
+// meant. A byte comparison cannot tell "moved" from "spelled differently", so
+// judging identity needs the structure of a URL rather than its string.
+//
+// A trailing slash, a host's letter case, and a default port spelled out
+// explicitly are the three ways two people (or a CLI default and a compiled-in
+// one) write the same address differently. All three fold away here.
+func sameZrokInstance(a, b string) bool {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+	if a == b {
+		// Also covers "both empty", which is not a same-instance question at
+		// all but must not be reported as a mismatch either.
+		return true
+	}
+	na, oka := normalizeZrokEndpoint(a)
+	nb, okb := normalizeZrokEndpoint(b)
+	if !oka || !okb {
+		// A string that will not parse as a URL is not provably the same
+		// instance as anything. Falling through to "different" here is the
+		// safe direction: it means an unparseable address still gets the
+		// refusal-and-explain path rather than a silent switch.
+		return false
+	}
+	return na == nb
+}
+
+// normalizeZrokEndpoint reduces one endpoint to the form its identity is
+// judged by: scheme and host lower-cased, a default port omitted rather than
+// spelled out, and no trailing slash on the path. The bool says whether `s`
+// parsed as a URL with a host at all, because "" and "not a URL" must not
+// normalize to the same string and then compare equal by accident.
+func normalizeZrokEndpoint(s string) (string, bool) {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return "", false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	if port := u.Port(); port != "" && port != defaultPortForScheme(scheme) {
+		host = host + ":" + port
+	}
+	path := strings.TrimRight(u.Path, "/")
+	return scheme + "://" + host + path, true
+}
+
+// defaultPortForScheme is the port a scheme implies when none is written, so
+// ":443" on an "https" address normalizes the same as no port at all.
+func defaultPortForScheme(scheme string) string {
+	switch scheme {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
 // SetZrokEnvironment chooses between the two roots and points one at an
 // instance.
 //
@@ -215,9 +282,21 @@ func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 	// from the environment showing no change at all.
 	if root.IsEnabled() {
 		current, _ := root.ApiEndpoint()
-		if endpoint != "" && current != endpoint {
-			return fmt.Errorf("that environment is already enabled against %s. "+
-				"disable it first, then set the address, then enable again", current)
+		// Compared NORMALISED, not byte for byte. `current` is read off disk
+		// (or is the SDK's own compiled-in default when nothing was ever
+		// written) and `endpoint` is whatever text a caller had on hand; a
+		// trailing slash or a default port spelled out differently between
+		// the two is not a request to move anywhere. See `sameZrokInstance`.
+		if endpoint != "" && !sameZrokInstance(current, endpoint) {
+			label := "this machine's zrok environment"
+			if cfg.OwnEnvironment {
+				label = "atrium's own zrok environment"
+			}
+			// Naming FROM and TO, unnormalised, so a one-character difference
+			// that somehow still trips this is visible rather than a message
+			// that only ever repeats "already enabled".
+			return fmt.Errorf("%s is enabled against %s, not %s. disable it first, "+
+				"then set the address, then enable again", label, current, endpoint)
 		}
 		cfg.ApiEndpoint = current
 		if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
