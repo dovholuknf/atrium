@@ -58,7 +58,17 @@ type Export struct {
 	Sources   []*store.Source     `json:"sources"`
 	Actions   []*store.CardAction `json:"actions"`
 	Rules     []*store.Rule       `json:"rules"`
-	Overlays  ExportOverlays      `json:"overlays"`
+	// Recognisers are the rows that say what a URL means. Exported for the same
+	// reason a source is: the understanding of somebody else's ticketing system
+	// lives in a template rather than in the binary, and that understanding is
+	// the part worth reviewing, diffing and keeping.
+	//
+	// A recogniser's `cwd` names this machine's worktree layout, and a `fetch`
+	// is operator-authored free text. Both are the flagged category rather than
+	// the omitted one: an export with them stripped restores a table that
+	// matches URLs and points nowhere.
+	Recognisers []*store.Recogniser `json:"recognisers"`
+	Overlays    ExportOverlays      `json:"overlays"`
 }
 
 // ExportOverlays is the overlay configuration WITHOUT the parts that are
@@ -182,6 +192,9 @@ func (d *Daemon) BuildExport() (*Export, error) {
 		return nil, err
 	}
 	if out.Rules, err = d.st.Rules(); err != nil {
+		return nil, err
+	}
+	if out.Recognisers, err = d.st.Recognisers(); err != nil {
 		return nil, err
 	}
 

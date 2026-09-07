@@ -5,6 +5,144 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Every codex hook atrium has ever written fails if the atrium binary sits under a path with a space.**
+
+  Claude Code hands a hook command to a shell, so the path is quoted and the shell strips the quotes. Codex
+  takes the FIRST WORD of the command as the program and does no quote handling on it at all, so the same
+  quotes make it look for a program whose name begins with one. Two runs differing by two characters, one
+  `hook: SessionStart Completed` and one `hook: SessionStart Failed`, and the failure is a single line in a
+  runner nobody is watching.
+
+  The writer now asks the target how it reads a command instead of assuming a shell. Quotes on the arguments
+  are kept, because codex honors those; it is the program alone.
+
+  There is no third spelling, so a path with a space in it means codex cannot be wired on that machine at all.
+  Atrium refuses before it touches the file and the board says why on the row, rather than offering a button
+  that writes hooks which then fail one at a time.
+
+- **Installing codex's hooks wrote claude's command line into codex's file.**
+
+  `upsert` took the target it was installing for and then asked `HookCommandFor` and `reportsEvent`, both of
+  which are the claude ones. It agreed by accident for as long as the two runners wanted the same events with
+  the same subcommands behind them, and would have started writing the wrong line into the wrong file the
+  moment either one said something the other does not.
+
+- **A codex session says it is codex.**
+
+  The session hook posted `"runner": "claude"` as a literal, whoever ran it, so a codex card came up wearing
+  claude's colour on the board and offering claude's resume. `atrium session` now takes `--runner`, which the
+  codex hooks file carries, and prefers `ATRIUM_RUNNER`, which a launched session is told. The environment
+  wins because it names the harness ROW: two rows can both run codex against different models and both read
+  the same `hooks.json`, so the file's answer is the right default and never the better one.
+
+- **A codex hook entry that does not say it is codex now reads as pointing elsewhere.**
+
+  Drift the path check cannot see. An entry written before atrium had a second runner is the right binary and
+  the right subcommand, and it reports `claude` whoever ran it. Without a second check it reads as wired, is
+  not counted as missing, and the board never offers the one button that would correct it, so every codex card
+  keeps coming up as claude with no way to find out why.
+
+  Narrow on purpose: it asks only whether the command names the runner, and only for a runner that needs
+  naming. Claude entries do not move, because every `settings.json` already installed says nothing about a
+  runner and marking those stale would report six working hooks as broken. Anything else somebody wrapped
+  around the binary is theirs and is left alone.
+
+- **Codex can be resumed, and its row said it could not.**
+
+  `codex resume <SESSION_ID>` takes the same uuid codex hands every hook in `session_id`, which is the id a
+  card already records. The seeded row shipped with an empty `resume_args` and a note saying to confirm the
+  flag first, so a codex card has been carrying a working resume id and refusing to use it. Migration
+  `0039_codex_resume` fills it in, guarded on the empty list so an operator's own value survives.
+
+- **Resume arguments that never mention the id are refused instead of resuming somebody else's work.**
+
+  Found by running the migrations against a copy of a live database, which is what
+  `internal/store/CLAUDE.md` says to do: codex on that machine was configured as `resume --last`. That runs, it
+  succeeds, and it picks up whichever codex conversation the machine saw last. The card's own id is dropped on
+  the floor and nothing anywhere says a substitution did not happen, so the terminal comes up holding work the
+  card has nothing to do with.
+
+  A launch that is resuming now checks that some argument contains `{resume}` and refuses with the arguments it
+  was given if none does. Refused rather than corrected: which spelling a runner wants is the operator's to
+  write, and a launcher that guessed would be inventing a command line for a program it knows nothing about. A
+  plain start is untouched.
+
+- **Codex reports a compaction now, and the board stops offering it a hook codex does not have.**
+
+  `PreCompact` is added to the codex set; it is the same `atrium session --event compact` behind it. Codex has
+  no `Notification` and no `PostToolUseFailure`, so those two claude rows have no codex row rather than
+  appearing as permanently missing.
+
+- **The runners table stops implying that every row can report.**
+
+  Only the claude row ever carried a hooks button, so the codex, ollama and shell rows carried a blank where
+  the count goes, which reads as wired. A codex row now carries its own button over its own file and its own
+  count. A row atrium has no hooks target for carries `reports nothing`, with the reason on hover: no
+  activity, no session lifecycle, no resume id, and none of that is coming, because the runner has nowhere to
+  say it from.
+
+  `docs/other-runners.md` is what each runner was actually measured to offer, including the two that offer
+  nothing and the one that was not measured.
+
+
+- **Paste a pull request URL and get a launch dialog that already knows what it is.**
+
+  Every session used to begin with somebody pasting context by hand: find the worktree, type the path, type a
+  title, retype the link into a first instruction. A recogniser is a row that does all four. It is a regular
+  expression with named groups and a set of templates over what it captured, and it turns a URL into a filled-in
+  form.
+
+  **Nothing about GitHub is in the binary.** A recogniser is a pattern and a mapping, and whoever wrote the row
+  did the understanding. That is what lets this serve a ticketing system nobody has thought of yet, and it is
+  why the table ships empty rather than with a helpful default. `scripts/recognisers` has working rows for
+  GitHub and Bitbucket, and a script that loads them.
+
+  The table is ordered, most specific first, and the first row that matches wins. A specific "pull request"
+  pattern sits above a generic "any repository" one, or the generic one swallows it. The row at the bottom is a
+  shrug rather than an error: a URL on a host you know that matches nothing specific is still worth a dialog.
+
+  **It makes no directories, and atrium is not learning git.** `cwd` is a template that produces a path. Where
+  the worktree is not there, the dialog says `... is not here yet. make the worktree, then start it` and stops.
+  A tool that cloned here would be a second, worse implementation of something already on the PATH.
+
+  A hole is left standing rather than blanked. A template reading `{branch}` with nothing to put in it produces
+  a field that still says `{branch}`, because `feature/{branch}` blanked becomes `feature/`, which is a
+  directory somebody creates by accident.
+
+  Three places take a URL: the launch dialog's new link box, `atrium open <url>`, and an offered card in the
+  inbox, whose link is put in that box ready to press.
+
+- **A recogniser's optional `fetch` command turns a number into a title, and holds no credential.**
+
+  The pattern gives you an issue number. Turning that into a title needs an authenticated network call, and
+  atrium does not make one: it runs an argv the operator wrote, exactly as a source does, and reads a JSON
+  object of facts off stdout. Every key in it becomes a variable the templates can read. `gh` already has a
+  token, in the keyring it already uses, and there is nowhere in a recogniser row to put one.
+
+  **The captures win over the fetched facts.** A fact only fills a name the pattern left empty. A fetch reads
+  whatever an issue tracker holds and anybody can write into an issue tracker, so one that could redefine
+  `repo` could move `cwd`, which would mean the contents of an issue chose the directory a runner starts in.
+
+  A fetch that fails is reported on the row and is never fatal: the URL still resolves from its captures, and
+  the dialog says why the title is thin. It does not switch the row off, which is deliberately unlike a source.
+  A source is a timer nobody is watching. A recogniser runs because somebody just pasted a link with the board
+  in front of them, and a row that switched itself off would make the next paste silently match nothing while
+  they watched.
+
+- **The launch dialog has a tags field, and carries what a recogniser knew.**
+
+  `--tags` has been on `atrium launch` since it existed and the board had no way to set them. It does now, and
+  the repo, org, host, branch, window, theme and origin a recogniser worked out ride along with the launch
+  without needing a box each: they are not things to type, they are what a launcher knew.
+
+- **Recognisers are exported and imported with the rest of the configuration.**
+
+  The understanding of somebody else's ticketing system lives in a template rather than in the binary, which
+  makes it exactly the kind of thing worth reviewing, diffing and keeping in a repository. An import compiles
+  each pattern, so a hand-edited file with a broken expression fails naming the row rather than landing a row
+  that can never match.
+
+
 - **A room can now be added, read and forgotten from the board, without the board learning to store one.**
 
   The rooms pane drew what turned up and nothing else. Adding a room meant knowing the flags, knowing this

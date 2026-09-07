@@ -23,8 +23,8 @@ import (
 
 // ImportChange is one thing an import would do, or did.
 type ImportChange struct {
-	// Kind is `setting`, `harness`, `fixture`, `source`, `action`, `rule` or
-	// `overlay`.
+	// Kind is `setting`, `harness`, `fixture`, `source`, `action`, `rule`,
+	// `recogniser` or `overlay`.
 	Kind string `json:"kind"`
 	// Name is which one, in whatever way that kind is identified.
 	Name string `json:"name"`
@@ -154,6 +154,29 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 		if apply && do {
 			if _, err := d.st.SaveSource(*s); err != nil {
 				return nil, fmt.Errorf("source %s: %w", s.ID, err)
+			}
+		}
+	}
+
+	for _, rec := range in.Recognisers {
+		if rec == nil {
+			continue
+		}
+		exists := false
+		if got, err := d.st.RecogniserByID(rec.ID); err == nil && got != nil {
+			exists = true
+		}
+		change, do := decide("recogniser", rec.ID, exists, force)
+		res.Changes = append(res.Changes, change)
+		if change.Action == "keep" {
+			res.Kept++
+		}
+		if apply && do {
+			// SaveRecogniser compiles the pattern, so a hand-edited file with a
+			// broken expression in it fails the import naming the row rather
+			// than landing a row that can never match.
+			if _, err := d.st.SaveRecogniser(*rec); err != nil {
+				return nil, fmt.Errorf("recogniser %s: %w", rec.ID, err)
 			}
 		}
 	}

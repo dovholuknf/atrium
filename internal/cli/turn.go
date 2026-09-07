@@ -78,7 +78,7 @@ func newTurn() *cobra.Command {
 	var event, name, hubURL string
 	c := &cobra.Command{
 		Use:   "turn",
-		Short: "Report that a turn ended. Run by Claude Code, not by hand.",
+		Short: "Report that a turn ended. Run by a harness, not by hand.",
 		Long: "Claude Code's Stop hook. Posts to the daemon and writes the answer to stdout, " +
 			"which is how a queued message reaches a session that is sitting idle.\n\n" +
 			"It never fails a session: whatever goes wrong, it prints a plain continue and exits 0.\n\n" +

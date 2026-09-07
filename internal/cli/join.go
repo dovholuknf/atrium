@@ -127,7 +127,13 @@ func sessionEvent(hubURL, event, name, title, why string) error {
 		// The pid is left for the hook to fill in. This process is a child of
 		// the session, not the session itself, and the next gated tool call
 		// reports the real one.
-		"runner": "claude",
+		//
+		// There is no flag here, unlike the session hook, because this one is
+		// typed inside a session rather than written into a hooks file. What
+		// it can read is what the session was launched as, and claude when it
+		// was not launched by atrium, which is the same answer this line was
+		// giving unconditionally before.
+		"runner": whichRunner(""),
 	})
 	if err != nil {
 		return err

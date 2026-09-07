@@ -172,6 +172,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
+	d.ap.Recognise = d.Recognise
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.DrainAuto = d.drainForAuto

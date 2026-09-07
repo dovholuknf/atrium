@@ -1,15 +1,36 @@
 # Wiring the hooks
 
-Atrium learns everything it knows about a session from Claude Code hooks. Without them a session is invisible
+Atrium learns everything it knows about a session from its runner's hooks. Without them a session is invisible
 until it makes a gated tool call, and several features are built but inert.
 
-**The board can wire these for you.** Runners tab, the `hooks` button on the claude row. It lists what is
-missing and writes it into your own `settings.json`, keeping a copy of the old file first. The rest of this page
-is what it writes and what each entry buys, for anyone who would rather do it by hand.
+**The board can wire these for you.** Runners tab, the `hooks` button on the row. It lists what is missing and
+writes it into your own settings, keeping a copy of the old file first. The rest of this page is what it writes
+and what each entry buys, for anyone who would rather do it by hand.
 
-The button sits on that row because these are claude's hooks, not because they belong to that row. They cover
-every claude on the machine, including ones atrium never started, and disabling or deleting the row does not
-unwire them.
+The button sits on a row because those are that runner's hooks, not because they belong to that row. They cover
+every session of that runner on the machine, including ones atrium never started, and disabling or deleting the
+row does not unwire them.
+
+## Which runners have hooks at all
+
+Two of the four seeded runners do, and they are the two that are agents:
+
+| Runner | File | Events atrium wants |
+| --- | --- | --- |
+| claude code | `~/.claude/settings.json` | eleven, listed below |
+| codex | `$CODEX_HOME/hooks.json`, else `~/.codex/hooks.json` | nine: the list below, less the two it does not fire |
+| ollama | none | none. it is a chat prompt |
+| shell | none | none, on purpose |
+
+The two codex does not fire are `Notification` and `PostToolUseFailure`, so they have no codex row rather than
+sitting there permanently missing.
+
+A row atrium has no hooks for says `reports nothing` where the count goes, rather than leaving a blank that
+reads as wired. `docs/other-runners.md` is what each one was measured to offer and how.
+
+The rest of this page is claude, and every rule in it holds for codex except two, both of which are in that
+document: codex will not run a hook it has not been shown once, and codex reads the first word of a hook
+command as the program with no quote handling, so atrium refuses to point it at a path with a space in it.
 
 ## What atrium writes
 

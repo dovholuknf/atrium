@@ -50,6 +50,11 @@ type Server struct {
 	// failed to start is a 200 saying so, because the request worked and the
 	// answer is the failure.
 	RunSource func(id string) (int, error)
+	// Recognise turns a pasted URL into the fields of a launch dialog. Owned by
+	// the daemon, which owns process spawning: a recogniser's optional fetch is
+	// an operator-written command, and looking at the directory the templates
+	// named needs the daemon's filesystem rather than the browser's.
+	Recognise func(url string) (*store.Resolved, error)
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -295,6 +300,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
 	mux.HandleFunc("DELETE /v1/sources/{id}", s.deleteSource)
 	mux.HandleFunc("POST /v1/sources/{id}/run", s.runSourceNow)
+	mux.HandleFunc("GET /v1/recognisers", s.listRecognisers)
+	mux.HandleFunc("PUT /v1/recognisers/{id}", s.saveRecogniser)
+	mux.HandleFunc("DELETE /v1/recognisers/{id}", s.deleteRecogniser)
+	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)

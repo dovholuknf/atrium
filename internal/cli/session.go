@@ -60,17 +60,18 @@ type sessionInput struct {
 }
 
 func newSession() *cobra.Command {
-	var event, name, hubURL string
+	var event, name, hubURL, runner string
 	c := &cobra.Command{
 		Use:   "session",
-		Short: "Report that this session started or ended. Run by Claude Code, not by hand.",
-		Long: "Posts one session event to the daemon and exits. Meant to be registered in " +
-			"Claude Code's settings.json as SessionStart and SessionEnd.\n\n" +
+		Short: "Report that this session started or ended. Run by a harness, not by hand.",
+		Long: "Posts one session event to the daemon and exits. Meant to be registered as " +
+			"SessionStart and SessionEnd in the hooks file of whichever runner is starting: " +
+			"Claude Code's settings.json, or codex's hooks.json.\n\n" +
 			"It never fails a session: whatever goes wrong, it exits 0.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			reported := reportSession(hubURL, event, name)
+			reported := reportSession(hubURL, event, name, runner)
 			if interactive() {
 				addr, source := hubAddressFrom(hubURL)
 				fmt.Fprintf(cmd.OutOrStdout(),
@@ -83,7 +84,29 @@ func newSession() *cobra.Command {
 	c.Flags().StringVar(&event, "event", "start", "start, end or compact")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+	c.Flags().StringVar(&runner, "runner", "",
+		"which harness is reporting (default: $ATRIUM_RUNNER, then claude)")
 	return c
+}
+
+// whichRunner is the harness a hook is reporting for.
+//
+// The environment first, because a session atrium launched was told which ROW
+// started it and the hooks file only knows which RUNNER it belongs to. Two
+// harness rows can both run codex against different models and both read the
+// same `hooks.json`, so the file's answer is the right default and never the
+// better one.
+//
+// Then the flag, which the hooks file carries for every session atrium did not
+// start. Then claude, which is what every caller meant before there was a
+// second runner and what an already-installed settings.json still says.
+func whichRunner(flag string) string {
+	for _, s := range []string{os.Getenv("ATRIUM_RUNNER"), flag} {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			return s
+		}
+	}
+	return "claude"
 }
 
 // sessionReport is what was sent, for the interactive line. Nothing on the hook
@@ -93,7 +116,7 @@ type sessionReport struct {
 	pid   int
 }
 
-func reportSession(hubURL, event, name string) sessionReport {
+func reportSession(hubURL, event, name, runner string) sessionReport {
 	var out sessionReport
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
 		return out
@@ -147,7 +170,7 @@ func reportSession(hubURL, event, name string) sessionReport {
 	body, err := json.Marshal(map[string]any{
 		"agent":   agent,
 		"event":   event,
-		"runner":  "claude",
+		"runner":  whichRunner(runner),
 		"cwd":     filepath.ToSlash(cwd),
 		"pid":     out.pid,
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
