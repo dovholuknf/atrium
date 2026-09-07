@@ -155,6 +155,28 @@ func runnerArgs(h *store.Harness, resume, rawPrompt string) (args []string, logg
 		if len(h.ResumeArgs) == 0 {
 			return nil, "", fmt.Errorf("%s has no resume arguments configured", h.Label)
 		}
+		// THE ID HAS TO GO SOMEWHERE.
+		//
+		// Resume arguments with no `{resume}` in them run, and resume the
+		// wrong conversation. `codex resume --last` is the one found in the
+		// wild: it takes the most recent codex session on the machine, which
+		// on a board with several cards is somebody else's, and the card whose
+		// id was discarded shows a conversation it has nothing to do with.
+		//
+		// Refused rather than corrected. Which spelling a runner wants is the
+		// operator's to write, and a launcher that guessed would be inventing
+		// a command line for a program it knows nothing about.
+		var carries bool
+		for _, a := range h.ResumeArgs {
+			if strings.Contains(a, "{resume}") {
+				carries = true
+			}
+		}
+		if !carries {
+			return nil, "", fmt.Errorf("%s resumes with %s, which never uses the id this card "+
+				"recorded, so it would pick up whichever conversation that runner saw last. "+
+				"put {resume} where the id goes", h.Label, shellJoin(h.ResumeArgs))
+		}
 		args = make([]string, 0, len(h.ResumeArgs))
 		for _, a := range h.ResumeArgs {
 			args = append(args, strings.ReplaceAll(a, "{resume}", resume))
@@ -551,6 +573,15 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	env := childEnvFrom(base, h.Env, map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
+		// Which harness this is, for the hooks it will run.
+		//
+		// A hook knows which file it was registered in and nothing else, and
+		// the hooks file is per runner while this row is per harness: two rows
+		// can both run codex with different models and both read the same
+		// hooks.json. The launcher is the only thing that knows which row it
+		// started, so it says so, and the hook prefers this over the runner
+		// name baked into its own command line.
+		"ATRIUM_RUNNER": h.ID,
 	})
 	via := ""
 
@@ -729,7 +760,7 @@ func inheritedTaint(key string) bool {
 		return true
 	case strings.HasPrefix(upper, "CLAUDECODE"):
 		return true
-	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID":
+	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" || upper == "ATRIUM_RUNNER":
 		// Replaced below with this launch's own values.
 		return true
 	}

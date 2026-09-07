@@ -119,9 +119,9 @@ func newHook() *cobra.Command {
 	var event, name, hubURL string
 	c := &cobra.Command{
 		Use:   "hook",
-		Short: "Report what this session is doing. Run by Claude Code, not by hand.",
-		Long: "Posts one activity event to the daemon and exits. Meant to be registered in " +
-			"Claude Code's settings.json, which the board can do for you from the runners tab.\n\n" +
+		Short: "Report what this session is doing. Run by a harness, not by hand.",
+		Long: "Posts one activity event to the daemon and exits. Meant to be registered in the " +
+			"runner's own hooks file, which the board can do for you from the runners tab.\n\n" +
 			"It never fails a session: whatever goes wrong, it exits 0 and says nothing.",
 		// Silenced because cobra would otherwise print usage on a bad flag,
 		// and this runs inside somebody's tool call.

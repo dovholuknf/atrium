@@ -152,6 +152,11 @@ type HookReport struct {
 	// Trust is what has to happen after the file is written, when writing it
 	// is not enough. Codex refuses to run a hook it has not been shown.
 	Trust string `json:"trust,omitempty"`
+	// Refused is why this runner cannot be wired at all on this machine, and
+	// is empty in the ordinary case. Set rather than returned as an error so
+	// the board can grey the button out and say the reason on it, instead of
+	// offering a write that fails when pressed.
+	Refused string `json:"refused,omitempty"`
 }
 
 // UserSettingsPath is the file atrium reads and writes: the one in the home
@@ -236,7 +241,8 @@ func InspectTarget(t Target, exe string) (*HookReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	rep := &HookReport{Path: filepath.ToSlash(path), Runner: t.ID, Trust: t.Trust}
+	rep := &HookReport{Path: filepath.ToSlash(path), Runner: t.ID, Trust: t.Trust,
+		Refused: unwritable(t, exe)}
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -264,7 +270,7 @@ func InspectTarget(t Target, exe string) (*HookReport, error) {
 			}
 			st.Installed = true
 			st.Found = cmd
-			st.Stale = !sameBinary(cmd, exe)
+			st.Stale = !sameBinary(cmd, exe) || !saysWhichRunner(t, cmd)
 			break
 		}
 		// An optional hook that is not installed is not missing. It was never
@@ -307,6 +313,12 @@ func InstallOnly(exe string, events []string) (*HookReport, InstallResult, error
 // InstallOnlyTarget is InstallOnly for one runner's configuration.
 func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, InstallResult, error) {
 	var none InstallResult
+	// Before the file is touched, because a hook this runner cannot run is
+	// worse than one that was never written: it fails inside a session, once
+	// per event, where the only report is a line the operator is not reading.
+	if why := unwritable(t, exe); why != "" {
+		return nil, none, fmt.Errorf("%s", why)
+	}
 	path, err := t.Path()
 	if err != nil {
 		return nil, none, err
@@ -411,7 +423,15 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (
 		}
 	}
 
-	want := HookCommandFor(exe, event)
+	// THE TARGET'S OWN SHAPE, not claude's.
+	//
+	// Both of these read `Claude` before there was anything a second runner
+	// spelled differently, and they agreed by accident for as long as the two
+	// sets held the same events with the same subcommands behind them. The
+	// moment one of them says `--runner codex`, or drops the quotes claude
+	// needs, the writer starts writing claude's line into codex's file and the
+	// matcher stops recognising what it just wrote.
+	want := HookCommandForTarget(t, exe, event)
 	entries := all[hook]
 
 	// An entry that already reports this event is corrected in place, so a
@@ -427,11 +447,11 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (
 			if !ok {
 				continue
 			}
-			if s, _ := hm["command"].(string); reportsEvent(s, event) {
+			if s, _ := hm["command"].(string); reportsEventFor(t, s, event) {
 				// Already exactly right. Rewriting it would produce another
 				// backup of a file nothing changed in.
 				if s == want {
-					if t, _ := hm["type"].(string); t == "command" {
+					if kind, _ := hm["type"].(string); kind == "command" {
 						return false, nil
 					}
 				}
@@ -534,6 +554,26 @@ func hasEventArg(low, arg string) bool {
 	return strings.Contains(low, "-event "+arg) || strings.Contains(low, "--event "+arg)
 }
 
+// saysWhichRunner reports whether an already-registered command names the
+// runner it belongs to, for a target that needs it named.
+//
+// This is drift the path check cannot see. An entry written before atrium had
+// a second runner is the right binary and the right subcommand, and it reports
+// `claude` whoever ran it, so every codex card comes up wearing claude's colour
+// and offering claude's resume for an id claude never issued. Without this it
+// reads as wired, is not counted as missing, and the board never offers the one
+// button that would fix it.
+//
+// Deliberately narrow. Anything else about a command that does not match what
+// atrium would write today is left alone, because a wrapper somebody put around
+// the binary is theirs and rewriting it is not this function's call.
+func saysWhichRunner(t Target, command string) bool {
+	if !t.Named {
+		return true
+	}
+	return strings.Contains(strings.ToLower(command), "--runner "+strings.ToLower(t.ID))
+}
+
 // sameBinary reports whether a command runs the atrium we are running.
 func sameBinary(command, exe string) bool {
 	return strings.Contains(
@@ -555,13 +595,35 @@ func HookCommandFor(exe, event string) string {
 func HookCommandForTarget(t Target, exe, event string) string {
 	w, ok := eventForTarget(t, event)
 	if !ok {
-		return quoted(exe) + " hook --event " + event
+		return program(t, exe) + " hook --event " + event + named(t)
 	}
 	return hookCommand(t, exe, w)
 }
 
 func hookCommand(t Target, exe string, w HookEvent) string {
-	return quoted(exe) + " " + w.Sub + " --event " + w.Arg
+	return program(t, exe) + " " + w.Sub + " --event " + w.Arg + named(t)
+}
+
+// named is the runner this hook is reporting for, or nothing when the
+// subcommand's own default already says it.
+func named(t Target) string {
+	if !t.Named {
+		return ""
+	}
+	return " --runner " + t.ID
+}
+
+// program is the executable path as this runner will read it.
+//
+// Claude Code hands the command to a shell, so a path with a space in it has
+// to be quoted or the shell splits it. Codex takes the first word as the
+// program and does no quote handling there, so the same quotes make it fail.
+// See Target.ProgramUnquoted.
+func program(t Target, exe string) string {
+	if t.ProgramUnquoted {
+		return filepath.ToSlash(exe)
+	}
+	return quoted(exe)
 }
 
 // quoted is the executable's path, quoted when it needs to be. A path with a
@@ -573,4 +635,22 @@ func quoted(exe string) string {
 		return `"` + p + `"`
 	}
 	return p
+}
+
+// unwritable says why a runner cannot be given this binary's path, or is
+// empty when it can.
+//
+// The one case is a runner that will not take quotes around the program and a
+// path with a space in it. There is no third spelling: unquoted, the runner
+// splits the path and runs the first half; quoted, it looks for a program
+// whose name begins with a quote. Refusing says so once, where a write would
+// leave every hook failing silently inside a session nobody is watching.
+func unwritable(t Target, exe string) string {
+	if !t.ProgramUnquoted || !strings.ContainsAny(exe, " \t") {
+		return ""
+	}
+	return fmt.Sprintf("%s runs the first word of a hook command as the program and will not "+
+		"take quotes around it, so it cannot be pointed at %q, which has a space in it. "+
+		"put atrium somewhere without one, or set %s to a path that has none.",
+		t.Label, filepath.ToSlash(exe), HookExeEnv)
 }

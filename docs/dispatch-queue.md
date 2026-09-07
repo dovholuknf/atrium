@@ -257,6 +257,55 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   underneath as the working. The limited case already does exactly that, and it is the only branch of this
   block anybody understands on sight.
 
+- **A dialog scrollbar inside a dialog scrollbar.** `.dlg-body` is `max-height: 78vh; overflow-y: auto`, and
+  the fields inside it include textareas that scroll on their own. On a short window that is two vertical
+  scrollbars a few pixels apart, and the outer one is the one nobody expects. Operator: "it's got a strange
+  slider bar in a slider bar (vertical)".
+
+  The recogniser editor is where it shows worst because it is the longest dialog in the board: id, label,
+  pattern, rank, cwd, title, prompt, tags, branch, window, theme, kind, three fetch fields, then the switch.
+
+- **A recogniser cannot be turned on without scrolling past everything.** Operator, having filled the whole
+  form in: "i don't see any way to 'enable' or 'on' the rule". It is the last field in the dialog, under the
+  three fetch fields, and it is a checkbox labelled `ask this row when a url is pasted`.
+
+  Two problems and they compound. It is BELOW THE FOLD, after the fields somebody writing their first row will
+  leave empty, so the one control that decides whether the row does anything is the one hardest to reach. And
+  it does not read as a switch: every other on/off on this board says on or off, and a row that says "ask this
+  row when a url is pasted" is a sentence, not a state. The word it is missing is the one somebody looks for,
+  which is `enabled`.
+
+  It belongs at the top, beside the id, where the answer to "is this row live" is visible without reading the
+  form.
+
+- **The recogniser row is missing the two controls it is read for.** Operator: "the on/off toggle should be
+  available in the recognizer table and ... i like the try it function that should also be a button from the
+  table".
+
+  Both exist, and both are inside the editor, which is a fourteen-field form. So the two things somebody does
+  repeatedly, turning a row off and asking a row what a url resolves to, each cost opening a dialog, scrolling
+  it, and closing it again. `tryRecogniser` in particular is how a row gets debugged, and debugging a row is
+  the whole reason the list is ordered.
+
+  On the row: an on/off, and a `try` that opens the same box the editor has. The editor keeps both; it stops
+  being the only way to reach them.
+
+- **`ask this row when a url is pasted` is a bad name for a switch.** Operator: "the name is fucking
+  horrible". It is a sentence describing a behaviour where a state belongs, and it is the reason the control
+  was not found at all. Inside the editor it should read as a toggle button that says what the row IS, on or
+  off, at the bottom where a decision belongs, not a checkbox with a clause after it.
+
+- **TESTS: check what the recogniser surface actually covers before adding any.** Deliberately NOT written
+  yet, at the operator's instruction. Today: `internal/store/recognisers_test.go` 15 tests,
+  `internal/daemon/recognise_test.go` 9, `internal/api/recognisers_test.go` 5. That is the matching, the
+  templates and the endpoint.
+
+  What no test touches is the part being changed above, which is the board: nothing asserts that a row can be
+  turned on from the list, that the try box answers from the list, or that a saved row comes back enabled. The
+  board has no test harness of its own beyond the `scripts/check-*.js` parsers, so the honest options are a
+  check script over `index.html` for the controls existing, and API-level tests for the state actually
+  changing. Decide which before writing either.
+
 ---
 
 ## I. Two views on one terminal, which nothing arbitrates

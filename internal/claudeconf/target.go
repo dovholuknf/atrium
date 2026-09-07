@@ -17,9 +17,14 @@ import (
 // shape is identical, and two copies of it would be two places for the
 // "preserve what the operator put here" rules to drift apart.
 //
-// Verified rather than assumed: a `hooks.json` in this shape was written into
-// a scratch CODEX_HOME and codex printed `hook: SessionStart` when it ran, so
-// it read the file and matched the event.
+// Verified rather than assumed, against codex-cli 0.153.2 with a probe hook in
+// a scratch CODEX_HOME. Codex read the file, matched the events, and its
+// payloads carry the same field names claude's do: `session_id`, `cwd`,
+// `transcript_path`, `source`, `reason`, `tool_name`, `tool_input`,
+// `tool_use_id`, `stop_hook_active`, `agent_id`, `agent_type`. Two differ and
+// neither is read by atrium: the prompt arrives as `prompt` rather than
+// `user_input`, and a tool result as `tool_response` rather than
+// `tool_result`. `docs/other-runners.md` has the payloads.
 type Target struct {
 	// ID is what atrium calls this runner, matching the harness id.
 	ID string `json:"id"`
@@ -37,6 +42,27 @@ type Target struct {
 	// says this; it does not reach into the trust store, because that is the
 	// one step whose whole purpose is that a human took it.
 	Trust string `json:"trust,omitempty"`
+	// ProgramUnquoted says this runner reads the FIRST word of a command as
+	// the program and does no quote handling on it.
+	//
+	// Codex does exactly that. `"C:/tools/atrium.exe" hook --event tool-start`
+	// fails and `C:/tools/atrium.exe hook --event tool-start` runs, with the
+	// only difference being the two quotes, and the failure is a line saying
+	// `hook: SessionStart Failed` in a runner nobody is watching. Quotes on
+	// the ARGUMENTS are honored, which is why this is about the program alone.
+	//
+	// Claude Code hands the whole string to a shell, so it needs the quotes
+	// and gets them. There is no spelling that suits both, which is why this
+	// is a fact about the runner rather than a rule in the writer.
+	ProgramUnquoted bool `json:"-"`
+	// Named says the hook command should say which runner is reporting.
+	//
+	// Every hook subcommand assumes claude when nothing says otherwise, which
+	// is what every caller meant before there was a second runner. A codex
+	// session that did not say so would put a card on the board wearing the
+	// wrong colour and offering `claude --resume` for an id claude has never
+	// heard of.
+	Named bool `json:"-"`
 }
 
 // Claude Code, in ~/.claude/settings.json.
@@ -53,17 +79,31 @@ var Claude = Target{
 // exactly, which is why the atrium subcommands behind them are unchanged: a
 // SessionStart is a session starting whoever asked.
 //
-// Two have no Claude equivalent and are not wired yet: `PermissionRequest`,
-// which is the gate atrium already implements over its own listener, and
-// `Interrupt`. Both are listed in the runner and neither is offered here,
-// because offering a hook atrium does nothing with is a switch that reports
-// success and changes nothing.
+// Codex fires twelve: PreCompact, PostCompact, SessionStart, SessionEnd,
+// SubagentStart, SubagentStop, PreToolUse, PostToolUse, UserPromptSubmit,
+// Stop, PermissionRequest and Interrupt. Four are not offered here.
+//
+// `PermissionRequest` is the gate, and atrium's gate is a script in the
+// operator's own dotfiles rather than anything atrium writes. It works on
+// codex unchanged, on `PreToolUse`, which is where it already sits: codex
+// reads the same `hookSpecificOutput.permissionDecision` shape and blocks the
+// call. See `docs/other-runners.md`.
+//
+// `PostCompact` and `Interrupt` have no atrium subcommand behind them, and
+// offering a hook atrium does nothing with is a switch that reports success
+// and changes nothing.
+//
+// Codex has no `Notification` and no `PostToolUseFailure`, so those two lines
+// of the claude set have no codex row and the board says so rather than
+// showing eight of ten.
 var Codex = Target{
 	ID:    "codex",
 	Label: "codex",
 	Path:  CodexHooksPath,
 	Trust: "codex will not run a hook it has not been shown. start a codex session and " +
 		"approve it once, or pass --dangerously-bypass-hook-trust.",
+	ProgramUnquoted: true,
+	Named:           true,
 	Wanted: []HookEvent{
 		{Hook: "SessionStart", Event: "session-start", Sub: "session", Arg: "start",
 			Why: "a card appears when a session opens, before it does anything"},
@@ -79,12 +119,22 @@ var Codex = Target{
 			Why: "the subagent count going up"},
 		{Hook: "SubagentStop", Event: "subagent-end", Sub: "hook", Arg: "subagent-end",
 			Why: "and coming back down"},
+		// Codex fires this one and no probe here has made it fire, because
+		// filling a context to make it happen costs more than the fact is
+		// worth. The subcommand behind it reads `trigger` and records the
+		// moment either way: a compaction with no trigger word is still a
+		// compaction, and every atrium hook already treats a field it did not
+		// get as a thing nobody claimed.
+		{Hook: "PreCompact", Event: "compacting", Sub: "session", Arg: "compact",
+			Why: "the card records the moment this session forgot something"},
 		{Hook: "Stop", Event: "turn-end", Sub: "turn", Arg: "end",
 			Why:      "a message reaches a session that is sitting idle, and the card moves to ready",
 			Optional: true,
 			Warn: "this is the only hook that can change what a session does. it answers the " +
 				"end of a turn, and answering with a message makes the session keep working on " +
-				"it. that is how an idle session is reached at all."},
+				"it. that is how an idle session is reached at all. codex honors the same block " +
+				"and the same stop_hook_active guard claude does, both confirmed against a live " +
+				"session, so the loop that guard prevents is prevented here too."},
 	},
 }
 

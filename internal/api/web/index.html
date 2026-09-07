@@ -3877,6 +3877,29 @@ Three failures in a row switches one off, with the reason still on the row. scri
     </div>
     <div id="source-list"></div>
 
+    <!-- What a url means. Here beside the sources because they are the two
+         halves of the same idea: a source is work pushed at you on a timer,
+         and a recogniser is work you are holding a link to right now. -->
+    <div class="col-head r-section" data-pane="recognisers" style="margin:0 0 10px">
+      <span>recognisers</span>
+      <span class="help" tabindex="0" data-tip="Rows that turn a pasted url into a filled-in launch dialog.
+
+A recogniser is a pattern with named groups, and a set of templates over what it captured. Atrium learns nothing about GitHub, Bitbucket or any ticketing system: whoever wrote the row did the understanding, which is what lets this serve a system nobody has thought of yet.
+
+Ordered, most specific first. A url matches the first row that wants it, so a specific 'pull request' row has to sit above a generic 'any repo' one or the generic one swallows it.
+
+Templates read {host}, {org}, {repo}, {num} and anything the optional fetch command adds. A hole nothing filled in is left standing as {name} rather than blanked, so you can see it.
+
+IT MAKES NO DIRECTORIES. Atrium does not know git. Where the worktree named by cwd is not there, the dialog says so and you go and make it.">?</span>
+    </div>
+    <p class="pane-lead">Paste a pull request, an issue or a ticket and get a launch dialog that
+      already knows the repo, the branch, the title and a first instruction. Nothing about any
+      source system is in the binary: it is all in these rows.</p>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editRecogniser(null)">add a recogniser</button>
+    </div>
+    <div id="recogniser-list"></div>
+
     <!-- Things you say to an agent often enough to have got tired of typing.
          Here because this page is where the things atrium runs live, and
          because the alternative was a fourth tab. -->
@@ -4636,6 +4659,138 @@ A room is started with 'atrium room' on that machine.">?</span>
   </div>
 </dialog>
 
+<!-- One row of the recogniser table. Every field but the pattern is a template
+     over what the pattern captured, and the templates are the whole of atrium's
+     knowledge of whatever system the url came from. -->
+<dialog id="recogniser" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="r-heading">recogniser</h2></div>
+    <button onclick="document.getElementById('recogniser').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="r-id">id</label>
+      <input type="text" id="r-id" spellcheck="false" placeholder="github-pull-request">
+      <span class="hintline">Used in the log and in an export. Cannot be changed later.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-label">what to call this kind of thing</label>
+      <input type="text" id="r-label" spellcheck="false" placeholder="github pull request">
+      <span class="hintline">Shown when a url matches, so you can tell which row answered.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-pattern">pattern</label>
+      <input type="text" id="r-pattern" spellcheck="false"
+        placeholder="^https?://(?P&lt;host&gt;github\.com)/(?P&lt;org&gt;[^/]+)/(?P&lt;repo&gt;[^/]+)/pull/(?P&lt;num&gt;\d+)">
+      <span class="hintline">A Go regular expression with named groups. The names become the
+        variables every template below reads. <code>host</code>, <code>org</code> and
+        <code>repo</code> also go onto the card as themselves, which is how two forks of one
+        repository stop landing in the same pile. Refused if it does not compile.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-rank">rank</label>
+      <input type="number" id="r-rank" step="10" value="100">
+      <span class="hintline">Lowest first, and this is the dispatch rather than decoration.
+        A pull request url also matches a generic &ldquo;any repository&rdquo; pattern, so the
+        specific row has to be asked first. Leave the shrug at the bottom: a url that matches
+        nothing specific is still worth a dialog.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-cwd">working directory</label>
+      <input type="text" id="r-cwd" spellcheck="false" placeholder="d:/worktrees/{org}/{repo}/pr-{num}">
+      <span class="hintline">A template. ATRIUM NEVER CREATES IT: where it is not there, the
+        dialog says so and you make it with whatever makes worktrees here.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-title">title</label>
+      <input type="text" id="r-title" spellcheck="false" placeholder="{org}/{repo}#{num} {title}">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-prompt">first instruction</label>
+      <textarea id="r-prompt" rows="3" spellcheck="false"
+        placeholder="review the pull request at {url}"></textarea>
+      <span class="hintline">The one field a newline belongs in, so an issue body can be dropped
+        into it whole.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-tags">tags</label>
+      <input type="text" id="r-tags" spellcheck="false" placeholder="pull-request,{repo}">
+      <span class="hintline">A template, comma separated.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-branch">branch</label>
+      <input type="text" id="r-branch" spellcheck="false" placeholder="{branch}">
+      <span class="hintline">Recorded on the card. A url rarely says which branch, so this is
+        usually something the fetch command below worked out.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-window">window</label>
+      <input type="text" id="r-window" spellcheck="false" placeholder="pull-requests">
+      <span class="hintline">Which pile the card lands in, and what the board groups by.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-theme">theme</label>
+      <input type="text" id="r-theme" spellcheck="false" placeholder="optional">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-kind">what to call the source</label>
+      <input type="text" id="r-kind" spellcheck="false" placeholder="github">
+      <span class="hintline">Recorded as where the work came from and drawn as a badge. Atrium
+        never interprets it.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-fetch">fetch command</label>
+      <input type="text" id="r-fetch" spellcheck="false" placeholder="gh">
+      <span class="hintline">OPTIONAL, and this is the whole extensibility story. The pattern
+        gives you an issue number; turning that into a title needs an authenticated call, and
+        atrium does not make one. It runs this and reads a json object of facts off stdout,
+        which every template above can then read. Put the credential in the tool: gh already has
+        a token, in the keyring it already uses. There is nowhere here to put one.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-fetch-args">fetch arguments</label>
+      <textarea id="r-fetch-args" rows="3" spellcheck="false"
+        placeholder="pr&#10;view&#10;{num}&#10;--repo&#10;{org}/{repo}&#10;--json&#10;title,headRefName"></textarea>
+      <span class="hintline">One per line, templated the same way, never split by atrium. A value
+        with a space in it stays one argument.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="r-fetch-cwd">fetch working directory</label>
+      <div class="picker">
+        <input type="text" id="r-fetch-cwd" spellcheck="false" placeholder="optional">
+        <button onclick="browseInto('r-fetch-cwd')">browse</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="r-enabled"> ask this row when a url is pasted</label>
+      <span class="hintline">Off keeps the row without the behaviour.</span>
+    </div>
+    <div class="field" id="r-status-field" hidden>
+      <label class="eyebrow">last fetch</label>
+      <div class="hintline" id="r-status"></div>
+    </div>
+    <!-- The loop this feature is actually used in: paste, look, adjust a
+         template, paste again. It asks the SAVED table, so a more specific row
+         above this one answering instead is a thing you find out here. -->
+    <div class="field">
+      <label class="eyebrow" for="r-try">try a url</label>
+      <div class="picker">
+        <input type="text" id="r-try" spellcheck="false" placeholder="paste one and see what it resolves to">
+        <button onclick="tryRecogniser()">try it</button>
+      </div>
+      <span class="hintline">Asks the whole table as it is saved, and names the row that
+        answered. Save your edits first.</span>
+      <pre class="hintline" id="r-try-out" hidden style="white-space:pre-wrap"></pre>
+    </div>
+  </div>
+  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+    <button class="go" onclick="saveRecogniser()">save</button>
+    <button class="no" id="r-delete" onclick="deleteRecogniser()">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('recogniser').close()">cancel</button>
+  </div>
+</dialog>
+
 <dialog id="fixture" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="f-heading">fixture</h2></div>
@@ -4807,6 +4962,20 @@ A room is started with 'atrium room' on that machine.">?</span>
         <button onclick="goRunners('runners');document.getElementById('launch').close()">configure</button>
       </div>
     </div>
+    <!-- Paste a pull request, an issue or a ticket and the rest of this form
+         fills itself in. Atrium learns nothing about the system it came from:
+         a recogniser is a pattern and a set of templates, and whoever wrote
+         the row did the understanding. -->
+    <div class="field" id="l-link-field">
+      <label class="eyebrow" for="l-url">paste a link</label>
+      <div class="picker">
+        <input type="text" id="l-url" spellcheck="false"
+          placeholder="a pull request, an issue, a ticket">
+        <button id="l-recognise" onclick="recogniseLink()">recognise</button>
+      </div>
+      <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
+        below, and nothing starts until you press start.</span>
+    </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
       <div class="picker">
@@ -4828,6 +4997,12 @@ A room is started with 'atrium room' on that machine.">?</span>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>
       <input type="text" id="l-title" spellcheck="false" placeholder="what is this one for">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="l-tags">tags</label>
+      <input type="text" id="l-tags" spellcheck="false" placeholder="comma separated, or leave empty">
+      <span class="hintline">Free text. Split on commas and never on spaces, so a tag with a space
+        in it is one tag.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-why">why</label>
@@ -17418,6 +17593,7 @@ async function renderRunners() {
   renderDiscovered();
   renderFixtures();
   renderSources();
+  renderRecognisers();
   renderActions();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
@@ -17771,6 +17947,200 @@ async function deleteSource() {
   renderSources();
 }
 
+// ── recognisers ─────────────────────────────────────────
+//
+// Rows that say what a url means. Rows in a table, like runners, sources and
+// fixtures, because that is what they are.
+//
+// The rule the whole feature rests on: ATRIUM LEARNS NOTHING ABOUT ANY SOURCE
+// SYSTEM. A recogniser is a pattern and a set of templates, and whoever wrote
+// the row did the understanding. Nothing here special-cases GitHub, and the
+// table ships empty.
+
+let allRecognisers = [];
+
+async function renderRecognisers() {
+  const host = document.getElementById("recogniser-list");
+  if (!host) return;
+  try { allRecognisers = (await api("/v1/recognisers")).recognisers || []; } catch (e) { return; }
+
+  if (!allRecognisers.length) {
+    setHTML(host, `<div class="panel"><div class="empty">
+      nothing recognises a url yet. a recogniser is a pattern and a set of templates,
+      and scripts/recognisers has working examples for github and bitbucket.
+    </div></div>`);
+    return;
+  }
+
+  // In the order they are asked, which is the order they are drawn. Somebody
+  // debugging "why did the wrong row answer" is looking for exactly this.
+  setHTML(host, `<div class="panel">` + allRecognisers.map(r => `
+    <div class="row line">
+      <span class="chip ${r.enabled ? "accent" : ""}">${r.enabled ? "on" : "off"}</span>
+      <span class="by" title="asked in this order, lowest first">${esc(String(r.rank))}</span>
+      <span class="tool">${esc(r.label || r.id)}</span>
+      <code class="grow ell" title="${esc(r.pattern)}">${esc(r.pattern)}</code>
+      ${r.fetch ? `<span class="chip" title="${esc("fetches more facts with: " + r.fetch)}">fetch</span>` : ""}
+      ${r.last_error ? `<span class="chip warn" title="${
+        esc("the fetch failed " + r.failures + " time(s) in a row: " + r.last_error)
+      }">fetch failing</span>` : ""}
+      <button class="editrec" data-id="${esc(r.id)}">edit</button>
+    </div>`).join("") + `</div>`);
+
+  // THE ID COMES BACK THROUGH THE DOM, not through an inline handler. An id is
+  // operator-typed free text, and HTML escaping does nothing about an
+  // apostrophe inside a JavaScript string literal: a row called `it's mine`
+  // would close the argument and the button would throw instead of opening.
+  host.querySelectorAll(".editrec").forEach(b =>
+    b.onclick = () => editRecogniser(b.dataset.id));
+}
+
+function editRecogniser(id) {
+  const r = allRecognisers.find(x => x.id === id) || {
+    id: "", label: "", pattern: "", enabled: false,
+    // Below whatever is already there, so a new row cannot silently swallow
+    // urls a more specific one was answering.
+    rank: 100,
+    kind: "", title: "", tags: "", cwd: "", prompt: "", branch: "", window: "", theme: "",
+    fetch: "", fetch_args: [], fetch_cwd: ""
+  };
+  const dlg = document.getElementById("recogniser");
+  dlg.dataset.editing = r.id;
+  document.getElementById("r-heading").textContent = r.id ? "recogniser" : "new recogniser";
+
+  const idBox = document.getElementById("r-id");
+  idBox.value = r.id || "";
+  // The id is the key, so changing it would make a second row rather than
+  // renaming one. Editable exactly once.
+  idBox.disabled = !!r.id;
+
+  document.getElementById("r-label").value = r.label || "";
+  document.getElementById("r-pattern").value = r.pattern || "";
+  document.getElementById("r-rank").value = r.rank == null ? 100 : r.rank;
+  document.getElementById("r-cwd").value = r.cwd || "";
+  document.getElementById("r-title").value = r.title || "";
+  document.getElementById("r-prompt").value = r.prompt || "";
+  document.getElementById("r-tags").value = r.tags || "";
+  document.getElementById("r-branch").value = r.branch || "";
+  document.getElementById("r-window").value = r.window || "";
+  document.getElementById("r-theme").value = r.theme || "";
+  document.getElementById("r-kind").value = r.kind || "";
+  document.getElementById("r-fetch").value = r.fetch || "";
+  document.getElementById("r-fetch-args").value = (r.fetch_args || []).join("\n");
+  document.getElementById("r-fetch-cwd").value = r.fetch_cwd || "";
+  document.getElementById("r-enabled").checked = !!r.enabled;
+  document.getElementById("r-delete").hidden = !r.id;
+  document.getElementById("r-try").value = "";
+  document.getElementById("r-try-out").hidden = true;
+
+  const field = document.getElementById("r-status-field");
+  const box = document.getElementById("r-status");
+  if (r.id && (r.last_error || r.last_used_at)) {
+    field.hidden = false;
+    box.textContent = r.last_error
+      ? "the fetch failed at " + r.last_used_at + " (" + r.failures + " in a row): " + r.last_error
+      : "used at " + r.last_used_at + ", and the fetch worked.";
+  } else {
+    field.hidden = true;
+  }
+  dlg.showModal();
+}
+
+async function saveRecogniser() {
+  const id = document.getElementById("r-id").value.trim();
+  if (!id) { tellUser("atrium", "a recogniser needs an id."); return; }
+  const body = {
+    id,
+    label: document.getElementById("r-label").value.trim(),
+    pattern: document.getElementById("r-pattern").value.trim(),
+    rank: Number(document.getElementById("r-rank").value) || 0,
+    cwd: document.getElementById("r-cwd").value.trim(),
+    title: document.getElementById("r-title").value.trim(),
+    // Not trimmed on the right the way the others are: a first instruction is
+    // prose and its own line breaks are the author's.
+    prompt: document.getElementById("r-prompt").value,
+    tags: document.getElementById("r-tags").value.trim(),
+    branch: document.getElementById("r-branch").value.trim(),
+    window: document.getElementById("r-window").value.trim(),
+    theme: document.getElementById("r-theme").value.trim(),
+    kind: document.getElementById("r-kind").value.trim(),
+    fetch: document.getElementById("r-fetch").value.trim(),
+    // Split on lines and never on spaces, the same rule a source's arguments
+    // follow. A path with a space in it is one line and stays one argument.
+    fetch_args: document.getElementById("r-fetch-args").value
+      .split("\n").map(x => x.trim()).filter(Boolean),
+    fetch_cwd: document.getElementById("r-fetch-cwd").value.trim(),
+    enabled: document.getElementById("r-enabled").checked
+  };
+  try {
+    await api("/v1/recognisers/" + encodeURIComponent(id), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    // A pattern that does not compile comes back here, naming the position in
+    // the expression. That is the whole reason it is checked on save rather
+    // than at the moment somebody pastes a url.
+    tellUser("could not save it", e.message);
+    return;
+  }
+  document.getElementById("recogniser").close();
+  renderRecognisers();
+}
+
+async function deleteRecogniser() {
+  const id = document.getElementById("recogniser").dataset.editing;
+  if (!id) return;
+  if (!await confirmUser("delete this recogniser?",
+    "Urls of this shape stop filling a dialog in. The cards it already filled stay: they are " +
+    "work, and deleting the thing that recognised the link does not make it not work.",
+    "delete it")) return;
+  try {
+    await api("/v1/recognisers/" + encodeURIComponent(id), { method: "DELETE" });
+  } catch (e) { tellUser("could not delete it", e.message); return; }
+  document.getElementById("recogniser").close();
+  renderRecognisers();
+}
+
+// Paste, look, adjust a template, paste again. That is the loop this feature is
+// used in, and a table with no way to try one is a table nobody finishes
+// writing.
+//
+// It asks the WHOLE table as saved, not the row on screen, and names the row
+// that answered. "The generic row above swallowed my url" is the mistake this
+// makes visible.
+async function tryRecogniser() {
+  const url = document.getElementById("r-try").value.trim();
+  const out = document.getElementById("r-try-out");
+  if (!url) return;
+  out.hidden = false;
+  out.textContent = "asking...";
+  let got;
+  try {
+    got = await api("/v1/recognise", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+  } catch (e) {
+    out.textContent = e.message;
+    return;
+  }
+  const lines = [got.recogniser + " answered, as " + (got.label || got.recogniser)];
+  const say = (k, v) => { if (v) lines.push("  " + k + ": " + v); };
+  say("directory", got.cwd + (got.cwd_exists ? "" : "   (not here)"));
+  say("title", got.title);
+  say("tags", (got.tags || []).join(", "));
+  say("repo", [got.org, got.repo].filter(Boolean).join("/"));
+  say("host", got.host);
+  say("branch", got.branch);
+  say("window", got.window);
+  say("kind", got.kind);
+  say("prompt", got.prompt);
+  if (got.fetch_error) lines.push("\nthe fetch failed: " + got.fetch_error);
+  if (got.problem) lines.push("\n" + got.problem);
+  out.textContent = lines.join("\n");
+}
+
 // ── fixtures ────────────────────────────────────────────
 //
 // Terminals that come up with the daemon. Rows in a table, like runners,
@@ -17992,14 +18362,29 @@ async function renderDiscovered() {
     </div>`).join("") + `</div>`;
 }
 
-// Whether a runner row is claude code, which is the only one with hooks
-// atrium understands. Matched on the command rather than the row id, since the
-// id is whatever you typed when you made the row.
-function isClaudeRunner(h) {
+// Which runner's hooks file a row belongs to, or "" when atrium has none for
+// it. Matched on the command rather than the row id, since the id is whatever
+// you typed when you made the row.
+function hookTargetFor(h) {
   const cmd = (h.cmd || "").toLowerCase().replace(/\\/g, "/");
   const leaf = cmd.split("/").pop().replace(/\.(exe|cmd|bat|ps1)$/, "");
-  return leaf === "claude";
+  if (leaf === "claude") return "claude";
+  if (leaf === "codex") return "codex";
+  return "";
 }
+
+// What a runner with no hooks of its own can tell atrium, which is nothing.
+//
+// Written on the row rather than left blank. The table offers four runners as
+// equals and two of them cannot report a thing: no activity, no session
+// starting or ending, no resume id. A blank space there reads as "wired" to
+// anyone who has not read the notes field, and a card that never leaves
+// `running` reads as atrium being broken rather than as the runner having
+// nothing to say.
+const REPORTS_NOTHING =
+  "this runner has no hook system, so atrium learns nothing from it: no activity, " +
+  "no session starting or ending, and no id to resume from. its card shows the " +
+  "terminal, the permission gate and whatever you typed on the card itself.";
 
 // Not wiring the hooks is a legitimate choice, so the reminder can be turned
 // off. It goes through the same store as every other "do not ask me again", so
@@ -18013,11 +18398,21 @@ const HOOK_NAG = "hooks-nag";
 // it would take away the way back to the dialog that turns the reminder on
 // again.
 function hooksChip(h) {
-  if (!isClaudeRunner(h)) return "";
-  if (!hookReport) return "";
-  const n = skippedConfirms()[HOOK_NAG] ? 0 : hookReport.missing;
+  const target = hookTargetFor(h);
+  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}"
+    >reports nothing</span>`;
+  const rep = target === "codex" ? codexHooks : hookReport;
+  // A row atrium could wire and has not looked at yet. The button still opens
+  // the dialog, which is where the answer is; a count nobody fetched would be
+  // a number made up on the row.
+  if (!rep) return `<button onclick="openHooks()" title="${esc(target)} hooks">hooks</button>`;
+  if (rep.refused) {
+    return `<button onclick="openHooks()"
+      title="${esc(rep.refused)}">hooks: cannot wire</button>`;
+  }
+  const n = skippedConfirms()[HOOK_NAG] ? 0 : rep.missing;
   return `<button class="${n ? "go" : ""}" onclick="openHooks()"
-    title="${n ? "atrium cannot see what these sessions are doing" : "claude code hooks"}"
+    title="${n ? "atrium cannot see what these sessions are doing" : esc(target) + " hooks"}"
     >hooks${n ? `: ${n} missing` : ""}</button>`;
 }
 
@@ -18182,12 +18577,21 @@ function codexPanel() {
   const trust = rep.trust
     ? `<div class="row line"><span class="hintline warn">${esc(rep.trust)}</span></div>`
     : "";
-  const action = rep.missing === 0
-    ? `<span class="by found">all wired.</span>`
-    : `<button class="go" onclick="installHooks(null, 'codex')"
-         >do all ${rep.missing} for me</button>`;
+  // A runner atrium cannot point at this binary at all. Said here, with the
+  // reason, instead of leaving a button that fails the moment it is pressed.
+  // Codex reads the first word of a hook command as the program and strips no
+  // quotes, so a path with a space in it has no spelling that works.
+  const action = rep.refused
+    ? `<span class="by missing" title="${esc(rep.refused)}">cannot be wired here</span>`
+    : rep.missing === 0
+      ? `<span class="by found">all wired.</span>`
+      : `<button class="go" onclick="installHooks(null, 'codex')"
+           >do all ${rep.missing} for me</button>`;
+  const refused = rep.refused
+    ? `<div class="row line"><span class="hintline warn">${esc(rep.refused)}</span></div>`
+    : "";
   return `<h3 class="s-section">codex</h3>
-    <div class="panel">${where}${rows}${trust}
+    <div class="panel">${where}${rows}${refused}${trust}
       <div class="row line"><span class="grow"></span>${action}</div></div>`;
 }
 
@@ -18490,7 +18894,12 @@ async function startOffered(id) {
   await openLaunch(t.runner || null, "", t.worktree, t.id, {
     title: t.display_title || t.title || "",
     why: t.why || "",
-    prompt: t.prompt || ""
+    prompt: t.prompt || "",
+    tags: t.tags || [],
+    // The link the source raised it with, put in the box ready to recognise.
+    // An intake item usually has no directory, and the recogniser is what
+    // turns its url into one.
+    url: t.url || ""
   });
 }
 
@@ -18499,6 +18908,82 @@ async function startOffered(id) {
 // passed to the submit, because the decision is made in the menu that opened
 // the form and answered by the code that closes it.
 let launchWhere = "here";
+
+// What the last recognised url worked out, held for `doLaunch`.
+//
+// The fields in it are the ones the dialog has no box for: the repo, the org,
+// the host, the branch, the window and the theme. They are not hidden inputs
+// because they are not things to type. They are what a launcher knew, and
+// atrium derives none of them.
+//
+// CLEARED EVERY TIME THE DIALOG OPENS. Left over, a stale resolution would put
+// the previous card's repo and branch onto this one, and there is no field on
+// screen where that would be visible enough to correct.
+let launchResolved = null;
+
+function clearResolved(url) {
+  launchResolved = null;
+  const box = document.getElementById("l-url");
+  if (box) box.value = url || "";
+  const note = document.getElementById("l-link-note");
+  if (note) {
+    note.textContent = "Optional. A recogniser turns it into the fields below, " +
+      "and nothing starts until you press start.";
+    note.classList.remove("warn");
+  }
+}
+
+// Paste a link, fill the form in.
+//
+// IT STARTS NOTHING. What comes back is text in boxes, which is the whole
+// separation the design rests on: recognising is not deciding, and the button
+// that decides is the one that was already there.
+async function recogniseLink() {
+  const url = document.getElementById("l-url").value.trim();
+  const note = document.getElementById("l-link-note");
+  const btn = document.getElementById("l-recognise");
+  if (!url) return;
+  btn.disabled = true;
+  note.classList.remove("warn");
+  note.textContent = "recognising...";
+  let got;
+  try {
+    got = await api("/v1/recognise", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+  } catch (e) {
+    btn.disabled = false;
+    note.classList.add("warn");
+    // A url nothing matches is a 404 and reads as one. Not a failure: this
+    // atrium has no row for that shape yet, and the fix is to write one.
+    note.textContent = /404|no recogniser/i.test(e.message)
+      ? "nothing here knows what that is yet. add a row for it under runners, recognisers."
+      : e.message;
+    return;
+  }
+  btn.disabled = false;
+  launchResolved = got;
+
+  // Only over what the recogniser had something to say about. A directory or a
+  // title already typed is not overwritten by an empty template, because
+  // clearing what somebody just typed is the one thing that makes a form feel
+  // hostile.
+  const put = (id, v) => { if (v) document.getElementById(id).value = v; };
+  put("l-cwd", got.cwd);
+  put("l-title", got.title);
+  put("l-prompt", got.prompt);
+  put("l-tags", (got.tags || []).join(", "));
+
+  const bits = [got.label || got.recogniser];
+  if (got.fetch_error) bits.push("the fetch failed, so anything it would have added " +
+    "is missing: " + got.fetch_error);
+  if (got.problem) bits.push(got.problem);
+  note.textContent = bits.join(". ");
+  // A missing worktree, a hole in a template or a broken fetch all read the
+  // same way here: something to go and do before pressing start.
+  note.classList.toggle("warn", !!(got.problem || got.fetch_error));
+}
 
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
@@ -18526,6 +19011,20 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   document.getElementById("l-title").value = pre.title || "";
   document.getElementById("l-why").value = pre.why || "";
   document.getElementById("l-prompt").value = pre.prompt || "";
+  document.getElementById("l-tags").value = (pre.tags || []).join(", ");
+
+  // Every dialog starts with nothing recognised. Left over from the last one,
+  // a stale resolution would put the previous card's repo, branch and window
+  // onto this one, and none of those are fields you can see to correct.
+  clearResolved(pre.url || "");
+  // Resuming is the one case with nothing to recognise: that conversation
+  // already knows what it is for, and the directory it is in is not a choice.
+  //
+  // An offered card is the OPPOSITE case and the third place the design names
+  // a url gets pasted. An intake item arrives carrying a link and usually no
+  // directory, so its url is put in the box already, and one press turns "here
+  // is a thing" into "here is a card ready to start".
+  document.getElementById("l-link-field").hidden = !!resume;
 
   // A resumed conversation already has its instruction, and the daemon refuses
   // both. Hidden rather than disabled, so there is nothing to wonder about.
@@ -18587,11 +19086,31 @@ async function doLaunch() {
     cwd: document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
+    // Split on commas and never on spaces, the same rule everywhere else: a
+    // tag with a space in it is one tag.
+    tags: document.getElementById("l-tags").value
+      .split(",").map(x => x.trim()).filter(Boolean),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
       ? document.getElementById("l-prompt").value.trim() : ""
   });
+  // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never
+  // overwrites a card field with an empty value, so a plain launch says
+  // nothing about the repo rather than blanking one a session reported for
+  // itself.
+  if (launchResolved) {
+    Object.assign(body, {
+      repo: launchResolved.repo || "",
+      org: launchResolved.org || "",
+      host: launchResolved.host || "",
+      branch: launchResolved.branch || "",
+      window: launchResolved.window || "",
+      theme: launchResolved.theme || "",
+      source_kind: launchResolved.kind || "",
+      source_url: launchResolved.url || ""
+    });
+  }
   let task;
   try {
     task = await api("/v1/launch", {

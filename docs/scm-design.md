@@ -258,3 +258,34 @@ perfectly good second choice and nothing else in this design changes.
    just "call gwt".
 
 Each of those is useful alone, and each one shipped without the next is not a half-finished feature.
+
+---
+
+## What was built, and the two places it differs from the above
+
+One through four are built. Five is not, and is `docs/backlog.md` item 2.
+
+The table is `recogniser` in the store, `GET`/`PUT`/`DELETE /v1/recognisers` on the API, `POST /v1/recognise`
+for the verb, `atrium open <url>` on the command line, and a pane under runners on the board. The three places a
+URL gets pasted are all there: the launch dialog's link box, the CLI, and an offered card in the inbox whose
+link is put in that box ready to press. `scripts/recognisers` holds working rows and a README.
+
+**A failing `fetch` does not switch the row off,** which the `fetch` section above says it should, by analogy
+with a source. The analogy is wrong in one respect and it is the deciding one. A source is a timer nobody is
+watching, so a broken one retrying forever is a process spawned every fifteen minutes to produce an error into
+an empty room, and switching it off is a kindness. A recogniser is a verb somebody just typed with the board in
+front of them. Switching the row off would mean the NEXT paste silently matches nothing while they watch, which
+turns "gh was not logged in" into "atrium is broken". So the reason goes on the row where the settings screen
+shows it, the count says how long it has been going on, and the URL still resolves from its captures. Losing the
+fetched title is a worse card. Losing the card is worse than that.
+
+**The captures win over the fetched facts,** which the section above does not say either way. A fact only fills
+a name the pattern left empty and never overwrites one it filled. The reason is that a `fetch` reads whatever an
+issue tracker holds, and anybody can write into an issue tracker: a fetch that could redefine `repo` could move
+`cwd`, which would mean the contents of an issue chose the directory a runner starts in.
+
+One thing the design leaves implicit is worth stating, because it is the behaviour somebody will meet first. A
+template reading `{branch}` when nothing supplied one leaves the field saying `{branch}` and reports it. Blanking
+it would turn `feature/{branch}` into `feature/`, which is a directory somebody creates by accident and then
+wonders about, and failing the whole resolution would throw away the five fields that did work because the sixth
+did not.

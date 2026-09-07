@@ -94,10 +94,21 @@ func DefaultHarnesses() []Harness {
 			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
+			// `codex resume <SESSION_ID>` takes the same uuid codex puts in
+			// `session_id` on every hook payload, so the id a card records is
+			// the id that picks the conversation back up. Confirmed against
+			// codex-cli 0.153.2, where `codex resume --help` names the
+			// argument as a session uuid.
+			//
+			// A subcommand rather than a flag, which is why it is the whole
+			// argument list and not something appended: `resume` displaces
+			// the prompt, and `resume_args` replaces `args` by design.
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			PromptArgs: []string{"{prompt}"},
-			Notes:      "confirm the command and any resume flag before enabling",
+			ResumeArgs:  []string{"resume", "{resume}"},
+			PromptArgs:  []string{"{prompt}"},
+			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
+				"settings, and codex will not run one it has not been shown once",
 		},
 		{
 			ID: "ollama", Label: "ollama", Enabled: false, Cmd: "ollama",

@@ -907,6 +907,69 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN host TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// What a URL means, as a row rather than as code.
+		//
+		// Every column but `pattern` is a template, and the templates are the
+		// whole of atrium's knowledge of GitHub, Bitbucket, Jira or anything
+		// else: there is none in the binary, and this table ships empty.
+		//
+		// `window_name` rather than `window` for the same reason the task table
+		// spells it that way: WINDOW is a reserved word in SQL, and SQLite
+		// forgives it while Postgres does not.
+		name: "0039_recogniser",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS recogniser (
+				id           TEXT PRIMARY KEY,
+				label        TEXT NOT NULL DEFAULT '',
+				enabled      INTEGER NOT NULL DEFAULT 0,
+				rank         INTEGER NOT NULL DEFAULT 100,
+				pattern      TEXT NOT NULL,
+				kind         TEXT NOT NULL DEFAULT '',
+				title        TEXT NOT NULL DEFAULT '',
+				tags         TEXT NOT NULL DEFAULT '',
+				cwd          TEXT NOT NULL DEFAULT '',
+				prompt       TEXT NOT NULL DEFAULT '',
+				branch       TEXT NOT NULL DEFAULT '',
+				window_name  TEXT NOT NULL DEFAULT '',
+				theme        TEXT NOT NULL DEFAULT '',
+				fetch_cmd    TEXT NOT NULL DEFAULT '',
+				fetch_args   TEXT NOT NULL DEFAULT '[]',
+				fetch_cwd    TEXT NOT NULL DEFAULT '',
+				notes        TEXT NOT NULL DEFAULT '',
+				last_error   TEXT NOT NULL DEFAULT '',
+				failures     INTEGER NOT NULL DEFAULT 0,
+				last_used_at TEXT NOT NULL DEFAULT '',
+				created_at   TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_recogniser_rank ON recogniser (rank)`,
+		},
+	},
+	{
+		// Codex can be resumed, and the row said it could not.
+		//
+		// The seed shipped codex with an empty `resume_args` and a note saying
+		// to confirm the flag before enabling. It is `codex resume
+		// <SESSION_ID>`, and the id is the same uuid codex hands every hook in
+		// `session_id`, which is the one a card already records. So a codex
+		// card has been carrying a usable resume id and refusing to use it.
+		//
+		// Seeding only reaches a row that does not exist, so an existing
+		// database would keep the empty list forever. Guarded on the empty
+		// list, the same way 0024 guarded `prompt_args`, so an operator who
+		// has already written their own is not overwritten.
+		//
+		// NUMBERED 0040 rather than the 0039 it was written as. Five agents
+		// each wrote a migration on top of 0038 at once, so five of them said
+		// 0039. Nothing breaks either way, because a migration is recorded by
+		// NAME and these names differ, but a list where the numbers stop
+		// counting is a list that stops being read.
+		name: "0040_codex_resume",
+		stmts: []string{
+			`UPDATE harness SET resume_args = '["resume","{resume}"]'
+			   WHERE id = 'codex' AND (resume_args = '[]' OR resume_args = '')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
