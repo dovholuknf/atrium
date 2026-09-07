@@ -27,9 +27,13 @@ import (
 //
 // Named `ask` rather than `help` on the command line, because `atrium help` is
 // cobra's own and always will be.
+//
+// `--peer` routes the question to another session instead of onto the card.
+// The answer comes back through `atrium answer`, which is in `peer.go` with
+// the rest of the bus it rides.
 
 func newAsk() *cobra.Command {
-	var name, hubURL string
+	var name, hubURL, peer string
 	var working bool
 
 	c := &cobra.Command{
@@ -45,6 +49,11 @@ func newAsk() *cobra.Command {
 			"By default this means you have STOPPED, and the card moves to waiting. Pass " +
 			"--working if you are carrying on and would like an answer when somebody has one: " +
 			"a session still working does not belong in a bucket of things needing attention.\n\n" +
+			"Pass --peer <handle> to ask ANOTHER SESSION rather than a human. The question is " +
+			"queued for it and arrives on its next tool call or at the end of its turn, and it " +
+			"answers with `atrium answer`. Run `atrium peers` for the handles. Your card still " +
+			"shows the question and says who you asked, so a peer that never answers is " +
+			"visible rather than a session quietly stuck forever.\n\n" +
 			"Which session this is comes from $ATRIUM_AGENT_NAME, or the current directory's " +
 			"name, exactly like the hooks.",
 		Args: cobra.ArbitraryArgs,
@@ -56,11 +65,16 @@ func newAsk() *cobra.Command {
 			if ask == "" {
 				return fmt.Errorf("say what you need. an empty ask is what waiting already means")
 			}
-			return reportStuck(cmd.OutOrStdout(), hubURL, name, ask, !working)
+			return reportStuck(cmd.OutOrStdout(), hubURL, name, ask, peer, !working)
 		},
 	}
 	c.Flags().BoolVar(&working, "working", false,
 		"you are carrying on rather than stopping, so do not file the card as waiting")
+	// The backquoted word is the ARGUMENT NAME, not emphasis. Cobra takes the
+	// first one in a flag's usage and prints it beside the flag, so
+	// "`atrium peers` lists the handles" rendered as `--peer atrium peers`.
+	c.Flags().StringVar(&peer, "peer", "",
+		"the `handle` of a session to ask instead of a human. atrium peers lists them")
 	c.Flags().StringVar(&name, "name", "",
 		"what this session calls itself (default: $ATRIUM_AGENT_NAME, or the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "",
@@ -68,7 +82,7 @@ func newAsk() *cobra.Command {
 	return c
 }
 
-func reportStuck(out io.Writer, hubURL, name, ask string, blocked bool) error {
+func reportStuck(out io.Writer, hubURL, name, ask, peer string, blocked bool) error {
 	agent := name
 	if agent == "" {
 		agent = os.Getenv("ATRIUM_AGENT_NAME")
@@ -82,11 +96,24 @@ func reportStuck(out io.Writer, hubURL, name, ask string, blocked bool) error {
 		return fmt.Errorf("could not work out which session this is. pass --name")
 	}
 
+	// THE TASK ID IS THIS SESSION'S, SO A NAMED SESSION MUST NOT SEND IT.
+	//
+	// The daemon resolves a card by id first, because an id is more reliable
+	// than a name. `ATRIUM_TASK_ID` is in the environment of the session
+	// running this, so with `--name` it names one session and the environment
+	// names another, and the ask lands on the wrong card with nothing said.
+	// Passing a name is saying which session this is about, so it wins.
+	taskID := ""
+	if name == "" {
+		taskID = os.Getenv("ATRIUM_TASK_ID")
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"agent":   agent,
-		"task_id": os.Getenv("ATRIUM_TASK_ID"),
+		"task_id": taskID,
 		"ask":     ask,
 		"blocked": blocked,
+		"peer":    peer,
 	})
 	if err != nil {
 		return err
@@ -101,18 +128,48 @@ func reportStuck(out io.Writer, hubURL, name, ask string, blocked bool) error {
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("atrium refused: %s: %s", resp.Status, strings.TrimSpace(string(raw)))
-	}
 
 	var answer struct {
-		Recorded bool `json:"recorded"`
-		Waiting  bool `json:"waiting"`
+		Recorded bool      `json:"recorded"`
+		Waiting  bool      `json:"waiting"`
+		Peer     string    `json:"peer"`
+		Error    string    `json:"error"`
+		Peers    []peerRow `json:"peers"`
 	}
 	_ = json.Unmarshal(raw, &answer)
 
+	// A handle nobody has answers with the ones that would have worked, and
+	// nothing was recorded. Same as `tell`, and for the same reason: a bare
+	// subcommand cannot make listing mandatory, so the failure has to teach.
+	if resp.StatusCode == http.StatusNotFound && len(answer.Peers) > 0 {
+		fmt.Fprintf(out, "%s\n", answer.Error)
+		fmt.Fprintln(out, "\nthese are the sessions you can ask:")
+		printPeers(out, answer.Peers)
+		fmt.Fprintln(out, "\nnothing was asked. run it again with one of those, "+
+			"or without --peer to ask a human.")
+		return fmt.Errorf("no session called %s", peer)
+	}
+	if resp.StatusCode >= 300 {
+		if answer.Error != "" {
+			return fmt.Errorf("atrium refused: %s", answer.Error)
+		}
+		return fmt.Errorf("atrium refused: %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+	}
+
 	if !answer.Recorded {
 		fmt.Fprintf(out, "atrium has no card for %s, so there was nowhere to put that.\n", agent)
+		return nil
+	}
+	if answer.Peer != "" {
+		// What the asker needs to know next, and the part a model gets wrong
+		// on its own: nobody has been interrupted and no answer is coming back
+		// in this turn.
+		fmt.Fprintf(out, "asked %s. it arrives on that session's next tool call or at "+
+			"the end of its turn, and the answer comes back the same way.\n", answer.Peer)
+		if answer.Waiting {
+			fmt.Fprintf(out, "  your card says you are waiting on %s, so it is visible "+
+				"if no answer comes.\n", answer.Peer)
+		}
 		return nil
 	}
 	if answer.Waiting {

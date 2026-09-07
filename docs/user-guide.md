@@ -385,6 +385,46 @@ starts PASSIVE, so it does not start the fixtures or re-bind the shares it can s
 why running two ordinary daemons over one database is a different question with a worse answer, are in
 `docs/preview-design.md`.
 
+## Pattern 12: a session that is stuck, and one that asks another session
+
+A session that stops shows as waiting, because a hook noticed nobody is typing. That says THAT it stopped and
+never WHY, so the way to find out is to open its terminal and read back through it. From inside the session:
+
+```powershell
+atrium ask "which of these two schemas is authoritative"
+atrium ask --working "is the staging database safe to drop"
+```
+
+The question goes on the card, labelled **this agent has a question**, and it is not the same line as `why`:
+that one is what the card is for and is still true next week. Without `--working` the session is saying it has
+STOPPED, and the card moves to waiting. With it the session is carrying on and the card does not move, because
+a working session filed as waiting makes the count that drives every alert lie.
+
+**Saying anything to that card answers it.** The question comes off, whether you type it into the message box or
+press an action. Typing into the terminal does not: atrium cannot see that.
+
+The other direction asks a peer instead of you:
+
+```powershell
+atrium peers
+atrium ask --peer sg4/atrium-docs "which branch is base for the release notes"
+```
+
+That queues the question for the other session, which reads it on its next tool call or at the end of its turn,
+with the command to answer already in it:
+
+```powershell
+atrium answer sg4/ziti-acme "base is main, the release branch is cut afterwards"
+```
+
+The answer arrives the same way and takes the question off the asker's card. A handle nobody has refuses and
+answers with the handles that would have worked, so a guess turns into the list. Nothing here is typed into
+anybody's terminal in either direction.
+
+A blocked session that asked a peer still shows as waiting, and the card names the peer rather than reading as
+a question for you. That is on purpose: it has stopped, and a peer that never answers otherwise looks exactly
+like a session nobody noticed.
+
 ## Limits / what this won't do
 
 - **No persistence.** Stopping the hub loses the conversation log. We may add per-agent JSONL transcripts in

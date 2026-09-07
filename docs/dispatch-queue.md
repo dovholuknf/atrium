@@ -308,6 +308,316 @@ they are one session and not five. Adding a fifth one here is cheaper than start
 
 ---
 
+## Q. Sending work asks you to remember things atrium already knows
+
+From walking round 8. The queue, the claim and the handout are sound; the dialog in front of them is a form
+somebody has to already know the answers to.
+
+- **The room is typed from memory, and it should be picked.** The field is a text box reading `the name that
+  machine reports itself under`. Operator: "i should KNOW the rooms and PICK the room not guess and not type".
+
+  The hub already holds every room that has checked in, with its name, whether it takes work, whether it is
+  busy, and its workspace. That is a list, and a list is a picker. Typing a name that has to match exactly, on
+  a page that is already displaying the correct spellings a few hundred pixels away, is the operator doing
+  string matching for the machine.
+
+  A name for a room that has never checked in is still worth allowing, since queueing for a machine that is
+  switched off is a stated feature. So: pick from the known ones, with room to type an unknown one, and say
+  which it is when it is unknown.
+
+- **The whole form is drawn before a room is chosen, and most of it depends on the room.** Operator: "these
+  are all there but they are premature. we don't HAVE a room to send to, we don't KNOW if that room has claude
+  etc. most of this should be coming from after choosing the room".
+
+  Every field under `room` is a question about THAT room:
+
+  - **runner** is prefilled `claude` and hinted "this board's runner list says nothing about what is
+    configured over there, so it is typed rather than picked". True today, and the room could simply say. A
+    room already reports its version, its host and its cards; adding its runner names is one field on the
+    check-in, and then it is a picker too.
+  - **working directory** is only meaningful for a room started with a workspace, which the room already
+    reports. For a room without one it is a field whose only outcome is a refusal, and it should not be drawn.
+    For a room with one, the root is known and should be shown rather than described.
+  - **title** and **first instruction** are the only two that are about the work rather than the machine.
+
+  So the dialog is two steps: which machine, then what to run on it. The second step is drawn from what that
+  machine said about itself.
+
+- **`send work to a machine` is pressable with no rooms at all.** The rooms pane says `No other machines are
+  reporting in` and the button beside it opens a form to send work to one of them. It should be disabled, or
+  it should open saying there is nowhere to send anything yet and pointing at `add a room`.
+
+- **A test step that says "type `nowhere`" is the symptom, not the workaround.** Written into the walkthrough
+  for this round because there was no way to exercise the dialog without inventing a room name. Operator:
+  "uh ...no thanks". A form that can only be tested by lying to it is a form that will be used by lying to it.
+
+- **`ctrl-shift-v` opens the box even on loopback, where nothing needed a box.** Operator: "let's stop using
+  ctrl-shift-v when you're LOCAL to the machine. i'm finding myself pushing ctrl-shift-v a lot from habit.
+  i'm local it should just paste without making me do more work".
+
+  The box exists because reading the clipboard from script is a permission granted per ORIGIN, and every share
+  is a new origin whose prompt never gets answered. On loopback that permission was answered once and is
+  remembered, so the read settles immediately and the box is pure ceremony.
+
+  `pasteIntoTerm` already races the read against a timeout and falls back to the box, which is the correct
+  shape for right click. `ctrl-shift-v` skips the race and opens the box unconditionally, so the one path that
+  could just work never tries.
+
+  Make `ctrl-shift-v` take the same path as right click: attempt the read, and open the box only when it does
+  not settle. On loopback the paste lands with no box; on a share the box arrives a beat later, which is the
+  behaviour that already exists. Nothing needs to detect "am I local" — whether the clipboard answers IS the
+  test, and it is the one that stays right on a browser nobody anticipated.
+
+- **The card dialog has no save, and `close` saves anyway.** Operator: "there is no save button just a close
+  and that is confusing. i feel like a save and exit button should be floated at the top of that modal. close
+  seems to have saved it afaict".
+
+  It did save. Every field patches on its `change` event, which fires when focus leaves it, and pressing
+  `close` moves focus, so the write lands on the way out. Correct, invisible, and indistinguishable from
+  having lost the edit.
+
+  Two things wrong, and the second is the one that will bite somebody:
+
+  1. **Nothing acknowledges the write.** A field that looks identical typed-in and saved is one you close
+     without meaning to, which is the exact sentence already written next to the file editor's `not saved`
+     state. The card dialog has no equivalent.
+  2. **`close` is the wrong word for a button that commits.** It reads as the discard half of a pair, and on
+     this dialog it is the only button there is. Somebody who types into `why`, changes their mind, and
+     presses `close` expecting to back out has already saved.
+
+  The operator's fix is a `save and close` floated at the top of the modal. That works and it has to be the
+  WHOLE answer rather than a second path: adding a save button while `change` still patches means two ways to
+  commit and one of them is still invisible. Either commit on close and say so, or hold the edits and commit
+  on the button, and then `close` has to ask about unsaved ones.
+
+- **The card dialog does not show the question.** The stack row draws `this agent has a question` and the ask
+  underneath it, correctly. Open that card and the question is not there. Operator: "i DO NOT see that in the
+  'settings' of the card and expected to".
+
+  The dialog has `d-why` and a `d-recap-field` that appears when a session has said what it did. There is no
+  `d-ask`. So the field that records what a session SAID IT DID has a place in the dialog, and the field that
+  records what it is stopped ON does not, which is backwards: the recap is history and the ask is the thing
+  wanting an answer right now.
+
+  It belongs beside the recap and shaped like it: shown only when there is one, read-only, because the ask is
+  something the session wrote rather than something the operator fills in. With `ask_peer` set it should name
+  the peer, the same way the row does, so a card stopped on somebody else reads differently from one stopped
+  on you.
+
+  **And the dialog is where answering it should be possible.** Saying anything to a card clears its ask, and
+  the dialog is where somebody who just read the question already is. Today they have to close it and find the
+  message box.
+
+- **`--working` should be `--continue`.** Operator: "this flag should be renamed to --continue assuming that
+  it means 'the agent asked a question but kept going'". That is what it means.
+
+  `--working` names the STATE the session is in, which is the thing the reader already knows, and it reads as
+  a claim about being busy rather than as a choice about what happens next. `--continue` names the DECISION,
+  which is the only thing the flag actually controls: ask, and carry on rather than stop.
+
+  It also fixes the asymmetry. Today the two calls are `atrium ask "..."` and `atrium ask --working "..."`,
+  and nothing about the first says it stops. With `--continue` the pair reads as stop-by-default and carry-on
+  by request, which is what it is.
+
+  Rename the flag, keep `--working` as a hidden alias rather than breaking anything already written down, and
+  change the wording everywhere it is described: the help text, `docs/user-guide.md` pattern 12, and the
+  `blocked` field's own comment in `help.go`, which explains the distinction at length and would otherwise go
+  on naming the old one.
+
+- **A second question destroys the first.** `SetAsk` writes one column, so asking again replaces what was
+  there. Operator: "it appears to have overwritten the OLD question which is no good. if there's a series of
+  questions it should be made clear that the agent has SEVERAL to answer".
+
+  Reproduced in one minute: `atrium ask --working "which of these two schemas is authoritative"` then
+  `atrium ask "which branch is base"`, and the first question is gone from the card with nothing saying it
+  ever existed. A session that asks two things gets one answered and never learns the other was dropped.
+
+  **This is the same mistake `ask` was built to fix, one level down.** An ask used to be written into `why`
+  and destroyed the standing answer to "what was I even doing", so it got a field of its own. A field of its
+  own that holds exactly one thing destroys the previous ASK instead. One column, one value, and questions
+  arrive one at a time: that shape cannot hold a series.
+
+  It wants a table, the way messages and events already are, keyed by card with a timestamp and an answered-at.
+  Then the card draws a count, the dialog lists them, and answering one leaves the others standing. The event
+  log already records every ask under `EventSubmitted` with `kind: asked`, so the history exists and only the
+  live view is lossy.
+
+  **Decide what an answer answers.** Today any message to the card clears the ask, which is right for one and
+  wrong for three. With a list, either a message clears the oldest, or clears all of them, or each is answered
+  individually. The third is the only one that stays true with a peer involved, since `ask_peer` is per
+  question and today there is one of those too.
+
+- **A question should be answerable where it is drawn.** Operator: "if i click on a question, it feels like i
+  should get to 'say' something back on that question?"
+
+  The ask is drawn on the stack row as a static line. Clicking it does nothing, and answering means finding
+  the message box elsewhere. Saying anything to the card is ALREADY the mechanism that clears it, so this is a
+  path to something that exists rather than new behaviour.
+
+  Same fix as the missing dialog field above, and they should be built together: the question, wherever it is
+  drawn, is a control that opens a box aimed at that card. With a list of asks it aims at that question.
+
+- **A human's answer arrives with no question attached.** The session asked `which branch is base`, the
+  operator answered `main` from the board, and the session received the word `main` and nothing else.
+  Operator: "the response did not carry any of the context from the question".
+
+  **The peer path already does this correctly and the human path does not.** `askEnvelope` wraps a routed
+  question with who asked, what they asked, and the command to answer, precisely because the receiver cannot
+  work those out. An answer coming back the same way carries the original question quoted. An answer typed
+  into the board's message box is delivered as the operator's own words, because that box is a general purpose
+  "say something to this session" and knows nothing about asks.
+
+  It costs a session a turn at best. At worst it is wrong: with the multiple-asks item above unfixed, a
+  one-word answer to one of two questions is unattributable, and the session picks.
+
+  The fix is not to make every message quote something. It is that a message sent WHILE AN ASK IS OUTSTANDING,
+  and which therefore clears it, should say what it clears. Same envelope the peer path uses, minus the
+  command to answer, since the human is not being asked to reply.
+
+  **And this is the argument for answering from the question rather than from the message box.** A box aimed at
+  a specific ask knows which one it is answering, so the envelope writes itself. A general box has to infer
+  it, and inference is what produces "main" with no question on it.
+
+- **The pinned block has no label, and the divider under it names the sort.** Operator: 'change "the rest,
+  waiting on you" to a "Pinned" label and "The rest" using the allcaps you have'.
+
+  `stackRows` draws a `.pinbreak` reading `the rest, <sort label>`, and nothing labels what is ABOVE it. So the
+  block that outranks the sort is unmarked and the divider explains the sort instead, which is the less
+  interesting of the two facts: the reader can see what the sort is, it is a pressed button at the top of the
+  screen.
+
+  Two headings in the small caps already used for `THE REST, LAST ACTIVE`: **PINNED** over the pinned block,
+  **THE REST** under it. The sort name comes off, since the sort control says it.
+
+  Worth remembering why the divider exists at all, because the fix must not undo it: pinning outranks the sort
+  and nothing on screen said so, so three cards at 16m, 2m and 19s sat above one at 4h17m and the only
+  explanation was a star twelve pixels wide. Naming both sides is a better answer than naming one.
+
+- **A refusal prints itself three times and then the usage.** `atrium ask --peer nobody-here` answers with a
+  written refusal, the five handles that would have worked, and `nothing was asked. run it again with one of
+  those, or without --peer to ask a human.` Then cobra prints `Error: no session called nobody-here`, the full
+  flag usage, and `atrium: no session called nobody-here`.
+
+  The good part is the part somebody wrote. What follows is twelve lines of flag descriptions for a command
+  the operator just ran correctly except for one argument, and the sentence they need is now off the top of a
+  short terminal.
+
+  `SilenceUsage` and `SilenceErrors` on the command, and return the error already reported as a sentinel that
+  `Execute` does not re-print. Worth doing for every command that writes its own refusal, not just this one:
+  `tell` has the same shape, and so does `dispatch`.
+
+- **A card with messages queued for it does not say so on the board.** `atrium peers` prints
+  `zrok-research-3500 [1 waiting]`, which is how the operator confirmed a routed question had landed. The
+  stack row for that same card shows nothing.
+
+  The count is the answer to "did that arrive", and today it is only available to a model running a CLI. It is
+  also the answer to "why is this session about to be interrupted", since a queued message is delivered at the
+  gate ahead of every rule and is the second step of the permission chain.
+
+  A small chip on the row, drawn only when the count is above zero. The number already travels: `roster` puts
+  it on every `Peer` as `Waiting`, from the same store query, so this is a field the board does not read
+  rather than one that has to be computed.
+
+  **The peer list and the board disagreeing about what is known is the thing to watch here.** `peers` grew
+  `want`, `note`, `ask`, `recap` and `waiting` because a model needed them in one place. Every one of those is
+  a fact about a card, and four of the five are drawn on the row. This is the one that is not.
+
+---
+
+## P. A room has to be worth something with the hub gone
+
+Raised on the way out of the door, and it is the item that decides whether the multi-machine work is worth
+having. Operator: "they need to work AUTONOMOUSLY in situations like this. i want to be able to access them
+over a share from anywhere as though i was operating via the hub for when the hub goes offline".
+
+**"Situations like this" is the case to design for**, and it is not a hypothetical: the operator is on a plane,
+the hub is a desktop at home, and the machines doing the work are elsewhere again. A design where the hub is
+the only way in makes every one of those machines useless the moment one desktop sleeps.
+
+**The good news is that a room is already a whole atrium.** It is not a thin agent. It has its own store, its
+own board, its own permission gate, its own supervisor. When the hub goes away a room does not degrade: it
+stops checking in and carries on. So this is not "make a room work alone", which it already does. It is
+"make a room REACHABLE alone", which it is not.
+
+### What is actually missing
+
+1. **A room publishes its own share, and keeps it.** Today a room reports a `board` address, which is a LAN
+   address the hub draws a link to. From a plane that link is nothing. A room needs its own overlay, its own
+   reserved name, and a share that comes back after a reboot the way the board's does. Every piece of that
+   exists in `overlay_reserve.go` and `RestoreCardShares`; none of it is wired to `atrium room`.
+
+2. **The address has to be knowable when the hub is down.** A share address discovered only through the hub's
+   room list is one you cannot look up in the situation this exists for. It has to be somewhere else too: the
+   name is deterministic per room, or it is written down where the operator already looks.
+
+3. **AUTHENTICATION STOPS BEING OPTIONAL, and this is the part to think hardest about.** A published board with
+   no login is `docs/overlays.md`'s named line: atrium serves a board on an overlay and never decides who may
+   connect. A room's board is a machine's whole board, including its terminals, which is a shell. The login
+   from round 1 is the answer and it is per machine, so every room needs it configured, and a room published
+   without it is a mistake somebody can make in one flag.
+
+   Decide whether `atrium room` may publish at all without a login configured. The defensible answer is no.
+
+4. **The gate has to be answerable, or answer itself.** A blocked agent on a room today waits for somebody to
+   open that room's board. With the hub up, `rooms-permissions` forwards the decision. With the hub down and
+   the operator on a plane, an agent that hits the gate is stopped until landing. That is either fine, because
+   stopping is what the gate is for, or it is what auto mode and standing rules exist for, and a room should
+   be able to be started saying which.
+
+5. **DISCRETE SHARES, ONE EACH, AND NO AGGREGATION. Answered, not open.** Operator: "the hub and the rooms
+   would all get their own discrete shares. i still would primarily work from the hub but if the hub runs on
+   my laptop and the rooms are geographically diverse would want to use my phone to get to the rooms in
+   question is all".
+
+   The hub stays where the work is driven from. Every machine including the hub publishes its own address, and
+   reaching a room means opening that room's own board, which is a whole atrium and already draws everything.
+   Nothing aggregates rooms without a hub, so none of this is federation: it is the share machinery that
+   already exists, run in four more places.
+
+   **What it does NOT mean, because it is the shape somebody will build by accident:** the hub does not proxy
+   to a room, and a room's board is not embedded in the hub's. Either would put the hub back in the path this
+   exists to survive without.
+
+   The phone is the client these addresses are for, which makes group O load-bearing rather than cosmetic: a
+   room's board reached from a phone is a room's board at 390px.
+
+### Where this sits
+
+It belongs with `NEXT. Send the work to another machine`, as the thing that makes the sent work retrievable.
+Sending work to four machines that are only reachable through one desktop moves the single point of failure
+rather than removing it.
+
+---
+
+## O. The board at phone width, beyond the one row that was done
+
+`approvals-from-a-phone` did what its name says: the permission row, the touch targets and the toast clamp.
+Everything else at that width was never looked at, and the first pane the operator happened to open was one of
+them. Screenshot at 390px, terminals view. Operator: "the view on the whole is 'meh' not great".
+
+What is wrong in that one screenshot:
+
+- **It scrolls sideways.** The tab strip (`stack / board / perms / runners`) and the attached-card strip both
+  run off the right edge. A page that scrolls horizontally on a phone is the single loudest signal that
+  nobody tried it, and it is the first thing to fix because everything else is judged through it.
+- **`nothing attached` is an empty panel filling the screen.** On a desktop it is a placeholder beside a list.
+  At 390px it IS the screen, so the whole viewport is given to a sentence saying there is nothing here.
+- **The header is over-full.** `1 SESSION SHARED`, the auto-mode dot, the sound toggle and the gear, then a
+  second row for the tabs, then a third for the sort control and the card strip. Three rows of chrome before
+  any content, on the shortest screen.
+
+**Do not fix this pane by pane.** The permission row was done because somebody sat in front of it; the next
+one will be done the same way and the one after that will not. What is missing is a decision about what the
+board IS at that width: the whole thing shrunk, or a smaller set of things worth doing from a phone. Approving
+a permission and reading what a session asked are worth doing from a phone. Driving a terminal is arguably
+not, and `docs/overlays.md` already says lending a session hands out a link rather than making the board
+mobile.
+
+Answer that first, then the panes fall out of it. `scripts/check-phone.js` exists now and should grow the
+invariants for whatever is decided, starting with "nothing scrolls sideways".
+
+---
+
 ## N. The board does not know things until the gear is opened
 
 - **`share this session` says `no overlay is set up yet` on a machine where zrok IS set up.** Reported with a

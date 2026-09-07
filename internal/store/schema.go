@@ -1000,6 +1000,70 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// What a session needs right now, kept apart from what its card is for.
+		//
+		// An ask used to land in `why`, which is the field the operator writes
+		// once and reads in a week. So a session asking a question destroyed
+		// the standing answer to "what was I even doing", and the board drew
+		// both in the same quiet italic line with nothing saying which it was
+		// looking at.
+		//
+		// `ask_peer` is the session it was routed to, empty when it is on the
+		// board for a human. That is what lets a card stopped on another
+		// session read differently from one stopped on you.
+		//
+		// NUMBERED 0042 rather than the 0039 it was written as, for the same
+		// reason 0040 and 0041 above were renumbered.
+		name: "0042_task_ask",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN ask TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN ask_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN ask_peer TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// Work queued for another machine. See `internal/store/dispatch.go`.
+		//
+		// Durable, unlike the room list beside it, and the difference is whose
+		// fact it is. A room's cards belong to that room's database and a copy
+		// here would be a second source of truth. A queued launch is THIS
+		// machine's own record of something it asked for, and a promise that
+		// evaporates when the hub restarts is not a queue.
+		//
+		// `token` is what makes a claim exclusive: minted on handout, cleared
+		// on settle, and required on the way back. `attempts` is what stops a
+		// permanently broken item being handed out forever.
+		//
+		// NUMBERED 0043 rather than the 0039 it was written as, for the same
+		// reason 0040 through 0042 above were renumbered.
+		name: "0043_dispatch",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS dispatch (
+				id          TEXT PRIMARY KEY,
+				room        TEXT NOT NULL,
+				harness     TEXT NOT NULL,
+				cwd         TEXT NOT NULL DEFAULT '',
+				title       TEXT NOT NULL DEFAULT '',
+				prompt      TEXT NOT NULL DEFAULT '',
+				why         TEXT NOT NULL DEFAULT '',
+				tags        TEXT NOT NULL DEFAULT '[]',
+				window_name TEXT NOT NULL DEFAULT '',
+				state       TEXT NOT NULL
+				              CHECK (state IN ('queued','claimed','running','failed','cancelled')),
+				token       TEXT NOT NULL DEFAULT '',
+				attempts    INTEGER NOT NULL DEFAULT 0,
+				card_id     TEXT NOT NULL DEFAULT '',
+				card_url    TEXT NOT NULL DEFAULT '',
+				error       TEXT NOT NULL DEFAULT '',
+				created_at  TEXT NOT NULL,
+				claimed_at  TEXT NOT NULL DEFAULT '',
+				settled_at  TEXT NOT NULL DEFAULT ''
+			)`,
+			// The handout query, which runs on every check-in from every room.
+			`CREATE INDEX IF NOT EXISTS idx_dispatch_room_state ON dispatch(room, state, created_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -89,8 +90,8 @@ const roomBackoff = time.Minute
 const roomQuiet = 10 * time.Minute
 
 func newRoom() *cobra.Command {
-	var hub, name, board, service, identity, local string
-	var once bool
+	var hub, name, board, service, identity, local, workspace string
+	var once, noLaunch bool
 
 	c := &cobra.Command{
 		Use:   "room",
@@ -105,11 +106,20 @@ func newRoom() *cobra.Command {
 			"Pass --board so the hub can offer that link.\n\n" +
 			"Reaching the hub: --hub for an ordinary address, or --service and --identity to " +
 			"dial it over an OpenZiti service, which is what you want when neither end can " +
-			"reach the other directly.",
+			"reach the other directly.\n\n" +
+			"IT ALSO TAKES WORK. The reply to each check-in may carry launches the hub queued " +
+			"for this room, which is how the hub sends work without ever dialling anything. " +
+			"They start through this machine's own daemon, on this machine's own runners. " +
+			"Pass --no-launch to report cards and refuse work.\n\n" +
+			"ATRIUM DOES NOT MAKE THE DIRECTORY. A queued launch that names no directory uses " +
+			"the working directory on this room's own runner, which is the ordinary case. A " +
+			"queued launch that names one is only honoured with --workspace, and only inside " +
+			"it. A directory that is not there is refused immediately and the hub is told why.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runRoom(cmd.Context(), roomOpts{
 				Hub: hub, Name: name, Board: board,
 				Service: service, Identity: identity, Local: local, Once: once,
+				Workspace: workspace, NoLaunch: noLaunch,
 			})
 		},
 	}
@@ -123,12 +133,21 @@ func newRoom() *cobra.Command {
 		"where a browser should go to reach THIS machine directly, since terminals do not federate")
 	c.Flags().StringVar(&local, "local", "", "this machine's own daemon (default: $ATRIUM_BOARD_URL or localhost:7778)")
 	c.Flags().BoolVar(&once, "once", false, "check in a single time and exit, for testing the path")
+	c.Flags().StringVar(&workspace, "workspace", "",
+		"the only directory a queued launch may name on this machine (default: it may name none)")
+	c.Flags().BoolVar(&noLaunch, "no-launch", false,
+		"report this machine's cards and refuse any work the hub queues for it")
 	return c
 }
 
 type roomOpts struct {
 	Hub, Name, Board, Service, Identity, Local string
-	Once                                       bool
+	// Workspace is the root a hub-supplied directory must resolve inside.
+	// Empty means a hub may not name a directory here at all. See
+	// `roomlaunch.go`, which carries the reasoning.
+	Workspace string
+	NoLaunch  bool
+	Once      bool
 }
 
 func runRoom(ctx context.Context, o roomOpts) error {
@@ -152,16 +171,52 @@ func runRoom(ctx context.Context, o roomOpts) error {
 		local = boardAddress("")
 	}
 
+	// Resolved once, at startup, so a workspace that does not exist is a
+	// refusal to start rather than a refusal per item an hour later.
+	if strings.TrimSpace(o.Workspace) != "" {
+		abs, err := filepath.Abs(filepath.FromSlash(strings.TrimSpace(o.Workspace)))
+		if err != nil {
+			return err
+		}
+		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
+			return fmt.Errorf("--workspace %s is not a directory on this machine", abs)
+		}
+		// Forward slashes, like every other path atrium carries. This one is
+		// drawn on a board that may be a different platform from the machine
+		// it describes.
+		o.Workspace = filepath.ToSlash(abs)
+	}
+
 	client, hubURL, err := hubClient(o)
 	if err != nil {
 		return err
 	}
 	log.Printf("[atrium] room %q reporting to %s every %s", o.Name, hubURL, roomBeat)
+	// Said at startup, once, because it is the one thing about this room a
+	// person needs to have seen: whether the hub can start processes here.
+	switch {
+	case o.NoLaunch:
+		log.Printf("[atrium] this room will NOT take work from the hub (--no-launch)")
+	case o.Workspace != "":
+		log.Printf("[atrium] this room takes work from the hub. a queued launch may name a "+
+			"directory inside %s, and nowhere else", o.Workspace)
+	default:
+		log.Printf("[atrium] this room takes work from the hub. a queued launch may not name " +
+			"a directory, so each one runs where its own runner here is configured to")
+	}
+
+	// Launches run off this loop rather than inside it, so a batch that takes
+	// three minutes does not stop the heartbeat and make this room look dead
+	// while it does exactly what it was told. See `roomWorker`.
+	worker := &roomWorker{done: map[string]outcome{}}
 
 	beat := roomBeat
 	var lastMoan time.Time
 	for {
-		res, err := checkIn(ctx, client, hubURL, local, o)
+		res, err := checkIn(ctx, client, hubURL, local, o, worker.taking(o))
+		if len(res.launches) > 0 {
+			worker.run(ctx, client, hubURL, local, o, res.launches)
+		}
 		switch {
 		case err != nil:
 			// Rate limited, and never fatal. See `roomQuiet`.
@@ -235,6 +290,9 @@ func hubClient(o roomOpts) (*http.Client, string, error) {
 type checkInResult struct {
 	cards int
 	perms int
+	// launches is what the hub had waiting for this room, riding the reply to
+	// the report it was already making. The whole outward path.
+	launches []handout
 }
 
 // checkIn reads this machine's cards and pending requests, tells the hub about
@@ -244,7 +302,8 @@ type checkInResult struct {
 // collecting decisions would be a second connection to keep working over an
 // overlay, a second thing to back off on, and a second place for the two ends
 // to disagree about whether a room is present.
-func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o roomOpts) (checkInResult, error) {
+func checkIn(ctx context.Context, client *http.Client, hubURL, local string,
+	o roomOpts, taking bool) (checkInResult, error) {
 	cards, err := localCards(ctx, local)
 	if err != nil {
 		// REPORTED WITHOUT CARDS rather than skipped. A room whose own daemon
@@ -265,6 +324,15 @@ func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o r
 	body, err := json.Marshal(map[string]any{
 		"name": o.Name, "board": o.Board, "host": host,
 		"version": VersionLine(), "cards": cards, "permissions": perms,
+		// Said on every check-in rather than configured on the hub. The machine
+		// granting the hub the right to start processes on it is the one that
+		// should be able to withdraw it by restarting with a flag.
+		//
+		// `busy` is the other half and is separate on purpose: a room part way
+		// through a batch is handed nothing either, and the board should not
+		// draw that as the standing refusal.
+		"launches": !o.NoLaunch, "busy": !taking && !o.NoLaunch,
+		"workspace": o.Workspace,
 	})
 	if err != nil {
 		return out, err
@@ -286,6 +354,7 @@ func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o r
 
 	var reply struct {
 		Decisions []roomDecision `json:"decisions"`
+		Launches  []handout      `json:"launches"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&reply); err != nil {
 		// The report landed, so this is not a failed check-in, but a reply
@@ -293,6 +362,7 @@ func checkIn(ctx context.Context, client *http.Client, hubURL, local string, o r
 		// off on it is right and costs nothing: the cards are already there.
 		return out, fmt.Errorf("the hub's answer could not be read: %w", err)
 	}
+	out.launches = reply.Launches
 	for _, d := range reply.Decisions {
 		applyDecision(ctx, local, d)
 	}

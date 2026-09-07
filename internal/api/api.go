@@ -167,6 +167,17 @@ type Server struct {
 	RoomJoin   func() any
 	RoomForget func(w http.ResponseWriter, r *http.Request)
 
+	// The other direction: work queued for another machine, which rides the
+	// reply to the check-in that room was already making. Unlike the room list
+	// this IS durable, because it is this machine's own record of something it
+	// asked for rather than a copy of somebody else's card.
+	// `DispatchResult` is the room reporting back and carries its own token, so
+	// it is not gated on anything this layer knows.
+	Dispatches     func() any
+	QueueDispatch  func(body []byte) (any, error)
+	CancelDispatch func(id string) error
+	DispatchResult func(w http.ResponseWriter, r *http.Request)
+
 	BuildExport func() (any, error)
 	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
 	// is the question somebody restoring a machine actually has, and is the
@@ -249,6 +260,20 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.RoomForget != nil {
 		mux.HandleFunc("DELETE /v1/rooms/{name}", s.RoomForget)
+	}
+	if s.Dispatches != nil {
+		mux.HandleFunc("GET /v1/dispatch", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, s.Dispatches())
+		})
+	}
+	if s.QueueDispatch != nil {
+		mux.HandleFunc("POST /v1/dispatch", s.queueDispatch)
+	}
+	if s.CancelDispatch != nil {
+		mux.HandleFunc("DELETE /v1/dispatch/{id}", s.cancelDispatch)
+	}
+	if s.DispatchResult != nil {
+		mux.HandleFunc("POST /v1/dispatch/{id}/result", s.DispatchResult)
 	}
 	mux.HandleFunc("GET /v1/auth", s.getAuth)
 	mux.HandleFunc("PUT /v1/auth", s.putAuth)
@@ -1204,6 +1229,37 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Broadcast("task", toView(task))
 	writeJSON(w, http.StatusOK, toView(task))
+}
+
+// queueDispatch files a launch for another machine.
+//
+// A bad room name, a missing runner id or a queue that is already full are all
+// the caller's problem, so they come back as 400 the way `launch` does. Nothing
+// here is checked against THIS machine's harnesses: see
+// `daemon.QueueDispatch`.
+func (s *Server) queueDispatch(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	item, err := s.QueueDispatch(body)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+// cancelDispatch withdraws an item, and refuses once a room has taken it.
+func (s *Server) cancelDispatch(w http.ResponseWriter, r *http.Request) {
+	if err := s.CancelDispatch(r.PathValue("id")); err != nil {
+		// 409 rather than 400: the request was fine and the world moved. The
+		// board draws the message, which says to stop it on that machine.
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) kill(w http.ResponseWriter, r *http.Request) {

@@ -1641,6 +1641,34 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     margin-top: 4px; padding-top: 4px;
   }
+  /* A QUESTION, WHICH IS NOT A NOTE. See `askLine`.
+     Never italic and never dim: `why` owns that voice, and the whole point is
+     that these two do not read alike. It wears the warn tints instead, which
+     is what everything else meaning "somebody is waiting" wears, and the
+     border down the left is what makes it a quote rather than a sentence
+     somebody left behind. */
+  .ask {
+    font-size: var(--fs-sm); color: var(--body); margin-top: 9px;
+    padding: 6px 9px; border-left: 2px solid var(--warn);
+    background: var(--warn-bg-soft); border-radius: 0 4px 4px 0;
+    /* Free text, so it can be one long unbroken run. Without this it sets its
+       own minimum width and pushes the card wider than its lane. */
+    min-width: 0; overflow-wrap: anywhere;
+  }
+  .ask .asklabel {
+    display: block; color: var(--warn); font-size: var(--fs-xxs);
+    letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px;
+  }
+  .card .ask { font-size: var(--fs-xs); margin-top: 7px; }
+  /* On a stack row it shares the line with everything else, so the label sits
+     beside the question and the whole thing gets one line. */
+  .stackrow .who .ask {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 4px; padding: 2px 7px;
+  }
+  .stackrow .who .ask .asklabel {
+    display: inline; margin-right: 6px; margin-bottom: 0;
+  }
   /* Inside the board these follow its scale rather than a fixed size. */
 
 
@@ -4142,8 +4170,28 @@ A room is started with 'atrium room' on that machine.">?</span>
          since every other add button on this page creates something. -->
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="openRoomJoin()">add a room</button>
+      <button class="go" onclick="openDispatch('')">send work to a machine</button>
     </div>
     <div id="room-list"></div>
+
+    <!-- The queue, drawn UNDER the rooms rather than beside them, because it is
+         a different kind of fact. A room row is what that machine says about
+         itself right now and is gone when it stops saying it. This is what this
+         machine asked for, and it survives a restart because a promise that
+         evaporates is not a queue. -->
+    <div class="col-head r-section" data-pane="dispatch" style="margin:18px 0 10px">
+      <span>queued for other machines</span>
+      <span class="help" tabindex="0" data-tip="Work handed to a room, waiting for it to check in.
+
+Nothing dials a room. An item sits here until that machine makes the check-in it was already making, and rides back down the reply, so a machine behind NAT needs nothing configured.
+
+A room that is switched off is still a room you can queue for. It collects the queue when it comes back.
+
+ATRIUM DOES NOT MAKE THE DIRECTORY. An item that names none uses that machine's own runner configuration. An item that names one is only honoured by a room started with a workspace, and a directory that is not there is refused before anything starts, with the reason on the row.
+
+Once a room has taken an item there is no withdrawing it from here. Stop it on that machine.">?</span>
+    </div>
+    <div id="dispatch-list"></div>
 
   </div>
 </main>
@@ -5355,6 +5403,55 @@ A room is started with 'atrium room' on that machine.">?</span>
   </div>
 </dialog>
 
+<!-- Sending work to another machine.
+     Deliberately NOT the launch dialog with a room dropdown on it. That dialog
+     browses this daemon's filesystem, picks from this machine's runners and
+     offers to resume a conversation this machine recorded, and every one of
+     those is a fact about here rather than there. What crosses is a runner
+     name that room uses, an optional directory that room will check, and what
+     to work on. -->
+<dialog id="dispatch">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="dp-heading">send work to another machine</h2></div>
+    <button onclick="document.getElementById('dispatch').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline" style="margin:0 0 12px">
+      This sits here until that machine checks in, which is every twenty seconds, and rides
+      back down the reply. Nothing dials it. A machine that is switched off collects its queue
+      when it comes back.
+    </p>
+    <div class="field">
+      <label class="eyebrow" for="dp-room">room</label>
+      <input type="text" id="dp-room" spellcheck="false" placeholder="the name that machine reports itself under">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="dp-runner">runner</label>
+      <input type="text" id="dp-runner" spellcheck="false" value="claude">
+      <span class="hintline">Named as THAT machine names it. This board's runner list says
+        nothing about what is configured over there, so it is typed rather than picked.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="dp-dir">working directory</label>
+      <input type="text" id="dp-dir" spellcheck="false" placeholder="leave empty, unless that room has a workspace">
+      <span class="hintline" id="dp-dir-note">Atrium does not make the directory. Leave this
+        empty and that machine's own runner answers, which is the ordinary case. A room started
+        without a workspace refuses a directory outright, and one that is not there is refused
+        before anything starts.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="dp-title">title</label>
+      <input type="text" id="dp-title" spellcheck="false" placeholder="what to show on the card it makes">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="dp-prompt">first instruction</label>
+      <textarea id="dp-prompt" rows="4" spellcheck="false"
+        placeholder="what it should start on over there"></textarea>
+    </div>
+    <div class="toolbar"><button class="go big" onclick="doDispatch()">queue it</button></div>
+  </div>
+</dialog>
+
 <!-- Right click a card. Every entry here used to cost opening the detail
      dialog, reading it, and closing it again. -->
 <div id="cardmenu"></div>
@@ -6356,8 +6453,37 @@ function cardHTML(t) {
         onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
       </div>
     </div>
+    ${askLine(t)}
     ${t.why ? `<div class="why">${esc(t.why)}</div>` : ""}
   </div>`;
+}
+
+// A QUESTION THE SESSION RAISED, drawn as a question.
+//
+// It used to land in `why` and be drawn by the line below it, so a question
+// raised five seconds ago and a note typed a week ago were the same italic
+// sentence. The reading was that somebody had written a strange note, and the
+// question itself went unanswered because nothing said it was one.
+//
+// They are not the same claim. `why` is WHAT THIS CARD IS FOR: written once,
+// read later, still true tomorrow. An ask is WHAT IT NEEDS NOW, and it stops
+// being true the moment somebody answers it. So it is its own field on the
+// card, drawn in its own voice, with a label in the words a person would use.
+//
+// A question put to another SESSION says so instead. That card is still
+// stopped and still counted, and you are not the one who owes it an answer,
+// which is a different thing to be looking at.
+function askLine(t) {
+  if (!t.ask) return "";
+  const peer = !!t.ask_peer;
+  const label = peer ? `asked ${t.ask_peer}` : "this agent has a question";
+  const tip = peer
+    ? "it put this to " + t.ask_peer + " rather than to you. it is still stopped, "
+      + "so this is where you find out when no answer comes back"
+    : "the session raised this itself. saying anything to this card answers it, "
+      + "and the question comes off";
+  return `<div class="ask" title="${esc(tip)}"
+    ><span class="asklabel">${esc(label)}</span>${esc(t.ask)}</div>`;
 }
 
 // ── grouping cards by project ───────────────────────────
@@ -7104,15 +7230,39 @@ const canResume = (t) => !!t.resume_id && !t.supervised;
 const justStarted = (t) => t.waiting_reason === "started";
 
 // A session that put a QUESTION to you, as opposed to one that ran out of
-// things to do. Knowable because asking is a tool call, so the permission hook
-// sees it by name before the turn ends.
+// things to do.
 //
 // This is the distinction the board could not make: everything landed in
 // `ready` and read the same, whether somebody was blocked on your answer or an
 // agent had simply finished.
-const wasAsked = (t) => t.waiting_reason === "asked";
+//
+// TWO SOURCES, and the card asked if either says so, because they know
+// different halves of it:
+//
+//   - `waiting_reason` is INFERRED. Asking is a tool call, so the permission
+//     hook sees it by name before the turn ends. It knows that a question was
+//     asked and never what it was.
+//   - `ask` is WRITTEN, by the session itself with `atrium ask`. It carries
+//     the question.
+//
+// In the data rather than in the stylesheet, because everything else that
+// wants the difference reads it from here: the sort that ranks a question
+// above a card that merely stopped, and the alert that names what it is
+// interrupting you for.
+const wasAsked = (t) => t.waiting_reason === "asked" || (!!t.ask && !t.ask_peer);
+
+// The question went to another SESSION rather than to you.
+//
+// Still stopped, still counted, still on the board. What changes is who owes
+// it an answer, which decides whether it is yours to act on and is the whole
+// reason the peer's name is stored beside the question.
+const askedAPeer = (t) => !!t.ask && !!t.ask_peer;
+
+// How far up a list of waiting cards a question puts one. Lower sorts first.
+const askRank = (t) => wasAsked(t) ? 0 : askedAPeer(t) ? 1 : 2;
 
 function readyBecause(t) {
+  if (askedAPeer(t)) return `asked ${t.ask_peer} and is waiting on the answer`;
   if (wasAsked(t)) return "asked you a question and is waiting on the answer";
   return justStarted(t)
     ? "just came online and is waiting for its first instruction"
@@ -8194,7 +8344,11 @@ const STACK_SORTS = {
     // wrong way round for a list called "waiting on you": those twenty are not
     // waiting on anything, they ran out of things to do. The clock only
     // decides between cards of the same kind.
-    cmp: (a, b) => (wasAsked(b) ? 1 : 0) - (wasAsked(a) ? 1 : 0) ||
+    // A question you owe an answer to outranks one another session owes,
+    // which outranks any amount of waiting. The middle rank is a card stopped
+    // on a peer: it still belongs above twenty that merely finished, because
+    // a peer that never answers looks exactly like a session nobody noticed.
+    cmp: (a, b) => askRank(a) - askRank(b) ||
       (b.wait_seconds || 0) - (a.wait_seconds || 0)
   },
   status: {
@@ -8372,7 +8526,8 @@ function paintStack() {
       return want ? (t.tags || []).includes(want) : true;
     }
     return (t.display_title + " " + (t.worktree || "") + " " + (t.runner || "") + " " +
-      (t.why || "") + " " + (t.tags || []).join(" ")).toLowerCase().includes(q);
+      (t.why || "") + " " + (t.ask || "") + " " +
+      (t.tags || []).join(" ")).toLowerCase().includes(q);
   };
 
   const list = allStack.filter(t => {
@@ -8553,6 +8708,7 @@ function stackRow(t) {
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
       <span>${esc(t.worktree || "no directory")}</span>
+      ${askLine(t)}
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
     <div class="chips">
@@ -8598,9 +8754,13 @@ function stateChip(t, w) {
   // kinds and is the less useful half: an agent that stopped will wait
   // forever without costing anything, and a question has somebody's work
   // behind it.
-  const label = wasAsked(t) ? "asked you" : statusLabel(t.status);
-  return `<span class="chip ${wasAsked(t) ? "warn asked" : w ? "warn" : over(t) ? "" : "accent"}"
-    title="${esc(wasAsked(t) ? "it put a question to you and is waiting" : t.status)}"
+  const label = wasAsked(t) ? "asked you"
+    : askedAPeer(t) ? "asked a peer" : statusLabel(t.status);
+  const asking = wasAsked(t) || askedAPeer(t);
+  return `<span class="chip ${asking ? "warn asked" : w ? "warn" : over(t) ? "" : "accent"}"
+    title="${esc(wasAsked(t) ? "it put a question to you and is waiting"
+      : askedAPeer(t) ? "it put a question to " + t.ask_peer + " and is waiting on that session"
+      : t.status)}"
     >${esc(label)}${said ? "" : " " + ago(dur)}</span>`;
 }
 
@@ -14521,6 +14681,12 @@ async function refresh() {
         t.status !== "needs-permission" && !justStarted(t)), t => ({
         title: wasAsked(t)
           ? `${t.display_title} asked you something`
+          // Named for what it is. A card stopped on another session still
+          // rings, because it has stopped and a peer that never answers is a
+          // session nobody is coming back to. Calling it "asked you" would
+          // send you looking for a question that is not yours.
+          : askedAPeer(t)
+          ? `${t.display_title} is waiting on ${t.ask_peer}`
           : `${t.display_title} is ${statusLabel(t.status)}`,
         body: readyBecause(t)
       }));
@@ -14595,6 +14761,10 @@ function connect() {
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
     armRestart(why);
   });
+  // An item moved: handed to a room, started there, or refused. The queue is
+  // only drawn on the runners pane, and `renderDispatch` is a single fetch, so
+  // this redraws rather than trying to patch a row.
+  es.addEventListener("dispatch", () => { renderDispatch(); });
   es.addEventListener("overlays", e => {
     let next;
     try { next = JSON.parse(e.data) || []; } catch (err) { return; }
@@ -18795,8 +18965,131 @@ async function renderRooms() {
              own board</a> to attach to one.</div>`
         : `<div class="hintline">That room did not say where its own board is, so there is
              no way to attach to anything on it from here.</div>`}
+      ${roomWork(r)}
     </div>`;
   }).join(""));
+}
+
+// Whether this room will take work, and what a directory would be checked
+// against if it does.
+//
+// SAID ON THE ROW rather than found out from a refusal. Queueing for a machine
+// that has decided not to run anything is the mistake this line exists to stop,
+// and the workspace is the other half of it: an item that names a directory is
+// only honoured by a room that has one.
+function roomWork(r) {
+  if (!r.launches) {
+    return `<div class="hintline">This room reports its cards and does not take work.
+      It was started with <code>--no-launch</code>, so anything queued for it stays queued.</div>`;
+  }
+  if (r.busy) {
+    return `<div class="hintline">This room is starting what it was last handed, so it is
+      taking nothing else right now. Anything queued for it goes on its next check-in.</div>`;
+  }
+  const where = r.workspace
+    ? `A queued launch may name a directory inside <code>${esc(r.workspace)}</code>, and nowhere else.`
+    : `A queued launch may not name a directory, so each one runs where that machine's own
+       runner is configured to. Atrium does not make the directory.`;
+  return `<div class="hintline">${where}
+    <a href="#" onclick="openDispatch('${esc(r.name)}');return false">send work to
+    ${esc(r.name)}</a></div>`;
+}
+
+// Work this machine has handed to another one.
+//
+// Durable, unlike the room list above it, and the difference is whose fact it
+// is: a room's cards belong to that room, and this is what this hub asked for.
+// So a failed item stays drawn until it is swept, because the reason a launch
+// did not happen on a machine nobody is watching is the whole value here.
+async function renderDispatch() {
+  const el = document.getElementById("dispatch-list");
+  if (!el) return;
+  let items;
+  try {
+    items = (await api("/v1/dispatch")).dispatches || [];
+  } catch (e) {
+    // An older daemon has no queue. Nothing has ever been in it there.
+    setHTML(el, "");
+    return;
+  }
+  if (!items.length) {
+    setHTML(el, `<div class="panel"><div class="empty">
+      Nothing is queued for another machine. Hand an item to a room and it starts there the
+      next time that room checks in.
+    </div></div>`);
+    return;
+  }
+  setHTML(el, `<div class="panel">` + items.map(d => {
+    const cls = d.state === "failed" ? "warn" : d.state === "running" ? "live idle" : "";
+    // The reason it did not start, in that machine's own words, is the row.
+    // Nothing else here is worth the space if this is filled in.
+    const what = d.error
+      ? `<div class="hintline">${esc(d.error)}</div>`
+      : d.card_url
+        ? `<div class="hintline"><a href="${esc(d.card_url)}" target="_blank"
+             rel="noreferrer">open it on ${esc(d.room)}</a></div>`
+        : d.prompt
+          ? `<div class="hintline">${esc(d.prompt.slice(0, 160))}</div>`
+          : "";
+    return `<div class="roomcard" style="display:block">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="grow">${esc(d.title || d.harness)} &middot; ${esc(d.room)}</span>
+        ${d.cwd ? `<span class="by">${esc(d.cwd)}</span>` : ""}
+        <span class="chip ${cls}">${esc(d.state)}</span>
+        ${d.state === "queued"
+          // Only while it is still here. Once a room has taken it there is
+          // nothing to withdraw: the hub never dials a room, so it cannot
+          // reach in and stop what it started.
+          ? `<button onclick="cancelDispatch('${esc(d.id)}')">withdraw</button>`
+          : ""}
+      </div>
+      ${what}
+    </div>`;
+  }).join("") + `</div>`);
+}
+
+// Queue work for a machine. `room` prefills the name when it came from a row.
+function openDispatch(room) {
+  document.getElementById("dp-room").value = room || "";
+  document.getElementById("dp-runner").value = "claude";
+  document.getElementById("dp-dir").value = "";
+  document.getElementById("dp-title").value = "";
+  document.getElementById("dp-prompt").value = "";
+  document.getElementById("dispatch").showModal();
+  document.getElementById(room ? "dp-prompt" : "dp-room").focus();
+}
+
+async function doDispatch() {
+  const body = {
+    room: document.getElementById("dp-room").value.trim(),
+    harness: document.getElementById("dp-runner").value.trim(),
+    cwd: document.getElementById("dp-dir").value.trim(),
+    title: document.getElementById("dp-title").value.trim(),
+    prompt: document.getElementById("dp-prompt").value,
+  };
+  try {
+    await api("/v1/dispatch", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    tellUser("atrium", e.message);
+    return;
+  }
+  document.getElementById("dispatch").close();
+  tellUser("atrium", `queued for ${body.room}. it starts there the next time that machine
+    checks in, which is within twenty seconds if it is up.`);
+  renderDispatch();
+}
+
+async function cancelDispatch(id) {
+  try {
+    await api("/v1/dispatch/" + encodeURIComponent(id), { method: "DELETE" });
+  } catch (e) {
+    // The refusal says to stop it on that machine, which is the useful half.
+    tellUser("atrium", e.message);
+  }
+  renderDispatch();
 }
 
 // Drops a room from the list now rather than waiting for it to age out.
@@ -18931,6 +19224,7 @@ async function renderRunners() {
   // Not awaited. A room list that is slow, or a daemon too old to have the
   // endpoint, must not hold up the rest of this page.
   renderRooms();
+  renderDispatch();
   try { allHarnesses = (await api("/v1/harnesses")).harnesses || []; } catch (e) { return; }
   // Before the list is drawn: the claude row carries the count.
   await loadHooks();

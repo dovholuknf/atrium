@@ -61,11 +61,42 @@ func TestAnAskLandsOnTheCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got.Why, "authoritative") {
-		t.Fatalf("the ask is not on the card: %q", got.Why)
+	if !strings.Contains(got.Ask, "authoritative") {
+		t.Fatalf("the ask is not on the card: %q", got.Ask)
+	}
+	if got.AskAt == nil {
+		t.Fatal("the card does not say when it asked")
 	}
 	if got.Status != store.StatusNeedsInput {
 		t.Fatalf("a blocked session is filed as %q", got.Status)
+	}
+}
+
+// AN ASK DOES NOT EAT THE OPERATOR'S `WHY`.
+//
+// It used to. `why` is the field somebody writes once and reads in a week, and
+// an ask landing there destroyed the standing answer to "what was I even
+// doing" with a question that would be stale by lunchtime, with nothing to put
+// it back from. The two facts also read identically once they share a line,
+// which is the other half of the same bug.
+func TestAnAskDoesNotOverwriteWhatTheCardIsFor(t *testing.T) {
+	d := testDaemon(t)
+	task := cardFor(t, d, "has-a-why")
+	if err := d.st.SetWhy(task.ID, "port the vcpkg dependency and open a pull request"); err != nil {
+		t.Fatal(err)
+	}
+
+	askOf(t, d, HelpRequest{Agent: "has-a-why", Blocked: true, Ask: "which branch is base"})
+
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Why, "vcpkg") {
+		t.Fatalf("asking a question destroyed what the card is for: %q", got.Why)
+	}
+	if !strings.Contains(got.Ask, "base") {
+		t.Fatalf("the ask did not land: %q", got.Ask)
 	}
 }
 
@@ -93,8 +124,8 @@ func TestAWorkingSessionIsNotFiledAsWaiting(t *testing.T) {
 		t.Fatalf("a working session's card moved to %q", got.Status)
 	}
 	// And the question is still recorded, or --working is a way to say nothing.
-	if !strings.Contains(got.Why, "staging database") {
-		t.Fatalf("the ask was dropped: %q", got.Why)
+	if !strings.Contains(got.Ask, "staging database") {
+		t.Fatalf("the ask was dropped: %q", got.Ask)
 	}
 }
 
@@ -143,8 +174,8 @@ func TestALongAskIsTruncatedNotRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Why) > MaxAsk+8 {
-		t.Fatalf("the ask was stored at %d characters", len(got.Why))
+	if len(got.Ask) > MaxAsk+8 {
+		t.Fatalf("the ask was stored at %d characters", len(got.Ask))
 	}
 }
 

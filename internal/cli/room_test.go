@@ -215,7 +215,7 @@ func TestACheckInReportsRequestsAndCollectsDecisions(t *testing.T) {
 	defer hub.Close()
 
 	res, err := checkIn(context.Background(), hub.Client(), hub.URL, local,
-		roomOpts{Name: "leaf"})
+		roomOpts{Name: "leaf"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestAnUnreadableAnswerIsAFailedCheckIn(t *testing.T) {
 	defer hub.Close()
 
 	if _, err := checkIn(context.Background(), hub.Client(), hub.URL, local,
-		roomOpts{Name: "leaf"}); err == nil {
+		roomOpts{Name: "leaf"}, true); err == nil {
 		t.Fatal("a hub that answered gibberish was treated as a successful check-in")
 	}
 }
@@ -262,7 +262,7 @@ func TestARoomWithNoLocalDaemonStillReports(t *testing.T) {
 
 	// A port nothing is listening on.
 	res, err := checkIn(context.Background(), hub.Client(), hub.URL,
-		"http://127.0.0.1:1", roomOpts{Name: "leaf"})
+		"http://127.0.0.1:1", roomOpts{Name: "leaf"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

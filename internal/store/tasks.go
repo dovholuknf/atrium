@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at, org, host`
+	icon, priority, priority_at, org, host, ask, ask_at, ask_peer`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -30,13 +30,15 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		autoUntil    string
 		recapAt      string
 		priorityAt   string
+		askAt        string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
 		&t.ExternalID, &t.ResumeID, &t.Branch, &t.WindowName, &gated, &auto,
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
-		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host); err != nil {
+		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
+		&t.Ask, &askAt, &t.AskPeer); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -91,6 +93,13 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 			return nil, fmt.Errorf("task %s priority_at: %w", t.ID, err)
 		}
 		t.PriorityAt = &p
+	}
+	if askAt != "" {
+		a, err := parseTS(askAt)
+		if err != nil {
+			return nil, fmt.Errorf("task %s ask_at: %w", t.ID, err)
+		}
+		t.AskAt = &a
 	}
 	t.WireName = wire.String
 	t.Overrides = map[string]string{}
@@ -292,13 +301,16 @@ func (s *Store) insertTask(t *Task) error {
 	// caller that knew which palette this session should wear had to create
 	// the card and then call `SetTheme`, and everything that forgot the second
 	// call produced a card that came up in the default and stayed there.
+	//
+	// A new card has no ask and no recap. Both are things a session says once
+	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
 		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "",
-		t.Org, t.Host)
+		t.Org, t.Host, "", "", "")
 	return err
 }
 

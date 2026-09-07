@@ -267,7 +267,9 @@ func (st *Store) DueSources(at time.Time) ([]*Source, error) {
 	return out, nil
 }
 
-// firstLineOf keeps a source's failure to one readable line on a row.
+// firstLineOf keeps a failure to one readable line on a row. Shared with the
+// dispatch queue, which draws a room's refusal the same way for the same
+// reason.
 func firstLineOf(s string) string {
 	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
 		s = s[:i]

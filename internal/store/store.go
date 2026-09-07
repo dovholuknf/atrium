@@ -230,6 +230,27 @@ type Task struct {
 	// the only party that knows what happened. Bounded on the way in.
 	Recap   string     `json:"recap,omitempty"`
 	RecapAt *time.Time `json:"recap_at,omitempty"`
+	// Ask is what this session needs RIGHT NOW, and AskAt is when it said so.
+	//
+	// Its own field rather than `Why`, which is where an ask used to land.
+	// Those are two different questions that read identically once they share
+	// a line: `Why` is what the card is FOR, written once by the operator and
+	// read in a week, and an ask is a question outstanding this minute. An
+	// ask writing over it lost the standing answer to "what was I even doing"
+	// to a question that would be stale by lunchtime, and nothing could put it
+	// back.
+	//
+	// Cleared when the ask is answered, so a card holding one means somebody
+	// still owes it something.
+	Ask   string     `json:"ask,omitempty"`
+	AskAt *time.Time `json:"ask_at,omitempty"`
+	// AskPeer is the session an ask was routed to, or empty when it is on the
+	// board for a human.
+	//
+	// The difference decides who is on the hook. A card that is stopped
+	// waiting on another session should not read as one waiting on you, and
+	// with only the ask stored there was no way to draw them apart.
+	AskPeer string `json:"ask_peer,omitempty"`
 	// Note is what you want to say next, written down while the agent is still
 	// working and not sent until you say.
 	//

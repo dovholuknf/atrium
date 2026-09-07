@@ -1748,3 +1748,163 @@ one the window was opened on.
 **Expect** step 2 is refused, saying B already has a window. At step 3 the board LETS GO of card C, its pane
 goes back to nothing attached, and it says so. Neither case ends with two live views on one terminal.
 
+
+## T. A session asking another session for help
+
+Two gated sessions on the board, on the same machine. `atrium peers` from either one names the other, and the
+handle it prints is what these steps mean by `<them>` and `<you>`.
+
+### T1. A question reads as a question, not as a note
+
+**Steps**
+
+1. Put something in `why am I doing this` on a card, from the board. A sentence you will recognise.
+2. In that session: `atrium ask --working "which of these two schemas is authoritative"`
+
+**Expect** the card shows BOTH: the question labelled **this agent has a question**, and the `why` you typed,
+still there and unchanged. The card does NOT move, because `--working` says the session is carrying on. If the
+`why` is gone, the ask is writing to the wrong field again.
+
+### T2. A blocked ask moves the card and says what it is waiting for
+
+**Steps** in a session: `atrium ask "which branch is base"`
+
+**Expect** the card moves to waiting, wears an `asked you` chip, and sorts ABOVE cards that merely finished
+their turn under `waiting on you`. The desktop alert, if alerts are on, says the card asked you something
+rather than that it is ready.
+
+### T3. Saying anything to the card answers it
+
+**Steps** send a message to that card from the board.
+
+**Expect** the question comes off the card. Typing the same answer into the TERMINAL instead must leave it
+there: atrium cannot see the terminal, and pretending otherwise would clear questions nobody answered.
+
+### T4. A question routed to a peer
+
+**Steps** in one session: `atrium ask --peer <them> "which branch is base for the release notes"`
+
+**Expect**
+
+- Your card says **asked `<them>`** rather than "this agent has a question", and shows an `asked a peer` chip.
+- Nothing was typed into the other session's terminal. Watch it: the question must NOT appear at its prompt.
+- The other session receives it on its next tool call or at the end of its turn, with `atrium answer <you>` in
+  the message.
+
+### T5. A handle nobody has refuses, and teaches
+
+**Steps** `atrium ask --peer nobody-here "anything"`
+
+**Expect** it refuses, prints the handles that WOULD have worked, and says nothing was asked. Then check the
+card: it must not be asking anything and must not have moved to waiting. A refused route that still filed the
+card would have it claiming a peer owes it an answer when nobody does.
+
+### T6. The answer coming back
+
+**Steps** in the other session: `atrium answer <you> "base is main"`
+
+**Expect** the asker's card stops asking. The answer is queued for it, arrives with the original question
+quoted back, and the card returns to running when the session actually reads it, not before.
+
+### T7. A finished card is not still asking
+
+**Steps** ask something, then `atrium finish "worked it out on my own"` in the same session.
+
+**Expect** the card is in done with the recap, and the question is gone. A card in done that is still asking
+makes the field meaningless.
+
+
+## U. Sending work to another machine
+
+The outward half of federation. `docs/remote-launch.md`. All of it needs two atriums, so the second one can be
+another daemon on this machine with its own database and port, started as a room pointing at the first.
+
+Set up once, on the machine that will be the room:
+
+```powershell
+atrium daemon --http :7878 --addr :7877 --db $env:TEMP\room.db --location-file $env:TEMP\room.json
+atrium room --hub http://localhost:7778 --name testroom --board http://localhost:7878 --local http://localhost:7878
+```
+
+### U1. A queued item starts on the other machine
+
+**Steps**
+
+1. On the hub: `atrium dispatch to testroom --runner claude --prompt "say hello and stop"`.
+2. Watch the room's log.
+
+**Expect** within twenty seconds the room logs `started claude for the hub`, a card appears on the room's own
+board at :7878, and `atrium dispatch list --all` on the hub shows the item as `running` with a card id.
+
+**Expect** no card is created on the HUB. The work is on the other machine and the hub keeps a pointer, never a
+copy.
+
+### U2. A directory that is not there fails immediately, with the reason
+
+**Steps**
+
+1. Restart the room with `--workspace $env:TEMP`.
+2. `atrium dispatch to testroom --runner claude --dir $env:TEMP\nothing-here`.
+
+**Expect** the item goes `failed` within twenty seconds and the row says `is not a directory on this machine.
+atrium does not create worktrees`. Nothing starts. This is the one that matters: a card that fails readably
+beats one that starts in the wrong place.
+
+### U3. A room with no workspace refuses any directory the hub names
+
+**Steps**
+
+1. Restart the room WITHOUT `--workspace`.
+2. `atrium dispatch to testroom --runner claude --dir $env:TEMP`.
+
+**Expect** `failed`, and the reason names `--workspace`. A hub may not name a directory on a machine that has
+not said it may.
+
+### U4. A directory outside the workspace is refused
+
+**Steps** With the room on `--workspace $env:TEMP\inside`, dispatch with `--dir $env:TEMP\outside`.
+
+**Expect** `failed`, saying it is not inside the workspace. Try the sibling case too: a workspace of
+`$env:TEMP\work` and a directory of `$env:TEMP\work-elsewhere` must be refused.
+
+### U5. A room started with --no-launch is handed nothing
+
+**Steps**
+
+1. Restart the room with `--no-launch`.
+2. Queue an item for it and wait a minute.
+
+**Expect** the item stays `queued`, not `failed`. The rooms pane says that room takes no work. The item's
+attempts must still be zero: a room that was never going to run it does not get to spend its retries.
+
+### U6. An item cannot be withdrawn once a room has taken it
+
+**Steps** Queue an item, wait for the room to claim it, then `atrium dispatch cancel <item>`.
+
+**Expect** a refusal that says to stop it on that machine. Cancelling BEFORE the room checks in must succeed,
+and the withdrawn item must never be handed out afterwards.
+
+### U7. The queue survives a hub restart
+
+**Steps**
+
+1. Stop the room, so nothing collects.
+2. Queue two items for it. `atrium stop` the hub, start it again.
+3. `atrium dispatch list`.
+
+**Expect** both items still there and still `queued`. Start the room and they run. A promise that evaporates on
+restart is not a queue, which is why this table is durable while the room list beside it is not.
+
+### U8. A stale result is refused rather than overwriting
+
+**Steps**
+
+```powershell
+curl.exe -s -X POST http://localhost:7778/v1/dispatch/<item>/result `
+  -H "Content-Type: application/json" -d '{\"token\":\"nonsense\",\"ok\":true,\"card_id\":\"x\"}'
+```
+
+**Expect** 409, and the row unchanged. The token is the whole of the authorization and there is no room
+identity to trust. If this ever answers 200, anything that can reach the board can mark somebody's queue item
+started.
+
