@@ -90,19 +90,28 @@ for (const [fn, what] of keyed) {
   }
 }
 
-// Rule 4: listeners are wired once per node.
+// Rule 4: nothing wires listeners onto board nodes after a paint.
 //
 // A card that was already on the board is the SAME ELEMENT after a repaint,
-// with the listeners it was given the first time still on it. `wireDragging`
-// runs after every render, so without a guard it adds a second copy of every
-// handler each time, and a `drop` running twice files the same move twice
-// against ranks that have already moved.
-const wire = script.slice(script.indexOf("function wireDragging() {"),
-  script.indexOf("function acceptsDrop("));
-if ((wire.match(/__dragWired/g) || []).length < 4) {
-  fail("wireDragging does not guard against re-wiring a node it has already wired. " +
-    "The board is reconciled now, so the same card comes back with its listeners " +
-    "still attached and every handler is added again.");
+// with the listeners it was given the first time still on it. So a wiring pass
+// that runs after every render adds a second copy of every handler each time,
+// and a handler running twice acts twice.
+//
+// This rule used to name `wireDragging`, which was that pass and which carried
+// a `__dragWired` flag per node to survive the reconciler. Dragging a card is
+// gone, and so is the pass: every handler a card has is now an attribute in
+// its own markup, which comes back with the card and cannot double.
+//
+// The rule is kept, aimed at the shape rather than at the function, because
+// the hazard is a property of the reconciler and not of dragging. The next
+// person to reach for a post-render wiring pass gets told here. A per-node
+// flag or a `dataset` marker is what makes one safe, so either satisfies this.
+const wiring = /querySelectorAll\(\s*["'`]#board[^)]*\)\s*\.forEach\([^)]*=>\s*\{[^]*?addEventListener/;
+if (wiring.test(script) && !/__\w*Wired|dataset\.\w*wired/i.test(script)) {
+  fail("something walks #board after a render and calls addEventListener with no " +
+    "per-node guard. The board is reconciled, so a card that was already there comes " +
+    "back with its listeners still attached and gets a second copy of every one. Mark " +
+    "the node, or put the handler in the markup where it belongs.");
 }
 
 if (bad) {
