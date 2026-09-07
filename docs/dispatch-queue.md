@@ -231,3 +231,45 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   the window you clicked in, which is the one that now does not have the terminal. It belongs in the window
   that was raised, which is where you are about to be looking. `raiseToasts` already moves the toast host
   between elements, so the machinery for putting a toast somewhere specific exists.
+
+---
+
+## H. How to hand back a parallel run
+
+**Not a feature. A working rule that does not exist yet, and the thing tonight most obviously lacked.**
+
+Twenty-six agents finished at once and the handover was improvised: a stack rank written from what the
+operator had complained about that day, then eight worktrees copied file by file into the main checkout. It
+worked, it was not repeatable, and two things about it were wrong in ways worth writing down before they are
+forgotten.
+
+**Merge cost was decided by file overlap, not by topic.** The batch that landed cleanly was chosen on one
+property: nothing in it touched `internal/api/web/index.html`. Eight worktrees, three conflicts, all of them
+append-shaped. That grouping is computable rather than judged, from `git status --porcelain` in every worktree
+intersected against the others, and it was run AFTER the review had started. Run first, it would have said that
+thirteen sessions were queued on one file, which is the single most useful fact about that run.
+
+**Copying files into the tree asks for a trust that a patch does not.** A numbered series applied one at a
+time, each applying alone, each green under `scripts/ci.sh` alone, each reverting alone, can be judged. A
+directory of copied files cannot. The unattended workflow already produces patch series, so this is a shape
+that exists rather than machinery to build.
+
+The candidate rule, to be argued with rather than adopted:
+
+> When a parallel run finishes: survey what every worktree touched and where they collide, before anything
+> else. Stack rank for review by what will be felt first, what blocks the operator, and what can wait, saying
+> which is which. Group into chunks by conflict surface rather than by topic. Adapt each chunk onto main as a
+> numbered patch that applies alone, passes ci alone, and reverts alone. Hand over the table and the order,
+> and apply nothing until told.
+
+**Two things it has to answer, because both bit tonight:**
+
+- **The top of a ranking is not derivable from the code.** The first three items were ranked by what the
+  operator had sworn at that afternoon. Without that input a ranking degrades to "biggest diff first", which
+  is worthless. So the rule needs a way to ask for it, or to say plainly when it is missing.
+- **Chunking moves a decision from the operator to whoever chunks.** A bad change rides into a chunk of good
+  ones and gets approved with them. The guard is that a chunk is only a chunk if it reverts on its own: two
+  things that cannot be separated are one patch, and the description has to say why they could not be.
+
+**Where it lives is also open.** In this repo it is a rule about atrium's own backlog. In `dotagents` it would
+apply to every repository the operator runs agents against, which is the direction this is going.

@@ -126,6 +126,27 @@ func (r *ringBuffer) SetWidth(cols int) {
 	if last := r.marks[len(r.marks)-1]; last.cols == cols {
 		return
 	}
+
+	// A WIDTH NOTHING WAS WRITTEN AT DESCRIBES NOTHING, so it is not a mark.
+	//
+	// This cost an hour of somebody's scrollback. Popping a window out and
+	// closing it again changes the agreed size twice in a moment, because the
+	// smallest attached viewer decides. If no output arrived in between, the
+	// buffer went from two hundred columns to eighty and back to two hundred
+	// with every byte still composed for two hundred, and a mark at each step
+	// cut the replay to whatever came after the last one. The operator
+	// reattached to an hour-old session and found one page.
+	//
+	// So a mark laid at the position the previous one sits at REPLACES it, and
+	// if that makes the last two agree they merge, which puts the earlier run
+	// back. Nothing is guessed: the bytes before that position really were
+	// composed at the width now in force.
+	if last := len(r.marks) - 1; r.marks[last].at == r.written && last > 0 {
+		r.marks = r.marks[:last]
+		if r.marks[len(r.marks)-1].cols == cols {
+			return
+		}
+	}
 	r.marks = append(r.marks, widthMark{at: r.written, cols: cols})
 	r.forgetOldMarks()
 }

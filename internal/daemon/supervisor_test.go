@@ -199,6 +199,63 @@ func TestAgreeingOnTheSizeAgainDoesNotSplitTheRun(t *testing.T) {
 	}
 }
 
+// THE ONE THAT COST AN HOUR OF SCROLLBACK.
+//
+// Popping a window out and closing it changes the agreed size twice in a
+// moment, because the smallest attached viewer decides. No output arrives in
+// between. Every byte is still composed for the width that came back, and a
+// mark at each step cut the replay to whatever followed the last one: the
+// operator reattached to an hour-old session and found one page.
+func TestAWidthNothingWasWrittenAtIsNotAMark(t *testing.T) {
+	r := newRing(1024, 200)
+	r.Write([]byte("an hour of two hundred column output\n"))
+	// A narrow window opens and closes without the runner saying anything.
+	r.SetWidth(80)
+	r.SetWidth(200)
+
+	got, dropped := r.SnapshotAt(200)
+	if string(got) != "an hour of two hundred column output\n" {
+		t.Fatalf("a width nothing was written at threw away the scrollback: %q", got)
+	}
+	if dropped {
+		t.Fatal("claimed to have dropped output that was never composed at another width")
+	}
+}
+
+// And the same when it happens repeatedly, which is what a viewer attaching and
+// detaching in a loop looks like.
+func TestRepeatedEmptyWidthChangesKeepTheRun(t *testing.T) {
+	r := newRing(1024, 200)
+	r.Write([]byte("kept\n"))
+	for i := 0; i < 5; i++ {
+		r.SetWidth(80)
+		r.SetWidth(120)
+		r.SetWidth(200)
+	}
+	got, _ := r.SnapshotAt(200)
+	if string(got) != "kept\n" {
+		t.Fatalf("five empty round trips lost the output: %q", got)
+	}
+}
+
+// The guard must not eat a width that output WAS written at. Narrow, write,
+// then wide is a real hole and the earlier run is genuinely unreadable now.
+func TestAWidthThatWasWrittenAtIsStillAMark(t *testing.T) {
+	r := newRing(1024, 200)
+	r.Write([]byte("wide\n"))
+	r.SetWidth(80)
+	r.Write([]byte("narrow\n"))
+	r.SetWidth(200)
+
+	got, dropped := r.SnapshotAt(200)
+	if strings.Contains(string(got), "wide") {
+		t.Fatalf("spliced across output composed at eighty columns: %q", got)
+	}
+	if !dropped {
+		t.Fatal("dropped a real stretch of output and did not say so")
+	}
+}
+
 // A day of dragging a window must not leave a mark per drag describing bytes
 // that were overwritten hours ago.
 func TestWidthMarksDoNotGrowWithTheSession(t *testing.T) {

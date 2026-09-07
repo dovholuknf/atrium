@@ -206,14 +206,92 @@ if (fitAt < 0) {
   fail("there is no onTermResize. The layout handler is where a fit gets its position wrong.");
 } else {
   const body = html.slice(fitAt, fitAt + 1400);
-  if (!/term\.cols === wasCols && term\.rows === wasRows/.test(body)) {
+  if (!/wasCols \|\| term\.rows !== wasRows/.test(body)) {
     fail("onTermResize does not check whether the size actually changed. A fit that changes " +
       "nothing still reaches xterm's resize, which snaps a scrolled-up terminal to the bottom.");
   }
-  if (!/scrollToLine\(/.test(body)) {
+  if (!/holdScrollAt\(/.test(body)) {
     fail("onTermResize never restores the viewport. A resize that changes the row count clamps " +
       "to the bottom, so a terminal somebody scrolled up loses their place on any layout event.");
   }
+}
+
+// Rule 10: xterm does not get to decide when input scrolls.
+//
+// `scrollOnUserInput` defaults to true and fires on more than typing: focus,
+// and a click into the terminal. Scrolling up and clicking anywhere put the
+// viewport back at the end, and no amount of fixing the resize path touches it.
+// `sendInput` is where atrium does this deliberately, and the reason it is
+// there rather than here is that a paste and a dropped file never reach xterm.
+if (/new Terminal\(/.test(html) && !/scrollOnUserInput:\s*false/.test(html)) {
+  fail("the terminal is built without `scrollOnUserInput: false`, so xterm scrolls to the " +
+    "bottom on focus and on a click. atrium already scrolls on input in sendInput, which is " +
+    "the path that also covers a paste and a dropped file.");
+}
+
+// Rule 11: focusing the terminal does not take the viewport with it.
+//
+// THE CAUSE OF FOUR FAILED FIXES. xterm keeps a hidden textarea for keystrokes
+// and moves it to the CURSOR, which is at the bottom. Browsers scroll a focused
+// element into view, so clicking the terminal or returning to the window took
+// the scroll position to the end. Nothing calls a scroll function, which is why
+// patching every scroll API found nothing.
+//
+// The position is recorded at the two moments before a focus can happen, a
+// pointer going down and the window leaving, and put back after.
+// Rule 12: a focus report is not a keystroke.
+//
+// THE ONE THAT COST A WHOLE EVENING. Claude Code asks to be told about focus
+// and about the mouse, and xterm answers by sending escape sequences THROUGH
+// `onData`, the same channel as typing: `ESC[I` on focus, `ESC[O` on blur, a
+// coordinate report per click.
+//
+// `sendInput` scrolls to the bottom on input, so clicking in a terminal you had
+// scrolled up threw your position away, and every theory blamed the browser,
+// xterm, the reconciler and the resize path in turn. `noteTyped` has the same
+// exposure from the other side: it abandons its buffer on anything unprintable,
+// so a focus change silently switched off path completion.
+if (!/function isAutoReport\(/.test(html)) {
+  fail("nothing tells a focus or mouse report apart from a keystroke. xterm delivers both on " +
+    "`onData`, so a click becomes input, and input scrolls to the bottom.");
+} else {
+  const at = html.indexOf("term.onData(");
+  const body = at < 0 ? "" : html.slice(at, at + 300);
+  if (!/isAutoReport\(d\)/.test(body)) {
+    fail("the onData handler does not check `isAutoReport`. A mouse or focus report reaching " +
+      "sendInput as ordinary input is what makes a click jump to the bottom.");
+  }
+  if (!/function sendInput\(text, quiet\)/.test(html)) {
+    fail("sendInput cannot be told the input was not typed, so it scrolls for xterm's own " +
+      "focus and mouse reports.");
+  }
+}
+
+if (!/\.xterm-helper-textarea\s*\{[^}]*top:\s*0\s*!important/.test(html)) {
+  fail("xterm's helper textarea is not pinned. It is a 20x20 box parked at the CURSOR, and a " +
+    "browser scrolls a focused element into view, so clicking the terminal, returning to the " +
+    "window or closing the find bar all take the viewport to the bottom. Nothing calls a scroll " +
+    "function, so this cannot be fixed anywhere in the scroll code: four attempts proved it.");
+}
+
+// And the focuses atrium performs itself do not scroll either.
+//
+// Belt to the pin's braces, and cheap. `closeFind` is the one that bit: search
+// for something above the fold, press escape, and the match was gone.
+if (!/preventScroll/.test(html)) {
+  fail("something focuses the terminal without `preventScroll`. Use `focusTerm`, which focuses " +
+    "xterm's textarea without asking the browser to scroll to it.");
+}
+
+// And the position atrium holds must be releasable by hand.
+//
+// `holdScrollAt` re-asserts where you were for a moment, because the runner
+// repaints when told its new size and that repaint arrives after any single
+// restore. A hold with no release fights the wheel.
+if (/function holdScrollAt\(/.test(html) && !/releaseScrollHold/.test(html)) {
+  fail("the scroll hold has no release. It re-asserts a position for several hundred " +
+    "milliseconds, so a wheel or a scrollbar drag during that window is fought rather than " +
+    "obeyed.");
 }
 
 if (bad) {
