@@ -19,6 +19,17 @@
      xterm's buffer, which is the only place that text exists.
      addon-search 0.15.0, from the same wave as the rest. -->
 <script src="/vendor/xterm-addon-search.js"></script>
+<!-- A URL in the output, clickable. Without this the address of the board
+     itself is text you have to retype into a bar, which is what a terminal
+     printing `http://localhost:7778/#term=<id>` is for.
+     addon-web-links 0.11.0, from the same wave as the rest.
+     LOADED BEFORE the file-path provider is registered, and that ordering is
+     the whole reason these two were built together. xterm asks every provider
+     about a row and then drops the links that overlap ones an EARLIER provider
+     already claimed, so whichever registers first owns any run of text both
+     want. A URL is the one with a scheme in it and the more specific claim, so
+     it goes first. -->
+<script src="/vendor/xterm-addon-web-links.js"></script>
 <style>
   :root {
     /* THE PALETTE, AND WHY HALF OF IT IS SPELLED AS CHANNELS.
@@ -14808,6 +14819,14 @@ function openTerm(task) {
   term.open(screen);
   useWebgl(term);
   useSearch(term);
+  // THESE TWO ARE IN THIS ORDER ON PURPOSE. Both linkify the terminal, and
+  // xterm gives a disputed run of text to whichever provider registered first,
+  // so a URL wins over a path that matched inside it.
+  useWebLinks(term);
+  // A path in the output is a path you can click. The card comes with it,
+  // because what makes a word a link is whether it is a file in that card's
+  // directory, and nothing else.
+  useFileLinks(term, task);
   // Drop a file onto the pane. The same pipeline as paste, because whatever
   // gesture produced the bytes, the bytes go to the same place.
   wireTerminalDrops(screen);
@@ -15708,6 +15727,274 @@ function useWebgl(t) {
   }
 }
 
+// ── clicking a path in the terminal ─────────────────────
+//
+// A path that scrolled past is a path you retype. The terminal knows where it
+// is and the daemon knows what the card's directory holds, so between them a
+// filename can be a link, and clicking it opens the file.
+//
+// THE HARD PART IS NOT UNDERLINING EVERYTHING. A terminal is full of things
+// shaped like a filename and not one: `v2.1.263`, `zrok.io`, `foo.bar()`,
+// `Opus 5`. Every rule that separates them by looking is wrong somewhere, and
+// wrong here means a page of noise with a line under half the words.
+//
+// So nothing here decides. It finds candidates and asks `files/probe`, which
+// answers which of them exist inside the card, and the rule becomes "it is a
+// link if it is a file". The answer is CACHED PER CARD, hit and miss alike,
+// because the same word turns up on a hundred lines and the point of asking
+// is that it is asked once.
+//
+// Where a click goes is the other half, and it is not `files/open`. That
+// starts an editor ON THE DAEMON'S MACHINE, which over a share is a window on
+// a screen nobody is sitting in front of. These open atrium's own viewer,
+// which opens where the click happened, and that is the whole reason the
+// board is worth using from another machine.
+
+// What the daemon has already answered, for one card. A miss is remembered as
+// firmly as a hit: `the` is not a file, and it should be asked about once
+// rather than once per line it appears on.
+let probeCache = { id: "", known: new Map() };
+
+// The cache for a card, emptied if the card changed. Switching cards changes
+// which directory a word is measured against, so nothing carries over.
+function probeKnown(id) {
+  if (probeCache.id !== id) probeCache = { id, known: new Map() };
+  return probeCache.known;
+}
+
+// The daemon's own bound, repeated here so a wide line is cut before it is
+// sent rather than silently truncated on arrival.
+const probeBatch = 64;
+
+// How far a logical line may be chased across wrapped rows. A path is a
+// reason to join rows together; a screenful of unbroken output is not.
+const probeWrapRows = 64;
+
+function useFileLinks(t, task) {
+  if (!task || !task.worktree) return;
+  const id = task.id;
+  try {
+    t.registerLinkProvider({
+      provideLinks: (y, done) => provideFileLinks(t, id, y, done)
+    });
+  } catch (e) {
+    // Not worth a word to the operator. What they lose is an underline.
+    console.warn("path links would not register:", e);
+  }
+}
+
+// Every path on one row, once the daemon has agreed they are paths.
+//
+// xterm asks per row and asks on hover, which is what makes a batch the right
+// shape: the answer for the whole row is fetched in one request the first time
+// the pointer crosses it, and never again.
+async function provideFileLinks(t, id, y, done) {
+  // The pane may have moved to another card while this was in flight, and a
+  // link that opens a file from the previous card is worse than no link.
+  if (!termTask || termTask.id !== id) { done(undefined); return; }
+  const line = logicalLine(t, y);
+  if (!line) { done(undefined); return; }
+
+  const known = probeKnown(id);
+  const spans = [], ask = [];
+  for (const c of fileCandidates(line.text)) {
+    const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
+    // Only what is on the row being asked about. The line is joined across
+    // wraps so a path broken over two rows is still whole, but a joined line
+    // can be thousands of characters and probing all of it would ask about
+    // words nobody is pointing at.
+    if (y < start.y || y > end.y) continue;
+    spans.push({ token: c.token, range: { start, end } });
+    if (!known.has(c.token) && !ask.includes(c.token)) ask.push(c.token);
+  }
+  if (ask.length) await askProbe(id, ask);
+  if (!termTask || termTask.id !== id) { done(undefined); return; }
+
+  const links = [];
+  for (const s of spans) {
+    const hit = probeKnown(id).get(s.token);
+    if (hit) links.push(fileLink(id, s.range, hit));
+  }
+  done(links.length ? links : undefined);
+}
+
+// Asks the daemon, and remembers both answers.
+//
+// A failure is silent and cached as nothing, so the terminal behaves exactly
+// as it did before any of this existed. A decoration that cannot be drawn is
+// not something to interrupt somebody about.
+async function askProbe(id, paths) {
+  const batch = paths.slice(0, probeBatch);
+  let found = [];
+  try {
+    const r = await api(`/v1/tasks/${id}/files/probe`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths: batch })
+    });
+    found = r.found || [];
+  } catch (e) {
+    return;
+  }
+  const hits = new Map(found.map(h => [h.path, h]));
+  const known = probeKnown(id);
+  // EVERY path asked about is written down, not just the ones that came back.
+  // Remembering only the hits means every word that is not a file is asked
+  // about again on the next hover, which is most of the words.
+  for (const p of batch) known.set(p, hits.get(p) || null);
+}
+
+// One link, with somewhere to go and something to say on the way.
+function fileLink(id, range, hit) {
+  return {
+    range,
+    text: hit.rel,
+    activate: (ev) => {
+      ev.preventDefault();
+      hideTip();
+      openFromTerminal(id, hit);
+    },
+    hover: (ev) => tipSoon(() => placeTip(pointerAnchor(ev), hit.dir
+      ? hit.rel + "/\nopens the file browser here"
+      : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser")),
+    leave: () => hideTip()
+  };
+}
+
+// Where a clicked path opens, WHICH IS HERE.
+//
+// `files/open` is deliberately not reachable from this. It runs a command on
+// the daemon's machine, so over a share it opens a window beside the agent
+// and not beside the person who clicked. The text editor in this page and the
+// file browser in this pane are the two things that open where you are.
+function openFromTerminal(id, hit) {
+  if (!termTask || termTask.id !== id) return;
+  // THE DRAWER FIRST, for a file as well as for a directory.
+  //
+  // The editor is a panel INSIDE the drawer, so opening it while the drawer
+  // was hidden put the file on screen nowhere: it was read, the box was
+  // filled in, and nothing appeared. It stayed invisible until something else
+  // opened the drawer, and then a file clicked minutes earlier turned up. So
+  // the click read as doing nothing and the next click read as opening the
+  // wrong file.
+  setTermFiles(true);
+  if (hit.dir) {
+    loadFiles(hit.rel, termFilesCtx());
+    return;
+  }
+  // The directory the file is in, drawn behind the editor. Closing the editor
+  // then leaves the drawer somewhere related to what was clicked, rather than
+  // wherever it happened to be last.
+  const cut = hit.rel.lastIndexOf("/");
+  loadFiles(cut > 0 ? hit.rel.slice(0, cut) : "", termFilesCtx());
+  openEditor(id, hit.rel);
+}
+
+// placeTip measures whatever it is explaining, and a link has nothing to
+// measure: the terminal is drawn on a canvas, so there is no element under the
+// underline. The pointer stands in for one.
+function pointerAnchor(ev) {
+  const x = ev.clientX, y = ev.clientY;
+  return {
+    getBoundingClientRect: () => ({
+      left: x, right: x, top: y - 8, bottom: y + 8, width: 0, height: 16
+    })
+  };
+}
+
+// One logical line, joined back together across the rows it wrapped onto.
+//
+// A long path is exactly the thing that wraps, and half of one probes as
+// nothing. Rows are recorded with the offset each starts at, so a position in
+// the joined text can be turned back into a cell.
+//
+// `translateToString(false)` is asked for without trimming ON PURPOSE: it pads
+// every row out to the terminal's width, so an offset in the joined text maps
+// to a column by arithmetic, and a token continued on the next row is joined
+// with nothing between it.
+function logicalLine(t, y) {
+  const buf = t.buffer.active;
+  let top = y;
+  for (let n = 0; n < probeWrapRows && top > 1; n++) {
+    const l = buf.getLine(top - 1);
+    if (!l || !l.isWrapped) break;
+    top--;
+  }
+  const rows = [];
+  let text = "";
+  for (let at = top; at < top + probeWrapRows; at++) {
+    const l = buf.getLine(at - 1);
+    if (!l) break;
+    if (at !== top && !l.isWrapped) break;
+    const s = l.translateToString(false);
+    rows.push({ y: at, at: text.length, len: s.length });
+    text += s;
+  }
+  return rows.length ? { rows, text } : null;
+}
+
+// An offset in the joined text, as the cell it is in. xterm counts columns
+// from one and both ends of a range are inclusive.
+function cellAt(line, off) {
+  for (const r of line.rows) {
+    if (off < r.at + r.len) return { x: off - r.at + 1, y: r.y };
+  }
+  const last = line.rows[line.rows.length - 1];
+  return { x: Math.max(1, last.len), y: last.y };
+}
+
+// Every word on a line that is worth asking the daemon about.
+//
+// Tokens are cut at whitespace and at the brackets and quotes that wrap a path
+// in prose, in a shell line or in a stack trace. What survives is TRIMMED
+// rather than rejected, because the characters around a path are not part of
+// it: `"internal/api/api.go",` is a path with three characters of punctuation
+// stuck to it, and probing it whole finds nothing.
+function fileCandidates(text) {
+  const out = [];
+  const re = /[^\s"'`()\[\]{}<>,;|]+/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const lead = (m[0].match(/^[('"`\[{<*]+/) || [""])[0].length;
+    const token = trimCandidate(m[0].slice(lead));
+    if (!token || !worthProbing(token)) continue;
+    out.push({ token, start: m.index + lead, end: m.index + lead + token.length });
+  }
+  return out;
+}
+
+// The punctuation stuck to the end of a path, taken off.
+function trimCandidate(tok) {
+  tok = tok.replace(/[)'"`\]}>]+$/, "");
+  // `internal/api/api.go:248:1`, which is how a compiler, a vet run and a test
+  // failure all say where they are. The line number is not part of the name,
+  // and leaving it on means none of those ever link.
+  //
+  // The TRAILING COLON is matched here rather than left to the sentence
+  // punctuation below, because the two cannot be applied in the other order:
+  // `api.go:248:1:` ends in a colon, so stripping punctuation first leaves
+  // `api.go:248:1` and the line number is then past its last chance to go.
+  tok = tok.replace(/:\d+(:\d+)?:?$/, "");
+  // Sentence punctuation last, since a full stop can follow a line number.
+  return tok.replace(/[.,:;!?]+$/, "");
+}
+
+// A cheap refusal before the daemon is asked. NOT a judgement about what looks
+// like a path: that is the daemon's job and the reason it has one. This only
+// drops what could not be a file in this card under any reading, so that a
+// line of English costs one small request instead of one per word.
+function worthProbing(tok) {
+  if (tok.length < 2 || tok.length > 512) return false;
+  // A flag.
+  if (tok[0] === "-") return false;
+  // A URL. Its host resembles a filename and is not one, which is most of
+  // what this endpoint exists to refuse, but there is no need to ask.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(tok)) return false;
+  // A version, a duration, a hash, a count. Nothing to open.
+  if (!/[a-zA-Z_]/.test(tok)) return false;
+  // Characters a path cannot hold on either platform.
+  if (/[*?<>|]/.test(tok)) return false;
+  return true;
+}
 // ── finding something in the scrollback ─────────────────────────────────────
 //
 // xterm's own search addon rather than anything written here. It walks the
@@ -15742,6 +16029,63 @@ function useSearch(t) {
     console.warn("the search addon would not load:", e);
     termSearch = null;
   }
+}
+
+// ── a URL in the output, clickable ──────────────────────
+//
+// The board prints its own address at people and they could not click it. Over
+// a share the address is the one thing you most want out of the terminal and
+// the least want to retype, so it was copied by eye into a bar.
+//
+// xterm's own addon rather than a fourth matcher here. Its regular expression
+// is the one part of this nobody should be writing twice, and the file-path
+// provider beside it is deliberately the opposite kind of thing: that one asks
+// the daemon because looking cannot tell a filename from a version string,
+// while a URL announces itself with a scheme and needs no permission to
+// recognise.
+//
+// REGISTERED FIRST, which is the contract between the two. xterm collects
+// every provider's answer for a row and then throws away links that overlap
+// something an EARLIER provider claimed, so registration order decides who
+// owns a run of text both matched. Reversing it lets the path matcher claim
+// the inside of a URL, and the failure is a link that opens the wrong thing
+// rather than a link that is missing.
+function useWebLinks(t) {
+  // Loudly, for the same reason the search addon is: what a missing bundle
+  // looks like is a URL that is simply not a link, which is also what this
+  // feature looked like before it existed. One sentence tells the two apart.
+  if (typeof WebLinksAddon === "undefined") {
+    console.error("the web links addon did not load. /vendor/xterm-addon-web-links.js " +
+      "defines WebLinksAddon and nothing did. URLs in the terminal will not be clickable.");
+    return;
+  }
+  try {
+    t.loadAddon(new WebLinksAddon.WebLinksAddon(openTermURL));
+  } catch (e) {
+    console.warn("the web links addon would not load:", e);
+  }
+}
+
+// A URL opens in a new tab, and that is all it does.
+//
+// NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a
+// file in the card and the daemon has no business being asked about it.
+//
+// `noreferrer` because the board can be published, and the address of a
+// published board is not something to hand to whatever an agent printed a link
+// to. It implies `noopener`, and `noopener` is named as well so that reading
+// the line does not require knowing that.
+function openTermURL(ev, uri) {
+  ev.preventDefault();
+  const a = document.createElement("a");
+  a.href = uri;
+  a.target = "_blank";
+  a.rel = "noreferrer noopener";
+  // Attached before it is clicked. A detached anchor is ignored by some
+  // browsers, and the failure is a click that does nothing at all.
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // The colours are the theme's. A hit highlighted in board-blue on a dark green

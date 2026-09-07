@@ -352,6 +352,18 @@ type a sentence around it and send it yourself.
 Files only ever go into or out of one card's own directory. There is no way to ask atrium for a path that is not
 below a card.
 
+Coming the other way, a path the agent printed is a link. Hover a filename in the terminal and it underlines if
+it is a real file in that card's directory, and clicking it opens the file **in the browser you are sitting at**,
+in atrium's own text box. A directory opens the file drawer there instead. Nothing is decided by how a word
+looks, so a version string, a hostname and a function call are left alone while `Makefile` is still a link, and
+`internal/api/api.go:248:1` opens the file without the line number.
+
+This is deliberately not the `open there` chip in the file browser. That one starts an editor on the machine the
+daemon runs on, which over a share is a window in front of nobody.
+
+A URL in the output is a link too, and that one opens in a new browser tab. The two do not fight: a URL is
+matched first, so a path found inside one never claims it.
+
 ## Pattern 11: seeing a board change without restarting the board
 
 The board is one file, and installing a new one restarts the daemon every live session is attached to. So a

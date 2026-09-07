@@ -5,6 +5,45 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A path in the terminal is a link, and the daemon is what decides which words are paths.**
+
+  `POST /v1/tasks/{id}/files/probe` has been there and unused since it was written. The board now calls it: on
+  hover it takes the words on a row, sends the ones that could be a path, and underlines whatever comes back as
+  a real file inside that card. The answer is cached per card, misses as firmly as hits, so a word that is not a
+  file is asked about once rather than once per line it appears on.
+
+  Not underlining everything is the whole problem, and it is why nothing on the board judges by looking. A
+  terminal is full of things shaped like a filename and not one: `v2.1.263`, `zrok.io`, `foo.bar()`, `Opus 5`.
+  Every one of those is offered to the daemon and refused, and the rule stays "it is a link if it is a file",
+  which also keeps `Makefile` clickable. Punctuation is taken off first, so a quoted path with a comma after it
+  and the `internal/api/api.go:248:1` a compiler prints both resolve to the name underneath.
+
+  Clicking opens **atrium's own viewer, in the browser doing the clicking**, and never `files/open`. That one
+  starts an editor on the daemon's machine, which is right for the `open there` chip that says so and wrong for
+  everything here: the board is meant to be driven from another machine over a share, and a window opening
+  beside the agent is a window in front of nobody. A directory opens the file drawer instead. `check-terminal.js`
+  now fails if that ever gets rewired, because on the machine the daemon runs on both are the same machine and
+  both look correct.
+
+  A wrapped path is one link. Rows are joined back into the line they came from before anything is probed, so a
+  filename broken across two rows is still a filename rather than two halves that are not files.
+
+- **A URL in the terminal is clickable, which it never was.**
+
+  The board prints its own address at people. `http://localhost:7778/#term=<id>` could be pasted into a bar and
+  could not be clicked where it was written, because atrium vendors the fit, webgl and search addons and never
+  vendored `web-links`. It is vendored now, at 0.11.0, from the same wave as the rest, and loaded the same way:
+  from disk, never a CDN, with the same one-sentence console error the search addon has for a bundle that did
+  not arrive. A URL opens in a new tab with `rel="noreferrer noopener"`, and never through the file viewer.
+
+  Shipped together with the path links above because they are two link providers on one terminal and the
+  ordering between them is a real contract. xterm asks every provider about a row and then drops links that
+  overlap something an EARLIER provider claimed, so registration order decides who owns a run of text both
+  matched. The web-links addon registers first, so a URL wins over a path found inside it. Reversed, the mistake
+  does not look like one: the link is still drawn, and clicking it opens atrium's file viewer on something that
+  was never a file. `check-terminal.js` fails if the two are ever swapped.
+
+
 - **Every codex hook atrium has ever written fails if the atrium binary sits under a path with a space.**
 
   Claude Code hands a hook command to a shell, so the path is quoted and the shell strips the quotes. Codex
