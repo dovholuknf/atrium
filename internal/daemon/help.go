@@ -112,10 +112,16 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// lie. The ask is recorded either way and the board can show it either way.
 	//
 	// A card put down by hand stays put, the same rule `finish` follows.
+	// AND IT RECORDS THAT IT IS A QUESTION. `SetStatus` writes an empty
+	// waiting reason, which reads as "a turn ended", so an agent that stopped
+	// on purpose and said what it needed landed in the same bucket as one that
+	// simply ran out of things to do. That is the exact distinction
+	// `WaitingAsked` exists for, and the asking-tool path already writes it.
 	moved := false
 	if in.Blocked && task.Status != store.StatusShelved &&
 		task.Status != store.StatusNeedsInput {
-		if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
+		if err := d.st.SetStatusBecause(task.ID, store.StatusNeedsInput,
+			store.WaitingAsked); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}

@@ -105,6 +105,26 @@ type Peer struct {
 	// Waiting is how many messages are queued for it and undelivered. A peer
 	// with a pile already waiting is one to leave alone.
 	Waiting int `json:"waiting,omitempty"`
+
+	// What this card wants from a human, and how to read it. See fleet.go for
+	// the buckets and why they are in that order.
+	//
+	// Want is one of the Want constants. Note is the same thing in a sentence,
+	// which is what a list prints.
+	Want string `json:"want,omitempty"`
+	Note string `json:"note,omitempty"`
+	// Ask is the question a session asked, in its own words, and Blocked is
+	// whether it stopped to wait for the answer. Empty when nobody asked
+	// anything, which is not the same as a `Why` the operator typed.
+	Ask     string `json:"ask,omitempty"`
+	Blocked bool   `json:"blocked,omitempty"`
+	// Recap is what a finished session said it did, and empty on a card that
+	// finished without saying.
+	Recap string `json:"recap,omitempty"`
+	// Since is when this card started wanting what it wants, and Seconds is
+	// that as an age. Ordering within a bucket is oldest first.
+	Since   time.Time `json:"since,omitempty"`
+	Seconds int64     `json:"seconds,omitempty"`
 }
 
 // peers lists the sessions that can be addressed.
@@ -112,43 +132,34 @@ type Peer struct {
 // Addressable means it has a name to address and has not ended. A dead card
 // cannot be reached by anything, and telling a model otherwise wastes a turn
 // and produces a message nobody will ever read.
+//
+// Ranked by what each one wants from a human, which `roster` decides. That
+// costs nothing here and is worth having: a peer that is blocked on a question
+// is one to leave alone, and a peer that is quietly working is one to ask.
 func (d *Daemon) peers(exclude string) ([]Peer, error) {
-	tasks, err := d.st.List()
-	if err != nil {
-		return nil, err
-	}
-	waiting, err := d.st.UndeliveredCounts()
-	if err != nil {
-		// Not fatal. The list is still worth having without the counts.
-		waiting = map[string]int{}
-	}
-	exclude = d.st.Qualify(strings.TrimSpace(exclude))
-
-	out := make([]Peer, 0, len(tasks))
-	for _, t := range tasks {
-		if t.WireName == "" || t.WireName == exclude {
-			continue
-		}
-		switch t.Status {
-		case store.StatusDead, store.StatusDone, store.StatusBacklog:
-			continue
-		}
-		out = append(out, Peer{
-			Handle: t.WireName, Title: t.DisplayTitle(), Status: t.Status,
-			Runner: t.Runner, Worktree: t.Worktree, Why: t.Why,
-			Waiting: waiting[t.ID],
-		})
-	}
-	return out, nil
+	return d.roster(exclude, false)
 }
 
-// handlePeers answers "who can I talk to".
+// handlePeers answers "who can I talk to", and with `fleet=1`, "which of these
+// want me".
 //
-// Discovery is first class rather than an afterthought. `docs/charon.md` makes
-// listing mandatory before sending, and the reason is that a model which
-// guesses a handle messages nobody and has no way to find that out.
+// One endpoint and two questions, because they are the same rows read for
+// different reasons and the second is the first plus the sessions that have
+// finished. Discovery is first class rather than an afterthought:
+// `docs/charon.md` makes listing mandatory before sending, and the reason is
+// that a model which guesses a handle messages nobody and has no way to find
+// that out.
 func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
-	list, err := d.peers(r.URL.Query().Get("me"))
+	q := r.URL.Query()
+	fleet := q.Get("fleet") != "" && q.Get("fleet") != "0"
+	// How far back finished work counts. An unreadable value falls back to the
+	// default rather than refusing: this list is worth having with the wrong
+	// window on it and worth nothing as an error.
+	within := defaultFinishedWithin
+	if dur, err := time.ParseDuration(q.Get("since")); err == nil && dur > 0 {
+		within = dur
+	}
+	list, err := d.rosterWithin(q.Get("me"), fleet, within)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return

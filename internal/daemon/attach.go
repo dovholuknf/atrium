@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -44,6 +45,15 @@ type attachIn struct {
 // nothing, and their meaning must not move. Making attach prefer a shell when
 // one exists would silently repoint all of them.
 const shellKind = "shell"
+
+// How long an attach waits for the viewer to say how big it is before
+// replaying anything.
+//
+// Long enough for the first frame of a socket that has just opened, which the
+// board sends from `onopen` with no round trip in between, and short enough
+// that a client which never sends one is not left looking at an empty
+// terminal.
+const sizeWait = 500 * time.Millisecond
 
 func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
 	d.attach(w, r, r.PathValue("id"), r.URL.Query().Get("kind") == shellKind)
@@ -164,20 +174,15 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// The retained output first, so attaching shows what is already on screen
-	// rather than an empty box waiting for the next keystroke.
-	backlog, updates := run.subscribe()
-	defer run.unsubscribe(updates)
 	// And give the size back when this viewer goes. A window that attached
 	// once and was closed would otherwise hold the session at its width
 	// forever, which is worse than the bug this pairs with: at least a
 	// last-writer-wins resize could be undone by dragging something.
 	defer run.dropViewport(c)
-	if len(backlog) > 0 {
-		if err := c.Write(ctx, websocket.MessageBinary, backlog); err != nil {
-			return
-		}
-	}
+
+	// Closed once this viewer has said how big it is. See the wait below.
+	sized := make(chan struct{})
+	var sizedOnce sync.Once
 
 	// Reader: control frames from the browser.
 	go func() {
@@ -207,6 +212,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				if err := run.setViewport(c, in.Cols, in.Rows); err != nil {
 					log.Printf("[atrium] resize %s: %v", taskID, err)
 				}
+				sizedOnce.Do(func() { close(sized) })
 			case "signal":
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
@@ -216,6 +222,51 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			}
 		}
 	}()
+
+	// THE SIZE BEFORE THE BACKLOG, and this order is the fix.
+	//
+	// The browser sends its size as its first frame, but a frame arrives after
+	// the upgrade, and the backlog used to be written before anything was
+	// read. So the daemon decided what to replay while the terminal was still
+	// whatever size the last viewer left it, then resized underneath what it
+	// had just sent. Every attach that changed the width replayed output
+	// composed for the old one, which is exactly what cannot be rendered.
+	//
+	// Waiting for one frame costs nothing when it comes, and the timeout is
+	// for a client that never sends one at all: it gets the output held at
+	// whatever width the terminal is already at, which is the best answer
+	// available for a viewer that will not say how big it is.
+	select {
+	case <-sized:
+	case <-ctx.Done():
+		return
+	case <-time.After(sizeWait):
+	}
+
+	// The retained output, so attaching shows what is already on screen rather
+	// than an empty box waiting for the next keystroke. Only the run of it
+	// composed at the width this terminal is at now: see the ring buffer.
+	backlog, dropped, updates := run.subscribe()
+	defer run.unsubscribe(updates)
+	if dropped {
+		// SAID, NOT SWALLOWED. Somebody attaching to an hour-old session and
+		// finding a nearly empty screen deserves to know the history existed
+		// and why it is not there, or the fix for the unreadable attach reads
+		// as a second bug.
+		//
+		// Nothing further is needed to fill the screen. Output is only ever
+		// dropped when the width just changed, and a width change is a resize
+		// the runner is told about, so a terminal user interface is already
+		// repainting itself as this is written.
+		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
+			"[atrium] earlier output was written for a terminal of another width "+
+			"and cannot be redrawn here\x1b[0m\r\n"))
+	}
+	if len(backlog) > 0 {
+		if err := c.Write(ctx, websocket.MessageBinary, backlog); err != nil {
+			return
+		}
+	}
 
 	// Writer: output from the runner.
 	for {

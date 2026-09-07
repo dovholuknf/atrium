@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,21 +32,33 @@ import (
 const peerTimeout = 5 * time.Second
 
 func newPeers() *cobra.Command {
-	var name, hubURL string
+	var name, hubURL, since string
+	var fleet bool
 	c := &cobra.Command{
 		Use:   "peers",
-		Short: "List the other sessions this one can talk to.",
-		Long: "Every session atrium knows about that is still going, with its handle, what it " +
-			"is working on and how much is already queued for it.\n\n" +
+		Short: "List the other sessions, most wanting a human first.",
+		Long: "Every session atrium knows about that is still going, grouped by what it wants " +
+			"from you: stopped and asking, held at the permission gate, asking while it " +
+			"carries on, or gone quiet with nothing recorded.\n\n" +
 			"Use the handle with `atrium tell`. A peer with things already waiting is one " +
-			"to leave alone.",
+			"to leave alone.\n\n" +
+			"`--fleet` answers the dispatcher's question instead of the addressing one. It " +
+			"adds the sessions that have FINISHED, which are not addressable and are the " +
+			"ones you would otherwise find out about by asking them one at a time.\n\n" +
+			"A session that FINISHED counts for twelve hours, which is about a shift. " +
+			"`--since 3h` narrows it to what has ended since you last looked, and everything " +
+			"that ever ran here is a different question the board's history answers.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return listPeers(cmd.OutOrStdout(), hubURL, name)
+			return listPeers(cmd.OutOrStdout(), hubURL, name, fleet, since)
 		},
 	}
 	c.Flags().StringVar(&name, "name", "",
 		"what this session calls itself, so it is left out of its own list")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
+	c.Flags().BoolVar(&fleet, "fleet", false,
+		"which of these want me: include the sessions that have finished")
+	c.Flags().StringVar(&since, "since", "",
+		"how far back a finished session still counts, as a duration. default 12h")
 	return c
 }
 
@@ -97,10 +110,43 @@ type peerRow struct {
 	Worktree string `json:"worktree"`
 	Why      string `json:"why"`
 	Waiting  int    `json:"waiting"`
+	// What this card wants from a human, and the same thing in a sentence.
+	Want string `json:"want"`
+	Note string `json:"note"`
+	// Recap is what a finished session said it did.
+	Recap string `json:"recap"`
+	// Seconds is how long it has wanted that.
+	Seconds int64 `json:"seconds"`
 }
 
-func listPeers(out io.Writer, hubURL, name string) error {
-	url := hubAddress(hubURL) + "/peers?me=" + whoAmI(name)
+// The buckets, in the order the daemon ranks them, with a heading each.
+//
+// Held here as well as in the daemon rather than printed from the wire, because
+// the heading is what makes the four confusable states read differently and it
+// is a sentence, not a field. An unknown bucket from a newer daemon still
+// prints, under its own name, at the end.
+var peerBuckets = []struct{ want, heading string }{
+	{"blocked", "STOPPED AND ASKING. These cannot go on until you answer."},
+	{"permission", "HELD AT THE GATE. A decision each, and they are stopped too."},
+	{"question", "ASKED WHILE STILL WORKING. Worth an answer, not an interruption."},
+	{"finished", "FINISHED. These want reading, not answering."},
+	{"quiet", "NOTHING RECORDED. No recap, no question, no word. Go and look."},
+	{"working", "WORKING. Nothing to do about these."},
+}
+
+func listPeers(out io.Writer, hubURL, name string, fleet bool, since string) error {
+	url := hubAddress(hubURL) + "/peers?me=" + neturl.QueryEscape(whoAmI(name))
+	if fleet {
+		url += "&fleet=1"
+	}
+	if strings.TrimSpace(since) != "" {
+		// Checked here so a typo is a refusal rather than a list that quietly
+		// used the default window and looks like the answer.
+		if _, err := time.ParseDuration(since); err != nil {
+			return fmt.Errorf("--since %q is not a duration. try 3h, 90m, 45s", since)
+		}
+		url += "&since=" + neturl.QueryEscape(since)
+	}
 	client := &http.Client{Timeout: peerTimeout}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -122,6 +168,12 @@ func listPeers(out io.Writer, hubURL, name string) error {
 	return nil
 }
 
+// printPeers draws the list grouped by what each card wants.
+//
+// GROUPED RATHER THAN SORTED, because a sorted list of sixteen still has to be
+// read from the top to find out where the part that wants you stops. A heading
+// says how many there are and what answering one of them means, and the
+// dispatcher reads the first group and stops.
 func printPeers(out io.Writer, peers []peerRow) {
 	width := 0
 	for _, p := range peers {
@@ -129,16 +181,97 @@ func printPeers(out io.Writer, peers []peerRow) {
 			width = len(p.Handle)
 		}
 	}
+
+	seen := map[string]bool{}
+	first := true
+	group := func(want, heading string) {
+		var rows []peerRow
+		for _, p := range peers {
+			if p.Want == want {
+				rows = append(rows, p)
+			}
+		}
+		if len(rows) == 0 {
+			return
+		}
+		if !first {
+			fmt.Fprintln(out)
+		}
+		first = false
+		fmt.Fprintf(out, "%s  (%d)\n", heading, len(rows))
+		for _, p := range rows {
+			printPeerRow(out, width, p)
+		}
+	}
+	for _, b := range peerBuckets {
+		seen[b.want] = true
+		group(b.want, b.heading)
+	}
+	// A bucket this binary has never heard of still prints. An older CLI
+	// against a newer daemon drops a whole group otherwise, silently, which is
+	// the worst way for this to be wrong.
 	for _, p := range peers {
-		what := p.Why
-		if what == "" {
-			what = p.Worktree
+		if !seen[p.Want] {
+			seen[p.Want] = true
+			group(p.Want, strings.ToUpper(p.Want))
 		}
-		queued := ""
-		if p.Waiting > 0 {
-			queued = fmt.Sprintf("  [%d waiting]", p.Waiting)
+	}
+}
+
+func printPeerRow(out io.Writer, width int, p peerRow) {
+	// The note is what the daemon decided this card wants, in a sentence. It
+	// falls back to the operator's `why` and then to the path, which is what
+	// this printed before there was anything better.
+	what := p.Note
+	if what == "" {
+		what = p.Why
+	}
+	if what == "" {
+		what = p.Worktree
+	}
+	if p.Recap != "" {
+		what += ": " + oneLine(p.Recap)
+	}
+	age := ""
+	if p.Seconds > 0 {
+		age = "  " + shortAge(p.Seconds)
+	}
+	queued := ""
+	if p.Waiting > 0 {
+		queued = fmt.Sprintf("  [%d waiting]", p.Waiting)
+	}
+	fmt.Fprintf(out, "  %-*s  %s%s%s\n", width, p.Handle, oneLine(what), age, queued)
+}
+
+// oneLine flattens and bounds a field that may hold a paragraph.
+//
+// A recap is up to two thousand characters and an ask up to five hundred, and
+// both are drawn here in a list somebody is scanning. Cut to a width a terminal
+// holds rather than wrapped: the rest is on the card.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	const max = 90
+	if len(s) > max {
+		return s[:max-3] + "..."
+	}
+	return s
+}
+
+// shortAge writes seconds the way a person says it. Matches what the daemon
+// puts in its own notes, so one line does not carry two spellings of an age.
+func shortAge(sec int64) string {
+	switch {
+	case sec < 60:
+		return fmt.Sprintf("%ds", sec)
+	case sec < 3600:
+		return fmt.Sprintf("%dm", sec/60)
+	case sec < 86400:
+		if m := sec % 3600 / 60; m > 0 {
+			return fmt.Sprintf("%dh%dm", sec/3600, m)
 		}
-		fmt.Fprintf(out, "%-*s  %-16s %s%s\n", width, p.Handle, p.Status, what, queued)
+		return fmt.Sprintf("%dh", sec/3600)
+	default:
+		return fmt.Sprintf("%dd", sec/86400)
 	}
 }
 

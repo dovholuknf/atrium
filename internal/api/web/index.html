@@ -5050,50 +5050,218 @@ const api = async (path, opts) => {
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// Writes only when the markup actually changed.
+// ── painting without repainting ─────────────────────────
 //
-// The board polls every five seconds whether or not anything happened, because
-// ages tick with no server event behind them and the event stream can drop.
-// Rewriting a list that came back identical throws away selection, scroll
-// position inside it, and any open native menu, and shows up as constant churn
-// in dev tools.
-// Replace a chunk of the page, WITHOUT throwing away where somebody had
-// scrolled to.
+// Replace a chunk of the page, WITHOUT destroying the part of it that did not
+// change.
 //
-// The equality check above is not enough on its own and never could be: a card
-// carries how long it has been sitting, so every poll produces different HTML
-// even when nothing has happened. Replacing `innerHTML` puts every scroll
-// position inside it back to zero, so scrolling down a long `done` column
-// snapped back to the top every five seconds.
+// `innerHTML = html` throws away every node under the element, and a browser
+// has nowhere to put the scroll position, the text selection, the focus or the
+// running CSS transition of an element that no longer exists. So the view
+// jumped to the top, a drag-select died mid-drag, and the board flickered.
+// The board polls every five seconds AND redraws on every event, which on a
+// board with sixteen live agents is constant, so scrolling down a long column
+// was something you could not finish doing.
 //
-// Both the element and whatever scrolls it are saved, because either can be
-// the one that moved: a column with its own overflow scrolls itself, and a
-// short list scrolls the view around it.
+// Preserving the scroll offset around the swap was the previous answer here
+// and it was a lie: it fights the browser every frame, does nothing for
+// selection or focus, and goes wrong the moment the content above the viewport
+// changes height. It is gone. Nothing is thrown away now, so there is nothing
+// to put back.
+//
+// What happens instead is in `morphChildren`: the new markup is parsed
+// detached and reconciled against what is already on the page.
+//
+// Returns whether anything in the DOM actually moved. Callers that wire
+// listeners onto what they drew use that as their cue.
 function setHTML(el, html) {
-  if (!el || el.innerHTML === html) return false;
-  const outer = scrollParent(el);
-  const mine = el.scrollTop, theirs = outer ? outer.scrollTop : 0;
-  el.innerHTML = html;
-  // Restored immediately rather than on a frame. The new content is in the
-  // document synchronously, so its height is already known, and deferring
-  // would show one frame at the top and read as a flicker.
-  if (mine) el.scrollTop = mine;
-  if (outer && theirs) outer.scrollTop = theirs;
-  return true;
+  if (!el) return false;
+  // The string this element was last painted from. Compared rather than
+  // `el.innerHTML`, which is a fresh serialization and never matches markup
+  // written across several lines: the parser normalises the whitespace inside
+  // a tag, so the old equality check could not fire for anything on this
+  // board bigger than a single line.
+  //
+  // The child count guards the one way the cache can go stale, which is code
+  // elsewhere assigning `innerHTML` on the same element behind this function's
+  // back. It catches the realistic version of that, which is a wholesale
+  // replacement or a clear.
+  if (el.__paintedFrom === html && el.__paintedKids === el.childNodes.length) return false;
+
+  // Parsed into an element of the SAME TAG, not a `<template>`, because the
+  // parser's answer depends on where the markup lands: rows outside a table
+  // and options outside a select are dropped on the floor.
+  const shadow = document.createElement(el.tagName);
+  shadow.innerHTML = html;
+  const changed = morphChildren(el, shadow);
+  el.__paintedFrom = html;
+  el.__paintedKids = el.childNodes.length;
+  return changed;
 }
 
-// The nearest ancestor that actually scrolls, or null.
+// Reconcile one element's children against a freshly parsed copy of them.
 //
-// `overflow: auto` on something that fits is not a scroller, so the height is
-// checked as well as the style: otherwise the first `auto` ancestor claims the
-// answer and the real one never gets asked.
-function scrollParent(el) {
-  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
-    const o = getComputedStyle(p).overflowY;
-    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+// TWO TIERS, AND THE SECOND IS WHAT MAKES IT HOLD.
+//
+//   1. THE CONTAINER IS NEVER REBUILT. Children are matched by key, so a row
+//      that is still there keeps the exact node it had, wherever it moved to.
+//      Scroll, selection and focus survive because nothing that held them was
+//      destroyed.
+//   2. A MATCHED ROW IS NOT REBUILT EITHER. It is walked, and only the
+//      attributes and the text that actually differ are written. The fields
+//      that tick constantly, the age and the activity chip and the status
+//      class, land in the nodes that are already there.
+//
+// Tier one on its own swaps one bug for a quieter one. The age changes every
+// second, so the card being destroyed is the card being read: the scroll
+// position now survives and the selection dies anyway. That is a fix that
+// looks complete and is not, which is why both tiers are here.
+//
+// This is deliberately generic rather than a hand-written updater per view.
+// The board, the stack and the terminal switcher all paint through `setHTML`,
+// as does every list in every dialog, and a per-view updater would have fixed
+// one of them and left the rest to be discovered one at a time.
+function morphChildren(parent, source) {
+  let changed = false;
+
+  // The keyed children already on the page, so a row that MOVED is found and
+  // re-used rather than rebuilt wherever it landed.
+  const keyed = new Map();
+  for (let n = parent.firstChild; n; n = n.nextSibling) {
+    const k = morphKey(n);
+    if (k && !keyed.has(k)) keyed.set(k, n);
   }
-  return null;
+
+  // `cursor` is where the next child belongs. Everything before it is done.
+  let cursor = parent.firstChild;
+  let want = source.firstChild;
+  while (want) {
+    // Read now: placing `want` moves it out of `source` and loses its sibling.
+    const after = want.nextSibling;
+    const k = morphKey(want);
+
+    let mine = null;
+    if (k) {
+      mine = keyed.get(k) || null;
+      if (mine) keyed.delete(k);
+    } else if (cursor && !morphKey(cursor) &&
+        cursor.nodeType === want.nodeType && cursor.nodeName === want.nodeName) {
+      // Unkeyed markup matches by position and shape. That is what a heading,
+      // a wrapper or a run of text is, and it is why an unkeyed list still
+      // benefits from this at all.
+      mine = cursor;
+    }
+
+    // The key came back on a different KIND of node: a group that used to be
+    // drawn as a list, a row that became a heading. That is a replacement and
+    // not a patch, and it is handled here rather than in `morphNode` because
+    // `morphNode` would have to remove the node the cursor is standing on and
+    // the cursor would be left pointing outside the tree.
+    if (mine && (mine.nodeType !== want.nodeType || mine.nodeName !== want.nodeName)) {
+      if (mine === cursor) cursor = cursor.nextSibling;
+      parent.removeChild(mine);
+      mine = null;
+    }
+
+    if (mine) {
+      if (mine !== cursor) { parent.insertBefore(mine, cursor); changed = true; }
+      if (morphNode(mine, want)) changed = true;
+      cursor = mine.nextSibling;
+    } else {
+      // New. Adopted from the parsed copy rather than cloned, since the copy
+      // is thrown away either way.
+      parent.insertBefore(want, cursor);
+      changed = true;
+    }
+    want = after;
+  }
+
+  // Whatever the cursor never reached is gone.
+  while (cursor) {
+    const stale = cursor;
+    cursor = cursor.nextSibling;
+    parent.removeChild(stale);
+    changed = true;
+  }
+  return changed;
 }
+
+// What makes two nodes THE SAME NODE across a repaint.
+//
+// `data-id` is the card, which is the case that matters and the precondition
+// this whole change rests on: every row on the board and in the stack already
+// carried one. The rest are the containers a card sits in, and they are keyed
+// for the same reason: a column or a group must not be rebuilt just because
+// its contents moved.
+//
+// `data-morph-key` is the escape hatch for markup that has no natural id.
+// Nothing without a key goes unreconciled, it just matches by position.
+function morphKey(node) {
+  if (!node || node.nodeType !== 1) return "";
+  const d = node.dataset;
+  if (!d) return "";
+  if (d.morphKey !== undefined) return "m:" + d.morphKey;
+  if (d.id !== undefined) return "i:" + d.id;
+  if (d.column !== undefined) return "c:" + d.column;
+  if (d.path !== undefined) return "p:" + d.path;
+  if (d.status !== undefined) return "s:" + d.status;
+  return "";
+}
+
+// One node against its new version.
+//
+// The two are the same KIND of node. `morphChildren` is the only caller and it
+// guarantees that, because a node that has to be swapped rather than patched
+// has to be swapped where the cursor can see it happen.
+function morphNode(mine, want) {
+  // Text and comments. Written only when the text differs, which is what keeps
+  // a selection alive over a card whose age is ticking two chips away.
+  if (mine.nodeType !== 1) {
+    if (mine.nodeValue === want.nodeValue) return false;
+    mine.nodeValue = want.nodeValue;
+    return true;
+  }
+  let changed = morphAttrs(mine, want);
+  // A subtree the board has handed to something else, a terminal or a canvas
+  // or anything holding state the markup does not describe, is not the
+  // board's to reconcile. Its attributes still sync, its children are left
+  // alone.
+  if (mine.hasAttribute("data-morph-keep")) return changed;
+  if (morphChildren(mine, want)) changed = true;
+  return changed;
+}
+
+// Attributes, in both directions.
+//
+// Attributes and not properties, on purpose. Somebody who has typed into an
+// input or ticked a checkbox has made that element dirty, and the browser
+// stops reflecting the attribute into the value once they have. So writing
+// the attribute here updates a field nobody has touched, and leaves a
+// half-finished edit exactly where it was. Both of those are what you want.
+function morphAttrs(mine, want) {
+  let changed = false;
+  const wanted = want.attributes;
+  for (let i = 0; i < wanted.length; i++) {
+    const a = wanted[i];
+    if (mine.getAttribute(a.name) === a.value) continue;
+    mine.setAttribute(a.name, a.value);
+    changed = true;
+  }
+  const have = mine.attributes;
+  // Backwards, since removing shortens the live collection underneath us.
+  for (let i = have.length - 1; i >= 0; i--) {
+    const name = have[i].name;
+    if (want.hasAttribute(name)) continue;
+    mine.removeAttribute(name);
+    changed = true;
+  }
+  return changed;
+}
+
+// `scrollParent` lived here. It found the ancestor whose scroll offset had to
+// be saved and put back around an `innerHTML` swap, and it went with the swap.
+// Nothing is destroyed now, so nothing needs finding and nothing needs putting
+// back.
 
 function ago(secs) {
   if (secs == null) return "";
@@ -5731,7 +5899,8 @@ function pinnedGroupHTML(pins, keyPrefix) {
   // A fixed hue rather than one derived from a name. Every other group takes
   // its color from what it is called; this one is not a project and borrowing
   // a project's color would say it was.
-  return `<details class="cardgroup project pins"${shut} style="--ghue:41">
+  return `<details class="cardgroup project pins"${shut} style="--ghue:41"
+    data-morph-key="${esc(key)}">
     <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')">
       <span class="gname">&#9733; pinned</span>
       <span class="gn">${pins.length}</span>
@@ -5772,8 +5941,10 @@ function cardsHTML(cards, g, keyPrefix) {
     // the bucket is that it is findable, and the point of greying it is that
     // it does not compete with what you are doing now.
     const cold = name === "dormant" ? " dormant" : "";
+    // Keyed by the group's own name, so reordering the groups moves them
+    // rather than rewriting each one with the next one's contents.
     return `<details class="cardgroup project${cold}"${shut}
-      style="--ghue:${groupHue(name)}">
+      style="--ghue:${groupHue(name)}" data-morph-key="${esc(key)}">
       <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
         oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
@@ -5962,8 +6133,21 @@ function rememberGroup(e, status) {
 // never renumbers the column. Dropping onto a column changes status.
 let dragging = null;
 
+// WIRED ONCE PER NODE, and the flag is not an optimisation.
+//
+// The board is reconciled rather than replaced now, so a card that was already
+// there is the SAME ELEMENT after a repaint, with the listeners it was given
+// the first time still on it. Calling `addEventListener` again would add a
+// second copy of every one of them, and a `drop` handler running twice files
+// the same move twice, seconds apart, with the second one working from ranks
+// that have already changed.
+//
+// The flag lives on the node, so it goes when the node does, which is the only
+// time a fresh set is wanted.
 function wireDragging() {
   document.querySelectorAll("#board .card").forEach(card => {
+    if (card.__dragWired) return;
+    card.__dragWired = true;
     card.addEventListener("dragstart", e => {
       dragging = card.dataset.id;
       card.classList.add("dragging");
@@ -6004,6 +6188,8 @@ function wireDragging() {
   });
 
   document.querySelectorAll("#board .col").forEach(col => {
+    if (col.__dragWired) return;
+    col.__dragWired = true;
     col.addEventListener("dragover", e => {
       if (!dragging) return;
       if (!acceptsDrop(col)) { e.dataTransfer.dropEffect = "none"; return; }
@@ -7452,7 +7638,8 @@ function stackGroupsHTML(list, g) {
     }
     const key = "stack:" + name;
     const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
-    return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}">
+    return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}"
+      data-morph-key="${esc(key)}">
       <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
         oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
@@ -14675,6 +14862,7 @@ async function renderTermList() {
       const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
       return `
         <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}"
+             data-id="${t.id}"
              style="${style}"
              onclick="${t.supervised
                ? `attachTask('${t.id}')`

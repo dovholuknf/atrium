@@ -170,6 +170,11 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 	if err != nil {
 		return fmt.Errorf("could not open a pseudo terminal: %w", err)
 	}
+	// The same launch size the runner's terminal gets, because its ring buffer
+	// files those first bytes under the same width. A shell opened at the
+	// platform default and a buffer saying it was 120 columns wide is a
+	// mislabelled prompt banner on the first attach.
+	sizeAtLaunch(p)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	c.Env = d.shellEnv(taskID)
@@ -180,7 +185,7 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
-		buf:      newRing(api.ScrollbackBytes(d.st)),
+		buf:      newRing(api.ScrollbackBytes(d.st), launchCols),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

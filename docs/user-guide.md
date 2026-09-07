@@ -352,6 +352,27 @@ type a sentence around it and send it yourself.
 Files only ever go into or out of one card's own directory. There is no way to ask atrium for a path that is not
 below a card.
 
+## Pattern 11: seeing a board change without restarting the board
+
+The board is one file, and installing a new one restarts the daemon every live session is attached to. So a
+change to it used to cost everybody else an interruption, taken before anybody knew whether the change was any
+good.
+
+```
+# from the worktree that has the change, and after building it there
+atrium preview --http 50022 --from live
+```
+
+That is a second daemon. Own database, own ports, own address file. `--from live` copies the cards the running
+daemon has, because an empty board only shows you the empty state, which is the one state nobody was working on.
+Ctrl-C stops it, and `--fresh` throws its cards away and starts the copy again.
+
+Two things it deliberately will not do. It does not take the hooks: every claude session on the machine still
+reports to the real daemon, so a preview is for LOOKING at a board and never a second place to work. And it
+starts PASSIVE, so it does not start the fixtures or re-bind the shares it can see in the copy. Both rules, and
+why running two ordinary daemons over one database is a different question with a worse answer, are in
+`docs/preview-design.md`.
+
 ## Limits / what this won't do
 
 - **No persistence.** Stopping the hub loses the conversation log. We may add per-agent JSONL transcripts in

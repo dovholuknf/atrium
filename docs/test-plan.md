@@ -1114,3 +1114,296 @@ comment above it in `internal/api/settings.go`.
   building when the surface stabilizes.
 - The choices parser (`extractChoices`) is pure Go and easy to unit test. Same for `wrapLines` / `wrapOne` /
   `visibleLen`. Adding `internal/tui/parse_test.go` would catch regressions cheaply.
+
+## L. The preview board
+
+These are the scenarios `atrium preview` exists to make safe, so each one is written as the damage it must not
+do. Run them with a real daemon running and at least one live claude session gated through it, because a preview
+that behaves on an idle machine proves nothing.
+
+### L1. A preview does not take the hooks
+
+**The failure this exists for.** Every daemon writes its address to one file and every hook reads that file. A
+second daemon without `--location-file` takes all of them, and the symptom is not an error: it is the real board
+going quiet.
+
+**Steps**
+
+1. Note the real board's address. Have a gated claude session open.
+2. From a worktree: `atrium preview --http 50022 --from live`.
+3. In the gated session, run any tool call.
+4. Watch the REAL board.
+
+**Expect** the activity badge and any permission prompt appear on the REAL board. The preview draws the cards it
+copied and does not move. Stop the preview, run another tool call, and the real board still works: a preview
+must not remove the address file on its way out either.
+
+### L2. A preview starts nothing and re-binds nothing
+
+**The failure this exists for.** Everything in the copied database is real. The first version of preview spawned
+the operator's fixtures and went after their reserved zrok name.
+
+**Steps**
+
+1. Have at least one fixture defined and one card with a lent share.
+2. `atrium preview --from live --fresh`.
+3. Watch the preview's own log, and the machine: is there a new terminal? Does the real share still answer?
+
+**Expect** no fixture terminal opens, no share is re-bound, and nothing is swept off the zrok account. The board
+still lists the fixture and the share as rows, because a copy shows what it copied.
+
+### L3. The copy takes the sidecars
+
+**Steps**
+
+1. With the real daemon running, make a visible change on the board, for example move a card to another column.
+2. `atrium preview --from live --fresh` immediately, without stopping the real daemon.
+
+**Expect** the change is there. Recent writes live in the `-wal` file, so a copy without it looks like a board
+that is mysteriously an hour out of date rather than like a bad copy.
+
+### L4. Ports, and saying no rather than colliding
+
+**Steps**
+
+1. Start two previews with no `--http`.
+2. Start a third with `--http` set to a port that is already taken.
+
+**Expect** the first two each print a different address and both work. The third refuses with the port named,
+before starting a daemon.
+
+### L5. Cards are kept unless you say otherwise
+
+**Steps**
+
+1. `atrium preview --from live`. Shelve a card on the preview board. Ctrl-C.
+2. `atrium preview --from live` again.
+3. `atrium preview --from live --fresh`.
+
+**Expect** step 2 keeps the shelved card and SAYS it is keeping the cards this preview already had. Step 3 starts
+from a new copy. A preview that silently re-copied would produce "why are these cards stale" an hour later, and
+one that silently kept them would produce the same question the other way round.
+
+
+## L. Cutting a release
+
+Nothing here touches the board. It is in this document because a release is the one procedure that gets run
+rarely, by a person, under pressure, and the parts of it a script cannot check are the parts that reach a
+stranger.
+
+`scripts/check-release.sh` already asserts every refusal in CI, so do not re-test those by hand. What is left
+below is what only a human and a network can answer.
+
+### L1. The dry run is the whole run
+
+**Steps**
+
+1. On a clean tree: `bash scripts/cut-release.sh v0.1.0`
+2. Read the output from the top.
+3. `git tag -l` and `git status --porcelain`.
+
+**Expect** it compiles five platforms, builds four Linux packages, prints `atrium version --short -> v0.1.0`,
+says linux/amd64 builds byte for byte the same from the commit alone, verifies every hash, writes
+`build.claude/release/v0.1.0/scoop/atrium.json`, and prints the `gh release create` command it did NOT run.
+
+**Also expect** step 3 shows no new tag and no change to the tree. A dry run that created the tag would be a
+decision, and the default is meant to be the option that decides nothing.
+
+### L2. The version the binary reports
+
+**The failure this exists for.** The version is stamped by the linker and is `dev` when it is not. A release
+that reports itself as `dev` is one a package manager will never offer an upgrade over, and it looks completely
+normal until somebody runs it.
+
+**Steps**
+
+1. Unzip `build.claude/release/v0.1.0/atrium_v0.1.0_windows_amd64.zip`.
+2. Run `atrium.exe version` from where it unpacked.
+
+**Expect** `atrium v0.1.0` and the commit the tag names. Not `dev`, and not a commit with `(dirty)` after it.
+
+### L3. The scoop bucket, which is the real test of the release shape
+
+**Steps**
+
+1. Publish: `bash scripts/cut-release.sh v0.1.0 --execute`, or let the tag push run the workflow.
+2. Copy `build.claude/release/v0.1.0/scoop/atrium.json` into the bucket repository as `bucket/atrium.json`,
+   commit and push.
+3. On a Windows machine that has never had atrium: `scoop bucket add dovholuknf ...` then `scoop install atrium`.
+4. `atrium version`.
+
+**Expect** scoop downloads the zip, its hash matches the manifest, and step 4 prints `v0.1.0`.
+
+**What a failure here means.** A hash mismatch means the manifest and the asset disagree, which is the one
+failure the publish path re-hashes specifically to prevent, so it points at the bucket copy rather than the
+release. A "cannot find atrium.exe" means `extract_dir` and the archive layout disagree.
+
+### L4. The workflow and the local publish do not both win
+
+**Steps**
+
+1. Run `bash scripts/cut-release.sh v0.1.0 --execute` and let it push the tag.
+2. Watch the `release` workflow, which the push started.
+
+**Expect** exactly one of the two creates the release and the other fails saying it already exists. That is
+the designed outcome and not a bug. Prefer the workflow once it has worked once, and use `--from-tag` locally
+after that.
+
+
+## L. Which of these want me
+
+`atrium peers` grouped by what each card wants. The states it separates are the ones that were repeatedly
+confused when sixteen agents were running: finished, stopped and asking, asking while still working, and gone
+quiet with nothing recorded.
+
+Run these against a preview (`atrium preview --http <port> --from live`) so the asks land on a copy.
+
+**Watch out for `ATRIUM_TASK_ID`.** A supervised session has it set, and `atrium ask` prefers it over `--name`,
+so every ask typed from inside one lands on that session's own card whatever name you pass. Clear it for these
+steps. This is correct behaviour and it will waste ten minutes if you forget.
+
+### L1. The four states read differently
+
+**Steps**
+
+1. On a card whose session is running: `atrium ask "which schema is authoritative"`.
+2. On a second one: `atrium ask --working "should the postgres path be stubbed"`.
+3. On a third: `atrium finish "wired the reaper to the pty"`.
+4. Leave a fourth alone, with no hooks reporting for it.
+5. `atrium peers --fleet`.
+
+**Expect** four groups with different headings. The first card is under `STOPPED AND ASKING` with its question
+printed. The second is under `ASKED WHILE STILL WORKING` and its card has NOT moved into a waiting column. The
+third is under `FINISHED` with the first line of its recap. The fourth is under `NOTHING RECORDED`.
+
+**Also expect** the groups in that order, most wanting a human first, and the longest wait first inside each.
+
+### L2. A card in `done` is not a session that finished
+
+**The failure this exists for.** Everything dragged to `done` by hand, adopted, or tidied by the sweep is in the
+same column as a session that ran `atrium finish`. Pointing the first version of this at a real board buried
+nineteen recaps under twenty five rows of old cards nobody had claimed.
+
+**Steps**
+
+1. Find a card in `done` that no session ever finished, or drag one there.
+2. `atrium peers --fleet`.
+
+**Expect** it is not listed at all. Only a card with a recap, or one an agent filed a `finished` for, appears.
+
+### L3. Finished work ages out and blocked work does not
+
+**Steps**
+
+1. `atrium peers --fleet` and note the finished group.
+2. `atrium peers --fleet --since 1m`.
+3. `atrium peers --fleet --since bananas`.
+
+**Expect** step 2 shows only what finished in the last minute, and every blocked or quiet card is still there:
+the window is on finished work only. A session that has been blocked since yesterday is exactly what this list
+exists to surface and must never age out. Step 3 refuses with a message naming the format, rather than quietly
+using the default and looking like an answer.
+
+### L4. A finished session is still not somebody to talk to
+
+**Steps**
+
+1. `atrium peers` with no `--fleet`, on a board with a finished card on it.
+
+**Expect** the finished card is absent. The plain list is the addressing list for `atrium tell`, and offering a
+session that has ended wastes a turn and produces a message nobody reads. It is still grouped and ranked.
+
+
+## L. The board does not throw away where you were
+
+**Read this before running any of it.** Every case here looks like it passes on a quiet board, because a quiet
+board was never the problem. The board only repaints when something changes or the poll lands, so a board with
+two idle cards on it will sit still whatever the code does. Each case below therefore says what has to be
+MOVING while you look, and if nothing is moving you have tested nothing.
+
+The easiest way to get movement without launching anything: leave a card selected in the detail dialog and
+watch the ages tick, or start one short-lived shell fixture. `atrium preview --from live` gives you a copy of
+the real cards to do it against.
+
+### L1. Scrolling down stays down
+
+**Steps**
+
+1. Open the board with enough cards that a column scrolls. The `finished` column with `done` expanded is the
+   usual one.
+2. Scroll that column to the bottom.
+3. Wait through at least four polls, which is twenty seconds, with at least one card running so ages tick and
+   events arrive.
+
+**Expect** the view has not moved. Not "moved and came back", which is what the old scroll-restore did and what
+you would see as a jump: it does not move at all.
+
+**Also** repeat it on the stack and on the terminal switcher, which are separate lists and were separately
+broken.
+
+### L2. A selection survives a card ticking
+
+**The one that catches a half fix.** Reconciling rows by id but rewriting every matched row fixes the scroll
+and leaves this broken, because the age changes every second and the card being rewritten is the card being
+read.
+
+**Steps**
+
+1. Find a running card and drag-select the text of its title. Do not release.
+2. Hold the selection across at least two age ticks.
+3. Release, then leave the selection alone for another ten seconds.
+
+**Expect** the selection is still there and still covers the same text, and the age beside it changed while you
+held it.
+
+### L3. Focus is not moved out from under you
+
+**Steps**
+
+1. Open the stack. Click into the search box and type a partial filter.
+2. Leave it. Let several polls land, with something running.
+
+**Expect** the caret is where you left it and the text is what you typed. The list under it filters and
+redraws around the box.
+
+### L4. A drag files ONE move
+
+**The failure this exists for.** A reconciled board hands back the SAME card element after a repaint, with the
+listeners it already had. Wiring them again on every render adds a second `drop` handler, and then one drop
+files the move twice, a moment apart, against ranks that have already changed. It presents as a card that
+jumps to a second position by itself, seconds after you let go.
+
+**Steps**
+
+1. Leave the board open for a minute with something running, so it has repainted many times.
+2. Drag a card between two others in another column.
+3. Watch it for ten seconds without touching anything.
+
+**Expect** it lands once and stays. Check the card's timeline: one status change, not two.
+
+### L5. Ticks in the file picker survive a repaint
+
+**Steps**
+
+1. Open a card's files. Tick three files in a directory with enough entries to scroll.
+2. Scroll down. Wait for a poll.
+
+**Expect** the three are still ticked, the download button still says three, and the scroll has not moved. This
+one is a side effect of writing attributes rather than properties, and it is worth checking because it is the
+cheapest evidence that a repaint really is not rebuilding rows.
+
+### L6. Cards still arrive, leave and reorder
+
+**The regression the fix could cause.** A reconciler that matches too eagerly shows you a stale board, which is
+worse than one that flickers, and it will look calm while doing it.
+
+**Steps**
+
+1. Launch a card. Watch it appear.
+2. Shelve it, unshelve it, and drag it between columns.
+3. Change its title from the detail dialog.
+4. Delete it.
+
+**Expect** every one of those shows up on the board within a poll, in the right column, with the right text.
+A card that arrives in the wrong place, keeps an old title, or refuses to leave is this fix failing.
+

@@ -132,3 +132,66 @@ one: a margin is legible and a mis-wrapped screen is not.
 5. ~~**Resize authority.**~~ Answered, after last writer wins shipped and turned out to be worse than
    "occasionally reflow someone else's terminal": it made the other viewer's screen unreadable rather than
    merely differently sized. See "One terminal, several windows, one size" above.
+
+### A terminal belongs to the daemon that opened it
+
+The supervisor holds a pty per runner in the operator's own logon session, so a card and its terminal are not
+equally portable. Any daemon that can read the row can draw the card. Only the daemon that opened the pty can
+attach to it.
+
+That is why `atrium preview` starts PASSIVE. It opens a copy of a database full of fixtures it must not spawn,
+and the terminals it CAN offer are only the ones started against that copy. It is also the item on the list in
+`docs/preview-design.md` that has no answer at all for two active daemons sharing state: the other four are
+lease problems, and this one is an operating system fact.
+
+### Retained output is only meaningful at the width it was written at
+
+The size rule above fixes everything a runner draws from the moment a viewer attaches. It does nothing for what
+is already in the buffer, and that is the second half of the same bug: a session launched with nobody watching
+produces an hour of output composed for the width it was launched at, and then somebody attaches a wide browser
+window. The pty is resized, so new output is correct, but the daemon replays the retained bytes first and those
+carry hard line breaks at the old column count and absolute cursor moves worked out for it. Replayed into a
+wider grid they overwrite each other. The screenshot of that is a two hundred column window holding sixty
+column text, diffs on top of themselves, and two thirds of the window empty.
+
+**The width is recorded with the bytes.** Every change of the agreed size leaves a mark in the ring buffer at
+the stream position where it took effect. An attaching viewer is sent the trailing run of output that was
+composed at the width the terminal is at now, and nothing older. If anything older was left out, the terminal
+says so in one dim line before the replay.
+
+Three things follow, and each was a choice:
+
+- **The trailing run only, never a splice.** A window dragged narrow, wide and narrow again leaves two readable
+  stretches with an unreadable one between them. Joining the two would join text across a hole.
+- **Columns, not rows.** Width decides how bytes were composed. A height mismatch moves a repaint up or down and
+  the runner's next draw corrects it, so keying on height as well would throw history away to buy very little.
+- **The size is read before the backlog is written.** The viewer's size arrives as its first frame, which is
+  after the upgrade, so an attach waits briefly for it before deciding what to replay. Replaying first and
+  resizing afterwards is what produced the unreadable screen, and no amount of care about the buffer fixes it.
+
+Nothing extra is needed to fill the screen after a drop. Output is only ever dropped when the width just
+changed, a width change resizes the pty, and a terminal user interface repaints itself when told its new size.
+
+The alternatives were considered and are worse. Replaying nothing whenever the width has ever changed throws
+away history that renders perfectly. Fixing the size at launch so it can never change is the cheapest and is
+wrong the moment somebody drags a window, which is the thing that started this. A launch size IS chosen, but for
+a different reason: a terminal opened at whatever its platform defaults to has a width nothing recorded, and
+recording the width of the first byte only works if that width is known.
+
+### A snapshot has to start somewhere it is safe to start
+
+The write cursor is a byte offset and knows nothing about what is at it. Once the buffer has wrapped, the oldest
+retained byte can be the middle of an escape sequence or the middle of a multi byte rune, and a width mark lands
+between two arbitrary reads of the pty with the same problem. A severed escape loses its introducer and arrives
+as printable characters typed onto the screen. A severed rune renders as a replacement character and can eat
+what follows it.
+
+A snapshot that does not begin at the true start of the stream therefore begins after the first line ending it
+finds. A line feed cannot appear inside either an escape sequence or a multi byte rune, so it is a boundary that
+can be found without parsing. **Losing a line beats shipping a broken escape.** A snapshot with no line ending in
+it at all is megabytes of one line redrawing itself, which has no safe starting point and is about to be redrawn
+again, so nothing is sent.
+
+Fixed on the way out rather than on the way in. The buffer has to keep taking bytes as fast as a runner produces
+them, and cannot afford to parse them.
+

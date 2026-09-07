@@ -262,6 +262,125 @@ func handOverTo(ifRunning string, live bool) runningVerdict {
 	return startAnyway
 }
 
+// WHAT A LAUNCH ONTO AN EXISTING CARD DOES TO ITS STATUS.
+//
+// The thing being eliminated is a card whose status disagrees with whether a
+// process exists. A daemon restart kills every supervised runner and files its
+// card dead, which is correct. The cards are then started again ONTO, with
+// `task_id`, and the pid on the card was updated while the status was not. So
+// the board drew a dead card, the sweep archived it off the board, and the
+// process behind it went on posting activity and raising permission requests
+// against a card atrium was drawing as finished.
+//
+// Some of those cards recovered because their SessionStart hook fired and
+// moved them, and some did not, which makes the behaviour "it depends on
+// whether a hook fired". That is not a rule. This is:
+//
+//   - dead:    atrium's own conclusion that there is no process. A launch is
+//     proof to the contrary, so the card comes back.
+//   - done:    somebody said the work was finished, and starting a runner onto
+//     it is picking it back up. It has to come back: `done` is never
+//     swept and `turnResumed` only revives a card from a waiting
+//     state, so a live runner left under a done card works forever in
+//     the finished column with nothing able to move it.
+//   - backlog: an offered item nobody had started. Starting it is what the
+//     inbox is for, so it comes back.
+//   - shelved: REFUSED. See ontoRefusal.
+//
+// It lands in `needs-input` with `started` rather than in `running`, which is
+// where session.go puts a session that has only just come up, and for the same
+// reason: the process exists and has not done anything yet. Both paths landing
+// in the same column is the whole point, since the complaint was that they did
+// not.
+func statusAfterLaunchOnto(status string) (string, bool) {
+	switch status {
+	case store.StatusDead, store.StatusDone, store.StatusBacklog:
+		return store.StatusNeedsInput, true
+	}
+	// Already in a column that means a process exists. Nothing to correct, and
+	// a session that started and got to work during the settle window must not
+	// be dragged back to `needs-input` to announce work it has begun.
+	return "", false
+}
+
+// ontoRefusal is when a runner may NOT be started onto an existing card.
+//
+// A SHELVED CARD IS A STANDING NO, and the permission chain in daemon.go is
+// where that is spent: every request from a shelved card is refused unanswered,
+// so a runner started onto one asks, gets a refusal it did not earn, and
+// freezes behind a card nobody is looking at. The other way out is worse. A
+// launch that quietly moved the card out of shelved would overturn the
+// operator putting the work down, which is a decision, not a stale value, and
+// it is the one status here that somebody chose by hand.
+//
+// So neither, and the launch is refused with the way through named. Unshelving
+// still works: the board moves the card out of shelved and THEN asks for the
+// runner (see api.patchTask), so by the time this is asked the card is no
+// longer shelved. This refuses the other callers, which are the adopt path and
+// anything posting `task_id` at /v1/launch.
+//
+// A live runner is refused for the reason `handOverTo` already refuses it: two
+// processes on one card write to one directory and the card ends up describing
+// whichever spoke last.
+func ontoRefusal(t *store.Task, live bool) error {
+	if live {
+		return fmt.Errorf("%s already has a runner on it. two processes on one card write "+
+			"to one directory and the card describes whichever spoke last. attach to that "+
+			"one, or terminate it and start again", t.DisplayTitle())
+	}
+	if t.Status == store.StatusShelved {
+		return fmt.Errorf("%s is shelved, and a shelved card is a standing no: every "+
+			"permission request from it is refused unanswered, so a runner started onto it "+
+			"freezes behind a card nobody is looking at. unshelve it, which starts the same "+
+			"conversation again", t.DisplayTitle())
+	}
+	return nil
+}
+
+// runnerIsLive answers whether there is a process behind this card right now.
+//
+// The supervisor first, because it is not a guess: it holds an entry only
+// while the process atrium started is running, and drops it in `awaitExit`.
+//
+// The pid only for a card that is in a column claiming to run, which is the
+// same set the reaper vets. A pid is never an identity: the operating system
+// recycles them, so the pid on a card that has been dead for an hour can be
+// true about somebody else's process entirely, and believing it there would
+// refuse the relaunch this whole change exists to make work.
+func (d *Daemon) runnerIsLive(t *store.Task) bool {
+	if d.sup.get(t.ID) != nil {
+		return true
+	}
+	switch t.Status {
+	case store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission:
+		return t.PID > 0 && processAlive(t.PID)
+	}
+	return false
+}
+
+// startedOnto moves a card that now has a process on it, once the process has
+// proved it is going to stay.
+//
+// The card is read again rather than trusted from before the spawn, because
+// the runner's own SessionStart hook may have landed during the settle window
+// and moved it already. Re-reading makes the two paths agree instead of race.
+func (d *Daemon) startedOnto(taskID string) {
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		log.Printf("[atrium] status after starting onto %s: %v", taskID, err)
+		return
+	}
+	want, move := statusAfterLaunchOnto(t.Status)
+	if !move {
+		return
+	}
+	if err := d.st.SetStatusBecause(taskID, want, store.WaitingStarted); err != nil {
+		log.Printf("[atrium] status after starting onto %s: %v", taskID, err)
+		return
+	}
+	log.Printf("[atrium] %s was %s and now has a runner on it", t.DisplayTitle(), t.Status)
+}
+
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
@@ -293,6 +412,11 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		t, err := d.st.Get(req.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("no card %s to start onto: %w", req.TaskID, err)
+		}
+		// Before anything is spawned, so a refusal costs nothing and leaves
+		// the card exactly as it was.
+		if err := ontoRefusal(t, d.runnerIsLive(t)); err != nil {
+			return nil, err
 		}
 		task = t
 		agentName = t.WireName
@@ -334,6 +458,13 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 					cwd, t.DisplayTitle())
 				return t, nil
 			case startOnto:
+				// `AdoptableTask` excludes done and dead and NOT shelved, so
+				// this is a real way to reach a shelved card. Adopting one
+				// would start a runner every request of which is refused
+				// unanswered, so it is refused here instead, by name.
+				if err := ontoRefusal(t, false); err != nil {
+					return nil, err
+				}
 				task = t
 				agentName = t.WireName
 				req.TaskID = t.ID
@@ -365,6 +496,10 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		title = filepath.Base(cwd)
 	}
 
+	// Whether this launch is onto a card that already existed, which is the
+	// only case with a status to correct. A card created below is created
+	// running.
+	onto := task != nil
 	claimed := task != nil && task.WireName == ""
 	if agentName == "" {
 		agentName = fmt.Sprintf("%s-%d", filepath.Base(cwd), time.Now().UnixNano()%100000)
@@ -526,6 +661,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 			msg += ":\n" + out
 		}
 		return nil, errors.New(msg)
+	}
+
+	// The process is real and staying, so the card stops saying it is not.
+	// After the settle, because a runner that fell over in the first two
+	// seconds is what `launchFailed` files as dead, and moving the card before
+	// that would have it announce a session that never was.
+	if onto {
+		d.startedOnto(created.ID)
 	}
 
 	d.publishTask(created.ID)

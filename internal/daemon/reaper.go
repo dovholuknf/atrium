@@ -43,7 +43,67 @@ const ReapEvery = 20 * time.Second
 // working, and if it was, it says so and comes straight back.
 const QuietAfter = 15 * time.Minute
 
+// reviveOwnedDead is the reaper run the other way: a card filed dead with a
+// process provably still on it.
+//
+// The reaper is the one thing here that asks the operating system rather than
+// waiting to be told, and the disagreement worth eliminating is a card whose
+// status says one thing and whose process says the other. It has to run in
+// both directions or it only half works. A launch onto a dead card moves it
+// (see `statusAfterLaunchOnto`), and this catches every other path that does
+// not, including ones written after this one.
+//
+// ONLY RUNNERS ATRIUM OWNS, and asked of the supervisor rather than of the
+// card's pid. A dead card's pid is the pid it had when it died, and the
+// operating system recycles pids, so `processAlive` on an old dead card can be
+// true about a process that has nothing to do with it. The supervisor holds an
+// entry only while the process it started is running and drops it in
+// `awaitExit`, so it cannot be wrong in that direction. The honest limit is
+// that a window-mode launch is owned by its terminal and never appears here.
+//
+// It is asked of the supervisor rather than of the board for a second reason:
+// `List` does not return archived cards, and a dead card is archived off the
+// board within a minute. The card being invisible is the symptom, so a check
+// that could not see it would be exactly no use.
+//
+// `needs-input` with `started`, matching the launch path and session.go: there
+// is a process and nothing has been heard from it. `running` would put a card
+// in the one column that means work is happening on the strength of a pid.
+// Moving the status also clears `archived_at`, so a card the sweep already
+// took away comes back onto the board.
+func (d *Daemon) reviveOwnedDead() error {
+	for _, r := range d.sup.all() {
+		t, err := d.st.Get(r.taskID)
+		if err != nil {
+			// A card deleted out from under its runner is not this job's
+			// problem to report. Terminating it is.
+			continue
+		}
+		if t.Status != store.StatusDead {
+			continue
+		}
+		if err := d.st.AppendEvent(t.ID, store.EventLaunched, map[string]any{
+			"by": "reaper", "detected": "filed dead while atrium still owns its runner",
+			"pid": t.PID,
+		}); err != nil {
+			return err
+		}
+		if err := d.st.SetStatusBecause(t.ID, store.StatusNeedsInput, store.WaitingStarted); err != nil {
+			return err
+		}
+		log.Printf("[atrium] %s was filed dead with a live runner on it, back on the board",
+			t.DisplayTitle())
+		d.publishTask(t.ID)
+	}
+	return nil
+}
+
 func (d *Daemon) reapOnce() error {
+	// Both directions, and this one first. A card that is about to be revived
+	// must not be swept off the board in the same tick for being dead.
+	if err := d.reviveOwnedDead(); err != nil {
+		return err
+	}
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
 	if err != nil {
 		return err
@@ -113,6 +173,19 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.reapOrphans(); err != nil {
 			log.Printf("[atrium] orphan check: %v", err)
 		}
+		// WHICH CARDS ARE ALIVE IS SETTLED FIRST, before anything acts on the
+		// answer. The sweep below archives dead cards, and a card the liveness
+		// check was about to revive must not be taken off the board in the
+		// same tick for a status that is one call away from being corrected.
+		// A tick that could not answer the question sweeps nothing.
+		if err := d.reapOnce(); err != nil {
+			if msg := err.Error(); msg != lastErr {
+				log.Printf("[atrium] liveness check: %v", err)
+				lastErr = msg
+			}
+			continue
+		}
+		lastErr = ""
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.
@@ -125,13 +198,5 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.pruneOld(); err != nil {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
-		if err := d.reapOnce(); err != nil {
-			if msg := err.Error(); msg != lastErr {
-				log.Printf("[atrium] liveness check: %v", err)
-				lastErr = msg
-			}
-			continue
-		}
-		lastErr = ""
 	}
 }
