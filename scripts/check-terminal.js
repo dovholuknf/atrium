@@ -191,6 +191,31 @@ if (/completePath/.test(html)) {
   }
 }
 
+// Rule 9: a fit does not move the viewport.
+//
+// `fit()` hands new rows and columns to xterm's `resize()`, and xterm clamps
+// the viewport to the bottom when the row count changes. Every layout event
+// runs it, including ones a window focus change produces, so scrolling up and
+// clicking away used to put you back at the bottom.
+//
+// Two properties keep it fixed and neither survives a casual edit. A fit that
+// changed nothing must not be treated as a resize, and a fit that DID change
+// something must put the viewport back where it was.
+const fitAt = html.indexOf("function onTermResize(");
+if (fitAt < 0) {
+  fail("there is no onTermResize. The layout handler is where a fit gets its position wrong.");
+} else {
+  const body = html.slice(fitAt, fitAt + 1400);
+  if (!/term\.cols === wasCols && term\.rows === wasRows/.test(body)) {
+    fail("onTermResize does not check whether the size actually changed. A fit that changes " +
+      "nothing still reaches xterm's resize, which snaps a scrolled-up terminal to the bottom.");
+  }
+  if (!/scrollToLine\(/.test(body)) {
+    fail("onTermResize never restores the viewport. A resize that changes the row count clamps " +
+      "to the bottom, so a terminal somebody scrolled up loses their place on any layout event.");
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);
