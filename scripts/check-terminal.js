@@ -490,6 +490,48 @@ if (/function openFromTerminal\(/.test(html)) {
   }
 }
 
+// Rule 13: the font size goes through the resize path, and dies with the pane.
+//
+// Changing xterm's `fontSize` changes how many rows and columns fit, so it is a
+// resize whether or not it is called one. Fitting on its own here would be a
+// second copy of what rules 9 through 12 protect: a fit that changed nothing
+// still reaches xterm's `resize` and snaps a scrolled-up terminal to the
+// bottom, and a fit that DID change something has to put the viewport back and
+// hold it while the runner repaints.
+//
+// SEARCHED FOR RATHER THAN SLICED AT. A sibling check reads a fixed window of
+// characters from the top of a function and fails anything that pushes what it
+// wants past the end, which has nothing to do with what it protects. This takes
+// the whole function and looks inside it.
+if (/function setTermFont\(/.test(html)) {
+  const fontAt = html.indexOf("function setTermFont(");
+  const fontEnd = html.indexOf("\nfunction ", fontAt + 1);
+  const fontBody = html.slice(fontAt, fontEnd < 0 ? html.length : fontEnd);
+  if (!/onTermResize\(\)/.test(fontBody)) {
+    fail("setTermFont does not go through onTermResize. A font change is a resize, and " +
+      "fitting on its own is a second copy of the viewport handling that rules 9 to 12 " +
+      "exist to protect.");
+  }
+  if (/localStorage|patchTask/.test(fontBody)) {
+    fail("setTermFont persists the size. It is deliberately short lived and dies with the " +
+      "pane, because it answers `I cannot read this right now` rather than being a " +
+      "preference. See the comment above it.");
+  }
+  // And the line that makes that true. Without it a size set on one terminal
+  // survives into the next one built in the same page, which is the
+  // persistence above arriving by accident.
+  const openAt = html.indexOf("function openTerm(");
+  if (openAt >= 0) {
+    const openEnd = html.indexOf("\nfunction ", openAt + 1);
+    const openBody = html.slice(openAt, openEnd < 0 ? html.length : openEnd);
+    if (!/termFontSize = TERM_FONT_DEFAULT/.test(openBody)) {
+      fail("openTerm does not put the font size back to the default, so a size set on one " +
+        "terminal survives into the next one built in this page. It is meant to die with " +
+        "the pane.");
+    }
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);

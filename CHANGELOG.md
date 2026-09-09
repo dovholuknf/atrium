@@ -5,6 +5,63 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The text in a terminal scales without scaling the board around it.**
+
+  Browser zoom was the only tool and it takes the tabs, the card strip, the bar and every chip with it. The
+  terminal's cog now has **text size**, a number with a minus and a plus either side of it, which changes
+  xterm's own `fontSize` for that pane and nothing else on the page.
+
+  **A value you can type, not a list you pick from.** It started as a submenu of bigger, smaller and reset,
+  which closed the menu on every press: nudging a font up four points meant opening the cog four times, and no
+  number of entries lets somebody say 22. So the menu learned one new row shape. It is the only row here that
+  does not close the menu, because it is the only one that is a value being adjusted rather than a decision
+  made once, and it is a `div` rather than a `button` so the row itself does nothing and the three controls in
+  it do. The row handler now scopes to DIRECT children for that reason: a nested button carrying no index
+  would have looked the item list up with a NaN.
+
+  Closing the menu also blurs anything focused inside it. The menu is hidden rather than removed, so a control
+  that had the focus kept it and every keystroke after that went somewhere nobody could see. The stepper's
+  field is the first thing in there anybody focuses on purpose.
+
+  **It dies with the pane, deliberately.** Not on the card, not in `localStorage`, not on the daemon, though
+  every other per-terminal choice here is remembered somewhere: the theme is on the card, a popped-out window's
+  size is in storage, the skin is on the daemon. This one answers "I cannot read this right now" rather than
+  "this is how I like terminals", and `openTerm` puts it back to 14 every time it builds a terminal.
+
+  **A font change is a resize**, which is the part that makes it more than a setting. xterm measures in cells,
+  so changing the size changes how many rows and columns fit and that number goes to the runner. It goes
+  through `onTermResize` rather than fitting on its own, because that already ignores a fit that changed
+  nothing, which would otherwise snap a scrolled-up terminal to the bottom, and already restores the viewport
+  and holds it while the runner repaints. Those are `check-terminal.js` rules 9 through 12 and reimplementing
+  them here would be a second copy to get wrong.
+
+  Rule 13 keeps it that way, and checks the size is not persisted. It SEARCHES the function rather than
+  slicing a fixed number of characters off the top of it, which is a trap a sibling rule has.
+
+  The pty follows the smallest attached viewport, so a bigger font does narrow the columns the agent draws
+  into for anybody else watching. Left that way: a terminal has one size, and an exemption would mean the agent
+  drawing into a width nobody is looking at.
+
+- **A question can be taken off a card without telling the session anything.**
+
+  Every way an ask got settled delivered text: saying something to a card types it into the terminal, sending
+  its note does the same, and a session declaring its work over is the session's own decision. None of them is
+  available to somebody who already answered by TYPING IN THE TERMINAL, which atrium cannot see and which is how
+  anybody sitting in front of a session replies. `askAnswered` says so in its own comment and leaves it there.
+
+  So the question stays open forever. Nothing expires an ask, and `wasAsked` on the board falls back to the ask
+  field when no waiting reason is set, so every LATER turn-end on that card announces itself as a question. One
+  card carried two of them for two days and rang as `asked you something` every time it finished a turn, for
+  questions answered within a minute of being asked.
+
+  `DELETE /v1/tasks/{id}/asks` settles them all and sends nothing, and the card menu offers it when there is
+  something to dismiss. Recorded in the event log as `dismissed` rather than as answered, because that is what
+  happened. A question put to a peer comes off too: it is still one nobody is going to answer, and a menu entry
+  that said it cleared them and did not would be worse than not having one.
+
+  What this does NOT do is stop the mislabelling. `wasAsked` inferring a question from a stale ask field is a
+  separate defect and is reported rather than changed here.
+
 - **Four things the board drew wrongly.** (`B2-10`, `B2-11`, `B2-03`, `B2-09`)
 
   **A pinned session in the terminal switcher was the wrong colour.** The row wrote its star as `class="pin"`

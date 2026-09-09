@@ -226,7 +226,7 @@ One session, and it should build the endpoint and the statusline change together
 Kept together deliberately. Each is minutes of work and they all live in `internal/api/web/index.html`, so
 they are one session and not five. Adding a fifth one here is cheaper than starting a fifth agent.
 - **The whole group heading toggles the accordion, and nothing says so.** Operator: "it's still REALLY not
-- **Scale the text in a terminal without scaling the board around it.** Operator: "i need to be able to scale
+- **DONE.** **Scale the text in a terminal without scaling the board around it.** Operator: "i need to be able to scale
   the font IN the terminal separate from the browser so that it doesn't scale the ui elements with the text.
   some sort of setting cog menu per terminal and keep it short lived so it's tied TO the terminal."
 
@@ -245,9 +245,12 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   1. **It resizes the runner for every other viewer.** `setViewport` agrees on the SMALLEST attached viewport,
      so somebody bumping their font up in one window shrinks the columns the agent is drawing into everywhere.
      With the second-view refusal in place that is one viewer most of the time, and not over a share.
-  2. **It can discard the carried scrollback.** The buffer written across a restart is replayed only when the
-     width matches, because bytes composed for another width are unreadable. A font change right after
-     attaching would throw away the history that just came back.
+  2. ~~**It can discard the carried scrollback.**~~ **No longer true, and the correction is worth keeping.**
+     This said a buffer was replayed only when the width matched, so a font change right after attaching would
+     throw away the history that just came back. `SnapshotAt` is gone. `ringBuffer.Replay` hands over
+     everything it holds with the widths alongside it, and `attach.go` says which above the replay, because
+     deciding on the reader's behalf that imperfect output is worth less than no output is wrong: misplaced
+     text can be read, scrolled past and searched, and an empty pane cannot. A font change costs nothing here.
   3. **It must not move the viewport.** `check-terminal.js` rules 9 through 12 exist because a `fit()` that
      changes the row count clamps the view to the bottom, which is the scroll bug that took five attempts to
      fix. A font change is a deliberate resize and has to restore the position the same way `onTermResize`
