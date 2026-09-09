@@ -84,6 +84,13 @@ type Server struct {
 	// shows one session, and this is how the older one is reached when it is
 	// wanted.
 	OlderScrollback http.HandlerFunc
+	// DismissAsks takes every outstanding question off a card without telling
+	// the session anything.
+	//
+	// Owned by the daemon rather than answered here, because clearing a
+	// question writes to the event log and publishes the card, and both of
+	// those belong with the other three ways an ask gets settled.
+	DismissAsks http.HandlerFunc
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
@@ -317,6 +324,9 @@ func (s *Server) Handler() http.Handler {
 	// is for the dialog, where somebody is reading the card rather than
 	// scanning it, and it is the only place the rest of them exist.
 	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
+	if s.DismissAsks != nil {
+		mux.HandleFunc("DELETE /v1/tasks/{id}/asks", s.DismissAsks)
+	}
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)

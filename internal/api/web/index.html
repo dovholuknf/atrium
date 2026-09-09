@@ -815,6 +815,34 @@
   /* A toggle. The label names the thing and the lamp says whether it is on,
      so the entry reads as a state rather than as an instruction whose meaning
      you have to invert to learn what is true now. */
+  /* A NUMBER YOU CAN HOLD DOWN OR TYPE INTO. The rest of this menu is rows
+     you press once, so this one is deliberately shaped like a control rather
+     than like an entry: no hover highlight across the whole row, because the
+     row does nothing and only the three things in it do. */
+  #cardmenu .stepper {
+    display: flex; align-items: center; gap: 4px; padding: 5px 11px;
+    color: var(--label); font-size: var(--fs-base);
+  }
+  #cardmenu .stepper .steplabel { margin-right: auto; }
+  #cardmenu .stepper button {
+    display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+    color: var(--label); border-radius: var(--r-sm); font-size: var(--fs-base);
+  }
+  #cardmenu .stepper button:hover { background: var(--lift); color: var(--head); }
+  #cardmenu .stepper .stepval {
+    width: 48px; text-align: center; padding: 3px 4px;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
+    background: var(--shell-1); color: var(--head);
+    font: var(--fs-base) var(--mono);
+  }
+  /* The browser's own spinners, gone. There are two buttons either side of
+     this doing the same job at a size a pointer can hit. */
+  #cardmenu .stepper .stepval::-webkit-inner-spin-button,
+  #cardmenu .stepper .stepval::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  #cardmenu .stepper .stepval { -moz-appearance: textfield; appearance: textfield; }
   #cardmenu button.toggle { display: flex; align-items: center; gap: var(--sp-3); }
   #cardmenu button.toggle .lamp {
     margin-left: auto; font: var(--fs-xs) var(--mono); letter-spacing: .06em;
@@ -6749,6 +6777,23 @@ async function paintMoreAsks(id, open) {
   box.hidden = false;
 }
 
+// Takes every outstanding question off a card and tells the session nothing.
+//
+// The count comes back rather than being assumed, because the card may have
+// been asked something else between the menu being drawn and the click.
+async function dismissAsks(id) {
+  try {
+    const r = await api(`/v1/tasks/${encodeURIComponent(id)}/asks`, { method: "DELETE" });
+    const n = r.dismissed || 0;
+    toast(n === 1 ? "question dismissed" : `${n} questions dismissed`,
+      "nothing was sent to the session");
+  } catch (e) {
+    toast("could not dismiss", e.message);
+    return;
+  }
+  refresh();
+}
+
 async function answerAsk(id) {
   if (!id) return;
   if (!(detail.open && current && current.id === id)) await openTask(id);
@@ -7907,6 +7952,23 @@ async function cardMenu(e, id) {
                 "started. This session is running somewhere else.",
               act: () => toast("cannot shelve",
                 "atrium does not own this process, so it cannot stop it") },
+    // ANSWERED IN THE TERMINAL, which atrium cannot see.
+    //
+    // Every other way a question comes off a card delivers text to the
+    // session: saying something to it, sending its note, or the session
+    // declaring its work over. None of those is available to somebody who
+    // already replied by typing, which is how anybody sitting in front of a
+    // session replies. So the question stayed open, and since nothing expires
+    // one and the board falls back to the ask field when no waiting reason is
+    // set, every later turn-end on that card announced itself as a question.
+    (t.asks_open || 0) ? {
+      label: t.asks_open === 1 ? "dismiss the question" : `dismiss ${t.asks_open} questions`,
+      note: "says nothing to it",
+      help: "Takes the outstanding questions off this card without sending it " +
+        "anything. For the ones you already answered by typing in its terminal, " +
+        "which atrium cannot see.",
+      act: () => dismissAsks(id)
+    } : null,
     { sep: true },
     // Everything about what this card IS, in one dialog. Last, because it is
     // the one entry you go into rather than press: the ones above are single
@@ -8390,6 +8452,28 @@ function showMenu(e, items) {
 
   cardMenuEl.innerHTML = items.map((it, i) => it.sep
     ? `<div class="sep"></div>`
+    // A NUMBER, WITH BOTH WAYS OF CHANGING IT.
+    //
+    // The rest of this menu is rows you press once. This one is a value you
+    // hold down or type into, which is a different shape and cannot be a
+    // `label` and an `act`: a submenu of bigger, smaller and reset closed the
+    // menu on every press, so nudging a font up four points meant opening the
+    // cog four times, and no amount of entries lets you say 22.
+    //
+    // A `div` rather than a `button`, so the row itself is not clickable and
+    // the three controls inside it are. That is also why the handler below
+    // scopes to DIRECT children: a nested button with no `data-i` would index
+    // the item list with a NaN.
+    : it.step
+    ? `<div class="stepper" data-i="${i}">
+        <span class="steplabel">${esc(it.label)}${
+          it.help ? `<span class="help" tabindex="0" data-tip="${esc(it.help)}">?</span>` : ""}</span>
+        <button class="stepdown" title="smaller">&minus;</button>
+        <input class="stepval" type="number" inputmode="numeric"
+          min="${it.min}" max="${it.max}" value="${it.get()}"
+          aria-label="${esc(it.label)}">
+        <button class="stepup" title="bigger">+</button>
+      </div>`
     : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
         it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
         data-i="${i}"${it.tip ? ` title="${esc(it.tip)}"` : ""}>${esc(it.label)}${
@@ -8419,7 +8503,10 @@ function showMenu(e, items) {
             : `<span class="subitem" data-i="${i}" data-j="${j}"
                 >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
-  cardMenuEl.querySelectorAll("button").forEach(b => b.onclick = ev => {
+  // DIRECT CHILDREN ONLY. A stepper row holds two buttons of its own, and
+  // they carry no `data-i`, so reaching them here would look up `items[NaN]`
+  // and take the menu down on a press meant to change a number.
+  cardMenuEl.querySelectorAll(":scope > button").forEach(b => b.onclick = ev => {
     ev.stopPropagation();
     // The question mark explains, it does not do. Clicking it used to run the
     // entry, which on a destructive one is the worst possible reading of
@@ -8436,6 +8523,34 @@ function showMenu(e, items) {
     ev.stopPropagation();
     closeCardMenu();
     items[Number(s.dataset.i)].sub[Number(s.dataset.j)].act();
+  });
+  // THE MENU STAYS OPEN. Every other row here closes it, because every other
+  // row is a decision made once. This one is a number being adjusted, and a
+  // control that closes the thing it lives in cannot be pressed twice.
+  //
+  // The field is read back from the item rather than from the input after
+  // every change, since the setter clamps and may refuse: typing 400 has to
+  // show what actually happened rather than what was asked for.
+  cardMenuEl.querySelectorAll(".stepper").forEach(row => {
+    const it = items[Number(row.dataset.i)];
+    const input = row.querySelector(".stepval");
+    const apply = (n) => {
+      it.set(n);
+      input.value = it.get();
+    };
+    row.querySelector(".stepdown").onclick = ev => { ev.stopPropagation(); apply(it.get() - 1); };
+    row.querySelector(".stepup").onclick = ev => { ev.stopPropagation(); apply(it.get() + 1); };
+    // Clicking into the field, and typing in it, must not reach the document
+    // listener that dismisses an open menu, nor the board's own shortcuts.
+    input.onclick = ev => ev.stopPropagation();
+    input.onkeydown = ev => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") apply(Number(input.value));
+      if (ev.key === "Escape") closeCardMenu();
+    };
+    // On the way out as well as on Enter, so a value typed and then clicked
+    // away from is not silently discarded.
+    input.onchange = () => apply(Number(input.value));
   });
   wireFlyouts();
 
@@ -8497,6 +8612,17 @@ function wireFlyouts() {
 
 function closeCardMenu() {
   clearTimeout(flyoutTimer);
+  // FOCUS DOES NOT GO WITH IT INTO THE HIDDEN MENU.
+  //
+  // The menu is hidden rather than removed, so a control inside it that had
+  // the focus keeps it, and every keystroke after that goes to something
+  // nobody can see. Reachable since the stepper: its field and its two buttons
+  // are the first things here anybody focuses on purpose.
+  //
+  // Blurred rather than handed anywhere, because this closes from a click, an
+  // escape and a scroll, in five different views. Whatever the page would have
+  // focused on its own is a better answer than a guess made here.
+  if (cardMenuEl.contains(document.activeElement)) document.activeElement.blur();
   cardMenuEl.classList.remove("on");
   cardMenuEl.querySelectorAll("button.subopen").forEach(b => b.classList.remove("subopen"));
 }
@@ -16141,6 +16267,26 @@ async function termSettings(e) {
     { label: "copy on select", on: copyOnSelect,
       tip: "Selecting text copies it, the way a terminal does.",
       act: () => toggleCopyOnSelect() },
+    // The text in the terminal, and nothing else on the page. Browser zoom
+    // takes the tabs, the strip and the chrome with it, which is the thing
+    // this exists instead of.
+    //
+    // The current size is on the row rather than in the tip, because the one
+    // question somebody opening this has is how big it is now.
+    { step: true, label: "text size",
+      min: TERM_FONT_MIN, max: TERM_FONT_MAX,
+      help: "Scales the text in this terminal only, unlike browser zoom, " +
+        "which takes the tabs and the strip with it. Type a size or press the " +
+        "buttons. It lasts as long as the pane does and is deliberately not " +
+        "remembered: it answers `I cannot read this right now`.",
+      get: () => termFontSize,
+      set: (n) => setTermFont(n) },
+    // Only when it is not already there, since a reset that resets nothing is
+    // a row you read and skip every time you open this.
+    termFontSize !== TERM_FONT_DEFAULT ? {
+      label: "reset text size", note: `back to ${TERM_FONT_DEFAULT}px`,
+      act: () => setTermFont(TERM_FONT_DEFAULT)
+    } : null,
     { sep: true },
     // WHAT THIS TERMINAL SAID BEFORE THE LAST RESTART.
     //
@@ -16249,13 +16395,17 @@ function openTerm(task) {
 
   const screen = document.getElementById("t-screen");
   screen.innerHTML = "";
+  // BACK TO THE DEFAULT, because the size dies with the pane. See
+  // `setTermFont`: this is the line that makes it short lived, and deleting it
+  // is how the setting quietly becomes a preference.
+  termFontSize = TERM_FONT_DEFAULT;
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
     // Consolas renders as boxes.
     fontFamily: "'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', " +
       "'Fira Code', Consolas, ui-monospace, monospace",
-    fontSize: 14,
+    fontSize: termFontSize,
     lineHeight: 1.2,
     letterSpacing: 0.2,
     cursorBlink: true,
@@ -18783,6 +18933,53 @@ function sendResize() {
 // exception: after you TYPE, `followScroll` keeps the view down for a moment.
 // The rule the operator gave is exactly that, said from this side: stay put
 // until I type.
+// HOW BIG THE TEXT IN THE TERMINAL IS, and nothing else on the page.
+//
+// Browser zoom was the only tool and it scales the tabs, the card strip, the
+// bar and every chip with it. The operator's words: "scale the font IN the
+// terminal separate from the browser so that it doesn't scale the ui elements
+// with the text".
+//
+// SHORT LIVED ON PURPOSE, and this is the unusual part. It is not on the card,
+// not in `localStorage`, and not on the daemon, even though every other per
+// terminal choice here is remembered somewhere: the theme is on the card, a
+// popped-out window's size is in storage, the skin is on the daemon. This one
+// dies with the pane, because it answers "I cannot read this right now" rather
+// than "this is how I like terminals". `openTerm` puts it back to the default
+// every time it builds one, which is the line that makes that true.
+//
+// The next person to read this will want to persist it. That is the whole
+// reason the paragraph above exists.
+const TERM_FONT_DEFAULT = 14;
+const TERM_FONT_MIN = 8;
+const TERM_FONT_MAX = 32;
+let termFontSize = TERM_FONT_DEFAULT;
+
+// A FONT CHANGE IS A RESIZE, which is the part that makes this more than a
+// setting. xterm measures in CELLS, so changing the size changes how many rows
+// and columns fit, and that number goes to the runner.
+//
+// So it goes through `onTermResize` rather than fitting on its own. That
+// function already does the two things this path needs and both took a while
+// to get right: it ignores a fit that changed nothing, since reaching xterm's
+// `resize` with the same numbers snaps a scrolled-up terminal to the bottom,
+// and it restores the viewport afterwards and HOLDS it while the runner
+// repaints. `check-terminal.js` rules 9 through 12 exist because of those.
+// Reimplementing the fit here would be a second copy of that to get wrong.
+//
+// It does resize the pty for every other viewer, since `setViewport` agrees on
+// the smallest attached viewport. Left that way deliberately: a terminal has
+// one size, an exemption would mean the agent drawing into a width nobody is
+// looking at, and the second-view refusal means it is one viewer nearly always.
+function setTermFont(px) {
+  if (!term) return;
+  const size = Math.max(TERM_FONT_MIN, Math.min(TERM_FONT_MAX, Math.round(px || 0)));
+  if (size === termFontSize) return;
+  termFontSize = size;
+  term.options.fontSize = size;
+  onTermResize();
+}
+
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached

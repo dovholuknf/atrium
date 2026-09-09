@@ -333,6 +333,41 @@ func (d *Daemon) askAnswered(taskID, by string) {
 // One event per question rather than one per act, because the event log is
 // where you go to find out what happened to a question, and a single line
 // saying three were settled cannot tell you which three.
+// handleDismissAsks takes every outstanding question off a card and tells the
+// session nothing.
+//
+// THE ONE WAY TO ANSWER A QUESTION THAT DOES NOT INVOLVE ANSWERING IT, and it
+// exists because the three that came first all deliver text. Saying something
+// to a card types it into the terminal, sending a note does the same, and a
+// session finishing is the session's own decision. None of them is available
+// to somebody who already answered by TYPING IN THE TERMINAL, which atrium
+// cannot see and which is the way anybody sitting in front of a session
+// actually replies.
+//
+// So the question stayed open. Nothing expires an ask, and `wasAsked` on the
+// board falls back to the ask field when no waiting reason is set, so every
+// later turn-end on that card announced itself as a question. One card carried
+// two questions for two days that way, and the operator had answered both
+// within a minute of being asked.
+//
+// Recorded as `dismissed` rather than answered, since that is what happened
+// and the event log is the only place it can be said.
+func (d *Daemon) handleDismissAsks(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	settled, err := d.st.AnswerAllAsks(taskID, askDismissed)
+	if err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	d.askSettled(taskID, askDismissed, settled)
+	d.publishTask(taskID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"dismissed": len(settled)})
+}
+
+// What the event log records for a question nobody answered through atrium.
+const askDismissed = "dismissed"
+
 func (d *Daemon) askSettled(taskID, by string, settled []*store.Ask) {
 	for _, a := range settled {
 		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
