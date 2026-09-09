@@ -74,6 +74,16 @@ type Server struct {
 	// agent and there is nowhere to type `git status`.
 	OpenShell http.HandlerFunc
 	ShutShell http.HandlerFunc
+	// OlderScrollback serves what this card's terminal held before the last
+	// restart, ASKED FOR RATHER THAN PUSHED.
+	//
+	// It used to be joined onto the front of every attach, and the result was
+	// two copies of the last hour: a resumed session reprints its own recent
+	// history, so the carried bytes ended mid-conversation and the same
+	// conversation began again below the divider. A terminal running claude
+	// shows one session, and this is how the older one is reached when it is
+	// wanted.
+	OlderScrollback http.HandlerFunc
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
@@ -301,6 +311,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
+	// Every question this card is waiting on, oldest first.
+	//
+	// The card itself carries only the oldest, which is what a row draws. This
+	// is for the dialog, where somebody is reading the card rather than
+	// scanning it, and it is the only place the rest of them exist.
+	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
@@ -363,6 +379,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
+	}
+	if s.OlderScrollback != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/older", s.OlderScrollback)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
@@ -463,6 +482,19 @@ type view struct {
 	// activity worth drawing and a context figure that still decides whether
 	// you resume it.
 	Telemetry any `json:"telemetry,omitempty"`
+	// AsksOpen is how many questions this card has outstanding.
+	//
+	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
+	// whole card until an ask became a row, and it is still the right thing to
+	// show first, but on its own it says a card has one question when it may
+	// have six. The bug this replaces was a second question DESTROYING the
+	// first; drawing one of several without saying so would be the same lie
+	// told more quietly.
+	//
+	// Counted for the whole list in one query rather than per card, the way
+	// `UndeliveredCounts` already does for messages. Absent when it is one or
+	// zero, because the row says that much by drawing the ask or not.
+	AsksOpen int `json:"asks_open,omitempty"`
 }
 
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
@@ -517,6 +549,29 @@ func toViews(ts []*store.Task) []view {
 	return out
 }
 
+// withAskCounts stamps how many questions each card has outstanding.
+//
+// ONE QUERY FOR THE WHOLE LIST. The alternative is asking per card, which is
+// the N+1 this board already avoids for undelivered messages, and the list is
+// drawn on every event.
+//
+// A failure here is swallowed on purpose. The count is a decoration on a row
+// whose ask is already drawn from the card itself, so a board that cannot say
+// "and two more" is worth serving; a board that answers 500 because a count
+// query failed is not.
+func (s *Server) withAskCounts(vs []view) []view {
+	counts, err := s.st.OpenAskCounts()
+	if err != nil {
+		return vs
+	}
+	for i := range vs {
+		if vs[i].Task != nil {
+			vs[i].AsksOpen = counts[vs[i].Task.ID]
+		}
+	}
+	return vs
+}
+
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	var statuses []string
 	if raw := r.URL.Query().Get("status"); raw != "" {
@@ -527,7 +582,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": toViews(tasks)})
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(tasks))})
 }
 
 func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
@@ -536,7 +591,24 @@ func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": toViews(tasks)})
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(tasks))})
+}
+
+// listAsks answers with the questions a card is still waiting on.
+//
+// Open ones only. The answered ones are in the event log, which is where a
+// history belongs; a dialog listing forty settled questions above the one that
+// matters is worse than not listing them.
+func (s *Server) listAsks(w http.ResponseWriter, r *http.Request) {
+	asks, err := s.st.OpenAsks(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if asks == nil {
+		asks = []*store.Ask{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"asks": asks})
 }
 
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {

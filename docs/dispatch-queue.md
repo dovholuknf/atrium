@@ -225,6 +225,81 @@ One session, and it should build the endpoint and the statusline change together
 
 Kept together deliberately. Each is minutes of work and they all live in `internal/api/web/index.html`, so
 they are one session and not five. Adding a fifth one here is cheaper than starting a fifth agent.
+- **The whole group heading toggles the accordion, and nothing says so.** Operator: "it's still REALLY not
+- **Scale the text in a terminal without scaling the board around it.** Operator: "i need to be able to scale
+  the font IN the terminal separate from the browser so that it doesn't scale the ui elements with the text.
+  some sort of setting cog menu per terminal and keep it short lived so it's tied TO the terminal."
+
+  Browser zoom is the only tool today and it scales everything: the tabs, the card strip, the bar, the chrome.
+  What is wanted is xterm's own `fontSize`, per pane, from the cog that is already on the terminal bar.
+
+  **SHORT LIVED, and that is the unusual part.** Every other per-terminal choice on this board is remembered:
+  the theme is on the card, the popped-out window size is in `localStorage`, the skin is on the daemon. This
+  one is deliberately none of those. It dies with the pane, because it is an answer to "I cannot read this
+  right now" rather than a preference. Say that in the comment or the next person will helpfully persist it.
+
+  **The thing that makes this more than a font setting: changing the size changes the SIZE OF THE PTY.** xterm
+  measures in cells, so a font change is a `fit()`, and `fit()` hands new rows and columns to `resize()`. Three
+  consequences, all already load bearing elsewhere:
+
+  1. **It resizes the runner for every other viewer.** `setViewport` agrees on the SMALLEST attached viewport,
+     so somebody bumping their font up in one window shrinks the columns the agent is drawing into everywhere.
+     With the second-view refusal in place that is one viewer most of the time, and not over a share.
+  2. **It can discard the carried scrollback.** The buffer written across a restart is replayed only when the
+     width matches, because bytes composed for another width are unreadable. A font change right after
+     attaching would throw away the history that just came back.
+  3. **It must not move the viewport.** `check-terminal.js` rules 9 through 12 exist because a `fit()` that
+     changes the row count clamps the view to the bottom, which is the scroll bug that took five attempts to
+     fix. A font change is a deliberate resize and has to restore the position the same way `onTermResize`
+     does.
+
+  So the setting is two lines and the correctness is entirely in what a resize already means here. Read those
+  rules before touching it, and add one for this path.
+
+- **A shell atrium opens should prefer `pwsh`, then `powershell`, then `cmd`.** Operator: "shell should use
+  pwsh if available then powershell then cmd in that order".
+
+  Two places this bites, and they are not the same code:
+
+  1. **The card's own shell**, opened from the terminal bar beside the runner. It exists for the moment the
+     agent has wedged and there is nowhere to type `git status`, so it should be the shell somebody actually
+     types in.
+  2. **What a harness runs when nothing names a shell.** A harness that spawns a command has to pick one, and
+     picking `cmd` gives a person a prompt they stopped using years ago.
+
+  The order matters more than it looks. `pwsh` is PowerShell 7 and is a separate install; `powershell` is 5.1
+  and is on every Windows; `cmd` is the floor. Falling straight to `cmd` when `pwsh` is missing skips the one
+  that is always there.
+
+  RESOLVED ONCE, NOT PER SPAWN. `internal/claudeconf/whichexe.go` already has the pattern for this and the
+  header explains why it is not `os.Executable()`. Resolve at startup, log which one was chosen, and let a
+  harness override it, since a machine where the answer is wrong should be able to say so without a rebuild.
+
+  Seen on SG3 while setting up a room: the ssh default shell was pointed at a `pwsh.exe` that is not installed
+  there, and the session came up on 5.1. A chooser that checks rather than assumes would have said so.
+
+  obvious that clicking anywhere on that whole row collapses and expands the view. that should be a hover or
+  something... i keep clicking all that white space thinking it's safe but it collapses or expands the
+  accordion".
+
+  A `<summary>` is clickable across its full width by default, and the heading is mostly empty space, so the
+  safest looking part of the row is the part with the largest hit area. Making the triangle a proper target
+  (fixed in round 9) helped the aim and did nothing about the surprise: the glyph now looks like the control,
+  which makes the rest of the row look like it is not one.
+
+  Two ways, and they are opposite:
+
+  - **Say the whole row is the control.** A hover treatment across the entire heading, the way a list row that
+    opens something already gets one. Cheap, keeps the big hit area, and makes an accidental press an informed
+    press.
+  - **Make only the triangle the control.** Stop the summary's default toggle and put the handler on the
+    glyph. Then the white space IS safe, which is what the operator expected. Costs the easy target that was
+    just added, on a row people also want to click quickly.
+
+  The first is more likely right, since the big target is worth keeping and the complaint is about surprise
+  rather than about wanting the space inert. But note the collision: the heading is ALSO the right-click
+  target for recolouring a group, so whatever hover is added has to leave room to say that too.
+
 
 - **A toast about a popped-out window appears in the wrong window.** Attaching to a card that is already
   popped out raises that window and says "it is in its own window: raised it for you". The toast is drawn in
@@ -305,6 +380,251 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   board has no test harness of its own beyond the `scripts/check-*.js` parsers, so the honest options are a
   check script over `index.html` for the controls existing, and API-level tests for the state actually
   changing. Decide which before writing either.
+
+---
+
+- **A 27 line paste arrived as one fragment.** The operator copied a `tasklist | grep atrium` block out of
+  Notepad++ and pasted it into a terminal on loopback. What reached the session was `23,276 K` -- the tail of
+  the LAST line -- and nothing else. Twenty six lines vanished with nothing said. The source used CRLF
+  throughout, which he confirmed.
+
+  **`sendPasteText` normalises before it decides whether to bracket, and that is the defect:**
+
+      let body = String(text).replace(/\r\n/g, "\r").replace(/\n/g, "\r");
+      const bracketed = term && term.modes && term.modes.bracketedPasteMode;
+      if (bracketed) body = "\x1b[200~" + body + "\x1b[201~";
+
+  Turning every line ending into a bare `\r` is the behaviour the UNBRACKETED case wants, because there a
+  newline should read as Enter. It is applied unconditionally, so the bracketed path carries twenty seven
+  carriage returns where it should carry newlines. A bare `\r` returns the cursor to column zero without
+  advancing a line, so the lines overwrite each other and what survives is a tail.
+
+  The point of bracketed paste is that the RECEIVER decides what a newline in the block means. Rewriting the
+  newlines first takes that decision away from it and hands it the one thing it cannot undo.
+
+  **The fix has two halves and only one of them is the regex.** Inside the markers the line endings should go
+  as they came, or normalised to `\n`. Outside them the `\r` conversion stays, because that is what makes a
+  small paste behave like typing. So the normalisation belongs on the unbracketed branch, not above the
+  branch.
+
+  **THE MECHANISM IS NOT ESTABLISHED, and the exact input is kept so it can be.** The source was saved
+  verbatim: 2084 bytes, 27 lines, CRLF throughout, ending `23,276 K\r\n`. What arrived was the last EIGHT
+  CHARACTERS, not the last line, and the last line is about seventy characters long. That rules out both of
+  the obvious readings:
+
+  - If each `\r` submitted, the result would be twenty seven messages, or one carrying the whole final line.
+  - If each line overwrote from column zero, the buffer would hold the whole final line.
+
+  Something is keeping only the text after the final run of whitespace. Whatever that is has not been
+  identified, and the `\r` normalisation above is a defect on its own merits whether or not it is the cause.
+  Reproduce with the saved input before changing anything, because a fix that makes a short paste work still
+  proves nothing here: short pastes already worked.
+
+  **Why this shipped:** `check-terminal.js` rule 5 asserts the markers exist IN THE FILE and cannot assert
+  anything about what sits between them. Add a rule that the conversion is inside the unbracketed branch, since
+  that is a shape a parser can see.
+
+  **And every paste tested so far was short.** Round 6 check 6.4 was a multi-line paste that worked, over a
+  share, through the paste box. This was loopback, direct, twenty seven lines. Three different paths and only
+  the short ones were exercised. Any test that replaces this one has to use a block long enough that
+  overwriting is visible.
+
+## S. Handing somebody a session, which is the moment the whole feature is judged
+
+Six findings from one screen. This dialog is the entire product of lending a session: everything before it is
+machinery and this is what a person sees.
+
+- **THE COPY BUTTON COPIES THE WRONG THING. A defect, and the cause is one missing escape.** The button is
+  written as:
+
+      onclick="copyText(this, ${JSON.stringify(s.address).replace(/'/g, "&#39;")})"
+
+  `JSON.stringify` emits the address WRAPPED IN DOUBLE QUOTES, and that sits inside a double-quoted HTML
+  attribute. The attribute ends at the first inner quote, so the handler the browser parses is not the handler
+  that was written. Only `'` was escaped; `"` was not.
+
+  What the operator got in the clipboard was the paragraph under the box. What they wanted was
+  `atrium-b85qy7smrqke.shares.zrok.io/#term=01a06dc7-...`.
+
+  **Do not fix this by escaping harder.** This board already learned that lesson on the file list: "a filename
+  with an apostrophe in it breaks an onclick attribute, and HTML escaping does nothing about that", and the fix
+  there was to WIRE the handler after rendering rather than to inline it. Same fix here, and the same reason.
+
+- **The address has no scheme.** It reads `atrium-b85qy7smrqke.shares.zrok.io/#term=...`, so pasting it
+  somewhere that turns text into links usually will not, and pasting it into an address bar is a guess about
+  http versus https. It is https. Say so.
+
+- **It is a link and it is not clickable.** Operator: "that link should 'be a link' that i can click WITH the
+  copy icon for the 'copy button' instead". A read-only input with a word beside it is a form field; this is an
+  address somebody is about to open or send. An anchor, plus a copy ICON rather than a copy WORD, since the
+  word is what makes it read like a field.
+
+- **`zrok token` is a frightening label for something harmless.** Operator: "what is 'zrok token'??? is that a
+  leak????" It is the SHARE token, zrok's id for this one share, and the comment beside it says why it is
+  shown: it is what releases a share left behind on the account.
+
+  It is not the account token, which is the actual credential and lives in `~/.zrok2/environment.json`. But
+  "zrok token" is the phrase everybody uses for the account one, so a label that makes the operator ask whether
+  their board just leaked a credential has already failed, whatever the answer is.
+
+  **DECIDED: TAKE IT OFF THE SCREEN.** Operator: "that share token is 'just implementation details' then to me.
+  it should be hidden and not shown and just referenced / used when needed". So it is not a labelling problem
+  after all. It is on this dialog because releasing an orphaned share needs it, and that is atrium's job rather
+  than the operator's: the sweep in `SweepDeadCardShares` already releases names atrium reserved, and anything
+  it cannot reach is a bug to fix rather than a string to paste at somebody.
+
+  Remove it here. If a human ever genuinely needs it, it belongs on the shares list beside the share it
+  identifies, where somebody cleaning up would look, and not in the flow of handing a link to a person.
+
+- **"Whoever has this drives the session. It survives a restart and stops only when you say so."** Operator:
+  "makes NO fucking sense". Three facts about three different things in two sentences: who can use it, what
+  happens on a restart, and how it ends. Each matters and none of them is what somebody reads at the moment
+  they are about to send a link to a person.
+
+  The sentence that belongs here is the warning: anybody with this link has the terminal. The rest is
+  reference, and reference belongs where the share is listed rather than in the flow of handing it over.
+
+- **`stop sharing, for good` stops it with no confirmation.** Operator: "i clicked that but again -- no modal
+  while it STOPPED the share. i need that". Stopping gives the address up and it does not come back.
+
+  The code KNOWS this. The comment on that menu row says the wording is a warning because "a flyout row cannot
+  carry a help bubble, so the explanation is in the confirmation instead" -- so a confirmation was designed,
+  named in a comment, and never wired. `confirmUser` is right there and is what `killTask` uses for a smaller
+  loss.
+- **THE SECOND-VIEW REFUSAL DOES NOT WORK OVER A SHARE, WHICH IS THE CASE IT EXISTS FOR.** Operator, opening a
+  lent session's address while the board held the same terminal: "i do NOT get the same behavior i expected. i
+  expected to learn 'hey you can only have one share open take it anyway' like the other thing did".
+
+  Round 9 built the refusal on the `BroadcastChannel` the popped-out windows already used. That channel is
+  scoped to an ORIGIN. `atrium-b85qy7smrqke.shares.zrok.io` and `localhost:7778` are two origins, so the two
+  windows cannot hear each other at all: the roll call goes out, nobody answers, and the guest correctly
+  concludes the card is free.
+
+  So the fix covers two windows on the operator's own machine and does nothing for a guest, which is the whole
+  reason two views on one terminal matters. The pty still sizes to the smaller viewer and the wider one still
+  redraws wrapped lines on top of itself.
+
+  **The arbitration has to move to the daemon.** `setViewport` already holds a map of every attached viewer per
+  runner, keyed by attachment, and the websocket is the one thing both origins talk to. That is the only place
+  that can see across origins, across machines, and across a browser that has never heard of the other one.
+
+  Three things to settle when it is written:
+
+  1. **What the second attach gets.** A refusal on the socket, before any output flows, saying the terminal is
+     in use. Not a silent close, which reads as the share being broken.
+  2. **What "take it anyway" becomes.** In the browser-only version the holder yields over the bus. Across
+     origins the daemon has to do it: drop the existing attachment and tell that viewer why. That is a stronger
+     act than the local one, since the viewer being kicked may be a person on another machine.
+  3. **Whether a guest may take it from the operator at all.** The local case is one person with two windows.
+     This one is two people, and the operator lent the session deliberately. Kicking the owner off their own
+     terminal because a guest opened the link is not obviously right, and neither is refusing the guest the
+     thing they were just handed.
+
+  The browser-side refusal is still worth keeping for the same-origin case: it is faster, it explains itself in
+  the window somebody is looking at, and it stops the common accident. It is just not the containment.
+
+- **The guest page works and reads like a bug report.** It correctly recognises a trimmed link now, and the
+  operator's verdict on the words was "that page shows me this garbage". What it says:
+
+  > one terminal
+  > this link is one terminal. nothing else here is shared.
+  > This address ends in #term=<card> and that fragment is what picks the session. It never reaches the server,
+  > so a link with it trimmed off arrives here. Ask for the whole link again.
+
+  Four problems, and they are one problem:
+
+  1. **The heading is `one terminal`**, which is a fact about the share and not a description of what happened.
+     What happened is that this link is incomplete.
+  2. **The daemon's refusal sentence is reused as the opening line.** It was written to answer a request, where
+     it is right. As the first thing a person reads it answers a question they did not ask.
+  3. **Three sentences of mechanism** -- what a fragment is, that the server never sees it, why the request
+     arrived here -- before anything they can do.
+  4. **The one actionable sentence is last.** `Ask for the whole link again.`
+
+  Invert it. Say the link is incomplete, say to ask for the whole one, and put the fragment explanation
+  underneath for whoever wants to know why.
+
+  **This is the same defect as the zrok account block and the switcher key hint**, both already in this file:
+  a verdict is owed first and the working goes underneath. Worth doing as one pass over every explanatory block
+  on the board rather than three separate fixes, since three fixes will not stop the fourth being written the
+  same way.
+
+
+---
+
+## R. Reading a card's questions, which is now possible and unpleasant
+
+An ask became a row so a second question stops destroying the first, and the board grew a count and a list to
+show it. The data is right. Everything about touching it is wrong, and the operator's verdict on the first
+attempt was "the experience sucks".
+
+- **THE DIALOG DOES NOT LIST THE OTHER QUESTIONS. A defect, not a preference.** `withAskCounts` was wired to
+  `listTasks` and `waiting` and NOT to `getTask`, so the card dialog reads a card with no `asks_open` on it,
+  `paintMoreAsks` sees a count below two, and returns before drawing anything. The row says `+1 more` and the
+  card it opens shows one question. Fix `getTask` first: everything below is judged through it.
+
+- **`+1 more` cannot be read without opening the card.** Operator: "worth noting that the '+1 more' won't let
+  me copy the text without opening the card -- super fucking annoying". The chip is a count, and the thing
+  wanted is the questions.
+
+  Cheapest honest answer is the `title`, so hovering the chip shows the rest as text. Better is drawing them:
+  the row already carries one question on its own line, and a second line for a second question is the shape
+  that stops needing a chip at all. Decide whether a stack row may be three lines tall before choosing, because
+  that is the real constraint and it is why the count exists.
+
+- **Clicking the question drops you into "say something to it".** Operator: "when i click on the question,
+  equally stupid is it brings me directly to 'say something to it'".
+
+  That was deliberate and it is wrong. The reasoning was that saying anything answers the question, so the
+  fastest path from reading it to answering it is the box. What it misses is that pressing a question is
+  mostly how you go and READ it, and being dropped into a text box with the caret blinking is being asked to
+  answer something you have not finished reading.
+
+  Open the card, put the question in view, and leave the caret alone. Answering is a button press away and
+  should stay one.
+
+- **Escape does not close the card dialog, and there is no cancel.** The only button is `save and close`.
+  Every field commits when it loses focus, so there is nothing to cancel, and that is exactly why the missing
+  escape reads as being trapped: the dialog behaves like a form and offers one way out that sounds like a
+  commitment.
+
+  This is the other end of the round 9 change that renamed `close` to `save and close`. That fixed "the button
+  lies about what it does" and created "the button is the only way out". Both halves want answering together:
+  escape closes it, and the button says what it says.
+
+  **Check `data-guard` before writing anything.** Several dialogs on this board carry it and something is
+  consulting it on `cancel`. If the card dialog is deliberately guarded, the fix is to say WHY on screen rather
+  than to remove the guard.
+
+**DESIGN THE FLOW BEFORE WRITING ANY MORE OF IT.** Operator: "it needs to be discussed so leave it for now.
+it's working 'like shit' imo so we need to design the flow together next".
+
+The wiring that produced the four faults above is UNCOMMITTED on purpose, in `internal/api/api.go` and
+`internal/api/web/index.html`. It is a count on the row, an endpoint, and a list in the dialog, and it was
+built by working outward from the data rather than from what somebody does with it. That is why every fault
+above is about the doing rather than about the data.
+
+The questions to settle first, before any of it is touched again:
+
+1. **What is a question, on a row?** One line of the oldest with a count is the current answer. The
+   alternatives are every question on its own line, or no question at all on the row and a count that opens
+   the card. The constraint that decides it is how tall a stack row may be, since that is the whole reason a
+   count exists.
+2. **Where do you read them?** The dialog is the current answer and it is a form with a question bolted into
+   it. A flyout from the row is the other shape, and it is the one that does not make reading a question cost
+   opening a form.
+3. **How is one answered?** Today ANY message to the card answers ALL of them, which is right when there is
+   one and wrong the moment there are two. The store already supports answering one (`AnswerAsk`), and nothing
+   reaches it. Decide whether a reply is aimed at a question or at the card, and if at a question, what the
+   affordance is.
+4. **What happens to a question nobody answers?** They accumulate to a cap of ten and the oldest is retired
+   with a note. Nobody has looked at whether that is the behaviour wanted, or whether a card with four
+   outstanding questions should be shouting rather than counting.
+5. **Does the operator ever want the answered ones?** They are in the event log and nothing draws them. A
+   session that asked six things over an afternoon has a history that might be the useful artefact, or might
+   be noise.
+
+Answer those and most of the four faults above stop being separate items.
 
 ---
 
@@ -527,6 +847,32 @@ somebody has to already know the answers to.
 ## P. A room has to be worth something with the hub gone
 
 Raised on the way out of the door, and it is the item that decides whether the multi-machine work is worth
+- **The operator expects to drive a remote agent from the hub, and the design refuses to.** Asked while
+  looking at cdaws's card on the board: "i can't connect to it like i can with you? i'm expecting that this is
+  just a fancy 'double stream' of bytes where i talk to you, you stream to hub, hub streams from claude cdaws
+  and back, no?"
+
+  No, and the refusal is deliberate. A room posts a SUMMARY of its cards, no bytes cross, and the hub never
+  dials a room. Attaching is meant to be a REDIRECT to that room's own board, which is item 2 under `NEXT` and
+  is not built. Nor would it work today: cdaws's board is on its own loopback and nothing publishes it, which
+  is group P item 1 and also not built.
+
+  So the state is: you can see a remote card, queue work to it, and answer its gate. You cannot type at it from
+  anywhere.
+
+  **The expectation is reasonable and the answer should not be "read the design doc".** Two things are being
+  traded and only one of them has been written down.
+
+  - **Relaying** puts the hub in the byte path. Then the hub going down takes every terminal with it, which is
+    the exact failure group P exists to survive, and the operator asked for discrete shares for that reason.
+  - **Redirecting** keeps the hub out of the path and costs every room its own published address, its own
+    login, and a link that works from a phone in an airport. That is three unbuilt things standing between the
+    operator and a terminal they can already see the card for.
+
+  The redirect is the right answer and it is currently a promise. Until group P lands, the honest thing for the
+  board to do is SAY so on a remote card rather than leaving somebody to discover that attach is missing:
+  name the room, say its terminals stay there, and say what would make them reachable.
+
 having. Operator: "they need to work AUTONOMOUSLY in situations like this. i want to be able to access them
 over a share from anywhere as though i was operating via the hub for when the hub goes offline".
 
@@ -621,6 +967,30 @@ invariants for whatever is decided, starting with "nothing scrolls sideways".
 ## N. The board does not know things until the gear is opened
 
 - **`share this session` says `no overlay is set up yet` on a machine where zrok IS set up.** Reported with a
+- **An overlay reports `running` when it is no longer reachable.** The ziti panel said `running: true` since
+  `21:35:59` the previous evening. From the other end, a room dialling that same service got
+  `service 1OQxriR8fUOF7vwSsQJYVo has no terminators` -- the binding was gone. Stopping and starting the
+  overlay brought it back.
+
+  `running` is a flag set when start succeeds and never checked again. It answers "did this start" and the
+  board draws it as though it answered "is this reachable". Those are the same fact for about as long as the
+  network holds still, which on a laptop that sleeps, roams between networks, or sits behind a travel router is
+  not long.
+
+  **The board's own claim about being reachable is the one claim it cannot afford to be wrong about**, because
+  the person it is wrong to is somewhere else, and their symptom is silence. This is the same class as the
+  round 1 finding that made the board say only what it had checked, and it is the same fix: ask rather than
+  remember.
+
+  For ziti, the SDK knows whether the listener is still bound and the controller can be asked how many
+  terminators a service has. For zrok, the share either answers or it does not. Neither needs polling on a
+  timer: check when the panel is drawn, which is when somebody is asking.
+
+  **And a room that cannot reach the hub should be visible from the hub side too.** Today the hub simply has no
+  room, which looks identical to a room nobody ever started. The room knows it is failing and says so in its
+  own log, on a machine nobody is watching. That asymmetry is the whole reason `docs/dispatch-queue.md` group P
+  exists.
+
   screenshot: the card menu says to go to the gear and expose the board, while the gear says
   `enabled against https://api-v2.zrok.io/` and the API answers `ready: true`.
 
@@ -779,6 +1149,38 @@ multi-line paste arrived as one paste.
 ## M. Scrollback does not survive a restart, and the restart is atrium's own
 
 Operator: "if i am in a terminal (here) and then you restart, and then i close this window and open it up again
+- **Resizing the window costs the whole scrollback, silently.** Operator, mid-session: "i have lost the
+  scrollback and can't see it which is super fucking annoying". Nothing restarted and nothing was killed. The
+  width changed.
+
+  The ring replays only the run of output composed at the width the terminal is at NOW, and a width nothing was
+  ever written at is not a mark, so it returns nothing at all. The rule is correct on its own terms: bytes
+  composed for eighty columns rendered into a hundred and twenty are unreadable, and that lesson was learned
+  the hard way. What was never written down is the price. Any resize, any zoom, any font change, and the
+  history is gone until enough new output accumulates at the new width.
+
+  It is worse than it sounds because the operator does not connect the two events. Resizing a window is not an
+  action anybody expects to destroy anything, there is no message, and the buffer is still there on the daemon
+  holding output at a width nobody is looking at any more.
+
+  Three ways out, and they are not equal:
+
+  1. **Say so.** One line where the scrollback would be: the history was written at another width, resize back
+     to see it. Cheap, honest, and does not get the history back.
+  2. **Reflow.** Keep the bytes and re-wrap them for the new width. This is what a terminal emulator does with
+     its own buffer and it is the reason xterm can resize without losing anything. Atrium is holding RAW BYTES
+     including escape sequences, so re-wrapping means interpreting them, which is most of a terminal emulator.
+  3. **Keep a run per width.** The ring already marks widths; keep the marked runs rather than only the last
+     one, and replay whichever matches. Bounded by the same ring, costs nothing when the width never changes,
+     and gives the history back the moment somebody resizes to a width they used before.
+
+  The third is the one that fits what is already there. The first should happen regardless, because even after
+  the third there will be a first visit to a new width.
+
+  **This also explains the carried buffer across a restart.** Round 9 writes one width in the header for the
+  same reason, so a restart plus a resize is two ways to lose the same thing. Fixing the live ring and leaving
+  the carried file alone would be half an answer.
+
 from the stack page my scrollback is only since i got here not 'forever' back". And: "same for viewing it in
 'terminals'". Both surfaces, one cause.
 
@@ -1226,3 +1628,34 @@ zrok SDK loaded a default root, `IsEnabled()` was false, and `SetZrokEnvironment
 different path. Both tests passed without reaching the comparison they exist for. The fixture writes both files
 now and `requireEnabled` asserts the precondition, which is the part that stops it coming back.
 
+
+## Group T: the restart path cannot stop the daemon
+
+Found on 2026-09-08, and it had been lying about success for at least a day.
+
+`POST /v1/shutdown` answers **403** on a daemon started with a shutdown token. `stopDaemon` in
+`internal/cli/stop.go` sends the token it was given, falling back to `ATRIUM_SHUTDOWN_TOKEN` from the
+environment. The detached restarter in `internal/cli/control.go` calls it with an empty token, and a detached
+process does not inherit the environment of the session that spawned it, so there is no token to fall back to.
+
+What that produces is worse than a failure, because nothing reports it:
+
+1. `runRestart` ignores the error, by design: a daemon already gone is not a failure.
+2. It then polls `/v1/health` until it stops answering. It never stops answering, so this burns the full
+   twenty second grace.
+3. `swapAllStaged` runs anyway, so `atrium.next.exe` is moved into place. The tree now looks like a
+   successful install.
+4. It starts a daemon which cannot bind the port and exits immediately.
+
+The old daemon is still running the old binary, `atrium_status` says a daemon is up, the staged file is gone,
+and every visible signal says the restart worked. Two consecutive restarts landed here.
+
+- **The fix is the token.** `restart_atrium` runs inside the MCP server, which is a child of the claude
+  session and can read the token the daemon was started with the same way anything else does. Pass it on the
+  spawned command line, or teach the daemon to accept a stop from loopback without one.
+- **And the restarter must not step past a refused stop.** A stop that was refused is not a daemon that has
+  gone away, and continuing to the swap is what turned a clear 403 into a silent no-op. It should stop there
+  and say so.
+- **`atrium_status` should be able to answer "is the running daemon the installed binary".** It reports
+  `running: true` and where. It cannot say the process was started from a file that has since been replaced,
+  which is the exact question after a restart.

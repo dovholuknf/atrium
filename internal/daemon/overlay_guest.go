@@ -695,6 +695,12 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		//                      since `browseroots.go`, and still not a guest's
 		//                      business: those roots are where your work is.
 		//   /v1/tasks/*/files  reading and writing files in the directory.
+		//   /v1/tasks/*/scrollback/older
+		//                      what this terminal held before the last
+		//                      restart. A guest was lent a session, which is
+		//                      what is happening now. Everything atrium said
+		//                      in that directory yesterday is a different
+		//                      offer, and it is not this one.
 		//
 		// The page tolerates all of these failing: it polls, catches, and
 		// carries on with what it has.

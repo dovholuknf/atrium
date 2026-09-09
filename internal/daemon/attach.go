@@ -3,13 +3,16 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/dovholuknf/atrium/internal/api"
 )
 
 // Attach is the one place the client contract widens past JSON and SSE.
@@ -115,6 +118,62 @@ func (d *Daemon) whyClosed(shell bool) (say, reason string) {
 		return "[atrium] this shell has closed", "shell closed"
 	}
 	return "[atrium] this runner has exited", "runner exited"
+}
+
+// humanBytes is a size in the units somebody would say out loud.
+//
+// Only ever used in a sentence a person reads, so it rounds and does not
+// apologise for it. The scrollback setting is in whole megabytes, which is
+// where every number this is handed comes from.
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.0fGB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.0fMB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0fKB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
+}
+
+// widthNote is the line drawn above replayed output that was composed for a
+// terminal other than this one, and the empty string when there is nothing to
+// say.
+//
+// SAID RATHER THAN WITHHELD. The scrollback really may sit in the wrong
+// columns, and the reader is the one who gets to decide whether that is worth
+// having. Everything below the note is theirs to judge, and everything the
+// runner draws after it is composed for this terminal.
+//
+// Three cases, because "it might look wrong" is not the same sentence as
+// "here is which part":
+//
+//	nothing to say   one width, and it is this one
+//	one width        the whole backlog was drawn elsewhere
+//	several          the session was resized while it ran
+func widthNote(widths []int, wantCols int) string {
+	if len(widths) == 0 {
+		return ""
+	}
+	if len(widths) == 1 {
+		if widths[0] == wantCols || widths[0] <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("\x1b[38;5;244m[atrium] the scrollback that follows was drawn "+
+			"for a terminal %d columns wide and this one is %d, so it may sit in the "+
+			"wrong places. anything the session draws from now on is drawn for this "+
+			"one.\x1b[0m\r\n", widths[0], wantCols)
+	}
+	seen := make([]string, 0, len(widths))
+	for _, w := range widths {
+		seen = append(seen, strconv.Itoa(w))
+	}
+	return fmt.Sprintf("\x1b[38;5;244m[atrium] this session was resized while it ran, so the "+
+		"scrollback that follows was drawn at %s columns and this terminal is %d. some of "+
+		"it may sit in the wrong places. anything the session draws from now on is drawn "+
+		"for this one.\x1b[0m\r\n", strings.Join(seen, ", "), wantCols)
 }
 
 func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, shell bool) {
@@ -244,28 +303,56 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	}
 
 	// The retained output, so attaching shows what is already on screen rather
-	// than an empty box waiting for the next keystroke. Only the run of it
-	// composed at the width this terminal is at now: see the ring buffer.
-	backlog, dropped, updates := run.subscribe()
+	// than an empty box waiting for the next keystroke. All of it, whatever
+	// width each part was drawn for: see `ringBuffer.Replay`.
+	// The size setting, applied before anything is read out of the buffer.
+	//
+	// It was only ever read at spawn, so raising it did nothing until every
+	// runner had been restarted, and a restart is what somebody raising it is
+	// trying to survive. Growing keeps every byte, so the worst case here is
+	// that it does nothing.
+	run.buf.Grow(api.ScrollbackBytes(d.st))
+
+	backlog, widths, wantCols, wrapped, updates := run.subscribe()
 	defer run.unsubscribe(updates)
-	if dropped {
-		// SAID, NOT SWALLOWED. Somebody attaching to an hour-old session and
-		// finding a nearly empty screen deserves to know the history existed
-		// and why it is not there, or the fix for the unreadable attach reads
-		// as a second bug.
-		//
-		// Nothing further is needed to fill the screen. Output is only ever
-		// dropped when the width just changed, and a width change is a resize
-		// the runner is told about, so a terminal user interface is already
-		// repainting itself as this is written.
-		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
-			"[atrium] earlier output was written for a terminal of another width "+
-			"and cannot be redrawn here\x1b[0m\r\n"))
-	}
 	if len(backlog) > 0 {
-		if err := c.Write(ctx, websocket.MessageBinary, backlog); err != nil {
+		// WHY THE SCROLLBACK STOPS WHERE IT STOPS, said at the top where
+		// somebody who has scrolled all the way up is looking.
+		//
+		// A history that ends is either everything there was or the buffer's
+		// own limit, and the two call for opposite reactions: nothing, or a
+		// number in the settings. Without this line every short scrollback
+		// reads as the limit, which is how an hour lost to a kill got reported
+		// as the ring being too small.
+		if wrapped {
+			_ = c.Write(ctx, websocket.MessageBinary, []byte(fmt.Sprintf(
+				"\x1b[38;5;244m[atrium] ---- THIS IS NOT THE START OF THE SESSION. the buffer "+
+					"holds %s and this session has produced more than that, so older output "+
+					"has been overwritten. raise it in settings, scrollback ----\x1b[0m\r\n",
+				humanBytes(int64(api.ScrollbackBytes(d.st))))))
+		}
+		// FLATTENED, because sending it whole was not enough on its own.
+		//
+		// The history is full of absolute cursor moves and erases, and on
+		// replay each one lands on the history already on screen rather than
+		// on the line it was drawn to replace. A megabyte arrived and erased
+		// itself down to two screens. `flatten` takes the ability to overwrite
+		// away and leaves the text.
+		//
+		// The LIVE stream below is untouched, so a terminal user interface
+		// works normally from here on.
+		if note := widthNote(widths, wantCols); note != "" {
+			_ = c.Write(ctx, websocket.MessageBinary, []byte(note))
+		}
+		if err := c.Write(ctx, websocket.MessageBinary, flatten(backlog)); err != nil {
 			return
 		}
+		// AND A LINE UNDER IT, so the boundary between what was flattened and
+		// what is live is visible. Without it the first redraw after attaching
+		// reads as the history having been corrupted.
+		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
+			"[atrium] ---- everything above is history, laid out flat so it could not "+
+			"erase itself. live from here ----\x1b[0m\r\n"))
 	}
 
 	// Writer: output from the runner.

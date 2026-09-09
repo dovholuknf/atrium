@@ -174,7 +174,12 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 	// files those first bytes under the same width. A shell opened at the
 	// platform default and a buffer saying it was 120 columns wide is a
 	// mislabelled prompt banner on the first attach.
-	sizeAtLaunch(p)
+	//
+	// Which is now the width this CARD was last looked at, so the shell comes
+	// up the size of the window it is about to be drawn in. See
+	// `launchWidthFor`.
+	cols := d.launchWidthFor(taskID)
+	sizeAtLaunch(p, cols)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	c.Env = d.shellEnv(taskID)
@@ -185,7 +190,7 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
-		buf:      newRing(api.ScrollbackBytes(d.st), launchCols),
+		buf:      newRing(api.ScrollbackBytes(d.st), cols),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

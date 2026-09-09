@@ -2064,3 +2064,163 @@ usage block, no repeated error line.
 
 **Expect** the usage block IS still printed, because that failure has no sentence of its own. Suppressing it
 everywhere would make a real failure silent.
+
+## W. Scrollback survives being looked at
+
+Three bugs stacked on one symptom, and each fix uncovered the next. Every scenario here is one of them, so a
+regression in any single scenario reads as the whole thing being broken again.
+
+### W1. Resizing a window keeps the scrollback
+
+1. Open a supervised terminal that has been running long enough to have real history in it. The atrium card
+   itself is the honest case: scroll up and confirm you can read work from earlier.
+2. Drag the browser window narrower by a couple of inches, or change the browser zoom one step.
+3. Scroll up.
+
+**Expected:** everything that was there before is still there. Above it, one grey line naming what the history
+was drawn for and what the terminal is now.
+
+**The bug:** the pane emptied and left `earlier output was written for a terminal of another width and cannot
+be redrawn here`. The width mark is laid before the pty is told its new size, so the run of output composed at
+the new width was zero bytes old.
+
+### W2. Resizing twice does not cut the history to the last resize
+
+1. Same terminal. Resize it, wait for the agent to draw something, then resize it again.
+2. Scroll up as far as it goes.
+
+**Expected:** history from before BOTH resizes. The grey line says the session was resized while it ran and
+names each width in the order they happened.
+
+**The bug:** the second attempt returned the trailing run of output, and a run ends at every width mark. Only
+what was drawn since the last resize came back, which for a quiet agent is a page or two. It looks exactly like
+W1 and is a different fault.
+
+### W3. The replay cannot erase itself
+
+1. Attach to a card whose agent has redrawn its own block many times, which is any claude session that has
+   been working for a while.
+2. Scroll up through the whole buffer.
+
+**Expected:** every line of history is readable and in order, and a grey line marks where the flattened
+history ends and live output begins. Text that redrew in place, a spinner or a progress bar, appears as each
+version in turn rather than only the last one. Colour is intact.
+
+**The bug:** the daemon sent two megabytes and the browser showed two screens. The history is full of absolute
+cursor moves and erase-in-line sequences, so each replayed redraw landed on the history rather than on the
+older version of itself. Measured on one card: 33,957 cursor moves and 1,879 erases in 1.6MB.
+
+**Also check:** live output after the boundary line still renders normally. A terminal user interface must
+work as it always did from the moment you are attached, since only history is flattened.
+
+### W4. Scrollback survives a clean restart, and says a restart happened
+
+1. Note what is on screen in a supervised terminal.
+2. Restart the daemon with `atrium stop` and bring it back, or use `restart_atrium`. It must be a STOP: a kill
+   skips the wind-down and there is nothing to save the buffer.
+3. When the card comes back, attach and scroll up.
+
+**Expected:** the output from before the restart, then a grey divider saying atrium restarted here, then the
+new session. The divider is the point: without it the join reads as the agent repeating itself.
+
+**Also check:** a session that was resized before the restart still gets its history. That case used to be
+declined outright, on the grounds that a file holds one width and cannot carry a warning. It can, because the
+warning is drawn by whoever replays it.
+
+### W5. A kill loses it, and nothing pretends otherwise
+
+1. `taskkill` the daemon rather than stopping it.
+2. Bring it back and attach.
+
+**Expected:** whatever the last clean stop wrote, or an empty terminal if there has never been one. No claim
+that history exists.
+
+**Why it is in the plan:** two restarts in a row went this way because `POST /v1/shutdown` refuses while a
+share is running, so the wind-down never ran and the carryover was never written. The scrollback fix looked
+broken when it was working. See `docs/dispatch-queue.md` group T.
+
+### W6. A restart reopens the terminals that were open
+
+1. Note which cards have a live terminal. The terminals tab counts them.
+2. Open a terminal on a card that is NOT a fixture, so the case being tested is the one that used to fail.
+   Unshelving something, or launching from a directory, both do it.
+3. Stop the daemon and bring it back. A stop, not a kill.
+4. Look at the terminals tab.
+
+**Expected:** every card that had a terminal has one again, with its scrollback and a restart divider in it.
+Fixtures come up first and are pinned and themed as they always were.
+
+**The bug:** only fixtures came back. Six terminals went down and four returned, and the two that did not were
+the two nobody had written a fixture for.
+
+**Also check:**
+
+- **A shelved card does not come back.** Shelve one, restart, and it stays down. Putting work down is a
+  standing no and a restart must not undo it.
+- **A card whose worktree has been deleted** logs a line and does not stop the others reopening.
+- **Closing everything and then stopping** leaves nothing to reopen. An empty list is written rather than
+  skipped, so the previous list cannot come back to life.
+
+### W7. Raising the scrollback limit works without a restart
+
+1. Settings, scrollback. Note the current megabytes.
+2. Raise it and save.
+3. Open a terminal that was already running before the change.
+
+**Expected:** the buffer for that runner is now the new size, holding everything it already held.
+
+**The bug:** the size was read once at spawn, so raising it did nothing until every runner had been restarted,
+which is the thing somebody raising it is trying to survive.
+
+**Also check:** LOWERING it does not throw scrollback away. It applies to runners started afterwards, the way
+it always did.
+
+### W8. Hitting the limit is announced
+
+1. Set the scrollback to its minimum and start a runner that produces a lot of output.
+2. Let it produce more than the limit.
+3. Attach and scroll to the very top.
+
+**Expected:** a grey line saying THIS IS NOT THE START OF THE SESSION, naming the limit and where to raise it.
+
+**Why it matters:** without it a scrollback that stops reads identically whether it is complete or truncated,
+and an hour lost to a kill got reported as the buffer being too small.
+
+### W9. A terminal shows one session, and the older history is a click away
+
+1. Attach to a card that has been through at least one clean restart.
+2. Scroll to the top of the terminal.
+3. Open the terminal's cog and choose **history from before the restart**.
+
+**Expected:** the terminal holds only what this process has produced, the way a terminal running claude does.
+The cog item opens a tab of plain text holding what the terminal said before the last stop, oldest first, with
+a restart divider between each generation and no escape codes.
+
+**The bug:** the carried scrollback was joined onto the front of every attach. A resumed session reprints its
+own recent history, so the last hour appeared twice with nothing to say why, and every attempt to fix the
+scrollback made that worse rather than better.
+
+**Also check:**
+
+- **A card with nothing saved** answers with the reason rather than an empty tab. The file is written when
+  atrium is stopped, so a card whose daemon was killed has none.
+- **It reaches back further than one restart.** Several dividers in one file, because each stop folds the
+  previous generation into the one it writes.
+- **A lent session cannot reach it.** Open a share and request the older scrollback route against it. The
+  answer is 403 and the message says the link is one terminal.
+
+### W10. A reopened terminal comes up the right width
+
+1. Note how wide the browser window is. Attach to a card and let the agent draw something.
+2. Stop atrium and bring it back.
+3. Attach to that card and scroll through the newest generation.
+
+**Expected:** no note saying the history was drawn for a terminal of another width, and no stretch of output
+breaking a third of the way across the window.
+
+**The bug:** every terminal opened at 120 columns and was resized by the first browser to attach, so every
+restart put a stretch of 120 column output into the scrollback. The operator saw one width-mismatch note per
+restart.
+
+**Also check:** a card that has never had a terminal still opens at 120, and a card whose runner exited before
+any viewer said how big it was does not have its recorded width overwritten with zero.

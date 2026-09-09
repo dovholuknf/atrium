@@ -179,6 +179,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Attach = d.handleAttach
 	d.ap.OpenShell = d.handleShellOpen
 	d.ap.ShutShell = d.handleShellClose
+	d.ap.OlderScrollback = d.handleOlderScrollback
 	d.ap.Message = d.handleMessage
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
@@ -767,11 +768,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// name off them. A board being looked at must not act on what it is
 	// drawing.
 	if !d.opts.Passive {
-		// Terminals that come up with the daemon. In the background, so a
-		// runner that is slow to start cannot delay the board answering: a
-		// board that is not up yet looks like a hang, a terminal that is not
-		// open yet does not.
-		go d.startFixtures()
+		// Terminals that come up with the daemon, and then the ones that were
+		// simply open when it stopped. In the background, so a runner that is
+		// slow to start cannot delay the board answering: a board that is not
+		// up yet looks like a hang, a terminal that is not open yet does not.
+		//
+		// IN THAT ORDER. A fixture card is on the reopen list too, and the
+		// fixture is what pins it, themes it and decides how it resumes. See
+		// `reopenSaved`.
+		go func() {
+			d.startFixtures()
+			d.reopenSaved()
+		}()
 		// Sessions that were lent out when the last daemon went down. A
 		// restart is not the operator withdrawing a link, so the address comes
 		// back up rather than the link going dead. Anything whose runner is
