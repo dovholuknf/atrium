@@ -5,6 +5,171 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`scripts/start-atrium.ps1`, for a daemon that has died rather than one you want to replace.**
+
+  `atrium stop` and `restart_atrium` both need a daemon that is answering. The case neither covers is the
+  process being gone: the board refuses connections, every supervised session went with it, and the session you
+  would normally ask for a restart from is one of them. A machine that slept, a console that was taken away, or
+  a crash all land there.
+
+  It refuses to start a second daemon, since two on one database is the most likely way to make things worse:
+  the second cannot bind the port, exits, and leaves you looking at the first one wondering why nothing
+  changed. If the port is held by something that is not answering it says which process and stops rather than
+  killing anything.
+
+  It reads the database path out of the address file rather than assuming the default, because a daemon started
+  against another file would otherwise come back on the wrong one and show an empty board, which reads as data
+  loss. It reports how many terminals it is about to reopen and WHEN that list was recorded, since a daemon
+  that was killed never wrote one and both the list and the scrollback are from the last clean stop.
+
+  `-InstallStaged` puts a binary staged by a build that never got its restart into place, which is the one
+  moment that can be done. Off by default: starting a daemon and changing which daemon you start are two
+  decisions.
+
+- **Flattening a replay no longer turns bracketed paste off, which was making one paste arrive as five.**
+  (found while investigating `B2-18`)
+
+  `flatten` keeps SGR and drops every other escape sequence, on the grounds that anything else can move the
+  cursor or erase. `ESC [ ? 2004 h` is neither. It is how a session says it understands a paste as ONE thing
+  rather than as fast typing, and the board reads it off this stream to decide whether to wrap a paste in the
+  markers. Dropping it meant every pane opened after a replay believed the session did not support bracketed
+  paste, and pasted a raw body.
+
+  A raw body is then at the mercy of arrival timing, and the pseudo terminal's input pipe destroys it.
+  Measured with a real ConPTY: **41,001 bytes written in one call arrive at the child as 4096 byte
+  installments**, milliseconds apart. A session that tells typing from pasting by timing sees one paste as
+  five, which is the reported symptom.
+
+  So bracketed paste survives flattening, and nothing else that resembles it does. Keeping every private mode
+  that does not draw would be the shorter rule and is how `ESC [ ? 1049 h` gets back in, which takes the whole
+  scrollback off the display at once.
+
+  This is not the whole of `B2-18`. It made an intermittent fault unconditional, and the underlying question,
+  what a pane should do when the enable has scrolled out of the ring entirely, is reported rather than
+  answered here.
+
+- **Reading twelve lines of a dying runner's output no longer copies its whole scrollback, three times.**
+  (`B2-17`)
+
+  `awaitExit` wants the last twelve lines to say why a runner died. It asked for `Snapshot`, which copies
+  everything the ring retains, and handed that to `lastOutput`, which made a string of it, ran a regexp over
+  that to strip the escapes, and split the result. Three copies. With the scrollback setting at its ceiling
+  that is over a gigabyte of allocation to read about a kilobyte, paid on EVERY runner exit, and worst for a
+  runner that lived all day and filled its ring. Go grows the heap to the peak and hands it back to the
+  operating system lazily, which is what leaves a resident set far above anything the process holds.
+
+  `ringBuffer.Tail(n)` reads the last n bytes, clamped to the oldest byte still retained so a wrapped ring can
+  never hand back what it overwrote. Both callers take it, at 64KB, which holds twelve lines of anything.
+  `settleFor` was not costing anything yet, since it only fires within two seconds of a launch, and it is
+  fixed too because it is one widened window away from being the same bug.
+
+  `lastOutput` also trims what it is given, so widening a caller cannot quietly bring the cost back.
+
+  The test that matters measures BYTES rather than allocation counts, since one allocation of eight megabytes
+  and one of sixty four kilobytes are both one allocation. Against the old call it reports 8,388,608 bytes for
+  a 65,536 byte read.
+
+- **A terminal shows one session again, and the older scrollback is asked for rather than pushed.**
+
+  Joining the pre-restart scrollback onto the front of every attach was confusing in a way that took a while to
+  name. A resumed claude session REPRINTS its own recent history, so the carried bytes ended mid-conversation
+  and the same conversation started again below the restart divider: two copies of the last hour, with nothing
+  on screen to say why. Chasing that produced a lot of correct fixes to the wrong problem.
+
+  So an attach now shows what THIS process has produced, which is what a terminal running claude shows. The
+  carryover is still written at every clean stop, still folded forward so it reaches back through many
+  restarts, and reachable from the terminal's cog: **history from before the restart**, served as plain text on
+  `GET /v1/tasks/{id}/scrollback/older`.
+
+  It opens in a tab rather than in the terminal because xterm can only append. There is no way to put bytes
+  above what is already in its buffer, so a "load more" at the top of the scroll would have to clear the pane
+  and redraw it, throwing away the live screen to show history. Colour is stripped for the tab, since a browser
+  renders escape codes as literal text.
+
+  A card with nothing saved says so, and says why, because that is the part nobody can guess: the file is
+  written when atrium is stopped, so a daemon that was killed left none.
+
+  A lent session cannot reach it. `overlay_guest.go` is default-deny and the route is named in its refusal
+  list: a guest was lent a session, and everything that terminal said yesterday is a different offer.
+
+- **A terminal reopens at the width it was last looked at.**
+
+  A pseudo terminal opened at a fixed 120 columns and was resized by the first browser to attach, so every
+  restart pushed a stretch of output composed for a terminal nobody was sitting at into the scrollback, with
+  hard line breaks a third of the way across the window. Flattening a replay can drop a cursor move but cannot
+  undo a line break that is already in the bytes, so the only fix is not to produce it.
+
+  The width is recorded on the card at the wind-down (`last_cols`, migration `0045`), never on the resize
+  itself: a browser sends a resize frame whenever anything on the page moves, and that is not a rate to write
+  to sqlite at. The resize a moment after launch is then not a change at all, and the ring merges the two marks
+  into one run.
+
+- **A restart reopens the terminals that were open, not just the fixtures.**
+
+  Six supervised terminals went down with the daemon and four came back. The two that did not were the two
+  nobody had written a fixture for: a card launched from a pull request, a piece of work picked back up by
+  hand. A fixture is a standing decision, "this terminal exists every day", and it was the only thing that
+  survived a restart. A restart is maintenance rather than a judgement about which work matters.
+
+  The wind-down now records which cards had a runner, beside the scrollback it already writes, and the next
+  daemon starts them again: fixtures first, since a fixture is what pins its card, themes it and decides how
+  it resumes, then everything else that was open. What gets recorded is only the LIST OF CARDS, because
+  everything needed to start one is already on its row: the harness is `Runner`, the directory is `Worktree`,
+  the conversation is `ResumeID`. Copying those into a file would be a second source of truth that goes stale
+  the moment somebody moves a worktree.
+
+  Not reopened: a shelved card, since putting work down is a standing no and a restart must not undo it; a card
+  that has since been pruned; one whose worktree or harness is no longer recorded. A stale resume id is dropped
+  and the session starts fresh in the right directory, because a resume that fails exits within a second and
+  reaches the board as a dead card and a terminal that never appeared. An empty list is written rather than
+  skipped, so closing everything and then stopping does not reopen yesterday's set.
+
+  Pairs with the scrollback carryover below and neither is much use alone: that one brings back what a terminal
+  said, this one brings back the terminal.
+
+- **The scrollback limit says when it has been hit, and raising it no longer needs a restart.**
+
+  A history that stops is either everything there was or the buffer's own ceiling, and those call for opposite
+  reactions: nothing, or a number in the settings. Nothing distinguished them, so every short scrollback read
+  as the limit. The top of a replay that was cut now says so and names the size.
+
+  The size itself was read once when a runner spawned, so raising it did nothing until every runner had been
+  restarted, and a restart is what somebody raising it is trying to survive. `Grow` copies the retained bytes
+  into a bigger buffer, keeps every width mark and loses nothing. Shrinking still throws bytes away, so it is
+  refused. It runs on attach, which is a person opening a terminal rather than anything on the output path.
+
+- **Scrollback survives being looked at. It took three goes.**
+
+  Resizing a window, changing the browser zoom, or popping a card out emptied the terminal and left one grey
+  line saying the output could not be redrawn. Each attempt at this fixed a real defect and uncovered the next
+  one, so all three are worth writing down.
+
+  **One: the buffer refused to hand over anything.** `SnapshotAt` returned only the run of output composed at
+  the width the terminal is at now, and `setViewport` lays a width mark BEFORE the pty is told its new size. So
+  a viewer attaching at a new width asked for a run that was zero bytes old and got nothing. Dragging a window
+  edge cost an hour of scrollback.
+
+  **Two: it handed over the trailing run.** Better, and still wrong, because a run ends at every width mark. A
+  session that had been resized twice replayed only what it drew after the second resize, which for a quiet
+  agent is a couple of screens out of sixteen megabytes. Indistinguishable on screen from the first bug. The
+  ring's width marks now DESCRIBE the output instead of gating it: `Replay` returns everything retained plus
+  every width it was drawn at, and the attach says which above the replay. The same reversal applies to the
+  restart carryover, which had been declining to save anything at all for a session that had been resized, so
+  a resize plus a restart lost the history twice over.
+
+  **Three: the bytes arrived and erased each other.** Two megabytes down the socket, two screens on display. A
+  terminal user interface draws by moving the cursor to an absolute row and erasing the line it lands on, which
+  is right against a live terminal and destructive on a replay: every redraw lands on the history instead of on
+  the older version of itself it means to replace. One card's 1.6MB of carried scrollback held 33,957 cursor
+  moves and 1,879 erases. Replayed history is now flattened first (`internal/daemon/flatten.go`): anything that
+  can move the cursor off its line, erase, scroll, or switch to the alternate screen buffer is dropped, and a
+  bare carriage return becomes a line ending. Colour is kept, since SGR cannot move or erase anything.
+
+  What that costs, and it is a real cost: a box or a progress bar that redrew in place becomes every version of
+  itself in turn, and the final rendered state no longer matches what the runner believes is on its screen
+  until the next full redraw. Both are paid on history alone, live output is untouched, and the alternative on
+  offer was an empty pane.
+
 - **Two windows on one terminal is refused, rather than quietly wrecking the wider one.**
 
   A `#term=<id>` url pasted into a tab attached a second viewer to a terminal that already had one. The daemon

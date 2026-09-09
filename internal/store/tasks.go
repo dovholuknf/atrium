@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at, org, host, ask, ask_at, ask_peer`
+	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -38,7 +38,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
-		&t.Ask, &askAt, &t.AskPeer); err != nil {
+		&t.Ask, &askAt, &t.AskPeer, &t.LastCols); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -305,12 +305,15 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
 		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "",
-		t.Org, t.Host, "", "", "")
+		t.Org, t.Host, "", "", "",
+		// A new card has never had a terminal, so nothing says how wide it
+		// was. `launchWidthFor` reads zero as "no opinion".
+		0)
 	return err
 }
 
@@ -614,6 +617,22 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 	}
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
+		return err
+	})
+}
+
+// SetLastCols records how wide this card's terminal was, so the next one can
+// open at the same size.
+//
+// A width of zero or less is ignored rather than written. It means nobody ever
+// said how big the terminal was, and storing that would replace a real answer
+// with the absence of one on the next stop.
+func (s *Store) SetLastCols(id string, cols int) error {
+	if cols <= 0 {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET last_cols = ? WHERE id = ?`, cols, id)
 		return err
 	})
 }

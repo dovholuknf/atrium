@@ -1119,6 +1119,27 @@ var migrations = []struct {
 			   AND NOT EXISTS (SELECT 1 FROM ask WHERE ask.task_id = task.id)`,
 		},
 	},
+	{
+		// HOW WIDE THIS CARD'S TERMINAL WAS WHEN IT WAS LAST STOPPED.
+		//
+		// A pseudo terminal used to open at a fixed hundred and twenty columns
+		// and get resized by the first browser to attach, so every restart put
+		// a stretch of output into the scrollback that was composed for a
+		// terminal nobody was sitting at, with hard line breaks a third of the
+		// way across the window. Reopening at the width the card was last
+		// looked at means the resize a moment later is not a change at all.
+		//
+		// A column rather than a file, because the file it used to be read
+		// from was the scrollback carryover, and that is gone.
+		//
+		// Written once per card per clean stop, never on the resize itself: a
+		// browser sends a resize frame whenever anything on the page moves,
+		// and that is not a rate anything should be writing to sqlite at.
+		name: "0045_task_last_cols",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN last_cols INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

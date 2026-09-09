@@ -1686,6 +1686,24 @@
   /* Pressing it answers it, so it says so under the pointer. The border is what
      brightens rather than the text: the question is already the loudest thing
      on the row and making it louder still reads as a state change. */
+  /* How many more questions are behind this one.
+     In the ask's own warn colour rather than a quieter grey: it is part of the
+     question, and a card waiting on six things is not a quieter fact than one
+     waiting on one. It cannot wrap on its own, so it stays attached to the
+     text it qualifies. */
+  .ask .askmore {
+    margin-left: 7px; padding: 1px 6px; border-radius: 999px;
+    background: var(--warn-bg); color: var(--warn);
+    font-size: var(--fs-xxs); letter-spacing: .03em; white-space: nowrap;
+  }
+  /* The questions behind the one the dialog is showing. Indented under it and
+     quieter than it: the field above is the one being answered, and these are
+     what is still waiting after it. */
+  .askrest { margin-top: 8px; }
+  .askrestone {
+    padding: 4px 0 4px 9px; border-left: 1px solid var(--warn-stroke);
+    color: var(--body); font-size: var(--fs-xs); overflow-wrap: anywhere;
+  }
   .ask.act { cursor: pointer; }
   .ask.act:hover { background: var(--warn-bg); }
   /* The same gesture in the card dialog. The textarea is read only, so a click
@@ -5596,6 +5614,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="d-ask" id="d-ask-label">this agent has a question</label>
       <textarea id="d-ask" rows="3" spellcheck="false" readonly></textarea>
       <span class="hintline" id="d-ask-how"></span>
+      <!-- The rest of them, when there is more than one. Fetched rather than
+           carried on the card: the card holds the oldest and a count, which is
+           what a row needs, and the whole list is only ever wanted here. -->
+      <div id="d-ask-more" hidden></div>
     </div>
     <!-- What the session said it did, in its own words. Shown only when there
          is one: an empty box on every card would read as a form to fill in,
@@ -6637,6 +6659,19 @@ function askLine(t) {
   if (!t.ask) return "";
   const peer = !!t.ask_peer;
   const label = peer ? `asked ${t.ask_peer}` : "this agent has a question";
+  // AND HOW MANY MORE THERE ARE.
+  //
+  // `t.ask` is the OLDEST outstanding question, and the card carries only that
+  // one, so a row drawing it alone says "there is a question" about a card
+  // that may have six. An ask used to be a single column and a second question
+  // destroyed the first. That is fixed; drawing one of several without saying
+  // so is the same loss told more quietly.
+  //
+  // The count rides down with the card, counted for the whole board in one
+  // query. Absent below two, because one question is what drawing the ask
+  // already means.
+  const more = (t.asks_open || 0) - 1;
+  const rest = more > 0 ? `<span class="askmore">+${more} more</span>` : "";
   const tip = peer
     ? "it put this to " + t.ask_peer + " rather than to you. it is still stopped, "
       + "so this is where you find out when no answer comes back. press to say "
@@ -6648,7 +6683,7 @@ function askLine(t) {
   // which opens the same dialog and takes the focus straight back off the box.
   return `<div class="ask act" title="${esc(tip)}"
     onclick="event.stopPropagation();answerAsk('${esc(t.id)}')"
-    ><span class="asklabel">${esc(label)}</span>${esc(t.ask)}</div>`;
+    ><span class="asklabel">${esc(label)}</span>${esc(t.ask)}${rest}</div>`;
 }
 
 // Opens the card the question is on, with the cursor in the box that answers
@@ -6657,6 +6692,44 @@ function askLine(t) {
 // Re-opening is skipped when that card's dialog is already up, since `openTask`
 // refetches the card and repaints the timeline, and doing that under somebody
 // who just pressed the question is a flash and a scroll for nothing.
+// Every other question this card is waiting on.
+//
+// NOT DRAWN AT ALL FOR ONE, which is the ordinary case: the field above IS
+// that question, and a list of one underneath it reads as a second thing.
+//
+// Fetched when the dialog opens rather than carried on every card in every
+// poll. The count comes down with the card and decides whether to ask at all,
+// so a board full of cards with one question each makes no extra request.
+//
+// A failure is silent and draws nothing. This is a detail on a dialog whose
+// main answer is already on screen, and a card that cannot list its other
+// questions is still worth opening.
+async function paintMoreAsks(id, open) {
+  const box = document.getElementById("d-ask-more");
+  if (!box) return;
+  box.hidden = true;
+  setHTML(box, "");
+  if (!id || open < 2) return;
+  let asks;
+  try {
+    asks = (await api(`/v1/tasks/${encodeURIComponent(id)}/asks`)).asks || [];
+  } catch (e) {
+    return;
+  }
+  // The dialog may have moved to another card while this was in flight, and
+  // one card's questions drawn on another is worse than none.
+  if (!current || current.id !== id) return;
+  // The first is the one the field above is already showing.
+  const rest = asks.slice(1);
+  if (!rest.length) return;
+  setHTML(box, `<div class="askrest">
+    <span class="asklabel">and ${rest.length} more</span>
+    ${rest.map(a => `<div class="askrestone">${esc(a.text)}${
+      a.peer ? `<span class="by"> asked ${esc(a.peer)}</span>` : ""}</div>`).join("")}
+  </div>`);
+  box.hidden = false;
+}
+
 async function answerAsk(id) {
   if (!id) return;
   if (!(detail.open && current && current.id === id)) await openTask(id);
@@ -14246,6 +14319,7 @@ async function openTask(id) {
     ? "it put this to " + current.ask_peer + " rather than to you. it is still stopped, so " +
       "saying something here still reaches it."
     : "say something below and this comes off. any message answers it.";
+  paintMoreAsks(current.id, current.asks_open || 0);
 
   const recapField = document.getElementById("d-recap-field");
   recapField.hidden = !current.recap;
@@ -15968,6 +16042,40 @@ function toggleCopyOnSelect() {
 // last size automatically meant nudging an edge to see something behind the
 // window silently became the size every card opened at, which is a preference
 // nobody expressed.
+// openOlderScrollback shows what a card's terminal held before the last
+// restart, in a tab of its own.
+//
+// FETCHED BEFORE THE TAB IS OPENED, so a card with nothing saved says so here
+// instead of opening a window onto an error page. The 404 carries the reason,
+// which is the part nobody can guess: the file is written when atrium is
+// stopped, so a card whose daemon was killed has none.
+//
+// A blob rather than the url directly. The endpoint answers `text/plain` and a
+// browser would render it, but going through the fetch is what lets the
+// failure be a toast, and the same bytes then open with no second request.
+async function openOlderScrollback(id) {
+  let body;
+  try {
+    const res = await fetch(`/v1/tasks/${id}/scrollback/older`);
+    if (!res.ok) {
+      toast("no history saved", (await res.text()).trim());
+      return;
+    }
+    body = await res.blob();
+  } catch (err) {
+    toast("could not read the history", err.message);
+    return;
+  }
+  const url = URL.createObjectURL(body);
+  const w = open(url, "_blank");
+  if (!w) {
+    toast("the tab was blocked", "allow pop-ups for atrium to read the history");
+  }
+  // Released once the tab has had a chance to load it. Revoking immediately
+  // races the open and gives a blank tab.
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function termSettings(e) {
   // Without this the menu opens and closes in the same event: `showMenu` draws
   // it, the click keeps bubbling to the document listener that dismisses any
@@ -16002,6 +16110,23 @@ async function termSettings(e) {
     { label: "copy on select", on: copyOnSelect,
       tip: "Selecting text copies it, the way a terminal does.",
       act: () => toggleCopyOnSelect() },
+    { sep: true },
+    // WHAT THIS TERMINAL SAID BEFORE THE LAST RESTART.
+    //
+    // In a tab and not in the terminal, because xterm can only append. There
+    // is no way to put bytes above what is already in its buffer, so "load
+    // more at the top" would have to clear the pane and redraw it, which
+    // throws away the live session's screen to show you history.
+    //
+    // It used to be joined onto the front of every attach and that was worse
+    // than either: a resumed session reprints its own recent history, so you
+    // got the last hour twice with nothing saying why.
+    { label: "history from before the restart…", note: "opens in a tab",
+      help: "What this card's terminal held when atrium was last stopped, as " +
+        "plain text. Written at a clean stop, so there is none if the daemon " +
+        "was killed. Not shown in the terminal because a terminal can only " +
+        "add to the bottom.",
+      act: () => openOlderScrollback(t.id) },
     { sep: true },
     // Only meaningful from the window whose size is being remembered. From the
     // board there is no popped-out window to measure.

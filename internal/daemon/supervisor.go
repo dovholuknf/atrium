@@ -50,10 +50,12 @@ import (
 // diffs overlapping themselves, and two thirds of the screen empty.
 //
 // So the width is recorded WITH the bytes. Every change of the agreed size
-// leaves a mark at the stream position where it took effect, and an attaching
-// viewer is only given the run of output that was composed at the width its
-// terminal is at now. What was composed at some earlier width is dropped and
-// said to be dropped, which loses history nobody could have read anyway.
+// leaves a mark at the stream position where it took effect.
+//
+// The marks DESCRIBE the output, they do not gate it. An attaching viewer is
+// given everything retained and told which widths are in it, because misplaced
+// text can still be read and an empty pane cannot. See `Replay`, which carries
+// the two versions of this that withheld history instead.
 //
 // COLUMNS ONLY, not rows. Width is what decides how the bytes were composed:
 // wrapping, boxes and column positions are all a function of it. A height
@@ -181,6 +183,48 @@ func (r *ringBuffer) retained() int {
 // retainedStart is the stream position of the oldest byte still held.
 func (r *ringBuffer) retainedStart() int64 { return r.written - int64(r.retained()) }
 
+// Grow makes the buffer bigger, keeping everything it holds.
+//
+// GROWING ONLY, and that asymmetry is the whole reason this can exist. The
+// size was read once at spawn, with the note that resizing a live ring means
+// either dropping what it holds or copying it under the lock. Half of that is
+// true: SHRINKING has to throw bytes away and is refused here. Growing copies
+// the retained run into a bigger slice in order, keeps every width mark, and
+// loses nothing.
+//
+// It is not free, and it does not need to be. It runs when somebody raises the
+// setting and on the first attach after that, which is a person clicking a
+// button rather than anything on the output path. The alternative was
+// "restart the daemon for this to take effect", said to somebody who raised
+// the limit BECAUSE they had just lost scrollback, and whose restart would
+// then cost them the buffer they were trying to keep.
+func (r *ringBuffer) Grow(size int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if size <= len(r.data) {
+		return
+	}
+	// THE RAW RETAINED BYTES, not what `from` returns. `from` trims to a line
+	// start so a snapshot never begins mid escape, and dropping those bytes
+	// here would shift `retainedStart` without shifting the width marks
+	// expressed against it. What goes in is byte for byte what was held.
+	data := make([]byte, size)
+	n := 0
+	if r.full {
+		n = copy(data, r.data[r.at:])
+		n += copy(data[n:], r.data[:r.at])
+	} else {
+		n = copy(data, r.data[:r.at])
+	}
+	r.data = data
+	r.at = n
+	r.full = false
+	// `written` is not touched. It is a stream position that the marks are
+	// expressed in, and moving it would invalidate every one of them. What
+	// changes is how far back `retainedStart` reaches, which is exactly the
+	// point.
+}
+
 // CurrentWidth is the width output is being composed at right now.
 //
 // The ring is asked rather than the viewports, because it is the same answer
@@ -196,36 +240,114 @@ func (r *ringBuffer) CurrentWidth() int {
 // Snapshot returns the retained output, oldest first, whatever width it was
 // composed at.
 //
-// For reading a runner's last words rather than for putting on a screen. An
-// attaching viewer wants SnapshotAt.
+// NOTHING OUTSIDE A TEST CALLS THIS, and it is worth saying why rather than
+// deleting it. It used to be how a runner's last words were read, and doing
+// that meant copying the whole ring to find twelve lines. That caller takes
+// `Tail` now, and an attaching viewer takes `Replay`, which says what the
+// bytes were drawn for.
+//
+// Kept because "everything retained, unconditionally" is the plainest
+// statement of what the buffer holds, and both of the others are checked
+// against it.
 func (r *ringBuffer) Snapshot() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.from(r.retainedStart())
 }
 
-// SnapshotAt returns the retained output that was composed for a terminal
-// `cols` wide, and whether anything older than that was left out.
+// Tail returns at most the last n bytes held, oldest first.
 //
-// THE TRAILING RUN ONLY. A session that went eighty, then two hundred, then
-// eighty again holds two stretches of eighty column output with something
-// unreadable between them, and splicing the two together would join text
-// across a hole. The run that reaches the end of the stream is the one that
-// continues into what the runner draws next, so it is the only one worth
-// sending.
-func (r *ringBuffer) SnapshotAt(cols int) (out []byte, dropped bool) {
+// FOR READING, NOT FOR REPLAYING. The caller is a message with its escape
+// sequences stripped out, so none of the width machinery applies and none of
+// it is consulted.
+//
+// It exists because asking for the whole ring to read twelve lines is not a
+// rounding error at this size. `Snapshot` copies everything retained, and
+// `lastOutput` then makes a string of it, hands that to a regexp that builds
+// another, and splits that. With the scrollback setting at its ceiling the
+// peak cost of finding out why a runner exited was over a gigabyte of
+// allocation, paid on every exit, and Go returns a heap grown that far to the
+// operating system lazily. A resident set far above anything the process held
+// is what that looks like from outside.
+//
+// Clamped to the oldest byte still held, exactly as `Snapshot` is, so a ring
+// that has wrapped can never hand back bytes that were overwritten.
+func (r *ringBuffer) Tail(n int) []byte {
+	if n <= 0 {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pos := r.written - int64(n)
+	if start := r.retainedStart(); pos < start {
+		pos = start
+	}
+	return r.from(pos)
+}
+
+// Replay returns everything retained, oldest first, and every width it was
+// composed at.
+//
+// ALL OF IT, and the width marks now DESCRIBE the output instead of gating it.
+// That reverses the rule this buffer was built around, so the reasoning is
+// worth having in full.
+//
+// The hazard is real and has not changed. A terminal user interface asks how
+// wide the terminal is and composes for that number: hard breaks at the column
+// it was told, boxes drawn to it, absolute cursor moves to positions it worked
+// out itself. Replay those bytes into a wider grid and the breaks land a third
+// of the way across and paragraphs sit on top of each other.
+//
+// Two attempts to protect the reader from that both made things worse:
+//
+//   - **Only the run composed at the current width.** Every resize lays a mark
+//     before the pty is told, so an attach at a new size asked for a run zero
+//     bytes old and got nil. Dragging a window edge emptied an hour of
+//     scrollback.
+//   - **Then: the trailing run, whatever it was drawn for.** Better, and still
+//     wrong, because a run ENDS AT EVERY MARK. A session resized twice hands
+//     back only what it has drawn since the second resize, which for a quiet
+//     agent is a couple of screens out of sixteen megabytes. The operator's
+//     words were "scrollback is not fixed", and they were right.
+//
+// What both share is deciding on the reader's behalf that imperfect output is
+// worth less than no output. It is not. Misplaced text can be read, scrolled
+// past, and searched. An empty pane cannot. So everything held is handed over,
+// the widths come with it, and the caller says what the reader is looking at.
+//
+// The widths are returned oldest first with consecutive repeats collapsed. A
+// mark sitting at the write position describes output nobody has produced yet
+// and is left out, which is the same rule `SetWidth` applies when it merges
+// one.
+// `wrapped` is whether this is the start of the stream or the point the buffer
+// began overwriting itself. THE READER HAS TO BE ABLE TO TELL. A scrollback
+// that stops is either all there was or the buffer's own limit, and those two
+// call for completely different reactions: one is nothing to do about, the
+// other is a number in the settings. Somebody who cannot tell them apart reads
+// every short history as the limit and every long one as luck.
+func (r *ringBuffer) Replay() (out []byte, widths []int, wrapped bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	start := r.retainedStart()
-	last := r.marks[len(r.marks)-1]
-	if last.cols != cols {
-		// Everything held was composed for a terminal of another size.
-		return nil, r.retained() > 0
+	out = r.from(start)
+	if len(out) == 0 {
+		return nil, nil, false
 	}
-	if last.at > start {
-		return r.from(last.at), true
+	for _, m := range r.marks {
+		if m.at >= r.written {
+			continue
+		}
+		if len(widths) > 0 && widths[len(widths)-1] == m.cols {
+			continue
+		}
+		widths = append(widths, m.cols)
 	}
-	return r.from(start), false
+	if len(widths) == 0 {
+		// Every mark sits at the end, so nothing describes these bytes but the
+		// width in force. Which is the width they were drawn at.
+		widths = []int{r.marks[len(r.marks)-1].cols}
+	}
+	return out, widths, start > 0
 }
 
 // from returns the retained bytes at and after a stream position, oldest
@@ -498,44 +620,39 @@ func smallestViewport(all map[any]viewport) viewport {
 
 // subscribe returns the retained output plus a channel of everything after it.
 //
-// The backlog is only ever the run of output composed at the width the
-// terminal is at now, and `dropped` says whether there was older output that
-// was not. See the ring buffer's own comment: replaying bytes composed for
-// another width is what makes an attach unreadable.
+// `widths` is every width the backlog was composed at, oldest first, and
+// `wantCols` is the width the terminal is at now. A caller with more than one
+// width, or one that is not `wantCols`, is holding output that will not land
+// where it was drawn to: see `attach.go`, which says so on screen.
 //
 // Snapshot and subscription are taken together under the one lock, so a chunk
 // arriving between them can neither be lost nor sent twice.
-func (r *runner) subscribe() (backlog []byte, dropped bool, updates chan []byte) {
+func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrapped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cols := r.buf.CurrentWidth()
-	buf, cut := r.buf.SnapshotAt(cols)
-	// And what the card held before the restart, WHEN THE WIDTH STILL AGREES.
+	buf, widths, wrapped := r.buf.Replay()
+	// THIS PROCESS ONLY. What the card held before the restart is on disk and
+	// is NOT joined on here any more.
 	//
-	// The same rule the ring applies to its own history, applied to bytes that
-	// outlived the process which produced them: output composed for another
-	// size cannot be redrawn here, so it is left out rather than replayed on
-	// top of itself.
+	// It was, for an afternoon, and the result was confusing in a way that
+	// took a while to name: a resumed session REPRINTS its own recent history,
+	// so the carried bytes ended mid-conversation and then the same
+	// conversation started again below the divider. Two copies of the last
+	// hour with nothing on screen to say why.
 	//
-	// This is the one place a join is made across a gap, which the ring itself
-	// refuses to do. It is allowed here because the gap is a RESTART rather
-	// than a stretch of unreadable output: the two sides are two processes,
-	// the boundary is real, and it is drawn on screen instead of being hidden.
-	if r.carried != nil && r.carried.cols == cols {
-		joined := make([]byte, 0, len(r.carried.bytes)+len(carryDivider)+len(buf))
-		joined = append(joined, r.carried.bytes...)
-		joined = append(joined, carryDivider...)
-		buf = append(joined, buf...)
-	}
+	// A terminal running claude shows one session's output. Atrium now matches
+	// that, and the older bytes are fetched deliberately rather than pushed at
+	// somebody who did not ask. See `carryover.go` and `handleOlderScrollback`.
 	select {
 	case <-r.done:
 		close(ch)
-		return buf, cut, ch
+		return buf, widths, cols, wrapped, ch
 	default:
 	}
 	r.watchers[ch] = struct{}{}
-	return buf, cut, ch
+	return buf, widths, cols, wrapped, ch
 }
 
 func (r *runner) unsubscribe(ch chan []byte) {
@@ -661,12 +778,48 @@ const (
 	launchRows = 30
 )
 
-// sizeAtLaunch puts a freshly opened terminal at the launch size.
+// launchWidthFor is the width to open THIS CARD's terminal at.
+//
+// THE WIDTH IT WAS LAST AT, and falling back to `launchCols` for a card that
+// has never had one. This is worth more than it looks.
+//
+// A fixed launch width means every restart injects a stretch of output drawn
+// for a terminal nobody is sitting at. The session comes up at a hundred and
+// twenty columns, draws its resumed conversation there, and a browser attaches
+// a second later and resizes it to whatever the window really is. The
+// scrollback then holds two hundred and forty seven columns, then a hundred
+// and twenty, then two hundred and forty seven again, once per restart, and
+// the middle stretch has hard line breaks a third of the way across.
+//
+// Flattening the replay cannot undo that. A cursor move can be dropped, a line
+// break that is already in the bytes cannot, so the only fix is not to produce
+// it: come up at the width the window was, and the resize a moment later is
+// not a change at all. See `ringBuffer.SetWidth`, which then merges the two
+// marks and leaves one run.
+//
+// Read off the card, written there at the wind-down. It lived in the
+// scrollback carryover's header for one afternoon, which was convenient right
+// up until the carryover stopped being replayed automatically: a width that
+// only exists inside a file nobody reads by default is a width that quietly
+// stops working.
+func (d *Daemon) launchWidthFor(taskID string) int {
+	if taskID == "" {
+		return launchCols
+	}
+	t, err := d.st.Get(taskID)
+	if err == nil && t.LastCols > 0 {
+		return t.LastCols
+	}
+	return launchCols
+}
+
+// sizeAtLaunch puts a freshly opened terminal at the size this card was last
+// looked at, or the launch default.
 //
 // A refusal is not worth failing a launch over: the terminal still works at
 // whatever size it opened with, and the first viewer to attach resizes it.
-func sizeAtLaunch(p pty.Pty) {
-	if err := p.Resize(launchCols, launchRows); err != nil {
+func sizeAtLaunch(p pty.Pty, cols int) {
+	if err := p.Resize(cols, launchRows); err != nil {
 		log.Printf("[atrium] could not set the launch terminal size: %v", err)
 	}
 }
@@ -704,7 +857,12 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	if err != nil {
 		return 0, fmt.Errorf("could not open a pseudo terminal: %w", err)
 	}
-	sizeAtLaunch(p)
+	// The width this card was last looked at, so a reopened session draws its
+	// first screen for the window it is about to appear in. See
+	// `launchWidthFor`: a fixed width here put a stretch of narrow output into
+	// the scrollback on every single restart.
+	cols := d.launchWidthFor(taskID)
+	sizeAtLaunch(p, cols)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	c.Env = env
@@ -717,7 +875,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
 		resumed:  resumed,
 		spec:     fresh,
-		buf:      newRing(api.ScrollbackBytes(d.st), launchCols),
+		buf:      newRing(api.ScrollbackBytes(d.st), cols),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
@@ -769,7 +927,11 @@ func (d *Daemon) awaitExit(r *runner) {
 	r.closeWatchers()
 	// Read before the terminal closes. For a runner that dies on startup this
 	// text is the reason, and the only copy of it.
-	tail := lastOutput(r.buf.Snapshot(), 12)
+	//
+	// A BOUNDED READ. This asked for the whole ring, which at the scrollback
+	// ceiling is half a gigabyte copied to find twelve lines, and then copied
+	// twice more by `lastOutput`. See `ringBuffer.Tail`.
+	tail := lastOutput(r.buf.Tail(tailBytes), 12)
 	r.closePTY()
 	d.sup.remove(r.taskID)
 	// The process is gone, so nothing it was doing is still true.
@@ -871,11 +1033,29 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 	wg.Wait()
 	log.Printf("[atrium] all supervised runners stopped")
 
-	// And their scrollback goes to disk, so the next daemon can hand it back.
+	// And their scrollback goes to disk. NOT REPLAYED AUTOMATICALLY any more,
+	// but kept, because it is the only record of what was on screen and the
+	// board can ask for it. See `carryover.go` for why the automatic replay
+	// went away.
+	//
 	// AFTER the wind-down, so whatever a session said on its way out is in it,
 	// and bounded by its own budget so it cannot extend a shutdown that is
-	// already bounded and narrated. See `carryover.go`.
+	// already bounded and narrated.
 	d.saveCarryover(live)
+	// WHICH TERMINALS WERE OPEN, so the next daemon opens them again. See
+	// `reopen.go`.
+	d.saveReopen(live)
+	// AND HOW WIDE EACH ONE WAS, so the terminal that replaces it comes up the
+	// size of the window it is about to appear in rather than at a fixed width
+	// that something resizes a moment later. See `launchWidthFor`.
+	for _, r := range live {
+		if r == nil || r.buf == nil {
+			continue
+		}
+		if err := d.st.SetLastCols(r.taskID, r.buf.CurrentWidth()); err != nil {
+			log.Printf("[atrium] could not record the terminal width for %s: %v", r.taskID, err)
+		}
+	}
 }
 
 // stopOne winds a single runner down and waits for it. Returns whether atrium

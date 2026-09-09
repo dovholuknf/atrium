@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,10 +24,18 @@ func carryRunner(id string, size, cols int) *runner {
 	}
 }
 
-// THE BUG, end to end: a daemon stops, its ring goes with it, and the runner
-// that comes back on the same card must still be able to show what came
-// before.
-func TestCarryoverRoundTripsAndReplaysAtTheSameWidth(t *testing.T) {
+// WHAT WAS ON SCREEN BEFORE THE RESTART SURVIVES ON DISK, and is not put back
+// into the terminal on its own.
+//
+// This asserted the replay for one afternoon. Joining it onto the front of
+// every attach was confusing in a way that took a while to name: a resumed
+// session REPRINTS its own recent history, so the carried bytes ended mid
+// conversation and the same conversation started again below the divider. Two
+// copies of the last hour with nothing on screen to say why.
+//
+// A terminal running claude shows one session's output. So does this now, and
+// the older bytes are fetched by somebody who asks for them.
+func TestCarryoverIsKeptOnDiskAndNotReplayedIntoTheTerminal(t *testing.T) {
 	dir := t.TempDir()
 	before := carryRunner("card1", 4096, 100)
 	before.buf.Write([]byte("what I was doing before the restart\r\n"))
@@ -34,66 +44,197 @@ func TestCarryoverRoundTripsAndReplaysAtTheSameWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// It is still read at spawn, which is what makes the file cumulative: the
+	// next stop folds this generation into the one it writes, so asking for
+	// the older scrollback reaches back further than one restart.
 	after := carryRunner("card1", 4096, 100)
 	after.carried = readCarry(dir, "card1", 4096)
 	if after.carried == nil {
-		t.Fatal("nothing came back off disk")
+		t.Fatal("nothing came back off disk, so the next save has nothing to fold in")
 	}
 	after.buf.Write([]byte("and what the new process says\r\n"))
 
-	backlog, _, ch := after.subscribe()
+	backlog, _, _, _, ch := after.subscribe()
 	after.unsubscribe(ch)
-	if !bytes.Contains(backlog, []byte("before the restart")) {
-		t.Fatalf("the pre-restart output was not replayed: %q", backlog)
+	if bytes.Contains(backlog, []byte("before the restart")) {
+		t.Fatalf("pushed the previous session at somebody who did not ask: %q", backlog)
 	}
 	if !bytes.Contains(backlog, []byte("the new process")) {
-		t.Fatalf("the live output was lost: %q", backlog)
+		t.Fatalf("lost this session's own output: %q", backlog)
 	}
-	if !bytes.Contains(backlog, carryDivider) {
-		t.Fatal("the restart boundary was not drawn, so the join reads as a repeat")
+
+	// And the next save carries both, so nothing is lost by not showing it.
+	next := after.carryFrom(4096)
+	if next == nil {
+		t.Fatal("saved nothing")
 	}
-	if bytes.Index(backlog, []byte("before the restart")) >
-		bytes.Index(backlog, []byte("the new process")) {
-		t.Fatal("the carried output was replayed after the live output")
+	if !bytes.Contains(next.bytes, []byte("before the restart")) {
+		t.Fatalf("the older generation was dropped rather than carried: %q", next.bytes)
+	}
+	if !bytes.Contains(next.bytes, []byte("the new process")) {
+		t.Fatalf("this generation was not added: %q", next.bytes)
+	}
+	if !bytes.Contains(next.bytes, carryDivider) {
+		t.Fatal("no restart boundary between them, so the join reads as a repeat")
 	}
 }
 
-// The rule the ring learned the hard way, applied to bytes that outlived the
-// process: output composed for another width cannot be redrawn here.
-func TestCarryoverWrittenAtOneWidthIsNotReplayedIntoAnother(t *testing.T) {
-	dir := t.TempDir()
-	before := carryRunner("card1", 4096, 80)
-	before.buf.Write([]byte("eighty column output\r\n"))
-	if err := writeCarry(dir, "card1", before.carryFrom(4096)); err != nil {
+// AND IT IS SERVED AS PLAIN TEXT, because it opens in a browser tab and a tab
+// is not a terminal. Colour codes would render as `[38;5;244m` throughout.
+func TestTheOlderScrollbackIsServedWithoutEscapes(t *testing.T) {
+	d := testDaemon(t)
+	r := carryRunner("card1", 4096, 100)
+	r.buf.Write([]byte("\x1b[38;5;244mcoloured output\x1b[0m\r\n\x1b[Hand a redraw over it\r\n"))
+	if err := writeCarry(d.carryDir(), "card1", r.carryFrom(4096)); err != nil {
 		t.Fatal(err)
 	}
 
-	after := carryRunner("card1", 4096, 200)
-	after.carried = readCarry(dir, "card1", 4096)
-	if after.carried == nil {
-		t.Fatal("nothing came back off disk")
-	}
-	after.buf.Write([]byte("two hundred column output\r\n"))
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/card1/scrollback/older", nil)
+	req.SetPathValue("id", "card1")
+	rec := httptest.NewRecorder()
+	d.handleOlderScrollback(rec, req)
 
-	backlog, _, ch := after.subscribe()
-	after.unsubscribe(ch)
-	if bytes.Contains(backlog, []byte("eighty column")) {
-		t.Fatal("replayed output composed for a terminal of another width")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(backlog, []byte("two hundred column")) {
-		t.Fatalf("dropped the live output too: %q", backlog)
+	body := rec.Body.String()
+	if strings.Contains(body, "\x1b") {
+		t.Fatalf("left escape sequences in a plain text answer: %q", body)
+	}
+	for _, want := range []string{"coloured output", "and a redraw over it"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("lost %q: %q", want, body)
+		}
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("served it as %q", ct)
 	}
 }
 
-// A width nothing was written at describes nothing, so there is nothing to
-// save. The empty file that would otherwise be written is a file the next
-// daemon has to decide about.
-func TestCarryoverOfAWidthNothingWasWrittenAtIsNotSaved(t *testing.T) {
+// A CARD WITH NOTHING SAVED SAYS SO, and says why, because "it is written when
+// atrium is stopped" is the whole answer and nobody can guess it.
+func TestTheOlderScrollbackSaysWhenThereIsNone(t *testing.T) {
+	d := testDaemon(t)
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/card1/scrollback/older", nil)
+	req.SetPathValue("id", "card1")
+	rec := httptest.NewRecorder()
+	d.handleOlderScrollback(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("answered %d for a card with no saved scrollback", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "clean stop") {
+		t.Fatalf("did not say why there is none: %q", rec.Body.String())
+	}
+}
+
+// A WIDTH CHANGE NO LONGER LOSES THE SAVE, which was the refusal this file was
+// written with and the reason a resized session came back empty.
+//
+// The argument for refusing was that a file holds one width and cannot carry a
+// warning to whoever opens it tomorrow. What it actually did was throw away
+// every restart's scrollback for any session that had been resized, which is
+// most of them.
+func TestCarryoverIsSavedWhateverWidthItWasDrawnAt(t *testing.T) {
+	dir := t.TempDir()
+	before := carryRunner("card1", 4096, 80)
+	before.buf.Write([]byte("eighty column output\r\n"))
+	before.buf.SetWidth(200)
+	before.buf.Write([]byte("two hundred column output\r\n"))
+
+	c := before.carryFrom(4096)
+	if c == nil {
+		t.Fatal("saved nothing for a session that had been resized")
+	}
+	for _, want := range []string{"eighty column output", "two hundred column output"} {
+		if !bytes.Contains(c.bytes, []byte(want)) {
+			t.Fatalf("lost %q: %q", want, c.bytes)
+		}
+	}
+	if err := writeCarry(dir, "card1", c); err != nil {
+		t.Fatal(err)
+	}
+	if got := readCarry(dir, "card1", 4096); got == nil {
+		t.Fatal("what was written could not be read back")
+	}
+}
+
+// A RESTART AFTER A RESIZE STILL SAVES THE SCROLLBACK.
+//
+// This asserted that nothing was saved, which followed from `carryFrom` asking
+// for the run composed at the width in force: a resize with no output after it
+// makes that run empty. So the shape that was already the ring's worst bug
+// (pop a window out, close it, restart) also emptied the file. Everything
+// retained is saved now.
+func TestCarryoverAfterAResizeStillSavesEverything(t *testing.T) {
 	r := carryRunner("card1", 4096, 80)
 	r.buf.Write([]byte("eighty column output\r\n"))
 	r.buf.SetWidth(200)
+
+	c := r.carryFrom(4096)
+	if c == nil {
+		t.Fatal("a resize with no output after it emptied the file")
+	}
+	if !bytes.Contains(c.bytes, []byte("eighty column output")) {
+		t.Fatalf("saved something other than the scrollback: %q", c.bytes)
+	}
+	if c.cols != 200 {
+		t.Fatalf("recorded %d columns, not the width in force at the save", c.cols)
+	}
+}
+
+// And a runner that has produced nothing writes no file at all, because an
+// empty file is one the next daemon has to decide about.
+func TestCarryoverOfAnEmptyRingIsNotSaved(t *testing.T) {
+	r := carryRunner("card1", 4096, 80)
 	if c := r.carryFrom(4096); c != nil {
-		t.Fatalf("saved %d bytes for a width nothing was composed at", len(c.bytes))
+		t.Fatalf("saved %d bytes for a runner that never wrote anything", len(c.bytes))
+	}
+}
+
+// THE WIDTH A REOPENED TERMINAL COMES UP AT.
+//
+// Every terminal used to open at a fixed hundred and twenty columns and get
+// resized a second later by the first browser to attach. So every restart put
+// a stretch of narrow output into the scrollback, with hard line breaks a
+// third of the way across a wide window, and flattening cannot undo a line
+// break that is already in the bytes. The operator saw one note per restart
+// saying the history was drawn for another terminal, and was right that the
+// thing producing it was the problem.
+func TestATerminalReopensAtTheWidthItWasLastLookedAt(t *testing.T) {
+	d := testDaemon(t)
+	task, _, err := d.st.Register(store.Observed{
+		WireName: "wide-window", Worktree: t.TempDir(), Runner: "claude",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A card that has never had a terminal has no opinion, so the default
+	// stands rather than something being invented.
+	if got := d.launchWidthFor(task.ID); got != launchCols {
+		t.Fatalf("invented a width for a card with no terminal history: %d", got)
+	}
+
+	if err := d.st.SetLastCols(task.ID, 247); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.launchWidthFor(task.ID); got != 247 {
+		t.Fatalf("would have opened at %d columns, not the 247 it was last at", got)
+	}
+
+	// A width of nothing is not an answer and must not replace a real one. The
+	// case is a runner that exited before any viewer said how big it was.
+	if err := d.st.SetLastCols(task.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.launchWidthFor(task.ID); got != 247 {
+		t.Fatalf("a width of zero overwrote the real one: %d", got)
+	}
+
+	// And a card nothing knows about falls back rather than failing a launch.
+	if got := d.launchWidthFor("no-such-card"); got != launchCols {
+		t.Fatalf("invented a width for a card that does not exist: %d", got)
 	}
 }
 

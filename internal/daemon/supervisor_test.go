@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"bytes"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -108,76 +110,249 @@ func TestOutputWithNoLineBoundaryIsNotShippedHalfway(t *testing.T) {
 	}
 }
 
-// THE ONE FROM THE SCREENSHOT. An hour of output composed for eighty columns,
-// then a two hundred column window attaches. Those bytes carry hard line
-// breaks at eighty and absolute cursor moves worked out for eighty, so
-// replaying them into the wider grid overwrites itself.
-func TestOutputComposedAtAnotherWidthIsNotReplayed(t *testing.T) {
-	r := newRing(1024, 80)
-	r.Write([]byte("an hour of narrow output\n"))
+// READING THE END OF A RUNNER'S OUTPUT MUST NOT COPY THE WHOLE RING.
+//
+// `awaitExit` wants the last twelve lines to say why a runner died. It asked
+// for `Snapshot`, which copies everything retained, and `lastOutput` then made
+// a string of it, ran a regexp over that, and split the result. At the
+// scrollback ceiling that is over a gigabyte of allocation to read about a
+// kilobyte, on every single exit.
 
-	got, dropped := r.SnapshotAt(200)
-	if len(got) != 0 {
-		t.Fatalf("replayed eighty column output into a two hundred column window: %q", got)
+func TestTailReturnsTheEndOfAWrappedRing(t *testing.T) {
+	r := newRing(64, testCols)
+	for i := 0; i < 40; i++ {
+		r.Write([]byte("line of output\n"))
 	}
-	if !dropped {
-		t.Fatal("dropped the history without saying so, which reads as a second bug")
+	got := r.Tail(20)
+	if len(got) > 20 {
+		t.Fatalf("asked for 20 bytes and got %d", len(got))
+	}
+	// Whatever came back is the END of the stream, so it is a suffix of what
+	// the buffer holds.
+	whole := r.Snapshot()
+	if !bytes.HasSuffix(whole, got) {
+		t.Fatalf("the tail is not the end of the buffer:\nwhole %q\ntail  %q", whole, got)
 	}
 }
 
-// The width it is at now replays in full, which is the ordinary attach and
-// must not be made worse by any of this.
+// NEVER OLDER THAN THE OLDEST BYTE HELD. A ring that has wrapped has
+// overwritten what came before, and asking for more than it holds must not
+// read whatever happens to be in the slice.
+func TestTailNeverReachesPastWhatIsRetained(t *testing.T) {
+	r := newRing(32, testCols)
+	r.Write([]byte("this line is overwritten by what follows it\n"))
+	r.Write([]byte("the newest output\n"))
+
+	got := r.Tail(1 << 20)
+	if len(got) > 32 {
+		t.Fatalf("returned %d bytes from a 32 byte ring", len(got))
+	}
+	if bytes.Contains(got, []byte("overwritten by")) {
+		t.Fatalf("handed back bytes that had been overwritten: %q", got)
+	}
+	// And it is the same answer Snapshot gives, since everything retained is
+	// less than what was asked for.
+	if !bytes.Equal(got, r.Snapshot()) {
+		t.Fatalf("tail %q disagrees with snapshot %q", got, r.Snapshot())
+	}
+}
+
+// A ring bigger than what has been written to it returns all of it, rather
+// than a short read or a panic reaching back before the start of the stream.
+func TestTailOfALightlyUsedRingReturnsEverything(t *testing.T) {
+	r := newRing(1<<20, testCols)
+	r.Write([]byte("only a little output\n"))
+	if got := string(r.Tail(64 << 10)); got != "only a little output\n" {
+		t.Fatalf("got %q", got)
+	}
+	// Nothing at all is a legitimate answer and must not be a panic.
+	if got := newRing(1024, testCols).Tail(64 << 10); len(got) != 0 {
+		t.Fatalf("invented output from an empty ring: %q", got)
+	}
+	if got := r.Tail(0); got != nil {
+		t.Fatalf("asking for nothing returned %q", got)
+	}
+}
+
+// THE POINT OF THE WHOLE CHANGE, asserted rather than described: reading the
+// tail costs what was asked for, not what the ring is capable of holding.
+//
+// This is the shape of the bug. Nothing about the call site changed when the
+// scrollback setting was raised, and the cost went up by three orders of
+// magnitude, because the call asked for "everything" and everything got
+// bigger.
+func TestReadingTheTailDoesNotCopyTheWholeRing(t *testing.T) {
+	const content = "a line of output that is worth reading at the end\n"
+
+	// FILLED, which is the whole condition. A ring only retains what has been
+	// written to it, so a big EMPTY ring costs no more to snapshot than a
+	// small one and would make this test pass against the bug it exists for.
+	// The case in the report is a runner that lived all day.
+	big := newRing(8<<20, testCols)
+	for big.retained() < len(big.data) {
+		big.Write([]byte(content))
+	}
+
+	// What the fix removed: the old call, measured, so the number below means
+	// something.
+	whole := testing.AllocsPerRun(5, func() { _ = big.Snapshot() })
+	bounded := testing.AllocsPerRun(5, func() { _ = big.Tail(tailBytes) })
+	t.Logf("snapshot of a full 8MB ring: %.0f allocations, bounded tail: %.0f", whole, bounded)
+
+	// Measured in bytes rather than in counts, since one allocation of eight
+	// megabytes and one of sixty four kilobytes are both one allocation.
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	sink = big.Tail(tailBytes)
+	runtime.ReadMemStats(&after)
+	grew := after.TotalAlloc - before.TotalAlloc
+	if grew > 4*tailBytes {
+		t.Fatalf("reading %d bytes of tail allocated %d, which is the ring rather than the request",
+			tailBytes, grew)
+	}
+
+	// And the same again through the function that actually consumes it, since
+	// two of the three copies were its doing.
+	if got := lastOutput(big.Tail(tailBytes), 12); !strings.Contains(got, "worth reading") {
+		t.Fatalf("the bounded read lost the output: %q", got)
+	}
+}
+
+// sink keeps a measured allocation alive so the compiler cannot decide the
+// call had no effect and remove it.
+var sink []byte
+
+// lastOutput trims what it is given, so widening a caller cannot quietly bring
+// back the cost this was fixed to remove.
+func TestLastOutputRefusesToProcessMoreThanTheBound(t *testing.T) {
+	huge := []byte(strings.Repeat("padding that should never be scanned\n", 40000))
+	huge = append(huge, "the line that matters\n"...)
+	if len(huge) <= tailBytes {
+		t.Fatal("the fixture is not bigger than the bound, so this proves nothing")
+	}
+
+	got := lastOutput(huge, 12)
+	if !strings.Contains(got, "the line that matters") {
+		t.Fatalf("trimmed away the end instead of the beginning: %q", got)
+	}
+	if len(got) > tailBytes {
+		t.Fatalf("returned %d bytes for a bound of %d", len(got), tailBytes)
+	}
+}
+
+// AN HOUR OF EIGHTY COLUMN OUTPUT, AND A TWO HUNDRED COLUMN WINDOW ATTACHES.
+//
+// This used to assert that nothing came back. Those bytes carry line breaks
+// and absolute cursor moves worked out for eighty columns, so replaying them
+// into a wider grid puts things in the wrong places, and the buffer refused.
+//
+// The refusal was the wrong trade and the operator found it by dragging a
+// window edge: a resize lays a mark before the pty is told, so attaching at a
+// new size asked for a run that was zero bytes old, and an hour of scrollback
+// went with nothing but a line saying it could not be redrawn. Imperfect
+// history beats none, PROVIDED the reader is told which it is.
+//
+// So the output comes back and `widths` says what it was drawn for. The caller
+// decides what to say; `attach.go` says it.
+func TestOutputComposedAtAnotherWidthComesBackLabelled(t *testing.T) {
+	r := newRing(1024, 80)
+	r.Write([]byte("an hour of narrow output\n"))
+
+	got, widths, _ := r.Replay()
+	if string(got) != "an hour of narrow output\n" {
+		t.Fatalf("threw away readable history rather than labelling it: %q", got)
+	}
+	if !slices.Equal(widths, []int{80}) {
+		t.Fatalf("did not say what the output was drawn for: got %v, want [80]", widths)
+	}
+}
+
+// AND A WIDTH CHANGE WITH NOTHING WRITTEN AT IT STILL REPLAYS WHAT CAME
+// BEFORE.
+//
+// The first shape of the operator's complaint. `setViewport` marks the new
+// width before any output is composed at it, so the trailing run is empty and
+// a naive read of "the last mark" returns nothing at all.
+func TestAResizeWithNoOutputAfterItStillReplaysWhatCameBefore(t *testing.T) {
+	r := newRing(1024, 80)
+	r.Write([]byte("an hour of narrow output\n"))
+	r.SetWidth(200)
+
+	got, widths, _ := r.Replay()
+	if string(got) != "an hour of narrow output\n" {
+		t.Fatalf("a resize emptied the scrollback: %q", got)
+	}
+	if !slices.Equal(widths, []int{80}) {
+		t.Fatalf("mislabelled the output: got %v, want [80]", widths)
+	}
+}
+
+// The ordinary attach, which none of this is allowed to make worse: one width,
+// and it is the one in force.
 func TestOutputComposedAtThisWidthIsReplayedWhole(t *testing.T) {
 	r := newRing(1024, 80)
 	r.Write([]byte("an hour of narrow output\n"))
 
-	got, dropped := r.SnapshotAt(80)
+	got, widths, _ := r.Replay()
 	if string(got) != "an hour of narrow output\n" {
 		t.Fatalf("threw away history that renders correctly: %q", got)
 	}
-	if dropped {
-		t.Fatal("said history was dropped when all of it was sent")
+	if !slices.Equal(widths, []int{80}) {
+		t.Fatalf("named a width the output was not drawn at: %v", widths)
 	}
 }
 
-// Everything drawn since the resize is still good, and it is the part worth
-// having: it is what is on screen.
+// THE SECOND SHAPE OF THE COMPLAINT, AND THE ONE THAT REOPENED IT.
 //
-// A resize lands between two arbitrary reads of the terminal, so the first
-// line after one is treated as unsafe to start at, the same as the oldest
-// retained byte. A runner repainting after being told its new size opens with
-// control bytes and a line ending, which is what is lost here.
-func TestOutputSinceTheResizeSurvivesIt(t *testing.T) {
+// Returning the trailing run fixed the empty attach and left this: a run ENDS
+// AT EVERY MARK, so a session that had been resized handed back only what it
+// drew afterwards. For a quiet agent that is a page or two out of sixteen
+// megabytes, which on screen is indistinguishable from the original bug.
+//
+// Both halves come back now, and `widths` names both.
+func TestBothSidesOfAResizeComeBack(t *testing.T) {
 	r := newRing(1024, 80)
-	r.Write([]byte("narrow and unreadable\n"))
+	r.Write([]byte("narrow, drawn before the drag\n"))
 	r.SetWidth(200)
-	r.Write([]byte("\x1b[H\x1b[2J\nwide and correct\n"))
+	r.Write([]byte("wide, drawn after it\n"))
 
-	got, dropped := r.SnapshotAt(200)
-	if string(got) != "wide and correct\n" {
-		t.Fatalf("wanted only what was drawn at two hundred columns, got %q", got)
+	got, widths, _ := r.Replay()
+	if !strings.Contains(string(got), "narrow, drawn before the drag") {
+		t.Fatalf("a resize threw away everything before it: %q", got)
 	}
-	if !dropped {
-		t.Fatal("the narrow half was dropped and nobody was told")
+	if !strings.Contains(string(got), "wide, drawn after it") {
+		t.Fatalf("lost the output drawn since the resize: %q", got)
+	}
+	if !slices.Equal(widths, []int{80, 200}) {
+		t.Fatalf("did not name both widths: got %v, want [80 200]", widths)
 	}
 }
 
-// A window dragged narrow and back again leaves two readable stretches with
-// something unreadable between them. Joining them splices text across a hole.
-func TestAWidthComingBackDoesNotSpliceAcrossTheGap(t *testing.T) {
+// A window dragged narrow and back again leaves three stretches, and all three
+// are handed over.
+//
+// This asserted the reverse: two readable stretches with something unreadable
+// between them, joined only at the cost of splicing text across a hole. That
+// reasoning held right up until the hole turned out to be most of the
+// scrollback. The widths are reported in the order they occur so the note can
+// say the session was resized rather than name one width for all of it.
+func TestAWidthComingBackKeepsEveryStretch(t *testing.T) {
 	r := newRing(1024, 80)
 	r.Write([]byte("first narrow stretch\n"))
 	r.SetWidth(200)
 	r.Write([]byte("a wide stretch nobody can read at eighty\n"))
 	r.SetWidth(80)
-	r.Write([]byte("\nsecond narrow stretch\n"))
+	r.Write([]byte("second narrow stretch\n"))
 
-	got, _ := r.SnapshotAt(80)
-	if strings.Contains(string(got), "first narrow stretch") {
-		t.Fatalf("joined two stretches of eighty column output across a hole: %q", got)
+	got, widths, _ := r.Replay()
+	for _, want := range []string{"first narrow stretch", "a wide stretch", "second narrow stretch"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("lost %q from the scrollback: %q", want, got)
+		}
 	}
-	if string(got) != "second narrow stretch\n" {
-		t.Fatalf("wanted the trailing run only, got %q", got)
+	if !slices.Equal(widths, []int{80, 200, 80}) {
+		t.Fatalf("did not report the widths in the order they happened: %v", widths)
 	}
 }
 
@@ -190,12 +365,12 @@ func TestAgreeingOnTheSizeAgainDoesNotSplitTheRun(t *testing.T) {
 	r.SetWidth(80)
 	r.Write([]byte("after\n"))
 
-	got, dropped := r.SnapshotAt(80)
+	got, widths, _ := r.Replay()
 	if string(got) != "before\nafter\n" {
 		t.Fatalf("a redundant resize cut the scrollback in half: %q", got)
 	}
-	if dropped {
-		t.Fatal("claimed to have dropped output over a resize to the size it already was")
+	if !slices.Equal(widths, []int{80}) {
+		t.Fatalf("a resize to the width already in force was reported: %v", widths)
 	}
 }
 
@@ -213,12 +388,12 @@ func TestAWidthNothingWasWrittenAtIsNotAMark(t *testing.T) {
 	r.SetWidth(80)
 	r.SetWidth(200)
 
-	got, dropped := r.SnapshotAt(200)
+	got, widths, _ := r.Replay()
 	if string(got) != "an hour of two hundred column output\n" {
 		t.Fatalf("a width nothing was written at threw away the scrollback: %q", got)
 	}
-	if dropped {
-		t.Fatal("claimed to have dropped output that was never composed at another width")
+	if !slices.Equal(widths, []int{200}) {
+		t.Fatalf("reported a width nothing was ever written at: %v", widths)
 	}
 }
 
@@ -232,14 +407,18 @@ func TestRepeatedEmptyWidthChangesKeepTheRun(t *testing.T) {
 		r.SetWidth(120)
 		r.SetWidth(200)
 	}
-	got, _ := r.SnapshotAt(200)
+	got, widths, _ := r.Replay()
 	if string(got) != "kept\n" {
 		t.Fatalf("five empty round trips lost the output: %q", got)
 	}
+	if !slices.Equal(widths, []int{200}) {
+		t.Fatalf("five empty round trips left widths behind: %v", widths)
+	}
 }
 
-// The guard must not eat a width that output WAS written at. Narrow, write,
-// then wide is a real hole and the earlier run is genuinely unreadable now.
+// The merge must not eat a width that output WAS written at. Wide, write,
+// narrow, write, wide again is a real stretch of eighty column output in the
+// middle, and the note has to be able to say so.
 func TestAWidthThatWasWrittenAtIsStillAMark(t *testing.T) {
 	r := newRing(1024, 200)
 	r.Write([]byte("wide\n"))
@@ -247,12 +426,12 @@ func TestAWidthThatWasWrittenAtIsStillAMark(t *testing.T) {
 	r.Write([]byte("narrow\n"))
 	r.SetWidth(200)
 
-	got, dropped := r.SnapshotAt(200)
-	if strings.Contains(string(got), "wide") {
-		t.Fatalf("spliced across output composed at eighty columns: %q", got)
+	got, widths, _ := r.Replay()
+	if !strings.Contains(string(got), "wide") || !strings.Contains(string(got), "narrow") {
+		t.Fatalf("lost half the scrollback: %q", got)
 	}
-	if !dropped {
-		t.Fatal("dropped a real stretch of output and did not say so")
+	if !slices.Equal(widths, []int{200, 80}) {
+		t.Fatalf("swallowed a width real output was drawn at: %v", widths)
 	}
 }
 
@@ -285,9 +464,63 @@ func TestTheWidthOfTheOldestRetainedByteIsKept(t *testing.T) {
 	if got := r.CurrentWidth(); got != 200 {
 		t.Fatalf("current width is %d, not the one in force", got)
 	}
-	got, _ := r.SnapshotAt(200)
+	got, widths, _ := r.Replay()
 	if len(got) == 0 {
 		t.Fatal("threw away output written at the width the terminal is still at")
+	}
+	if len(widths) == 0 || widths[0] != 200 {
+		t.Fatalf("lost the width the oldest retained byte was drawn at: %v", widths)
+	}
+}
+
+// RAISING THE LIMIT KEEPS WHAT IS ALREADY HELD.
+//
+// The size was read once at spawn, so raising it did nothing until every
+// runner had been restarted, and a restart is the thing somebody raising it is
+// trying to survive.
+func TestGrowingTheBufferKeepsEverythingInIt(t *testing.T) {
+	r := newRing(64, 80)
+	// Past its size, so it has wrapped and the oldest byte is mid-slice.
+	for i := 0; i < 20; i++ {
+		r.Write([]byte("some output\n"))
+	}
+	before, _, wrappedBefore := r.Replay()
+	if !wrappedBefore {
+		t.Fatal("the fixture did not wrap, so this proves nothing")
+	}
+
+	r.Grow(4096)
+
+	after, _, _ := r.Replay()
+	if !strings.HasSuffix(string(after), string(before)) {
+		t.Fatalf("growing lost or reordered what was held:\nbefore %q\nafter  %q", before, after)
+	}
+	// And it goes on holding more than it used to.
+	for i := 0; i < 20; i++ {
+		r.Write([]byte("more output\n"))
+	}
+	grown, _, wrappedAfter := r.Replay()
+	if len(grown) <= len(before) {
+		t.Fatalf("held %d bytes after growing, %d before", len(grown), len(before))
+	}
+	// STILL NOT THE START OF THE SESSION, and it has to keep saying so. Those
+	// bytes were discarded before the buffer was made bigger and raising a
+	// limit does not go back in time. A buffer that reported itself whole here
+	// would be telling the reader the top of their scrollback is the beginning
+	// of the session when it is not.
+	if !wrappedAfter {
+		t.Fatal("claimed to hold the whole session after growing, having already dropped output")
+	}
+}
+
+// Shrinking has to throw bytes away, so it is refused rather than obeyed.
+func TestShrinkingTheBufferIsRefused(t *testing.T) {
+	r := newRing(4096, 80)
+	r.Write([]byte("output that must not be dropped by a settings change\n"))
+	r.Grow(16)
+	got, _, _ := r.Replay()
+	if !strings.Contains(string(got), "must not be dropped") {
+		t.Fatalf("a smaller size threw away the scrollback: %q", got)
 	}
 }
 
@@ -300,7 +533,7 @@ func TestFanoutDoesNotBlockOnASlowWatcher(t *testing.T) {
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
-	_, _, ch := r.subscribe()
+	_, _, _, _, ch := r.subscribe()
 
 	// Far more than the channel buffer, with nobody reading.
 	for i := 0; i < 500; i++ {
@@ -333,7 +566,7 @@ func TestSubscribeAfterExitClosesImmediately(t *testing.T) {
 	r.buf.Write([]byte("some earlier output"))
 	close(r.done)
 
-	backlog, _, ch := r.subscribe()
+	backlog, _, _, _, ch := r.subscribe()
 	if string(backlog) != "some earlier output" {
 		t.Fatalf("backlog lost: %q", backlog)
 	}

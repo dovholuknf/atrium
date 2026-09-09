@@ -55,11 +55,20 @@ func (d *Daemon) settleFor(taskID string, window time.Duration) (string, bool) {
 	}
 	select {
 	case <-r.done:
-		return lastOutput(r.buf.Snapshot(), 12), false
+		return lastOutput(r.buf.Tail(tailBytes), 12), false
 	case <-time.After(window):
 		return "", true
 	}
 }
+
+// tailBytes is how much of a terminal's output is read to find the last few
+// lines of it.
+//
+// Sixty four kilobytes holds twelve lines of anything, including a stack trace
+// with a hundred columns of it per line, and it is three orders of magnitude
+// under the ring at its ceiling. The old answer was the whole ring, which is
+// how reading twelve lines came to cost a gigabyte.
+const tailBytes = 64 << 10
 
 // ansi strips the escape sequences a terminal would have consumed, so a failure
 // message reads as text.
@@ -68,7 +77,23 @@ var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r`)
 // lastOutput takes the final few non-empty lines of a terminal's scrollback.
 // The end, not the beginning: a program that fails to start prints its banner
 // first and its complaint last.
+//
+// IT TRIMS WHAT IT IS GIVEN, and that guard is not paranoia about a caller
+// that does not exist. Both callers used to hand it the whole ring, and every
+// line of this function then multiplies it: `string(buf)` copies, because Go
+// cannot alias a byte slice as a string, the regexp scans all of it and builds
+// another, and `Split` walks that. Three copies of half a gigabyte to read
+// twelve lines.
+//
+// The callers pass a bounded read now. This makes the bound true whatever they
+// pass, so widening one of them cannot quietly bring the cost back.
 func lastOutput(buf []byte, maxLines int) string {
+	if len(buf) > tailBytes {
+		// From a line start, because a cut at an arbitrary byte lands inside
+		// an escape sequence or a rune, and this is about to be read by a
+		// person.
+		buf = fromLineStart(buf[len(buf)-tailBytes:])
+	}
 	text := ansi.ReplaceAllString(string(buf), "")
 	var lines []string
 	for _, ln := range strings.Split(text, "\n") {

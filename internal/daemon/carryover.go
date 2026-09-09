@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -85,15 +86,34 @@ var carryDivider = []byte("\r\n\x1b[38;5;244m" +
 	"[atrium] ---- atrium restarted here ----" +
 	"\x1b[0m\r\n")
 
-// carryover is one card's retained output and the width it was composed at.
+// carryCutNotice goes at the TOP of a file that could not hold everything.
 //
-// ONE WIDTH, not a list of marks, and that is the whole format decision. The
-// ring records every width its output was ever composed at, but `SnapshotAt`
-// only ever returns the TRAILING RUN composed at the width in force now, and
-// nothing else could ever be replayed into a terminal. So what is saved is
-// that run and that one number. The rule the ring learned the hard way comes
-// with it for free: a width nothing was written at yields an empty run, and an
-// empty run is not saved at all.
+// Written into the payload rather than the header, so no format version has to
+// change and every later generation carries it forward without knowing what it
+// is. See `carryFrom`, which explains why that matters.
+//
+// The wording is about the limit and not about the loss, because the reader
+// standing at the top of their scrollback has one useful question and it is
+// "is this all of it or is this the setting".
+const carryCutNotice = "\x1b[38;5;244m" +
+	"[atrium] ---- THIS IS NOT THE START OF THE SESSION. what came before this was past " +
+	"the scrollback limit and has been discarded. raise it in settings, scrollback ----" +
+	"\x1b[0m\r\n"
+
+// carryover is one card's retained output and the width it was last composed
+// at.
+//
+// ONE WIDTH FOR THE WHOLE FILE, not a list of marks, and it is an
+// approximation rather than a fact about every byte. A session resized while
+// it ran holds output drawn at several widths, and this records the one in
+// force when it was saved.
+//
+// That is deliberately less than the ring knows. Whoever reads this file back
+// gets a note saying the scrollback may sit in the wrong places, which is the
+// same thing they would be told about a live buffer resized twice, and it does
+// not need a mark table to say it. Carrying the marks would buy a more precise
+// sentence in a file that already spans a restart, and cost a format that has
+// to stay parseable by one Cut.
 type carryover struct {
 	cols  int
 	bytes []byte
@@ -232,6 +252,74 @@ func (d *Daemon) carryDir() string {
 	return filepath.Join(filepath.Dir(d.opts.DBPath), carryDirName)
 }
 
+// handleOlderScrollback serves what this card's terminal held before the last
+// restart.
+//
+// PLAIN TEXT, and every escape sequence gone. It opens in a browser tab, and a
+// browser tab is not a terminal: colour codes would render as literal
+// `[38;5;244m` through the whole file. The flattening the attach does to stop
+// history erasing itself gets rid of everything except colour, so this is that
+// pass plus one more.
+//
+// Served rather than replayed for the reason `subscribe` gives at length: a
+// resumed session reprints its own recent history, so pushing this at every
+// attach showed the last hour twice with nothing to say why.
+func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	c := readCarry(d.carryDir(), taskID, api.ScrollbackBytes(d.st))
+	if c == nil {
+		http.Error(w, "there is no scrollback saved for this card from before the last restart. "+
+			"it is written when atrium is stopped, so a card that has never been through a "+
+			"clean stop has none, and neither does one whose daemon was killed.",
+			http.StatusNotFound)
+		return
+	}
+	body := stripSGR(flatten(c.bytes))
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Read in a tab rather than downloaded, which is the difference between
+	// answering the question and putting a file in somebody's downloads.
+	w.Header().Set("Content-Disposition", "inline")
+	// It is a snapshot of a moment that has passed, so it will not change.
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
+}
+
+// stripSGR removes the colour that `flatten` deliberately keeps.
+//
+// Two callers want the same bytes and disagree about exactly one thing. A
+// terminal wants the colour, because a transcript in one colour is much harder
+// to read. A browser tab cannot render it and shows the codes as text.
+func stripSGR(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	for i := 0; i < len(b); {
+		if b[i] != 0x1b {
+			out = append(out, b[i])
+			i++
+			continue
+		}
+		// Only SGR can be here, since flatten dropped everything else, but the
+		// scan is written to consume any CSI so a stray sequence cannot leave
+		// its parameters on screen.
+		j := i + 1
+		if j < len(b) && b[j] == '[' {
+			j++
+			for j < len(b) && b[j] >= 0x30 && b[j] <= 0x3f {
+				j++
+			}
+			for j < len(b) && b[j] >= 0x20 && b[j] <= 0x2f {
+				j++
+			}
+			if j < len(b) {
+				j++
+			}
+			i = j
+			continue
+		}
+		i = j + 1
+	}
+	return out
+}
+
 // adoptCarryover hands a freshly spawned runner whatever the last daemon left
 // for its card.
 //
@@ -272,24 +360,61 @@ func (r *runner) carryFrom(max int) *carryover {
 		return nil
 	}
 	cols := r.buf.CurrentWidth()
-	live, _ := r.buf.SnapshotAt(cols)
+	// EVERYTHING RETAINED, the same as an attach.
+	//
+	// This used to keep only the run composed at the width being recorded, on
+	// the grounds that a file cannot carry a warning to whoever opens it
+	// tomorrow. It can: the warning is drawn by whoever replays it, from the
+	// width in the header against the width of the terminal then. What the
+	// refusal actually did was throw away every restart's scrollback for any
+	// session that had been resized, which is most of them.
+	live, _, wrapped := r.buf.Replay()
 
 	r.mu.Lock()
 	carried := r.carried
 	r.mu.Unlock()
 
+	// And whatever the LAST restart left, so scrollback survives a second one
+	// rather than only the one it was written for. Folded in whatever width it
+	// was drawn at, for the reason above.
 	out := live
-	if carried != nil && carried.cols == cols {
+	if carried != nil && len(carried.bytes) > 0 {
 		out = make([]byte, 0, len(carried.bytes)+len(carryDivider)+len(live))
 		out = append(out, carried.bytes...)
 		out = append(out, carryDivider...)
 		out = append(out, live...)
+		// The ring's answer was about the ring, and the ring is no longer the
+		// oldest thing here. Whether the file we are folding in was itself cut
+		// is already written INSIDE it, by the run of this function that wrote
+		// it, which is the only reason that works.
+		wrapped = false
 	}
 	if len(out) > max {
-		out = fromLineStart(out[len(out)-max:])
+		// ROOM FOR THE NOTICE INSIDE THE BUDGET, not on top of it. `max` is
+		// what a ring holds and what `readCarry` will accept, so a file that
+		// went over it by the length of its own explanation would be refused
+		// by the next daemon and the scrollback lost to the thing that exists
+		// to report scrollback being lost.
+		budget := max - len(carryCutNotice)
+		if budget < 0 {
+			budget = 0
+		}
+		out = fromLineStart(out[len(out)-budget:])
+		wrapped = true
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	// SAID INSIDE THE FILE, not in its header.
+	//
+	// The header carries six fields and nothing else can be added to it
+	// without a version bump, which would make every file already on disk
+	// unreadable and throw away the scrollback this exists to keep. A line of
+	// terminal output at the top of the payload needs no format change, is
+	// carried forward by every future generation for free, and lands in front
+	// of whoever scrolls to the top, which is the person asking.
+	if wrapped {
+		out = append([]byte(carryCutNotice), out...)
 	}
 	return &carryover{cols: cols, bytes: out}
 }

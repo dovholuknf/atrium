@@ -149,6 +149,18 @@ type Task struct {
 	// one ticket are two pieces of work somebody asked for twice.
 	IntakeKey string `json:"intake_key,omitempty"`
 	Branch    string `json:"branch,omitempty"`
+	// LastCols is how wide this card's terminal was when it was last stopped.
+	//
+	// Written at the wind-down, never on the resize itself. A browser sends a
+	// resize frame whenever anything on the page moves, and that is not a rate
+	// to write to a database at.
+	//
+	// It exists so a reopened terminal comes up the size of the window it is
+	// about to appear in. Opening at a fixed width and being resized a moment
+	// later put a stretch of output composed for nobody into the scrollback on
+	// every restart, with hard line breaks a third of the way across. Zero for
+	// a card that has never had a terminal atrium owned.
+	LastCols int `json:"last_cols,omitempty"`
 	// Org and Host are which one, above the repo name.
 	//
 	// `openziti/zrok` on `github.com` and a fork of it under another org are
