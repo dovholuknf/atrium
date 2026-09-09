@@ -512,22 +512,29 @@ if (/function setTermFont\(/.test(html)) {
       "fitting on its own is a second copy of the viewport handling that rules 9 to 12 " +
       "exist to protect.");
   }
-  if (/localStorage|patchTask/.test(fontBody)) {
-    fail("setTermFont persists the size. It is deliberately short lived and dies with the " +
-      "pane, because it answers `I cannot read this right now` rather than being a " +
-      "preference. See the comment above it.");
+  // IT SURVIVES A SWITCH, and this half of the rule asserted the opposite for
+  // one build. `openTerm` runs every time you switch to another session, so a
+  // size that resets there is a size cleared by clicking a second card and
+  // coming back. The operator found that within a minute of it shipping.
+  if (!/localStorage/.test(fontBody)) {
+    fail("setTermFont does not remember the size, so switching to another session and back " +
+      "clears it. It is kept per card in localStorage, the way a popped-out window's size " +
+      "already is.");
   }
-  // And the line that makes that true. Without it a size set on one terminal
-  // survives into the next one built in the same page, which is the
-  // persistence above arriving by accident.
+  // AND NOT ON THE DAEMON. This is a property of the screen somebody is
+  // reading rather than of the work, so it has no business travelling to
+  // another machine or being served to a guest holding a share of one session.
+  if (/patchTask|\/v1\//.test(fontBody)) {
+    fail("setTermFont sends the size to the daemon. It belongs to the browser reading the " +
+      "terminal, not to the card, and a guest holding a share must not inherit it.");
+  }
   const openAt = html.indexOf("function openTerm(");
   if (openAt >= 0) {
     const openEnd = html.indexOf("\nfunction ", openAt + 1);
     const openBody = html.slice(openAt, openEnd < 0 ? html.length : openEnd);
-    if (!/termFontSize = TERM_FONT_DEFAULT/.test(openBody)) {
-      fail("openTerm does not put the font size back to the default, so a size set on one " +
-        "terminal survives into the next one built in this page. It is meant to die with " +
-        "the pane.");
+    if (!/termFontSize = readTermFont\(/.test(openBody)) {
+      fail("openTerm does not restore this card's font size, so switching sessions loses it. " +
+        "It used to reset to the default here, which is the bug rather than the design.");
     }
   }
 }
