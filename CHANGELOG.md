@@ -23,10 +23,16 @@ section heading is just "what landed in this iteration."
   that had the focus kept it and every keystroke after that went somewhere nobody could see. The stepper's
   field is the first thing in there anybody focuses on purpose.
 
-  **It dies with the pane, deliberately.** Not on the card, not in `localStorage`, not on the daemon, though
-  every other per-terminal choice here is remembered somewhere: the theme is on the card, a popped-out window's
-  size is in storage, the skin is on the daemon. This one answers "I cannot read this right now" rather than
-  "this is how I like terminals", and `openTerm` puts it back to 14 every time it builds a terminal.
+  **Remembered per card, in this browser.** It shipped for an hour dying with the pane, on the reasoning that
+  it answers "I cannot read this right now" rather than "this is how I like terminals". The reasoning was fine
+  and the implementation of it was not: `openTerm` builds a terminal every time you SWITCH session, so clicking
+  a second card and coming back put the size straight back to 14. Kept in `localStorage` keyed by card now, the
+  way a popped-out window's size already is, and per card rather than one number for the board because one
+  agent drawing wide tables and another printing a log want different answers.
+
+  It is still NOT on the daemon, and that line is worth holding: this is a property of the screen somebody is
+  reading rather than of the work, so it has no business travelling to another machine or being served to a
+  guest holding a share of one session.
 
   **A font change is a resize**, which is the part that makes it more than a setting. xterm measures in cells,
   so changing the size changes how many rows and columns fit and that number goes to the runner. It goes
@@ -35,8 +41,10 @@ section heading is just "what landed in this iteration."
   and holds it while the runner repaints. Those are `check-terminal.js` rules 9 through 12 and reimplementing
   them here would be a second copy to get wrong.
 
-  Rule 13 keeps it that way, and checks the size is not persisted. It SEARCHES the function rather than
-  slicing a fixed number of characters off the top of it, which is a trap a sibling rule has.
+  Rule 13 keeps it that way, and asserts the size IS remembered across a switch and is NOT sent to the daemon.
+  Its first version asserted the opposite of the first of those, which is how the reset survived review: the
+  check agreed with the code and both were wrong. It SEARCHES the function rather than slicing a fixed number
+  of characters off the top of it, which is a trap a sibling rule has.
 
   The pty follows the smallest attached viewport, so a bigger font does narrow the columns the agent draws
   into for anybody else watching. Left that way: a terminal has one size, and an exemption would mean the agent

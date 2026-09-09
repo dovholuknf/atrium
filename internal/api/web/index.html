@@ -16395,10 +16395,11 @@ function openTerm(task) {
 
   const screen = document.getElementById("t-screen");
   screen.innerHTML = "";
-  // BACK TO THE DEFAULT, because the size dies with the pane. See
-  // `setTermFont`: this is the line that makes it short lived, and deleting it
-  // is how the setting quietly becomes a preference.
-  termFontSize = TERM_FONT_DEFAULT;
+  // WHATEVER THIS CARD WAS LAST READ AT. This line used to put it back to the
+  // default, which meant switching to another session and back cleared a size
+  // somebody had just set: `openTerm` runs on every switch, not only on the
+  // first one.
+  termFontSize = readTermFont(task.id);
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
@@ -18940,20 +18941,43 @@ function sendResize() {
 // terminal separate from the browser so that it doesn't scale the ui elements
 // with the text".
 //
-// SHORT LIVED ON PURPOSE, and this is the unusual part. It is not on the card,
-// not in `localStorage`, and not on the daemon, even though every other per
-// terminal choice here is remembered somewhere: the theme is on the card, a
-// popped-out window's size is in storage, the skin is on the daemon. This one
-// dies with the pane, because it answers "I cannot read this right now" rather
-// than "this is how I like terminals". `openTerm` puts it back to the default
-// every time it builds one, which is the line that makes that true.
+// PER CARD, AND REMEMBERED IN THIS BROWSER. It is not on the daemon.
 //
-// The next person to read this will want to persist it. That is the whole
-// reason the paragraph above exists.
+// The first version of this died with the pane, on the reasoning that it
+// answers "I cannot read this right now" rather than "this is how I like
+// terminals". That reasoning was fine and the implementation of it was not:
+// `openTerm` builds a terminal every time you SWITCH to another session, so
+// clicking a second card and coming back put the size straight back to
+// fourteen. The operator's words: "changing terminals shouldn't clear it".
+//
+// So it is stored the way a popped-out window's size already is, keyed by
+// card, in `localStorage`. Per card rather than one number for the board,
+// because the original ask was per terminal and it is a real difference: one
+// agent drawing wide tables and another printing a log want different answers.
+//
+// NOT ON THE DAEMON, which is the line that is still worth holding. This is a
+// property of the screen somebody is reading, not of the work, so it has no
+// business travelling to another machine or being served to a guest holding a
+// share of one session.
 const TERM_FONT_DEFAULT = 14;
 const TERM_FONT_MIN = 8;
 const TERM_FONT_MAX = 32;
 let termFontSize = TERM_FONT_DEFAULT;
+
+const termFontKey = (id) => "atrium.termfont." + id;
+
+// What this card's terminal was last read at, or the default.
+//
+// Guarded like `readSize` is, because a stored zero or a NaN left by an older
+// shape would open a terminal at a size with no glyphs in it, which looks
+// exactly like a terminal that failed to attach.
+function readTermFont(id) {
+  try {
+    const v = Number(localStorage.getItem(termFontKey(id)));
+    if (v >= TERM_FONT_MIN && v <= TERM_FONT_MAX) return Math.round(v);
+  } catch (e) {}
+  return TERM_FONT_DEFAULT;
+}
 
 // A FONT CHANGE IS A RESIZE, which is the part that makes this more than a
 // setting. xterm measures in CELLS, so changing the size changes how many rows
@@ -18977,6 +19001,12 @@ function setTermFont(px) {
   if (size === termFontSize) return;
   termFontSize = size;
   term.options.fontSize = size;
+  // Written against the card rather than against the pane, so switching to
+  // another session and back finds it again. See the note above `readTermFont`
+  // for why that is not the same as making it a preference.
+  if (termTask && termTask.id) {
+    try { localStorage.setItem(termFontKey(termTask.id), String(size)); } catch (e) {}
+  }
   onTermResize();
 }
 
