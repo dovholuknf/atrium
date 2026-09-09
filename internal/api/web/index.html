@@ -2333,6 +2333,20 @@
      card in `full`, and in the right-click menu in both. */
   .tl-mini .term-list .card { padding: 6px 4px; }
   .tl-mini .term-list .card .chips, .tl-mini .term-list .card .title .pin { display: none; }
+  /* THE DIVIDER SURVIVES `mini`, and the star above does not. That looks
+     inconsistent and is the point.
+     The star goes because pinning is a DECISION and a decision does not
+     belong on the control you shrank to get it out of the way. A divider is
+     not a control. It is the shape of the list, and with no stars here it is
+     the only thing left saying the top of this list is deliberate rather than
+     a sort you do not recognize. Hiding it with the star would inherit a rule
+     written about a different kind of thing.
+     Tightened to fit 104px: the padding comes in, the letter-spacing comes
+     off, and the word is kept whole rather than wrapped, since a divider
+     reading `the` over `rest` is worse than no divider. */
+  .tl-mini .pinbreak {
+    padding: 5px 4px 2px; letter-spacing: 0; gap: 4px; white-space: nowrap;
+  }
   .tl-mini .term-list .card .title {
     display: flex; align-items: center; justify-content: center; gap: 4px;
   }
@@ -6330,6 +6344,11 @@ function switchView(name) {
   // as a detached one does, so it is sized on the way in rather than only on
   // the way past a poll.
   if (name === "perms") sizeCommands();
+  // Anything measured while this view was hidden was measured against zeroes
+  // and discarded, so the bridge is placed on the way IN, on a layout that has
+  // a size. Cheap enough to sit on every scroll of the list, so it is cheap
+  // enough to sit here.
+  if (name === "terms") requestAnimationFrame(placeTabBridge);
   // Where you were, so a reload puts you back. A restart of the daemon
   // reloads every board it is serving, and landing on the board every time
   // meant two clicks to get back to the terminal you were reading.
@@ -7226,16 +7245,28 @@ async function renderBoard() {
     // width buys nothing but a longer title, and a straight ratio would give
     // one busy column the whole board.
     //
-    // Capped at TWO, not four. The columns have a flex basis of zero, so the
-    // weight divides the whole width rather than the leftover: four against
-    // one gave `ready` four fifths of the board and clipped the chips off the
-    // one card in `running`. Two against one is the widest spread that leaves
-    // the quiet column able to show a card whole, which is the entire reason
-    // it is on screen.
-    const weight = Math.min(2, Math.max(1, Math.round(Math.sqrt(mine.length))));
+    // NOT ROUNDED, and that is the whole of what the square root was for.
+    // `Math.round(Math.sqrt(n))` has two values under a cap of two: `sqrt(2)`
+    // rounds to 1 and `sqrt(3)` rounds to 2, so a column jumped from narrowest
+    // to widest between two cards and three, and three cards and fifty one
+    // came out identical. A weight that follows content and then throws away
+    // every step except one boundary is a constant with extra arithmetic.
+    // `flex-grow` takes fractions, so it does not need to be an integer.
+    //
+    // The cap is FOUR and it divides the surplus only. Every column starts at
+    // a basis of 268 with a `min-width` to match, so no weight can squeeze the
+    // quiet column below the width its own cards need: that is what the basis
+    // is for, and it is why the old cap of two is not load bearing any more.
+    // The cap that remains is about how lopsided the leftover may get, not
+    // about protecting anybody.
+    //
+    // The comment that used to sit here said the basis was ZERO and justified
+    // the cap of two with it. That has been false since the basis became 268,
+    // and the stylesheet says so at length where `.board .col` is declared.
+    const weight = Math.min(4, Math.max(1, Math.sqrt(mine.length)));
 
     return `<section class="col${folded}${vacant}" data-column="${col.id}"
-      ${vacant ? "" : `style="flex-grow:${weight}"`}>
+      ${vacant ? "" : `style="flex-grow:${weight.toFixed(2)}"`}>
       <div class="col-head" onclick="toggleColumn('${col.id}')">
         <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
         <span class="help" tabindex="0" onclick="event.stopPropagation()"
@@ -16925,6 +16956,19 @@ function placeTabBridge() {
   const list = document.getElementById("term-list");
   const lr = list.getBoundingClientRect();
 
+  // NOTHING TO MEASURE IS NOT THE SAME AS NOTHING TO DRAW.
+  //
+  // Every rectangle on a `display: none` subtree is zero, and read as
+  // geometry that says the card is scrolled out of sight and the gutter has
+  // no width, so this hid the bridge for a reason that had nothing to do with
+  // the bridge. A window resized while you are on another view is enough to
+  // reach it, and coming back does not undo it.
+  //
+  // So a measurement taken on a hidden layout is DISCARDED rather than acted
+  // on. The state is left exactly as it was, and the next placement on a
+  // visible layout is the one that decides.
+  if (!l.width && !l.height) return;
+
   // Scrolled out of sight behind its own header, or past the bottom. Drawing
   // it anyway would leave a bar of colour floating against the terminal with
   // nothing on the other end of it.
@@ -17172,6 +17216,28 @@ async function renameTask(id, currentName) {
   refresh();
 }
 
+// THE RULE BETWEEN THE PINNED SESSIONS AND THE REST, in the switcher.
+//
+// The list already sorted pinned to the top and said nothing about it, and
+// sorting by something invisible reads as not sorting. The stack found this
+// first and answered it with `.pinbreak`, so this is the same answer rather
+// than a second one.
+//
+// Only when there is something on BOTH sides. A heading over an empty set, or
+// over everything, names nothing.
+//
+// A FUNCTION OF ITS OWN, beside `stackRows` which does the same job, rather
+// than a closure inside `renderTermList`. `scripts/check-morph.js` reads a
+// fixed window of characters from the top of that function looking for the
+// row's `data-id`, so anything added near its top pushes the key out of view
+// and fails an invariant that has nothing to do with the change.
+function termPinBreak(i, pinned, total) {
+  if (!pinned || pinned === total) return "";
+  if (i === 0) return `<div class="pinbreak"><span>pinned</span></div>`;
+  if (i === pinned) return `<div class="pinbreak"><span>the rest</span></div>`;
+  return "";
+}
+
 async function renderTermList() {
   // Cheap and idempotent, and it means the mode survives a reload without
   // finding a second place to call it from.
@@ -17216,6 +17282,8 @@ async function renderTermList() {
   // is not one, and this is the whole point of pinning it.
   tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
+  const pinnedCount = tasks.filter(t => t.pinned).length;
+
   const host = document.getElementById("term-list");
   const toggle = `<div class="termhead">
       <button class="termsort" onclick="toggleTermSort()"
@@ -17236,14 +17304,14 @@ async function renderTermList() {
     // a pill that rewrites itself every few seconds in the corner of your eye
     // answers a question nobody asked it. The board is where "how long has
     // this been sitting" belongs, and it says it better.
-    ? toggle + tasks.map(t => {
+    ? toggle + tasks.map((t, i) => {
       // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a
       // row of tabs onto the panes behind it rather than as a list of names.
       // Amber for waiting said something the board already says better and
       // cost the one signal that is actually per session.
       const th = themeFor(t);
       const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
-      return `
+      return termPinBreak(i, pinnedCount, tasks.length) + `
         <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}"
              data-id="${t.id}"
              style="${style}"
@@ -17253,7 +17321,8 @@ async function renderTermList() {
              oncontextmenu="termMenu(event, '${t.id}')">
           <div class="card-line">
             <div class="title">
-              <span class="pin" title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+              <span class="pin ${t.pinned ? "on" : ""}"
+                title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
                 onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
                 >${t.pinned ? "&#9733;" : "&#9734;"}</span>${runnerMark(t.runner)}<span
                 class="tname">${esc(terminalLabel(t) || t.display_title)}</span><span
@@ -18050,6 +18119,18 @@ function connectTerm(taskID) {
     attachSaidGone = false;
     sendResize();
     focusTerm();
+    // THE BRIDGE, once there is a terminal for it to reach.
+    //
+    // It had three callers, the strip render, a resize and the pane teardown,
+    // and none of them was this. `placeTabBridge` gives up when `term` is
+    // null, and on the restore path the strip renders before the socket
+    // opens, so the one call that fired measured a terminal that did not
+    // exist yet. The row drew itself attached and the span across the gutter
+    // was missing, which the stylesheet's own comment says reads as broken.
+    //
+    // A frame later for the same reason the strip defers it: the pane is
+    // still settling into the layout that was just written.
+    requestAnimationFrame(placeTabBridge);
   };
   const sock = termSock;
   // GUARDED BY IDENTITY, the same way `onclose` is.
