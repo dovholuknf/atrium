@@ -5,6 +5,51 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Four things the board drew wrongly.** (`B2-10`, `B2-11`, `B2-03`, `B2-09`)
+
+  **A pinned session in the terminal switcher was the wrong colour.** The row wrote its star as `class="pin"`
+  with no state, so `.pin.on, .pinned > .pin` could never match and every star drew in the same faint grey. Only
+  the glyph changed, filled against hollow, which at strip size is five pinned rows and one unpinned row
+  looking like six rows with slightly different characters in them. It now says what `pinChip` on a card has
+  always said.
+
+  **And a rule between the pinned sessions and the rest.** The switcher already sorted pinned to the top and
+  said nothing about it, and sorting by something invisible reads as not sorting. The stack answered this first
+  with `.pinbreak`, so this is the same component rather than a second answer, drawn only when the list is
+  MIXED: all pinned or none pinned names nothing.
+
+  **The divider survives `mini` and the star does not.** That looks inconsistent and is the decision. The star
+  goes because pinning is a decision and a decision does not belong on the control you shrank to get it out of
+  the way. A divider is not a control, it is the shape of the list, and with no stars in that mode it is the
+  only thing left saying the top of the list is deliberate. Tightened to fit 104 pixels rather than inheriting
+  the star's rule by accident.
+
+  **The tab bridge went missing after leaving the terminals view and coming back.** The span drawn across the
+  gutter joins the attached row to its pane, and the row went on marking itself attached with nothing reaching
+  it. Two causes, both real:
+
+  - `placeTabBridge` had three callers, the strip render, a resize and the pane teardown, and none of them was
+    the attach completing. It gives up when `term` is null, and on the restore path the strip renders before
+    the socket opens, so the one call that fired measured a terminal that did not exist yet. It is called from
+    `onopen` now.
+  - Every rectangle on a hidden subtree is zero, and zeroes read as a card scrolled out of sight beside a
+    gutter with no width, so a window resized while you were on another view hid the bridge for a reason that
+    had nothing to do with it. A measurement taken on a hidden layout is discarded now rather than acted on,
+    and the placement runs on the way back into the view.
+
+  **Board columns were uneven and the narrow one clipped its own cards.** The weight was
+  `Math.min(2, Math.max(1, Math.round(Math.sqrt(n))))`, and the rounding threw away the thing the square root
+  was chosen for: `sqrt(2)` rounds to 1 and `sqrt(3)` rounds to 2, so a column jumped from narrowest to widest
+  between two cards and three, and three cards and fifty one came out identical. `flex-grow` takes fractions,
+  so the root is used as it is, capped at four.
+
+  **Two comments disagreed about the same number and one of them is gone.** The weight's comment said the
+  columns had a flex basis of ZERO and justified its cap of two with it. The stylesheet says the opposite,
+  deliberately and at length: a basis of 268 with a `min-width` to match, so the weight divides only the
+  SURPLUS. The stylesheet is the one that is true, and it describes correcting the zero basis, so the weight's
+  comment was stale and has been deleted rather than left to be reconciled again. The old cap of two was chosen
+  under the zero basis and is not load bearing now, since the basis is what protects the quiet column.
+
 - **`scripts/start-atrium.ps1`, for a daemon that has died rather than one you want to replace.**
 
   `atrium stop` and `restart_atrium` both need a daemon that is answering. The case neither covers is the
