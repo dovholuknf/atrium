@@ -14,7 +14,8 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing`
+	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
+	model`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -39,7 +40,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
-		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping); err != nil {
+		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
@@ -307,7 +308,7 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -318,7 +319,11 @@ func (s *Store) insertTask(t *Task) error {
 		0,
 		// Peers may type into it. The column defaults the same way for every
 		// card that existed before it did.
-		1)
+		1,
+		// Which model, chosen once at launch. Empty means nobody chose, which
+		// is every card, because the box is unticked every time the form
+		// opens.
+		t.Model)
 	return err
 }
 
@@ -624,6 +629,62 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
 		return err
 	})
+}
+
+// SetModel records which model this card was launched on.
+//
+// Written by the launch path, on the card rather than on the harness, because
+// the choice is one time with respect to the runner and sticky with respect to
+// the card. `reopenSaved` reads it back after a restart, which is the only
+// reason it is durable at all.
+//
+// UNLIKE `SetResumeID`, AN EMPTY VALUE CLEARS IT. Relaunching the same card
+// without naming a model means running on the default, and a card that kept the
+// old name would put a session on a model nobody asked for and then replay that
+// on every restart.
+func (s *Store) SetModel(id, model string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET model = ? WHERE id = ?`,
+			strings.TrimSpace(model), id)
+		return err
+	})
+}
+
+// ModelsUsed is every model name this board has been asked for, most recently
+// used first.
+//
+// A HISTORY, NOT A CATALOG. Atrium does not know which models exist and must
+// never hold a list of them: they change every few months and one written into
+// the code ships wrong. This is what somebody has already typed, offered so the
+// second launch on a model is not a second act of typing, and it never
+// constrains what can be typed next.
+//
+// Archived cards count. A model used on work that is finished is exactly the
+// one somebody reaches for again, and dropping it would mean the list empties
+// itself every time the sweep runs.
+func (s *Store) ModelsUsed() ([]string, error) {
+	out := []string{}
+	err := s.guard(func() error {
+		out = out[:0]
+		rows, err := s.db.Query(`SELECT model, MAX(last_activity_at) AS seen FROM task
+			WHERE model <> '' GROUP BY model ORDER BY seen DESC LIMIT 20`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name, seen string
+			if err := rows.Scan(&name, &seen); err != nil {
+				return err
+			}
+			out = append(out, name)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SetPeerTyping decides whether another session may type into this card's

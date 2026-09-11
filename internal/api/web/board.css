@@ -1476,6 +1476,14 @@
     background: hsl(38 60% 45% / .14); border: 1px solid hsl(38 55% 50% / .35);
     color: hsl(38 60% 74%); cursor: help;
   }
+  /* Which model this session was started on, shown only when somebody chose.
+     Teal, the accent every other statement of fact on a card uses, and quiet:
+     it is a label rather than a warning, and a card wearing one is not in a
+     different state from a card without one. */
+  .chip.model {
+    background: hsl(186 60% 40% / .12); border: 1px solid hsl(186 50% 45% / .32);
+    color: hsl(186 55% 74%); cursor: help;
+  }
   /* And its absence, which is a fact rather than a fault. Dim enough to read
      as a gap and not as a warning: a card can perfectly well be done with
      nothing to say about it. */

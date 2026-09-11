@@ -96,7 +96,18 @@ func LookPath(cmd string) string {
 }
 
 // listHarnesses returns the configured runners, each saying whether its command
-// exists on this machine.
+// exists on this machine, and the model names this board has been asked for
+// before.
+//
+// THE MODELS RIDE ALONG rather than getting a route of their own, because the
+// launch dialog already asks for this and the two answers are read in the same
+// breath: which runners can take a model, and what has been typed into that box
+// before. A second round trip would be a second thing to fail.
+//
+// ATRIUM DOES NOT KNOW WHICH MODELS EXIST and must never hold a list. They
+// change every few months and one written here ships wrong. This is a history
+// of what somebody typed, offered as a convenience, and typing something new is
+// always allowed.
 func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 	hs, err := s.st.Harnesses()
 	if err != nil {
@@ -107,7 +118,12 @@ func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 	for _, h := range hs {
 		out = append(out, harnessView{Harness: h, Found: LookPath(h.Cmd)})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"harnesses": out})
+	models, err := s.st.ModelsUsed()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"harnesses": out, "models": models})
 }
 
 // discoverRunners reports runners this machine has that are not set up yet.

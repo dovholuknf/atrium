@@ -149,6 +149,21 @@ type Task struct {
 	// one ticket are two pieces of work somebody asked for twice.
 	IntakeKey string `json:"intake_key,omitempty"`
 	Branch    string `json:"branch,omitempty"`
+	// Model is which model this card was launched on, if one was named.
+	//
+	// ONE TIME WITH RESPECT TO THE HARNESS, STICKY WITH RESPECT TO THE CARD.
+	// The form forgets the choice the moment it is made, so nobody has to
+	// remember to turn it back off. The card does not: a session that started
+	// on a model stays on it, and `reopen.go` replays this after a restart. A
+	// model not written down here is a session quietly moved back to the
+	// default the next time the daemon comes up, which is the failure this
+	// field exists to prevent.
+	//
+	// Empty means nothing was chosen and the runner's own default applies.
+	// Atrium never learns what a model name means, exactly as it never learns
+	// what a source is: it is text the operator typed, handed to the runner in
+	// the shape that runner declared.
+	Model string `json:"model,omitempty"`
 	// LastCols is how wide this card's terminal was when it was last stopped.
 	//
 	// Written at the wind-down, never on the resize itself. A browser sends a

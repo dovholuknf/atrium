@@ -26,7 +26,7 @@ func codexLike(resume ...string) *store.Harness {
 // The refusal. Better a launch that does not happen than a card showing a
 // conversation it has nothing to do with.
 func TestResumeRefusesArgumentsThatDiscardTheID(t *testing.T) {
-	_, _, err := runnerArgs(codexLike("resume", "--last"), "01a077cc-43d4-7e50-913a-011da04baf63", "")
+	_, _, err := runnerArgs(codexLike("resume", "--last"), "01a077cc-43d4-7e50-913a-011da04baf63", "", "")
 	if err == nil {
 		t.Fatal("resume arguments with no {resume} were accepted, so the wrong conversation opens")
 	}
@@ -38,7 +38,7 @@ func TestResumeRefusesArgumentsThatDiscardTheID(t *testing.T) {
 // And the shipped codex spelling is accepted, with the id where codex wants it.
 func TestCodexResumesWithTheCardsOwnID(t *testing.T) {
 	id := "01a077cc-43d4-7e50-913a-011da04baf63"
-	args, _, err := runnerArgs(codexLike("resume", "{resume}"), id, "")
+	args, _, err := runnerArgs(codexLike("resume", "{resume}"), id, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestCodexResumesWithTheCardsOwnID(t *testing.T) {
 // sit inside the resume branch, or every ordinary start of a runner with no
 // resume arguments would start failing.
 func TestAPlainStartDoesNotNeedResumeArguments(t *testing.T) {
-	if _, _, err := runnerArgs(codexLike(), "", ""); err != nil {
+	if _, _, err := runnerArgs(codexLike(), "", "", ""); err != nil {
 		t.Fatalf("starting a runner fresh asked for resume arguments: %v", err)
 	}
 }

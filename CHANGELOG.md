@@ -5,6 +5,37 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launch can name a model, once.** B2-29. Operator: "i really wish i could relaunch u under the fable
+  model", "i want that immediately, i also want it to BE EASY to turn on and off, and ONE TIME ONLY sorta
+  thing".
+
+  The only ways to do this were editing the runner or keeping a second runner that differs by one flag, which
+  turns the runner table into a list of models and multiplies: two runners and three models is six rows kept in
+  step by hand.
+
+  **One time with respect to the RUNNER, sticky with respect to the CARD.** The tickbox on the new agent form
+  starts off, goes back to off every time the form opens, and writes nothing to the runner's row. The card
+  keeps what it was launched with for its own lifetime, and `reopen` replays it, so a session that started on a
+  model is still on it after a restart. Those are two different questions and reading them as one is how this
+  goes wrong.
+
+  **A runner declares how it takes a model, the same way it declares how it resumes and how it is prompted.**
+  `model_args` with `{model}` substituted. A runner with none cannot be asked, and a launch that asks anyway is
+  REFUSED rather than started on the default: a session quietly running on the wrong model is invisible until
+  the output or the bill is wrong. A shell has no model and its row stays empty.
+
+  **The model names come from what has been typed before, never from a list in atrium.** Which models exist
+  changes every few months and a list written into the code ships wrong. The box is free text with a history
+  behind it.
+
+  Existing databases get `--model {model}` on their `claude` and `codex` rows by migration. Without it the
+  column would arrive with no way to use it on every board that already exists, and the runner most likely to
+  be asked would be the one that refuses. Nothing else is guessed at: ollama takes its model as a positional
+  argument that is already in `args`.
+
+  The card shows which model, because two cards in one directory on one runner and two models are otherwise
+  indistinguishable. `atrium launch` takes `--model`.
+
 - **The board is a stylesheet and two dozen scripts instead of one 23,724 line file. No behaviour change.**
 
   Every UI change edited `internal/api/web/index.html`, so no two people could work on the board at once

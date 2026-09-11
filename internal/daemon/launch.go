@@ -34,6 +34,17 @@ type LaunchRequest struct {
 	// harness's PromptArgs say to. This is how a card raised from an issue
 	// starts with the issue in front of it rather than at an empty cursor.
 	Prompt string `json:"prompt,omitempty"`
+	// Model names the model this session runs on, handed over as the harness's
+	// ModelArgs say to.
+	//
+	// ONE TIME WITH RESPECT TO THE HARNESS, STICKY WITH RESPECT TO THE CARD.
+	// The form's control is unticked every time it opens, so nobody has to
+	// remember to turn it back, and nothing is written to the runner's row.
+	// The card keeps it, and `reopenSaved` replays it, so a session that
+	// started on a model stays on it across a restart.
+	//
+	// Naming one for a harness with no ModelArgs is REFUSED. See runnerArgs.
+	Model string `json:"model,omitempty"`
 	// Source, ExternalID and URL record where this work came from. See
 	// store.SetOrigin and docs/intake-design.md.
 	Source     string `json:"source,omitempty"`
@@ -149,7 +160,7 @@ func expandTemplate(tmpl []string, cwd, title, cmd string, args []string) []stri
 // into a command string. expandTemplate carries the same rule for the same
 // reason: a joined prompt with a quote in it becomes a shell's problem rather
 // than the runner's.
-func runnerArgs(h *store.Harness, resume, rawPrompt string) (args []string, logged string, err error) {
+func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []string, logged string, err error) {
 	args = h.Args
 	if resume != "" {
 		if len(h.ResumeArgs) == 0 {
@@ -182,6 +193,43 @@ func runnerArgs(h *store.Harness, resume, rawPrompt string) (args []string, logg
 			args = append(args, strings.ReplaceAll(a, "{resume}", resume))
 		}
 	}
+	// THE MODEL GOES ON BEFORE THE PROMPT AND AFTER EVERYTHING ELSE.
+	//
+	// Before the prompt because a prompt is a bare positional argument for
+	// both runners that take one, and a flag after it would be read as part of
+	// the instruction rather than as a flag. After the resume arguments
+	// because those REPLACE the base arguments: a resumed session keeps the
+	// model it was started on, which is the whole point of the card holding
+	// it.
+	if model := strings.TrimSpace(rawModel); model != "" {
+		if len(h.ModelArgs) == 0 {
+			// REFUSED, NOT IGNORED. Starting on the default after being asked
+			// for something else is invisible until the output or the bill is
+			// wrong, and by then nobody remembers which session was which.
+			return nil, "", fmt.Errorf("%s has no way to be given a model. "+
+				"set model arguments on the runner, using {model} where the name goes", h.Label)
+		}
+		// The same refusal `{resume}` gets, for the same reason: arguments
+		// that never mention the value run, and run with the wrong one.
+		var carries bool
+		for _, a := range h.ModelArgs {
+			if strings.Contains(a, "{model}") {
+				carries = true
+			}
+		}
+		if !carries {
+			return nil, "", fmt.Errorf("%s takes a model as %s, which never uses the name "+
+				"asked for, so it would start on whatever that spells. put {model} where "+
+				"the name goes", h.Label, shellJoin(h.ModelArgs))
+		}
+		next := make([]string, 0, len(args)+len(h.ModelArgs))
+		next = append(next, args...)
+		for _, a := range h.ModelArgs {
+			next = append(next, strings.ReplaceAll(a, "{model}", model))
+		}
+		args = next
+	}
+
 	logged = shellJoin(append([]string{h.Cmd}, args...))
 
 	prompt := strings.TrimSpace(rawPrompt)
@@ -507,7 +555,19 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if wanted == "" && task != nil && req.Resume == "" {
 		wanted = task.Prompt
 	}
-	args, logged, err := runnerArgs(h, req.Resume, wanted)
+	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
+	// different reason: a relaunch or an unshelve of a card that was started
+	// on a model has to come back on that model, or the session changes
+	// underneath somebody because they pressed start twice.
+	//
+	// UNLIKE the prompt, this applies on a resume too. Resuming is the case
+	// that matters most: `reopenSaved` resumes every card after a restart, and
+	// that is where a model silently reverting would otherwise happen.
+	model := strings.TrimSpace(req.Model)
+	if model == "" && task != nil {
+		model = task.Model
+	}
+	args, logged, err := runnerArgs(h, req.Resume, wanted, model)
 	if err != nil {
 		return nil, err
 	}
@@ -665,6 +725,15 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}); err != nil {
 		return nil, err
 	}
+	// WHICH MODEL THIS CARD IS RUNNING ON, written after the runner is up
+	// rather than before, so a launch that was refused leaves nothing behind.
+	//
+	// `model` and not `req.Model`: the card's own value is the fallback, so a
+	// relaunch that named nothing keeps what it was started on. Writing the
+	// request instead would clear it, which is the restart bug in miniature.
+	if err := d.st.SetModel(created.ID, model); err != nil {
+		return nil, err
+	}
 	source, url := req.Source, req.URL
 	if req.SourceKind != "" {
 		source = req.SourceKind
@@ -677,7 +746,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
-		"via": via, "mode": h.LaunchMode, "prompted": prompt != "",
+		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
 	}); err != nil {
 		return nil, err

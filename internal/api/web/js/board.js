@@ -692,6 +692,7 @@ function cardHTML(t) {
         t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
+      ${modelChip(t)}
       ${tagChips(t)}
       ${noteChip(t)}
       ${originChip(t)}
