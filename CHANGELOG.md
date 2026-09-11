@@ -5,6 +5,59 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The terminal groups nest on screen, and fold.**
+
+  The grouping shipped with the tree in the markup and nowhere on the display. Headings carried a depth and
+  ROWS CARRIED NOTHING, so a session three levels down sat at the same left edge as one at the top: the list
+  had headings in it and still read as flat. Indenting rows by depth would have fixed the alignment and
+  nothing else.
+
+  A container per level gets the rest for free. The indent belongs to the box, and a border down its left edge
+  draws the vertical guide that says which rows are under which heading, the way `tree` does with line drawing
+  characters. The lines are continuous because the box is, rather than being reassembled per row out of glyphs
+  that have to agree with each other about depth.
+
+  **Groups fold**, with a caret, and a count so a folded group says what is inside rather than losing it.
+  Folding is per browser and keyed by PATH, so folding `github/openziti` and later starting work in a new org
+  leaves the fold where it was instead of sliding onto whatever moved into that slot.
+
+  **The heading is a button only as wide as the thing you press.** `docs/dispatch-queue.md` group F carries a
+  complaint that the board's group headings toggle across their whole width, so clicking what looks like empty
+  space beside a name folds what you were reading. The caret and the name are the control here and the rest of
+  the row is outside it.
+
+  In `mini` the name goes and the caret and count stay. At 104 pixels a heading spends its whole width on
+  `openziti` and leaves nothing for the rows, and the indent and the guide carry the shape anyway.
+
+  Found by rendering the real markup for the real cards and reading the nesting back out of it. The check that
+  walked the TREE had been passing all along, which is what let a flat rendering of a correct tree ship.
+
+  Three corrections after looking at it:
+
+  - **Two headings shared a line.** The button was `inline-flex`, which makes a heading behave like a word, so
+    a folded `openziti` and the `dovholuknf` after it came out side by side and read as one heading with two
+    names in it. `flex` with a `fit-content` width is block level and still only as wide as the caret and the
+    name, which is what keeps it from being a full-width click target.
+  - **The count was the quietest thing on the row**, a nine pixel pill in the chip colours. It is the heading's
+    own font and colour now. A count nobody can read is a count that is not there, and it is the one thing a
+    folded group has to say.
+  - **Loose sessions get a heading.** A directory with no forge and no org in it sat under nothing at the top
+    of the list, which read as a session that had escaped the grouping rather than one the grouping has nothing
+    to say about. They are under `uncategorized` at the BOTTOM now, since a catch-all above everything is the
+    first thing read and the least interesting. Still absent when there is nothing to contrast it with, because
+    a heading over the whole list names nothing.
+  - **Every level keeps its own heading**, whatever it holds. Two collapses were written to keep the height
+    down and both produced the same defect, one level apart. The first folded a chain of only children, so
+    `openziti-test-kitchen/docpreview` was text on a row while `openziti` beside it was a heading. The second
+    folded a level holding one row, so `ziti-openwrt` was text on a row while `desktop-edge-win` beside it was
+    a heading, decided by nothing about either repo except how many branches happened to be checked out.
+
+    The shape of the list says host, then org, then repo, every time. Somebody reading it should not have to
+    work out which rule applied to which row, and height is the wrong thing to spend that on.
+  - **A heading directly under a heading sits tight to it.** Every level carried its own top margin, so
+    `github` followed by `openziti` paid for both and left a band of empty strip between two lines that belong
+    together.
+
 - **Back and forward work on the board.**
 
   The board is one page that swaps views and attaches terminals, and it kept none of that, so the browser's

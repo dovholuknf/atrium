@@ -1387,17 +1387,50 @@
      accordion, so the complaint about a group heading toggling when you click
      the space around it cannot arrive here, and three levels of it would have
      multiplied that. */
-  .tgroup {
-    display: flex; align-items: center; gap: var(--sp-2);
-    padding: 6px 12px 2px; color: var(--label);
-    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+  /* THE GUIDE DOWN THE LEFT OF A GROUP, which is what makes this read as a
+     tree rather than as headings with rows loose between them.
+     One border on the container rather than line drawing glyphs per row. The
+     line is continuous because the box is, and depth costs an indent rather
+     than a rule per level that has to agree with every other one. */
+  .tnest {
+    margin-left: 9px; padding-left: 9px;
+    border-left: 1px solid var(--hairline);
   }
-  .tgroup::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
-  .tgroup:first-child { padding-top: 2px; }
-  /* Depth by indent rather than by size. A heading that shrinks per level is
-     unreadable by the third one, and there are only ever three. */
-  .tgroup[data-depth="1"] { margin-left: 10px; }
-  .tgroup[data-depth="2"] { margin-left: 20px; }
+  /* A HEADING DIRECTLY UNDER A HEADING SITS TIGHT TO IT.
+     Every level carries its own top margin, so `github` followed immediately
+     by `openziti` paid for both and left a band of empty strip between two
+     lines that belong together. The gap is worth having between a group and
+     the rows above it and is dead space between two names. */
+  .tnest > .tgroup:first-child { margin-top: 1px; }
+  /* A HEADING IS A BUTTON, and only as wide as the thing you press.
+     The complaint this answers is about the board's group headings, where the
+     whole width toggles: clicking what looks like empty space beside a name
+     folds what you were reading. The caret and the name are the control, the
+     rule filling the rest of the row is decoration and outside it. */
+  /* FLEX, NOT INLINE-FLEX, and `fit-content` for the width.
+     Inline-flex made a heading behave like a word, so two headings in a row
+     sat side by side: a folded `openziti` and the `dovholuknf` after it came
+     out on one line reading as a single heading with two names in it. Flex is
+     block level and takes the line, and `fit-content` keeps the button only as
+     wide as the caret and the name, which is the whole point of it not being
+     the full-width click target. */
+  .tgroup {
+    display: flex; width: fit-content; align-items: center; gap: 5px;
+    margin: 5px 0 1px; padding: 1px 6px 1px 2px;
+    border: none; border-radius: var(--r-sm); background: transparent;
+    color: var(--label); cursor: pointer;
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
+  }
+  .tgroup:hover { background: var(--lift); color: var(--head); }
+  .tgroup .tcaret { font-size: 9px; opacity: .8; width: 9px; text-align: center; }
+  .tgroup .tgname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* What is inside, so folding hides it rather than losing it.
+     THE HEADING'S OWN FONT AND COLOUR, inherited rather than styled. It was a
+     pill in the chip colours at nine pixels, which made the one number that
+     says how much a fold is hiding the quietest thing on the row. A count
+     nobody can read is a count that is not there. */
+  .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; }
+  .tgroup:hover .tgcount { opacity: 1; }
   /* On a card title it sits inline with the text, so it takes the title's
      size rather than the row's. */
   .card .title .pin {
@@ -2395,10 +2428,14 @@
      off, the indent goes, and the name is cut rather than wrapped, since a
      heading reading `dovholuknf` over `atrium` is worse than one that is
      visibly abbreviated. */
-  .tl-mini .tgroup {
-    padding: 5px 4px 2px; letter-spacing: 0; gap: 4px; margin-left: 0;
-  }
-  .tl-mini .tgroup span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-mini .tgroup { margin: 5px 0 2px; padding: 2px 3px 2px 1px; letter-spacing: 0; gap: 3px; }
+  /* The name goes and the caret and the count stay. At 104px a heading spends
+     its whole width on `openziti` and leaves nothing for the rows, and the
+     shape of the list is carried by the indent and the guide anyway. The title
+     attribute still names it on hover, and the count is what a folded group
+     needs to say. */
+  .tl-mini .tgroup .tgname { display: none; }
+  .tl-mini .tnest { margin-left: 5px; padding-left: 5px; }
   .tl-mini .term-list .card .title {
     display: flex; align-items: center; justify-content: center; gap: 4px;
   }
@@ -17565,11 +17602,21 @@ function termPathOf(t) {
 // Entries were already being cut at the FRONT to keep the leaf, which is the
 // symptom of a shared prefix drawn once per row. A heading holds it once.
 //
-// A SINGLE CHILD DOES NOT EARN A LEVEL. `github` containing only `dovholuknf`
-// is one heading reading `github/dovholuknf`, not two. Three levels of
-// accordion in a strip a few hundred pixels wide can spend more height on
-// headings than on rows, and the collapse is what keeps that from happening
-// until a second forge actually appears.
+// EVERY FORGE AND EVERY ORG GETS ITS OWN HEADING, even when it holds one
+// thing.
+//
+// A chain of only children used to be folded into one heading, so `github`
+// containing only `dovholuknf` read as `github/dovholuknf`. It was done to keep
+// the heading count down and it made the list inconsistent in the way that
+// matters: `openziti` was drawn as an org and `netfoundry` was drawn as text on
+// a row, so the same kind of thing appeared in two shapes and one of them
+// looked like the grouping had failed to recognise it. The operator read it
+// exactly that way.
+//
+// The heading count is kept down by the OTHER rule instead, in `termNodeHTML`:
+// a level holding a single ROW folds into that row as `project:branch`. That
+// one removes headings that group nothing, where this one removed headings
+// that name something.
 function termTree(list) {
   const root = { name: "", rows: [], kids: new Map() };
   for (const t of list) {
@@ -17581,22 +17628,7 @@ function termTree(list) {
     }
     node.rows.push(t);
   }
-  return collapseOnlyChildren(root);
-}
-
-// Folds a chain of only children into one heading. `github` then `dovholuknf`
-// with nothing else at either level becomes `github/dovholuknf`.
-//
-// Only when the parent holds no rows of its own. A directory that is both a
-// checkout and the parent of others has something to say at its own level, and
-// folding it would put its rows under a heading naming somewhere else.
-function collapseOnlyChildren(node) {
-  node.kids = new Map([...node.kids].map(([k, v]) => [k, collapseOnlyChildren(v)]));
-  while (node.name && node.rows.length === 0 && node.kids.size === 1) {
-    const [only] = [...node.kids.values()];
-    node = { name: node.name + "/" + only.name, rows: only.rows, kids: only.kids };
-  }
-  return node;
+  return root;
 }
 
 // One entry in the switcher.
@@ -17609,10 +17641,7 @@ function collapseOnlyChildren(node) {
 // row draws its LEAF alone, which is the whole point of the headings: the
 // shared prefix moves up and stops being drawn once per row.
 //
-// `own` is the level this row absorbed because it was the only thing in it.
-// A project holding one branch is `atrium:main` on the row rather than a
-// heading with a single row under it. See `termNodeHTML`.
-function termRow(t, deep, own) {
+function termRow(t, deep) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
@@ -17621,7 +17650,7 @@ function termRow(t, deep, own) {
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
-  const shown = own ? own + ":" + leaf : deep ? leaf : full;
+  const shown = deep ? leaf : full;
   return `
     <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}"
          data-id="${t.id}"
@@ -17674,11 +17703,50 @@ function termRow(t, deep, own) {
 // around it, and three levels of heading in a narrow strip would multiply
 // whatever is decided there. A label cannot have that problem.
 function termGroupsHTML(list) {
-  return termNodeHTML(termTree(list), 0);
+  return termNodeHTML(termTree(list), 0, "", termFolded());
 }
 
-function termHeading(name, depth) {
-  return `<div class="tgroup" data-depth="${depth}"><span>${esc(name)}</span></div>`;
+// WHICH GROUPS ARE FOLDED, kept in this browser and keyed by the path itself.
+//
+// Not on the card and not on the daemon: this is a property of how somebody is
+// reading the list right now, and two windows on one board are allowed to
+// disagree about what is folded.
+//
+// Keyed by path rather than by position, so folding `github/openziti` and then
+// starting a session in a new org leaves the fold where it was instead of
+// sliding onto whatever moved into that slot.
+const TERM_FOLDED = "atrium.termfolded";
+
+function termFolded() {
+  try { return new Set(JSON.parse(localStorage.getItem(TERM_FOLDED) || "[]")); }
+  catch (e) { return new Set(); }
+}
+
+function toggleTermGroup(path) {
+  const folded = termFolded();
+  if (folded.has(path)) folded.delete(path);
+  else folded.add(path);
+  try { localStorage.setItem(TERM_FOLDED, JSON.stringify([...folded])); } catch (e) {}
+  renderTermList();
+}
+
+// A group heading, which IS a control now.
+//
+// THE ROW IS NOT THE TARGET, and that is deliberate. `docs/dispatch-queue.md`
+// group F carries a complaint about the board's group headings: the whole
+// width toggles the accordion and nothing says so, so clicking what looks like
+// empty space next to a name collapses the thing you were reading. The button
+// here is the caret and the name and stops there, and the rule that fills the
+// rest of the width is decoration outside it.
+//
+// The count is on the heading because a folded group has to say what is inside
+// it or folding loses information rather than hiding it.
+function termHeading(name, path, count, folded) {
+  return `<button class="tgroup" onclick="toggleTermGroup('${esc(path)}')"
+      title="${folded ? "show" : "hide"} ${esc(name)}"
+      ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
+      ><span class="tgname">${esc(name)}</span
+      ><span class="tgcount">${count}</span></button>`;
 }
 
 // Rows at this level first, then the levels under it.
@@ -17695,18 +17763,75 @@ function termHeading(name, depth) {
 // pixels wide spending more height on headings than on sessions. Folding the
 // single-row levels took it to five headings for the same ten rows, and the
 // ones that remain are the ones that group something.
-function termNodeHTML(node, depth) {
-  let out = node.name ? termHeading(node.name, depth) : "";
-  const under = depth + (node.name ? 1 : 0);
-  out += node.rows.map(t => termRow(t, !!node.name)).join("");
+// NESTED CONTAINERS, NOT A FLAT LIST WITH AN INDENT CLASS.
+//
+// The first version drew headings with a `data-depth` and left the rows at the
+// left edge, so a session three levels down sat in line with one at the top and
+// the tree was in the markup and nowhere on the screen. Indenting rows by depth
+// would have fixed the alignment and nothing else.
+//
+// A container per level gets both for free: the indent is the container's, and
+// a border down its left edge draws the vertical guide that says which rows
+// belong to which heading, the way `tree` does with line drawing characters.
+// The lines are continuous because the box is, rather than being reassembled
+// per row out of glyphs that have to agree about depth.
+//
+// It also makes folding a container with nothing in it rather than a filter
+// over a flat list.
+function termNodeHTML(node, depth, path, folded) {
+  const at = node.name ? (path ? path + "/" + node.name : node.name) : "";
+  const isFolded = at !== "" && folded.has(at);
+  let out = node.name ? termHeading(node.name, at, termCount(node), isFolded) : "";
+  if (isFolded) return out;
+
+  // AT THE ROOT, LOOSE ROWS GET A HEADING OF THEIR OWN.
+  //
+  // A session in a directory atrium cannot read a forge and an org out of sits
+  // under no heading, and at the top of the list that read as a session that
+  // had escaped the grouping rather than one the grouping has nothing to say
+  // about. `uncategorized` says which it is.
+  //
+  // Named and moved to the BOTTOM, since a catch-all above everything is the
+  // first thing read and the least interesting. And only when there is
+  // something to contrast it with: with no groups at all it is the whole list,
+  // and a heading over everything names nothing, which is the same rule the
+  // pinned divider followed.
+  const loose = node.name ? "" : (() => {
+    if (!node.rows.length) return "";
+    if (!node.kids.size) return node.rows.map(t => termRow(t, false)).join("");
+    const isOff = folded.has("uncategorized");
+    const head = termHeading("uncategorized", "uncategorized", node.rows.length, isOff);
+    if (isOff) return head;
+    return head + `<div class="tnest">${node.rows.map(t => termRow(t, true)).join("")}</div>`;
+  })();
+
+  // EVERY LEVEL IS A HEADING, including one holding a single row.
+  //
+  // This folded a level with one row into that row, so a repo with one branch
+  // came out as `ziti-openwrt:firmware-upgrade-recovery-docs` on a row while
+  // `desktop-edge-win` beside it, which happened to have two, was a heading.
+  // Two repos, two shapes, decided by something that is not about them.
+  //
+  // It was done to keep the height down and that is the wrong thing to spend
+  // consistency on. The same instinct folded orgs a moment earlier and made
+  // the same mess: the shape of the list should say host, then org, then repo,
+  // every time, so somebody can read it without working out which rule applied
+  // to which row.
+  let inner = node.name ? node.rows.map(t => termRow(t, true)).join("") : "";
   for (const kid of node.kids.values()) {
-    if (kid.kids.size === 0 && kid.rows.length === 1) {
-      out += termRow(kid.rows[0], true, kid.name);
-      continue;
-    }
-    out += termNodeHTML(kid, under);
+    inner += termNodeHTML(kid, depth + 1, at, folded);
   }
-  return out;
+  // The root has no heading, so it has nothing to indent under and no guide to
+  // draw. Wrapping it would push the whole strip right for no reason.
+  return node.name ? out + `<div class="tnest">${inner}</div>` : out + inner + loose;
+}
+
+// How many sessions are under a heading, at any depth. A folded group has to
+// say what is inside it, or folding loses information rather than hiding it.
+function termCount(node) {
+  let n = node.rows.length;
+  for (const kid of node.kids.values()) n += termCount(kid);
+  return n;
 }
 
 // `termPinBreak` stood here. It drew `pinned` and `the rest` across the strip,
