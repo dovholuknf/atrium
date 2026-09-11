@@ -145,6 +145,20 @@ func (d *Daemon) reopenSaved() {
 			Cwd:     t.Worktree,
 			TaskID:  t.ID,
 			Resume:  d.reopenResume(t),
+			// THE MODEL COMES BACK TOO, and this is the line the whole
+			// durable side of that feature exists for.
+			//
+			// This rebuilds a launch out of the card, so anything not named
+			// here reverts to the runner's default. A session started on one
+			// model and reopened without it would move back on the next
+			// restart, silently, which is the failure choosing a model was
+			// meant to solve arriving through a different door.
+			//
+			// `Launch` falls back to the card's own value anyway, so this is
+			// belt and braces. It is written out because the fallback is in
+			// another file and a future edit there would take this with it
+			// without anybody noticing.
+			Model: t.Model,
 		}
 		if _, err := d.Launch(req); err != nil {
 			// Logged and stepped over, one card at a time. A worktree that has

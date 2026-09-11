@@ -1158,6 +1158,50 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN peer_typing INTEGER NOT NULL DEFAULT 1`,
 		},
 	},
+	{
+		// WHICH MODEL A SESSION IS RUNNING ON, chosen once when it launched.
+		//
+		// Two columns for two different questions, which is why this is not
+		// one.
+		//
+		// `harness.model_args` is what a runner can be ASKED for. It is
+		// configuration, it is per runner, and it is empty for a shell, which
+		// has no model and would try to execute the flag. It works exactly
+		// like `prompt_args` and `resume_args` and for the same reason: there
+		// is no common spelling, so the operator writes it once per runner.
+		//
+		// `task.model` is what this card WAS asked for. It is not a setting
+		// and nothing on the form remembers it: the choice is one time with
+		// respect to the harness and sticky with respect to the card. Held
+		// here because `reopen.go` rebuilds a launch from the card after a
+		// restart, and a model that was not written down is a session quietly
+		// moved back to the default on the next restart.
+		// The backfill is safe for exactly one reason: THE COLUMN IS NEW, so
+		// every existing row holds the default and nobody could have chosen
+		// anything for this to overwrite. It is still written to only touch a
+		// row that is still empty, because a migration that would clobber an
+		// operator's edit if it ever ran twice is one rewrite away from doing
+		// it.
+		//
+		// Without it the feature is dead on arrival on every database that
+		// already exists: `DefaultHarnesses` is seeded once on first run, so
+		// an existing `claude` row would gain the column and no way to use it,
+		// and asking for a model would be refused by the runner most likely to
+		// be asked.
+		//
+		// `claude` and `codex` only. Both spell it `--model <name>`. Nothing
+		// else is guessed at: a shell has no model, and ollama takes its model
+		// as a positional argument that is already in `args`, so a flag
+		// appended after it would be a second model on one command line.
+		name: "0047_launch_model",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN model_args TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE task ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET model_args = '["--model","{model}"]'
+			   WHERE id IN ('claude', 'codex')
+			     AND (model_args IS NULL OR model_args = '' OR model_args = '[]')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

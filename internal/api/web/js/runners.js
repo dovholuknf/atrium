@@ -1,5 +1,10 @@
 // ── runners ─────────────────────────────────────────────
 let allHarnesses = [];
+// Model names this board has been asked for before, newest first. A HISTORY,
+// NOT A CATALOG: nothing here decides which models exist, and the box accepts
+// anything typed into it. Arrives alongside the runners, since the launch
+// dialog reads both at once.
+let modelsSeen = [];
 let launchTarget = null;
 
 // Which pane of the runners page was last open, remembered the same way the

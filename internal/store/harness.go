@@ -38,6 +38,20 @@ type Harness struct {
 	// cannot be given an opening prompt, and a launch that supplies one is
 	// refused rather than starting a session that will never read it.
 	PromptArgs []string `json:"prompt_args"`
+	// ModelArgs name a model for one launch. {model} is substituted with it.
+	//
+	// Per runner for the third time and for the same reason as the two above:
+	// there is no common spelling. Claude takes `--model <name>`, a shell has
+	// no model at all and would try to execute the flag. Empty means this
+	// runner cannot be asked for a model, and a launch that names one is
+	// REFUSED rather than started on the default, because a session quietly
+	// running on the wrong model is not visible until the output or the bill
+	// is wrong.
+	//
+	// This is not a list of models and must not become one. It is the shape of
+	// the argument. Which models exist changes every few months, and a list
+	// held here would ship out of date.
+	ModelArgs []string `json:"model_args"`
 	// ExitKeys is what to send to ask this runner to exit, in order.
 	//
 	// There is no common answer: a shell takes `exit` and a newline, claude
@@ -98,6 +112,7 @@ func DefaultHarnesses() []Harness {
 			LaunchMode: LaunchPTY, ResumeArgs: []string{"--resume", "{resume}"},
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:  []string{"{prompt}"},
+			ModelArgs:   []string{"--model", "{model}"},
 			RulesSource: "claude", Sort: 10,
 			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
@@ -115,6 +130,7 @@ func DefaultHarnesses() []Harness {
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
 			ResumeArgs:  []string{"resume", "{resume}"},
 			PromptArgs:  []string{"{prompt}"},
+			ModelArgs:   []string{"--model", "{model}"},
 			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
@@ -146,14 +162,14 @@ func DefaultHarnesses() []Harness {
 
 func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error) {
 	var (
-		h                               Harness
-		args, env, resume, exit, prompt string
-		created                         string
-		enabled                         int
+		h                                      Harness
+		args, env, resume, exit, prompt, model string
+		created                                string
+		enabled                                int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt); err != nil {
+		&h.Sort, &created, &prompt, &model); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -164,6 +180,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(prompt, "[]")), &h.PromptArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(model, "[]")), &h.ModelArgs); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(exit, "[]")), &h.ExitKeys); err != nil {
@@ -187,7 +206,8 @@ func orDefault(s, def string) string {
 }
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
-	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args`
+	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
+	model_args`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -257,6 +277,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	model, err := json.Marshal(orEmptySlice(h.ModelArgs))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -284,17 +308,18 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			enabled = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
 				launch_mode = excluded.launch_mode, resume_args = excluded.resume_args,
 				exit_keys = excluded.exit_keys, prepare = excluded.prepare,
 				rules_source = excluded.rules_source, notes = excluded.notes,
-				sort = excluded.sort, prompt_args = excluded.prompt_args`,
+				sort = excluded.sort, prompt_args = excluded.prompt_args,
+				model_args = excluded.model_args`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
-			h.RulesSource, h.Notes, h.Sort, created, string(prompt))
+			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model))
 		return err
 	})
 	if err != nil {

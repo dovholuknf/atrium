@@ -1711,6 +1711,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">used instead of the arguments above when picking a conversation back up.
         put <code>{resume}</code> where the session id goes.</span>
     </div>
+    <!-- How this runner is told which model to use. Empty means it cannot be
+         asked for one, which is right for a shell, and a launch that names a
+         model for it is refused rather than started on the default. -->
+    <div class="field">
+      <label class="eyebrow" for="h-model">model arguments, one per line</label>
+      <textarea id="h-model" rows="2" spellcheck="false"
+        placeholder="--model&#10;{model}"></textarea>
+      <span class="hintline">appended when a launch names a model. put <code>{model}</code> where
+        the name goes. leave empty for a runner that has no model.</span>
+    </div>
     <div class="field">
       <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
       <textarea id="h-exit" rows="2" spellcheck="false"
@@ -1814,6 +1824,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span>pick up where it left off</span>
       </label>
       <span class="hintline" id="l-resume-note"></span>
+    </div>
+    <!-- Which model, for THIS launch and nothing else.
+         Unticked every time this opens, and nothing is written to the runner's
+         row. The card keeps what it started on, so a restart brings the
+         session back on the same model, but the form never remembers: a
+         one-time choice you have to turn back off is not a one-time choice.
+         The list is what has been typed here before, never a catalog. Atrium
+         does not know which models exist and a list written into it would ship
+         out of date within months. -->
+    <div class="field" id="l-model-field">
+      <label class="check">
+        <input type="checkbox" id="l-model-on">
+        <span>run this one on a different model</span>
+      </label>
+      <input type="text" id="l-model" list="l-model-seen" spellcheck="false" hidden
+        placeholder="the name this runner calls it">
+      <datalist id="l-model-seen"></datalist>
+      <span class="hintline" id="l-model-note">This launch only. The card remembers it so a
+        restart comes back on the same model, and this box is empty again next time.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>

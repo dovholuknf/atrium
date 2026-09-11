@@ -29,6 +29,7 @@ import (
 type launchOpts struct {
 	boardURL, harness, cwd, title, why, resume string
 	prompt, source, externalID, itemURL        string
+	model                                      string
 	// What the caller already knows about the work. See `LaunchRequest`:
 	// atrium derives none of it, and every one is optional.
 	repo, org, host, branch, window, theme string
@@ -64,6 +65,10 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.prompt, "prompt", "",
 		"the first instruction the runner gets. not available with --resume: "+
 			"that conversation already has one")
+	c.Flags().StringVar(&o.model, "model", "",
+		"which model this session runs on, for this session only. the runner has to "+
+			"declare how it takes one, and a runner that cannot is refused rather than "+
+			"started on its default")
 	c.Flags().StringVar(&o.source, "source", "",
 		"the system this came from, such as github or zendesk. atrium never interprets it")
 	c.Flags().StringVar(&o.externalID, "external", "",
@@ -119,6 +124,7 @@ func launchAgent(o launchOpts) error {
 		"resume":      o.resume,
 		"tags":        o.tags,
 		"prompt":      o.prompt,
+		"model":       o.model,
 		"source":      o.source,
 		"external_id": o.externalID,
 		"url":         o.itemURL,

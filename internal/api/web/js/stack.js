@@ -411,6 +411,7 @@ function stackRow(t) {
     </div>
     <div class="chips">
       ${tagChips(t)}
+      ${modelChip(t)}
       ${noteChip(t)}
       ${originChip(t)}
       ${recapChip(t)}
@@ -588,6 +589,25 @@ function noteChip(t) {
   return `<span class="chip note"
     title="${esc("held, not sent:\n\n" + note + "\n\nopen the card to send it")}"
     >note</span>`;
+}
+
+// Which model this session is running on, when it is not the runner's default.
+//
+// Only shown when one was chosen, so every card that existed before this looks
+// exactly as it did. The point is that two cards in one directory, on one
+// runner, on two models are otherwise indistinguishable, and the difference is
+// the whole reason somebody chose.
+//
+// The name as typed, never interpreted. Atrium does not know what a model is
+// any more than it knows what a source is: it is text handed to the runner in
+// the shape that runner declared, and rendered back here unchanged.
+function modelChip(t) {
+  const model = (t.model || "").trim();
+  if (!model) return "";
+  return `<span class="chip model"
+    title="${esc("this session was started on " + model + ". chosen once when it launched, " +
+      "and kept across a restart")}"
+    >${esc(model)}</span>`;
 }
 
 // Where this work came from, when it came from somewhere.

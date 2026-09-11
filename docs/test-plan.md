@@ -2224,3 +2224,76 @@ restart.
 
 **Also check:** a card that has never had a terminal still opens at 120, and a card whose runner exited before
 any viewer said how big it was does not have its recorded width overwritten with zero.
+
+## X. Choosing a model when you launch
+
+The whole feature is one flag on a command line, so the risk is not that it fails. It is that it succeeds at the
+wrong thing, and every way it does that is invisible on screen. What you see instead is output that reads
+differently, or a bill.
+
+Two readings have to hold at once and they sound contradictory. **One time with respect to the runner**: the
+control is off every time the form opens and nothing is written to the runner's row. **Sticky with respect to
+the card**: a session that started on a model stays on it, across restarts, for its own lifetime.
+
+### X1. The control starts off and goes back to off
+
+1. Open the new agent form. The model tickbox is unticked and there is no name box.
+2. Tick it. A name box appears with the cursor in it. Type a model and start the session.
+3. Open the form again.
+
+**Expected:** unticked, with nothing in the box, every time. Open the runners page and check the claude row:
+its model arguments are `--model` and `{model}`, and nothing about the model you chose is on it.
+
+**The bug this prevents:** a one-time choice you have to remember to turn back off is not a one-time choice. It
+becomes a setting, and the session you start next week is on a model you picked for a different reason.
+
+### X2. Unticking clears the name
+
+1. Tick the box, type a model, then untick it without starting.
+2. Tick it again.
+
+**Expected:** empty. A name left sitting behind an unticked box reads as off and is not.
+
+### X3. The card says which model, and only when one was chosen
+
+1. Start two sessions in the same directory on the same runner, one with a model named and one without.
+
+**Expected:** the one you chose for wears a chip with the model name on it. The other wears nothing, and looks
+exactly as every card did before this existed.
+
+### X4. The model survives a restart. THIS IS THE ONE THAT GOES WRONG SILENTLY
+
+1. Start a session with a model named. Leave it attached.
+2. `atrium stop`, then start the daemon again.
+3. When the card comes back, look at its chip, and ask the session what model it is running as.
+
+**Expected:** the same model. The card is reopened by rebuilding a launch out of it, so a model that was not
+written down would revert to the runner's default here, with nothing on screen saying so.
+
+**Also check:** the decision log entry for the relaunch records the model.
+
+### X5. A runner that cannot take a model says so
+
+1. Open the new agent form and pick the shell runner.
+
+**Expected:** the model control is not there at all. A shell has no model and would try to execute the flag, so
+offering a tickbox that can only produce a refusal is worse than offering nothing.
+
+2. From a terminal: `atrium launch --runner shell --model claude-opus-5`
+
+**Expected:** refused, and the message says to put `{model}` in the runner's model arguments. NOT started on
+the default.
+
+### X6. The names offered are a history, never a catalog
+
+1. Start sessions on two different models, then open the form and click into the name box.
+
+**Expected:** both names offered. Typing something that is not on the list is accepted: atrium does not know
+which models exist and must never decide.
+
+### X7. Nothing changed for a launch that names no model
+
+1. Start a session the way you always have, without touching the control.
+
+**Expected:** identical to before. Same command line in the decision log, no chip on the card, and the runner
+on its own default.

@@ -23,7 +23,7 @@ func claudeLike() *store.Harness {
 // hand the runner a dozen arguments it has no flags for.
 func TestPromptStaysOneArgument(t *testing.T) {
 	text := `investigate #4211 and say "why" it regressed`
-	args, _, err := runnerArgs(claudeLike(), "", text)
+	args, _, err := runnerArgs(claudeLike(), "", text, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestPromptStaysOneArgument(t *testing.T) {
 // there is a paragraph in a column meant to hold a command line, and for a
 // support case it is a customer's words in atrium's own database.
 func TestTheLoggedCommandOmitsThePrompt(t *testing.T) {
-	_, logged, err := runnerArgs(claudeLike(), "", "a very long instruction about a customer")
+	_, logged, err := runnerArgs(claudeLike(), "", "a very long instruction about a customer", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestTheLoggedCommandOmitsThePrompt(t *testing.T) {
 
 // Resuming and prompting together is refused rather than guessed at.
 func TestPromptAndResumeAreRefusedTogether(t *testing.T) {
-	_, _, err := runnerArgs(claudeLike(), "sess-1", "do the thing")
+	_, _, err := runnerArgs(claudeLike(), "sess-1", "do the thing", "")
 	if err == nil {
 		t.Fatal("a resume and a prompt were accepted together")
 	}
@@ -66,7 +66,7 @@ func TestPromptAndResumeAreRefusedTogether(t *testing.T) {
 // that will never read it. A shell is the case: it would try to execute it.
 func TestARunnerThatCannotTakeAPromptSaysSo(t *testing.T) {
 	shell := &store.Harness{ID: "shell", Label: "shell", Cmd: "pwsh", Args: []string{"-NoLogo"}}
-	_, _, err := runnerArgs(shell, "", "run the tests")
+	_, _, err := runnerArgs(shell, "", "run the tests", "")
 	if err == nil {
 		t.Fatal("a shell accepted an opening prompt")
 	}
@@ -82,7 +82,7 @@ func TestPromptIsAppendedNotSubstituted(t *testing.T) {
 		ID: "ollama", Label: "ollama", Cmd: "ollama",
 		Args: []string{"run", "llama3"}, PromptArgs: []string{"{prompt}"},
 	}
-	args, _, err := runnerArgs(h, "", "hello")
+	args, _, err := runnerArgs(h, "", "hello", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestPromptIsAppendedNotSubstituted(t *testing.T) {
 func TestNoPromptChangesNothing(t *testing.T) {
 	h := claudeLike()
 	h.Args = []string{"--verbose"}
-	args, logged, err := runnerArgs(h, "", "   ")
+	args, logged, err := runnerArgs(h, "", "   ", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestNoPromptChangesNothing(t *testing.T) {
 
 // Resuming still works, and its own arguments still substitute.
 func TestResumeIsUnchanged(t *testing.T) {
-	args, logged, err := runnerArgs(claudeLike(), "sess-9", "")
+	args, logged, err := runnerArgs(claudeLike(), "sess-9", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
