@@ -621,9 +621,14 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		// The page itself, and what it loads. Static, identical for everybody,
 		// and the board is only a terminal in this window because of a
 		// fragment the server never sees.
+		//
+		// `/board.css` and `/js/` are the board itself, split into files. They
+		// are as static as the page that loads them, and a guest refused them
+		// gets an unstyled document with no script on it, which is not a
+		// smaller thing to give away, just a broken one.
 		if r.Method == http.MethodGet &&
-			(p == "/" || p == "/index.html" || p == "/sw.js" ||
-				strings.HasPrefix(p, "/vendor/")) {
+			(p == "/" || p == "/index.html" || p == "/sw.js" || p == "/board.css" ||
+				strings.HasPrefix(p, "/js/") || strings.HasPrefix(p, "/vendor/")) {
 			board.ServeHTTP(w, r)
 			return
 		}

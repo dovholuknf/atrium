@@ -33,15 +33,38 @@ var web embed.FS
 // So the board is given a way to notice. This goes out with `/v1/health`, the
 // page remembers what it saw first, and a different answer means the thing
 // serving it is not the thing that wrote it.
+// THE WHOLE TREE, not `index.html`. The board used to be one file, so hashing
+// that file was hashing the board. It is now a page that loads `board.css` and
+// two dozen scripts, and almost every change lands in one of those. Hashing
+// only the page would leave the build id identical across a change to any of
+// them, and the reload-on-new-build behaviour above would quietly stop firing
+// for the changes it exists for.
 var BuildID = buildID()
 
 func buildID() string {
-	raw, err := web.ReadFile("web/index.html")
+	sum := sha256.New()
+	// WalkDir visits in lexical order, so the same tree always hashes the
+	// same way. The path goes in as well as the bytes: a file renamed and
+	// nothing else changed is still a different board.
+	err := fs.WalkDir(web, "web", func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if e.IsDir() {
+			return nil
+		}
+		raw, err := web.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum.Write([]byte(path))
+		sum.Write(raw)
+		return nil
+	})
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:8])
+	return hex.EncodeToString(sum.Sum(nil)[:8])
 }
 
 func webHandler() http.Handler {

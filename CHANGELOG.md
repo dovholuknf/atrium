@@ -5,6 +5,33 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board is a stylesheet and two dozen scripts instead of one 23,724 line file. No behaviour change.**
+
+  Every UI change edited `internal/api/web/index.html`, so no two people could work on the board at once
+  without colliding in it. It is now `index.html`, `board.css`, and 24 files under `web/js/` that the page
+  loads in order.
+
+  **Plain scripts, not modules.** The script was one shared global scope: functions and top-level state
+  reference each other freely across what are now file boundaries. Classic scripts on one page share one
+  global lexical environment, so loading them in the order the code was written in preserves that exactly.
+  Threading imports through 17,000 lines of it would not have been a behaviour-preserving change, and the
+  breakage would not have shown up until a specific dialog opened.
+
+  The cuts are at the section banners the file already carried, so the concatenation of the js files in load
+  order reproduces the old script body byte for byte. Nothing was renamed, reordered, reformatted or fixed.
+
+  **`BuildID` now hashes the whole `web/` tree.** It hashed `index.html`, which used to be the board and is
+  now a loader. Left alone, the build id would have stopped changing when the board changed, and the reload
+  when a new daemon is installed would have quietly stopped happening.
+
+  **The checkers were rewritten, not weakened.** `scripts/board-source.js` puts the pieces back into one page,
+  and every checker is handed that, so all nine keep their assertions. `check-board.sh` asserted "exactly one
+  script block"; what replaces it is that the page names every file in `web/js` exactly once. Each checker had
+  its bug reintroduced and was watched to fail.
+
+  **A lent session serves the new files.** `guestHandler` names what a guest may fetch, and a guest refused
+  `/board.css` and `/js/` would have got an unstyled page with no script on it.
+
 - **A published board can ask for a name and a password.** Operator: "make sure it has auth now. basic auth is
   fine for starters".
 

@@ -12,8 +12,11 @@
 
 set -euo pipefail
 
-board="$(dirname "$0")/../internal/api/web/index.html"
-[ -f "$board" ] || { echo "no board at $board" >&2; exit 1; }
+# The stylesheet, which is where the skins are. It used to be a `<style>` block
+# inside `index.html`, and the indentation the awk below matches on is the
+# indentation it had in there, which is why board.css kept it.
+board="$(dirname "$0")/../internal/api/web/board.css"
+[ -f "$board" ] || { echo "no board stylesheet at $board" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

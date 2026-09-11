@@ -119,9 +119,13 @@ terminal** it is neither: those stay open for days, and the symptom is a fix tha
 afterwards and not in the one you are looking at. That cost an hour of "the reconnect is broken" for code that
 reconnected correctly everywhere else.
 
-So `/v1/health` carries a build id: the first eight bytes of the sha256 of the embedded `index.html`. The page
-remembers the first one it saw, and a different answer means the thing serving the page is not the thing that wrote
-it, so it calls `location.reload()`.
+So `/v1/health` carries a build id: the first eight bytes of a sha256 over the whole embedded `web/` tree, paths
+and contents, walked in lexical order. The page remembers the first one it saw, and a different answer means the
+thing serving the page is not the thing that wrote it, so it calls `location.reload()`.
+
+It hashed `index.html` alone while that file was the whole board. The board is now a page that loads `board.css`
+and two dozen scripts, and almost every change lands in one of those, so hashing the page alone would leave the
+build id identical across the changes this exists for.
 
 Hashing the board rather than stamping a version means this fires when the page and the daemon genuinely differ,
 and never on an ordinary restart of the same build. The reconnect path checks it too, so a daemon that came back on
