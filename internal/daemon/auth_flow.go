@@ -238,6 +238,34 @@ func (d *Daemon) authGuard(next http.Handler) http.Handler {
 				return
 			}
 		}
+		// A NAME AND A PASSWORD, CHECKED BEFORE THE PROVIDER.
+		//
+		// Ahead of the redirect so a board with both configured still opens
+		// when the provider is unreachable, and so an api client can present
+		// credentials rather than being told to visit a login page.
+		//
+		// A wrong password FALLS THROUGH rather than refusing. Adding a
+		// password to a board that already had a provider must not lock its
+		// users out, and somebody with a valid provider session is not made to
+		// know a password as well.
+		if cfg.Basic {
+			if user, pass, ok := r.BasicAuth(); ok && cfg.checks(user, pass) {
+				// A session cookie, so the browser is not asked again on every
+				// image and poll, and so signing out means the same thing
+				// whichever way somebody got in.
+				setSession(w, r, key, "basic:"+cfg.User)
+				next.ServeHTTP(w, r)
+				return
+			}
+			// NOTHING ELSE CONFIGURED MEANS ASK FOR IT. With a provider as
+			// well, the redirect below is the better prompt and this stays out
+			// of its way.
+			if strings.TrimSpace(cfg.Issuer) == "" {
+				w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
+				http.Error(w, "this board asks who you are", http.StatusUnauthorized)
+				return
+			}
+		}
 		// A BROWSER IS REDIRECTED AND ANYTHING ELSE IS REFUSED. Bouncing an
 		// API call through a login page produces an HTML document where JSON
 		// was expected, which reads as a corrupt response rather than as a

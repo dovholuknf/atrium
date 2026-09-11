@@ -56,6 +56,19 @@ type OverlayState struct {
 	// zrok share has a URL, a private one has a token to access, and a ziti
 	// service has neither because reaching it is a matter of policy.
 	Address string `json:"address,omitempty"`
+	// Share is what the zrok account calls this share, which is the name it is
+	// listed under in the console and the one `zrok2 overview` prints.
+	//
+	// NOT THE SAME AS THE ADDRESS, and that is why it has to be shown. A public
+	// share's address is a URL on a frontend and the share itself is a token,
+	// so somebody looking at their account to find what atrium made had the
+	// address, the console had the token, and nothing on the board connected
+	// the two. The operator asked for it by name: "show me the share name so i
+	// can find it".
+	//
+	// Empty for ziti, which makes no share: reaching that service is a matter
+	// of policy on the network rather than anything atrium holds.
+	Share string `json:"share,omitempty"`
 	// Output is kept for the shape the board already draws. Nothing writes to
 	// it now that no child process is involved.
 	Output []string `json:"output"`
@@ -130,7 +143,7 @@ func (n *native) state(found string) OverlayState {
 	defer n.mu.Unlock()
 	st := OverlayState{
 		Kind: n.kind, Found: found, Running: n.srv != nil,
-		Address: n.address, Err: n.err,
+		Address: n.address, Share: n.shareToken, Err: n.err,
 	}
 	if n.srv != nil {
 		st.Since = n.since.Format(time.RFC3339)

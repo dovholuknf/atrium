@@ -1255,6 +1255,19 @@
     padding: 9px 11px; border-radius: var(--r-sm);
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
   }
+  /* THE SAME ROW, QUIETER. The address is the thing you hand somebody and the
+     share name is the thing you look up later, so one is in the accent colours
+     and the other is not, and they still line up as a pair. */
+  .ov-share {
+    display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px;
+    padding: 7px 11px; border-radius: var(--r-sm);
+    background: var(--chip); border: 1px solid var(--stroke-dim);
+  }
+  .ov-share .eyebrow { flex: none; }
+  .ov-share code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-base) var(--mono); color: var(--head);
+  }
   .ov-addr code {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
@@ -2357,6 +2370,14 @@
     /* Room for the lift on hover and for a focus ring, or the top card's
        border is clipped by the scroll container. */
     padding: 3px 3px 6px;
+    /* ITS OWN SURFACE, so the page's grid does not show through it.
+       `body::before` lays a 60px grid over the whole page at a third opacity,
+       which is a texture behind the board and reads as a defect behind a list:
+       it draws bands across the strip that line up with nothing in it, and the
+       first question anybody asks is what those bands mean.
+       It was invisible while this list was wall to wall cards. Group headings
+       leave gaps, and gaps are where it came through. */
+    background: var(--shell-0); border-radius: var(--r-md);
   }
   /* The list's own controls, above the entries and scrolling with them.
      Same height as the terminal's bar, so the two headers read as one line
@@ -4606,10 +4627,38 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">Only the PUBLISHED board. This machine's own
         <code>localhost:7778</code> is untouched, and so are the hooks, the CLI and a session you
         have lent to somebody: a lent link is the credential by design, and making a guest sign in
-        would defeat it.<br><br>
-        Atrium holds no passwords. Signing in happens at your own provider and atrium checks what
-        it signed.</span>
+        would defeat it.</span>
     </div>
+
+    <!-- A NAME AND A PASSWORD, for a board with no provider in front of it.
+         The flow below is the better answer and it needs a provider, a client
+         registered with it, and a redirect matching the published address
+         exactly. Somebody sharing a board for an afternoon has none of those,
+         and what they do instead is publish it with no login at all. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="auth-basic" onchange="saveAuth()">
+        <span>a name and a password</span>
+      </label>
+      <span class="hintline">The simple one, and enough on its own: with this set you can leave
+        everything below empty. The browser asks once and remembers for the rest of the day.
+        Checked before the provider, so a board with both still opens when the provider is
+        down.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-user">name</label>
+      <input type="text" id="auth-user" spellcheck="false" autocomplete="off"
+        onchange="saveAuth()" placeholder="who types the password">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-pass">password</label>
+      <input type="password" id="auth-pass" autocomplete="new-password" onchange="saveAuth()"
+        placeholder="typing here sets it">
+      <span class="hintline" id="auth-pass-said"></span>
+      <span class="hintline">Stored salted and hashed, never in plain, and never sent back to this
+        page. Atrium cannot tell you what it is, only that there is one.</span>
+    </div>
+
     <div class="field">
       <label class="eyebrow" for="auth-issuer">provider</label>
       <input type="text" id="auth-issuer" spellcheck="false" onchange="saveAuth()"
@@ -12074,6 +12123,21 @@ function overlayCard(o) {
         >copy</button>
     </div>` : "";
 
+  // WHAT THE ACCOUNT CALLS IT, which is not the address.
+  //
+  // A public share's address is a URL on a frontend and the share itself is a
+  // token. So somebody looking at their zrok account to find what atrium made
+  // had the address on this panel, the token in the console, and nothing
+  // joining the two. The operator asked for it in those terms: show the share
+  // name so it can be found.
+  const share = o.share ? `
+    <div class="ov-share">
+      <span class="eyebrow">listed in your account as</span>
+      <code>${esc(o.share)}</code>
+      <button onclick='copyText(this, ${JSON.stringify(o.share).replace(/'/g, "&#39;")})'
+        >copy</button>
+    </div>` : "";
+
   // Whatever it said. A share that refuses explains itself here and nowhere
   // else, so it is shown rather than summarised.
   const log = (o.output || []).length ? `
@@ -12148,7 +12212,7 @@ function overlayCard(o) {
       </div>
       ${state}
     </div>
-    ${addr}${err}${note}${ready}${acct}
+    ${addr}${share}${err}${note}${ready}${acct}
     ${overlayBody(o, body)}
     ${actions}${log}
   </div>`;
@@ -12818,6 +12882,17 @@ async function loadAuth() {
       ? "a secret is set. typing here replaces it, and leaving it empty keeps it."
       : "no secret set. leave it empty if your provider registered a public client.";
   }
+  // The name and password half. Same rule as the secret: the password is never
+  // read back, only whether there is one, so an empty box keeps what is there.
+  const basic = document.getElementById("auth-basic");
+  if (basic) basic.checked = !!a.basic;
+  set("auth-user", a.user);
+  const pwSaid = document.getElementById("auth-pass-said");
+  if (pwSaid) {
+    pwSaid.textContent = a.has_password
+      ? "a password is set. typing here replaces it, and leaving it empty keeps it."
+      : "no password set yet.";
+  }
 }
 
 async function saveAuth() {
@@ -12829,7 +12904,13 @@ async function saveAuth() {
     client_id: val("auth-client").trim(),
     redirect: val("auth-redirect").trim(),
     allow: val("auth-allow").split(",").map(s => s.trim()).filter(Boolean),
-    client_secret: val("auth-secret")
+    client_secret: val("auth-secret"),
+    basic: !!(document.getElementById("auth-basic") || {}).checked,
+    user: val("auth-user").trim(),
+    // Sent in plain and hashed by the daemon, which is the only place it ever
+    // exists. Empty means keep the one that is there, for the same reason the
+    // secret above works that way.
+    password: val("auth-pass")
   };
   try {
     await api("/v1/auth", {
