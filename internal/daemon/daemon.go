@@ -216,6 +216,12 @@ func New(opts Options) (*Daemon, error) {
 			"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
 			"redirect": c.Redirect, "allow": c.Allow,
 			"has_client_secret": strings.TrimSpace(c.ClientSecret) != "",
+			// The name is shown, the password never is: only whether one is
+			// set, which is the difference between drawing "set a password"
+			// and "change it". The hash and its salt do not leave the daemon
+			// either, since a hash somebody has is a hash somebody can attack
+			// offline.
+			"basic": c.Basic, "user": c.User, "has_password": c.HasPassword(),
 		}
 	}
 	d.ap.SaveAuth = func(body []byte) error {
@@ -230,6 +236,14 @@ func New(opts Options) (*Daemon, error) {
 			ClientSecret *string  `json:"client_secret"`
 			Redirect     *string  `json:"redirect"`
 			Allow        []string `json:"allow"`
+			Basic        *bool    `json:"basic"`
+			User         *string  `json:"user"`
+			// The password ARRIVES IN PLAIN and is never stored that way. It
+			// is hashed below and this field is the only place it exists in
+			// this process. `GET /v1/auth` answers whether one is set and
+			// never what it is, so the form cannot send back what it was
+			// shown, which is what the empty-means-leave-it rule below is for.
+			Password *string `json:"password"`
 		}
 		if err := json.Unmarshal(body, &in); err != nil {
 			return err
@@ -254,6 +268,21 @@ func New(opts Options) (*Daemon, error) {
 		// blanks a working secret every time somebody edits the allow list.
 		if in.ClientSecret != nil && strings.TrimSpace(*in.ClientSecret) != "" {
 			next.ClientSecret = strings.TrimSpace(*in.ClientSecret)
+		}
+		if in.Basic != nil {
+			next.Basic = *in.Basic
+		}
+		if in.User != nil {
+			next.User = strings.TrimSpace(*in.User)
+		}
+		// Same rule as the client secret, and the same reason: a form that was
+		// never shown the password cannot send it back, so an empty one means
+		// leave it rather than clear it. Otherwise editing the name would blank
+		// the password every time.
+		if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
+			if err := setBasicPassword(&next, *in.Password); err != nil {
+				return err
+			}
 		}
 		return d.SaveAuth(next)
 	}

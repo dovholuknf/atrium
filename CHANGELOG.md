@@ -5,6 +5,41 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A published board can ask for a name and a password.** Operator: "make sure it has auth now. basic auth is
+  fine for starters".
+
+  The login that existed was OIDC only, and it needs a provider, a client registered with it, a redirect
+  matching the published address exactly, and an allow list. Somebody putting a board on a zrok share for an
+  afternoon has none of those, so what they reach for instead is publishing it with no login at all. That is
+  the case this closes.
+
+  **A name and a password is a complete configuration.** Demanding an issuer from somebody who set a password
+  would refuse the simple case for missing the complicated one. Both can be set, and the password is checked
+  FIRST, so a board with a provider still opens when the provider is down and an api client can present
+  credentials rather than being told to visit a login page.
+
+  **A wrong password falls through rather than refusing.** Adding a password to a board that already had a
+  provider must not lock out the people who were using it.
+
+  The password is salted and hashed with scrypt, deliberately slow, since the threat is somebody who has taken
+  the database and is guessing offline. A fresh salt every time, or two boards with one password store one
+  hash. It is never stored in plain, never sent back to the page, and `GET /v1/auth` answers whether one is set
+  and nothing else. Both comparisons are constant time, the name as well as the password, so the pair cannot be
+  learned one at a time.
+
+  A successful password issues the same session cookie the provider flow does, so the browser is not asked
+  again on every poll and every image, and signing out means one thing either way.
+
+  **None of this touches the loopback board.** It guards the PUBLISHED handler only, the same line the OIDC
+  flow already drew.
+
+- **A share says what your account calls it.**
+
+  The panel showed the address and the daemon held the share token without ever sending it. A public share's
+  address is a URL on a frontend and the share itself is a token, so somebody opening their zrok console to
+  find what atrium made had the address here, the token there, and nothing joining them. Operator: "show me the
+  share name so i can find it".
+
 - **The terminal groups nest on screen, and fold.**
 
   The grouping shipped with the tree in the markup and nowhere on the display. Headings carried a depth and
@@ -57,6 +92,10 @@ section heading is just "what landed in this iteration."
   - **A heading directly under a heading sits tight to it.** Every level carried its own top margin, so
     `github` followed by `openziti` paid for both and left a band of empty strip between two lines that belong
     together.
+  - **The switcher has its own surface.** `body::before` lays a 60 pixel grid over the whole page at a third
+    opacity, which is a texture behind the board and reads as a defect behind a list: it draws bands across the
+    strip that line up with nothing in it, and the first question anybody asks is what the bands mean. It was
+    invisible while the list was wall to wall cards, and group headings leave gaps.
 
 - **Back and forward work on the board.**
 

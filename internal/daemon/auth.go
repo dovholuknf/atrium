@@ -4,12 +4,16 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 // A login in front of the board, and ONLY in front of the published one.
@@ -118,6 +122,108 @@ type AuthConfig struct {
 	// provider authenticated", which on a provider with open registration is
 	// the whole internet with an extra step.
 	Allow []string `json:"allow"`
+
+	// A NAME AND A PASSWORD, for a board published without an identity
+	// provider in front of it.
+	//
+	// The OIDC flow above is the better answer and it is not always an
+	// available one: it needs a provider, a client registered with it, and a
+	// redirect that matches the published address exactly. Somebody putting a
+	// board on a zrok share for an afternoon has none of those, and the
+	// alternative they actually reach for is publishing it with no login at
+	// all. The operator's words: "make sure it has auth now. basic auth is
+	// fine for starters".
+	//
+	// It is checked BEFORE the provider, so a board can have both configured
+	// and a password still works while the provider is down. The one thing it
+	// must not do is weaken the other: a request that fails here falls through
+	// to the OIDC path rather than being refused, so adding a password to a
+	// board that had a provider cannot lock its users out.
+	Basic bool `json:"basic"`
+	// User is the name to type. Empty is refused when `Basic` is on, since a
+	// password with no name is a password everybody shares and nobody owns.
+	User string `json:"user,omitempty"`
+	// PassHash is the password, salted and hashed. THE PASSWORD ITSELF IS
+	// NEVER STORED and never leaves the browser it was typed in: the board
+	// sends it once to be hashed here, and reads back only whether one is set.
+	//
+	// See `setBasicPassword`, which is the only thing that writes it.
+	PassHash string `json:"pass_hash,omitempty"`
+	PassSalt string `json:"pass_salt,omitempty"`
+}
+
+// HasPassword reports that a password is set without saying anything about it.
+// The board draws a different control for "change it" than for "set one".
+func (c AuthConfig) HasPassword() bool {
+	return strings.TrimSpace(c.PassHash) != "" && strings.TrimSpace(c.PassSalt) != ""
+}
+
+// basicReady says whether the name and password half could let somebody in.
+func (c AuthConfig) basicReady() error {
+	if !c.Basic {
+		return nil
+	}
+	if strings.TrimSpace(c.User) == "" {
+		return fmt.Errorf("a password login needs a name to go with the password")
+	}
+	if !c.HasPassword() {
+		return fmt.Errorf("a password login needs a password")
+	}
+	return nil
+}
+
+// checks reports whether this name and password are the ones configured.
+//
+// CONSTANT TIME on the hash, because the comparison is against a secret and a
+// byte-by-byte one leaks how much of a guess was right. The name is compared
+// the same way for the same reason, since knowing the name is most of a guess.
+func (c AuthConfig) checks(user, pass string) bool {
+	if !c.Basic || !c.HasPassword() {
+		return false
+	}
+	nameOK := subtle.ConstantTimeCompare(
+		[]byte(strings.TrimSpace(user)), []byte(strings.TrimSpace(c.User))) == 1
+	passOK := subtle.ConstantTimeCompare(
+		[]byte(hashPassword(pass, c.PassSalt)), []byte(c.PassHash)) == 1
+	// Both are evaluated before either is read, so a wrong NAME costs the same
+	// as a wrong password and the pair cannot be learned one at a time.
+	return nameOK && passOK
+}
+
+// hashPassword is scrypt over the password and its salt.
+//
+// Deliberately slow. The threat is somebody who has taken the database and is
+// trying every password offline, and the whole defence against that is how
+// long one guess costs. The parameters are the ones the Go documentation names
+// for interactive use, which is around a tenth of a second here.
+func hashPassword(pass, salt string) string {
+	key, err := scrypt.Key([]byte(pass), []byte(salt), 1<<15, 8, 1, 32)
+	if err != nil {
+		return ""
+	}
+	return base64.RawStdEncoding.EncodeToString(key)
+}
+
+// setBasicPassword hashes a new password into the configuration.
+//
+// A FRESH SALT EVERY TIME. Reusing one would mean two boards with the same
+// password store the same hash, which is the property that makes a stolen
+// table worth precomputing against.
+func setBasicPassword(c *AuthConfig, pass string) error {
+	if strings.TrimSpace(pass) == "" {
+		return fmt.Errorf("a password of nothing is not a password")
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return fmt.Errorf("could not make a salt: %w", err)
+	}
+	salt := base64.RawStdEncoding.EncodeToString(raw)
+	hash := hashPassword(pass, salt)
+	if hash == "" {
+		return fmt.Errorf("could not hash the password")
+	}
+	c.PassSalt, c.PassHash = salt, hash
+	return nil
 }
 
 // authConfig reads it, with the defaults that make being unconfigured safe.
@@ -138,6 +244,15 @@ func (d *Daemon) authConfig() AuthConfig {
 // as unconfigured.
 func (c AuthConfig) ready() error {
 	if !c.Enabled {
+		return nil
+	}
+	if err := c.basicReady(); err != nil {
+		return err
+	}
+	// A NAME AND PASSWORD IS ENOUGH ON ITS OWN. The checks below are about
+	// the provider, and demanding an issuer from somebody who configured a
+	// password would refuse the simple case for missing the complicated one.
+	if c.Basic {
 		return nil
 	}
 	if strings.TrimSpace(c.Issuer) == "" {
@@ -219,6 +334,21 @@ func (d *Daemon) cookieKey() ([]byte, error) {
 // credential and the expiry is public. What has to be impossible is editing it,
 // which a MAC gives, and reading it costs an attacker nothing they did not
 // already know about themselves.
+// setSession puts a signed session on the response.
+//
+// Extracted when a second way of signing in arrived. The OIDC callback wrote
+// this cookie inline, and a password login writing its own copy is how the two
+// drift apart on the attributes that matter: `HttpOnly` keeps it away from
+// script, `Secure` keeps it off plain http, and `SameSite` is what stops
+// another site spending it.
+func setSession(w http.ResponseWriter, r *http.Request, key []byte, subject string) {
+	until := time.Now().Add(authSessionFor)
+	http.SetCookie(w, &http.Cookie{
+		Name: authCookie, Value: signSession(key, subject, until), Path: "/",
+		Expires: until, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+	})
+}
+
 func signSession(key []byte, subject string, until time.Time) string {
 	body := base64.RawURLEncoding.EncodeToString(
 		[]byte(fmt.Sprintf("%s|%d", subject, until.Unix())))

@@ -203,13 +203,56 @@ func alreadyThere(err error) bool {
 // credential, which is why the two differ.
 const boardShareNameLen = 8
 
+// parseShareName turns what is in the settings box into what zrok wants.
+//
+// IT IS A COLON, and getting that wrong broke public sharing outright.
+// `zroksdk.ParseNameSelection` documents its input as
+// `<namespaceToken>[:<name>]` and splits on a colon, so it put the WHOLE of
+// `public/atrium-4pcddxxx9aez` into the namespace and left the name empty. The
+// name then reached `ReserveZrokName`, which refused with "a reservation needs
+// a name", and every attempt to start a public share failed on a config that
+// looked correct in the box.
+//
+// A BARE NAME IS ALSO WRONG THROUGH THAT FUNCTION, and that is the half nobody
+// would have found by reading. `atrium-4pcddxxx9aez` on its own parses as a
+// NAMESPACE with no name, which is the same empty name by a shorter route. The
+// code below it tried to cover this with `if sel.NamespaceToken == ""`, which
+// can never fire: the parse always fills the namespace, because the namespace
+// is the part it keeps.
+//
+// So three forms are accepted and all of them mean the same thing. A colon is
+// zrok's own spelling, a slash is what atrium wrote into this box for months,
+// and a bare name is what anybody types. The namespace defaults to `public`,
+// which is the only one a board is shared in.
+func parseShareName(s string) (zroksdk.NameSelection, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return zroksdk.NameSelection{}, fmt.Errorf("a share needs a name")
+	}
+	ns, name := publicNamespace, s
+	for _, sep := range []string{":", "/"} {
+		if i := strings.Index(s, sep); i >= 0 {
+			ns, name = strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:])
+			break
+		}
+	}
+	if ns == "" {
+		ns = publicNamespace
+	}
+	if name == "" {
+		return zroksdk.NameSelection{}, fmt.Errorf(
+			"%q names a namespace and no share. it should be a name, or namespace:name", s)
+	}
+	return zroksdk.NameSelection{NamespaceToken: ns, Name: name}, nil
+}
+
 func (d *Daemon) boardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) {
 	var sel zroksdk.NameSelection
 
 	if n := strings.TrimSpace(cfg.Name); n != "" {
-		parsed, err := zroksdk.ParseNameSelection(n)
+		parsed, err := parseShareName(n)
 		if err != nil {
-			return sel, fmt.Errorf("that name selection is not one zrok understands: %w", err)
+			return sel, err
 		}
 		sel = parsed
 	} else {
@@ -233,9 +276,8 @@ func (d *Daemon) boardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) 
 		}
 	}
 
-	if sel.NamespaceToken == "" {
-		sel.NamespaceToken = publicNamespace
-	}
+	// The namespace is filled in by both paths above, so nothing defaults it
+	// here. A guard that did used to sit at this spot and could never fire.
 	d.overlayStep("zrok", "name", "reserving the address "+sel.Name)
 	if _, err := d.ReserveZrokName(sel.NamespaceToken, sel.Name); err != nil {
 		return sel, err
