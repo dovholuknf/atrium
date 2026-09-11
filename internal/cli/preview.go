@@ -16,7 +16,7 @@ import (
 // A board you can look at without touching the one you work in.
 //
 // The problem this solves is not tenancy and not scale. It is that changing
-// the board means changing `internal/api/web/index.html`, and the only way to
+// the board means changing files under `internal/api/web/`, and the only way to
 // SEE the change was to install the binary and restart the daemon that every
 // live session on the machine is attached to. So a session working on the UI
 // had to interrupt everybody else to show its work, and the operator had to

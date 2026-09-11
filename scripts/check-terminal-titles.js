@@ -1,6 +1,7 @@
-// Run terminalLabel from index.html against the cards on a RUNNING board.
+// Run terminalLabel from the board's own script against the cards on a RUNNING
+// board.
 //
-//   node scripts/check-terminal-titles.js internal/api/web/index.html
+//   node scripts/check-terminal-titles.js
 //
 // Not part of `check-board.sh`, because it needs a daemon. Run it by hand when
 // the naming changes.
@@ -11,10 +12,11 @@
 // `promote-2.11.3.1-and-beta`), a repo whose name matches its org, and a card
 // with no repo at all. Two of those produced a label naming the branch twice,
 // and neither was visible by reading the function.
-const fs = require("fs");
 const http = require("http");
 
-const html = fs.readFileSync(process.argv[2], "utf8");
+// The board's scripts, concatenated in the order the page loads them.
+// `terminalLabel` is in one of them and this does not care which.
+const html = require("./board-source.js").boardScript();
 
 // Pull the function out of the page rather than copying it, so this tests what
 // actually ships.

@@ -113,3 +113,28 @@ func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
 		}
 	}
 }
+
+// The page a guest gets has to be the WHOLE page.
+//
+// `guestHandler` is an allow list, which is the point of it: everything not
+// named is refused. The board was one HTML file when that list was written, so
+// splitting it into a stylesheet and two dozen scripts added two dozen paths
+// the list did not name. A guest refused those does not get a smaller board,
+// they get an unstyled document with no script on it, and nothing says why.
+func TestAGuestGetsTheWholeBoard(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	task := sharedCard(t, d, "lent")
+	h := d.guestHandler(task.ID)
+
+	for _, path := range []string{"/", "/sw.js", "/board.css", "/js/core.js", "/js/boot.js"} {
+		rec := guestGet(h, path)
+		if rec.Code != http.StatusOK {
+			t.Errorf("a guest asking for %s got %d. the board cannot load without it", path, rec.Code)
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("a guest asking for %s got an empty body", path)
+		}
+	}
+}

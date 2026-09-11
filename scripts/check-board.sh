@@ -1,22 +1,32 @@
 #!/usr/bin/env bash
-# Syntax-check the board's JavaScript.
+# Syntax-check the board's JavaScript, and everything else about the board that
+# no compiler is going to notice.
 #
-# The board is one HTML file with one large script block in it, and nothing
-# parsed that script until a browser did. A syntax error therefore shipped as a
-# blank dashboard with one line in a console nobody had open, and the error
-# pointed at whatever token came after the mistake rather than at the mistake.
+# The board is an HTML file, a stylesheet, and about two dozen plain scripts
+# loaded in order, and nothing parses any of it until a browser does. A syntax
+# error therefore shipped once as a blank dashboard with one line in a console
+# nobody had open, and the error pointed at whatever token came after the
+# mistake rather than at the mistake.
 #
 # The specific way it happened is worth knowing, because it will happen again:
 # an HTML comment written INSIDE a JavaScript template literal, containing a
 # backtick. The comment is not a comment to the JavaScript parser, so the
 # backtick ended the string and the rest of the file parsed as nonsense.
 #
+# THE SCRIPTS SHARE ONE GLOBAL SCOPE. They are classic scripts on one page, not
+# modules, so a function declared in one is callable from all of them and the
+# load order in the head is the order the code runs in. Two things follow, and
+# both are checked below: the order matters, and the right thing to parse is
+# the CONCATENATION rather than any one file.
+#
 # Run by hand, and by CI, which does nothing but check out and call this.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-page="$here/internal/api/web/index.html"
-sw="$here/internal/api/web/sw.js"
+web="$here/internal/api/web"
+page="$web/index.html"
+css="$web/board.css"
+sw="$web/sw.js"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "node is not on PATH, so the board's script cannot be parsed." >&2
@@ -27,32 +37,76 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Everything between the first <script> and the matching </script>. There is
-# exactly one such block, which awk asserts rather than assumes: a second one
-# would mean this check silently covers only the first.
-blocks=$(grep -c '^<script>$' "$page" || true)
-if [ "$blocks" != "1" ]; then
-  echo "expected exactly one script block in index.html, found $blocks." >&2
-  echo "this check extracts one. teach it about the others before adding them." >&2
+# The load order, read off the page. This is the new invariant: the page used
+# to assert "exactly one script block", and what replaces it is that the head
+# names the js files, in an order, and that every file on disk is named exactly
+# once. A file added to `js/` and not referenced is dead code that looks live.
+# A file referenced twice runs twice, which for this code means every listener
+# bound twice and every keystroke sent twice.
+grep -o 'src="/js/[A-Za-z0-9_-]*\.js"' "$page" | sed 's|src="/js/||; s|"||' > "$tmp/order.txt"
+
+if [ ! -s "$tmp/order.txt" ]; then
+  echo "index.html references no scripts under /js/. the check itself is broken," >&2
+  echo "or the board was put back into one file without telling this script." >&2
   exit 1
 fi
 
-awk '/^<script>$/{on=1;next} /^<\/script>$/{on=0} on' "$page" > "$tmp/board.js"
+dupes=$(sort "$tmp/order.txt" | uniq -d)
+if [ -n "$dupes" ]; then
+  echo "these scripts are referenced more than once, so they would run twice:" >&2
+  echo "$dupes" >&2
+  exit 1
+fi
+
+( cd "$web/js" && ls *.js ) | sort > "$tmp/ondisk.txt"
+sort "$tmp/order.txt" > "$tmp/named.txt"
+if ! diff -u "$tmp/ondisk.txt" "$tmp/named.txt" > "$tmp/order.diff"; then
+  echo "the files in internal/api/web/js do not match what index.html loads." >&2
+  echo "a file on disk and not in the head never runs. one in the head and not" >&2
+  echo "on disk is a 404 and everything after it still runs, which is worse." >&2
+  sed -n '1,40p' "$tmp/order.diff" >&2
+  exit 1
+fi
+
+# The whole script, in load order, and the whole page with it inlined. Both
+# come from `board-source.js`, which the node checkers use too, so there is one
+# answer to "what does the browser end up with" rather than two that drift.
+node "$here/scripts/board-source.js" --script > "$tmp/board.js"
+node "$here/scripts/board-source.js" > "$tmp/page.html"
 
 if [ ! -s "$tmp/board.js" ]; then
-  echo "extracted no javascript from index.html. the check itself is broken." >&2
+  echo "the concatenated board script is empty. the check itself is broken." >&2
   exit 1
 fi
+if ! grep -q '^<script>$' "$tmp/page.html"; then
+  echo "could not rebuild the one-file page for the checkers." >&2
+  echo "the head's script tags are not in the shape board-source.js expects." >&2
+  exit 1
+fi
+whole="$tmp/page.html"
 
 fail=0
 # --check parses without running, which is what is wanted: this code expects a
 # browser and would not survive being executed here.
 if ! node --check "$tmp/board.js"; then
   echo "the board's script does not parse. see the line above." >&2
-  echo "line numbers are relative to the script block, which starts at line" \
-       "$(grep -n '^<script>$' "$page" | cut -d: -f1) of index.html." >&2
+  echo "line numbers are relative to the CONCATENATION of the files under" >&2
+  echo "internal/api/web/js, in the order index.html loads them:" >&2
+  awk '{ printf "  %s\n", $0 }' "$tmp/order.txt" >&2
   fail=1
 fi
+
+# And each file on its own, so the error names a file rather than an offset
+# into 17,000 lines. A file can fail here and the concatenation still parse,
+# since a block left open in one file is closed by the next, and that is worth
+# reporting: it means a seam is in the wrong place.
+while read -r f; do
+  if ! node --check "$web/js/$f" 2>"$tmp/one.err"; then
+    echo "js/$f does not parse on its own:" >&2
+    cat "$tmp/one.err" >&2
+    fail=1
+  fi
+done < "$tmp/order.txt"
 
 if ! node --check "$sw"; then
   echo "sw.js does not parse." >&2
@@ -67,7 +121,7 @@ fi
 # Parsing cannot catch that: the markup is still valid and the script still
 # runs. So it is checked here, against the real file, rather than discovered by
 # opening the gear.
-if ! node "$here/scripts/check-settings-panes.js" "$page"; then
+if ! node "$here/scripts/check-settings-panes.js" "$whole"; then
   echo "the settings dialog would not partition into panes. see above." >&2
   fail=1
 fi
@@ -75,7 +129,7 @@ fi
 # The runners page is cut the same way, by the same function, with the same
 # hazard. Checked separately because its headings are labelled explicitly and
 # its lists are named, and neither of those is true of the dialog.
-if ! node "$here/scripts/check-runner-panes.js" "$page"; then
+if ! node "$here/scripts/check-runner-panes.js" "$whole"; then
   echo "the runners page would not partition into panes. see above." >&2
   fail=1
 fi
@@ -84,7 +138,7 @@ fi
 # been hit, and all of them are invisible until somebody types: a keystroke
 # arriving twice, a paste arriving as one Enter per line, output from a socket
 # that should have been closed. None of it is reachable from a parser.
-if ! node "$here/scripts/check-terminal.js" "$page"; then
+if ! node "$here/scripts/check-terminal.js" "$whole"; then
   echo "a terminal invariant is broken. see above." >&2
   fail=1
 fi
@@ -93,7 +147,7 @@ fi
 # longer replaces what it draws into, and what that rests on is a key on every
 # row. A row that loses its key is destroyed and rebuilt like it always was,
 # and nothing says so: the board looks right and the scroll goes to the top.
-if ! node "$here/scripts/check-morph.js" "$page"; then
+if ! node "$here/scripts/check-morph.js" "$whole"; then
   echo "the board would throw away where you were. see above." >&2
   fail=1
 fi
@@ -114,7 +168,7 @@ fi
 #
 # The other half of that file guards the drop targets that are NOT cards, since
 # they are what a future pass at "remove the drag code" takes by accident.
-if ! node "$here/scripts/check-cards.js" "$page"; then
+if ! node "$here/scripts/check-cards.js" "$whole"; then
   echo "a card invariant is broken. see above." >&2
   fail=1
 fi
@@ -124,7 +178,7 @@ fi
 # is the trim and a very small refusal, and both fail quietly: a path with a
 # comma stuck to it is simply never a link, and there is nothing on screen that
 # says why.
-if ! node "$here/scripts/check-path-tokens.js" "$page"; then
+if ! node "$here/scripts/check-path-tokens.js" "$whole"; then
   echo "the terminal's path candidates are wrong. see above." >&2
   fail=1
 fi
@@ -133,7 +187,7 @@ fi
 # card it is. Both halves fail silently. A browser that ignores preventDefault
 # says nothing, and a claim that is not released heals itself in fifteen
 # seconds, so the symptom is a flicker rather than an error.
-if ! node "$here/scripts/check-switcher.js" "$page"; then
+if ! node "$here/scripts/check-switcher.js" "$whole"; then
   echo "a switcher invariant is broken. see above." >&2
   fail=1
 fi
@@ -142,7 +196,7 @@ fi
 # markup stays valid and the script keeps running with every one of these
 # broken, and what breaks instead is which button a thumb lands on. Nobody
 # narrows a window to 390 pixels on the way past, so it is checked here.
-if ! node "$here/scripts/check-phone.js" "$page" "$sw"; then
+if ! node "$here/scripts/check-phone.js" "$whole" "$sw"; then
   echo "a phone invariant is broken. see above." >&2
   fail=1
 fi

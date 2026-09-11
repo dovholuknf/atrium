@@ -156,12 +156,14 @@ const document = { createElement: (tag) => new Element(tag) };
 
 // ── the real functions, lifted out of the board ─────────
 
-const page = fs.readFileSync(
-  require("path").join(__dirname, "..", "internal", "api", "web", "index.html"), "utf8");
+// The board's scripts, concatenated in the order the page loads them. The
+// reconciler is in one of them and this does not care which: what it needs is
+// the text between the two markers, wherever it now lives.
+const page = require("./board-source.js").boardScript();
 const from = page.indexOf("function setHTML(el, html) {");
 const to = page.indexOf("// `scrollParent` lived here.");
 if (from < 0 || to < 0 || to < from) {
-  console.error("FAIL: could not find the reconciler in index.html. " +
+  console.error("FAIL: could not find the reconciler in the board's script. " +
     "If it moved, move these markers with it.");
   process.exit(1);
 }
