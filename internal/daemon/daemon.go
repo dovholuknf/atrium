@@ -23,6 +23,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/hub"
+	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -731,6 +732,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
 	log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
+	// WHAT A SHELL WILL OPEN AS, said once at startup rather than discovered
+	// by opening one. The search looks at PATH, so the answer is a property of
+	// the machine the daemon is running on and nobody can guess it from
+	// outside. Somebody whose board gave them the wrong shell needs to know
+	// what was FOUND before they can say what to use instead, and the
+	// `shell_command` setting is where they say it.
+	log.Printf("[atrium] shell   -> %s", shellpick.Chosen())
 
 	// Before the address file is overwritten, since the previous one is what
 	// says which database the last daemon used.

@@ -620,6 +620,12 @@ These were not in the original plan and are worth recording, because two of them
   until the session can hear one: typed straight into its terminal when atrium owns it, carried back on the next
   tool call through the permission hook when it does not, or delivered as the turn ends through the Stop hook when
   the session is idle. Framed so the model reads it as the operator talking rather than as a policy refusal.
+
+  **One session's message to another takes the same route now.** The peer bus queued always, because atrium owned
+  the terminal for the human. The operator overruled that, considering the pty shared between himself and the
+  agents, so a peer message is typed when the terminal is free and queued when it is not. What is never done is
+  typing into a line somebody is part way through, and the daemon knows because every operator keystroke has
+  already passed through it. See `docs/supervision-design.md` for the three states.
 - **Stopping is not killing.** The daemon owns each pseudo terminal and closing one takes the attached process
   with it, so killing the daemon ends every runner it started at once. `atrium stop` and `POST /v1/shutdown` reach
   the narrated wind-down instead.

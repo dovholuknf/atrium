@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/shellpick"
 )
 
 // Harness is a runner atrium knows how to start: claude, codex, ollama, a bare
@@ -79,7 +81,13 @@ const (
 // Only claude is enabled, because it is the only one whose invocation is known
 // to work on this machine. The rest are scaffolding with a plausible command,
 // left off until their command line is confirmed.
+// SEEDED ONCE, ON FIRST RUN, which is the honest limit of this half of the
+// fix. A database that already has a `shell` row keeps whatever it was seeded
+// with, because a harness is a row the operator may have edited and rewriting
+// it on every start would throw that away. Anybody whose row says `pwsh` on a
+// machine without it edits the row or the `shell_command` setting.
 func DefaultHarnesses() []Harness {
+	shellCmd, shellArgs := shellpick.Pick()
 	return []Harness{
 		// pty by default. Something started from atrium should be something
 		// atrium can attach to, terminate and check the liveness of. Window
@@ -121,8 +129,14 @@ func DefaultHarnesses() []Harness {
 			// whoever started the daemon, shown in the browser like any other
 			// supervised runner. Useful for the times the answer is a command
 			// rather than a conversation, and for watching one from a phone.
-			ID: "shell", Label: "shell", Enabled: false, Cmd: "pwsh",
-			Args: []string{"-NoLogo"}, LaunchMode: LaunchPTY, Sort: 40,
+			// THE SAME ANSWER THE CARD'S OWN SHELL GIVES. This said `pwsh`
+			// unconditionally, which is a guess that is right on this machine
+			// and wrong on any Windows without PowerShell 7 installed, where
+			// it produces a harness that cannot start. The board would then be
+			// offering two shells that disagree, since the other one resolved
+			// to `COMSPEC`.
+			ID: "shell", Label: "shell", Enabled: false,
+			Cmd: shellCmd, Args: shellArgs, LaunchMode: LaunchPTY, Sort: 40,
 			ExitKeys: []string{"exit"},
 			Notes: "a plain shell, not an agent. runs as whoever started the daemon, " +
 				"reports nothing about itself, and its card shows the terminal and nothing else",

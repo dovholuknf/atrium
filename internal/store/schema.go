@@ -1140,6 +1140,24 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN last_cols INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// MAY ANOTHER SESSION TYPE INTO THIS CARD'S TERMINAL.
+		//
+		// On by default, because the operator's position is that the pty is
+		// shared between himself and the agents, and a feature that has to be
+		// switched on per card before two agents can talk is a feature nobody
+		// switches on.
+		//
+		// It exists because the exclusions are real and per card rather than
+		// global. A card lent over a share is the obvious one: the guest holds
+		// that terminal, and a peer typing into it would be putting one
+		// session's words in front of somebody who was handed exactly one
+		// other session.
+		name: "0046_task_peer_typing",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN peer_typing INTEGER NOT NULL DEFAULT 1`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

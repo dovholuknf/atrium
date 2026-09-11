@@ -31,14 +31,42 @@ import (
 // the resolution and the limit below so that a handle, a refusal and a flood
 // mean the same thing whichever of the three is being attempted.
 //
-// What is NOT adopted is Charon's injection. It types into a session as though
-// the human had, which works there because its sessions are SDK turns with
-// nobody at a keyboard. Atrium owns a real terminal that a person may be
-// mid-command in, and `docs/supervision-design.md` settled that input is not
-// fanned out. So a peer message is QUEUED, always, even when atrium owns the
-// terminal and could type it. That is the one line in here most likely to be
-// "simplified" by reusing handleMessage, which does type, and doing so would
-// quietly reintroduce the thing this refuses.
+// A PEER MESSAGE IS TYPED INTO THE TERMINAL WHEN THE TERMINAL IS FREE, and
+// queued when it is not. This reversed a refusal, so the reasoning on both
+// sides is worth having.
+//
+// What it used to say: Charon's injection types into a session as though the
+// human had, which works there because its sessions are SDK turns with nobody
+// at a keyboard, while atrium owns a real terminal a person may be mid-command
+// in. So a peer message was queued ALWAYS, even when atrium owned the terminal
+// and could type it.
+//
+// The operator overruled that, in these words: "i want agents to be able to
+// talk to one another without me here but i want to see when the agent does
+// it. i consider the pty shared between me and all agents so PUT THE FUCKING
+// TEXT INTO THE STREAM."
+//
+// Two things make that more than a preference:
+//
+//   - **The reframing.** The refusal rested on atrium owning the terminal FOR
+//     the human. If the pty is shared between the human and the agents, the
+//     problem stops being ownership and becomes contention. Ownership is
+//     principled and contention is solvable.
+//   - **The risk was already being taken everywhere else.** `Say` types text,
+//     pauses, and presses Enter, and every other way of speaking to a session
+//     goes through it: a message, a note, an action's prompt. This was not the
+//     one safe path, it was the one path pretending the risk was unacceptable.
+//
+// So the objection is ANSWERED rather than dropped, by `runner.howBusy`. It
+// reads a record rather than a guess: atrium is the only way the operator can
+// type into a supervised session, so the daemon has seen every keystroke and
+// knows whether a line is part written. A part written line is still never
+// typed into. See `tellByTyping` for the three states and what each does about
+// Enter.
+//
+// `CLAUDE.md` still lists injecting prompts into a running session as out of
+// scope and names this bus. It is a symlink into another repository and is not
+// ours to edit, so it disagrees with this file until somebody there fixes it.
 
 const (
 	// maxPeerMessage bounds one peer message.
@@ -282,10 +310,41 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// QUEUED, never typed. See the note at the top of this file: atrium owns a
-	// terminal a person may be mid-command in, and a peer is not that person.
-	// Reusing handleMessage here would type into the pty and reintroduce
-	// exactly the injection docs/supervision-design.md refuses.
+	// TYPED WHEN THE TERMINAL IS FREE, AND QUEUED WHEN IT IS NOT.
+	//
+	// This refused to type, at length and on principle: atrium owned the
+	// terminal for the human, and a peer was not that human. The operator has
+	// overruled it, and the reframing is what makes that more than a
+	// preference. He considers the pty SHARED between himself and the agents,
+	// which turns the question from ownership into contention. Contention is
+	// solvable and ownership is not, so the mechanism answers the old
+	// objection rather than dropping it.
+	//
+	// The old comment was also the only caller pretending the risk was
+	// unacceptable. `Say` types text, pauses, and presses Enter, and every
+	// other way of speaking to a session already goes through it: a message, a
+	// note, an action's prompt. Atrium types into a pty somebody may be
+	// mid-command in several times a day. The peer bus was not being asked to
+	// take a new risk.
+	//
+	// What answers the objection is `runner.howBusy`, which reads a record
+	// rather than a guess. Atrium is the only way the operator can type into a
+	// supervised session, so the daemon has already seen every keystroke and
+	// knows whether a line is part written.
+	//
+	// THE QUEUE STAYS. It is the fallback for everything not typed, and a
+	// message that is typed is written to the timeline instead so the traffic
+	// is still auditable. Both, and the agent would receive it twice.
+	if typed, how := d.tellByTyping(target, from, text); typed {
+		log.Printf("[atrium] %s typed into %s (%d chars, %s)", from, to, len(text), how)
+		d.publishTask(target.ID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"typed": true, "to": to, "note": how,
+		})
+		return
+	}
+
 	if _, err := d.st.QueueFromPeer(target.ID, text, from); err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
@@ -297,4 +356,75 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"queued": true, "to": to, "note": queuedNote,
 	})
+}
+
+// peerBanner marks a typed message as coming from another session.
+//
+// UNMISTAKABLY NOT THE OPERATOR, which is the condition attached to putting
+// this in the stream at all. Grey and named, in the sentinel style the rest of
+// the board uses for anything atrium says on a terminal it does not own the
+// content of.
+func peerBanner(from string) string {
+	return "\r\n\x1b[38;5;244m[atrium] " + from + " says:\x1b[0m\r\n"
+}
+
+// tellByTyping puts a peer's message into the terminal when the terminal is
+// free enough to take it, and answers whether it did.
+//
+// THE THREE STATES ARE THE DESIGN, and the difference between them is whether
+// Enter is pressed:
+//
+//   - Nobody attached, or attached and idle. Typed and submitted. This is the
+//     case the feature exists for, an agent talking to an agent while nobody
+//     is at the keyboard, and a message that does not submit does nothing.
+//   - Attached and watching. Typed, attributed, and NOT submitted. The pty is
+//     shared so the text goes in, and pressing Enter under somebody's hands is
+//     a different act from putting words in front of them. They send it, edit
+//     it, or clear the line.
+//   - A part written line. Never typed. This is what the old refusal was
+//     protecting and it stays protected, because there is no way to insert
+//     into a line somebody is halfway through without wrecking it.
+func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, string) {
+	// A card can refuse on its own account. A lent card is the case this was
+	// built for: the guest holds that terminal and was handed exactly one
+	// session, so another session's words have no business appearing in it.
+	if !target.PeerTyping {
+		return false, ""
+	}
+	run := d.sup.get(target.ID)
+	if run == nil {
+		return false, ""
+	}
+	switch run.howBusy() {
+	case peerMidLine:
+		return false, ""
+	case peerWatching:
+		if err := run.Write([]byte(peerBanner(from) + text)); err != nil {
+			return false, ""
+		}
+		d.notePeerTyped(target.ID, from, text, "left in the prompt, you were typing")
+		return true, "typed into the terminal without sending it, since you were just typing"
+	default:
+		if err := run.Write([]byte(peerBanner(from))); err != nil {
+			return false, ""
+		}
+		if err := run.Say(text); err != nil {
+			return false, ""
+		}
+		d.notePeerTyped(target.ID, from, text, "typed and sent")
+		return true, "typed into the terminal and sent"
+	}
+}
+
+// notePeerTyped records a typed message on the timeline.
+//
+// The queue is what makes peer traffic auditable and a typed message never
+// reaches it, so this is the record instead. Written after the bytes are in
+// the terminal, because a message that failed to type is not one that happened.
+func (d *Daemon) notePeerTyped(taskID, from, text, how string) {
+	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+		"text": text, "via": "terminal", "from_peer": from, "how": how,
+	}); err != nil {
+		log.Printf("[atrium] typed a peer message into %s but could not record it: %v", taskID, err)
+	}
 }

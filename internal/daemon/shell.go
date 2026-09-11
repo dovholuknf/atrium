@@ -6,12 +6,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/shellpick"
 )
 
 // A SHELL BESIDE A WEDGED AGENT.
@@ -63,35 +63,34 @@ const shellIdleness = 30 * time.Minute
 // responds and short enough not to read as the board hanging.
 const shellHangup = time.Second
 
-// SettingShellCommand names the shell to open.
+// SettingShellCommand names the shell to open, and it now lives in
+// `internal/api` beside the other settings the board can write.
 //
-// Empty means work it out. Configurable because the thing wanted here is the
-// operator's own shell, and the one the operating system reports is frequently
-// not it: on Windows `COMSPEC` is `cmd.exe` on a machine where everything else
-// is PowerShell.
-const SettingShellCommand = "shell_command"
+// Moved rather than duplicated. It sat here, next to the only code that read
+// it, which is the tidier arrangement and is exactly why nobody noticed it had
+// never been added to the settings endpoint.
+const SettingShellCommand = api.SettingShellCommand
 
 // shellFor works out what to run.
 //
-// The setting, then the environment's own answer, then a floor that exists on
-// every installation of the platform. The floor matters: a shell that cannot
-// start is reported as an error the operator can read, but only if there was
-// something to try.
+// The setting first, then whatever `shellpick` found. The setting is READ
+// EVERY TIME rather than resolved once, because it is the override: somebody
+// whose board opened the wrong shell types the right one into settings and
+// opens another pane, and having to restart the daemon to be believed would
+// make the override useless at the moment it is reached for.
+//
+// The search behind it is what changed. This used to go from the setting
+// straight to `COMSPEC`, which on Windows is `cmd.exe`, so the answer was
+// always cmd on a machine where everything else is PowerShell. The comment
+// over `SettingShellCommand` already knew that and offered the setting as the
+// workaround. See `internal/shellpick` for the order and why the middle of it
+// matters most.
 func (d *Daemon) shellFor() (string, []string) {
 	if v, err := d.st.Setting(SettingShellCommand); err == nil && strings.TrimSpace(v) != "" {
 		fields := strings.Fields(strings.TrimSpace(v))
 		return fields[0], fields[1:]
 	}
-	if runtime.GOOS == "windows" {
-		if v := strings.TrimSpace(os.Getenv("COMSPEC")); v != "" {
-			return v, nil
-		}
-		return "cmd.exe", nil
-	}
-	if v := strings.TrimSpace(os.Getenv("SHELL")); v != "" {
-		return v, nil
-	}
-	return "/bin/sh", nil
+	return shellpick.Pick()
 }
 
 // getShell, addShell and the rest are `get`, `add` and `remove` over the second

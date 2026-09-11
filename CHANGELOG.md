@@ -5,6 +5,135 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Back and forward work on the board.**
+
+  The board is one page that swaps views and attaches terminals, and it kept none of that, so the browser's
+  back button either did nothing or left atrium entirely. Both moves are recorded now: switching view, and
+  switching session.
+
+  **The address bar is not touched**, and that is the part worth keeping. `#term=<id>` already means something
+  here, it is how a popped-out window resolves its card on load, so a view in the hash would make every reload
+  of a solo window a negotiation between two meanings of one string. That is why the view went to
+  `localStorage` in the first place. `pushState` carries a state object against the same URL, so the entries
+  exist and the address does not move. The two restores stay separate and each is right for its job:
+  `localStorage` answers "where was I yesterday" across a reload and a daemon restart, history answers "where
+  was I a moment ago" inside this visit.
+
+  Three things that are only obvious once they are wrong:
+
+  - **Going back must not record the arrival**, or forward points at where you just came from and the two
+    buttons walk in a circle.
+  - **Attaching pushes once, not twice.** `openTerm` switches view before the card is set, so the naive
+    version left `terms with nothing attached` between the view you came from and the session you asked for,
+    and back needed pressing twice to leave a place you were never in.
+  - **The opening view needs an entry of its own**, recorded after the restore has decided where the page
+    actually landed. Without it the first push replaces rather than pushes, and the first press of back steps
+    straight over where you started.
+
+  `check-terminal.js` rule 14 holds all three, because the failure is not that back stops working, it is that
+  back appears to work and goes to the wrong place.
+
+- **The terminal switcher groups by host, then org, then project.** (`B2-02`)
+
+  Eleven entries repeated `github/` eleven times and `dovholuknf/` three or four, so the list was widest where
+  it said least. It was already failing: rows rendered as `...nziti/ziti-openwrt:firmware-upgrade-recovery-docs`
+  because the strip is a few hundred pixels wide and the FRONT of the path was being cut to keep the leaf. A
+  hierarchy fixes that by construction, since the shared prefix moves into a heading and stops being drawn once
+  per row.
+
+  Grouping never reached this strip. The settings expression the operator writes applies inside a board column,
+  and the strip is not a column, so this is hierarchy taken there rather than an extension of that.
+
+  **Two collapses, and the second is what makes it usable.** A chain of only children is one heading, so
+  `openziti-test-kitchen/docpreview` is not two levels. And a level holding a SINGLE row is not a level at all:
+  it draws as `atrium:main` on the row. Without the second, the real board came out with eleven headings for
+  ten rows, which is the failure this design is warned about. With it, five headings for the same ten rows, and
+  every one groups something.
+
+  **Pinning stops being a divider here**, which is the interaction this had to settle. Grouping and pinning both
+  wanted the top-level split. The obvious answer is what the stack does, pinned as one group above the rest, and
+  the real board refutes it: eight of ten terminals are pinned, so that block is nearly the whole list drawn
+  flat with all the repeated prefixes still in it. A split that puts most rows on one side is not a split. So
+  pinning keeps its meaning and loses its heading, sorting first within each group, with the star carrying the
+  signal. That star was invisible until two days ago, which is probably why the divider was carrying it.
+
+  **A heading here is a label, not a control.** No click target and no accordion. `docs/dispatch-queue.md` group
+  F has an open complaint that a group heading on the BOARD toggles when you click the space around it, and
+  three levels of heading would have multiplied whatever is decided there.
+
+  `check-morph.js` rule 3 read a FIXED 4000 character window from the top of `renderTermList` and failed
+  anything that pushed the row's key past it, which is `B2-21`. It searches the whole function now, and points
+  at `termRow`, which is where the row markup moved and is the shape `cardHTML` and `stackRow` already had.
+
+- **One session's message goes into another's terminal, when that terminal is free.** (`B2-28`)
+
+  The peer bus queued always, at length and on principle: atrium owned the terminal for the human, and a peer
+  was not that human. The operator overruled it. "i want agents to be able to talk to one another without me
+  here but i want to see when the agent does it. i consider the pty shared between me and all agents so PUT THE
+  FUCKING TEXT INTO THE STREAM."
+
+  Two things make that more than a preference. The refusal rested on OWNERSHIP, and if the pty is shared
+  between the human and the agents the question becomes CONTENTION, which is solvable. And the risk was already
+  being taken everywhere else: `Say` types text, pauses and presses Enter, and a message, a note and an
+  action's prompt all go through it. The peer bus was not the one safe path, it was the one path pretending the
+  risk was unacceptable.
+
+  So the objection is answered rather than dropped. Three states, and the difference between them is Enter:
+
+  | the terminal | what happens |
+  | --- | --- |
+  | nobody attached, or idle | typed, attributed, and submitted |
+  | somebody who typed in the last 20 seconds | typed and attributed, NOT submitted |
+  | a part written line | never typed, queued instead |
+
+  The middle one is the operator's own qualifier, "assuming i'm not using it". Putting words in front of
+  somebody is a different act from pressing Enter under their hands, so they send it, edit it, or clear the
+  line.
+
+  **It reads a record, not a guess.** Atrium is the only way the operator can type into a supervised session, so
+  every keystroke has already passed through `runner.Write` and the daemon knows whether a line is open. The
+  tracker is in the DAEMON rather than the board, which has something similar for path completion: that copy is
+  per viewer, dies on reload, and would make a decision about the pty depend on which tab is open. Nothing
+  parses the runner's OUTPUT to infer this, which is the line `B2-20` declines to cross.
+
+  **The queue stays** as the fallback for everything not typed, which is still most traffic on a machine where
+  atrium owns no terminals. A typed message is written to the timeline instead, so it is still auditable.
+  Recording both would deliver it twice.
+
+  A per-card switch turns it off, on by default, offered only where atrium owns a terminal. A card lent over a
+  share is the case: the guest holds that terminal and was handed exactly one session.
+
+  `docs/supervision-design.md` and `docs/architecture-v2.md` are updated. `CLAUDE.md` still lists this as out of
+  scope and names the peer bus, and it is a symlink into another repository, so it is left disagreeing until
+  somebody there changes it.
+
+- **A shell opens `pwsh`, then `powershell`, then the command shell.** Operator: "i just want pwsh not fucking
+  cmd".
+
+  `shellFor` went from the `shell_command` setting straight to `COMSPEC`, and on Windows `COMSPEC` is
+  `cmd.exe`, so unless that setting was populated the answer was always cmd on a machine where everything else
+  is PowerShell. The comment over the setting already knew this and offered the setting as the workaround.
+
+  **The middle of the order is the part that matters.** `pwsh` is PowerShell 7 and a separate install,
+  `powershell` is 5.1 and is on every Windows there has ever been, and `cmd` is the floor. Falling to cmd when
+  `pwsh` is missing skips the one that is always there, which is the same bug with an extra step.
+
+  **Looked for, not assumed from the platform.** Seen while setting up a room on another machine: an ssh
+  default shell pointed at a `pwsh.exe` that was not installed there and the session came up on 5.1 with
+  nothing saying why. `exec.LookPath` is the check, and the daemon logs what it found at startup, because a
+  search of the daemon's own PATH is not something anybody can work out from the other end of a browser.
+
+  **One resolver, two callers.** `internal/shellpick` exists as its own package for the reason
+  `internal/safepath` does: the daemon opens a card's shell and the store seeds a `shell` harness row, neither
+  can import the other, and answering it twice is how they disagreed. They already had: the harness said
+  `pwsh` unconditionally while the daemon said `COMSPEC`, so one board offered two shells that were PowerShell
+  7 and cmd. The harness seeds on first run only, so an existing database keeps the row it has.
+
+  **And `shell_command` reached the settings surface.** It was documented, carried by the config export, and
+  settable only by editing the database or importing a config. That mattered more than an ordinary gap: it was
+  the workaround for this exact problem, so the escape hatch was unreachable by the person who needed it. The
+  hint says what an empty box resolves to on this machine.
+
 - **The text in a terminal scales without scaling the board around it.**
 
   Browser zoom was the only tool and it takes the tabs, the card strip, the bar and every chip with it. The

@@ -259,7 +259,7 @@ they are one session and not five. Adding a fifth one here is cheaper than start
   So the setting is two lines and the correctness is entirely in what a resize already means here. Read those
   rules before touching it, and add one for this path.
 
-- **A shell atrium opens should prefer `pwsh`, then `powershell`, then `cmd`.** Operator: "shell should use
+- **DONE.** **A shell atrium opens should prefer `pwsh`, then `powershell`, then `cmd`.** Operator: "shell should use
   pwsh if available then powershell then cmd in that order".
 
   Two places this bites, and they are not the same code:
