@@ -161,6 +161,13 @@ type Task struct {
 	// every restart, with hard line breaks a third of the way across. Zero for
 	// a card that has never had a terminal atrium owned.
 	LastCols int `json:"last_cols,omitempty"`
+	// PeerTyping is whether another session may type into this card's
+	// terminal, rather than only queue for it. On by default.
+	//
+	// NOT omitempty, because false is the interesting value here and a field
+	// that vanishes when it is off is a field the board cannot draw a switch
+	// from.
+	PeerTyping bool `json:"peer_typing"`
 	// Org and Host are which one, above the repo name.
 	//
 	// `openziti/zrok` on `github.com` and a fork of it under another org are

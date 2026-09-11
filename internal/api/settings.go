@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -68,6 +69,14 @@ func globalAutoView(s *Server) map[string]any {
 		// Empty means only the per-user one, which is right when the daemon
 		// and its callers are the same person.
 		SettingSharedLocation: "shared_location",
+		// WHICH SHELL A PANE OPENS. Empty means the one `shellpick` found.
+		//
+		// It was documented, exported by the config export, and settable
+		// nowhere: the only routes were editing the database or importing a
+		// config. That mattered because it was the WORKAROUND for the shell
+		// always being cmd, so the escape hatch for the problem was itself
+		// unreachable by anybody hitting the problem.
+		SettingShellCommand: "shell_command",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -94,6 +103,10 @@ func globalAutoView(s *Server) map[string]any {
 	// default set, and the person reading it wants to know what that came out
 	// as rather than being told there is a default.
 	out["browse_roots_now"] = s.browseRootsFor()
+	// And which shell an empty box comes out as, for the same reason. This one
+	// is a search of PATH on the daemon's machine, so it is not something the
+	// person reading the box could work out for themselves.
+	out["shell_command_now"] = shellpick.Chosen()
 	// What the board is wearing, and everything it could wear. The list is
 	// sent rather than written into the page so the picker and the validator
 	// cannot disagree: there is one list and the daemon holds it.

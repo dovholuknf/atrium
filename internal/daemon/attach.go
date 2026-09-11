@@ -260,6 +260,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			}
 			switch in.T {
 			case "in":
+				// THE ONE PLACE THE OPERATOR'S OWN KEYSTROKES ARRIVE, which is
+				// what makes the record trustworthy. `Say` and the peer bus
+				// also reach `Write`, so counting bytes there would have
+				// atrium reading its own typing as the person being busy.
+				// See `runner.noteOperatorTyped`.
+				run.noteOperatorTyped([]byte(in.D))
 				if err := run.Write([]byte(in.D)); err != nil {
 					return
 				}

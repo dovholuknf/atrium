@@ -81,6 +81,29 @@ Any attacher can write to the pty. Nothing arbitrates between two attachers typi
 this is one person's tool, and two browser tabs typing into the same terminal is the same situation as two hands
 on one keyboard.
 
+### The pty is shared with the agents too, and that one IS arbitrated
+
+Another session may type into a card's terminal. The peer bus queued always, on the grounds that atrium owned the
+terminal for the human and a peer was not that human. The operator overruled it: he considers the pty shared
+between himself and the agents, which turns the question from ownership into contention.
+
+Contention is arbitrated, unlike two tabs above, because the parties are not equivalent. A person is mid-thought
+and a peer is not, so the daemon tracks whether a line is part written and acts on it:
+
+| the terminal | what a peer message does |
+| --- | --- |
+| nobody attached, or idle | typed, attributed, and submitted |
+| somebody who typed recently | typed and attributed, NOT submitted. They send it, edit it or clear the line |
+| a part written line | never typed. Queued, which is what always happened |
+
+The record is the input side and never the output side. Atrium is the only way the operator can type into a
+supervised session, so every keystroke has already passed through `runner.Write` and the daemon knows whether a
+line is open. Reading what the runner is DRAWING to infer the same thing is a guess, and it is the line `B2-20`
+declines to cross.
+
+The queue stays as the fallback for everything not typed, and a card can refuse typed input entirely. A card lent
+over a share is the case that matters: the guest holds that terminal and was handed exactly one session.
+
 ### Shutdown waits, then stops asking
 
 On shutdown the daemon closes the agent listener, as it does now, and then gives supervised runners a short

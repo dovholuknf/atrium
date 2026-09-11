@@ -645,6 +645,10 @@ type patchBody struct {
 	// AutoMinutes is how long to leave it on. Zero or absent means no
 	// deadline, which is what this did before deadlines existed.
 	AutoMinutes int `json:"auto_minutes"`
+	// PeerTyping is whether another session's message goes into this card's
+	// terminal or only into its queue. A pointer, so leaving it out is not the
+	// same as turning it off.
+	PeerTyping *bool `json:"peer_typing"`
 	// Tags is the whole set, not an addition. A pointer to a slice so that
 	// clearing every tag is distinguishable from not mentioning them.
 	Tags *[]string `json:"tags"`
@@ -839,6 +843,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+		}
+	}
+	if body.PeerTyping != nil {
+		if err := s.st.SetPeerTyping(id, *body.PeerTyping); err != nil {
+			s.fail(w, err)
+			return
 		}
 	}
 	if body.Overrides != nil {

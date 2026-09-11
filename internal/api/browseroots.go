@@ -48,6 +48,20 @@ const SettingBrowseRoots = "browse_roots"
 // `daemon.sharedLocation`, which reads it.
 const SettingSharedLocation = "shared_location"
 
+// SettingShellCommand names the shell a pane opens, and empty means the one
+// `internal/shellpick` finds.
+//
+// HERE FOR THE SAME REASON `SettingSharedLocation` is: the settings endpoint
+// is in this package and the daemon already imports it. It lived in
+// `daemon/shell.go` beside the code that reads it, which is the tidier place
+// and is why it never reached the settings surface. It was documented,
+// carried by the config export, and settable only by editing the database.
+//
+// That mattered more than an ordinary gap, because this setting was the
+// WORKAROUND for a shell that always came up as cmd. The escape hatch was
+// unreachable by exactly the person who needed it.
+const SettingShellCommand = "shell_command"
+
 // browseRootsFor is the allowed set, resolved.
 //
 // Resolved rather than compared as text, because the whole point of the check

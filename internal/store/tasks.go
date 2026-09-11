@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols`
+	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -31,6 +31,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		recapAt      string
 		priorityAt   string
 		askAt        string
+		peerTyping   int
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
@@ -38,11 +39,12 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
-		&t.Ask, &askAt, &t.AskPeer, &t.LastCols); err != nil {
+		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping); err != nil {
 		return nil, err
 	}
 	t.Gated = gated != 0
 	t.AutoApprove = auto != 0
+	t.PeerTyping = peerTyping != 0
 	t.Pinned = pinned != 0
 	// Always a list, never nil, so the board can filter without a guard and
 	// the JSON carries `[]` rather than `null`.
@@ -305,7 +307,7 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -313,7 +315,10 @@ func (s *Store) insertTask(t *Task) error {
 		t.Org, t.Host, "", "", "",
 		// A new card has never had a terminal, so nothing says how wide it
 		// was. `launchWidthFor` reads zero as "no opinion".
-		0)
+		0,
+		// Peers may type into it. The column defaults the same way for every
+		// card that existed before it did.
+		1)
 	return err
 }
 
@@ -617,6 +622,25 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 	}
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
+		return err
+	})
+}
+
+// SetPeerTyping decides whether another session may type into this card's
+// terminal, rather than only queue for it.
+//
+// On by default. The operator's position is that the pty is shared between
+// himself and the agents, so a switch that has to be turned on before two
+// agents can talk is a switch nobody turns on. This is for the exclusions, and
+// they are per card rather than global: a card lent over a share is one, since
+// the guest holds that terminal and was handed exactly one session.
+func (s *Store) SetPeerTyping(id string, on bool) error {
+	return s.guard(func() error {
+		v := 0
+		if on {
+			v = 1
+		}
+		_, err := s.db.Exec(`UPDATE task SET peer_typing = ? WHERE id = ?`, v, id)
 		return err
 	})
 }

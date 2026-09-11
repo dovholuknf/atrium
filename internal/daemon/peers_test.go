@@ -67,17 +67,26 @@ func TestOneSessionCanTellAnother(t *testing.T) {
 	}
 }
 
-// THE one. `docs/supervision-design.md` settled that atrium does not type into
-// a session as though the human had, and Charon's peer bus does exactly that.
-// The temptation is to reuse handleMessage, which types when atrium owns the
-// terminal. Doing so would reintroduce the injection this refuses.
-func TestAPeerMessageIsQueuedEvenWhenAtriumOwnsTheTerminal(t *testing.T) {
+// THE QUEUE IS THE FALLBACK, and it has to stay one.
+//
+// This asserted the opposite for as long as the peer bus existed: a peer
+// message was queued ALWAYS, even when atrium owned the terminal and could
+// type it, on the grounds that atrium owns the terminal for the human. The
+// operator overruled that, considering the pty shared between himself and the
+// agents, and `peers.go` carries both sides of the argument.
+//
+// What survives is the fallback. A card that cannot be typed into, for any of
+// the reasons in `tellByTyping`, still gets its message, and the queue is what
+// delivers it. A version of this change that dropped the queue would lose
+// every message to a window mode runner, which is most of them on a machine
+// where atrium owns nothing.
+func TestAPeerMessageToACardThatCannotBeTypedIntoIsStillQueued(t *testing.T) {
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
 
-	// A supervised runner, so the terminal branch exists and would be taken by
-	// anything that reused the human path.
+	// Supervised, and refusing typed input. A lent card is the case in the
+	// field, and it takes the same path.
 	fake := &runner{}
 	d.sup.mu.Lock()
 	d.sup.runners[bob.ID] = fake
@@ -85,19 +94,21 @@ func TestAPeerMessageIsQueuedEvenWhenAtriumOwnsTheTerminal(t *testing.T) {
 	if d.sup.get(bob.ID) == nil {
 		t.Fatal("this test is not exercising a supervised card")
 	}
+	if err := d.st.SetPeerTyping(bob.ID, false); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, code := tell(t, d, "alice", "bob", "do not type this at me"); code != http.StatusOK {
 		t.Fatalf("telling a supervised session answered %d", code)
 	}
 
-	// Queued, not typed.
 	pending, err := d.st.PendingMessages(bob.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(pending) != 1 {
-		t.Fatalf("a peer message to a supervised session queued %d messages, "+
-			"which means it was typed instead", len(pending))
+		t.Fatalf("a card refusing typed input queued %d messages, so the fallback is gone",
+			len(pending))
 	}
 }
 

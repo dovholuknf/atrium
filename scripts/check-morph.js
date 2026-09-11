@@ -77,13 +77,36 @@ if (!/mine\.getAttribute\(a\.name\) === a\.value\) continue/.test(script)) {
 const keyed = [
   ["cardHTML", "a board card"],
   ["stackRow", "a stack row"],
-  ["renderTermList", "a terminal switcher row"],
+  // `termRow`, not `renderTermList`. The row markup lived inline in the render
+  // function and moved out when the strip grew headings, which is the same
+  // shape the other two have always had: the row is drawn by a function named
+  // after the row.
+  ["termRow", "a terminal switcher row"],
 ];
+// THE WHOLE FUNCTION, NOT A FIXED WINDOW OF CHARACTERS FROM ITS TOP.
+//
+// This read 4000 characters from the declaration and failed anything that
+// pushed the key past the end. Two changes have now hit that: a comment and a
+// helper added near the top of `renderTermList` failed an invariant they had
+// nothing to do with, and the rows still carried their key both times. A check
+// that fires on where the code sits rather than on what it does teaches people
+// to work around it, which is the opposite of what it is for.
+//
+// The end of a function is found by the next top-level declaration, which is
+// crude and right for this file: everything here is a top-level `function` or
+// `const` at column zero, and overshooting into the next one can only make the
+// search MORE likely to find a key that is present.
+function bodyOf(name) {
+  const at = script.indexOf("function " + name + "(");
+  const start = at >= 0 ? at : script.indexOf(name + "(");
+  if (start < 0) return null;
+  const next = script.indexOf("\nfunction ", start + 1);
+  return script.slice(start, next < 0 ? script.length : next);
+}
+
 for (const [fn, what] of keyed) {
-  const at = script.indexOf("function " + fn + "(");
-  const start = at >= 0 ? at : script.indexOf(fn + "(");
-  if (start < 0) { fail(`${fn} is gone, so ${what} cannot be checked.`); continue; }
-  const body = script.slice(start, start + 4000);
+  const body = bodyOf(fn);
+  if (body === null) { fail(`${fn} is gone, so ${what} cannot be checked.`); continue; }
   if (!/data-id="\$\{t\.id\}"/.test(body)) {
     fail(`${what} does not carry data-id, so it cannot be matched across a repaint ` +
       `and is destroyed and rebuilt on every event. See morphKey.`);

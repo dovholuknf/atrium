@@ -539,6 +539,47 @@ if (/function setTermFont\(/.test(html)) {
   }
 }
 
+// Rule 14: back and forward do not record the journey they are undoing.
+//
+// The board is one page that swaps views and attaches terminals, so history is
+// something it keeps itself. The failure is not that back stops working, it is
+// that back appears to work and goes to the wrong place: an entry pushed while
+// HANDLING a popstate records the arrival, so forward then points at where you
+// just came from and the two buttons walk in a circle.
+//
+// `navApplying` is the guard and it is one boolean, which makes it exactly the
+// kind of thing a later edit drops without noticing, because nothing about the
+// symptom points at it.
+if (/function navPush\(/.test(html)) {
+  if (!/navApplying/.test(html)) {
+    fail("navPush exists with no navApplying guard, so going back records the arrival and " +
+      "forward points at where you came from.");
+  }
+  for (const [fn, what] of [["switchView", "switching view"], ["openTerm", "attaching a session"]]) {
+    const at = html.indexOf("function " + fn + "(");
+    if (at < 0) { fail(`${fn} is gone, so ${what} cannot be checked.`); continue; }
+    const end = html.indexOf("\nfunction ", at + 1);
+    const body = html.slice(at, end < 0 ? html.length : end);
+    if (!/navPush\(\)/.test(body)) {
+      fail(`${fn} does not record a history entry, so back steps over ${what}.`);
+    }
+    if (!/!navApplying/.test(body)) {
+      fail(`${fn} pushes a history entry unconditionally, so going back records the arrival ` +
+        `and forward points at where you came from.`);
+    }
+  }
+  // The address bar stays out of it. `#term=<id>` is how a popped-out window
+  // resolves its card on load, and a view in the hash would make every reload
+  // of a solo window a negotiation between two meanings of one string.
+  const pushAt = html.indexOf("function navPush(");
+  const pushEnd = html.indexOf("\nfunction ", pushAt + 1);
+  const pushBody = html.slice(pushAt, pushEnd < 0 ? html.length : pushEnd);
+  if (/location\.hash|#term=/.test(pushBody)) {
+    fail("navPush writes the address. The hash already means a popped-out window's card, and " +
+      "a view in it makes every reload of a solo window a negotiation between the two.");
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);

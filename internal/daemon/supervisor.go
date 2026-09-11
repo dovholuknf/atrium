@@ -465,6 +465,29 @@ type runner struct {
 	// shell has no work, so the question "is anyone still interested in this"
 	// is the only thing that decides whether it should still be running.
 	seen time.Time
+	// IS THE OPERATOR PART WAY THROUGH SOMETHING. Two facts, kept here rather
+	// than in the browser.
+	//
+	// `midLine` is whether keystrokes have arrived since the last thing that
+	// ends a line, and `lastTyped` is when the most recent one landed. Between
+	// them they answer the only question that decides whether another session
+	// may type into this terminal.
+	//
+	// THE DAEMON IS THE RIGHT PLACE and the board is not, even though the
+	// board already tracks something similar for path completion. That copy is
+	// per viewer, dies on reload, and would make a decision about the pty
+	// depend on which tab happens to be open. This one sees every byte,
+	// because atrium is the only way the operator can type into a supervised
+	// session: every keystroke arrives over the attach websocket and goes
+	// through `Write`. There is no second writer to miss.
+	//
+	// The INPUT side only. What the runner did with those bytes is not knowable
+	// from here and does not matter: the question is whether the operator is
+	// mid-thought, and only their own keystrokes answer it. Reading the
+	// runner's output to guess at this is the line `B2-20` declines to cross,
+	// and it would be a guess where this is a record.
+	midLine   bool
+	lastTyped time.Time
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -538,6 +561,79 @@ const sayThenEnter = 140 * time.Millisecond
 func (r *runner) Write(p []byte) error {
 	_, err := r.pty.Write(p)
 	return err
+}
+
+// noteOperatorTyped records that the PERSON sent these bytes.
+//
+// Called from the attach socket and from nowhere else, which is what makes it
+// trustworthy: `Say` and the peer bus also reach `Write`, and counting their
+// bytes here would have atrium deciding the operator was busy because atrium
+// had just typed something.
+//
+// What ends a line: a carriage return or a newline submits it, and the two
+// ways a line is thrown away are control-c and control-u. Everything else
+// leaves something part written, including a backspace, because a line being
+// edited down to nothing is still a line somebody is working on.
+func (r *runner) noteOperatorTyped(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastTyped = time.Now()
+	for _, b := range p {
+		switch b {
+		case '\r', '\n':
+			r.midLine = false
+		case 0x03, 0x15: // control-c, control-u
+			r.midLine = false
+		default:
+			r.midLine = true
+		}
+	}
+}
+
+// peerQuiet is how long after the operator's last keystroke a terminal is
+// still considered theirs.
+//
+// Short, because the common case this exists for is an agent talking to an
+// agent while nobody is at the keyboard, and a long window would make that the
+// uncommon case. Long enough that a pause for thought between two commands is
+// not read as having walked away.
+const peerQuiet = 20 * time.Second
+
+// howBusy says whether another session may type into this terminal now.
+//
+// Three answers, and they are the design rather than an implementation
+// detail. See `handleTell`.
+type peerRoom int
+
+const (
+	// peerFree is nobody attached, or attached and long since idle. Type it
+	// and press Enter: an agent talking to an agent while the operator is
+	// asleep is the whole case this feature exists for, and a message that
+	// does not submit does nothing.
+	peerFree peerRoom = iota
+	// peerWatching is somebody attached who typed recently, with no part
+	// written line. Type it, attributed, and DO NOT press Enter. The operator
+	// considers the pty shared, so the text goes in, and submitting under
+	// somebody's hands is a different act from putting text in front of them.
+	peerWatching
+	// peerMidLine is a part written line. Never type. This is the case the old
+	// refusal protected and it stays protected.
+	peerMidLine
+)
+
+func (r *runner) howBusy() peerRoom {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.midLine {
+		return peerMidLine
+	}
+	if !r.lastTyped.IsZero() && time.Since(r.lastTyped) < peerQuiet {
+		return peerWatching
+	}
+	return peerFree
 }
 
 // A pseudo terminal has ONE size and a shared session has several viewers.

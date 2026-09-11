@@ -29,8 +29,13 @@ import (
 // real width, which is a slow test of the operating system rather than a test
 // of what to replay.
 type fakePTY struct {
-	mu     sync.Mutex
-	sizes  []viewport
+	mu    sync.Mutex
+	sizes []viewport
+	// What was typed INTO it, which the peer bus tests read back. A terminal
+	// that swallows its input cannot answer whether a message was submitted,
+	// and whether Enter was pressed is the whole difference between two of the
+	// three states in `tellByTyping`.
+	in     []byte
 	closed chan struct{}
 }
 
@@ -41,7 +46,19 @@ func newFakePTY() *fakePTY { return &fakePTY{closed: make(chan struct{})} }
 // way the supervisor's reader would.
 func (f *fakePTY) Read(p []byte) (int, error) { <-f.closed; return 0, context.Canceled }
 
-func (f *fakePTY) Write(p []byte) (int, error) { return len(p), nil }
+func (f *fakePTY) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.in = append(f.in, p...)
+	return len(p), nil
+}
+
+// written is everything typed into it so far.
+func (f *fakePTY) written() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return string(f.in)
+}
 
 func (f *fakePTY) Close() error {
 	f.mu.Lock()
