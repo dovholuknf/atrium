@@ -5,6 +5,30 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A write into a supervised session now finishes, instead of reporting success with the tail missing.**
+  B2-14.
+
+  `runner.Write` is the one funnel for everything atrium puts into a session: a keystroke or a paste from the
+  board, an interrupt, and everything atrium SAYS to a session, which covers a queued message, a note, and an
+  action's stored prompt. It called the pty once and threw away the byte count. An `io.Writer` is allowed to
+  take fewer bytes than it was handed and return no error, so a short write left part of the input gone with
+  nothing anywhere reporting a problem. The only party that knew was the line that discarded the number.
+
+  `Say` is where that turns from lost data into wrong behaviour. It writes the text, pauses, then writes the
+  Enter that submits it. A short first write still gets its Enter, so an agent receives half a prompt as
+  though it were the whole one and acts on it.
+
+  It now loops until every byte is taken or the pty returns an error, and a writer that reports no progress
+  and no error gets `io.ErrShortWrite` rather than an endless spin.
+
+  **The continuation is immediate and the comment says why.** A TUI decides input is a paste rather than
+  typing from how fast it arrives. `Say` depends on that, and the board sends a paste as one frame for the
+  same reason. A sleep between the parts of one write would split a paste in two and undo both, which is
+  exactly what the obvious retry loop does.
+
+  This is not the cause of a paste arriving in several pieces. That is the pty's input pipe, and it is its own
+  bug. This is hygiene on the funnel every input passes through.
+
 - **The tab wears the atrium A.** B2-01. There was no `<link rel="icon">` on the board at all, so every atrium
   tab carried whatever a browser shows when nothing is supplied, which the operator reads as a stray bracket.
 

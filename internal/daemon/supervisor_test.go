@@ -2,11 +2,14 @@ package daemon
 
 import (
 	"bytes"
+	"io"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/aymanbagabas/go-pty"
 )
 
 // The ring buffer is what an attaching browser sees first. Getting it wrong
@@ -572,5 +575,80 @@ func TestSubscribeAfterExitClosesImmediately(t *testing.T) {
 	}
 	if _, ok := <-ch; ok {
 		t.Fatal("channel should already be closed for a runner that has exited")
+	}
+}
+
+// stubbornPty is a pty that deliberately writes short.
+//
+// It embeds the interface so the methods no test here calls do not have to be
+// written out. Calling one of those panics, which is the right outcome for a
+// test that has wandered off its subject.
+type stubbornPty struct {
+	pty.Pty
+	// most is the largest number of bytes one write will take.
+	most int
+	// got is everything it has accepted, in order.
+	got []byte
+	// calls counts how many writes it took to get there.
+	calls int
+}
+
+func (s *stubbornPty) Write(p []byte) (int, error) {
+	s.calls++
+	n := len(p)
+	if n > s.most {
+		n = s.most
+	}
+	s.got = append(s.got, p[:n]...)
+	return n, nil
+}
+
+// A writer that takes three bytes at a time still receives the whole message.
+//
+// This is the shape of the bug. A short write comes back with a nil error, so
+// before the loop everything past the first three bytes was dropped and Write
+// reported success.
+func TestWriteFinishesAShortWrite(t *testing.T) {
+	p := &stubbornPty{most: 3}
+	r := &runner{taskID: "t", pty: p}
+
+	msg := "run the tests and report back"
+	if err := r.Write([]byte(msg)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if string(p.got) != msg {
+		t.Fatalf("lost part of the write: %q", p.got)
+	}
+	if p.calls < 2 {
+		t.Fatalf("the writer never wrote short, so this proves nothing: %d call(s)", p.calls)
+	}
+}
+
+// Say is the case where lost bytes become wrong behaviour. The Enter goes
+// whatever happened to the text, so half a prompt gets SUBMITTED.
+func TestSayDeliversTheWholeTextBeforeTheEnter(t *testing.T) {
+	p := &stubbornPty{most: 4}
+	r := &runner{taskID: "t", pty: p}
+
+	if err := r.Say("deploy nothing today"); err != nil {
+		t.Fatalf("Say: %v", err)
+	}
+	if got := string(p.got); got != "deploy nothing today\r" {
+		t.Fatalf("the agent would have been sent %q", got)
+	}
+}
+
+// stuckPty reports no progress and no error, which is the one way a retry loop
+// turns into a hang.
+type stuckPty struct {
+	pty.Pty
+}
+
+func (stuckPty) Write(p []byte) (int, error) { return 0, nil }
+
+func TestWriteGivesUpOnAWriterThatMakesNoProgress(t *testing.T) {
+	r := &runner{taskID: "t", pty: stuckPty{}}
+	if err := r.Write([]byte("anything")); err != io.ErrShortWrite {
+		t.Fatalf("want io.ErrShortWrite, got %v", err)
 	}
 }
