@@ -727,6 +727,20 @@ function connectTerm(taskID) {
     // of yet.
     if (termSock !== sock) return;
 
+    // The daemon's own word for what just happened, or an empty string when
+    // the close did not come from it at all: a connection that dropped carries
+    // no reason. See `whyClosed` in internal/daemon/attach.go.
+    const why = (ev && ev.reason) || "";
+
+    // THE DAEMON SAID IT IS RESTARTING, on the close frame itself.
+    //
+    // Believed the same way the `going-down` event is, and for the same
+    // reason: it is the daemon saying so rather than this page inferring it
+    // from a socket that went quiet. The two carry the same news by two routes
+    // and either one arriving is enough, so this fills in the announcement
+    // when the event was the one that got lost.
+    if (why === "restarting" && !restartComing()) restartAt = Date.now();
+
     // A SHELL CLOSING IS NOT A SESSION GOING AWAY, and every branch below this
     // one assumes it is.
     //
@@ -760,10 +774,16 @@ function connectTerm(taskID) {
     // because somebody typed `exit`. The retry then hammers an attach for a
     // card whose runner is deliberately gone: five minutes of failed
     // connections in the console and a pane that will not settle.
-    if (ev && ev.reason === "runner exited") {
+    if (why === "runner exited") {
       attachSince = 0;
       attachSaidGone = false;
       termWait("");
+      // THE TEARDOWN HAS TO KNOW THIS TOO, and it is several calls away from
+      // here: this branch closes the pane, and the pane's teardown is what
+      // decides whether to spend ninety seconds waiting for the session to
+      // come back. Without the word being written down, it waited on every
+      // exit. See `noteAttachEnded`.
+      noteAttachEnded(taskID, why);
       // A window that IS this session says so and tears itself down.
       //
       // THE `markTermDead` CALL IS THE POINT, and its absence was the bug. This
@@ -825,7 +845,15 @@ function connectTerm(taskID) {
         term.write("\r\n\x1b[38;5;244m[atrium] waiting for atrium\x1b[0m\r\n");
       }
       if (Date.now() - attachSince > attachRaceFor) {
-        termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
+        // NOT CALLED A RESTART UNLESS ONE WAS ANNOUNCED. This branch is every
+        // attach that never opened, which is usually a fixture that has not
+        // started yet, and naming it a restart put a sentence on screen that
+        // the operator could see was false. The branch below this one, which
+        // has actually asked whether the daemon is there, is the one entitled
+        // to say it.
+        termWait(restartComing()
+          ? "atrium is restarting. reconnecting to " + waitName(termTask) + "…"
+          : "reconnecting to " + waitName(termTask) + "…");
       }
       setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
       return;

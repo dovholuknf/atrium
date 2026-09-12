@@ -36,6 +36,61 @@ function restartComing() {
   return restartAt > 0 && Date.now() - restartAt < restartWindow;
 }
 
+// WHY THE LAST ATTACH ENDED, read off the websocket close frame.
+//
+// `whyClosed` in the daemon sends one of `restarting`, `shell closed` and
+// `runner exited`, and that word is the whole question the pane has to answer
+// when a socket drops. A restart is an outage worth waiting out. The other two
+// are answers: the thing that ended was ended on purpose and nothing is coming
+// back. The board used to throw the word away, so every teardown started the
+// restart wait and a session somebody typed `exit` into sat for ninety seconds
+// under a banner saying atrium was restarting, while the bar under it said
+// nothing attached.
+//
+// Written down here rather than passed along the call chain, because the
+// teardown is reached from several places and not all of them can see the
+// close: the socket closing, the poll that finds the card no longer
+// supervised, and the runner-exited event are three teardowns of one exit, and
+// any of them can be the one that gets there first.
+//
+// A card AND a timestamp, for the same reason `restartAt` is a timestamp. A
+// reason left lying around would go on answering for a close that happens an
+// hour from now, on a different session.
+let endedCard = "", endedWhy = "", endedAt = 0;
+const endedWindow = 30 * 1000;
+
+function noteAttachEnded(card, why) {
+  endedCard = card || "";
+  endedWhy = why || "";
+  endedAt = Date.now();
+}
+
+// Did this card's attach end because somebody ended it, rather than because
+// atrium went away underneath it.
+function endedOnPurpose(card) {
+  if (!card || endedCard !== card) return false;
+  if (endedWhy !== "runner exited" && endedWhy !== "shell closed") return false;
+  return Date.now() - endedAt < endedWindow;
+}
+
+// THE TERMINAL BEFORE THIS ONE, so an exit has somewhere to land.
+//
+// `atrium.term` is a single slot and every attach overwrites it, so by the
+// time a session ends it holds the card that just died. This is the slot
+// underneath it: the card that was attached before the current one, which is
+// what "the last window" means when somebody exits and expects to be put
+// somewhere rather than nowhere.
+//
+// Written from `openTerm` rather than from `rememberWhereYouAre`, because that
+// one runs on every view change and would push the current card down into the
+// previous slot without anything having changed.
+function rememberPreviousTerm(now) {
+  try {
+    const was = localStorage.getItem("atrium.term") || "";
+    if (was && was !== now) localStorage.setItem("atrium.termPrev", was);
+  } catch (e) {}
+}
+
 // Copy on selection, off by default because it surprises people who drag to
 // scroll. Remembered, like the other preferences.
 let copyOnSelect = localStorage.getItem("atrium.copyOnSelect") === "1";
@@ -239,7 +294,12 @@ function openTerm(task) {
   // Written down so a reload comes back here. Only in the board: a solo
   // window is addressed by its hash and has no business voting on where the
   // board lands.
-  if (!termOnly()) { try { localStorage.setItem("atrium.term", task.id); } catch (e) {} }
+  if (!termOnly()) {
+    // The card being replaced goes into the slot underneath, so an exit has a
+    // terminal to fall back to. See `rememberPreviousTerm`.
+    rememberPreviousTerm(task.id);
+    try { localStorage.setItem("atrium.term", task.id); } catch (e) {}
+  }
   // AND A PLACE TO COME BACK TO. Switching session is the move made most
   // often after switching view, so back that skipped it would step over the
   // half of the journey somebody actually remembers.

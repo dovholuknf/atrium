@@ -5,6 +5,32 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Ending a session no longer claims atrium is restarting, and it puts you back on the terminal you were on
+  before.** Operator: "it should pick the last window if i exit like that".
+
+  Typing `exit` put up `atrium is restarting. waiting for ... to come back` and left it there for ninety
+  seconds, over a bar that said `nothing attached`. Atrium was not restarting and nothing was coming back. The
+  banner cried wolf about the one message that matters when a restart is real, because the real one looks
+  identical.
+
+  **The daemon already said which it was.** `whyClosed` puts `restarting`, `shell closed` or `runner exited` on
+  the websocket close frame, and the board dropped the word on the floor. Every teardown then started the
+  restart wait, and `waitLoop`'s only early exit tested `archived_at`, which a session you just closed is not.
+  The reason is now read, written down where the teardown can see it, and only `restarting` starts a wait.
+
+  The close frame is also believed when it says `restarting`, so a restart is still recognised when the
+  `going-down` event is the half that goes missing.
+
+  **Two other places stopped saying "restarting" without being told one was happening**: an attach that has
+  never opened, which is usually a fixture that has not started yet, and the restore loop on an ordinary
+  reload. Both now say they are reconnecting, and keep the restart wording for a restart that was announced.
+
+  **And the pane is not left empty.** A new `atrium.termPrev` slot holds the terminal attached before the
+  current one, written where `atrium.term` is overwritten, and an exit falls back to it. It refuses in the
+  cases `waitLoop` already refuses in: something else is attached, you have left the terminals view, the card
+  is in its own window, or this window is one terminal. With no previous terminal it says nothing attached
+  rather than picking one at random.
+
 - **A public share can be revoked from the board again. Both ways out of one were broken at the same time.**
 
   The header pill did nothing when clicked and the card menu refused to offer stop, so an operator holding a
