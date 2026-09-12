@@ -351,7 +351,15 @@ function clearTermPane(switching) {
   if (was) {
     const kept = localStorage.getItem("atrium.term");
     rlog("pane torn down. was", was, "remembered", kept || "(nothing)");
-    if (kept === was) waitAndAttach(was);
+    if (kept !== was) return;
+    // AN EXIT IS NOT AN OUTAGE, and the daemon already said which this was.
+    //
+    // Waiting is for a session that is coming back. A session somebody ended
+    // is not coming back, so waiting on it put "atrium is restarting" over an
+    // empty pane for ninety seconds and then gave up. Where it goes instead is
+    // `attachLastInstead`.
+    if (endedOnPurpose(was)) { attachLastInstead(was); return; }
+    waitAndAttach(was);
   }
 }
 

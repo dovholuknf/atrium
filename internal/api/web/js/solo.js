@@ -669,6 +669,78 @@ async function waitAndAttach(card) {
   try { await waitLoop(card); } finally { if (waitingFor === card) waitingFor = ""; }
 }
 
+// ENDING A SESSION SHOULD LEAVE YOU SOMEWHERE, NOT NOWHERE.
+//
+// The other half of not waiting on an exit. Typing `exit` used to leave an
+// empty pane with a false banner over it, and the banner was only half the
+// complaint: the operator's words are "it should pick the last window if i
+// exit like that".
+//
+// WHAT "LAST" MEANS HERE is the terminal that was attached before the one that
+// just ended, which is what `atrium.termPrev` holds. It is not the top of the
+// strip: that list is sorted by name with pinned first, so its last row is
+// whatever the alphabet says and has nothing to do with where you have been.
+//
+// THE REFUSALS ARE THE SAME ONES `waitLoop` MAKES, deliberately. This is the
+// board choosing a terminal for you, which is only welcome when you have not
+// already chosen one yourself. So: not when something is attached, not when
+// you have gone to another view, not into a card that is open in its own
+// window, and never from a popped-out window, which is one session by
+// definition and has no business attaching another.
+//
+// Silence is a valid outcome. If there is no previous terminal, or it is gone
+// too, the pane says nothing attached and the strip is right there. Falling to
+// some other card because one was available would be the board picking at
+// random.
+async function attachLastInstead(gone) {
+  // A window that IS one terminal never falls back, and never writes the
+  // board's slots. Checked before anything is read, so nothing is consumed on
+  // the way to refusing.
+  if (termOnly()) return;
+
+  // The card that just ended stops being where you were, whatever happens
+  // next. Leaving it written down means the next reload comes back to a dead
+  // session and waits out the full ninety seconds for it.
+  try {
+    if (localStorage.getItem("atrium.term") === gone) {
+      localStorage.removeItem("atrium.term");
+    }
+  } catch (e) { return; }
+
+  // The refusals come before the slot is read, so a fallback this window is
+  // not entitled to make leaves the history intact for the window that is.
+  if (term || termTask) { rlog("no fallback: something else is attached"); return; }
+  if (!isViewing("terms")) { rlog("no fallback: not on the terminals view"); return; }
+
+  let prev = "";
+  try { prev = localStorage.getItem("atrium.termPrev") || ""; } catch (e) { return; }
+  rlog("ended on purpose. the terminal before it was", prev || "(none)");
+  if (!prev || prev === gone) { termWait(""); return; }
+  if (poppedOut(prev)) { rlog("no fallback: it is in its own window"); return; }
+
+  // SPENT ON BEING USED, whether or not it works out from here. The slot is
+  // one step of history rather than a queue, and an entry that survived a
+  // failed fallback would send the next exit to a session two exits ago.
+  try { localStorage.removeItem("atrium.termPrev"); } catch (e) {}
+
+  let task = null;
+  try { task = await api("/v1/tasks/" + encodeURIComponent(prev)); }
+  catch (e) { rlog("no fallback: no answer about it:", e.message); return; }
+  if (!task || !task.supervised || task.archived_at) {
+    rlog("no fallback: it has no terminal either");
+    termWait("");
+    return;
+  }
+  // ASKED AGAIN AFTER THE ROUND TRIP. That question went to the daemon and
+  // came back, and in that time you can have clicked a card, left the view or
+  // popped this one out. Attaching on top of any of those is the board
+  // arguing with a decision you just made.
+  if (term || termTask || !isViewing("terms") || poppedOut(prev)) return;
+  rlog("attaching the terminal you were on before,", prev);
+  termWait("");
+  openTerm(task);
+}
+
 async function waitLoop(card) {
   const until = Date.now() + restoreWaitFor;
   let said = false, tries = 0;
@@ -697,7 +769,13 @@ async function waitLoop(card) {
     // an empty pane saying nothing attached while something is happening.
     if (!said || task) {
       said = true;
-      termWait("atrium is restarting. waiting for " + waitName(task) + " to come back…");
+      // ONLY A RESTART IS CALLED A RESTART. This loop is also how a boot comes
+      // back to the session it was reading, and most of those are an ordinary
+      // reload with the daemon up the whole time. Announcing a restart there
+      // is a sentence the operator can see is false, which is worse than no
+      // sentence: it is the same words the real one uses.
+      termWait((restartComing() ? "atrium is restarting. waiting for "
+                                : "waiting for ") + waitName(task) + " to come back…");
     }
     await new Promise(r => setTimeout(r, 1000));
   }
