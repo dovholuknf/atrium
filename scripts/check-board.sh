@@ -162,6 +162,16 @@ if ! node "$here/scripts/test-morph.js"; then
   fail=1
 fi
 
+# The terminal strip's grouping, RUN against a list of sessions. What it
+# asserts is the nesting that comes out of the renderer rather than the tree
+# that goes into it, because a correct tree flattened wrongly is exactly how a
+# single member org ended up drawn inside the group above it, wearing the rest
+# of its own path on the row.
+if ! node "$here/scripts/test-term-nesting.js"; then
+  echo "the terminal strip nests rows under the wrong headings. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.
