@@ -19,6 +19,9 @@
 // `first` and `last` say which end of the axis is at the top, in words. The
 // label alone cannot: "last active" reads as most recent first, and reversed
 // it is the exact opposite under an unchanged label.
+// Every axis below is coarse enough that cards tie on it constantly, and what
+// they fall back to is `cardTieBreak` in core.js, applied where the sort is
+// run rather than written into each axis.
 const STACK_SORTS = {
   activity: {
     label: "last active",
@@ -55,7 +58,7 @@ const STACK_SORTS = {
   },
   name: {
     label: "name", first: "a to z", last: "z to a",
-    cmp: (a, b) => a.display_title.localeCompare(b.display_title)
+    cmp: (a, b) => (a.display_title || "").localeCompare(b.display_title || "")
   },
   project: {
     label: "project", first: "a to z", last: "z to a",
@@ -245,7 +248,9 @@ function paintStack() {
     list.length === allStack.length ? "" : `${list.length} of ${allStack.length}`;
 
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
-  list.sort(s.cmp);
+  // The tiebreak is applied here rather than written into each cmp, so every
+  // axis gets it and a new one cannot be added without it.
+  list.sort((a, b) => s.cmp(a, b) || cardTieBreak(a, b));
   if (stackDesc) list.reverse();
   // Pinned to the top, after the reverse so it stays there in either
   // direction. Sorted is what the pills asked for; pinned is what you asked

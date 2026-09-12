@@ -140,6 +140,36 @@ if (relAt < 0 || !/popOuts\.delete\(m\.task\)/.test(html.slice(relAt, relAt + 70
     "as the claim, so the board keeps refusing to attach to a card whose window has moved on.");
 }
 
+// Rule 7: clicking outside closes a dialog, and never a guarded one.
+//
+// The switcher is what asked for this, being the dialog opened dozens of times
+// a day to answer "where next", and a picker that traps the pointer is the one
+// that gets abandoned. The handler is board-wide because the alternative is a
+// board where light-dismiss is true of whichever dialogs somebody got to.
+//
+// Both halves fail silently in a browser. A test written as `e.target === dlg`
+// closes the dialog when the click landed on its own padding, which reads as
+// the pointer jumping. Dropping the `data-guard` refusal loses a half-filled
+// form to a stray click, and there is nothing afterwards that says what went.
+const lightAt = html.indexOf("if (!inside) dlg.close();");
+if (lightAt < 0) {
+  fail("no dialog light-dismisses on a click outside it. The switcher is opened by reflex and " +
+    "has to be leavable by reflex, and the rule is set for every dialog at once or it is set " +
+    "for none.");
+} else {
+  const body = html.slice(lightAt - 800, lightAt + 80);
+  if (!/getBoundingClientRect\(\)/.test(body)) {
+    fail("light-dismiss decides inside from outside without the dialog's rectangle. The " +
+      "backdrop of a modal belongs to the dialog element, so a click on the dialog's own " +
+      "padded edge reports the dialog as its target and closes a dialog the pointer was in.");
+  }
+  if (!/hasAttribute\("data-guard"\)/.test(body)) {
+    fail("light-dismiss does not exempt `data-guard` dialogs. Those hold edits that are only " +
+      "kept when you press save, so closing one on a click outside is a way to throw work " +
+      "away by twitching.");
+  }
+}
+
 // ── and then the pure functions, RUN rather than read ──────────────
 //
 // Everything above is a shape. These two are logic, they are the identity of a

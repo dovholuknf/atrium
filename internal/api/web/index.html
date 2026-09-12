@@ -48,15 +48,26 @@
     <nav>
       <!-- Stack first and open by default. One ordered list answers "what
            should I look at next"; the board answers "what is where", which is
-           the second question. -->
-      <div class="tab on" data-view="stack">stack<span class="count zero" id="c-wait"></span></div>
+           the second question.
+
+           No count on it. The stack is the view that opens by default, so the
+           number sat next to the list it was counting and told you what was
+           already on screen. It counted the blocked agents that perms counts
+           as well, so one agent waiting to be let through lit two tabs and
+           read as two things to do. The window title and the alert still count
+           that queue, and those are the two that reach you from another tab. -->
+      <div class="tab on" data-view="stack">stack</div>
       <div class="tab" data-view="board">board</div>
-      <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"></span></div>
-      <div class="tab" data-view="runners">runners</div>
-      <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"></span></div>
-      <!-- Last, because it answers a question you go looking for rather than
-           one that interrupts you. -->
+      <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
+           title="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
+      <!-- These two last, because each answers a question you go looking for
+           rather than one that interrupts you. A harness row is edited when it
+           is set up and not looked at again, and auto mode answers most
+           permission requests, so what is left on perms is the audit trail. -->
+      <div class="tab" data-view="runners">runners</div>
+      <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
+           title="requests waiting to be answered"></span></div>
     </nav>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
@@ -401,6 +412,7 @@ Exports honor whatever filter is applied.">?</span>
         <div class="term-help">
           ctrl-c copies when text is selected, interrupts otherwise &middot;
           ctrl-v or shift-insert pastes &middot; ctrl-insert copies &middot;
+          ctrl-a selects the whole buffer, the browser's own cannot &middot;
           ctrl-shift-v opens a box to paste into, for a board on a share &middot;
           shift-enter or ctrl-enter writes a newline instead of sending &middot;
           ctrl-shift-c is not used, the browser takes it for dev tools

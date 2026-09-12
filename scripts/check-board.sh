@@ -172,6 +172,16 @@ if ! node "$here/scripts/test-term-nesting.js"; then
   fail=1
 fi
 
+# The stack's and the strip's sort order, RUN against cards that tie. A sort
+# that leaves ties to whatever order the poll handed it is right in every
+# screenshot and still moves rows on a repaint that changed nothing, which reads
+# as the board losing your place rather than as a sort. On the strip it moves a
+# tab out from under a cursor already on its way to it.
+if ! node "$here/scripts/test-sort-order.js"; then
+  echo "the stack or the strip does not sort the same way twice. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.

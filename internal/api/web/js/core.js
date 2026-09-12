@@ -123,6 +123,27 @@ const STATUS_LABEL = {
 };
 const statusLabel = (s) => STATUS_LABEL[s] || s;
 
+// What every list of cards falls back to once its sort has run out of opinion.
+//
+// Every axis anything here sorts on is coarser than the list it sorts. A dozen
+// cards share a runner, a whole project shares a worktree, and after a quiet
+// night most of them read the same idle second. Cards that tie kept whatever
+// order the last poll handed them, which is not an order at all: the daemon is
+// free to answer two identical questions in two sequences, so a repaint that
+// changed nothing still moved rows, and the one you were reaching for was
+// somewhere else by the time you got there.
+//
+// Oldest first, then the id. The id says nothing to a reader, but it is on
+// every card and never changes, so two cards raised in the same second still
+// land in the same order on every repaint.
+//
+// Here rather than in the stack or the strip because both have the bug and it
+// is the same bug, and a second copy of this would be the half that goes stale.
+function cardTieBreak(a, b) {
+  return (a.created_at || "").localeCompare(b.created_at || "") ||
+    (a.id || "").localeCompare(b.id || "");
+}
+
 const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
 const reviewDlg = document.getElementById("review");

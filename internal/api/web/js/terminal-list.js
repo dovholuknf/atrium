@@ -574,6 +574,48 @@ function termCount(node) {
 // still has its own `.pinbreak`, which is the same idea in a list that has no
 // other headings in it.
 
+// The strip's reading order, in place, before anything is grouped or drawn.
+//
+// Its own function rather than four sorts inside the render, because what it
+// has to get right is not visible in a screenshot: the same sessions must come
+// out in the same order every time they are handed over, and the only way to
+// see that is to run it twice. `scripts/test-sort-order.js` does.
+function termOrder(tasks) {
+  if (sortByActivity) {
+    // Anything waiting on a human first, then by how recently it moved.
+    //
+    // Both halves are coarse: waiting is a yes or a no, and a strip of sessions
+    // nobody has touched since last night all reads the same idle second. What
+    // tied kept the order the poll delivered, and the poll does not promise
+    // one, so the strip reshuffled between two polls that said exactly the same
+    // thing and the tab you were aiming at moved out from under the cursor.
+    tasks.sort((a, b) => {
+      const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
+      if (w) return w;
+      return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
+    });
+  } else {
+    // "Sorted by name" did no sorting at all. The button said one thing and the
+    // branch behind it fell through to whatever `/v1/tasks` happened to return,
+    // so the one mode somebody picks BECAUSE it should hold still was the one
+    // that never did.
+    //
+    // By the label the row actually draws, which is `terminalLabel` falling
+    // back to the title, so the order of the rows is the order of the words on
+    // them. Grouping runs after this and keeps it: a heading nests the rows it
+    // is given, it does not re-sort them.
+    const named = t => terminalLabel(t) || t.display_title || "";
+    tasks.sort((a, b) => named(a).localeCompare(named(b)) || cardTieBreak(a, b));
+  }
+  // Pinned above everything, in either sort. A fixture you have to hunt for
+  // is not one, and this is the whole point of pinning it.
+  //
+  // A second pass rather than the first clause of the one above: sort is stable,
+  // so everything decided a moment ago survives being split into two halves.
+  tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  return tasks;
+}
+
 async function renderTermList() {
   // Cheap and idempotent, and it means the mode survives a reload without
   // finding a second place to call it from.
@@ -606,17 +648,7 @@ async function renderTermList() {
   // running inside a refresh.
   if (termTask && !tasks.some(t => t.id === termTask.id)) clearTermPane();
 
-  if (sortByActivity) {
-    // Anything waiting on a human first, then by how recently it moved.
-    tasks.sort((a, b) => {
-      const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
-      if (w) return w;
-      return (a.idle_seconds || 0) - (b.idle_seconds || 0);
-    });
-  }
-  // Pinned above everything, in either sort. A fixture you have to hunt for
-  // is not one, and this is the whole point of pinning it.
-  tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  termOrder(tasks);
 
   const host = document.getElementById("term-list");
   const toggle = `<div class="termhead">
