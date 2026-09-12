@@ -17,6 +17,12 @@
 // beside one in the new reads as a bug in both.
 bootSkin();
 
+// The mark in the tab strip, in every window for the same reason as the skin.
+// A popped-out terminal is its own document and its own tab, and a board
+// carrying the A beside a terminal carrying the browser's default reads as two
+// different applications.
+wearTheMark();
+
 // The brought themes, in every window and for the same reason as the skin: a
 // popped-out terminal has its own document and its own copy of the table, and
 // one window in somebody's own colours beside one in atrium's reads as a bug in
@@ -95,6 +101,28 @@ async function bootBoard() {
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.
   addEventListener("pagehide", rememberWhereYouAre);
+}
+
+// The A in the tab.
+//
+// Drawn here rather than shipped as a file. `atriumMarkURL` hands back a PNG
+// data URL of the same mark the notifications wear, and a data URL is not
+// fetched, so there is no request, no route to serve it on, and no question
+// about how long a browser holds an old one.
+//
+// 64 pixels for a mark a browser draws at 16 or 32. Halving is the scale a
+// downsample survives best, and the whole image is under two kilobytes of
+// base64 either way.
+//
+// Best effort, and quiet when it fails. A tab with the browser's default mark
+// is what every atrium had until now, so a canvas that refuses to give up a
+// context should cost the icon and nothing else.
+function wearTheMark() {
+  const link = document.getElementById("favicon");
+  if (!link) return;
+  try {
+    link.href = atriumMarkURL(64);
+  } catch (e) {}
 }
 
 // What a lent session says at its bare address.

@@ -186,3 +186,50 @@ const api = async (path, opts) => {
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// ── the atrium mark ─────────────────────────────────────────────────────────
+//
+// An A for atrium: two legs and a crossbar. It is drawn rather than fetched,
+// so there is no image file anywhere and nothing to load before it appears.
+//
+// ONE DRAWING, TWO PLACES. The tab wears it and every desktop notification
+// wears it. A second copy of these dozen lines is how the two end up nearly
+// the same, which reads worse than either being wrong: a mark that shifts
+// between the tab and the notification looks like a rendering fault.
+//
+// The coordinates are written for a 128 box and scaled, because a notification
+// wants a large mark and a tab wants a small one. The line width scales with
+// them, which is the reason to scale at all: a 12px stroke on a 16px icon is a
+// smear.
+function drawAtriumA(g, size) {
+  const s = size / 128;
+  const grad = g.createLinearGradient(24 * s, 96 * s, 104 * s, 32 * s);
+  grad.addColorStop(0, "#00E3B0");
+  grad.addColorStop(1, "#28C2FF");
+  g.strokeStyle = grad;
+  g.lineWidth = 12 * s;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.beginPath();
+  g.moveTo(30 * s, 100 * s);
+  g.lineTo(64 * s, 28 * s);
+  g.lineTo(98 * s, 100 * s);
+  g.moveTo(44 * s, 72 * s);
+  g.lineTo(84 * s, 72 * s);
+  g.stroke();
+}
+
+// The mark on its own navy field, as a PNG data URL.
+//
+// The field is part of the mark. A tab strip is somebody else's background,
+// and the gradient on whatever white or grey a browser is using that day is a
+// shape with no weight to it.
+function atriumMarkURL(size) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  g.fillStyle = "#0B1B2E";
+  g.fillRect(0, 0, size, size);
+  drawAtriumA(g, size);
+  return c.toDataURL("image/png");
+}
+

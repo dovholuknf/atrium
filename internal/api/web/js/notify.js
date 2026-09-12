@@ -575,16 +575,9 @@ function iconDataURL(kind, mark) {
     g.arc(64, 87, 5.5, 0, Math.PI * 2);
     g.fill();
   } else {
-    const grad = g.createLinearGradient(24, 96, 104, 32);
-    grad.addColorStop(0, "#00E3B0");
-    grad.addColorStop(1, "#28C2FF");
-    // An A for atrium: two legs and a crossbar.
-    g.strokeStyle = grad;
-    g.lineWidth = 12;
-    g.beginPath();
-    g.moveTo(30, 100); g.lineTo(64, 28); g.lineTo(98, 100);
-    g.moveTo(44, 72);  g.lineTo(84, 72);
-    g.stroke();
+    // The A, from `drawAtriumA` in core.js, which is the same drawing the tab
+    // wears. Shared rather than copied so the two can never disagree.
+    drawAtriumA(g, 128);
   }
   notifIcons[key] = c.toDataURL("image/png");
   return notifIcons[key];
