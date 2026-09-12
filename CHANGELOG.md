@@ -5,6 +5,47 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The terminal strip and the stack keep rows that tie in the same place twice.** The reported symptom was the
+  strip: sorted by activity, it reshuffled itself between polls. Every axis either list sorts on is coarser
+  than the list it sorts. A dozen cards share a runner, a whole project shares a worktree, waiting is a yes or
+  a no, and after a quiet night most of them read the same idle second. Rows that tied kept whatever order the
+  last poll delivered, and the poll does not promise one, so a repaint that changed nothing still moved rows
+  and the tab you were reaching for was somewhere else by the time the cursor arrived.
+
+  Both now fall back to oldest first, then to the card id, through one `cardTieBreak` in `core.js`. The id
+  says nothing to a reader, but it is on every card and never changes, so two sessions started in the same
+  second still land in the same order on every repaint.
+
+  The strip's other sort was worse than unstable: **"sorted by name" did no sorting at all.** The button said
+  one thing and the branch behind it fell through to whatever `/v1/tasks` had returned, so the one mode you
+  pick because it should hold still was the one that never did. It sorts by the label the row draws, then by
+  the same tiebreak. Pinned rows still come first, and the order underneath them survives.
+
+  The stack's name axis also stopped reading `display_title` straight off the card: one card without it threw
+  inside the sort and took the whole repaint with it. The strip's ordering moved into `termOrder` so it can be
+  run without a poll, and `scripts/test-sort-order.js` runs both lists over rows that tie, from two different
+  starting orders, and over a row with nothing filled in.
+
+- **Clicking outside a dialog closes it, and that is now a rule for the board rather than a fix for one
+  control.** The switcher is what asked for it: it opens on a keystroke, dozens of times a day, to answer
+  "where do I go next", and until now the only ways out were escape and picking something. Something opened
+  that casually has to be dismissible just as casually.
+
+  The rule is which dialogs may do this, and the answer was already written down on the markup. A dialog
+  carrying `data-guard` holds edits that are kept only when you press save, so it keeps its explicit close:
+  light-dismiss on a form that has not been saved is a way to throw work away by twitching. Everything else
+  writes as you change it or writes nothing at all, so it is holding nothing you have not already been given,
+  and it closes when you click away. The switcher writes nothing and qualifies.
+
+  **The trap is that the target is the dialog either way.** With `showModal` the backdrop belongs to the dialog
+  element, so a click outside the content still reports the dialog as its target. The usual `e.target === dlg`
+  test is therefore wrong the moment a dialog has padding: a click on the dialog's own padded edge is a click
+  on the element, and the dialog shuts with the pointer well inside it. The handler compares the click's
+  coordinates against `getBoundingClientRect` instead, and requires the press and the release to both be
+  outside, so selecting text in a dialog and letting go past its edge is not a request to leave.
+
+  `scripts/check-switcher.js` holds both halves as invariants, because both fail silently in a browser.
+
 - **A card can open its directory in a real terminal window on the desktop.** Right click a card, "open in a
   terminal window", and the configured terminal opens there, beside the board.
 

@@ -1101,7 +1101,11 @@ async function refresh() {
     // to it only when there was something to add them to.
     const perms = local ? local.concat(remote) : (remote.length ? remote : null);
     if (waiting) {
-      badge("c-wait", waiting.length);
+      // No tab badge for this list: the stack tab is the list, and the count
+      // it carried was also counting the blocked agents perms counts. The
+      // title and the alert below still read it, and they are what has to
+      // work from another tab.
+      //
       // Who, and what they want. "is waiting on you" was neither: it named a
       // card and then said the one thing true of everything in this list, so
       // it never distinguished an agent that finished its turn from one frozen

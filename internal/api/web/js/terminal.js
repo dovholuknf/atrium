@@ -488,6 +488,24 @@ function openTerm(task) {
     // nothing claims it.
     if (ctrl && e.key === "Insert") { e.preventDefault(); copySelection(); return false; }
 
+    // SELECT ALL. The browser's own ctrl-a cannot do it: a WebGL terminal draws
+    // to a canvas and has no DOM to select, which is the same reason ctrl-f is
+    // taken over below. Without this there is no way to take the whole of a
+    // session's output anywhere.
+    //
+    // ctrl-a and not ctrl-shift-a, because ctrl-shift-a is Tab Search in Chrome
+    // and Edge and the browser takes it before the page sees it, the way it
+    // takes ctrl-shift-c above.
+    //
+    // THE COST IS REAL AND IS ACCEPTED: ctrl-a is readline's start-of-line and
+    // tmux's prefix, and the runner no longer sees it. Letting the operator
+    // rebind it is a separate item.
+    if (ctrl && !e.shiftKey && e.code === "KeyA") {
+      e.preventDefault();
+      term.selectAll();
+      return false;
+    }
+
     // FIND. Both bindings, because both are muscle memory: ctrl-f is the
     // browser's and ctrl-shift-f is what several editors use for "find in
     // everything". Here they open the same bar, since there is one buffer to
