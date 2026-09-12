@@ -425,6 +425,15 @@ async function cardMenu(e, id) {
         "an exit. Deleting one only removes the transcript.",
       act: () => forgetSessions(id, t)
     } : null,
+    // Reading one later is the other half of collecting them, and the reduced
+    // shape is the reason: the transcript as written is not something anybody
+    // reads. `saveSession` lives with the file download it works like.
+    t.worktree ? {
+      label: "save a conversation…",
+      help: "Writes one to a file: what you and the agent said as markdown, " +
+        "or the whole transcript exactly as the runner wrote it.",
+      act: () => saveSession(id, t)
+    } : null,
     // A REAL TERMINAL WINDOW, on the desktop, beside the board. Not a pane:
     // `wt.exe` makes its own window and returns at once, so atrium cannot
     // supervise it and does not try.

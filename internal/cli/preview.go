@@ -63,6 +63,7 @@ const previewDir = ".atrium/preview"
 
 func newPreview() *cobra.Command {
 	var dir, dbPath, from string
+	var live bool
 	var httpPort, agentPort int
 	var fresh bool
 
@@ -82,7 +83,7 @@ func newPreview() *cobra.Command {
 			return runPreview(cmd.Context(), previewOpts{
 				Dir: dir, DBPath: dbPath, From: from,
 				HTTPPort: httpPort, AgentPort: agentPort,
-				Fresh: fresh,
+				Fresh: fresh, LiveBoard: live,
 			})
 		},
 	}
@@ -96,6 +97,13 @@ func newPreview() *cobra.Command {
 	c.Flags().IntVar(&agentPort, "agent", 0, "agent listener port (default: whatever is free)")
 	c.Flags().BoolVar(&fresh, "fresh", false,
 		"throw away this preview's previous cards before starting")
+	// A preview still serves the board the BINARY carries, so looking at a
+	// change to the page means building and reinstalling first. This serves
+	// the worktree's own `internal/api/web` instead, and the change is a
+	// refresh away.
+	c.Flags().BoolVar(&live, "live-board", false,
+		"serve the board out of this worktree's internal/api/web rather than the "+
+			"copy built into the binary, so editing the page needs only a refresh")
 	return c
 }
 
@@ -103,6 +111,7 @@ type previewOpts struct {
 	Dir, DBPath, From   string
 	HTTPPort, AgentPort int
 	Fresh               bool
+	LiveBoard           bool
 }
 
 func runPreview(ctx context.Context, o previewOpts) error {
@@ -181,6 +190,9 @@ func runPreview(ctx context.Context, o previewOpts) error {
 		// of this did exactly that and went after the operator's zrok name
 		// from a process meant to be a preview.
 		Passive: true,
+	}
+	if o.LiveBoard {
+		opts.BoardDir = filepath.Join(dir, "internal", "api", "web")
 	}
 
 	fmt.Printf("preview of %s\n", filepath.ToSlash(dir))

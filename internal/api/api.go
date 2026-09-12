@@ -195,6 +195,15 @@ type Server struct {
 	CancelDispatch func(id string) error
 	DispatchResult func(w http.ResponseWriter, r *http.Request)
 
+	// BoardDir serves the board out of this directory instead of out of the
+	// embed. Empty is the default and stays the shipping path.
+	//
+	// A change to the page then costs a browser refresh rather than a rebuild,
+	// an install, and a restart that takes down the pseudo terminal of every
+	// supervised runner on the machine. Nothing about packaging changes: a
+	// built binary still carries the embedded copy.
+	BoardDir string
+
 	BuildExport func() (any, error)
 	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
 	// is the question somebody restoring a machine actually has, and is the
@@ -351,6 +360,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/tasks/{id}/icon", s.deleteIcon)
 	mux.HandleFunc("GET /v1/tasks/{id}/sessions", s.taskSessions)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/sessions/{session}", s.forgetSession)
+	// A conversation out to a file, whole or boiled down. See
+	// `sessionexport.go` for why this reads outside the card.
+	mux.HandleFunc("GET /v1/tasks/{id}/sessions/{session}/export", s.exportSession)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/probe", s.probeFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/text", s.readText)
 	mux.HandleFunc("PUT /v1/tasks/{id}/files/text", s.writeText)
@@ -418,7 +430,7 @@ func (s *Server) Handler() http.Handler {
 	// happened.
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.pendingMessages)
 	mux.HandleFunc("GET /v1/events", s.events)
-	mux.Handle("/", webHandler())
+	mux.Handle("/", webHandler(s.BoardDir))
 	return mux
 }
 
@@ -452,7 +464,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	halted, cause := s.st.Halted()
 	// `build` is here rather than on its own endpoint because health is the
 	// one thing every page already asks, on a timer and on every reconnect.
-	body := map[string]any{"ok": !halted, "halted": halted, "build": BuildID}
+	body := map[string]any{"ok": !halted, "halted": halted, "build": s.boardID()}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
 	}
@@ -517,6 +529,16 @@ var IsSupervised func(taskID string) bool
 // HasShell reports whether this task has a plain shell open beside its runner.
 // Supplied by the daemon for the same reason.
 var HasShell func(taskID string) bool
+
+// LiveRings counts the scrollback rings that exist right now: the runners
+// atrium owns, and the shells opened beside them. Supplied by the daemon,
+// which holds both maps.
+//
+// It is the MULTIPLIER on the megabytes the settings box asks for. That box
+// takes a number per ring and reads as though it were the whole board's, so
+// the count is what turns the setting into what it costs. A shell counts
+// because it allocates a second ring at the same size.
+var LiveRings func() (runners, shells int)
 
 // CloseShellFor ends a card's shell, called as the card is deleted.
 var CloseShellFor func(taskID string)

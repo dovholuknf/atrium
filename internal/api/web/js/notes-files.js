@@ -518,6 +518,68 @@ function bytes(n) {
   return (n / 1024 / 1024 / 1024).toFixed(1) + "G";
 }
 
+// ── getting a conversation out of a card ────────────────
+//
+// The other thing worth taking off the machine. A transcript is the only
+// record of why the code looks like it does, and it lives in one file, in a
+// format nobody reads, that forgetting the session deletes.
+//
+// Two questions, because they are two decisions and neither has a default the
+// other can be folded into: which conversation, then how much of it. One
+// conversation in the directory answers the first on its own.
+//
+// A PLAIN LINK, like the file download beside it, so the browser streams it
+// straight to disk. A transcript is ninety megabytes by the end of a working
+// day and it must never exist in the page. The name comes off the response.
+async function saveSession(id, t) {
+  let list = [];
+  try {
+    list = (await api(`/v1/tasks/${id}/sessions`)).sessions || [];
+  } catch (e) {
+    toast("could not read them", e.message);
+    return;
+  }
+  if (!list.length) { toast("nothing to save", "no conversations here"); return; }
+
+  let pick = list[0].id;
+  if (list.length > 1) {
+    pick = await askUser({
+      title: "save which conversation?",
+      body: `${list.length} in this directory. The one marked <b>current</b> is ` +
+        `the one this card is on.`,
+      value: (list.find(s => s.current) || list[0]).id,
+      choices: list.map(s => ({
+        value: s.id,
+        label: `${s.title}  ·  ${firstSeen(s.at)}  ·  ${bytes(s.bytes)}` +
+          (s.current ? "  ·  current" : "")
+      })),
+      buttons: [{ label: "cancel", value: null }, { label: "next", value: true, style: "go" }]
+    });
+    if (pick === null) return;
+  }
+
+  const mode = await askUser({
+    title: "how much of it?",
+    body: "The conversation is what you said and what the agent said back, as " +
+      "markdown, with the tool calls, their results and the thinking dropped. " +
+      "Everything is the transcript exactly as the runner wrote it.",
+    value: "md",
+    choices: [
+      { value: "md", label: "the conversation, as markdown" },
+      { value: "raw", label: "everything, as written (.jsonl)" }
+    ],
+    buttons: [{ label: "cancel", value: null }, { label: "save it", value: true, style: "go" }]
+  });
+  if (mode === null) return;
+
+  const a = document.createElement("a");
+  a.href = `/v1/tasks/${id}/sessions/${encodeURIComponent(pick)}/export?mode=${mode}`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 // ── actions on a card ───────────────────────────────────
 //
 // The things you say to an agent often enough to have got tired of typing.

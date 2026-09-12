@@ -27,7 +27,7 @@ func shortSum(raw []byte) string {
 // one feature quietly absent.
 
 func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
-	h := webHandler()
+	h := webHandler("")
 
 	get := func(path string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -63,7 +63,7 @@ func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
 // and with the board split across two dozen files there are now two dozen ways
 // to get half an old board and half a new one.
 func TestTheSplitBoardIsNotCached(t *testing.T) {
-	h := webHandler()
+	h := webHandler("")
 	for _, path := range []string{"/", "/board.css", "/js/core.js"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))

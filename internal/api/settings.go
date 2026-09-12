@@ -103,6 +103,21 @@ func globalAutoView(s *Server) map[string]any {
 	out["scrollback_lines_now"] = scrollbackLines(s.st)
 	out["scrollback_mb_max"] = maxScrollbackMB
 	out["scrollback_lines_max"] = maxScrollbackLines
+	// What that megabyte figure costs across the board, rather than per ring.
+	//
+	// The box asks for a number of megabytes and says nothing about being
+	// multiplied by every live runner and every shell open beside one, so
+	// somebody typing the maximum into it is answering the question they were
+	// asked. Sent as the pieces rather than as a sentence, so the board says
+	// it in the board's own words.
+	//
+	// A CEILING, NOT A BILL. A ring reserves its size and pages in as it is
+	// written, so a runner that has printed a megabyte holds about a megabyte.
+	// This is what the current setting could come to if every live ring filled.
+	runners, shells := liveRings()
+	out["scrollback_runners"] = runners
+	out["scrollback_shells"] = shells
+	out["scrollback_mb_total"] = scrollbackMB(s.st) * (runners + shells)
 	// What the picker will actually use, resolved. An empty box means the
 	// default set, and the person reading it wants to know what that came out
 	// as rather than being told there is a default.

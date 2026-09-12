@@ -46,6 +46,27 @@ section heading is just "what landed in this iteration."
 
   `scripts/check-switcher.js` holds both halves as invariants, because both fail silently in a browser.
 
+- **A launched claude no longer stops to ask about an MCP server it was never going to use.** Starting five
+  workers at once meant dismissing a "continue without this MCP server" dialog in five windows before any of
+  them did anything. One flaky global server, `mcp-gateway` in this case, is one modal per session, and at
+  the scale the board is built for it is sixteen. Each of those sessions is on the board, says `running`, and
+  is waiting on a human nobody told to look, which is worse than an error because there is no error.
+
+  The lever is `--strict-mcp-config`, which limits claude to the servers named by `--mcp-config`. None is
+  passed, so a launched session starts with no MCP servers at all. That is what a worker spawned to edit code
+  in a worktree wants anyway: the operator's global servers are the operator's own tools, and what the worker
+  needs from atrium arrives through its hooks and the `atrium` command, not through a server it has to
+  connect to.
+
+  Nothing points at a config file on purpose. `--mcp-config` naming a path that does not exist is a hard
+  startup failure, so a default that named `.mcp.json` would refuse to start in every worktree without one,
+  and a dead launch is not an improvement on a modal.
+
+  It is on the resume arguments as well as the base ones, because resuming REPLACES the arguments rather than
+  adding to them, and the flag missing there is the same dialog on the second start. A migration puts it on
+  the `claude` row of databases that already exist, since the harness table is seeded once on first run; a
+  row whose arguments have been edited is left alone, because that is somebody's own command line.
+
 - **A card can open its directory in a real terminal window on the desktop.** Right click a card, "open in a
   terminal window", and the configured terminal opens there, beside the board.
 

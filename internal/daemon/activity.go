@@ -29,6 +29,21 @@ const (
 	ActivityThinking = "thinking"
 	ActivityTool     = "tool"
 	ActivityIdle     = "idle"
+	// ActivityCompacting is the one state here with a beginning and no end.
+	//
+	// PreCompact says it started. Claude Code fires no PostCompact, so nothing
+	// says it stopped, and a state nothing clears is a card that spins for the
+	// rest of the day. It is ended by inference instead, two ways, neither of
+	// them a hook:
+	//
+	//   - the next activity event from that session, because every one of them
+	//     goes through `set` and replaces this;
+	//   - `compactingFor` below, when no event arrives at all.
+	//
+	// Kept out of the store on purpose. `store.EventCompacted` records that a
+	// session forgot something, which is a fact about the past and stays true.
+	// This is a guess about right now.
+	ActivityCompacting = "compacting"
 )
 
 // staleAfter is how long an activity is believed.
@@ -38,6 +53,15 @@ const (
 // Long enough not to write off a slow tool, short enough that a dead session
 // stops claiming to be busy.
 const staleAfter = 15 * time.Minute
+
+// compactingFor is how long a compaction is believed when nothing has been
+// heard since it began.
+//
+// Long enough to cover a big context being rewritten, short enough that a
+// session killed mid-compaction stops claiming it. Past this the card reads
+// `thinking`, because compaction happens mid-turn: a session that was
+// compacting and has gone quiet is one still working, not one that finished.
+const compactingFor = 2 * time.Minute
 
 // Tools whose whole purpose is to put a question to the operator.
 //
@@ -146,6 +170,13 @@ func (a *activityTracker) get(taskID string) *Activity {
 	}
 	out := *cur
 	out.Seconds = int64(age.Seconds())
+	// The inferred end of a compaction. See ActivityCompacting: there is no
+	// hook for it, so the badge stops on the clock rather than on an event.
+	// The age is not reset, because the session has been working since the
+	// compaction began and that is what the card is reporting.
+	if out.What == ActivityCompacting && age > compactingFor {
+		out.What = ActivityThinking
+	}
 	// Copied, not shared. The caller serialises this outside the lock, and
 	// handing over the live slice would race a subagent starting.
 	if len(cur.Running) > 0 {

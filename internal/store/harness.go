@@ -107,9 +107,37 @@ func DefaultHarnesses() []Harness {
 		// atrium can attach to, terminate and check the liveness of. Window
 		// mode remains for the one thing it does better: a runner that
 		// outlives the daemon.
+		// A LAUNCHED WORKER STARTS WITH NO MCP SERVERS, WHICH IS WHAT MAKES A
+		// LAUNCH UNATTENDED.
+		//
+		// A globally configured MCP server that fails to connect makes claude
+		// stop at startup and ask whether to continue without it. One flaky
+		// server is then one modal per session, and launching five workers is
+		// five windows to click through before any of them does anything. The
+		// session is on the board, it says `running`, and it is waiting on a
+		// human nobody told to look. That is worse than a failure, because
+		// there is no error to see.
+		//
+		// `--strict-mcp-config` limits claude to the servers named by
+		// `--mcp-config`, and none is passed, so it starts with none at all.
+		// The operator's global servers are the operator's own tools; a worker
+		// spawned to edit code in a worktree has no use for them, and the
+		// project's own `.mcp.json` goes with them for the same reason: what
+		// a launched worker needs from atrium arrives through its hooks and
+		// the `atrium` command, not through a server it has to connect to.
+		//
+		// Nothing is pointed at a file on purpose. `--mcp-config` naming a
+		// path that does not exist is a hard startup failure, so a default
+		// that named `.mcp.json` would refuse to start in every worktree
+		// without one, and trading a modal for a dead launch is not a fix.
+		//
+		// On the resume arguments as well as the base ones, because resuming
+		// REPLACES args rather than adding to them, and a resumed session with
+		// the flag missing is the same modal on the second start.
 		{
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
-			LaunchMode: LaunchPTY, ResumeArgs: []string{"--resume", "{resume}"},
+			LaunchMode: LaunchPTY, Args: []string{"--strict-mcp-config"},
+			ResumeArgs:  []string{"--resume", "{resume}", "--strict-mcp-config"},
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:  []string{"{prompt}"},
 			ModelArgs:   []string{"--model", "{model}"},

@@ -305,6 +305,15 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// dead card is untouched and nothing is dragged back out of a column
 		// somebody put it in.
 		d.turnResumed(task.ID)
+		// And it is a state while it lasts, which is the badge.
+		//
+		// Set AFTER `turnResumed`, which puts a resumed card on `thinking` and
+		// would otherwise overwrite this a line later. What ends it is not a
+		// hook, because there is no PostCompact: see ActivityCompacting.
+		d.act.set(task.ID, ActivityCompacting, "")
+		if a := d.act.get(task.ID); a != nil {
+			d.ap.Broadcast("activity", map[string]any{"task_id": task.ID, "activity": a})
+		}
 		log.Printf("[atrium] %s compacted its context (%s)", in.Agent, orWord(in.Trigger, "unsaid"))
 
 	case "end":
