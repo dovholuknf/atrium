@@ -715,8 +715,47 @@
   /* Live activity. A running tool breathes so a moving card is distinguishable
      from a still one across a whole board, without reading it. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* .chip.live.tool: the teal color already marks a live tool; motion removed (CPU). */
+  /* The mark that moves, on the three states that are going somewhere.
+     A word has to be read and compared against the word on the card beside it,
+     and across sixteen cards that is not a glance. Motion is what a glance
+     resolves, so each moving state gets its own mark with its own movement:
+     a breathing dot for a tool, a bobbing one for thinking, a bar that squeezes
+     for a compaction.
+
+     TRANSFORM AND OPACITY ONLY, and this is the rule the whole thing rests on.
+     Those two are composited, so a moving mark costs no main thread work per
+     frame on a page that also runs a WebGL terminal. Animating a width, a
+     colour or a shadow gives that up and lays out or paints every frame,
+     sixteen times over. That is the trap, and it is why the marks are drawn in
+     `currentColor` rather than tinted per state: the colour never moves.
+
+     Nothing here applies to a card that is finished, dead or shelved, because
+     `activityChip` draws no chip for one at all. Motion means "look here", and
+     a done card is the opposite of that. */
+  .chip.live.tool::before,
+  .chip.live.thinking::before,
+  .chip.live.compacting::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px;
+    border-radius: 50%; background: currentColor; vertical-align: middle;
+  }
+  @keyframes livebreathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.5); opacity: .45; } }
+  @keyframes livebob { 0%, 100% { transform: translateY(-1.5px); } 50% { transform: translateY(1.5px); } }
+  @keyframes livesqueeze { 0%, 100% { transform: scaleX(1); opacity: .95; } 50% { transform: scaleX(.2); opacity: .6; } }
+  .chip.live.tool::before { animation: livebreathe 1.8s ease-in-out infinite; }
+  .chip.live.thinking::before { animation: livebob 1.5s ease-in-out infinite; }
+  /* A bar rather than a dot, squeezing in on itself, because the shape is the
+     word. Left in the live teal and not in the danger colour the hot `ctx %`
+     wears: that chip predicts a compaction, this one reports one, and two
+     facts drawn the same colour read as one fact. */
+  .chip.live.compacting::before {
+    width: 9px; height: 3px; border-radius: 1px;
+    animation: livesqueeze 1.2s ease-in-out infinite;
+  }
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
+  /* Off while the tab is not on screen. Browsers mostly throttle a hidden
+     tab's animations already, and "mostly" across sixteen cards is not a thing
+     to rely on. `stillWhenHidden` puts the class on. */
+  body.tabhidden .chip.live::before { animation: none; }
   .chip.sub { background: rgba(var(--path-rgb),.12); color: var(--path); }
   /* How much context a session has burned, from its statusline.
      Quiet until it matters. Most of a session's life is spent under half a
@@ -744,6 +783,9 @@
   @media (prefers-reduced-motion: reduce) {
     .pulse, .chip.live.tool, .chip.auto, .gauto.on,
     button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
+    .chip.live.tool::before, .chip.live.thinking::before, .chip.live.compacting::before {
+      animation: none; opacity: 1; transform: none;
+    }
   }
   /* A card's text is SELECTABLE, and there is nothing here that stops it.
      This is the whole reason dragging a card is gone: a card carries a path, a

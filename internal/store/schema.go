@@ -1202,6 +1202,42 @@ var migrations = []struct {
 			     AND (model_args IS NULL OR model_args = '' OR model_args = '[]')`,
 		},
 	},
+	{
+		// A LAUNCHED CLAUDE STOPS ASKING ABOUT MCP SERVERS IT DOES NOT NEED.
+		//
+		// A global MCP server that fails to connect makes claude ask, at
+		// startup, whether to carry on without it. One flaky server is a modal
+		// per launched session, so a wave of workers is a row of windows each
+		// waiting on a click before it does anything, all of them `running` on
+		// the board while they wait. `--strict-mcp-config` with no
+		// `--mcp-config` beside it starts the session with no MCP servers at
+		// all, which is what a worker spawned to edit code in a worktree wants
+		// anyway: it reaches atrium through its hooks and the `atrium`
+		// command, not through a server.
+		//
+		// Here as well as in `DefaultHarnesses` because those are seeded once
+		// on first run, and without this the operator's existing `claude` row
+		// keeps popping the dialog on every launch.
+		//
+		// Both lists, because `resume_args` REPLACES `args` rather than adding
+		// to them, and a resumed session missing the flag is the same modal on
+		// the second start.
+		//
+		// Only rows still holding what atrium seeded. An operator who has
+		// edited either list has a command line of their own, and a migration
+		// that rewrote it would be taking that away to fix a problem they may
+		// already have solved. `claude` only: the flag is claude's spelling,
+		// and no other runner would recognise it.
+		name: "0048_strict_mcp_config",
+		stmts: []string{
+			`UPDATE harness SET args = '["--strict-mcp-config"]'
+			   WHERE id = 'claude'
+			     AND (args IS NULL OR args = '' OR args = '[]')`,
+			`UPDATE harness SET resume_args = '["--resume","{resume}","--strict-mcp-config"]'
+			   WHERE id = 'claude'
+			     AND resume_args = '["--resume","{resume}"]'`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

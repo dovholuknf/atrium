@@ -23,6 +23,10 @@ bootSkin();
 // different applications.
 wearTheMark();
 
+// The live badges stop moving when the tab is hidden. In every window, since a
+// popped-out terminal has its own document and its own visibility.
+stillWhenHidden();
+
 // The brought themes, in every window and for the same reason as the skin: a
 // popped-out terminal has its own document and its own copy of the table, and
 // one window in somebody's own colours beside one in atrium's reads as a bug in

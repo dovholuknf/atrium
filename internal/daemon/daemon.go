@@ -68,6 +68,11 @@ type Options struct {
 	// The rule is narrower and it is about STARTUP: opening a database is not
 	// consent to act on what is in it.
 	Passive bool
+	// BoardDir serves the board from this directory instead of the embedded
+	// copy, so changing the page is a browser refresh rather than a restart
+	// that every supervised terminal on the machine pays for. Empty is the
+	// default and is the embed. See api.Server.BoardDir.
+	BoardDir string
 }
 
 // Daemon owns the store, the hub, and both listeners.
@@ -168,6 +173,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
+	d.ap.BoardDir = opts.BoardDir
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
@@ -312,6 +318,9 @@ func New(opts Options) (*Daemon, error) {
 	// it itself would be wrong after every restart.
 	api.HasShell = func(taskID string) bool { return d.sup.getShell(taskID) != nil }
 	api.CloseShellFor = d.CloseShell
+	// How many rings the scrollback setting is being multiplied by right now,
+	// so the settings box can say what the number it holds costs in total.
+	api.LiveRings = d.sup.ringCount
 	// What a runner is doing right now. Held in the daemon, never written down.
 	api.ActivityOf = d.activityFor
 	// How much context it has burned. Held the same way and for the same

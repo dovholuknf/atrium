@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -39,21 +40,42 @@ var web embed.FS
 // only the page would leave the build id identical across a change to any of
 // them, and the reload-on-new-build behaviour above would quietly stop firing
 // for the changes it exists for.
-var BuildID = buildID()
+var BuildID = buildID(embeddedBoard())
 
-func buildID() string {
+// embeddedBoard is the board compiled into this binary.
+func embeddedBoard() fs.FS {
+	sub, err := fs.Sub(web, "web")
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
+
+// board is the tree the board is served and hashed from.
+//
+// A directory when one was named, the embed otherwise. Both are rooted at the
+// board itself rather than at a `web/` above it, so an unmodified directory
+// hashes to the same build id as the embed and the page has nothing to notice.
+func board(dir string) fs.FS {
+	if strings.TrimSpace(dir) == "" {
+		return embeddedBoard()
+	}
+	return os.DirFS(dir)
+}
+
+func buildID(fsys fs.FS) string {
 	sum := sha256.New()
 	// WalkDir visits in lexical order, so the same tree always hashes the
 	// same way. The path goes in as well as the bytes: a file renamed and
 	// nothing else changed is still a different board.
-	err := fs.WalkDir(web, "web", func(path string, e fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if e.IsDir() {
 			return nil
 		}
-		raw, err := web.ReadFile(path)
+		raw, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}
@@ -67,12 +89,21 @@ func buildID() string {
 	return hex.EncodeToString(sum.Sum(nil)[:8])
 }
 
-func webHandler() http.Handler {
-	sub, err := fs.Sub(web, "web")
-	if err != nil {
-		panic(err)
+// boardID is the build id of the board this server is actually serving.
+//
+// Recomputed on every call when the board comes off disk, because that is the
+// whole point of serving it off disk: the files change under a running daemon.
+// A build id frozen at start would be the reload check switched off in exactly
+// the mode that needs it most.
+func (s *Server) boardID() string {
+	if strings.TrimSpace(s.BoardDir) == "" {
+		return BuildID
 	}
-	files := http.FileServer(http.FS(sub))
+	return buildID(board(s.BoardDir))
+}
+
+func webHandler(dir string) http.Handler {
+	files := http.FileServer(http.FS(board(dir)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The board is compiled into the binary, so a rebuild is the only way
 		// it changes, and a cached copy after a rebuild looks exactly like a

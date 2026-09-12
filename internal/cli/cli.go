@@ -94,7 +94,7 @@ func newRoot() *cobra.Command {
 // ── daemon ──────────────────────────────────────────────────────────────────
 
 func newDaemon() *cobra.Command {
-	var agentAddr, humanAddr, dbPath, shutdownToken, locationFile string
+	var agentAddr, humanAddr, dbPath, shutdownToken, locationFile, boardDir string
 	var timeoutSec int
 	var withTUI bool
 	c := &cobra.Command{
@@ -111,6 +111,7 @@ func newDaemon() *cobra.Command {
 				LongPoll:      time.Duration(timeoutSec) * time.Second,
 				ShutdownToken: shutdownToken,
 				LocationFile:  locationFile,
+				BoardDir:      boardDir,
 			}, withTUI)
 		},
 	}
@@ -129,6 +130,13 @@ func newDaemon() *cobra.Command {
 	c.Flags().StringVar(&locationFile, "location-file", "",
 		"where to record this daemon's address (default: the machine's one place for it). "+
 			"name another to run a second daemon without stealing the first one's hooks")
+	// The board is compiled in, so a one-line change to a stylesheet costs a
+	// rebuild, an install, and a restart that takes down every supervised
+	// terminal on the machine. Pointing this at `internal/api/web` makes it a
+	// browser refresh instead.
+	c.Flags().StringVar(&boardDir, "board-dir", "",
+		"serve the board from this directory instead of the copy built into the binary, "+
+			"so a change to the page needs a refresh rather than a restart")
 	return c
 }
 
@@ -138,6 +146,21 @@ func runDaemon(ctx context.Context, opts daemon.Options, withTUI bool) error {
 	}
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Checked here rather than at first request, because the symptom of a
+	// wrong directory is a board that answers 404 for every file, which reads
+	// as a broken daemon rather than as a typo.
+	if dir := strings.TrimSpace(opts.BoardDir); dir != "" {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(abs, "index.html")); err != nil {
+			return fmt.Errorf("--board-dir %s has no index.html in it, so it is not a board", abs)
+		}
+		opts.BoardDir = abs
+		fmt.Printf("board served from %s\n", filepath.ToSlash(abs))
+	}
 
 	d, err := daemon.New(opts)
 	if err != nil {

@@ -506,7 +506,25 @@ function activityChip(t) {
          onclick="event.stopPropagation();toggleSubagents(this)"
          >&#8618; ${a.subagents}</span>`
     : "";
-  return `<span class="chip live ${esc(a.what)}">${label}${age}</span>${sub}`;
+  // Compacting is the one state worth explaining, because the right response
+  // to it is to do nothing: the session is rewriting what it knows, so a
+  // message sent now lands in a conversation that is about to forget it.
+  const why = a.what === "compacting"
+    ? ` title="this session is rewriting its context and is about to forget most of it. ` +
+      `nothing says when a compaction ends, so this clears on the next thing the session does."`
+    : "";
+  return `<span class="chip live ${esc(a.what)}"${why}>${label}${age}</span>${sub}`;
+}
+
+// Stop the live marks while the tab is not on screen.
+//
+// The marks are composited and cost little, but sixteen of them over a WebGL
+// terminal is a count worth not paying for a tab nobody is looking at. One
+// class on the body, and the rules that move anything are switched off by it.
+function stillWhenHidden() {
+  const paint = () => document.body.classList.toggle("tabhidden", document.hidden);
+  document.addEventListener("visibilitychange", paint);
+  paint();
 }
 
 // What the count is made of, for the chip's tooltip. Named where the runner

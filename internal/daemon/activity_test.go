@@ -345,3 +345,44 @@ func TestActivityReachesTheBoardView(t *testing.T) {
 		t.Fatalf("view shows %v, wanted tool/Bash", a)
 	}
 }
+
+// Compacting begins on a hook and ends on nothing, so the timeout is the only
+// thing that stops the badge when the session goes quiet. Past it the card
+// reads `thinking`, because a compaction happens mid-turn.
+func TestCompactingEndsOnTheTimeout(t *testing.T) {
+	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	tr := newActivityTracker()
+	tr.now = clock
+
+	tr.set("t1", ActivityCompacting, "")
+	*at = at.Add(compactingFor - time.Second)
+	if got := tr.get("t1"); got.What != ActivityCompacting {
+		t.Fatalf("activity is %s inside the window, wanted compacting", got.What)
+	}
+
+	*at = at.Add(2 * time.Second)
+	got := tr.get("t1")
+	if got.What != ActivityThinking {
+		t.Fatalf("activity is %s past the window, wanted thinking", got.What)
+	}
+	if got.Seconds != int64(compactingFor.Seconds())+1 {
+		t.Fatalf("age is %ds: the clock restarted, and the session has been working all along", got.Seconds)
+	}
+}
+
+// The other ending, and the one that mostly happens: anything the session does
+// next replaces it. That is what makes the timeout a backstop rather than the
+// mechanism.
+func TestCompactingEndsOnTheNextEvent(t *testing.T) {
+	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	tr := newActivityTracker()
+	tr.now = clock
+
+	tr.set("t1", ActivityCompacting, "")
+	*at = at.Add(5 * time.Second)
+	tr.set("t1", ActivityTool, "Bash")
+
+	if got := tr.get("t1"); got.What != ActivityTool || got.Tool != "Bash" {
+		t.Fatalf("activity is %s/%s after a tool started, wanted tool/Bash", got.What, got.Tool)
+	}
+}

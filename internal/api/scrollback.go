@@ -54,6 +54,16 @@ func ScrollbackBytes(st *store.Store) int {
 	return scrollbackMB(st) << 20
 }
 
+// liveRings is LiveRings with the nil case answered, which is a build with no
+// supervision: no rings exist, so the total is honestly zero rather than
+// missing.
+func liveRings() (runners, shells int) {
+	if LiveRings == nil {
+		return 0, 0
+	}
+	return LiveRings()
+}
+
 func scrollbackMB(st *store.Store) int {
 	return readNum(st, SettingScrollbackMB, defaultScrollbackMB, maxScrollbackMB)
 }

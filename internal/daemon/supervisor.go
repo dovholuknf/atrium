@@ -874,6 +874,15 @@ func (s *supervisor) remove(taskID string) {
 	delete(s.runners, taskID)
 }
 
+// ringCount is how many scrollback rings are live, counted separately because
+// they are two different reasons for the same allocation: a runner atrium
+// owns, and a shell somebody opened beside one.
+func (s *supervisor) ringCount() (runners, shells int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.runners), len(s.shells)
+}
+
 func (s *supervisor) all() []*runner {
 	s.mu.Lock()
 	defer s.mu.Unlock()
