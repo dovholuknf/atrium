@@ -5,6 +5,44 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card can open its directory in a real terminal window on the desktop.** Right click a card, "open in a
+  terminal window", and the configured terminal opens there, beside the board.
+
+  The question that started this was whether `wt.exe` could be a pane's shell, with a fallback chain down to
+  `cmd.exe`. It cannot. `wt.exe` is a terminal EMULATOR, not a shell: it creates its own window with its own
+  ConPTY, hosts a shell inside that, and returns immediately. A supervisor that spawned it would hold a pty
+  nothing ever writes to, show an empty pane, and watch its runner exit within a second, which the reaper
+  would correctly file as a dead card. In the fallback chain it would look like a configuration option and
+  behave like a crash.
+
+  What the question was really asking for is this: the card's directory, in a terminal, on the desktop. That
+  is an action rather than a runner, and `editor_command` is the precedent. So a new `terminal_command`
+  setting carries the same three fences, in `internal/api/termopen.go`:
+
+  **Off until configured, with no default.** There is no guess at which terminal you have. Empty means the
+  menu entry is absent, not dimmed, because nothing on a card could make it work.
+
+  **The operator writes the command, and it is never a shell.** The string is split into a program and its
+  arguments and handed to `exec.Command`, using the same splitter the editor uses. A directory called
+  `x; shutdown` is one argument called `x; shutdown`.
+
+  **The directory is resolved through `internal/safepath`** against the card's own worktree, so symlinks are
+  followed on both sides and what the program receives is a real directory. A worktree that has gone fails
+  here rather than as an argument to a terminal.
+
+  **And the fourth thing, which is the whole point here.** The DAEMON runs the command, so the window appears
+  wherever the daemon is. For an editor that is a caveat. For a terminal it is the difference between a useful
+  button and a confusing one, because a terminal is exactly what somebody reading the board on a laptop over
+  a share would expect to get locally. The menu entry says "on atrium's machine" next to the label, its help
+  says it again, and the toast names the machine the directory is on. A guest holding a lent session never
+  sees the entry at all: `guestHandler` refuses `/v1/settings`, so the board reads no terminal command and
+  offers nothing.
+
+  `{path}` in the command is the directory, and a command without it gets the directory appended. **`wt.exe -d
+  {path}`** is the one worth knowing: it opens a tab in the running Windows Terminal at that directory. The
+  setting is exported and imported with the rest of the configuration, and for now it is set over the API
+  (`POST /v1/settings` with `{"terminal_command": "wt.exe -d {path}"}`) rather than from the settings dialog.
+
 - **Ending a session no longer claims atrium is restarting, and it puts you back on the terminal you were on
   before.** Operator: "it should pick the last window if i exit like that".
 

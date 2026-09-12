@@ -234,6 +234,45 @@ async function resumeNow(id, t, where) {
   openTerm(task);
 }
 
+// Whether a terminal window can be opened on the desktop, and the command that
+// would do it.
+//
+// A MACHINE SETTING, so it comes off `/v1/settings` rather than off the card:
+// every card in the same daemon gets the same answer. Empty means the operator
+// has not configured one, and the entry is absent rather than dimmed, because
+// there is nothing on a card that could fix it.
+//
+// A failure to read it reads as empty, which is also the right answer for the
+// one caller that fails: a guest holding a lent session is refused
+// `/v1/settings` outright, and a guest must not be offered a terminal on
+// somebody else's desktop.
+async function machineTerminal() {
+  try {
+    return ((await api("/v1/settings")).terminal_command || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+// Opens this card's directory in a terminal window, ON THE MACHINE THE SESSION
+// RUNS ON.
+//
+// The same correction the file open needs and more load-bearing here: this does
+// not open a terminal on the machine holding the browser. The daemon runs the
+// command, so the window appears wherever the daemon is, which is where the
+// files are. A terminal is exactly the thing somebody on a laptop reading a
+// board over a share would expect to get locally, so the toast says which
+// machine it went to.
+async function openDesktopTerminal(id) {
+  try {
+    await api(`/v1/tasks/${id}/open-terminal`, { method: "POST" });
+  } catch (e) {
+    toast("could not open a terminal", e.message);
+    return;
+  }
+  toast("opening a terminal", "on the machine this card's directory is on");
+}
+
 function unshelveItem(id, t) {
   const why = cannotResume(t);
   return {
@@ -275,7 +314,13 @@ async function cardMenu(e, id) {
   if (selectionTouches(e.target.closest(".card, .stackrow"))) return;
   e.preventDefault();
   e.stopPropagation();
-  const t = await api(`/v1/tasks/${id}`);
+  // The card, and whether this machine has a terminal command. Together rather
+  // than one after the other: the menu is drawn on a click and the settings
+  // read is not worth a second beat of waiting.
+  const [t, termCmd] = await Promise.all([
+    api(`/v1/tasks/${id}`),
+    machineTerminal()
+  ]);
   // Once, and then held. The menu is drawn on a click and a round trip here
   // would open it a beat late every time.
   if (!allActions.length) await loadActions();
@@ -379,6 +424,21 @@ async function cardMenu(e, id) {
       help: "A directory collects transcripts, most of them two exchanges and " +
         "an exit. Deleting one only removes the transcript.",
       act: () => forgetSessions(id, t)
+    } : null,
+    // A REAL TERMINAL WINDOW, on the desktop, beside the board. Not a pane:
+    // `wt.exe` makes its own window and returns at once, so atrium cannot
+    // supervise it and does not try.
+    //
+    // Offered only when the operator has configured a command, and only on a
+    // card with a directory to open. The note says which machine, because that
+    // is the part a board read over a share gets wrong.
+    t.worktree && termCmd ? {
+      label: "open in a terminal window",
+      note: "on atrium's machine",
+      help: "Runs " + termCmd + " with this card's directory. The window opens " +
+        "on the machine atrium is on, which is the machine holding these files, " +
+        "not the one showing this board. atrium does not watch it.",
+      act: () => openDesktopTerminal(id)
     } : null,
     { sep: true },
     actionItems(t),
