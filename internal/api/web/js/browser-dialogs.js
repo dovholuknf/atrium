@@ -96,6 +96,14 @@ document.getElementById("launch").addEventListener("keydown", e => {
 // One promise-based dialog replaces all three.
 const askDlg = document.getElementById("ask");
 
+// Who is waiting on the dialog that is up.
+//
+// There is ONE dialog element for every question the board asks, so a second
+// question arriving while one is on screen is not a second dialog. It is the
+// same one, rewritten. Held here so that caller can be answered rather than
+// left waiting on a promise nothing will ever settle.
+let askPending = null;
+
 function askClose(resolve, value) {
   askDlg.close();
   resolve(value);
@@ -117,6 +125,30 @@ function answerOf(opts, btnValue, input, choices) {
 // opts: { title, body (html), buttons: [{label, value, style}], input, value }
 function askUser(opts) {
   return new Promise(resolve => {
+    // A question asked while another one is up.
+    //
+    // `showModal` on a dialog that is already open THROWS `InvalidStateError`,
+    // and a caller that does not await this promise never sees the rejection,
+    // so the click looks like it did nothing. The header's share pill was
+    // exactly that: one stale dialog open somewhere and the pill was dead for
+    // the rest of the session.
+    //
+    // The new question wins, because it is the one the operator just asked for.
+    // Whoever was waiting on the old one is answered with a cancel, which is
+    // what they get for any other dismissal.
+    if (askPending) {
+      const prior = askPending;
+      askPending = null;
+      prior(null);
+    }
+    askPending = resolve;
+    // Settling clears the slot first, so a dialog answered normally does not
+    // leave a stale resolver for the next question to cancel. Resolving twice
+    // is harmless, and the close event below always arrives after a button.
+    const settle = v => {
+      if (askPending === resolve) askPending = null;
+      resolve(v);
+    };
     document.getElementById("ask-title").textContent = opts.title || "";
     document.getElementById("ask-body").innerHTML = opts.body || "";
 
@@ -171,22 +203,24 @@ function askUser(opts) {
         if (opts.rememberKey && rememberOn.checked && b.value !== null) {
           skipConfirm(opts.rememberKey, true);
         }
-        askClose(resolve, answerOf(opts, b.value, input, choices));
+        askClose(settle, answerOf(opts, b.value, input, choices));
       };
       actions.appendChild(el);
     });
 
     // Escape cancels, enter takes the last button, which is always the
     // affirmative one. Same reflexes as the native dialog it replaces.
-    askDlg.onclose = () => resolve(null);
+    askDlg.onclose = () => settle(null);
     askDlg.onkeydown = e => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
       const last = buttons[buttons.length - 1];
-      askClose(resolve, answerOf(opts, last.value, input, choices));
+      askClose(settle, answerOf(opts, last.value, input, choices));
     };
 
-    askDlg.showModal();
+    // Already open means the element on screen has just been rewritten with
+    // this question, so it needs showing again like it needs opening twice.
+    if (!askDlg.open) askDlg.showModal();
     if (opts.input) { input.focus(); input.select(); }
   });
 }

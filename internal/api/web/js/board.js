@@ -718,6 +718,7 @@ function cardHTML(t) {
       ${sharedCards.has(t.id) ? `<span class="chip shared"
         title="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
           ". anyone with that address types into it as you would. right click to stop.")}"
+        oncontextmenu="stopSharingChip(event, '${t.id}')"
         >shared</span>` : ""}
       ${t.status === "shelved" ? `<span class="chip attach"
         title="${cannotResume(t)
