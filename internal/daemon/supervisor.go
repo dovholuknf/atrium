@@ -558,9 +558,35 @@ const sayThenEnter = 140 * time.Millisecond
 // Write sends keystrokes to the runner. Nothing arbitrates between two
 // attachers typing at once, which is the same situation as two hands on one
 // keyboard.
+//
+// THE LOOP IS THE POINT. An io.Writer is allowed to take fewer bytes than it
+// was given and return no error, and this is the one funnel every keystroke,
+// paste, message, note and action prompt passes through. Ignoring the count
+// means atrium reports success with the tail of the input gone, and nothing
+// downstream can tell, because the only party that knew was the line that
+// threw the number away. `Say` makes that silence dangerous: it writes the
+// text and then writes the Enter, so a short first write gets a HALF PROMPT
+// SUBMITTED to an agent.
+//
+// NO SLEEP BETWEEN THE PARTS, and that is the constraint the obvious
+// implementation breaks. The burst is load bearing. A TUI decides input is a
+// paste rather than typing from how fast it arrives, `Say` depends on that,
+// and the board sends a paste as one frame for the same reason. A pause here
+// would split one paste into two and undo both. Continue immediately.
 func (r *runner) Write(p []byte) error {
-	_, err := r.pty.Write(p)
-	return err
+	for len(p) > 0 {
+		n, err := r.pty.Write(p)
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			// No progress and no error. Looping again would spin forever, so
+			// call it what it is rather than hang the caller.
+			return io.ErrShortWrite
+		}
+		p = p[n:]
+	}
+	return nil
 }
 
 // noteOperatorTyped records that the PERSON sent these bytes.
