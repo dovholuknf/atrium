@@ -137,6 +137,7 @@ var exportedSettings = []string{
 	api.SettingBoardSkin,
 	api.SettingScrollbackLines,
 	api.SettingEditor,
+	api.SettingTerminal,
 	api.SettingPasteKeep,
 	api.SettingPastePreamble,
 	SettingShellCommand,

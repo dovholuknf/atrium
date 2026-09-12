@@ -52,6 +52,10 @@ func globalAutoView(s *Server) map[string]any {
 		// Not a timer, but read the same way and for the same reason: empty is
 		// a value here, and it means the open button is off.
 		SettingEditor: "editor_command",
+		// And the command that opens a card's directory in a terminal window.
+		// Read the same way and empty means the same thing: the action is not
+		// offered at all.
+		SettingTerminal: "terminal_command",
 		// Where a pasted file lands, and what gets typed in front of its path.
 		// Read as stored, because empty means something for each: the default
 		// in one case, a bare path in the other.
@@ -153,6 +157,10 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// clearing it are different requests, and clearing it is how the open
 		// button gets turned back off.
 		Editor *string `json:"editor_command"`
+		// The command that opens a card's directory in a terminal window, on
+		// the machine atrium is on. A pointer for the same reason as the
+		// editor: clearing it is how the action goes away again.
+		Terminal *string `json:"terminal_command"`
 		// Whether a pasted file is kept in the card, and the words that go in
 		// front of the path. Pointers, again because clearing one is a request.
 		PasteKeep     *string `json:"paste_keep"`
@@ -288,6 +296,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// is more use than refusing to save a line that would work tomorrow
 		// when the tool is installed.
 		if err := s.st.SetSetting(SettingEditor, strings.TrimSpace(*body.Editor)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Terminal != nil {
+		// Stored as typed, minus the surrounding space, and not checked
+		// against anything on disk. `wt.exe -d {path}` is the example worth
+		// knowing: it opens a tab in the running Windows Terminal at that
+		// directory. A command that is not installed fails when somebody
+		// presses the entry and says which program it could not run.
+		if err := s.st.SetSetting(SettingTerminal, strings.TrimSpace(*body.Terminal)); err != nil {
 			s.fail(w, err)
 			return
 		}

@@ -341,6 +341,9 @@ func (s *Server) Handler() http.Handler {
 	// directory, and carried by whatever already carries the board.
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
+	// The card's directory in a terminal window on the daemon's desktop. Not
+	// a pane and not a runner: see `termopen.go`.
+	mux.HandleFunc("POST /v1/tasks/{id}/open-terminal", s.openTerminal)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/zip", s.zipFiles)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/files", s.deleteFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/icon", s.getIcon)
