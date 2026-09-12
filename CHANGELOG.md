@@ -5,6 +5,55 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A public share can be revoked from the board again. Both ways out of one were broken at the same time.**
+
+  The header pill did nothing when clicked and the card menu refused to offer stop, so an operator holding a
+  live public address had no way to give it up from the board at all. The two failures are unrelated in cause
+  and were fixed together because either one alone still leaves a published session with no way off.
+
+  **The pill.** `askUser` calls `showModal` on one shared `<dialog>` element, and `showModal` on a dialog that
+  is already open throws `InvalidStateError`. `openSharing` did not await the dialog, so the rejection had no
+  handler and the click looked like it did nothing, for the rest of the session. A question asked while
+  another is up now rewrites the dialog in place rather than opening it twice, and the caller who was waiting
+  on the old question is answered with a cancel instead of being left on a promise nothing settles. Every path
+  out of `openSharing` is awaited, and a failure raises a toast.
+
+  **The card menu.** `shareItem` built the whole zrok section inside `if (ready("zrok"))`, so the ability to
+  STOP was gated on the same condition as the ability to START. When zrok went away, the stop option went with
+  it, on a card that was still published, and the menu said "no overlay is set up yet", which was false. The
+  rule now: readiness decides what can be started and nothing else. A share that exists can always be stopped.
+  When the overlay is down the menu says so and says that stopping still unpublishes the card, since giving
+  the reserved name back is the only part that needs zrok.
+
+  **The `shared` chip does what it says.** It has always claimed "right click to stop" in its tooltip. Right
+  clicking it now goes straight to the stop confirmation rather than to a card menu that was hiding the stop.
+
+- **The terminal strip's grouping is checked on what it DRAWS, not on the tree behind it.** B2-32 reported
+  single member orgs landing under the group above them: `openziti-test-kitchen` and `netfoundry` drawn inside
+  `github/dovholuknf/atrium`, and `ziti-sdk-csharp` inside `desktop-edge-win`, each wearing the rest of its own
+  path on the row because the renderer had segments it never turned into headings.
+
+  That does not reproduce on the current renderer. `termNodeHTML` builds a container per level and every level
+  gets its heading, so a row is inside the headings that spell its path and nowhere else. The behaviour the
+  report describes belongs to the collapsing renderer that came before it, which folded a chain of only
+  children into one heading and a single row level into its row.
+
+  **What was missing is the test.** The grouping had been verified by reading `termTree`, and a correct tree
+  flattened wrongly renders exactly the way the report describes, so the check could not have caught it.
+  `scripts/test-term-nesting.js` runs the real functions over a list of sessions, parses the markup they
+  produce, and walks the `.tnest` containers around every row to work out which headings the row is actually
+  inside. The invariant is that a row is inside the headings that spell its own path and no others, which is
+  what the indent and the guide line down the left of a group claim on screen.
+
+  It covers the case that fails whenever the flattening is wrong, a group with several members followed by a
+  single member sibling one level shallower, plus a folded org, a session with no path at all, and a chain
+  where every level holds one thing. It was watched to fail: a run based flattener put back in place of
+  `termGroupsHTML` broke 52 assertions and reproduced the reported rows exactly.
+
+  **The grouper does not assume the list arrives in group order.** `termTree` files each session into a map by
+  its own path, so the nesting is the same whichever order the strip is sorted in. The test asserts that by
+  drawing the same sessions forwards, backwards and shuffled.
+
 - **A write into a supervised session now finishes, instead of reporting success with the tail missing.**
   B2-14.
 

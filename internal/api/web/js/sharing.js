@@ -50,10 +50,22 @@ function paintSharing() {
 // a share whose card you can no longer find: pruned, renamed, or on a tab you
 // are not looking at. The token is shown because it is what releases a share by
 // hand if one is ever left on the account.
+//
+// EVERY PATH OUT OF HERE IS AWAITED, and a failure gets said out loud. The pill
+// is one click with one job, so a dialog that refuses to open has to leave
+// something on screen. It used to leave a rejected promise nobody was holding.
 async function openSharing() {
+  try {
+    await paintShareList();
+  } catch (e) {
+    toast("could not open the list", e.message || String(e));
+  }
+}
+
+async function paintShareList() {
   await loadShares();
   if (!sharedCards.size) {
-    tellUser("nothing is shared", "no session is published right now.");
+    await tellUser("nothing is shared", "no session is published right now.");
     return;
   }
   const rows = [...sharedCards.values()].map(s => {
@@ -81,7 +93,7 @@ async function openSharing() {
       <button class="no" onclick="stopSharingById('${esc(s.task_id)}')">stop</button>
     </div>`;
   }).join("");
-  tellUser("what is published",
+  await tellUser("what is published",
     "Each of these is reachable from outside this machine by anyone holding its " +
     "address, and each SURVIVES A RESTART: the address is reserved, so it comes " +
     "back up with the daemon rather than dying with it. Stopping one is the only " +
@@ -89,7 +101,12 @@ async function openSharing() {
 }
 
 // Stopping by id rather than by card, so a share outlives finding its card.
+//
+// The list is what this is clicked from, and the row it was clicked on is about
+// to be a lie either way, so the list goes first and the toast lands on the
+// board where it can be read.
 async function stopSharingById(id) {
+  if (askDlg && askDlg.open) askDlg.close();
   try {
     await api(`/v1/tasks/${id}/share`, { method: "DELETE" });
   } catch (e) {
@@ -102,14 +119,33 @@ async function stopSharingById(id) {
   refresh();
 }
 
+// The `shared` chip's own way out.
+//
+// The chip has told people to right click it to stop for as long as it has
+// existed, and the right click reached the card menu, where the stop was hidden
+// behind the overlay being ready. The menu is honest now, and the chip does
+// what it says on the chip: straight to the same confirmation, one step instead
+// of three. Left clicking it still opens the card menu like the rest of a card.
+function stopSharingChip(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  const t = (cards || []).find(c => c.id === id);
+  stopSharing(t || { id });
+}
+
 // What the menu offers for one card: share it, or stop.
 // Sharing, as a flyout of the ways out this machine actually has.
 //
-// One section per overlay, and A SECTION ONLY APPEARS WHEN THAT OVERLAY IS
-// READY, which is the same condition the gear uses to decide whether sharing
-// is possible at all. Offering a zrok link on a machine with no zrok account
-// is offering a button whose only outcome is a paragraph about accounts,
-// arriving after a confirmation and a wait.
+// One section per overlay, and THE WAYS TO START A SHARE ONLY APPEAR WHEN THAT
+// OVERLAY IS READY, which is the same condition the gear uses to decide whether
+// sharing is possible at all. Offering a zrok link on a machine with no zrok
+// account is offering a button whose only outcome is a paragraph about
+// accounts, arriving after a confirmation and a wait.
+//
+// READINESS GATES STARTING AND NOTHING ELSE. A share that exists can always be
+// stopped, whatever the overlay is doing at this instant. The two used to share
+// one gate, so an overlay that went away took the only control that revokes a
+// public address with it, on a card that was still published.
 //
 // The mode is chosen HERE rather than in the dialog. Public and private are
 // two different things to hand somebody, not two settings of one thing, and a
@@ -128,26 +164,38 @@ function shareItem(t) {
   const ready = k => (overlays || []).some(o => o.kind === k && o.ready);
   const sub = [];
 
-  if (ready("zrok")) {
+  // Stopping comes first and stands outside the readiness test, because this
+  // card is published right now and the address is out there either way.
+  //
+  // Every share is a zrok share today, so it is listed under zrok. A share will
+  // have to say which overlay made it before there is a second kind for this
+  // row to be wrong about.
+  if (live) {
     sub.push({ head: "with zrok" });
-    if (live) {
-      // Every share is a zrok share today, so it is listed here. A share will
-      // have to say which overlay made it before there is a second kind for
-      // this row to be wrong about.
-      // The wording is a warning. Stopping is the only thing that gives the
-      // address up, and it does not come back, so the row should not read like
-      // the reversible half of a toggle. A flyout row cannot carry a help
-      // bubble, so the explanation is in the confirmation instead.
-      sub.push({ label: "stop sharing, for good", act: () => stopSharing(t) });
-    } else {
-      sub.push({ label: "a link anyone can open", act: () => confirmShare(t, "public") });
-      sub.push({ label: "private, they need zrok too", act: () => confirmShare(t, "private") });
+    // The wording is a warning. Stopping is the only thing that gives the
+    // address up, and it does not come back, so the row should not read like
+    // the reversible half of a toggle. A flyout row cannot carry a help bubble,
+    // so the explanation is in the confirmation instead.
+    sub.push({ label: "stop sharing, for good", act: () => stopSharing(t) });
+    // Said only when the overlay is down, because it changes what stopping
+    // achieves. The card stops being published and the daemon forgets the
+    // share, which is the part the operator came for. Handing the reserved name
+    // back needs zrok, so that part waits.
+    if (!ready("zrok")) {
+      sub.push({ quiet: "zrok is not reachable right now" });
+      sub.push({ quiet: "stopping still unpublishes this card" });
     }
+  } else if (ready("zrok")) {
+    sub.push({ head: "with zrok" });
+    sub.push({ label: "a link anyone can open", act: () => confirmShare(t, "public") });
+    sub.push({ label: "private, they need zrok too", act: () => confirmShare(t, "private") });
   }
   if (ready("ziti")) {
     sub.push({ head: "with openziti" });
     sub.push({ quiet: "lending one session is not built yet" });
   }
+  // Only reachable when nothing is published and nothing is ready, so it can
+  // say there is no overlay. It used to be able to say that over a live share.
   if (!sub.length) {
     sub.push({ quiet: "no overlay is set up yet" });
     sub.push({ quiet: "see the gear, expose the board" });
@@ -368,6 +416,7 @@ async function stopSharing(t) {
     return;
   }
   sharedCards.delete(t.id);
+  paintSharing();
   toast("stopped sharing", t.display_title || t.id);
   refresh();
 }
