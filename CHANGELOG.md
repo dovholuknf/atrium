@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The tab wears the atrium A.** B2-01. There was no `<link rel="icon">` on the board at all, so every atrium
+  tab carried whatever a browser shows when nothing is supplied, which the operator reads as a stray bracket.
+
+  **No image file was added, because the mark was already in the code.** The desktop notifications draw an A
+  onto a canvas: two strokes and a gradient from `#00E3B0` to `#28C2FF` on the board's navy. That drawing is
+  now `drawAtriumA` in `js/core.js`, `boot.js` paints it into the tab's icon at load, and the notification
+  code calls the same function. The two cannot drift, because there is one drawing. Nothing is fetched, so
+  there is no new route, no asset, and no question about how long a browser holds an old icon.
+
+  Popped-out terminal windows get it too, for the reason they get the skin: a window in the mark beside one in
+  the browser default reads as two applications.
+
+  **The settable logo is not in this.** `internal/api/icon.go` already takes an uploaded image for a card and a
+  board-wide logo should reuse it, but where a custom logo appears and what empty means are decisions of their
+  own. Filed separately.
+
 - **A launch can name a model, once.** B2-29. Operator: "i really wish i could relaunch u under the fable
   model", "i want that immediately, i also want it to BE EASY to turn on and off, and ONE TIME ONLY sorta
   thing".

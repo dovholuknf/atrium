@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>atrium</title>
+<!-- The tab's mark, with no href on it. The pixels are drawn at boot by
+     `wearTheMark` in js/boot.js, from the same `drawAtriumA` every desktop
+     notification uses, so the tab and the notifications cannot drift apart.
+
+     An empty tag rather than an image: there is no icon file in this repo to
+     point at, and a link with no href asks the browser for nothing. Leaving
+     the tag out entirely would work too, since the script can create one, but
+     then nothing in the markup says the tab has a mark at all. -->
+<link rel="icon" id="favicon">
 <link rel="stylesheet" href="/vendor/xterm.css">
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/xterm-addon-fit.js"></script>
