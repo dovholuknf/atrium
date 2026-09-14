@@ -65,8 +65,9 @@ if (foldKeyAt < 0) {
 }
 const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 
-const names = ["shortLabel", "termPathOf", "termTree", "termRow", "termHeading", "termFolded",
-  "termNodeHTML", "termCount", "termGroupsHTML"];
+const names = ["shortLabel", "termPathOf", "termTree", "termRunnerMark", "termRow",
+  "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
+  "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.
@@ -87,11 +88,16 @@ const esc = (s) => String(s)
 // The label is `terminalLabel`'s job and it has its own tests. Here it is the
 // INPUT: a fixture says what a session's label is and this hands it over.
 const terminalLabel = (t) => t.label || "";
+// `isWaiting` and `over` decide whether a row's mark is drawn as working, and
+// a mark is not nesting: both answer false so every fixture takes the same
+// path through `termRunnerMark` and the markup this parses stays the markup
+// the nesting is about.
 const built = new Function("localStorage", "esc", "terminalLabel", "themeFor", "runnerMark",
-  "poppedOut", "termTask",
+  "poppedOut", "termTask", "isWaiting", "over",
   src + "\nreturn { termGroupsHTML, termPathOf };")(
   localStorage, esc, terminalLabel,
-  () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null);
+  () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null,
+  () => false, () => false);
 const { termGroupsHTML, termPathOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────

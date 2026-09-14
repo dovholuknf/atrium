@@ -264,6 +264,62 @@ func (d *Daemon) carryDir() string {
 // Served rather than replayed for the reason `subscribe` gives at length: a
 // resumed session reprints its own recent history, so pushing this at every
 // attach showed the last hour twice with nothing to say why.
+// handleRawScrollback hands back a card's LIVE ring, unprocessed.
+//
+// THE POINT IS TO STOP RESTARTING THE DAEMON TO LOOK AT A REPLAY. Every change
+// to how scrollback is rendered is in Go, so seeing its effect meant a build, a
+// wind-down, a restart and every session interrupted, and then reading the
+// result by eye out of a terminal pane. That loop is slow enough that the
+// rendering was twice changed on the strength of its unit tests alone, and both
+// times the tests were measuring the wrong thing.
+//
+// These are the exact bytes `attach` replays. Fetch them once, and both
+// renderers can be run over them offline, as many times as it takes, against a
+// real session rather than a fixture somebody wrote to match what they already
+// believed. `?kind=shell` asks for the card's shell instead, the same
+// parameter `attach` takes.
+//
+// NOT ON THE GUEST SURFACE. `overlay_guest.go` is an allowlist and this is not
+// in it, which is the right answer: a lent session is one terminal rendered for
+// somebody, not the raw stream behind it.
+func (d *Daemon) handleRawScrollback(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	run := d.sup.get(taskID)
+	if r.URL.Query().Get("kind") == "shell" {
+		run = d.sup.getShell(taskID)
+	}
+	if run == nil {
+		http.Error(w, "no supervised terminal on this card, so there is no ring to read. "+
+			"what a card held before the last restart is at /scrollback/older.",
+			http.StatusNotFound)
+		return
+	}
+	// `?collapse=0` IS THE ACTUALLY RAW ONE, and the difference matters more
+	// than it looks. `Replay` runs `collapseRedraws`, which keeps the last
+	// frame of a repeated in-place update and throws the earlier ones away.
+	// That is right for a pane and wrong for an investigation: asking this
+	// endpoint "is the missing text in the ring" and getting the collapsed
+	// answer means a frame that WAS in the ring reads as never having arrived.
+	// One wrong conclusion was drawn that way before this parameter existed.
+	buf, widths, rows, wrapped := run.buf.ReplaySized()
+	if r.URL.Query().Get("collapse") == "0" {
+		buf = run.buf.Snapshot()
+	}
+	// The size and the shape go in headers rather than in the body, so the body
+	// stays exactly the bytes and can be fed to a renderer without being
+	// unwrapped first.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Atrium-Rows", strconv.Itoa(rows))
+	w.Header().Set("X-Atrium-Wrapped", strconv.FormatBool(wrapped))
+	cols := make([]string, 0, len(widths))
+	for _, c := range widths {
+		cols = append(cols, strconv.Itoa(c))
+	}
+	w.Header().Set("X-Atrium-Cols", strings.Join(cols, ","))
+	_, _ = w.Write(buf)
+}
+
 func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	c := readCarry(d.carryDir(), taskID, api.ScrollbackBytes(d.st))

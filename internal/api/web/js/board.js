@@ -1284,10 +1284,37 @@ function rememberProject(e, key) {
 // only one of them runs at a time and both need the same answer.
 let lastTasks = [];
 
+// How many supervised sessions are mid-turn, in the header.
+//
+// `activity.what` is what a runner is DOING, held in memory by the daemon and
+// fed by its hooks. `idle` and empty both mean sitting at a prompt, so anything
+// else is a turn in flight. The same test the restart script uses, because it
+// is the same question: how much work would stopping right now interrupt.
+//
+// Painted from whichever list just loaded rather than fetching its own. Every
+// view already asks for the tasks, and a header that polled separately would
+// be a second answer arriving at a different moment from the cards it counts.
+//
+// NOT DRAWN AT ZERO. A chip that says nothing is running is a chip you read
+// every time to learn nothing, and the quiet state is the common one.
+function paintWorking(tasks) {
+  const el = document.getElementById("working");
+  if (!el) return;
+  const n = (tasks || []).filter(t =>
+    t.supervised && t.activity && t.activity.what && t.activity.what !== "idle").length;
+  el.hidden = n === 0;
+  if (!n) return;
+  el.textContent = n === 1 ? "1 working" : n + " working";
+  el.title = n === 1
+    ? "one session is mid-turn. click to go to the terminals"
+    : n + " sessions are mid-turn. click to go to the terminals";
+}
+
 async function renderBoard() {
   const { tasks } = await api("/v1/tasks");
   const all = tasks || [];
   lastTasks = all;
+  paintWorking(all);
   const g = grouper();
 
   const html = COLUMNS.filter(col => {

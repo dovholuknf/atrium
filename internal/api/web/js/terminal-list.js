@@ -373,6 +373,43 @@ function termTree(list) {
   return root;
 }
 
+// The runner's mark, moving while the runner is.
+//
+// The strip is where you look to decide which session to go to, and every row
+// in it looked the same whether the agent was grinding through a build or sat
+// at a prompt. The board answers that with a chip that spells the state out in
+// words, which is right in a column and does not fit in a strip a few hundred
+// pixels wide. So the mark that is already there carries it.
+//
+// CSS RATHER THAN THE ANIMATED IMAGE THIS WAS ASKED FOR, and the reasons are
+// worth stating because a gif is the obvious answer:
+//
+//   - There is no build step here and nothing is served that is not in the
+//     repository, so a gif is a binary to vendor, embed and cache-bust.
+//   - It could not take the session's colour. The mark wears `--tabc`, which
+//     is that terminal's own theme, and a gif is the pixels it was saved as.
+//   - `prefers-reduced-motion` cannot stop a gif. It stops this, by name, in
+//     the block that already exists for the board's live chips.
+//   - The board already animates exactly this state three ways, keyed on the
+//     same field. A fourth spelling of "working" would be a second answer.
+//
+// The state is `t.activity.what`, which is what the board's `activityChip`
+// reads, and the guards are the same: nothing is drawn as working for a card
+// that is waiting on you, finished, or shelved. Activity is held in memory and
+// outlives the status change that filed the card, so a card in `done` can
+// still be carrying a stale `thinking`.
+function termRunnerMark(t) {
+  const mark = runnerMark(t.runner);
+  const a = t.activity;
+  const working = a && a.what && a.what !== "idle" &&
+    !isWaiting(t) && !over(t) && t.status !== "shelved";
+  if (!working) return mark;
+  // Inserted into the class list the shared builder produced, rather than the
+  // builder growing a parameter. `runnerMark` is the board's and is called
+  // from three places that do not want this.
+  return mark.replace('class="rmark"', `class="rmark working ${esc(a.what)}"`);
+}
+
 // One entry in the switcher.
 //
 // A BOARD CARD, the same shape and the same class, because the switcher had
@@ -413,7 +450,7 @@ function termRow(t, deep) {
           <span class="pin ${t.pinned ? "on" : ""}"
             title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${runnerMark(t.runner)}<span
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
             class="tname" title="${esc(full)}">${esc(shown)}</span><span
             class="tshort" title="${esc(full)}"
             >${esc(shortLabel(t))}</span>
@@ -452,7 +489,64 @@ function termRow(t, deep) {
 // around it, and three levels of heading in a narrow strip would multiply
 // whatever is decided there. A label cannot have that problem.
 function termGroupsHTML(list) {
-  return termNodeHTML(termTree(list), 0, "", termFolded());
+  const folded = termFolded();
+  // THE BOARD'S GROUPING, ON THE STRIP. One setting, two surfaces: `grouper`
+  // and `groupingPrefs` are the board's and are read here rather than copied,
+  // so changing how the board groups changes how this groups and there is no
+  // second answer to keep in step.
+  //
+  // PROJECT IS THE EXCEPTION AND STAYS THE TREE. The board draws a project as
+  // one flat heading, `org/repo`, which is right for a column and wrong for a
+  // strip a few hundred pixels wide: eleven entries repeating `github/` is the
+  // complaint `termTree` exists to answer, and it answers it by lifting the
+  // shared prefix into nested headings. Same grouping, drawn for the space it
+  // is in. Every other mode has no path to nest, so it draws flat.
+  const p = typeof groupingPrefs === "function" ? groupingPrefs() : null;
+  const g = typeof grouper === "function" ? grouper() : null;
+  if (!g || !p || (p.mode === "project" && !String(p.by || "").trim())) {
+    return termNodeHTML(termTree(list), 0, "", folded);
+  }
+  return termFlatGroupsHTML(list, g, folded);
+}
+
+// One heading per group, in the grouper's own order.
+//
+// A card can land in SEVERAL groups, which is what `many` means and what
+// grouping by tag does. That is why the rows are collected into a map rather
+// than the list being partitioned: partitioning has to decide where a card
+// with three tags goes, and the answer is all three.
+//
+// The heading keys are prefixed, so folding a group called `dotfiles` here
+// does not also fold a path segment called `dotfiles` in the tree. They are
+// different groupings of the same sessions and a fold is an opinion about one
+// of them.
+function termFlatGroupsHTML(list, g, folded) {
+  const by = new Map();
+  for (const t of list) {
+    let names = [];
+    try { names = g.of(t) || []; } catch (e) { names = []; }
+    if (!names.length) names = [""];
+    for (const n of names) {
+      const key = String(n ?? "");
+      if (!by.has(key)) by.set(key, []);
+      by.get(key).push(t);
+    }
+  }
+  const names = [...by.keys()].sort((a, b) => {
+    try { return g.cmp(a, b); } catch (e) { return a.localeCompare(b); }
+  });
+  return names.map(name => {
+    // A group with no name is the absence of an answer rather than one, and
+    // the tree calls that `uncategorized`. Same word, so the two modes do not
+    // disagree about what nothing is called.
+    const shown = name || "uncategorized";
+    const at = "g:" + shown;
+    const off = folded.has(at);
+    const head = termHeading(shown, at, by.get(name).length, off);
+    if (off) return head;
+    return head + `<div class="tnest">${
+      by.get(name).map(t => termRow(t, false)).join("")}</div>`;
+  }).join("");
 }
 
 // WHICH GROUPS ARE FOLDED, kept in this browser and keyed by the path itself.
@@ -491,7 +585,13 @@ function toggleTermGroup(path) {
 // The count is on the heading because a folded group has to say what is inside
 // it or folding loses information rather than hiding it.
 function termHeading(name, path, count, folded) {
-  return `<button class="tgroup" onclick="toggleTermGroup('${esc(path)}')"
+  // The apostrophe, on top of the HTML escaping. A group name is free text now
+  // that these headings can come from tags and from operator-written code, and
+  // HTML escaping is not JavaScript escaping: `it's mine` closes the quoted
+  // argument and the rest of the attribute parses as nonsense. Same fix, same
+  // reason, as `tagChips` in `stack.js`.
+  const arg = esc(path).replace(/'/g, "&#39;");
+  return `<button class="tgroup" onclick="toggleTermGroup('${arg}')"
       title="${folded ? "show" : "hide"} ${esc(name)}"
       ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
@@ -627,6 +727,10 @@ async function renderTermList() {
   applyTermList();
   let all = [];
   try { all = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  // The header's count, from the list that just loaded. The terminals view is
+  // the one you are most likely to be on while something is working, and it is
+  // the view that does not call `renderBoard`.
+  if (typeof paintWorking === "function") paintWorking(all);
 
   // Terminals, AND the pinned bucket whether or not it is running.
   //
@@ -674,6 +778,18 @@ async function renderTermList() {
         ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
       <span class="grow"></span>
       ${termListButtons()}
+    </div>
+    <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
+         \`paintGroupSegs\` from the same list. Grouping is a way of reading the
+         same sessions rather than a property of one screen, so the control
+         belongs wherever you are when you decide you want it, and there is one
+         setting behind all three.
+         Its own row, because five buttons do not fit beside the sort toggle in
+         a strip this narrow. Hidden in \`mini\`, where there is no room for any
+         of it. -->
+    <div class="termhead termgroups">
+      <span class="barlabel">group</span>
+      <div class="seg groupseg" id="term-group"></div>
     </div>`;
 
   setHTML(host, tasks.length
@@ -706,6 +822,11 @@ async function renderTermList() {
     host.addEventListener("scroll", placeTabBridge, { passive: true });
   }
   wireTermDrag(host);
+  // After the host is replaced, since `setHTML` above threw away the div these
+  // buttons live in. Guarded because the strip draws an empty state with no
+  // header at all, and the board's painter writes into whichever of its three
+  // hosts it finds.
+  if (typeof paintGroupSegs === "function") paintGroupSegs();
 }
 
 // The fold key for the pinned bucket.

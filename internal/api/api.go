@@ -84,6 +84,16 @@ type Server struct {
 	// shows one session, and this is how the older one is reached when it is
 	// wanted.
 	OlderScrollback http.HandlerFunc
+	// RawScrollback hands back a card's live ring exactly as it is, with the
+	// widths and the height in headers.
+	//
+	// A DEVELOPMENT SURFACE, and it earns its place: every change to how
+	// scrollback renders is in Go, so seeing one meant a build and a restart
+	// and every session interrupted. That loop is slow enough that the
+	// rendering was twice changed on unit tests alone, and both times the
+	// tests measured the wrong thing. This is how a renderer gets run over a
+	// real session offline instead.
+	RawScrollback http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -413,6 +423,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.OlderScrollback != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/older", s.OlderScrollback)
+	}
+	// The live ring, unprocessed, so how a replay renders can be worked on
+	// without restarting the daemon to see the result. Registered separately
+	// because it is the supervisor's rather than the carry directory's.
+	if s.RawScrollback != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/raw", s.RawScrollback)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)

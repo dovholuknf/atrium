@@ -403,23 +403,45 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		// The setting is the way back. This path was wired once before on
 		// tests alone and had to be reverted, so there is a switch rather than
 		// a rebuild between the operator and the behaviour they had.
-		if replayFlat(d.st) {
-			if err := c.Write(ctx, websocket.MessageBinary, flatten(backlog)); err != nil {
-				return
-			}
-		} else {
+		var body []byte
+		mode := replayMode(d.st)
+		switch mode {
+		case "raw":
+			// UNTOUCHED, and xterm.js is the terminal. The bytes the runner
+			// wrote go down the socket exactly as it wrote them, so history and
+			// live output are rendered by one emulator instead of two that can
+			// disagree, and nothing here interprets a single sequence. That
+			// last part is what makes it identical for claude, codex, ollama
+			// and a bare shell rather than tuned for whichever one was in front
+			// of somebody when the rendering was last changed.
+			body = backlog
+		case "flat":
+			body = flatten(backlog)
+		default:
 			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
 			sc.apply(backlog)
-			if err := c.Write(ctx, websocket.MessageBinary, []byte(sc.text())); err != nil {
-				return
-			}
+			body = []byte(sc.text())
+		}
+		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
+			return
 		}
 		// AND A LINE UNDER IT, so the boundary between history and live output
 		// is visible. Without it the first redraw after attaching reads as the
 		// history having been corrupted.
+		// SAYS WHICH RENDERING PRODUCED IT, because three are possible and the
+		// answer to "why does this look like that" starts with which one ran.
+		// Naming the mode also means a screenshot carries it, which is most of
+		// how this gets reported.
+		how := map[string]string{
+			"raw":  "exactly as the session wrote it, rendered by this terminal",
+			"flat": "laid out flat so it could not erase itself",
+		}[mode]
+		if how == "" {
+			how = "replayed through a screen so it could not erase itself"
+		}
 		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
-			"[atrium] ---- everything above is history, replayed through a screen so it "+
-			"could not erase itself. live from here ----\x1b[0m\r\n"))
+			"[atrium] ---- everything above is history, "+how+
+			". live from here ----\x1b[0m\r\n"))
 	}
 
 	// Writer: output from the runner.

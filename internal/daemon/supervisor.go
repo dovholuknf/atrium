@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -1184,12 +1187,46 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// starts.
 	d.EnsureCardShare(taskID)
 
+	// EVERY BYTE THE PTY PRODUCES, TO A FILE, BEFORE ANYTHING HERE TOUCHES IT.
+	//
+	// Off unless `ATRIUM_TAP_DIR` names a directory. The question it answers
+	// cannot be answered anywhere else: when text a runner clearly printed is
+	// missing from the pane, the ring, the collapse, the replay and the
+	// renderer are all suspects, and so is the runner never having printed it.
+	// A tap ahead of all of them splits that in one read.
+	//
+	// Append-only, unbounded, and never cleaned up. It is an instrument, not a
+	// feature: a busy session writes megabytes an hour and that is the
+	// operator's to manage. A failure to open it is logged and ignored,
+	// because a diagnostic that can stop a runner starting is worse than no
+	// diagnostic.
+	var tap *os.File
+	if dir := strings.TrimSpace(os.Getenv("ATRIUM_TAP_DIR")); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			log.Printf("[atrium] tap dir %s: %v", dir, err)
+		} else if f, err := os.OpenFile(filepath.Join(dir, taskID+".tap"),
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err != nil {
+			log.Printf("[atrium] tap for %s: %v", taskID, err)
+		} else {
+			tap = f
+			log.Printf("[atrium] tapping %s to %s", taskID, f.Name())
+		}
+	}
+
 	// One reader owns the pty. Everything else subscribes to it.
 	go func() {
+		if tap != nil {
+			defer tap.Close()
+		}
 		chunk := make([]byte, 8192)
 		for {
 			n, err := p.Read(chunk)
 			if n > 0 {
+				// FIRST, so the tap holds what arrived even if everything
+				// below this line is wrong.
+				if tap != nil {
+					_, _ = tap.Write(chunk[:n])
+				}
 				_, _ = r.buf.Write(chunk[:n])
 				r.fanout(chunk[:n])
 			}

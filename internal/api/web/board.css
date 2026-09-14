@@ -1107,6 +1107,22 @@
   .sharing[hidden] { display: none; }
   .sharing::before { content: "\26D4"; font-size: 1.05em; line-height: 1; }
   .sharing:hover { border-color: var(--danger); background: rgba(var(--danger-rgb),.24); }
+  /* HOW MANY ARE MID-TURN. The share chip's shape, so the two read as one row
+     of facts about the board, and the teal rather than the danger colour
+     because work in flight is the normal state and a share is the one that
+     wants looking at. Still, like everything else in this header: the mark on
+     each terminal row already says which, and a header that ticked would be
+     the third thing animating for one fact. */
+  .working {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--teal); border-color: rgba(var(--teal-rgb),.55);
+    background: rgba(var(--teal-rgb),.12);
+  }
+  .working[hidden] { display: none; }
+  .working::before { content: "\25CF"; font-size: .8em; line-height: 1; }
+  .working:hover { border-color: var(--teal); background: rgba(var(--teal-rgb),.22); }
   /* An address beside the button that copies it. */
   .copyrow { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; }
   .copyrow input {
@@ -1484,8 +1500,41 @@
   /* ── what the board has told you ─────────────────────────────────────────
      A log of toasts, newest first. Scrolls, because the useful case is coming
      back to something from an hour ago. */
-  #toastlog { width: min(640px, 94vw); }
-  .toastlog { display: flex; flex-direction: column; max-height: 62vh; overflow: auto; }
+  /* A TRAY DOWN THE RIGHT EDGE, not a box in the middle.
+     A log is a column and the thing it is a log OF is the board behind it, so
+     it takes the height and gives back the width. Centred it covered the cards
+     it was describing and wasted two thirds of its own area on margins.
+     `margin: 0 0 0 auto` is what pins a `<dialog>` to an edge: the default
+     centres it by giving it equal margins, and the top layer has no other
+     anchor. `max-height` and `max-width` are both overridden because the
+     browser's own defaults for a dialog are a fraction of the viewport. */
+  /* `[open]`, AND THE ATTRIBUTE IS LOAD-BEARING. A `<dialog>` is hidden by the
+     browser's own `dialog:not([open]) { display: none }`, and any `display` set
+     without that qualifier beats it: the tray stayed on the right edge with
+     nothing in it, over the terminal's buttons, for the rest of the session.
+     Every other dialog here escapes this by never setting `display` at all. */
+  #toastlog[open] {
+    width: min(420px, 92vw); max-width: none;
+    height: 100vh; max-height: 100vh;
+    margin: 0 0 0 auto; padding: 0;
+    border-radius: 0; border-right: 0;
+    border-left: 1px solid var(--stroke-dim);
+    display: flex; flex-direction: column;
+    animation: trayin .16s ease-out;
+  }
+  /* From off the right edge, so it reads as arriving from where it lives
+     rather than fading in on top of the board. */
+  @keyframes trayin { from { transform: translateX(100%); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #toastlog { animation: none; } }
+  /* The head stays put and the list scrolls under it. In a full height tray
+     the clear button would otherwise be a screen away from the newest entry,
+     which is the one you came for. */
+  /* Tighter than a dialog's, because a tray is narrow and the heading is one
+     word. The shared padding is sized for a form with a sentence under it. */
+  #toastlog .dlg-head { flex: 0 0 auto; padding: 12px 14px; align-items: center; }
+  #toastlog .dlg-head h2 { margin: 0; font-size: var(--fs-md); }
+  #toastlog .dlg-body { flex: 1; min-height: 0; display: flex; padding: 0; }
+  .toastlog { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
   .tlrow {
     display: flex; gap: 10px; padding: 8px 10px;
     border-bottom: 1px solid var(--hairline);
@@ -2294,6 +2343,55 @@
   .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
   .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(var(--warn-rgb),.10); }
 
+  /* ── the mark moves while the runner does ────────────────────────────────
+     A ring around the harness mark, in the mark's own colour, so a row in the
+     strip says whether that session is working without spending any width on
+     saying it. `currentColor` is what makes it the session's colour rather
+     than the board's: the per-runner rules above set `color`, and the ring
+     inherits it.
+
+     ON TOP OF THE MARK, NOT BESIDE IT. A second element in the row is width
+     the strip does not have, and the mark is already the thing the eye lands
+     on first.
+
+     Three states, three motions, the same three the board's live chips use and
+     for the same reasons. Keeping them in step matters more than any one of
+     them being ideal: `thinking` in the strip and `thinking` on the board have
+     to read as one fact about one session. */
+  /* THE MARK ITSELF MOVES, NOT JUST A RING AROUND IT.
+     The first version was a 1.5px ring at `inset: -2px`, which is legible
+     around the stack's 39px mark and invisible around the strip's 21px one.
+     The strip is where this matters: a 21px box is most of what a row has, so
+     the thing to animate is the box, not two pixels outside it. */
+  .rmark.working { position: relative; }
+  .rmark.working::after {
+    content: ""; position: absolute; inset: -3px;
+    border-radius: inherit; pointer-events: none;
+    border: 2px solid currentColor;
+  }
+  /* STILL, NOT BREATHING, AND THAT WAS MEASURED RATHER THAN ARGUED.
+     These pulsed: `opacity` and `transform` only, which are the two properties
+     that animate on the compositor without layout or paint, and which every
+     account of this says are the cheap ones. On this board, with a dozen
+     sessions on screen, the tab went from 7 to 9 percent of a core to 14 to 20.
+     The theory was right about the kind of work and wrong about the amount:
+     each mark is its own compositor layer and a dozen of them next to a WebGL
+     canvas is not free.
+     A ring that is either there or not says the same thing. What is lost is
+     motion catching the eye, and what is bought back is ten percent of a core
+     that a terminal beside it wants. */
+  /* Rewriting its context, which is worth telling apart from working because
+     the right response to it is to do nothing: a message sent now lands in a
+     conversation about to forget it. A broken ring rather than a whole one,
+     and still nothing moving. */
+  .rmark.working.compacting::after {
+    border-color: currentColor transparent currentColor transparent;
+  }
+  /* No `prefers-reduced-motion` block and no `tabhidden` rule. Both stopped an
+     animation, and there is no animation. A ring that is drawn once costs
+     nothing to leave on screen, so a hidden tab and a reduced-motion setting
+     both get exactly what everyone else gets. */
+
   /* A project group in the stack. Its panel carries the color down the left
      edge, the same as a group on the board. */
   .stackgroup { margin-bottom: var(--vs-4); }
@@ -2601,6 +2699,14 @@
   .tl-mini .termsort:not(.tlcycle) { display: none; }
   .tl-mini .termhead { justify-content: center; }
   .tl-mini .termhead .grow { display: none; }
+  /* The group buttons wrap onto as many lines as they need, which in a strip
+     this narrow is two or three. They are five short words and reading them is
+     the whole control. */
+  .termgroups { flex-wrap: wrap; gap: 4px; }
+  .termgroups .barlabel { font-size: var(--fs-xxs); }
+  .termgroups .seg { flex-wrap: wrap; }
+  /* Nothing of it survives `mini`, which is eight characters and a mark. */
+  .tl-mini .termgroups, .tl-off .termgroups { display: none; }
   /* Which of the two names is showing is a CSS question, so both are rendered
      and neither has to be recomputed when the mode changes. */
   .tshort { display: none; }
@@ -3323,6 +3429,12 @@
      command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
   dialog::backdrop { background: rgba(var(--sink-rgb),.74); backdrop-filter: blur(3px); }
+  /* THE TRAY DOES NOT BLUR THE BOARD. Every other dialog here is a thing you
+     came to do, and hiding what is behind it is the point. This one is a list
+     of things that happened TO the board, and reading it while the board is a
+     blur means checking one against the other by memory. Dimmed, not hidden,
+     and a click outside still closes it. */
+  #toastlog::backdrop { background: rgba(var(--sink-rgb),.34); backdrop-filter: none; }
   /* One command, with its own heading and its own copy button. Separated
      rather than run together, because they are pasted one at a time into
      different places. */

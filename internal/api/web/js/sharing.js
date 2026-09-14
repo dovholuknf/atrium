@@ -69,7 +69,12 @@ async function paintShareList() {
     return;
   }
   const rows = [...sharedCards.values()].map(s => {
-    const t = (cards || []).find(c => c.id === s.task_id);
+    // `lastTasks`, which is what the board actually keeps. This read `cards`,
+    // a name nothing defines, so opening the share list threw `cards is not
+    // defined` and the dialog never appeared. A global that does not exist
+    // fails at the moment it is read rather than when it is written, which is
+    // why this survived: the line only runs when something is shared.
+    const t = (lastTasks || []).find(c => c.id === s.task_id);
     const name = t ? (t.display_title || t.id) : s.task_id;
     // An address that is recorded but not currently served. The card has no
     // terminal, so the link somebody holds reaches nothing until a runner
@@ -129,7 +134,8 @@ async function stopSharingById(id) {
 function stopSharingChip(e, id) {
   e.preventDefault();
   e.stopPropagation();
-  const t = (cards || []).find(c => c.id === id);
+  // `lastTasks`, for the same reason as above: `cards` is not a thing.
+  const t = (lastTasks || []).find(c => c.id === id);
   stopSharing(t || { id });
 }
 

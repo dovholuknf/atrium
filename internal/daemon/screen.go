@@ -325,9 +325,38 @@ func (s *screen) text() string {
 		last--
 	}
 
+	// RUNS OF BLANK ROWS COLLAPSE TO ONE, which is the single biggest thing
+	// between this and what a real terminal shows.
+	//
+	// Measured on one session: the native terminal's own capture was 13% blank
+	// lines and this was 56%, so more than half the pane was empty rows to
+	// scroll past. They are not invented. A repaint scrolls the grid, the rows
+	// that go off the top are whatever was on them, and a great many of them
+	// were blank because the region being repainted is taller than the text in
+	// it. Every one is a faithful record of a row that was empty, and a
+	// thousand faithful records of nothing is not what the operator is looking
+	// for.
+	//
+	// ONE IS KEPT, because a blank line between two blocks is how the runner
+	// separates them and dropping it runs them together. Past that a run says
+	// nothing the first one did not.
+	//
+	// The same rule and the same reasoning as `squeezeBlanks` in `flatten.go`,
+	// applied here rather than shared because that one works on bytes and this
+	// works on rows, and the row is the thing that knows it is blank without
+	// having to parse colour back out of it.
+	blanks := 0
 	cur := ""
 	for i := 0; i <= last; i++ {
 		r := rows[i]
+		if rowIsBlank(r) {
+			blanks++
+			if blanks > 1 {
+				continue
+			}
+		} else {
+			blanks = 0
+		}
 		end := len(r)
 		for end > 0 && r[end-1].ch == ' ' || (end > 0 && r[end-1].ch == 0) {
 			end--
@@ -811,26 +840,27 @@ func renderHistory(b []byte, cols int) []byte {
 	return []byte(s.text())
 }
 
-// replayFlat is whether this daemon has been asked for the old flattener.
+// replayMode is how this daemon has been asked to replay history.
 //
 // Read on every attach rather than cached, so flipping it takes effect on the
 // next attach instead of on the next restart. An attach is a websocket upgrade
 // and one settings read is nothing beside it.
 //
-// A STORE THAT CANNOT ANSWER GETS THE NEW PATH, not the old one. A halted
-// store means the daemon is already reporting a failure, and falling back to
-// the behaviour somebody turned off would be a second surprise on top of the
-// first.
-func replayFlat(st *store.Store) bool {
-	v, err := st.Setting(store.SettingReplayFlat)
+// A STORE THAT CANNOT ANSWER GETS THE DEFAULT. A halted store means the daemon
+// is already reporting a failure, and picking some other rendering on top of
+// that would be a second surprise.
+func replayMode(st *store.Store) string {
+	v, err := st.Setting(store.SettingReplayMode)
 	if err != nil {
-		return false
+		return "screen"
 	}
 	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "on", "1", "true", "yes", "flat":
-		return true
+	case "raw":
+		return "raw"
+	case "flat", "flatten", "on", "1", "true", "yes":
+		return "flat"
 	}
-	return false
+	return "screen"
 }
 
 // replayCols selects the last recorded width to match the newest output.

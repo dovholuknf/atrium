@@ -5,6 +5,67 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Scrollback is replayed through a screen instead of being stripped of everything that moves.** Attaching to
+  a card ran its history through `flatten`, which deletes every sequence that could overwrite something. That
+  is the only way an append-only replay can be safe, and it means a cursor move has to be replaced with
+  something: spaces. Measured on a real session, 362 of 864 lines came back padded with trailing whitespace,
+  and every intermediate repaint was printed in sequence, so one tool call appeared three times, twice
+  half-drawn. The same session captured from a native terminal had none of that.
+
+  The bytes now go through a grid, and what comes out is what the terminal would have held plus everything
+  that scrolled off the top of it. Two bugs had to be fixed first, and both were found by measuring against
+  that native capture rather than by reading the code.
+
+  **The attribute state was a string that sequences were appended to.** `\x1b[31m` then `\x1b[32m` does end up
+  green, so appending looks right. claude-code changes colour thousands of times without ever resetting, so
+  one cell ended up carrying `[32m[33m[90m[32m[90m[38;2;255;193;7m` and every run of text re-emitted the
+  pile. It is an attribute state now, one value per attribute, rendered from a reset so a row is safe to move
+  into history out of the order it was drawn in. 208KB of replay became 132KB.
+
+  **The grid grew instead of scrolling.** The ring recorded columns and never rows, so the screen started at
+  24 rows and stretched to whatever row got addressed. A terminal addressed past its last row scrolls, and
+  what goes off the top is history that can never be written on again. A grid that grows keeps those rows
+  addressable, so the next repaint lands on them and they are gone. That is where the expanded file listings
+  went, the ones claude-code prints and then collapses to `+31 lines (ctrl+o to expand)`.
+
+  Rows ride in the ring's width marks now, `ReplaySized` hands them over, and the grid will not grow past a
+  recorded height. Against the native capture: `flatten` preserved 170 of 361 lines, the screen model
+  preserved 151 before this and 164 after, with no padded lines instead of 219. Height is not a small effect
+  and was being guessed: replayed at 120 rows the same capture scores 4.4%.
+
+  **`replay_flat = on` puts the flattener back, without a rebuild.** This change was made once before on the
+  strength of its tests, looked excellent by every number, and had to be reverted the moment somebody read the
+  pane. Read per attach, so flipping it takes effect on the next attach.
+
+- **A subagent finishing no longer reports the card as ready.** A subagent is a session of its own: same
+  directory, same settings, same `ATRIUM_AGENT_NAME`, and the name is how every hook says which card it
+  belongs to. So the end of a subagent arrived looking exactly like the end of the turn that spawned it, the
+  card moved to `ready`, and the board rang to say an agent wanted you while the agent was still working. The
+  turn hook reads `hook_event_name` and answers `keepGoing` to anything that names itself and does not say
+  `Stop`. The count of running subagents is kept by its own pair of hooks and is untouched.
+
+- **Everything the board has told you is kept.** A toast is gone in seconds, which is right for a toast and
+  wrong as the only copy: a share address, a save that failed, a card that just asked for something. A bell in
+  the header opens the last 200, newest first, with repeats folded into a count and a badge for what has
+  arrived since it was last opened. Rows that name a card open it. Held in this browser, because what you were
+  told is a fact about this screen rather than about the work.
+
+- **Escape closes the file drawer, and once is enough.** Neither the drawer nor the editor inside it is a
+  `<dialog>`, so neither got escape for free. One layer per press. Clicking a path in the terminal opens the
+  drawer and then the editor on top of it, and closing the editor now closes a drawer that was opened that
+  way, because two presses to undo one click is one press too many. A drawer opened from the button stays.
+
+- **The terminal stopped flickering when the resize handle was hovered.** The pane holds a WebGL canvas and had
+  no compositor layer of its own, so anything a sibling repainted made the compositor rebuild the canvas with
+  it. Hovering a 6px handle was enough, and so was leaving it. Worth recording what did NOT fix it, since all
+  three are the obvious answers: removing the hover transition, `contain: paint` on the pane, and promoting the
+  handle. The grip is a SIBLING, so containing the pane isolates what is inside it and says nothing about a
+  neighbour dirtying the layer they share. Promoting the pane fixed it.
+
+- **The switcher stopped being offered an email alias.** Its input was the one filter field on the board still
+  typed `text`; the other three are `search`, which Chromium's autofill skips. `autocomplete="off"` does not
+  help and has not since 2015.
+
 - **Starting a second agent in a directory is a right click and a runner, not a form.** The card menu's "start
   a session here" opened the launch dialog with the directory filled in, and the other nine fields waiting.
   Every one of them is optional, so the common case (put a codex in this folder beside the claude already

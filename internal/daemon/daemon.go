@@ -187,6 +187,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.OpenShell = d.handleShellOpen
 	d.ap.ShutShell = d.handleShellClose
 	d.ap.OlderScrollback = d.handleOlderScrollback
+	d.ap.RawScrollback = d.handleRawScrollback
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.SendNote = d.handleSendNote
