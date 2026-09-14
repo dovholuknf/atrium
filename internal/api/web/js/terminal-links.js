@@ -660,6 +660,10 @@ function connectTerm(taskID) {
   // parameter is only ever added rather than always sent. That keeps the
   // ordinary URL identical to what it was before shells existed.
   const kind = termKind === "shell" ? "?kind=shell" : "";
+  // A new socket says what it is attached to for itself. Held over, this would
+  // be the previous session's answer applied to this one, and switching from
+  // an agent to a card's shell would bracket a paste the shell never asked for.
+  termCaps = {};
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the
@@ -708,7 +712,11 @@ function connectTerm(taskID) {
     // on the next line scrolls a buffer that has not grown yet, which is the
     // same off-by-one-echo mistake `sendInput` was making on its own.
     noteScrollAct("output");
-    if (typeof e.data === "string") { term.write(e.data, followScroll); return; }
+    // Output is binary, so text is the daemon. See `takeTermCaps`.
+    if (typeof e.data === "string") {
+      if (!takeTermCaps(e.data)) term.write(e.data, followScroll);
+      return;
+    }
     term.write(new Uint8Array(e.data), followScroll);
   };
   termSock.onclose = async ev => {
@@ -1233,7 +1241,7 @@ function sendCompletion(prefix, entry) {
 // same forty characters, so the eye has nothing to sort on. The shared part is
 // said once, in the heading, and each row carries only its own tail.
 function showCompletions(entries, what) {
-  const host = document.querySelector(".term-pane") || document.body;
+  const host = document.getElementById("term-pane") || document.body;
   let el = document.getElementById("t-complete");
   if (!el) {
     el = document.createElement("div");

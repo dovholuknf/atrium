@@ -229,6 +229,21 @@ type Task struct {
 	// Free text on purpose. A fixed list would be atrium deciding what kinds
 	// of work exist.
 	Tags []string `json:"tags"`
+	// Throwaway marks a card whose directory atrium made and will delete.
+	//
+	// The whole of the feature is this flag plus where it is read: the launch
+	// makes a temporary directory, and when the session ends the directory,
+	// the card and the conversation all go. Nothing else about the card is
+	// special, which is why file transfer, tags, terminals and the rest need
+	// no case for it.
+	//
+	// PromoteTo is where that directory goes instead, when somebody works in a
+	// throwaway for an hour and decides it mattered. Set while the session is
+	// still running and acted on after it ends, because a directory cannot be
+	// moved out from under the process whose working directory it is. Empty
+	// means nothing was promoted and the delete stands.
+	Throwaway bool   `json:"throwaway,omitempty"`
+	PromoteTo string `json:"promote_to,omitempty"`
 	// Pinned keeps a card at the top of every list and always in the terminal
 	// switcher. Some sessions are permanent fixtures and hunting for them in
 	// activity order is the wrong shape.

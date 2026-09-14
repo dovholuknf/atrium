@@ -67,7 +67,7 @@ function placeTabBridge() {
   // nothing on the other end of it.
   if (c.bottom <= lr.top + 2 || c.top >= lr.bottom - 2) { bridge.hidden = true; return; }
 
-  const pane = document.querySelector("#term-layout .term-pane");
+  const pane = document.getElementById("term-pane");
   const p = pane ? pane.getBoundingClientRect() : { left: lr.right };
   // From just inside the card's right edge to just inside the pane's left
   // one, so it overlaps both and no seam shows at either end.

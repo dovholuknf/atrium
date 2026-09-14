@@ -580,6 +580,39 @@ if (/function navPush\(/.test(html)) {
   }
 }
 
+// Rule: THERE IS ONE PANE, AND IT IS FOUND BY ID.
+//
+// This is `document.querySelectorAll(".term-pane").length === 1`, asked of the
+// file instead of a browser. The class is declared in exactly one place in the
+// delivered page, so a second declaration -- a second `<section>`, or markup
+// built in the script -- is counted here and named.
+//
+// It matters more than a duplicated help line, which is only the visible part
+// of it. The pane used to be reached by `querySelector(".term-pane")` from five
+// places, and that returns the FIRST match: with two in the tree, `paintPaneBg`
+// themes one, `placeTabBridge` measures another and `clearTermPane` tidies a
+// third, all without an error anywhere. So the lookups go by id, which cannot
+// be ambiguous, and the class query is refused below so it cannot come back.
+const declared = (html.match(/class="[^"]*\bterm-pane\b[^"]*"/g) || []).length;
+if (declared !== 1) {
+  fail(`the page declares .term-pane ${declared} times. There is one terminal, so there is ` +
+    `one pane: a second one takes the theme, the tab bridge or the teardown to whichever ` +
+    `section happens to come first in the document.`);
+}
+if (!/<section class="term-pane" id="term-pane">/.test(html)) {
+  fail("the terminal pane has no `id=\"term-pane\"`. Every lookup asks for it by id, so " +
+    "without it the theme, the bridge and the teardown all silently find nothing.");
+}
+// The script alone, so the markup's own comment about this rule is not read as
+// a breach of it.
+const paneScript = html.slice(html.indexOf("\n<script>\n"), html.lastIndexOf("\n</script>\n"));
+const byClass = (paneScript.match(/querySelector(?:All)?\("[^"]*\.term-pane/g) || []).length;
+if (byClass) {
+  fail(`${byClass} lookup(s) still find the pane by class. \`querySelector\` returns the first ` +
+    `match, which is the right pane only while there is exactly one. Use ` +
+    `\`document.getElementById("term-pane")\`.`);
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);

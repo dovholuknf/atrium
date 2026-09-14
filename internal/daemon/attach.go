@@ -37,6 +37,62 @@ type attachIn struct {
 	S    string `json:"s"`
 }
 
+// attachCaps is what the board cannot work out from the bytes, sent once as
+// the first message of an attach.
+//
+// The only direction that had a control channel was browser to daemon, because
+// output needs no framing. This is the first thing the OTHER way, and it is
+// text where output is binary, which is how the board tells them apart without
+// a framing layer either.
+type attachCaps struct {
+	T string `json:"t"`
+	// BracketedPaste is whether this card's runner asked for bracketed paste,
+	// read off its harness row rather than out of the output stream.
+	//
+	// WHY IT CANNOT BE INFERRED, and this is the whole of `B2-18`. The board's
+	// evidence was the `\x1b[?2004h` the runner emits once at startup, parsed
+	// out of the replayed scrollback. Once the ring has wrapped past it a
+	// freshly opened pane has no evidence at all and pastes raw, so a long
+	// paste is delivered to the runner a line at a time and the first line is
+	// submitted while the rest lands in a prompt that is now busy. The ring is
+	// entitled to discard that byte, so the answer has to come from somewhere
+	// that is not the stream.
+	//
+	// NOT THE DAEMON TRACKING THE MODE. This says what the runner is, which is
+	// fixed for the life of the process and is already configuration; it does
+	// not say what the terminal is doing right now. A pane that sees a real
+	// enable go past still believes that too, so a runner nobody has declared
+	// behaves exactly as it did before.
+	BracketedPaste bool `json:"bracketed_paste"`
+}
+
+// bracketedPasteFor answers `attachCaps.BracketedPaste` for one card.
+//
+// FALSE WHENEVER THE ANSWER IS NOT KNOWN, which covers a card with no harness
+// row, a runner recorded by a hook that atrium never launched, and a database
+// that cannot be read. Sending the markers to something that never asked for
+// them puts `200~` on screen, so an unknown runner keeps the old behaviour of
+// believing the stream and nothing else.
+//
+// A SHELL IS ALWAYS FALSE. `kind=shell` is not the harness's runner, it is a
+// command line, and a shell turns the mode on and off around each prompt
+// rather than for its whole run. It also re-emits the enable constantly, so the
+// stream is a good answer there and this one would be a guess.
+func (d *Daemon) bracketedPasteFor(taskID string, shell bool) bool {
+	if shell {
+		return false
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || t == nil || t.Runner == "" {
+		return false
+	}
+	h, err := d.st.Harness(t.Runner)
+	if err != nil || h == nil {
+		return false
+	}
+	return h.BracketedPaste
+}
+
 // WHICH OF A CARD'S TWO TERMINALS.
 //
 // A card may hold the runner's terminal and one shell (`shell.go`). They are
@@ -288,6 +344,20 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		}
 	}()
 
+	// WHAT THIS RUNNER IS, before anything is drawn.
+	//
+	// Ahead of the size wait rather than beside the backlog, because a paste
+	// can happen the moment the pane is open and this must not be behind half
+	// a second of waiting for a client that may never say how big it is. It is
+	// one small text message and the board holds it for the life of the
+	// socket.
+	if caps, err := json.Marshal(attachCaps{
+		T:              "caps",
+		BracketedPaste: d.bracketedPasteFor(taskID, shell),
+	}); err == nil {
+		_ = c.Write(ctx, websocket.MessageText, caps)
+	}
+
 	// THE SIZE BEFORE THE BACKLOG, and this order is the fix.
 	//
 	// The browser sends its size as its first frame, but a frame arrives after
@@ -337,19 +407,36 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					"has been overwritten. raise it in settings, scrollback ----\x1b[0m\r\n",
 				humanBytes(int64(api.ScrollbackBytes(d.st))))))
 		}
-		// FLATTENED, because sending it whole was not enough on its own.
+		// REPLAYED THROUGH A SCREEN, because the history was COMPOSED rather
+		// than appended and the meaning of a repaint is where it landed.
 		//
-		// The history is full of absolute cursor moves and erases, and on
-		// replay each one lands on the history already on screen rather than
-		// on the line it was drawn to replace. A megabyte arrived and erased
-		// itself down to two screens. `flatten` takes the ability to overwrite
-		// away and leaves the text.
+		// This used to call `flatten`, which dropped every sequence that could
+		// move the cursor onto a line already written. That kept the text and
+		// lost the layout, and three separate failures came out of it: a patch
+		// to columns 7 onward of a row arrived as the orphan `do…)`, a spinner
+		// redrawn beside a prompt arrived as one line per frame, and a prompt
+		// redrawn while somebody typed arrived as `f`, `ou`, `nd`, `it`.
+		//
+		// None of those is fixable by another rule, because the missing
+		// information is not in the byte stream. It is on the screen the runner
+		// could see. `screen.go` keeps that screen, and what scrolls off it is
+		// the history. Measured on twelve real sessions: 4,921 `Forging…`
+		// frames become 3.
+		//
+		// AT THE WIDTH THE HISTORY WAS COMPOSED AT, not the width of the
+		// browser asking. A repaint aimed at column 100 means nothing against a
+		// grid 80 wide, and `widths` is the record of what it was written for.
 		//
 		// The LIVE stream below is untouched, so a terminal user interface
 		// works normally from here on.
 		if note := widthNote(widths, wantCols); note != "" {
 			_ = c.Write(ctx, websocket.MessageBinary, []byte(note))
 		}
+		// NOT THROUGH THE SCREEN MODEL, and that is a decision rather than an
+		// oversight. `screen.go` exists, it is tested, and wiring it here made
+		// the pane worse in the operator's hands on the first attempt. It is
+		// left unwired until somebody has read a real pane through it and said
+		// otherwise. See the head of `screen.go`.
 		if err := c.Write(ctx, websocket.MessageBinary, flatten(backlog)); err != nil {
 			return
 		}

@@ -421,6 +421,10 @@ const PAIRS = [
     on: [...COL, "var(--warn-bg-soft)"], floor: LABEL },
   { what: "the text of a refusal", kind: "text", fg: "var(--danger-text)",
     on: [...CARD, "rgba(var(--danger-rgb),.24)"], floor: READ },
+  // The perms tab's count, which is a number read at a glance from across the
+  // room and wears the refusal colour over the header rather than over a card.
+  { what: "the perms tab's blocked count", kind: "text", fg: "var(--danger-text)",
+    on: [...PAGE, "rgba(var(--danger-rgb),.24)"], floor: READ },
   { what: "an accent on a card", kind: "text", fg: "var(--teal)", on: CARD, floor: LABEL },
   { what: "a path on a card", kind: "text", fg: "var(--path)", on: CARD, floor: LABEL },
   { what: "a wait timer on a row", kind: "text", fg: "var(--warn)", on: CARD, floor: LABEL },

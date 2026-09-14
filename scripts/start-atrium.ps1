@@ -27,17 +27,89 @@ param(
     # decisions, and this script exists for the moment when you want the
     # smaller one.
     [switch]$InstallStaged,
+    # Where atrium is installed, when it is not under the account running this.
+    # `C:\Users\someone\.atrium`, the folder holding `bin` and `atrium.db`.
+    [string]$AtriumHome,
+    # Start it anyway when the install belongs to another account. See the
+    # refusal below for what that costs.
+    [switch]$Force,
     # How long to wait for the board to answer before giving up on it.
     [int]$TimeoutSeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
 
-$bin = Join-Path $env:USERPROFILE '.atrium\bin'
+# WHERE ATRIUM IS, WHICH IS NOT NECESSARILY UNDER WHOEVER RAN THIS.
+#
+# This used to be `$env:USERPROFILE\.atrium` and that is wrong on the machine it
+# was written for. The daemon runs as its own account so that agents are not
+# running as the human, which is the whole point of rooms. The human then opens
+# a shell as himself, the daemon dies, he runs this, and it reports "there is no
+# atrium at C:\Users\<him>\.atrium\bin\atrium.exe" -- which is true, useless,
+# and names a path nobody installed anything to.
+#
+# Resolved in order of how much somebody has said: an explicit switch, then an
+# environment variable, then the running account, then every account on the
+# machine. The last one is a search rather than a guess, and it says what it
+# found.
+function Find-AtriumHome {
+    param([string]$Explicit)
+
+    if ($Explicit) {
+        if (Test-Path (Join-Path $Explicit 'bin\atrium.exe')) { return $Explicit }
+        throw "there is no atrium under $Explicit"
+    }
+    if ($env:ATRIUM_HOME -and (Test-Path (Join-Path $env:ATRIUM_HOME 'bin\atrium.exe'))) {
+        return $env:ATRIUM_HOME
+    }
+    $mine = Join-Path $env:USERPROFILE '.atrium'
+    if (Test-Path (Join-Path $mine 'bin\atrium.exe')) { return $mine }
+
+    # Other accounts. A profile this user cannot read throws rather than
+    # returning nothing, so each one is tried on its own.
+    $found = @()
+    foreach ($p in (Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)) {
+        try {
+            $candidate = Join-Path $p.FullName '.atrium'
+            if (Test-Path (Join-Path $candidate 'bin\atrium.exe')) { $found += $candidate }
+        } catch { }
+    }
+    if ($found.Count -eq 1) { return $found[0] }
+    if ($found.Count -gt 1) {
+        Write-Host "atrium is installed under more than one account:"
+        $found | ForEach-Object { Write-Host ("  " + $_) }
+        throw "say which with -AtriumHome"
+    }
+    throw "no atrium install found under any account on this machine"
+}
+
+$home_ = Find-AtriumHome -Explicit $AtriumHome
+$bin = Join-Path $home_ 'bin'
 $exe = Join-Path $bin 'atrium.exe'
 $staged = Join-Path $bin 'atrium.next.exe'
 $aside = Join-Path $bin 'atrium.old.exe'
-$addressFile = Join-Path $env:LOCALAPPDATA 'atrium\daemon.json'
+
+# The address file sits in the OWNER's local app data, not in this user's.
+# Deriving it from `$env:LOCALAPPDATA` had the same bug as the line above and
+# the same symptom: a default database, an empty board, and what reads as data
+# loss.
+$owner = Split-Path (Split-Path $home_ -Parent) -Leaf
+$addressFile = Join-Path (Split-Path $home_ -Parent) 'AppData\Local\atrium\daemon.json'
+
+# STARTING SOMEBODY ELSE'S DAEMON MAKES IT YOURS, and that is not a small thing.
+#
+# The process would run as whoever ran this. Every agent it spawns inherits that
+# account, every file it writes is owned by it, and the database under another
+# user's profile may not even be readable. A board that comes up wearing the
+# wrong identity is worse than no board, because it looks like it worked.
+if ($owner -ne $env:USERNAME -and -not $Force) {
+    Write-Host ("atrium is installed under " + $owner + " and you are " + $env:USERNAME + ".")
+    Write-Host "starting it from here would run the daemon, and every agent it spawns, as you."
+    Write-Host "start it as that account instead:"
+    Write-Host ("  runas /user:" + $owner + " `"pwsh -File " + $PSCommandPath + "`"")
+    Write-Host "or pass -Force if running it as yourself is what you meant."
+    exit 1
+}
 
 function Test-Board {
     param([string]$Board)
@@ -55,7 +127,7 @@ function Test-Board {
 # records it here, and starting this one on the default would open a different
 # database and show an empty board, which reads as data loss.
 $board = 'http://localhost:7778'
-$db = Join-Path $env:USERPROFILE '.atrium\atrium.db'
+$db = Join-Path $home_ 'atrium.db'
 if (Test-Path $addressFile) {
     try {
         $where = Get-Content $addressFile -Raw | ConvertFrom-Json

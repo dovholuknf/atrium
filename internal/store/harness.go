@@ -74,6 +74,23 @@ type Harness struct {
 	// the process atrium owns, which costs the exit keys, the liveness check
 	// and the terminate button.
 	Prepare string `json:"prepare"`
+	// BracketedPaste says this runner asks for bracketed paste, so the board
+	// may wrap a paste in `\x1b[200~` and `\x1b[201~` without waiting to see
+	// the enable go past.
+	//
+	// Declared per runner for the same reason ExitKeys is: it is a fact about
+	// the program, it never changes while the program runs, and there is no
+	// common answer. Claude and codex turn the mode on at startup. A shell
+	// turns it on and off around every prompt, and something that never asked
+	// would print `200~` on screen, which is why this is off by default.
+	//
+	// It exists because the board cannot answer the question from the output
+	// stream alone. Its only evidence is the `\x1b[?2004h` the runner emitted
+	// once, at startup, and a pane that attaches after the ring has wrapped
+	// past that byte never sees it. The evidence is exactly the thing the ring
+	// is entitled to discard, so the answer is configuration and not
+	// inference.
+	BracketedPaste bool `json:"bracketed_paste"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -141,7 +158,7 @@ func DefaultHarnesses() []Harness {
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:  []string{"{prompt}"},
 			ModelArgs:   []string{"--model", "{model}"},
-			RulesSource: "claude", Sort: 10,
+			RulesSource: "claude", Sort: 10, BracketedPaste: true,
 			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
@@ -156,10 +173,11 @@ func DefaultHarnesses() []Harness {
 			// the prompt, and `resume_args` replaces `args` by design.
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			ResumeArgs:  []string{"resume", "{resume}"},
-			PromptArgs:  []string{"{prompt}"},
-			ModelArgs:   []string{"--model", "{model}"},
-			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
+			ResumeArgs:     []string{"resume", "{resume}"},
+			PromptArgs:     []string{"{prompt}"},
+			ModelArgs:      []string{"--model", "{model}"},
+			BracketedPaste: true,
+			RulesSource:    "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
 		{
@@ -194,13 +212,15 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		args, env, resume, exit, prompt, model string
 		created                                string
 		enabled                                int
+		bracketed                              int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
+	h.BracketedPaste = bracketed != 0
 	if err := json.Unmarshal([]byte(orDefault(args, "[]")), &h.Args); err != nil {
 		return nil, err
 	}
@@ -235,7 +255,7 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args`
+	model_args, bracketed_paste`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -335,8 +355,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 		if h.Enabled {
 			enabled = 1
 		}
+		bracketed := 0
+		if h.BracketedPaste {
+			bracketed = 1
+		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -344,10 +368,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				exit_keys = excluded.exit_keys, prepare = excluded.prepare,
 				rules_source = excluded.rules_source, notes = excluded.notes,
 				sort = excluded.sort, prompt_args = excluded.prompt_args,
-				model_args = excluded.model_args`,
+				model_args = excluded.model_args,
+				bracketed_paste = excluded.bracketed_paste`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
-			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model))
+			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
+			bracketed)
 		return err
 	})
 	if err != nil {

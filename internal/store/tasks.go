@@ -15,7 +15,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
 	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
-	model`
+	model, throwaway, promote_to`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -33,6 +33,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		priorityAt   string
 		askAt        string
 		peerTyping   int
+		throwaway    int
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
@@ -40,9 +41,11 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
-		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model); err != nil {
+		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
+		&throwaway, &t.PromoteTo); err != nil {
 		return nil, err
 	}
+	t.Throwaway = throwaway != 0
 	t.Gated = gated != 0
 	t.AutoApprove = auto != 0
 	t.PeerTyping = peerTyping != 0
@@ -308,7 +311,7 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -323,7 +326,10 @@ func (s *Store) insertTask(t *Task) error {
 		// Which model, chosen once at launch. Empty means nobody chose, which
 		// is every card, because the box is unticked every time the form
 		// opens.
-		t.Model)
+		t.Model,
+		// Never temporary at creation. A throwaway is marked by the launch
+		// that made its directory, which is the only thing that knows.
+		0, "")
 	return err
 }
 

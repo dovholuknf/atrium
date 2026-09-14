@@ -141,6 +141,12 @@ async function pickSession(id, t) {
     body: `${list.length} in this directory. The one marked <b>current</b> is what ` +
       `this card would resume on its own.`,
     value: (list.find(s => s.current) || list[0]).id,
+    // Every row on screen at once, up to eight, because the pick is a
+    // comparison between them and a collapsed combo hides it behind a click.
+    // The selection still starts on `current`, which is what the body says
+    // this card resumes on its own, so pressing the button without touching
+    // anything does what it did before.
+    size: 8,
     choices: list.map(s => ({
       value: s.id,
       label: `${s.title}  ·  ${firstSeen(s.at)}  ·  ${bytes(s.bytes)}` +
@@ -200,6 +206,44 @@ async function forgetSessions(id, t) {
     return;
   }
   toast("forgotten", (gone && gone.title) || pick);
+}
+
+// Keeps a throwaway, by giving it somewhere real to live.
+//
+// The undo for "gone forever", and without it nobody would start anything in a
+// throwaway worth keeping. Somebody clones a repository into one and works in
+// it for an hour, and this is what turns that hour into an ordinary directory
+// and an ordinary card.
+//
+// WHEN IT MOVES DEPENDS ON WHETHER THE SESSION IS STILL RUNNING, and the reply
+// says which happened. A live runner's working directory cannot be moved out
+// from under it, so the daemon writes the destination down and does it when
+// the session ends. With nothing running it happens now.
+async function promoteCard(id, t) {
+  const to = await askUser({
+    title: "keep this work?",
+    body: "This directory is temporary and is deleted when the session ends. " +
+      "Say where it should live instead, and it becomes an ordinary card.",
+    input: true,
+    value: "",
+    placeholder: "the whole path, somewhere that does not exist yet",
+    buttons: [{ label: "cancel", value: null },
+              { label: "keep it", value: true, style: "go" }]
+  });
+  if (to === null || !to.trim()) return;
+
+  let res;
+  try {
+    res = await api(`/v1/tasks/${id}/promote`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: to.trim() })
+    });
+  } catch (e) {
+    toast("could not keep it", e.message);
+    return;
+  }
+  toast(res.when === "now" ? "moved" : "will move when the session ends", res.to);
+  refresh();
 }
 
 async function resumeNow(id, t, where) {
@@ -419,6 +463,19 @@ async function cardMenu(e, id) {
     // Only where there is a directory to have collected any. Reading them is
     // one request and the menu is drawn on a click, so it is not done here to
     // decide whether to offer this.
+    // Only on a card that is about to delete itself, which is the only card it
+    // means anything on. Above forgetting a conversation, because it is the
+    // opposite decision about the same session and the more urgent one: this
+    // directory goes on its own unless somebody says otherwise.
+    t.throwaway ? {
+      label: t.promote_to ? "keep it somewhere else…" : "keep this work…",
+      note: t.promote_to ? "moving to " + t.promote_to : "",
+      help: "This directory is temporary and goes when the session ends. " +
+        "Promoting it moves the directory somewhere you choose and the card " +
+        "stops being temporary. While a session is running the move happens " +
+        "as it ends, because a directory cannot be moved out from under it.",
+      act: () => promoteCard(id, t)
+    } : null,
     t.worktree ? {
       label: "forget a conversation…",
       help: "A directory collects transcripts, most of them two exchanges and " +

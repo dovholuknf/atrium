@@ -5,6 +5,40 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A session is called one thing, and if you named it, that is the thing.** The same card was `atrium` on the
+  board, `main:atrium` above its own terminal and `atrium-backlog` in the strip beside it, which is three names
+  for one session and no way to tell they were one.
+
+  **The name somebody typed now wins over the name a machine read.** `overrides.title` is what the rename box
+  writes and what the store has always served as `display_title`, but the terminal pane, the switcher, the
+  collapsed strip and the window title all took the address composed out of the worktree first, so a card
+  renamed to `atrium` was called `github/dovholuknf/atrium@main` everywhere except the board. The composing
+  half is `observedLabel` now and `terminalLabel` is the typed name in front of it, which is the rule
+  `CLAUDE.md` already states: what a machine reports never overwrites what a human typed.
+
+  **A rename does not move the row out of its group.** The strip's tree is still built from the observed path,
+  so a renamed session keeps the headings its directory puts it under and wears the typed name on the row. The
+  tooltip is the address, which is the fact the tooltip is there to add.
+
+  **And the separator stops meaning two things.** `TitleFor` names a repository's own checkout `branch:repo`,
+  the strip composed `path:branch`, and one colon said opposite things in opposite orders on one screen.
+  Now that `B2-02` draws the path as headings the strip's separator is `@`: `github/dovholuknf/atrium@main`
+  reads as a place and a branch, and the colon is left to the board, where the distinction between a checkout
+  and a worktree still earns it.
+
+- **The model control on the new agent form is a field called `model`, and the tickbox in front of it is
+  gone.** It read "run this one on a different model", which was a sentence among nouns: every neighbour is
+  `runner`, `working directory`, `title`, `tags`, `why`, `first instruction`. It also asked "different" from
+  a default the form never showed, and carried the one-time behaviour in the words "this one", where a reader
+  who did not already know it got nothing.
+
+  Now it is `model` in the same eyebrow style, and the hintline says the rest: this launch only, the card
+  remembers it so a restart comes back on the same model, and the field is empty again next time.
+
+  The tickbox went with the wording because it was asking you to say twice what an empty box already says.
+  Empty is the runner's own default, so there is nothing left for a tick to mean. A runner that cannot take a
+  model still hides the field entirely.
+
 - **The terminal strip and the stack keep rows that tie in the same place twice.** The reported symptom was the
   strip: sorted by activity, it reshuffled itself between polls. Every axis either list sorts on is coarser
   than the list it sorts. A dozen cards share a runner, a whole project shares a worktree, waiting is a yes or
@@ -66,6 +100,117 @@ section heading is just "what landed in this iteration."
   adding to them, and the flag missing there is the same dialog on the second start. A migration puts it on
   the `claude` row of databases that already exist, since the harness table is seeded once on first run; a
   row whose arguments have been edited is left alone, because that is somebody's own command line.
+
+- **The launch form offers the repositories on this machine, and atrium can make the worktree.** There is a
+  "projects" button beside "browse". It opens a list of every checkout the daemon can see, grouped by the
+  directory above it, and opening one shows the worktrees that already exist for it. Clicking any of them puts
+  its path in the working directory field. Typing a branch name and pressing "make a worktree" runs the
+  configured command in that repository and takes you to whatever comes out.
+
+  **Atrium RUNS the tool. It does not reimplement it.** `internal/daemon/recognise.go` says that making a
+  worktree is `gwt`'s job and that atrium has no business owning a checkout layout, and that is still true.
+  Running `git worktree add` here would mean atrium deciding where a worktree lives, what it is called, and
+  what happens after it is made, and the layout on a machine is a convention that some other tool maintains:
+  the moment atrium encodes it, it owns it and drifts from the thing that actually keeps it. So the new
+  `worktree_command` setting is a command TEMPLATE, the way a harness and a source already are. Atrium holds
+  the name of a command and never the thing behind it.
+
+  **It is hosted by a shell, and that is not a shortcut.** `gwt` is a PowerShell function defined in a profile
+  rather than a program on `PATH`, so there is nothing for `exec.Command` to spawn. `internal/shellpick`
+  already answered which shell this machine has, with the echelon that matters on Windows — `pwsh` is
+  PowerShell 7 and a separate install, `powershell` is 5.1 and is on every Windows, `cmd` is the floor — so
+  that answer is reused rather than asked a second time. The profile is loaded rather than skipped, because
+  the profile is where the function being run is defined.
+
+  **Which moves the fence.** `editor_command` can split its template into a program and arguments because the
+  part it does not control is a filename, and a filename is data. A shell has no such promise: every character
+  of a branch name is live. So the branch is checked against what a branch may hold — letters, digits, and
+  `. _ - /`, starting with a letter or a digit — BEFORE it reaches the line, rather than quoted afterwards.
+  Quoting is a claim about one shell's grammar and this runs under three. The command also gets no stdin, so a
+  template that stops to ask a question gets an end of file instead of a wait, and it is bounded at three
+  minutes, because a daemon holding a request open forever is how one wedged command takes the board with it.
+
+  **The path is read back out of git, not out of the output.** What the tool prints is for a person: it is
+  coloured, it is several lines, and its wording is not a promise. Where the worktree ended up is a question
+  `git worktree list --porcelain` answers exactly, which also means a template doing something else entirely
+  still works as long as a worktree comes out of it.
+
+  **Already there is the answer, not an error.** The common case for "make me a worktree for this branch" is
+  that one exists, and what somebody wants then is to go to it. The daemon checks first, says `existed`, and
+  the board says "already there" and takes you to it.
+
+  **The listing owns no layout either.** The repositories come from the directories the picker is already
+  allowed to open, walked a fixed `project_scan_depth` — two by default, matching `<root>/<org>/<repo>` —
+  rather than recursively, because a walk of a drive looking for every `.git` is a scan somebody waits on. A
+  directory holding a `.git` is a repository and is not descended into. The walk is bounded while it reads
+  rather than after, and says so when it stopped early. The worktrees come from git itself, asked of each
+  repository eight at a time with a timeout each, so a machine that keeps its worktrees somewhere unusual is
+  still described correctly and one repository on a slow share cannot hold up the list.
+
+  Both settings are in settings, this machine, under the browse roots they depend on, and both are exported
+  and imported with the rest of the configuration. An empty command means the default, `gwt new {branch} -y`,
+  and `off` means there is no make button at all. `guestHandler` is an allow list, so a guest holding a lent
+  session reaches neither endpoint.
+
+- **A throwaway session, in a directory that deletes itself.** Tick "throw it away when the session ends" on the
+  new agent form and atrium makes a temporary directory, starts the runner in it, and when the session is over
+  the directory, the card and the conversation are all gone. For the case of wanting to try something without
+  first deciding where it belongs.
+
+  "Gone forever" is three deletions and the third is the one that gets forgotten. Claude Code keys its
+  transcripts on the working directory, so deleting the directory alone leaves a transcript orphaned under an
+  encoded name for a path that no longer exists, one per throwaway, accumulating forever. `ForgetTranscripts` in
+  `internal/api/throwaway.go` takes the whole project directory, which is the difference from forgetting one
+  conversation somebody picked out of a list.
+
+  **All three happen in `awaitExit`, after `cmd.Wait` has returned.** The runner's working directory IS the
+  directory, and Windows will not let a live process have its cwd removed. A delete written where the exit is
+  REQUESTED appears to work and leaves the directory behind. Every way a session ends goes through the same
+  wait, so a crash cleans up as thoroughly as `atrium finish` does, and a daemon that was killed and therefore
+  waited on nothing is caught by a sweep at start up.
+
+  **A throwaway is never reopened.** A restart now brings back every card that had a runner, and a throwaway
+  whose directory has been deleted would be asked to start in a directory that is not there: a dead card after
+  every restart with nothing on it to explain why. `reopenWanted` refuses on what the card says about itself
+  rather than on whether the directory happens to still exist, because a daemon killed before the delete leaves
+  one behind.
+
+  **And there is a way out, which is what makes it safe to reach for.** Somebody will clone a repository into a
+  throwaway and work in it for an hour. "Keep this work…" on the card menu moves the directory somewhere real
+  and the card stops being temporary. While a session is still running the destination is written down and the
+  move happens as it ends, for the same Windows reason the delete does; with nothing running it happens at once.
+  The move falls back to a copy when a rename cannot cross volumes, which is the ordinary case: temporary
+  directories are on whichever volume the operating system keeps them on.
+
+- **A paste into a long-running session is bracketed again, however long it has been running.** Pasting a
+  ninety-eight line block into a supervised claude session produced five separate `[Pasted text #n]` blocks in
+  the prompt, and the same splitting ate the middle of a multi-line peer report.
+
+  The split itself is the operating system. ConPTY's input handle is a Windows anonymous pipe with a four
+  kilobyte buffer: a bigger write does not fail and does not truncate, it blocks until the child drains, so the
+  child receives the paste in buffer-sized installments with real time between them. A terminal user interface
+  decides whether input was typed or pasted from how it arrives, so each installment reads as its own burst.
+  Bracketed paste is what denies that: the markers say "this is one paste" no matter how it lands.
+
+  So the question is only ever whether the board wraps a paste in the markers, and its answer was coming from
+  the wrong place. The board asked `term.modes.bracketedPasteMode`, which is xterm's record of what it has
+  parsed, and the only evidence is the `\x1b[?2004h` the runner sends ONCE, at startup. A pane that attaches
+  after the ring has wrapped past that byte sees no evidence and pastes raw. That is the intermittency nobody
+  could explain: the same clipboard into the same session behaves differently on different days, because the
+  difference is how much output has scrolled past since the runner started. The evidence is exactly the thing
+  the ring is entitled to discard, so no amount of care in reading the replay could have fixed it.
+
+  A harness now DECLARES it. `bracketed_paste` is a column on the runner's row, ticked for claude and codex,
+  off for a shell and for anything undeclared, and there is a checkbox on the runner's form. An attach sends it
+  as its first message, `{"t":"caps"}`, which is the first thing the daemon has ever said to the board down
+  that socket in words rather than in bytes. The board brackets when either source says so, so a declared
+  runner is bracketed from the first paste and an undeclared one behaves exactly as it did before.
+
+  It is a fact about the PROGRAM, not about the terminal: which runner this is, fixed for the life of the
+  process, and already configuration. The daemon is not tracking terminal modes and does not know what the
+  terminal is doing right now. A shell is deliberately left out for that reason: it turns the mode on and off
+  around each prompt, so it is not a property of the program, and it re-emits its own enable often enough that
+  the stream is a good answer there.
 
 - **A card can open its directory in a real terminal window on the desktop.** Right click a card, "open in a
   terminal window", and the configured terminal opens there, beside the board.

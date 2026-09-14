@@ -140,6 +140,8 @@ var exportedSettings = []string{
 	api.SettingTerminal,
 	api.SettingPasteKeep,
 	api.SettingPastePreamble,
+	api.SettingWorktreeCommand,
+	api.SettingProjectDepth,
 	SettingShellCommand,
 }
 

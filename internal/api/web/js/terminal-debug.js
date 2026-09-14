@@ -187,7 +187,7 @@ async function exitTerm() {
 
 // The runner is gone. Keeps the scrollback, drops every claim that it is live.
 function markTermDead() {
-  const pane = document.querySelector(".term-pane");
+  const pane = document.getElementById("term-pane");
   if (pane) pane.classList.add("dead");
   const title = document.getElementById("t-title");
   if (title && termTask) title.textContent = termTask.display_title + " (exited)";
@@ -317,7 +317,7 @@ function clearTermPane(switching) {
   // them is what made the restore useless across exactly the restart it was
   // written for. `closeTerm` forgets, because closing it is something you did.
   if (switching) return;
-  const pane = document.querySelector(".term-pane");
+  const pane = document.getElementById("term-pane");
   if (pane) pane.classList.remove("dead");
   // Undo what markTermDead did to the bar, so the next attach gets its own
   // buttons back rather than a stranded close.

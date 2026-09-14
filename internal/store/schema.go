@@ -1238,6 +1238,45 @@ var migrations = []struct {
 			     AND resume_args = '["--resume","{resume}"]'`,
 		},
 	},
+	{
+		// A throwaway session lives in a directory atrium made and will
+		// delete. `promote_to` is where that directory goes INSTEAD, once
+		// somebody decides the work matters, and it is read where the delete
+		// would otherwise happen. Both default to the answer every card
+		// written before them gives: not temporary, going nowhere.
+		name: "0049_throwaway",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN throwaway INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE task ADD COLUMN promote_to TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// WHICH RUNNERS ASK FOR BRACKETED PASTE, declared rather than guessed.
+		//
+		// The board wraps a paste in `\x1b[200~`/`\x1b[201~` so the runner
+		// reads it as one paste instead of as a line per newline. Until now
+		// its only evidence was the `\x1b[?2004h` the runner emitted once at
+		// startup and the pane happened to parse out of the replayed
+		// scrollback. A pane that attaches after the ring has wrapped past
+		// that byte never sees it, pastes raw, and a long paste arrives as a
+		// line at a time. The evidence is precisely what the ring is entitled
+		// to throw away, so it cannot be the answer.
+		//
+		// `claude` and `codex` only, the two rows that are terminal user
+		// interfaces and turn the mode on for their whole run. NOT the shell:
+		// a shell turns the mode on and off around each prompt, so it is not
+		// a property of the program, and its enable is re-emitted constantly
+		// and stays in the ring anyway.
+		//
+		// Backfilled for the same reason `0047` was: `DefaultHarnesses` seeds
+		// once on first run, so without this every database that already
+		// exists gains the column and no row that uses it.
+		name: "0050_harness_bracketed_paste",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN bracketed_paste INTEGER NOT NULL DEFAULT 0`,
+			`UPDATE harness SET bracketed_paste = 1 WHERE id IN ('claude', 'codex')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

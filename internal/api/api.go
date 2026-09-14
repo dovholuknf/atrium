@@ -338,6 +338,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("PATCH /v1/tasks/{id}", s.patchTask)
 	mux.HandleFunc("DELETE /v1/tasks/{id}", s.deleteTask)
+	// The way out of a throwaway: move its directory somewhere real and stop
+	// it deleting itself. See throwaway.go.
+	mux.HandleFunc("POST /v1/tasks/{id}/promote", s.promoteCard)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
 	mux.HandleFunc("POST /v1/intake", s.intake)
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
@@ -375,6 +378,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/recognisers/{id}", s.deleteRecogniser)
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	mux.HandleFunc("GET /v1/browse", s.browse)
+	// The repositories on this machine, and what already exists for each. The
+	// make is a command template run in a shell, never a worktree atrium lays
+	// out itself: see `projects.go`.
+	mux.HandleFunc("GET /v1/projects", s.listProjects)
+	mux.HandleFunc("POST /v1/projects/worktree", s.makeWorktree)
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
 	}

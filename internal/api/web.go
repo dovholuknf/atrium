@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	pathpkg "path"
 	"strings"
 )
 
@@ -73,6 +74,25 @@ func buildID(fsys fs.FS) string {
 			return err
 		}
 		if e.IsDir() {
+			return nil
+		}
+		// WHAT `go:embed` SKIPS, THIS SKIPS, or the two hashes of one tree
+		// disagree and every board served from a directory reports itself
+		// stale the moment it loads.
+		//
+		// `internal/api/web/CLAUDE.md` is a SYMLINK into another repository.
+		// `go:embed` does not follow one, so the embedded board is 35 files
+		// and a walk of the same directory finds 36. Nothing about that is
+		// visible in a diff, and the build id it produced was wrong in the one
+		// mode the build id exists to serve.
+		//
+		// Dotfiles and underscore files go for the same reason: `go:embed`
+		// leaves them out, so counting them here would be describing a board
+		// nobody is being served.
+		if !e.Type().IsRegular() {
+			return nil
+		}
+		if base := pathpkg.Base(path); strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") {
 			return nil
 		}
 		raw, err := fs.ReadFile(fsys, path)

@@ -260,7 +260,17 @@ Exports honor whatever filter is applied.">?</span>
            handle, so its card and its terminal read as one surface. Placed
            and sized in `placeTabBridge`. -->
       <div class="tabbridge" id="tab-bridge" hidden></div>
-      <section class="term-pane">
+      <!-- THE ONE PANE, AND IT IS ADDRESSED BY ITS ID.
+           There is one terminal on this page and every piece of code that
+           reaches for it wants that one. `querySelector(".term-pane")` says
+           "whichever comes first", which is the same thing only for as long as
+           there is exactly one. A second section carrying the class, from
+           anywhere, hands half the terminal code the pane nobody is looking at:
+           the theme paints one, the tab bridge measures another and the
+           teardown tidies a third, and none of it errors. An id cannot be
+           ambiguous, so the lookups ask by id and `scripts/check-terminal.js`
+           holds them to it and to there being one. -->
+      <section class="term-pane" id="term-pane">
         <div class="term-bar">
           <!-- The mark and the name are one thing, so they are one element.
                As siblings in a wrapping flex row the runner's icon could end
@@ -409,13 +419,16 @@ Exports honor whatever filter is applied.">?</span>
           </div>
         </div>
         <div id="t-screen"></div>
+        <!-- One line, and it has to stay one line. Every entry earned its place
+             by somebody pressing the key and getting the other thing, so the
+             rule for cutting this is to drop the EXPLANATIONS and keep the
+             keys. What a key does is worth a strip under a terminal. Why it
+             does that is not. -->
         <div class="term-help">
-          ctrl-c copies when text is selected, interrupts otherwise &middot;
-          ctrl-v or shift-insert pastes &middot; ctrl-insert copies &middot;
-          ctrl-a selects the whole buffer, the browser's own cannot &middot;
-          ctrl-shift-v opens a box to paste into, for a board on a share &middot;
-          shift-enter or ctrl-enter writes a newline instead of sending &middot;
-          ctrl-shift-c is not used, the browser takes it for dev tools
+          ctrl-c copies a selection, interrupts otherwise &middot;
+          ctrl-v or shift-insert pastes &middot;
+          ctrl-a selects the buffer &middot;
+          shift-enter or ctrl-enter for a newline
         </div>
       </section>
     </div>
@@ -1065,6 +1078,40 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-browseroots-now"></b></span>
     </div>
 
+    <!-- Making a worktree, which atrium does by RUNNING the tool that owns
+         that job rather than by laying one out itself. The layout on a machine
+         is a convention some other tool maintains, and the moment atrium
+         encodes it, it owns it and drifts. So this is a command template, the
+         way a harness and a source already are. -->
+    <div class="field">
+      <label class="eyebrow" for="s-worktreecmd">make a worktree with</label>
+      <div class="picker">
+        <input id="s-worktreecmd" spellcheck="false"
+          placeholder="empty means gwt new {branch} -y">
+        <button onclick="saveWorktreeCommand()">save</button>
+      </div>
+      <span class="hintline">Run in the repository, on <b>the machine atrium is on</b>, through a
+        shell, because the tool that does this is often a shell function rather than a program.
+        <code>{branch}</code> is the branch and <code>{repo}</code> is the repository's directory.
+        The branch may hold letters, digits and <code>. _ - /</code> and nothing else, which is what
+        keeps a name off the command line as anything but a name. Answer any prompt in the command
+        itself: there is no keyboard attached to it. Type <code>off</code> to have no make button at
+        all. <b id="s-worktreecmd-now"></b></span>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-projdepth">and looks for repositories</label>
+      <div class="picker">
+        <input id="s-projdepth" spellcheck="false" inputmode="numeric"
+          placeholder="empty means 2 levels under each of those places">
+        <button onclick="saveProjectDepth()">save</button>
+      </div>
+      <span class="hintline">Levels under each place above. Two matches
+        <code>&lt;root&gt;/&lt;org&gt;/&lt;repo&gt;</code>, which is the usual arrangement. A
+        directory holding a <code>.git</code> is a repository and is not descended into, so going
+        deeper only costs somebody whose checkouts are further down. <b id="s-projdepth-now"></b></span>
+    </div>
+
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
          own state directory, which is the right place and unreadable to
@@ -1127,6 +1174,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
         is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
         empty for the default.</span>
+      <!-- The same arithmetic, done for the machine you are actually on. Filled
+           in from the daemon's count of live rings, and hidden when it does not
+           send one. -->
+      <span class="hintline" id="s-sbcost" hidden></span>
     </div>
 
     <h3 class="s-section">the board</h3>
@@ -1225,6 +1276,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         terminal does not use it. <b>Firefox takes it for the Web Console</b> and will not give it
         back, so rebind to <b>alt-k</b> there. <b>ctrl-k</b> works in every browser and costs you
         readline's kill-line in every session, which is the trade it looks like.</span>
+    </div>
+
+    <!-- Off by default, and it stays that way for anybody who does not come
+         looking for it. Focus-follows-mouse is loved and hated in about equal
+         measure, and this board takes focus back on a redraw already. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
+        <span>hovering a session types into it</span>
+      </label>
+      <span class="hintline">Moving the pointer onto a terminal gives it the keyboard, so typing
+        goes to the session without clicking first. It waits a moment, so crossing the pane on the
+        way somewhere else does not take the focus, and it never takes it while a dialog is open or
+        while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
     <!-- Grouping. The rule is the operator's, because their worktree layout
@@ -1732,6 +1797,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">used instead of the arguments above when picking a conversation back up.
         put <code>{resume}</code> where the session id goes.</span>
     </div>
+    <!-- How this runner is handed an opening instruction. Empty means it cannot
+         be given one, and a launch that supplies a prompt is refused rather
+         than started on a session that will never read it. -->
+    <div class="field">
+      <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
+      <textarea id="h-prompt" rows="2" spellcheck="false"
+        placeholder="{prompt}"></textarea>
+      <span class="hintline">appended when a launch supplies an opening prompt. put
+        <code>{prompt}</code> where the text goes. leave empty for a runner that cannot take one.</span>
+    </div>
     <!-- How this runner is told which model to use. Empty means it cannot be
          asked for one, which is right for a shell, and a launch that names a
          model for it is refused rather than started on the default. -->
@@ -1750,6 +1825,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         card is shelved. <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>,
         <code>esc</code>, <code>enter</code>, or any text to type. claude wants
         <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
+    </div>
+    <!-- Declared rather than watched for. The board's other source is the
+         `\x1b[?2004h` a runner sends once at startup, which scrolls out of the
+         buffer and takes bracketing with it. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="h-bracket">
+        <span>this runner asks for bracketed paste</span>
+      </label>
+      <span class="hintline">tick it for a terminal user interface that turns bracketed paste on for
+        its whole run, which claude and codex both do. a paste is then delivered as one paste rather
+        than as a line per newline, however long the session has been going. leave it off for a
+        shell, and for anything that would print <code>200~</code> on screen instead.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-cwd">default working directory</label>
@@ -1832,10 +1920,29 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="l-cwd">working directory</label>
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
+        <!-- The repositories on this machine, rather than a folder at a time.
+             Making the worktree is part of it, so starting work does not mean
+             leaving the board. -->
+        <button onclick="openProjects('l-cwd')">projects</button>
         <button onclick="openBrowse()">browse</button>
       </div>
       <span class="hintline">Directories already on the board. Click one to use it.</span>
       <div class="quickdirs" id="l-recent"></div>
+    </div>
+    <!-- A session with nowhere to live, for trying something without first
+         deciding where it belongs. Under the directory field and not beside
+         it, because it is the answer to the same question: atrium makes the
+         directory, so there is nothing to fill in above.
+         What happens to it is spelled out rather than implied. "Gone forever"
+         has to be the thing you knew you were choosing. -->
+    <div class="field" id="l-throwaway-field">
+      <label class="check">
+        <input type="checkbox" id="l-throwaway-on">
+        <span>throw it away when the session ends</span>
+      </label>
+      <span class="hintline">Atrium makes a temporary directory and starts here. When the
+        session ends the directory, the card and the conversation are all deleted. If it turns
+        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
     </div>
     <!-- Only shown when there is a conversation to pick up. Checked by
          default: if you had one, continuing it is almost always the intent. -->
@@ -1847,23 +1954,23 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="l-resume-note"></span>
     </div>
     <!-- Which model, for THIS launch and nothing else.
-         Unticked every time this opens, and nothing is written to the runner's
-         row. The card keeps what it started on, so a restart brings the
-         session back on the same model, but the form never remembers: a
-         one-time choice you have to turn back off is not a one-time choice.
+         Empty every time this opens, and nothing is written to the runner's
+         row. Empty IS the runner's own default, which is why nothing guards
+         this field: a tickbox in front of it asks you to say twice what one
+         empty box already says. The card keeps what it started on, so a
+         restart brings the session back on the same model, but the form never
+         remembers: a one-time choice you have to clear again is not a one-time
+         choice.
          The list is what has been typed here before, never a catalog. Atrium
          does not know which models exist and a list written into it would ship
          out of date within months. -->
     <div class="field" id="l-model-field">
-      <label class="check">
-        <input type="checkbox" id="l-model-on">
-        <span>run this one on a different model</span>
-      </label>
-      <input type="text" id="l-model" list="l-model-seen" spellcheck="false" hidden
-        placeholder="the name this runner calls it">
+      <label class="eyebrow" for="l-model">model</label>
+      <input type="text" id="l-model" list="l-model-seen" spellcheck="false"
+        placeholder="empty runs the runner's own default">
       <datalist id="l-model-seen"></datalist>
       <span class="hintline" id="l-model-note">This launch only. The card remembers it so a
-        restart comes back on the same model, and this box is empty again next time.</span>
+        restart comes back on the same model, and this field is empty again next time.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>
@@ -1958,11 +2065,45 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('browse').close()">close</button>
   </div>
   <div class="dlg-body">
+    <!-- Typing, because a worktree root with thirty children is a scroll. A
+         name narrows the list; a whole path goes straight there, which is how
+         somebody who already knows where they are going gets there. -->
+    <input type="text" id="b-filter" spellcheck="false" autocomplete="off"
+      placeholder="filter these folders, or type a path and press enter">
     <div class="toolbar">
       <button id="b-up" onclick="browseUp()">&#8593;&#8202;up a folder</button>
-      <button class="go" id="b-use" onclick="useBrowsed()">use this one</button>
+      <button class="go" id="b-use" onclick="useBrowsed()">use this folder</button>
     </div>
     <div class="dirlist" id="b-list"></div>
+    <!-- The dot and the triangle were a distinction nothing explained, and the
+         two ways to press a row are worth one line each. -->
+    <div class="dirlegend">
+      <span><span class="ic repo">&#9679;</span> a git checkout</span>
+      <span><span class="ic">&#9656;</span> a plain folder</span>
+      <span>press a row to choose it, <b>open</b> to look inside it</span>
+    </div>
+  </div>
+</dialog>
+
+<!-- The repositories on this machine, and what already exists for each.
+     Atrium RUNS the tool that makes a worktree, it does not lay one out
+     itself: the command is a template in settings and the path is read back
+     out of git. See internal/api/projects.go. -->
+<dialog id="projects">
+  <div class="dlg-head">
+    <div class="grow">
+      <h2>pick a project</h2>
+      <div class="crumb" id="p-where"></div>
+    </div>
+    <button onclick="document.getElementById('projects').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="toolbar">
+      <input id="p-filter" spellcheck="false" placeholder="filter by org, repo or branch"
+        oninput="drawProjects()">
+      <button onclick="loadProjects()">rescan</button>
+    </div>
+    <div class="dirlist projlist" id="p-list"></div>
   </div>
 </dialog>
 
@@ -2180,6 +2321,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
+<script src="/js/projects.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

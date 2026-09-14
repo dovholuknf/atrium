@@ -722,6 +722,7 @@ async function loadHousekeeping() {
     lines.max = s.scrollback_lines_max || 1000000;
   }
   applyScrollback();
+  showScrollbackCost(s);
 
   const roots = document.getElementById("s-browseroots");
   if (roots) roots.value = s.browse_roots || "";
@@ -733,6 +734,22 @@ async function loadHousekeeping() {
   // is not something the person reading the box could work out from here.
   const shellNow = document.getElementById("s-shell-now");
   if (shellNow) shellNow.textContent = s.shell_command_now || "";
+  const wtcmd = document.getElementById("s-worktreecmd");
+  if (wtcmd) wtcmd.value = s.worktree_command || "";
+  const wtnow = document.getElementById("s-worktreecmd-now");
+  if (wtnow) {
+    // What would actually run. This is the one template with a default, so an
+    // empty box is the case where the box does not say what happens.
+    wtnow.textContent = s.worktree_command_now
+      ? "Right now: " + s.worktree_command_now
+      : "Right now: nothing, so the projects list only offers worktrees that exist.";
+  }
+  const depth = document.getElementById("s-projdepth");
+  if (depth) depth.value = s.project_scan_depth || "";
+  const depthNow = document.getElementById("s-projdepth-now");
+  if (depthNow) {
+    depthNow.textContent = "Right now: " + (s.project_scan_depth_now || 2) + " level(s).";
+  }
   const now = document.getElementById("s-browseroots-now");
   if (now) {
     const list = s.browse_roots_now || [];
@@ -1180,6 +1197,47 @@ function applyScrollback() {
   if (term) term.options.scrollback = scrollbackLines();
 }
 
+// What the megabytes box costs on this machine right now.
+//
+// The box is per session and the bill is per RUNNING session, so the number
+// somebody types is a long way from the number the machine pays. The daemon
+// counts the live rings and answers with the total, and this only phrases it.
+// A daemon that does not send the counts leaves the line hidden rather than
+// have the page guess at a total.
+function scrollbackCost(s) {
+  const runners = Number(s.scrollback_runners);
+  const shells = Number(s.scrollback_shells);
+  const total = Number(s.scrollback_mb_total);
+  if (!(runners >= 0) || !(shells >= 0) || !(total >= 0)) return "";
+  const per = Number(s.scrollback_mb_now) || 16;
+  const live = [];
+  if (runners > 0) live.push(runners + (runners === 1 ? " runner" : " runners"));
+  if (shells > 0) live.push(shells + (shells === 1 ? " shell" : " shells"));
+  if (!live.length) {
+    return per + " MB per session, nothing running, so none of it is resident yet.";
+  }
+  return per + " MB per session, " + live.join(" and ") + " running, so up to " + scrollbackSize(total) + ".";
+}
+
+// Megabytes as somebody would say them out loud. `bytes()` is for a file
+// listing and reads as "4.0G"; this one is in the middle of a sentence.
+function scrollbackSize(mb) {
+  if (mb < 1024) return mb + " MB";
+  const gb = mb / 1024;
+  return (Number.isInteger(gb) ? gb : gb.toFixed(1)) + " GB";
+}
+
+// The cost line under the scrollback field. Hidden when the daemon says
+// nothing, so an older daemon shows the field with no line rather than an
+// empty sentence.
+function showScrollbackCost(s) {
+  const el = document.getElementById("s-sbcost");
+  if (!el) return;
+  const line = scrollbackCost(s || {});
+  el.textContent = line ? "Right now that is " + line : "";
+  el.hidden = !line;
+}
+
 // preambleOf turns what is stored into what gets typed.
 //
 // Three cases and only three: unset means the daemon's default, the sentinel
@@ -1240,6 +1298,35 @@ async function saveEditorCommand() {
   await saveHousekeeping("editor_command", ed.value.trim());
   toast(ed.value.trim() ? "editor set" : "editor cleared",
     ed.value.trim() || "the open button will say it is not configured");
+}
+
+// The same button rather than keystroke reasoning as the editor: a half-typed
+// template is a command that does not exist, and the failure would arrive
+// later, from a button somewhere else.
+async function saveWorktreeCommand() {
+  const el = document.getElementById("s-worktreecmd");
+  if (!el) return;
+  await saveHousekeeping("worktree_command", el.value.trim());
+  loadHousekeeping();
+  toast("saved", el.value.trim().toLowerCase() === "off"
+    ? "the projects list will only offer worktrees that already exist"
+    : (el.value.trim() || "back to the default"));
+}
+
+async function saveProjectDepth() {
+  const el = document.getElementById("s-projdepth");
+  if (!el) return;
+  try {
+    await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ project_scan_depth: el.value.trim() })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  loadHousekeeping();
+  toast("saved", "the next scan goes " + (el.value.trim() || "2") + " level(s) down");
 }
 
 function setTimerValue(id, value, fallback) {

@@ -366,7 +366,7 @@ function previewTheme(name) {
 // screen, the bar and the pane's own rounded corner all agree without three
 // places knowing the color.
 function paintPaneBg(theme) {
-  const pane = document.querySelector(".term-pane");
+  const pane = document.getElementById("term-pane");
   if (!pane) return;
   const bg = (theme && theme.background) || "";
   // A THEME GOES ON AND COMES OFF AS ONE THING.
