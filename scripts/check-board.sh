@@ -172,11 +172,8 @@ if ! node "$here/scripts/test-term-nesting.js"; then
   fail=1
 fi
 
-# The stack's and the strip's sort order, RUN against cards that tie. A sort
-# that leaves ties to whatever order the poll handed it is right in every
-# screenshot and still moves rows on a repaint that changed nothing, which reads
-# as the board losing your place rather than as a sort. On the strip it moves a
-# tab out from under a cursor already on its way to it.
+# Run sorting checks with tied cards and different input orders to catch
+# rows that would otherwise move between unchanged polls.
 if ! node "$here/scripts/test-sort-order.js"; then
   echo "the stack or the strip does not sort the same way twice. see above." >&2
   fail=1

@@ -1,12 +1,5 @@
-// ── projects ────────────────────────────────────────────
-// Every repository the daemon can see, and the worktrees that already exist
-// for each, so starting work does not mean leaving the board to make a
-// directory and browsing back to it.
-//
-// The daemon scans, for the same reason it browses: the repositories are on
-// the machine atrium runs on, which is not the machine this page is open on.
-// And the daemon does not MAKE the worktree, it runs the command that does.
-// See internal/api/projects.go.
+// List repositories and worktrees on the daemon's machine. The daemon scans
+// its filesystem and runs the configured creation command; see projects.go.
 const projDlg = document.getElementById("projects");
 let projData = { projects: [], roots: [], depth: 2, worktree_command: "" };
 // Which repository is open, by path. One at a time: the list is long and a row
@@ -141,9 +134,7 @@ function useProjectPath(path) {
   projDlg.close();
 }
 
-// THE COMMON CASE IS THAT IT ALREADY EXISTS, and the daemon answers that with
-// the directory rather than an error, so both answers land here the same way:
-// the field gets a path and the dialog closes.
+// Creation and reuse both return a path. Fill the field and close the dialog.
 async function makeWorktree(repo) {
   if (projBusy_) return;
   const box = document.querySelector(".proj-branch");

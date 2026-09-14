@@ -74,22 +74,10 @@ type Harness struct {
 	// the process atrium owns, which costs the exit keys, the liveness check
 	// and the terminate button.
 	Prepare string `json:"prepare"`
-	// BracketedPaste says this runner asks for bracketed paste, so the board
-	// may wrap a paste in `\x1b[200~` and `\x1b[201~` without waiting to see
-	// the enable go past.
-	//
-	// Declared per runner for the same reason ExitKeys is: it is a fact about
-	// the program, it never changes while the program runs, and there is no
-	// common answer. Claude and codex turn the mode on at startup. A shell
-	// turns it on and off around every prompt, and something that never asked
-	// would print `200~` on screen, which is why this is off by default.
-	//
-	// It exists because the board cannot answer the question from the output
-	// stream alone. Its only evidence is the `\x1b[?2004h` the runner emitted
-	// once, at startup, and a pane that attaches after the ring has wrapped
-	// past that byte never sees it. The evidence is exactly the thing the ring
-	// is entitled to discard, so the answer is configuration and not
-	// inference.
+	// BracketedPaste enables markers for runners that keep the mode on throughout
+	// their session. The startup enable sequence can fall out of scrollback, so
+	// the board also needs this configuration. Shells use stream detection
+	// because they toggle the mode around each prompt.
 	BracketedPaste bool `json:"bracketed_paste"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
@@ -120,37 +108,13 @@ const (
 func DefaultHarnesses() []Harness {
 	shellCmd, shellArgs := shellpick.Pick()
 	return []Harness{
-		// pty by default. Something started from atrium should be something
-		// atrium can attach to, terminate and check the liveness of. Window
-		// mode remains for the one thing it does better: a runner that
-		// outlives the daemon.
-		// A LAUNCHED WORKER STARTS WITH NO MCP SERVERS, WHICH IS WHAT MAKES A
-		// LAUNCH UNATTENDED.
+		// Use a PTY by default so atrium can attach, terminate, and check liveness.
+		// Window mode remains available for runners that need to outlive the daemon.
 		//
-		// A globally configured MCP server that fails to connect makes claude
-		// stop at startup and ask whether to continue without it. One flaky
-		// server is then one modal per session, and launching five workers is
-		// five windows to click through before any of them does anything. The
-		// session is on the board, it says `running`, and it is waiting on a
-		// human nobody told to look. That is worse than a failure, because
-		// there is no error to see.
-		//
-		// `--strict-mcp-config` limits claude to the servers named by
-		// `--mcp-config`, and none is passed, so it starts with none at all.
-		// The operator's global servers are the operator's own tools; a worker
-		// spawned to edit code in a worktree has no use for them, and the
-		// project's own `.mcp.json` goes with them for the same reason: what
-		// a launched worker needs from atrium arrives through its hooks and
-		// the `atrium` command, not through a server it has to connect to.
-		//
-		// Nothing is pointed at a file on purpose. `--mcp-config` naming a
-		// path that does not exist is a hard startup failure, so a default
-		// that named `.mcp.json` would refuse to start in every worktree
-		// without one, and trading a modal for a dead launch is not a fix.
-		//
-		// On the resume arguments as well as the base ones, because resuming
-		// REPLACES args rather than adding to them, and a resumed session with
-		// the flag missing is the same modal on the second start.
+		// Start Claude without MCP servers to avoid prompts blocking unattended launches.
+		// --strict-mcp-config without --mcp-config does this without requiring a file.
+		// Atrium communicates through hooks and the CLI. Set the flag in both argument
+		// lists because resume_args replaces args.
 		{
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
 			LaunchMode: LaunchPTY, Args: []string{"--strict-mcp-config"},

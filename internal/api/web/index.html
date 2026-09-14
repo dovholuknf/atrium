@@ -46,25 +46,14 @@
   <div class="bar">
     <h1 class="wordmark accent-text">Atrium</h1>
     <nav>
-      <!-- Stack first and open by default. One ordered list answers "what
-           should I look at next"; the board answers "what is where", which is
-           the second question.
-
-           No count on it. The stack is the view that opens by default, so the
-           number sat next to the list it was counting and told you what was
-           already on screen. It counted the blocked agents that perms counts
-           as well, so one agent waiting to be let through lit two tabs and
-           read as two things to do. The window title and the alert still count
-           that queue, and those are the two that reach you from another tab. -->
+      <!-- Open the stack by default. Omit its badge to avoid duplicating the
+           permissions count; titles and alerts still report the waiting queue. -->
       <div class="tab on" data-view="stack">stack</div>
       <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            title="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
-      <!-- These two last, because each answers a question you go looking for
-           rather than one that interrupts you. A harness row is edited when it
-           is set up and not looked at again, and auto mode answers most
-           permission requests, so what is left on perms is the audit trail. -->
+      <!-- Put runner configuration and the permissions audit after the daily work views. -->
       <div class="tab" data-view="runners">runners</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
            title="requests waiting to be answered"></span></div>
@@ -260,16 +249,8 @@ Exports honor whatever filter is applied.">?</span>
            handle, so its card and its terminal read as one surface. Placed
            and sized in `placeTabBridge`. -->
       <div class="tabbridge" id="tab-bridge" hidden></div>
-      <!-- THE ONE PANE, AND IT IS ADDRESSED BY ITS ID.
-           There is one terminal on this page and every piece of code that
-           reaches for it wants that one. `querySelector(".term-pane")` says
-           "whichever comes first", which is the same thing only for as long as
-           there is exactly one. A second section carrying the class, from
-           anywhere, hands half the terminal code the pane nobody is looking at:
-           the theme paints one, the tab bridge measures another and the
-           teardown tidies a third, and none of it errors. An id cannot be
-           ambiguous, so the lookups ask by id and `scripts/check-terminal.js`
-           holds them to it and to there being one. -->
+      <!-- Keep one terminal pane and address it by id. check-terminal.js verifies
+           the markup and lookups to catch duplicate panes. -->
       <section class="term-pane" id="term-pane">
         <div class="term-bar">
           <!-- The mark and the name are one thing, so they are one element.
@@ -419,11 +400,7 @@ Exports honor whatever filter is applied.">?</span>
           </div>
         </div>
         <div id="t-screen"></div>
-        <!-- One line, and it has to stay one line. Every entry earned its place
-             by somebody pressing the key and getting the other thing, so the
-             rule for cutting this is to drop the EXPLANATIONS and keep the
-             keys. What a key does is worth a strip under a terminal. Why it
-             does that is not. -->
+        <!-- Keep the shortcut strip to one line, listing keys and actions. -->
         <div class="term-help">
           ctrl-c copies a selection, interrupts otherwise &middot;
           ctrl-v or shift-insert pastes &middot;
@@ -1078,11 +1055,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-browseroots-now"></b></span>
     </div>
 
-    <!-- Making a worktree, which atrium does by RUNNING the tool that owns
-         that job rather than by laying one out itself. The layout on a machine
-         is a convention some other tool maintains, and the moment atrium
-         encodes it, it owns it and drifts. So this is a command template, the
-         way a harness and a source already are. -->
+    <!-- Configure the external command that creates worktrees and controls their layout. -->
     <div class="field">
       <label class="eyebrow" for="s-worktreecmd">make a worktree with</label>
       <div class="picker">
@@ -1174,9 +1147,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
         is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
         empty for the default.</span>
-      <!-- The same arithmetic, done for the machine you are actually on. Filled
-           in from the daemon's count of live rings, and hidden when it does not
-           send one. -->
+      <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
       <span class="hintline" id="s-sbcost" hidden></span>
     </div>
 
@@ -1278,9 +1249,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         readline's kill-line in every session, which is the trade it looks like.</span>
     </div>
 
-    <!-- Off by default, and it stays that way for anybody who does not come
-         looking for it. Focus-follows-mouse is loved and hated in about equal
-         measure, and this board takes focus back on a redraw already. -->
+    <!-- Focus on hover is opt-in. -->
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
@@ -1797,9 +1766,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">used instead of the arguments above when picking a conversation back up.
         put <code>{resume}</code> where the session id goes.</span>
     </div>
-    <!-- How this runner is handed an opening instruction. Empty means it cannot
-         be given one, and a launch that supplies a prompt is refused rather
-         than started on a session that will never read it. -->
+    <!-- Opening prompt arguments. Empty means the runner cannot accept a prompt. -->
     <div class="field">
       <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
       <textarea id="h-prompt" rows="2" spellcheck="false"
@@ -1826,9 +1793,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <code>esc</code>, <code>enter</code>, or any text to type. claude wants
         <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
     </div>
-    <!-- Declared rather than watched for. The board's other source is the
-         `\x1b[?2004h` a runner sends once at startup, which scrolls out of the
-         buffer and takes bracketing with it. -->
+    <!-- Persist paste support because the startup enable sequence can leave scrollback. -->
     <div class="field">
       <label class="check">
         <input type="checkbox" id="h-bracket">
@@ -1920,21 +1885,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="l-cwd">working directory</label>
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
-        <!-- The repositories on this machine, rather than a folder at a time.
-             Making the worktree is part of it, so starting work does not mean
-             leaving the board. -->
+        <!-- Choose a repository or create a worktree from the board. -->
         <button onclick="openProjects('l-cwd')">projects</button>
         <button onclick="openBrowse()">browse</button>
       </div>
       <span class="hintline">Directories already on the board. Click one to use it.</span>
       <div class="quickdirs" id="l-recent"></div>
     </div>
-    <!-- A session with nowhere to live, for trying something without first
-         deciding where it belongs. Under the directory field and not beside
-         it, because it is the answer to the same question: atrium makes the
-         directory, so there is nothing to fill in above.
-         What happens to it is spelled out rather than implied. "Gone forever"
-         has to be the thing you knew you were choosing. -->
+    <!-- Offer a temporary directory below the directory picker, with cleanup
+         behavior explained before launch. -->
     <div class="field" id="l-throwaway-field">
       <label class="check">
         <input type="checkbox" id="l-throwaway-on">
@@ -2065,9 +2024,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('browse').close()">close</button>
   </div>
   <div class="dlg-body">
-    <!-- Typing, because a worktree root with thirty children is a scroll. A
-         name narrows the list; a whole path goes straight there, which is how
-         somebody who already knows where they are going gets there. -->
+    <!-- Filter by name or enter a full path to navigate directly. -->
     <input type="text" id="b-filter" spellcheck="false" autocomplete="off"
       placeholder="filter these folders, or type a path and press enter">
     <div class="toolbar">
@@ -2075,8 +2032,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <button class="go" id="b-use" onclick="useBrowsed()">use this folder</button>
     </div>
     <div class="dirlist" id="b-list"></div>
-    <!-- The dot and the triangle were a distinction nothing explained, and the
-         two ways to press a row are worth one line each. -->
+    <!-- Explain folder icons and the separate select and open actions. -->
     <div class="dirlegend">
       <span><span class="ic repo">&#9679;</span> a git checkout</span>
       <span><span class="ic">&#9656;</span> a plain folder</span>
@@ -2085,10 +2041,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
-<!-- The repositories on this machine, and what already exists for each.
-     Atrium RUNS the tool that makes a worktree, it does not lay one out
-     itself: the command is a template in settings and the path is read back
-     out of git. See internal/api/projects.go. -->
+<!-- List repositories and worktrees. Creation runs the configured command,
+     then reads the resulting path from git. See internal/api/projects.go. -->
 <dialog id="projects">
   <div class="dlg-head">
     <div class="grow">

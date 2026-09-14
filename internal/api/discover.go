@@ -53,10 +53,8 @@ type candidate struct {
 var knownRunners = []candidate{
 	{
 		ID: "claude", Label: "claude code", Cmd: "claude",
-		// No MCP servers, for the reason DefaultHarnesses gives at length: a
-		// global server that will not connect turns every launch into a modal
-		// asking whether to go on without it, and a worker started from the
-		// board has nobody watching to answer.
+		// Disable MCP servers so connection prompts cannot block unattended launches.
+		// See DefaultHarnesses.
 		Args:       []string{"--strict-mcp-config"},
 		ResumeArgs: []string{"--resume", "{resume}", "--strict-mcp-config"},
 		ExitKeys:   []string{"ctrl-d", "ctrl-d"},

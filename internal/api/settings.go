@@ -108,17 +108,9 @@ func globalAutoView(s *Server) map[string]any {
 	out["scrollback_lines_now"] = scrollbackLines(s.st)
 	out["scrollback_mb_max"] = maxScrollbackMB
 	out["scrollback_lines_max"] = maxScrollbackLines
-	// What that megabyte figure costs across the board, rather than per ring.
-	//
-	// The box asks for a number of megabytes and says nothing about being
-	// multiplied by every live runner and every shell open beside one, so
-	// somebody typing the maximum into it is answering the question they were
-	// asked. Sent as the pieces rather than as a sentence, so the board says
-	// it in the board's own words.
-	//
-	// A CEILING, NOT A BILL. A ring reserves its size and pages in as it is
-	// written, so a runner that has printed a megabyte holds about a megabyte.
-	// This is what the current setting could come to if every live ring filled.
+	// Report total scrollback capacity across live runners and shells.
+	// This is the upper bound if every ring fills, not current memory usage.
+	// Send separate values so the board can format the explanation.
 	runners, shells := liveRings()
 	out["scrollback_runners"] = runners
 	out["scrollback_shells"] = shells

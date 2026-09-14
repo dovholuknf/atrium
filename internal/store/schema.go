@@ -1203,31 +1203,9 @@ var migrations = []struct {
 		},
 	},
 	{
-		// A LAUNCHED CLAUDE STOPS ASKING ABOUT MCP SERVERS IT DOES NOT NEED.
-		//
-		// A global MCP server that fails to connect makes claude ask, at
-		// startup, whether to carry on without it. One flaky server is a modal
-		// per launched session, so a wave of workers is a row of windows each
-		// waiting on a click before it does anything, all of them `running` on
-		// the board while they wait. `--strict-mcp-config` with no
-		// `--mcp-config` beside it starts the session with no MCP servers at
-		// all, which is what a worker spawned to edit code in a worktree wants
-		// anyway: it reaches atrium through its hooks and the `atrium`
-		// command, not through a server.
-		//
-		// Here as well as in `DefaultHarnesses` because those are seeded once
-		// on first run, and without this the operator's existing `claude` row
-		// keeps popping the dialog on every launch.
-		//
-		// Both lists, because `resume_args` REPLACES `args` rather than adding
-		// to them, and a resumed session missing the flag is the same modal on
-		// the second start.
-		//
-		// Only rows still holding what atrium seeded. An operator who has
-		// edited either list has a command line of their own, and a migration
-		// that rewrote it would be taking that away to fix a problem they may
-		// already have solved. `claude` only: the flag is claude's spelling,
-		// and no other runner would recognise it.
+		// Add --strict-mcp-config to existing default Claude harnesses so connection
+		// prompts do not block launches. DefaultHarnesses only seeds new databases.
+		// Update both lists because resume_args replaces args; preserve custom lists.
 		name: "0048_strict_mcp_config",
 		stmts: []string{
 			`UPDATE harness SET args = '["--strict-mcp-config"]'
@@ -1239,11 +1217,8 @@ var migrations = []struct {
 		},
 	},
 	{
-		// A throwaway session lives in a directory atrium made and will
-		// delete. `promote_to` is where that directory goes INSTEAD, once
-		// somebody decides the work matters, and it is read where the delete
-		// would otherwise happen. Both default to the answer every card
-		// written before them gives: not temporary, going nowhere.
+		// Store the throwaway flag and optional promotion destination. Existing
+		// cards default to permanent, with no pending move.
 		name: "0049_throwaway",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN throwaway INTEGER NOT NULL DEFAULT 0`,
@@ -1251,30 +1226,41 @@ var migrations = []struct {
 		},
 	},
 	{
-		// WHICH RUNNERS ASK FOR BRACKETED PASTE, declared rather than guessed.
-		//
-		// The board wraps a paste in `\x1b[200~`/`\x1b[201~` so the runner
-		// reads it as one paste instead of as a line per newline. Until now
-		// its only evidence was the `\x1b[?2004h` the runner emitted once at
-		// startup and the pane happened to parse out of the replayed
-		// scrollback. A pane that attaches after the ring has wrapped past
-		// that byte never sees it, pastes raw, and a long paste arrives as a
-		// line at a time. The evidence is precisely what the ring is entitled
-		// to throw away, so it cannot be the answer.
-		//
-		// `claude` and `codex` only, the two rows that are terminal user
-		// interfaces and turn the mode on for their whole run. NOT the shell:
-		// a shell turns the mode on and off around each prompt, so it is not
-		// a property of the program, and its enable is re-emitted constantly
-		// and stays in the ring anyway.
-		//
-		// Backfilled for the same reason `0047` was: `DefaultHarnesses` seeds
-		// once on first run, so without this every database that already
-		// exists gains the column and no row that uses it.
+		// Backfill paste support for Claude and Codex, which enable it for the whole
+		// session. The startup sequence can fall out of scrollback before attach.
+		// Shells toggle the mode around prompts and keep using stream detection.
+		// DefaultHarnesses only seeds new databases, so existing rows need this update.
 		name: "0050_harness_bracketed_paste",
 		stmts: []string{
 			`ALTER TABLE harness ADD COLUMN bracketed_paste INTEGER NOT NULL DEFAULT 0`,
 			`UPDATE harness SET bracketed_paste = 1 WHERE id IN ('claude', 'codex')`,
+		},
+	},
+	{
+		// WHERE A PINNED CARD SITS AMONG THE OTHER PINNED CARDS, decided by
+		// hand and kept.
+		//
+		// `pinned` was already a boolean and that was the whole of it: pinned
+		// cards floated above the rest and then sorted among themselves by
+		// whatever the surrounding sort said, which is activity or name. Both
+		// of those move. A bucket you arranged on purpose and that rearranges
+		// itself overnight is not one, so the order has to be a number
+		// somebody set rather than a consequence of one.
+		//
+		// WRITTEN AS A WHOLE LIST, in one transaction, rather than as a
+		// position per card. A drop moves one row and renumbers the rest, and
+		// sending each of those as its own request is how half a reorder lands
+		// and the bucket ends up in an order nobody chose. One request, one
+		// transaction, and either the new order is there or the old one is.
+		//
+		// Every existing pinned card starts at 0, so they stay in whatever
+		// order they are in today until the first drag gives them one, and
+		// ties fall back to the sort underneath. Zero is also what an unpinned
+		// card carries, which costs nothing: the order is only ever read
+		// within the pinned set.
+		name: "0051_pin_order",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN pin_order INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
 }

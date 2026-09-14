@@ -59,6 +59,11 @@ tool that already works.
 | --- | --- |
 | `github-assigned.ps1` | Open issues assigned to you, through `gh`. |
 | `zendesk-open.ps1` | Open support tickets, by identifier only. Read the header before using it. |
+| `runner-updates.ps1` | Runners with a newer version on npm. Reads this board's own harness rows. |
+
+`runner-updates.ps1` is the one to read for what a deduplication key is FOR. Its key is the package and the
+version that is available, so it raises one card for a release and then reports nothing until the next one.
+There is no state file and nothing to reset, because the inbox already knows what it has been told.
 
 ## Writing your own
 

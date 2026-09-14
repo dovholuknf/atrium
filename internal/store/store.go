@@ -229,25 +229,27 @@ type Task struct {
 	// Free text on purpose. A fixed list would be atrium deciding what kinds
 	// of work exist.
 	Tags []string `json:"tags"`
-	// Throwaway marks a card whose directory atrium made and will delete.
-	//
-	// The whole of the feature is this flag plus where it is read: the launch
-	// makes a temporary directory, and when the session ends the directory,
-	// the card and the conversation all go. Nothing else about the card is
-	// special, which is why file transfer, tags, terminals and the rest need
-	// no case for it.
-	//
-	// PromoteTo is where that directory goes instead, when somebody works in a
-	// throwaway for an hour and decides it mattered. Set while the session is
-	// still running and acted on after it ends, because a directory cannot be
-	// moved out from under the process whose working directory it is. Empty
-	// means nothing was promoted and the delete stands.
+	// Throwaway marks a card whose temporary directory, card, and transcripts
+	// are removed when the session ends. PromoteTo records a permanent destination
+	// instead. The move waits until exit so the working directory is no longer
+	// in use. An empty destination leaves cleanup enabled.
 	Throwaway bool   `json:"throwaway,omitempty"`
 	PromoteTo string `json:"promote_to,omitempty"`
 	// Pinned keeps a card at the top of every list and always in the terminal
 	// switcher. Some sessions are permanent fixtures and hunting for them in
 	// activity order is the wrong shape.
+	//
+	// A pinned card stays in the terminal switcher AFTER ITS RUNNER EXITS,
+	// greyed rather than gone. That is what makes the pinned set a bucket you
+	// keep things in instead of a filter over what happens to be running: a
+	// row that vanishes when you quit the session is a row you have to put
+	// back, and putting it back is the work pinning it was meant to save.
 	Pinned bool `json:"pinned"`
+	// PinOrder is where this card sits among the other pinned ones, smallest
+	// first. Set by dragging, and meaningless on a card that is not pinned.
+	// Zero on every card until something drags one, which leaves the pinned
+	// set tied and falling back to the sort underneath.
+	PinOrder int `json:"pin_order"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
 	// which is the point of coloring terminals: telling them apart at a

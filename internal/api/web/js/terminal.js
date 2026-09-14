@@ -7,20 +7,12 @@ let term = null, termFit = null, termSock = null, termTask = null;
 // another one on top. See `connectTerm`.
 let termData = null;
 
-// WHAT THE DAEMON SAID THIS RUNNER IS, from the first message of the attach.
-//
-// Reset per socket rather than per pane, because it arrives per socket: a
-// reconnect says it again, and a pane that has not heard it yet must not be
-// carrying the last session's answer. See `attachCaps` in
-// internal/daemon/attach.go.
+// Runner capabilities arrive in the first attach message. Reset per socket
+// so reconnects cannot reuse another session's capabilities. See attachCaps.
 let termCaps = {};
 
-// The caps message, or false for anything else so the caller can put it on
-// screen the way it always did.
-//
-// Deliberately narrow: a text message is only swallowed when it parses as JSON
-// AND says `"t":"caps"`. A runner that writes a line of JSON to its own output
-// sends it as binary, down the other branch, so it cannot be eaten by this.
+// Consume only text messages that parse as JSON with t=caps. Return false
+// for other messages. Runner output arrives as binary and bypasses this path.
 function takeTermCaps(data) {
   if (!data || data[0] !== "{") return false;
   let msg;
@@ -134,15 +126,8 @@ function toggleCopyOnSelect() {
   paintCopyMode();
 }
 
-// FOCUS THE TERMINAL WHEN THE POINTER ARRIVES ON IT.
-//
-// Off by default. It is a preference and not a correctness fix, and it is the
-// kind of preference that enrages whoever did not ask for it, so nothing
-// changes until somebody ticks the box.
-//
-// Held in the browser, like copy on select and the text scale: it is about the
-// mouse in front of this screen, and two people on two screens want different
-// answers to it.
+// Focus on hover is an opt-in browser preference, like copy on select and
+// text scale, so each screen can use its own setting.
 let hoverFocus = localStorage.getItem("atrium.hoverFocus") === "1";
 let hoverFocusTimer = 0;
 
@@ -152,16 +137,7 @@ function toggleHoverFocus(on) {
   if (!hoverFocus) clearTimeout(hoverFocusTimer);
 }
 
-// THE GUARDS ARE THE WHOLE FEATURE. This board already stole focus on a redraw
-// once, and it broke escape inside a dialog, so a deliberate and far more
-// frequent version of the same move has to say where it will not go.
-//
-// A dialog is open: several of them have text boxes, and they stack, so the
-// answer is "any of them", not "the one I know about".
-//
-// Something is being typed into: the find bar, the paste box, a settings
-// field, the launch form. Taking the caret out of a half-typed word is the
-// failure everybody who has met focus-follows-mouse remembers.
+// Do not move focus while a dialog is open or the user is editing a field.
 function hoverFocusBlocked() {
   if (document.querySelector("dialog[open]")) return true;
   const el = document.activeElement;
@@ -171,32 +147,13 @@ function hoverFocusBlocked() {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
-// WIRED ONCE. `#t-screen` outlives every attach, so a listener added per
-// `openTerm` would be a second, then a third, copy of this one.
-//
-// The delay is what makes this "the pointer arrived" rather than "the pointer
-// crossed": a diagonal move to a control on the far side of the pane passes
-// over the terminal, and without the wait it would take focus on the way past.
-// The hover is re-checked when the timer fires, because the pointer may have
-// left before then.
-//
-// Nothing happens on the way out. Leaving the pane leaves the focus in the
-// terminal, which is the half of focus-follows-mouse worth having here: the
-// stated preference is never to have the focus anywhere else.
+// Register once because #t-screen survives attaches. Delay focus so crossing
+// the pane on the way to another control does not steal it. Recheck hover
+// when the timer fires. Leaving the pane does not change focus.
 const hoverFocusDelay = 120;
 
-// WIRED ONCE, for the reason its three neighbours are, and it was not.
-//
-// These four sat inline in `openTerm`, which runs on every attach and on every
-// switch between sessions. `#t-screen` is emptied there rather than replaced,
-// so the element outlives the attach and every listener stayed on it: a second
-// copy after one switch, a tenth after nine.
-//
-// Nothing looked wrong, which is why it survived. Each one only records that
-// the operator moved the view and releases a scroll hold, so ten copies do
-// what one does, ten times. The cost is a handler count that climbs for as
-// long as the board is open, and a release that fires ten times for one wheel
-// tick.
+// Register once: #t-screen is emptied on attach, not replaced. Adding these
+// in openTerm would accumulate handlers on every session switch.
 function wireScrollActs(screen) {
   if (screen.dataset.scrollActsWired) return;
   screen.dataset.scrollActsWired = "1";
@@ -596,18 +553,9 @@ function openTerm(task) {
     // nothing claims it.
     if (ctrl && e.key === "Insert") { e.preventDefault(); copySelection(); return false; }
 
-    // SELECT ALL. The browser's own ctrl-a cannot do it: a WebGL terminal draws
-    // to a canvas and has no DOM to select, which is the same reason ctrl-f is
-    // taken over below. Without this there is no way to take the whole of a
-    // session's output anywhere.
-    //
-    // ctrl-a and not ctrl-shift-a, because ctrl-shift-a is Tab Search in Chrome
-    // and Edge and the browser takes it before the page sees it, the way it
-    // takes ctrl-shift-c above.
-    //
-    // THE COST IS REAL AND IS ACCEPTED: ctrl-a is readline's start-of-line and
-    // tmux's prefix, and the runner no longer sees it. Letting the operator
-    // rebind it is a separate item.
+    // Use xterm selection for Ctrl+A because the WebGL canvas has no selectable
+    // DOM text. Chrome and Edge reserve Ctrl+Shift+A for Tab Search. This consumes
+    // Ctrl+A before readline or tmux can handle it.
     if (ctrl && !e.shiftKey && e.code === "KeyA") {
       e.preventDefault();
       term.selectAll();
@@ -804,43 +752,13 @@ function wireTerminalPaste(screen) {
   });
 }
 
-// A PASTE IS NOT A BURST OF TYPING, and the runner has to be told which it is.
+// Clipboard handling bypasses xterm so we can receive pasted images too.
+// For text, normalize line breaks to carriage returns and add bracketed paste
+// markers when supported, as xterm would normally do.
 //
-// This path exists because atrium handles the clipboard itself: `ctrl-v` is
-// returned as unhandled to xterm so the browser's own `paste` event fires,
-// which is the only place a screenshot's bytes are reachable. The cost is that
-// xterm never sees the text, so the framing it would have applied has to be
-// applied here.
-//
-// Two things it does:
-//
-//   - CARRIAGE RETURNS. A clipboard gives `\n` or `\r\n`. A terminal delivers
-//     `\r` for a line break, and an application reading raw input treats `\n`
-//     as a line feed rather than as a key.
-//   - BRACKETED PASTE, when the application asked for it. Without the markers
-//     every newline in the pasted text is Enter, so pasting three lines into a
-//     prompt submits the first line and drops the rest into a prompt that is
-//     now busy. That is the whole bug: a big paste survived it because Claude
-//     Code detects a paste from the size of the burst, and a two line paste is
-//     not a big enough burst to be detected.
-//
-// `term.modes` is xterm's own record of what the application turned on, so
-// this asks rather than assumes: sending the markers to something that never
-// requested them would put `[200~` on screen.
-//
-// TWO SOURCES, AND THE SECOND ONE IS WHY A LONG PASTE STOPPED ARRIVING AS FIVE.
-//
-// `term.modes` can only know what this pane was replayed. The enable is sent
-// once, at the runner's startup, so a pane that attaches after the ring has
-// wrapped past that byte sees no evidence and pastes raw, and the operating
-// system then hands the runner the paste in four kilobyte installments that
-// read as separate bursts of typing. The ring is allowed to discard that byte,
-// so the pane cannot be the only one asked.
-//
-// `termCaps.bracketed_paste` is the daemon naming the runner's own harness row,
-// which is configuration and does not scroll away. Either one is enough: a
-// runner nobody has declared still gets the old behaviour, and a declared one
-// is bracketed from the first paste whatever is left in the ring.
+// Check both term.modes and the harness capability. The startup enable sequence
+// may have fallen out of scrollback, but the harness flag persists. Markers
+// keep multiline or chunked input together. Unsupported runners get plain text.
 function sendPasteText(text) {
   let body = String(text).replace(/\r\n/g, "\r").replace(/\n/g, "\r");
   const bracketed = (term && term.modes && term.modes.bracketedPasteMode) ||

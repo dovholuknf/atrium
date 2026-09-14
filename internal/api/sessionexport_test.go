@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// The boiling, against the shapes a real transcript mixes together: a typed
-// prompt, a tool result wearing the same `user` type, an assistant record
-// carrying text beside a tool call and thinking, a system reminder inside a
-// turn somebody did type, and a subagent's own exchange inline.
+// Exercise mixed transcript records: prompts, tool results, assistant text,
+// thinking, injected reminders, and inline sidechain conversations.
 func TestBoilDownKeepsOnlyTheConversation(t *testing.T) {
 	lines := []string{
 		`{"type":"user","message":{"content":"add the export\n<system-reminder>\nnot typed by anybody\n</system-reminder>\nsmall as you can"}}`,

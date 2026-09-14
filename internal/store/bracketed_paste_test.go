@@ -2,14 +2,8 @@ package store
 
 import "testing"
 
-// WHICH RUNNERS ASK FOR BRACKETED PASTE, which is a property of the program and
-// not something the board can read off the wire.
-//
-// The board's other source is the `\x1b[?2004h` the runner emits once at
-// startup, parsed out of the replayed scrollback. Once the ring has wrapped
-// past that byte a freshly opened pane has no evidence at all and pastes raw,
-// and a long paste then reaches the runner in four kilobyte installments that
-// read as separate bursts of typing. So the answer has to be a row.
+// Persist paste support in the harness so the board still knows about it
+// after the startup enable sequence falls out of scrollback.
 
 // The flag survives a round trip. It is stored as an integer and read back into
 // a bool beside sixteen other columns, and a scan that lands in the wrong field
@@ -53,10 +47,8 @@ func TestBracketedPasteSurvivesBeingSaved(t *testing.T) {
 	}
 }
 
-// THE BACKFILL IS WHAT MAKES THIS WORK ON A DATABASE THAT ALREADY EXISTS.
-// `DefaultHarnesses` is seeded once, on first run, so without the migration's
-// UPDATE the operator's own `claude` row gains the column and nothing that uses
-// it, and the runner this defect was reported against keeps pasting raw.
+// Existing databases need the migration backfill; DefaultHarnesses only
+// seeds new databases.
 func TestAnExistingClaudeRowAlreadyDeclaresBracketedPaste(t *testing.T) {
 	s := openTestStore(t)
 
@@ -69,10 +61,8 @@ func TestAnExistingClaudeRowAlreadyDeclaresBracketedPaste(t *testing.T) {
 			"has wrapped past the enable still pastes raw")
 	}
 
-	// A shell is deliberately not in the backfill. It turns the mode on and off
-	// around each prompt rather than for its whole run, so it is not a property
-	// of the program, and its enable is re-emitted often enough to stay in the
-	// ring.
+	// Leave shells out of the backfill because they toggle paste mode around
+	// prompts and can use stream detection.
 	sh, err := s.Harness("shell")
 	if err != nil {
 		t.Fatal(err)

@@ -518,19 +518,10 @@ function bytes(n) {
   return (n / 1024 / 1024 / 1024).toFixed(1) + "G";
 }
 
-// ── getting a conversation out of a card ────────────────
-//
-// The other thing worth taking off the machine. A transcript is the only
-// record of why the code looks like it does, and it lives in one file, in a
-// format nobody reads, that forgetting the session deletes.
-//
-// Two questions, because they are two decisions and neither has a default the
-// other can be folded into: which conversation, then how much of it. One
-// conversation in the directory answers the first on its own.
-//
-// A PLAIN LINK, like the file download beside it, so the browser streams it
-// straight to disk. A transcript is ninety megabytes by the end of a working
-// day and it must never exist in the page. The name comes off the response.
+// Export a conversation: choose a session, then raw or reduced output.
+// Skip the session picker when there is only one conversation. Use a download
+// link so large transcripts stream without buffering in the page. The response
+// supplies the filename.
 async function saveSession(id, t) {
   let list = [];
   try {
@@ -1197,13 +1188,8 @@ function applyScrollback() {
   if (term) term.options.scrollback = scrollbackLines();
 }
 
-// What the megabytes box costs on this machine right now.
-//
-// The box is per session and the bill is per RUNNING session, so the number
-// somebody types is a long way from the number the machine pays. The daemon
-// counts the live rings and answers with the total, and this only phrases it.
-// A daemon that does not send the counts leaves the line hidden rather than
-// have the page guess at a total.
+// Display total scrollback capacity using live ring counts from the daemon.
+// Hide the line when counts are unavailable.
 function scrollbackCost(s) {
   const runners = Number(s.scrollback_runners);
   const shells = Number(s.scrollback_shells);

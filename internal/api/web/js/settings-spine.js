@@ -1102,29 +1102,10 @@ async function refresh() {
     // to it only when there was something to add them to.
     const perms = local ? local.concat(remote) : (remote.length ? remote : null);
     if (waiting) {
-      // No tab badge for this list: the stack tab is the list, and the count
-      // it carried was also counting the blocked agents perms counts. The
-      // title and the alert below still read it, and they are what has to
-      // work from another tab.
-      //
-      // Who, and what they want. "is waiting on you" was neither: it named a
-      // card and then said the one thing true of everything in this list, so
-      // it never distinguished an agent that finished its turn from one frozen
-      // mid-tool waiting to be let through.
-      //
-      // Permissions are dropped here rather than described, because the block
-      // below alerts on the same event with the tool and the command in hand.
-      // Both firing meant one blocked agent rang twice and put up two toasts.
-      // A session that is ready because it has JUST STARTED never rings.
-      //
-      // Nothing was accomplished and nobody needs telling: you launched it, or
-      // a fixture did at boot, and in the second case half a dozen terminals
-      // coming up meant half a dozen notifications for an event with no
-      // content. The one thing worth hearing about a batch of fixtures is the
-      // ones that did NOT start, and `fixtures-started` says that once.
-      //
-      // Still counted, still on the board, still marked in a popped-out
-      // window's title bar. Only the interruption is dropped.
+      // Avoid a stack badge that duplicates the permissions count. Keep the count
+      // for titles and alerts, but let the permission handler notify about blocked
+      // tools so each event produces one alert. Newly started sessions stay visible
+      // without ringing; fixtures-started reports startup failures separately.
       alerting.check("waiting", waiting.filter(t =>
         t.status !== "needs-permission" && !justStarted(t)), t => ({
         title: wasAsked(t)

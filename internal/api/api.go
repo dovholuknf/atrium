@@ -195,13 +195,8 @@ type Server struct {
 	CancelDispatch func(id string) error
 	DispatchResult func(w http.ResponseWriter, r *http.Request)
 
-	// BoardDir serves the board out of this directory instead of out of the
-	// embed. Empty is the default and stays the shipping path.
-	//
-	// A change to the page then costs a browser refresh rather than a rebuild,
-	// an install, and a restart that takes down the pseudo terminal of every
-	// supervised runner on the machine. Nothing about packaging changes: a
-	// built binary still carries the embedded copy.
+	// BoardDir serves board files from disk for development, allowing changes
+	// without restarting the daemon. Empty uses the embedded copy.
 	BoardDir string
 
 	BuildExport func() (any, error)
@@ -342,6 +337,9 @@ func (s *Server) Handler() http.Handler {
 	// it deleting itself. See throwaway.go.
 	mux.HandleFunc("POST /v1/tasks/{id}/promote", s.promoteCard)
 	mux.HandleFunc("POST /v1/tasks/prune", s.pruneTasks)
+	// Before `{id}` would matter if these overlapped, and they do not: Go's
+	// mux prefers the literal segment over the wildcard either way.
+	mux.HandleFunc("POST /v1/tasks/pin-order", s.pinOrder)
 	mux.HandleFunc("POST /v1/intake", s.intake)
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
 	mux.HandleFunc("GET /v1/history", s.history)
@@ -538,14 +536,9 @@ var IsSupervised func(taskID string) bool
 // Supplied by the daemon for the same reason.
 var HasShell func(taskID string) bool
 
-// LiveRings counts the scrollback rings that exist right now: the runners
-// atrium owns, and the shells opened beside them. Supplied by the daemon,
-// which holds both maps.
-//
-// It is the MULTIPLIER on the megabytes the settings box asks for. That box
-// takes a number per ring and reads as though it were the whole board's, so
-// the count is what turns the setting into what it costs. A shell counts
-// because it allocates a second ring at the same size.
+// LiveRings counts runner and shell scrollback rings, supplied by the daemon.
+// Multiply by the per-ring setting to report total capacity; each companion
+// shell allocates its own ring.
 var LiveRings func() (runners, shells int)
 
 // CloseShellFor ends a card's shell, called as the card is deleted.
@@ -923,6 +916,36 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Broadcast("task-removed", map[string]string{"id": id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pinOrder writes the order of the pinned bucket, as the whole list.
+//
+// NOT A PATCH ON A CARD, which is what every other field on a card is. A
+// position is a statement about the cards around it, so one card's new place
+// is meaningless without theirs, and a patch per card would be a request per
+// row for one drag. The list is the unit and the store writes it in a
+// transaction, so a reorder either happened or did not.
+//
+// Ids nobody recognises are the store's problem rather than this handler's,
+// and it ignores them. A card unpinned in another tab between the drag and the
+// drop is the ordinary case, not an error worth refusing a reorder over.
+func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if err := s.st.SetPinOrder(body.IDs); err != nil {
+		s.fail(w, err)
+		return
+	}
+	// Every board says so, because the bucket is the same bucket in every tab
+	// and a drag in one leaves the others showing an order that is no longer
+	// true.
+	s.Broadcast("tasks-changed", map[string]int{"pinned": len(body.IDs)})
 	w.WriteHeader(http.StatusNoContent)
 }
 

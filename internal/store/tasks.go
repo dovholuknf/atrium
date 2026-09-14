@@ -15,7 +15,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
 	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
-	model, throwaway, promote_to`
+	model, throwaway, promote_to, pin_order`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -42,7 +42,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
 		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
-		&throwaway, &t.PromoteTo); err != nil {
+		&throwaway, &t.PromoteTo, &t.PinOrder); err != nil {
 		return nil, err
 	}
 	t.Throwaway = throwaway != 0
@@ -311,7 +311,7 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -329,7 +329,10 @@ func (s *Store) insertTask(t *Task) error {
 		t.Model,
 		// Never temporary at creation. A throwaway is marked by the launch
 		// that made its directory, which is the only thing that knows.
-		0, "")
+		0, "",
+		// No place in the pinned bucket, because a new card is not pinned.
+		// The first drag after somebody pins it is what gives it one.
+		0)
 	return err
 }
 
@@ -975,6 +978,37 @@ func (s *Store) SetPinned(id string, on bool) error {
 		}
 		_, err := s.db.Exec(`UPDATE task SET pinned = ? WHERE id = ?`, v, id)
 		return err
+	})
+}
+
+// SetPinOrder writes the pinned bucket's order, given the ids in the order
+// they should appear.
+//
+// THE WHOLE LIST, IN ONE TRANSACTION. A drag moves one card and changes the
+// position of every card it passed, so the honest unit of work is the order
+// itself rather than one card's place in it. Sending a position per card would
+// be a request per row, each able to fail on its own, and a half-applied
+// reorder leaves the bucket in an arrangement nobody chose and nobody can
+// recognise as wrong.
+//
+// Ids that are not pinned, or not there at all, are written anyway and cost
+// nothing: `pin_order` is only ever read within the pinned set, so a stale id
+// in the list is a number on a row that will never be compared. Refusing the
+// whole reorder because one card was unpinned in another tab a moment ago
+// would be the board arguing with itself.
+func (s *Store) SetPinOrder(ids []string) error {
+	return s.guard(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for i, id := range ids {
+			if _, err := tx.Exec(`UPDATE task SET pin_order = ? WHERE id = ?`, i, id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
 	})
 }
 

@@ -29,8 +29,7 @@ func throwawayCard(t *testing.T, st *store.Store, dir string) *store.Task {
 // quote is enough JSON quoting for a Windows path in a test.
 func quote(s string) string { return `"` + strings.ReplaceAll(s, `\`, `\\`) + `"` }
 
-// WITH NOTHING RUNNING THE MOVE IS IMMEDIATE. Making somebody start a session
-// in order to move a directory would be absurd.
+// Move immediately when no session is running.
 func TestPromotingAnIdleThrowawayMovesItNow(t *testing.T) {
 	s, st, dir := fileServer(t)
 	task := throwawayCard(t, st, dir)
@@ -57,9 +56,7 @@ func TestPromotingAnIdleThrowawayMovesItNow(t *testing.T) {
 	}
 }
 
-// WITH A SESSION RUNNING IT IS A PROMISE. Windows will not let a live
-// process have its working directory renamed, so the destination is written
-// down and `awaitExit` carries it out.
+// Record the destination while the runner is using the directory; awaitExit moves it.
 func TestPromotingALiveThrowawayWaitsForTheSession(t *testing.T) {
 	s, st, dir := fileServer(t)
 	task := throwawayCard(t, st, dir)
@@ -89,8 +86,7 @@ func TestPromotingALiveThrowawayWaitsForTheSession(t *testing.T) {
 	}
 }
 
-// A DESTINATION THAT ALREADY EXISTS IS REFUSED, before anything is moved. The
-// alternative is merging an hour of work into somebody else's directory.
+// Reject an existing destination before moving anything.
 func TestPromotingOntoSomethingThatExistsIsRefused(t *testing.T) {
 	s, st, dir := fileServer(t)
 	task := throwawayCard(t, st, dir)
@@ -110,17 +106,14 @@ func TestPromotingOntoSomethingThatExistsIsRefused(t *testing.T) {
 	}
 }
 
-// A RELATIVE PATH IS REFUSED, because the daemon's own working directory is
-// not anywhere the operator was thinking of.
+// Reject relative destinations to avoid resolving against the daemon's directory.
 func TestPromotingSomewhereRelativeIsRefused(t *testing.T) {
 	if _, err := promoteTarget("kept"); err == nil {
 		t.Fatal("a relative destination was accepted")
 	}
 }
 
-// THE CROSS-VOLUME CASE, which is the ordinary one: temporary directories live
-// on whichever volume the operating system keeps them on, and work is promoted
-// somewhere else. Rename cannot do it, so the copy is what has to work.
+// Exercise the copy fallback used when rename cannot cross volumes.
 func TestATreeIsCopiedWhenItCannotBeRenamed(t *testing.T) {
 	from := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(from, "src", "inner"), 0o755); err != nil {

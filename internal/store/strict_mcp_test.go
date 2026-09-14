@@ -5,11 +5,8 @@ import (
 	"testing"
 )
 
-// A launch that needs a click is not a launch. A global MCP server that will
-// not connect makes claude ask, at startup, whether to go on without it, and a
-// worker atrium started has nobody watching to answer. The flag that ends that
-// has to be on the command line atrium builds, on the first start and on every
-// resume after it.
+// Default Claude launches and resumes must disable MCP connection prompts
+// so they can start unattended.
 
 func carries(args []string, want string) bool {
 	for _, a := range args {
@@ -42,10 +39,8 @@ func TestTheClaudeRowStartsWithNoMCPServers(t *testing.T) {
 	}
 }
 
-// Nothing names an MCP config file. `--mcp-config` pointed at a path that does
-// not exist is a hard startup failure, so a default naming `.mcp.json` would
-// refuse to start in every worktree without one: a dead launch instead of a
-// modal, which is not an improvement.
+// Do not name an MCP config file: a missing file would fail startup in
+// worktrees that have no .mcp.json.
 func TestNoMCPConfigFileIsNamed(t *testing.T) {
 	s := openTestStore(t)
 
@@ -74,10 +69,8 @@ func TestAShellIsNotGivenTheFlag(t *testing.T) {
 	}
 }
 
-// THE BACKFILL IS WHY THIS WORKS ON A DATABASE THAT ALREADY EXISTS.
-// `DefaultHarnesses` is seeded once on first run, so without the migration the
-// operator's own `claude` row keeps the command line it was seeded with and
-// keeps raising the dialog on every launch.
+// Verify the migration updates existing defaults, since DefaultHarnesses
+// only seeds new databases.
 func TestAnExistingClaudeRowIsBackfilled(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 

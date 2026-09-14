@@ -10,27 +10,10 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 )
 
-// A session with nowhere to live.
-//
-// The case this is for is wanting to try something without first deciding
-// where it belongs. The alternative is making a folder, remembering what it
-// was for, and finding it three weeks later beside a card that has sat in
-// `finished` ever since. Small friction, paid every single time, and that is
-// the kind that decides whether a tool gets reached for at all.
-//
-// "GONE FOREVER" IS THREE DELETIONS and the third is the one that gets
-// forgotten: the directory, the card, and the conversation. Claude Code keys
-// its transcripts on the working directory, so deleting the directory alone
-// leaves a transcript orphaned under an encoded name for a path that no longer
-// exists, one per throwaway, accumulating forever. A throwaway that leaves its
-// transcript behind is not a throwaway.
-//
-// AND IT ALL HAPPENS AFTER THE PROCESS IS GONE. The runner's working directory
-// IS the directory, and Windows will not let a live process have its cwd
-// removed. So this is called from `awaitExit`, where the process has already
-// been waited on, rather than from wherever the exit was asked for. An
-// implementation that deletes where the exit was requested appears to work and
-// leaves the directory behind.
+// Clean up throwaways after their processes exit: remove the directory,
+// card, and Claude Code transcripts, which are stored separately. Run from
+// awaitExit because Windows cannot remove a live process's working directory.
+// Promotion replaces cleanup when the operator keeps the work.
 
 // throwawayPattern is what a temporary directory is called, so that one found
 // on disk later says what it was.
@@ -50,16 +33,9 @@ func makeThrowawayDir() (string, error) {
 const throwawayWhy = "temporary. this directory, this card and the conversation " +
 	"are deleted when the session ends. promote it to keep the work."
 
-// endThrowaway is what the end of a throwaway session means.
-//
-// Called for every card as its runner exits, and returns immediately for the
-// cards that are not throwaways, which is nearly all of them. Cheap enough to
-// ask every time and much safer than a caller remembering to.
-//
-// AN EXIT IS THREE DIFFERENT EVENTS: `atrium finish`, the process ending on
-// its own, and the operator killing it. All three arrive here, because all
-// three go through `cmd.Wait`. A crash cleans up as thoroughly as a tidy
-// finish for the same reason.
+// endThrowaway cleans up an exiting runner and returns immediately for
+// ordinary cards. All exit paths reach it through cmd.Wait, including
+// normal completion, termination, and crashes.
 func (d *Daemon) endThrowaway(taskID string) {
 	t, err := d.st.Get(taskID)
 	if err != nil || !t.Throwaway {
@@ -75,12 +51,9 @@ func (d *Daemon) endThrowaway(taskID string) {
 	d.discardThrowaway(t.ID, t.Worktree)
 }
 
-// promoteThrowaway carries out a promote that had to wait for the session.
-//
-// A FAILED MOVE STOPS THE DELETE ANYWAY. The directory is somewhere it was not
-// meant to stay and that is a great deal better than gone: the card keeps its
-// old directory, stops being temporary, and says what happened, which leaves
-// the operator with the work and a sentence explaining where it is.
+// promoteThrowaway performs a deferred move. If it fails, keep the original
+// path and clear the temporary flag so cleanup cannot delete the work.
+// Record the failure on the card.
 func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 	if err := api.MoveWorktree(from, to); err != nil {
 		log.Printf("[atrium] could not promote %s to %s: %v", taskID, to, err)
@@ -104,11 +77,8 @@ func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 	d.publishTask(taskID)
 }
 
-// discardThrowaway performs the three deletions.
-//
-// The directory first, because it is the one that can fail: a file still open
-// in it leaves everything else describing something that is still there. The
-// card last, because it is the only remaining way to find the other two.
+// discardThrowaway removes the directory, transcripts, then card. Stop if
+// the directory cannot be removed; keep the card until cleanup finishes.
 func (d *Daemon) discardThrowaway(taskID, dir string) {
 	// A shell opened beside the runner holds the directory open, and on
 	// Windows that is enough to refuse the removal. Closed here for the same
@@ -154,14 +124,8 @@ func isThrowawayDir(dir string) bool {
 	return strings.EqualFold(parent, filepath.Clean(os.TempDir()))
 }
 
-// sweepThrowaways is the backstop, and it is the case that will happen.
-//
-// `awaitExit` cleans up after every runner it waited on, and a daemon that was
-// killed waited on none of them. So a throwaway whose directory and card are
-// still there at start up is one whose session ended when the daemon did, and
-// it is finished either way: its directory cannot be reopened into, because
-// `reopenWanted` refuses a throwaway, and a card nothing can start again is a
-// card with nothing left to do.
+// sweepThrowaways cleans up leftovers after a daemon exit that bypassed
+// awaitExit. Throwaways are excluded from reopening and need cleanup at startup.
 func (d *Daemon) sweepThrowaways() {
 	tasks, err := d.st.List()
 	if err != nil {

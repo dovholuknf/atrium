@@ -6,22 +6,9 @@ import (
 	"testing"
 )
 
-// The sequences claude-code actually emits, and the two defects that came from
-// guessing at them instead of measuring.
-//
-// Both were found from one screenshot of a reattached terminal and confirmed by
-// counting escapes in a real carried scrollback:
-//
-//	15543  ESC[?2026h and ESC[?2026l, in matched pairs, one per frame
-//	12986  ESC[46;3H
-//	 7837  ESC[1C
-//	 2613  ESC[K
-//
-// `collapseRedraws` knew about carriage returns and erases, which are how a
-// SHELL SCRIPT draws a progress bar. A terminal user interface uses none of
-// them, so fifteen thousand frames read as one segment and collapsed to
-// nothing. `flatten` dropped the cursor-forwards, so every field on a drawn row
-// ended up against the one before it.
+// Regression cases from captured Claude Code output. Synchronized-output
+// markers delimit frames even without carriage returns. Cursor-forward
+// sequences must preserve spacing between fields when flattened.
 
 // frame is one spinner frame the way claude-code draws it: hold the screen,
 // position absolutely, write, release.
@@ -29,8 +16,7 @@ func frame(text string) string {
 	return "\x1b[?2026h\x1b[46;3H\x1b[38;2;215;119;87m" + text + "\x1b[m\x1b[?2026l"
 }
 
-// THE BUG, AS MEASURED. A run of frames separated by synchronized-output
-// markers and absolute positioning, with not one carriage return in it.
+// Captured frame boundaries use synchronized output with no carriage returns.
 func TestASynchronizedSpinnerCollapses(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("real work above\r\n")
@@ -55,12 +41,8 @@ func TestASynchronizedSpinnerCollapses(t *testing.T) {
 	}
 }
 
-// ABSOLUTE POSITIONING IS NOT A BOUNDARY, and this is the test that stops
-// somebody adding it because it looks like the obvious answer.
-//
-// claude-code emits several `CSI H` inside ONE frame. Counting each as a frame
-// end would collapse a frame to whatever followed its last positioning, which
-// throws away most of what was on screen.
+// Several absolute cursor positions can occur within one frame. They must
+// not count as redraw boundaries or the earlier parts of a frame will be lost.
 func TestAbsolutePositioningIsNotAFrameBoundary(t *testing.T) {
 	one := "\x1b[?2026h" +
 		"\x1b[43;1H first line of the block" +
@@ -100,11 +82,8 @@ func TestACarriageReturnSpinnerStillCollapses(t *testing.T) {
 	}
 }
 
-// THE OTHER HALF: a row drawn with cursor-forward instead of spaces has to
-// come back with its spacing.
-//
-// This is the table header from the screenshot, which replayed as
-// `idwire_namestatussupervisedpidworktree`.
+// Preserve spacing in this captured table header, which uses cursor-forward
+// instead of literal spaces.
 func TestCursorForwardBecomesSpacing(t *testing.T) {
 	row := "id" + "\x1b[4C" + "wire_name" + "\x1b[2C" + "status"
 
@@ -137,15 +116,9 @@ func TestCursorForwardIsBounded(t *testing.T) {
 	}
 }
 
-// EVERY MOVEMENT THAT COULD REACH HISTORY STAYS DROPPED.
-//
-// Two sequences are translated rather than dropped, and both only ever go
-// forward: cursor-forward becomes spaces on the row it is already on, and a
-// row jump DOWNWARD becomes a line ending. See `flatten_rows_test.go`.
-//
-// These are the rest. Every one can land on something already emitted, so
-// translating any of them would put the original bug back: a replay that
-// erases itself.
+// Drop movements that could overwrite emitted history. Only forward moves
+// are translated: horizontal moves become spaces and downward row jumps
+// become line breaks. See flatten_rows_test.go.
 func TestMovementsThatCouldReachHistoryAreDropped(t *testing.T) {
 	for _, seq := range []string{
 		"\x1b[3A",     // up

@@ -654,11 +654,8 @@ func TestWriteGivesUpOnAWriterThatMakesNoProgress(t *testing.T) {
 	}
 }
 
-// A REPLAYED SPINNER IS ONE LINE, NOT A THOUSAND.
-//
-// The specimen: a progress line repainting in place, each frame carrying its
-// own token count, with no newline until the run ends. Only the last frame was
-// ever on the screen that drew it, so only the last frame is replayed.
+// Replay only the last frame of a progress line whose counters change
+// between redraws and which has no newline until completion.
 func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
 	r := newRing(4096, 80)
 	r.Write([]byte("the work before it\n"))
@@ -679,9 +676,7 @@ func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
 	}
 }
 
-// AND THE FRAMES ARE NEVER COMPARED. These embed a counter that changes every
-// time, which is exactly what an implementation keyed on identical bytes would
-// refuse to collapse.
+// Changing counters must not prevent frames from collapsing.
 func TestFramesThatDifferAreStillOneRun(t *testing.T) {
 	r := newRing(4096, 80)
 	for i := 0; i < 20; i++ {
@@ -697,8 +692,7 @@ func TestFramesThatDifferAreStillOneRun(t *testing.T) {
 	}
 }
 
-// NEVER ACROSS A NEWLINE. Finished lines are history, however many of them a
-// runner draws, and a run is judged inside one line or not at all.
+// Never collapse across newlines; completed lines remain in history.
 func TestCompletedLinesAreNeverCollapsed(t *testing.T) {
 	r := newRing(4096, 80)
 	for i := 0; i < 5; i++ {

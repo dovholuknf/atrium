@@ -63,14 +63,5 @@ jobs:
         # shell `scripts/ci.sh` is written for and the same one a developer on
         # Windows runs it in.
         shell: bash
-        # `bash scripts/ci.sh` rather than `scripts/ci.sh`, because the file is
-        # mode 100644 in git and Linux refuses to execute it: the runner
-        # reported exit 126, "found but not executable", and the whole ubuntu
-        # job failed before running a single check.
-        #
-        # Marking it executable would fix that job and not this problem. Windows
-        # has no such bit, so the mode is a fact only one of the two platforms
-        # has, and one new script added without `chmod +x` would break Linux
-        # again silently. Naming the interpreter works the same way on both and
-        # cannot rot.
+        # Invoke bash explicitly because ci.sh has no executable bit in git.
         run: bash scripts/ci.sh

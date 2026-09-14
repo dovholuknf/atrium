@@ -210,13 +210,8 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		if t.Status == store.StatusShelved {
 			continue
 		}
-		// A THROWAWAY IS NOT REOPENED, EVER. Its directory is deleted when its
-		// session ends, so a restart would ask a runner to start in a
-		// directory that is not there. This cannot be answered by checking
-		// that the directory exists: a daemon killed before the delete leaves
-		// one behind, and starting a session in a directory that is about to
-		// be swept is a dead card appearing after a restart with nothing on it
-		// to explain why. What the card says about itself is the answer.
+		// Do not reopen throwaways. Their directories may be gone or awaiting
+		// startup cleanup, so directory existence alone does not make reopening safe.
 		if t.Throwaway {
 			continue
 		}

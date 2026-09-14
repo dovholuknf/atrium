@@ -5,6 +5,51 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Starting a second agent in a directory is a right click and a runner, not a form.** The card menu's "start
+  a session here" opened the launch dialog with the directory filled in, and the other nine fields waiting.
+  Every one of them is optional, so the common case (put a codex in this folder beside the claude already
+  there) was a form with one answer in it.
+
+  It is now **new agent here**, and the flyout under it is the runners themselves, one flat list. Clicking one
+  starts it in that card's directory and lands in the terminals tab. Nothing is asked, because nothing else
+  has to be: the directory comes off the card, and a title, a reason, tags, a first instruction and a model
+  are things a human writes when a human has something to say.
+
+  **On both surfaces.** The board's card menu and the terminal strip's own menu carry the same entry, because
+  it is the same question asked from the other side, and a second agent is most wanted while you are looking
+  at the first one.
+
+  **A shell is not on the list.** Every card already has `open a shell here`, which opens one on the card
+  rather than making a second card to hold it.
+
+  Runners whose command is not on this machine are left out rather than dimmed: the only fix is in the runners
+  tab, and a row that can only fail is worse than no row. `fill in a form…` is the last entry and opens the
+  dialog exactly as before, so nothing is lost.
+
+- **Pinned terminals are a bucket you arrange, and they stay in it after the session exits.** Pinning meant
+  "sort me first", and the strip's pinned rows then sorted among themselves by activity or by name. Both of
+  those move on their own, so a set arranged on purpose rearranged itself overnight.
+
+  **The pinned rows are now their own group at the top of the strip, in the order you dragged them into.**
+  Drag a row in from below to pin it, drag within the group to reorder. The group folds like every other
+  heading in the strip, keeping its count, and a folded bucket still takes a drop: the row goes on the end.
+
+  The order is a column on the card (`pin_order`, migration `0051`), so it survives a restart and follows to
+  another browser. Every existing
+  pinned card starts at zero, which reads as a tie and falls through to the sort underneath, so a board nobody
+  has dragged on looks exactly as it did.
+
+  **A pinned row outlives its runner, drawn cold.** This reverses a decision recorded in `terminal-list.js`:
+  that a row which cannot be switched to is a row that does nothing. That held while pinning only meant an
+  order. It stops holding once pinning means "this is mine and I put it here", because a bucket that empties
+  itself when you quit a session is not a bucket, and putting the row back by hand is the work pinning was
+  supposed to save. A cold row holds its place and, clicked, offers to start the session again in the same
+  directory onto the same card. Unpinned rows are unchanged: no runner, no row.
+
+  The order is written as the whole list, in one transaction, through `POST /v1/tasks/pin-order`. A drag moves
+  one row and changes the position of every row it passed, so the unit of work is the order rather than one
+  card's place in it, and a half-applied reorder would leave the bucket in an arrangement nobody chose.
+
 - **A session is called one thing, and if you named it, that is the thing.** The same card was `atrium` on the
   board, `main:atrium` above its own terminal and `atrium-backlog` in the strip beside it, which is three names
   for one session and no way to tell they were one.

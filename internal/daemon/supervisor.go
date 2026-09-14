@@ -350,30 +350,11 @@ func (r *ringBuffer) Replay() (out []byte, widths []int, wrapped bool) {
 	return out, widths, start > 0
 }
 
-// collapseRedraws reduces a run of in-place redraws to its last frame.
-//
-// A progress line does not print, it repaints: a frame, then a carriage return
-// or an erase, then the next frame, with NO newline anywhere in it. On the
-// terminal that produced it only the last frame was ever on screen. The ring
-// keeps the bytes as sent, so replaying them lays the whole animation out end
-// to end and the pane fills with `Forging…Forging…Forging…` and nothing else.
-//
-// ON READ, NOT ON WRITE. `Write` takes bytes as fast as a runner makes them
-// and cannot afford to parse them; `Replay` runs once per attach. It also sits
-// with the rest of what `Replay` decides about history rather than in a layer
-// of its own.
-//
-// NEVER ACROSS A NEWLINE. The moment a real line ends, everything before it is
-// output somebody may want to read. Only a run with no newline in it is an
-// animation, so each newline free segment is judged on its own.
-//
-// The frames are NOT compared. They embed token counts, elapsed times and
-// warnings, so no two are alike and anything keyed on identical bytes collapses
-// nothing. The boundary is what says a frame ended, not the text.
-//
-// Two boundaries are the threshold. One carriage return in a line is a runner
-// overwriting a prompt or drawing a single progress bar once, which is history
-// as much as any other line; a second one makes it a run.
+// collapseRedraws keeps the last frame of repeated in-place updates.
+// Run during replay to keep parsing off the write path. Never collapse across
+// a newline, since completed lines belong in history.
+// Detect frames by boundaries, since counters and timers change the text.
+// Require two boundaries so a single prompt overwrite is preserved.
 func collapseRedraws(b []byte) []byte {
 	out := make([]byte, 0, len(b))
 	// seg is the start of the newline free segment being judged, last and prev
@@ -416,42 +397,11 @@ func collapseRedraws(b []byte) []byte {
 	return out
 }
 
-// redrawAt returns the length of the in-place redraw starting at b[i], or zero
-// if what is there is not one.
-//
-// A carriage return, or an erase in line or in display: `CSI K` and `CSI J`
-// with whatever parameters. Those are the sequences that say the next bytes go
-// over the last ones rather than after them.
-//
-// AND `CSI ? 2026 h`, WHICH IS WHY THIS WAS NOT WORKING ON THE RUNNER IT WAS
-// WRITTEN FOR.
-//
-// The three above are how a shell script draws a progress bar. A terminal user
-// interface does not use any of them. Measured on one card's carried
-// scrollback, claude-code's spinner emitted:
-//
-//	15543  ESC[?2026h and ESC[?2026l, in matched pairs
-//	12986  ESC[46;3H
-//	 7837  ESC[1C
-//	 2613  ESC[K
-//
-// It repaints by ABSOLUTE CURSOR POSITION, so there is no carriage return to
-// find and the erases are far rarer than the frames. Every boundary this
-// function knew about was missing, so a run of fifteen thousand frames read as
-// one unbroken segment and collapsed to itself.
-//
-// `CSI ? 2026 h` is synchronized output: "hold the screen, I am about to draw
-// a frame", with `l` for "done". One pair per frame, which makes it the most
-// exact frame delimiter on offer, better than anything inferred from cursor
-// movement.
-//
-// ABSOLUTE POSITIONING IS DELIBERATELY NOT A BOUNDARY. `CSI H` looks like the
-// obvious answer and is the wrong one: claude-code emits SEVERAL of them inside
-// a single frame (`43;1H`, `43;3H`, `46;3H` above), so counting each as a frame
-// end would collapse a frame to its last line and throw away the rest of what
-// was on screen. A boundary has to mean "everything before this is a previous
-// frame", and only the synchronized-output marker and the three original
-// sequences carry that meaning.
+// redrawAt returns the length of a redraw boundary at b[i], or zero.
+// Recognize carriage return, line/display erases, and synchronized-output
+// start (CSI ? 2026 h), which Claude Code uses to delimit frames.
+// Absolute cursor positions are not boundaries: a frame can contain several,
+// and splitting on each would discard parts of that frame.
 func redrawAt(b []byte, i int) int {
 	if b[i] == '\r' {
 		return 1
@@ -680,26 +630,9 @@ func (r *runner) Say(text string) error {
 	return r.Write([]byte("\r"))
 }
 
-// SayPasted says it as a PASTE, wrapped in the bracketed paste markers.
-//
-// The same fix the board's paste path got, applied to the one channel that
-// never had it. A long message written as plain keystrokes is delivered by the
-// pseudo terminal's input pipe in four kilobyte installments with milliseconds
-// between them, and a runner that decides "typed or pasted" from arrival
-// timing sees a burst per installment. What arrives is a session acting on the
-// first installment while the rest is still coming, so a report longer than a
-// screen reaches its reader as its last paragraph.
-//
-// That is not hypothetical: a wave report sent with `atrium tell` arrived at
-// its reader as the final few words, twice, which is what put this on the
-// backlog as B2-47.
-//
-// The markers make the timing irrelevant, because they say where the text
-// begins and ends rather than leaving the runner to infer it.
-//
-// ONLY WHEN THE RUNNER ASKED. A runner that has not declared bracketed paste
-// gets the plain path, because sending markers to one that does not understand
-// them puts `200~` on its screen and in its transcript.
+// SayPasted adds bracketed paste markers when the runner supports them.
+// This keeps long peer messages together even if the PTY delivers chunks
+// (B2-47). Other runners get plain text to avoid displaying escape sequences.
 func (r *runner) SayPasted(text string) error {
 	if err := r.Write([]byte("\x1b[200~" + text + "\x1b[201~")); err != nil {
 		return err
@@ -1295,11 +1228,8 @@ func (d *Daemon) awaitExit(r *runner) {
 	d.publishTask(r.taskID)
 	log.Printf("[atrium] supervised runner for %s exited with %d", r.taskID, code)
 
-	// A THROWAWAY IS DELETED HERE AND NOWHERE ELSE. The process has been
-	// waited on, so nothing holds its working directory open any more, which
-	// on Windows is the difference between the directory going and the delete
-	// failing. Every way a session ends arrives here, so a crash cleans up as
-	// thoroughly as `atrium finish` does. See throwaway.go.
+	// Clean up throwaways after waiting for the process, when its working
+	// directory is no longer in use. All exit paths reach here. See throwaway.go.
 	d.endThrowaway(r.taskID)
 }
 

@@ -140,17 +140,10 @@ if (relAt < 0 || !/popOuts\.delete\(m\.task\)/.test(html.slice(relAt, relAt + 70
     "as the claim, so the board keeps refusing to attach to a card whose window has moved on.");
 }
 
-// Rule 7: clicking outside closes a dialog, and never a guarded one.
-//
-// The switcher is what asked for this, being the dialog opened dozens of times
-// a day to answer "where next", and a picker that traps the pointer is the one
-// that gets abandoned. The handler is board-wide because the alternative is a
-// board where light-dismiss is true of whichever dialogs somebody got to.
-//
-// Both halves fail silently in a browser. A test written as `e.target === dlg`
-// closes the dialog when the click landed on its own padding, which reads as
-// the pointer jumping. Dropping the `data-guard` refusal loses a half-filled
-// form to a stray click, and there is nothing afterwards that says what went.
+// Rule 7: clicking outside closes unguarded dialogs.
+// Check coordinates against the rectangle: backdrop and padding can both
+// report the dialog as the event target. Guarded dialogs stay open to
+// preserve unsaved edits.
 const lightAt = html.indexOf("if (!inside) dlg.close();");
 if (lightAt < 0) {
   fail("no dialog light-dismisses on a click outside it. The switcher is opened by reflex and " +

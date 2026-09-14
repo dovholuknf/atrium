@@ -580,19 +580,9 @@ if (/function navPush\(/.test(html)) {
   }
 }
 
-// Rule: THERE IS ONE PANE, AND IT IS FOUND BY ID.
-//
-// This is `document.querySelectorAll(".term-pane").length === 1`, asked of the
-// file instead of a browser. The class is declared in exactly one place in the
-// delivered page, so a second declaration -- a second `<section>`, or markup
-// built in the script -- is counted here and named.
-//
-// It matters more than a duplicated help line, which is only the visible part
-// of it. The pane used to be reached by `querySelector(".term-pane")` from five
-// places, and that returns the FIRST match: with two in the tree, `paintPaneBg`
-// themes one, `placeTabBridge` measures another and `clearTermPane` tidies a
-// third, all without an error anywhere. So the lookups go by id, which cannot
-// be ambiguous, and the class query is refused below so it cannot come back.
+// Require one terminal pane and look it up by id. Duplicate panes can send
+// theme, sizing, and teardown operations to the wrong element. Count markup
+// declarations and reject class-based lookups in the script below.
 const declared = (html.match(/class="[^"]*\bterm-pane\b[^"]*"/g) || []).length;
 if (declared !== 1) {
   fail(`the page declares .term-pane ${declared} times. There is one terminal, so there is ` +

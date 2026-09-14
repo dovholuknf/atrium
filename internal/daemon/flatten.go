@@ -53,28 +53,11 @@ func flatten(b []byte) []byte {
 		return b
 	}
 	out := make([]byte, 0, len(b)+len(b)/8)
-	// WHICH ROW THE CURSOR IS ON, and the only piece of terminal state this
-	// keeps. A row NUMBER, not a grid: there is nothing here that could tell
-	// you what is written at it.
-	//
-	// It exists because a terminal user interface does not end its lines. It
-	// jumps to the next row and writes, so a sixteen line file listing arrives
-	// as sixteen absolute positions and NOT ONE NEWLINE. Dropping those, which
-	// is what this did, concatenated the whole listing into a single 625
-	// character line. Measured on one card, from a real capture.
+	// Track the cursor row to split position-based output into lines.
+	// This flattener does not keep a grid or earlier row contents.
 	row := 1
-	// A BREAK IS OWED UNTIL SOMETHING IS WRITTEN, which is the difference
-	// between a line ending and a blank line.
-	//
-	// Spending it at the moment of the cursor move was wrong and measured
-	// wrong: a runner skips over rows it is not rewriting, so eleven jumps in
-	// a row with nothing drawn between them became eleven blank lines. On a
-	// screen those rows were never empty, they held what was already there.
-	//
-	// So a move only OWES a break. It is paid immediately before the next
-	// printable character, and a run of moves that draw nothing owes exactly
-	// the same one break as a single move does. 60% of one capture was blank
-	// lines, in 69 separate runs, and this is where they came from.
+	// Defer a break until text is written. Several cursor moves without output
+	// should produce one break, not a blank line for every move.
 	pend := owedBreak{}
 	for i := 0; i < len(b); {
 		c := b[i]
@@ -122,31 +105,10 @@ func flatten(b []byte) []byte {
 	return squeezeBlanks(out)
 }
 
-// squeezeBlanks reduces a run of empty lines to one.
-//
-// THESE ARE THE RUNNER'S OWN BLANK LINES, not something done to them here, and
-// that was measured before this was written: with every escape stripped and
-// nothing else changed, 2,542 of 4,063 lines of one card's carried scrollback
-// were already empty. claude-code redraws a block by writing rows and leaving
-// the rest of its screen blank, and each redraw contributes another screen of
-// nothing to the history.
-//
-// On a live terminal that costs nothing, because each redraw replaces the last
-// and only one is ever on screen. Read back as a transcript they accumulate,
-// and the operator scrolls through pages of empty green looking for the line
-// they remember.
-//
-// ONE BLANK LINE IS KEPT, because a blank line between paragraphs is how the
-// runner separates its blocks and flattening that to nothing would run them
-// together. Two or more mean the same thing as one here: a gap.
-//
-// Applied at the very end, over the whole result, so it does not have to be
-// reasoned about anywhere else in this file.
-// EMPTY MEANS EMPTY TO AN EYE, not empty of bytes, and getting that wrong is
-// why the first attempt at this barely moved the number. A line carrying only
-// a colour change and some spacing has no characters on it and is a blank line
-// to whoever is scrolling, while `len(line) > 0` calls it text. Measured: with
-// the byte test, 163 runs of three or more survived.
+// squeezeBlanks reduces consecutive visually empty lines to one.
+// Redraws can leave many blank rows in the transcript. Keep one for paragraph
+// spacing; whitespace and colour changes alone do not make a line nonblank.
+// Apply this after flattening the whole result.
 func squeezeBlanks(b []byte) []byte {
 	lines := splitKeepingEndings(b)
 	out := make([]byte, 0, len(b))
@@ -289,27 +251,8 @@ func skipEscape(b []byte, i int, out *[]byte, row *int, pend *owedBreak) int {
 			*out = append(*out, b[start:i]...)
 			return i
 		}
-		// CURSOR FORWARD BECOMES SPACES, because a terminal user interface
-		// does not indent with spaces. It moves the cursor.
-		//
-		// `CSI n C` says "skip n columns to the right", and on a live terminal
-		// the skipped columns are whatever was already there, which for a
-		// freshly drawn row is blank. Dropped, the two fields either side of
-		// it end up adjacent, and a replayed table header reads as
-		// `idwire_namestatussupervisedpidworktree`. Measured on one card:
-		// 7,837 of these in a single carried scrollback, which is the whole of
-		// why replayed history came back as a wall of run-together words.
-		//
-		// SAFE TO TRANSLATE BECAUSE IT ONLY EVER MOVES RIGHT, on the row the
-		// cursor is already on. It cannot reach the line above, cannot erase,
-		// and cannot scroll, so it fails none of the tests the rest of this
-		// file drops a sequence for. Every other movement stays dropped:
-		// absolute positioning, cursor up, and the rest can all land on
-		// history and overwrite it.
-		//
-		// Bounded, because the parameter is somebody else's number. A row is
-		// not a thousand columns wide and a corrupt parameter must not turn
-		// into a megabyte of spaces.
+		// Translate cursor-forward into spaces to preserve gaps between fields.
+		// Clamp the parameter so malformed input cannot allocate a huge string.
 		params := b[start+2 : i-1]
 		if final == 'C' {
 			if n := csiParam(params, 1); n > 0 {
@@ -326,66 +269,19 @@ func skipEscape(b []byte, i int, out *[]byte, row *int, pend *owedBreak) int {
 			}
 			return i
 		}
-		// MOVING DOWN A ROW IS A LINE ENDING, because a terminal user
-		// interface does not write one.
-		//
-		// `CSI r ; c H` says "put the cursor at row r, column c" and it is how
-		// claude-code draws every row of a block: sixteen rows of a file
-		// listing are sixteen of these and NOT ONE NEWLINE. Dropped, which is
-		// what happened before, the sixteen rows arrive as a single 625
-		// character line. Measured from a real capture.
-		//
-		// ONLY FORWARD. A move to a row at or above the one already reached is
-		// the runner redrawing something it has already drawn, and that is the
-		// exact overwrite this whole file exists to refuse. It emits nothing,
-		// which leaves the earlier row standing.
-		//
-		// The column becomes leading spaces for the same reason cursor-forward
-		// does, so an indented row comes back indented.
-		//
-		// What this is NOT: a screen model. There is one integer here and it
-		// counts rows. Nothing knows what is written at any of them, nothing
-		// can be read back, and no sequence can move anything that has already
-		// been emitted.
+		// Treat movement to a later row as a pending break, with the column as
+		// indentation. Earlier rows cannot be rewritten in this append-only output.
 		if final == 'H' || final == 'f' {
 			want, col := csiRowCol(params)
 			if want > *row {
-				// ONE LINE ENDING, HOWEVER FAR IT JUMPED.
-				//
-				// The distance is meaningless here and reproducing it was a
-				// mistake worth naming. On a screen, moving from row 43 to row
-				// 46 skips two rows that hold OTHER CONTENT, drawn earlier and
-				// still standing. In an append-only transcript there is
-				// nothing between the two lines, so every skipped row became a
-				// blank one: measured at 376 blank lines out of 656, in 74
-				// separate runs, which read as worse than the run-together
-				// text it replaced.
-				//
-				// A real blank line in the output is a real newline in the
-				// stream, and those are untouched. This only decides where one
-				// drawn row ends and the next begins, and the answer to that
-				// is always one.
+				// Queue one break regardless of jump distance. Skipped screen rows may hold
+				// existing content, so reproducing the distance would invent blank lines.
 				pend.owe(col)
 				*row = want
 			} else {
-				// A move back to a row already reached draws nothing here, and
-				// the text that follows it is still written.
-				//
-				// THE PARTIAL REPAINT IS NOT RECOVERABLE AND THAT IS THE COST.
-				// The runner updates the changed part of a row and leaves the
-				// rest standing, so `ESC[K ESC[42;7H do…)` is columns 7 onward
-				// of a line whose first six columns were drawn in an earlier
-				// frame. What is on row 42 lives in the terminal's grid, and
-				// there is no grid here by design, so that fragment arrives
-				// with no line in front of it. Twelve such fragments in one
-				// carried scrollback of four thousand lines.
-				//
-				// SUPPRESSING THE FRAGMENT WAS TRIED AND IS WORSE. The runner
-				// draws top to bottom, so most of these rows are FORWARD moves
-				// and the rule never fires on them; what it did catch was real
-				// content, and `ctrl+o to expand` went from 34 occurrences to
-				// 24. Losing ten whole lines to tidy nine fragments is the
-				// wrong trade.
+				// Ignore backward movement but keep the following text. Partial repaints
+				// can leave fragments because there is no grid to reconstruct the row.
+				// Suppressing those fragments also dropped valid content in captures.
 				*row = want
 			}
 		}
@@ -422,21 +318,12 @@ func skipEscape(b []byte, i int, out *[]byte, row *int, pend *owedBreak) int {
 	}
 }
 
-// maxSkipColumns bounds a cursor-forward turned into spaces.
-//
-// The parameter is a number somebody else wrote, and a corrupt or hostile one
-// must not become a megabyte of spaces in the middle of replayed history. No
-// terminal is a thousand columns wide, so anything past that is a defect in
-// the stream rather than an indent.
+// maxSkipColumns caps spaces produced by cursor-forward sequences to limit
+// allocation from malformed or excessively large parameters.
 const maxSkipColumns = 1000
 
-// csiParam reads the first numeric parameter of a CSI sequence.
-//
-// `def` is what an omitted parameter means, which for every movement sequence
-// is one: `CSI C` and `CSI 1 C` are the same instruction. Anything that is not
-// a number gives the default rather than an error, because this runs over
-// bytes that may have been cut in half by the ring buffer's own boundary and
-// the answer there is to do the harmless thing.
+// csiParam reads the first numeric CSI parameter, using def when omitted
+// or invalid. Ring boundaries can leave incomplete sequences.
 func csiParam(params []byte, def int) int {
 	if len(params) == 0 {
 		return def
@@ -461,12 +348,8 @@ func csiParam(params []byte, def int) int {
 	return n
 }
 
-// csiRowCol reads the row and column of a `CSI r ; c H`.
-//
-// Both default to one, which is what an omitted parameter means for this
-// sequence: `CSI H` is the top left corner. Anything unparseable gives the
-// defaults rather than an error, because these bytes may have been cut in half
-// by the ring buffer's own boundary and the harmless answer is the right one.
+// csiRowCol reads CSI row and column parameters, defaulting each to one
+// when omitted or invalid, including sequences cut by the ring boundary.
 func csiRowCol(params []byte) (row, col int) {
 	row, col = 1, 1
 	if len(params) == 0 {
@@ -486,16 +369,8 @@ func csiRowCol(params []byte) (row, col int) {
 	return row, col
 }
 
-// owedBreak is a line ending a cursor move has earned and not yet spent.
-//
-// THE WHOLE POINT IS THE RUN THAT DRAWS NOTHING. A runner redrawing part of
-// its screen steps over the rows it is leaving alone, so a block can be
-// preceded by a dozen moves with no text between them. Emitting a break at
-// each one turned those into a dozen blank lines, which measured as 60% of a
-// capture across 69 runs and read worse than the defect it replaced.
-//
-// Owing one instead makes a run of moves worth exactly one break, the same as
-// a single move, and a move followed by nothing at all worth none.
+// owedBreak emits a pending line ending before the next printable character.
+// Multiple cursor moves share one break; trailing moves emit none.
 type owedBreak struct {
 	owed bool
 	// col is where the last move landed, so an indented row comes back

@@ -21,60 +21,23 @@ import (
 	"github.com/dovholuknf/atrium/internal/shellpick"
 )
 
-// The repositories on this machine, and the worktrees that already exist for
-// each, so work can start from the board instead of from a directory tree.
+// List repositories under the allowed browse roots and ask git for their worktrees.
+// Limit scan depth to keep large directory trees manageable.
 //
-// ATRIUM RUNS `gwt`. IT DOES NOT REIMPLEMENT IT, and that is the whole design
-// rather than a detail of it. `internal/daemon/recognise.go` says of the
-// recogniser path that making a worktree is `gwt`'s job and atrium has no
-// business owning a checkout layout, and that stays true here. Running
-// `git worktree add` from the daemon would mean atrium deciding where a
-// worktree lives, what it is called, and what happens after it is made, and
-// the layout on this machine is a convention that another tool maintains.
-//
-// So the creation half is a COMMAND TEMPLATE, the way a harness and a source
-// already are. Atrium holds the name of a command and never the thing behind
-// it. It supplies the branch, runs the template in the repository, and reads
-// the resulting path back out of git rather than out of the command's output.
-//
-// The listing half owns no layout either:
-//
-//   - The repositories come from the directories the picker is already allowed
-//     to open, `browseRootsFor`, walked a fixed depth rather than recursively.
-//     A walk of a drive looking for every `.git` is a scan somebody waits on.
-//   - The worktrees come from `git worktree list`, asked of each repository.
-//     That is git's own answer, so a machine that keeps its worktrees
-//     somewhere else is still described correctly, which a path convention
-//     spelled out here could not manage.
+// Creation uses a command template, defaulting to gwt, so the existing tool
+// controls checkout layout. Run it in the repository and read the new path from git.
 
-// SettingProjectDepth is how many levels under a browse root a repository may
-// be found.
-//
-// Two, because the convention on this machine is `<root>/<org>/<repo>` and a
-// root IS sometimes the checkout itself. A setting rather than a constant
-// because it is a fact about one machine's layout, exactly like the roots it
-// walks, and the machine that nests one level deeper should not need a build.
+// SettingProjectDepth limits repository scan depth below each browse root.
+// The default of two covers <root>/<org>/<repo>; roots can also be checkouts.
 const SettingProjectDepth = "project_scan_depth"
 
-// SettingWorktreeCommand is the command that makes a worktree.
-//
-// Unlike `editor_command` and `terminal_command` this one HAS a default,
-// because it is not atrium picking a program to run on your machine: it is
-// atrium naming the tool that already owns this job on the machine it was
-// built for. Clearing it turns the make button off the same way an empty
-// editor turns the open button off.
-//
-// `{branch}` is the branch, `{repo}` is the repository's directory. A template
-// with neither still runs, in the repository, which is enough for a tool that
-// asks for its arguments.
+// SettingWorktreeCommand configures worktree creation. The template accepts
+// {branch} and {repo} and runs in the repository directory. An empty setting
+// uses the default; "off" disables creation.
 const SettingWorktreeCommand = "worktree_command"
 
-// DefaultWorktreeCommand is `gwt new`, with the confirmation already answered.
-//
-// `-y` IS PART OF THE DEFAULT AND NOT AN OPINION ABOUT PROMPTS. The daemon
-// gives the command no stdin, so a template that stops to ask a question is a
-// template that hangs until the timeout and then reports a failure that reads
-// like the tool is broken.
+// DefaultWorktreeCommand uses gwt new with -y because the daemon provides
+// no stdin for confirmation prompts.
 const DefaultWorktreeCommand = "gwt new {branch} -y"
 
 const (
@@ -96,10 +59,7 @@ const (
 	// fifty repositories is fifty process spawns end to end, which on Windows
 	// is the difference between a list that appears and a list that arrives.
 	worktreeScanWorkers = 8
-	// makeWorktreeTimeout bounds the template. `gwt new` clones the repository
-	// when it is missing, so this is minutes rather than seconds, and it is
-	// here at all because a daemon holding a request open forever is how one
-	// wedged command takes the board with it.
+	// makeWorktreeTimeout allows time for cloning while bounding a stuck command.
 	makeWorktreeTimeout = 3 * time.Minute
 )
 
@@ -109,12 +69,7 @@ type projectWorktree struct {
 	Path   string `json:"path"`
 }
 
-// project is one repository, with what already exists for it.
-//
-// `Worktrees` carries the answer to the second question somebody asks a moment
-// after the first: "make me a worktree" and "take me to the one I already
-// have" are the same question, and a row that only answers the first sends
-// them back to the picker.
+// project describes a repository and its existing worktrees.
 type project struct {
 	Name string `json:"name"`
 	// Group is the directory above the repository, which on this machine is
@@ -149,11 +104,8 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// projectScanDepth reads the setting, with the convention as the default.
-//
-// An unreadable or nonsensical value is the default rather than an error. This
-// is a bound on a scan, not a permission, and refusing to list anything
-// because a number was typed badly helps nobody.
+// projectScanDepth returns the configured depth, falling back to the default
+// when the value is unreadable or invalid.
 func projectScanDepth(s *Server) int {
 	v, err := s.st.Setting(SettingProjectDepth)
 	if err != nil {
@@ -169,13 +121,8 @@ func projectScanDepth(s *Server) int {
 	return n
 }
 
-// scanProjects walks each root looking for checkouts, and stops descending as
-// soon as it finds one.
-//
-// A worktree has a `.git` too, as a FILE rather than a directory, and both are
-// checkouts as far as this is concerned: pointing the launch form at either is
-// a working directory. What stops the walk turning a worktree root into
-// hundreds of rows is the depth, which is the same bound that keeps it quick.
+// scanProjects walks each root to the depth limit, stopping at checkouts.
+// Recognize both .git directories and the .git files used by worktrees.
 func scanProjects(roots []string, depth int) ([]*project, bool) {
 	seen := map[string]bool{}
 	var found []*project
@@ -214,10 +161,7 @@ func scanProjects(roots []string, depth int) ([]*project, bool) {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			// Silently. A root that cannot be read is a root that contributes
-			// nothing, and it is not this endpoint's job to say why: the
-			// picker gives one answer for outside, missing and unreadable for
-			// the same reason.
+			// Skip unreadable directories, consistent with the file picker.
 			return
 		}
 		for _, e := range entries {
@@ -276,13 +220,8 @@ func fillWorktrees(repos []*project) {
 	wg.Wait()
 }
 
-// worktreesOf asks git what worktrees a repository has, and drops the
-// repository itself.
-//
-// The main checkout is the first entry git lists and it is not an answer to
-// "where could I work": it is the directory that was already on the row. A
-// detached worktree has no branch to offer, so it is listed under its own
-// directory name, which is what somebody would recognise it by anyway.
+// worktreesOf lists worktrees except the main checkout, which is already
+// shown on the repository row. Label detached worktrees by directory name.
 func worktreesOf(repo string) []projectWorktree {
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeListTimeout)
 	defer cancel()
@@ -331,18 +270,9 @@ func parseWorktreeList(out, repo string) []projectWorktree {
 	return found
 }
 
-// legalBranch is the fence on the one piece of this that reaches a shell.
-//
-// `editor_command` can split its template into a program and arguments because
-// the part it does not control is a FILENAME and a filename is data. This
-// cannot: `gwt` is a PowerShell function rather than a program on PATH, so the
-// template has to be hosted by a shell, and in a shell every character of the
-// branch name is live.
-//
-// So the branch is checked against what a branch may contain BEFORE it reaches
-// the line, rather than quoted afterwards. Quoting is a claim about one shell's
-// grammar and this runs under three. A name outside this set is refused, which
-// costs somebody an exotic branch name and takes the injection away entirely.
+// legalBranch restricts branch names before they enter a shell command.
+// Allow a conservative subset of git names, excluding shell metacharacters
+// and leading dashes, without depending on one shell's quoting rules.
 var legalBranch = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
 
 type makeWorktreeRequest struct {
@@ -380,10 +310,8 @@ func (s *Server) makeWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ALREADY THERE IS NOT AN ERROR, it is the answer. The common case for
-	// "make me a worktree for this branch" is that one exists, and what the
-	// person wants then is to go to it. Reported as `existed` so the board can
-	// say which of the two happened.
+	// Return an existing worktree for this branch. Set existed so the board
+	// can distinguish reuse from creation.
 	if wt := findWorktree(repo, branch); wt != "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"path": wt, "branch": branch, "existed": true,
@@ -421,11 +349,8 @@ func (s *Server) makeWorktree(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdin = nil
 	out, runErr := cmd.CombinedOutput()
 
-	// READ BACK FROM GIT, NOT FROM THE OUTPUT. What the tool prints is for a
-	// person: it is coloured, it is several lines, and its wording is not a
-	// promise. Where the worktree ended up is a question git answers exactly,
-	// and asking it also means a template doing something entirely different
-	// still works as long as a worktree comes out of it.
+	// Read the resulting path from git; command output may contain colour,
+	// progress messages, or wording that changes between versions.
 	if wt := findWorktree(repo, branch); wt != "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"path": wt, "branch": branch, "existed": false,
@@ -453,14 +378,8 @@ func findWorktree(repo, branch string) string {
 	return ""
 }
 
-// worktreeTemplate is the stored value, with the default where nothing is
-// stored, and `off` as the way to mean nothing.
-//
-// `off` RATHER THAN EMPTY, because a setting read out of a store cannot tell
-// "never set" from "set to nothing", and those have to be different answers
-// here: this is the one command template with a default, so an empty box has
-// to keep meaning the default. `off` is the same spelling the housekeeping
-// timers already use for the same shape of question.
+// worktreeTemplate returns the stored command or the default. Use "off"
+// to disable it because the store treats missing and empty values alike.
 func worktreeTemplate(stored string) string {
 	v := strings.TrimSpace(stored)
 	switch v {
@@ -472,29 +391,15 @@ func worktreeTemplate(stored string) string {
 	return v
 }
 
-// shellCommand wraps a command line in a shell that can host it.
-//
-// A SHELL, DELIBERATELY, AND FOR ONE REASON. `gwt` is a PowerShell function
-// defined in a profile rather than an executable on PATH, so there is nothing
-// for `exec.Command` to spawn. `internal/shellpick` already decided which
-// shell this machine has, with the echelon that matters on Windows: `pwsh` is
-// PowerShell 7 and a separate install, `powershell` is 5.1 and is on every
-// Windows, `cmd` is the floor. That answer is reused rather than asked again,
-// because a second chooser is how two parts of one program disagree.
-//
-// The profile is LOADED rather than skipped, which is the opposite of what
-// `-NoProfile` would give and is the whole point: the profile is where the
-// function being run is defined.
+// shellCommand runs the template in the shell chosen by shellpick.
+// Load its profile so functions such as gwt are available.
 func shellCommand(line string) (string, []string) {
 	shell, _ := shellpick.Pick()
 	return shellArgsFor(shell, line)
 }
 
-// shellArgsFor is the flag that means "and here is the line", per shell.
-//
-// Split out because the choice is worth checking and the chooser is not: which
-// shell this machine has is a search of its PATH, and a test that asks would
-// be a test of the machine it ran on.
+// shellArgsFor selects command flags for a shell. Keep it separate from
+// PATH lookup so tests do not depend on installed shells.
 func shellArgsFor(shell, line string) (string, []string) {
 	base := strings.ToLower(shellBase(shell))
 	switch {
@@ -510,13 +415,9 @@ func shellArgsFor(shell, line string) (string, []string) {
 	}
 }
 
-// shellBase is the last element of a shell's path, cutting on EITHER separator.
-//
-// Not `filepath.Base`, which cuts on the separator of the machine it runs on.
-// Every shell named above is a Windows shell carrying a Windows path, so on
-// Linux `filepath.Base` hands back `C:\Windows\System32\cmd.exe` whole, no
-// prefix matches, and cmd is handed `-c`. The path decides how it is read, not
-// the host, which is the same rule the gwt ledger reader already follows.
+// shellBase returns the last path component using either separator.
+// filepath.Base follows the host OS, leaving Windows paths intact on Linux
+// and causing cmd.exe to receive the wrong command flag.
 func shellBase(p string) string {
 	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
 		return p[i+1:]
@@ -524,10 +425,7 @@ func shellBase(p string) string {
 	return p
 }
 
-// tail keeps the last few lines of a command's output, for the error.
-//
-// The end rather than the beginning: a tool that failed says why last, after
-// whatever it was doing when it got there.
+// tail keeps the final output lines, where commands usually report errors.
 func tail(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\r\n"), "\n")
 	if len(lines) > 12 {
