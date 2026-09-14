@@ -147,11 +147,16 @@ function openFromTerminal(id, hit) {
   // opened the drawer, and then a file clicked minutes earlier turned up. So
   // the click read as doing nothing and the next click read as opening the
   // wrong file.
+  // Remember whether the drawer was already up. Closing the editor puts back
+  // what was on screen before the click, which for a drawer this opened means
+  // closing it too. See `closeEditor`.
+  const wasOpen = !document.getElementById("t-files-panel").hidden;
   setTermFiles(true);
   if (hit.dir) {
     loadFiles(hit.rel, termFilesCtx());
     return;
   }
+  termFilesAuto = !wasOpen;
   // The directory the file is in, drawn behind the editor. Closing the editor
   // then leaves the drawer somewhere related to what was clicked, rather than
   // wherever it happened to be last.

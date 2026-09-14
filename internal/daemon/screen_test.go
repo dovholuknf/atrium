@@ -218,10 +218,16 @@ func TestColourSurvivesAndIsNotRepeatedPerCharacter(t *testing.T) {
 	in := "\x1b[31mred text\x1b[m plain\r\n"
 	got := render(in, 40)
 
-	if !strings.Contains(got, "\x1b[31m") {
+	// `;31m` rather than `\x1b[31m`, because a run opens FROM A RESET:
+	// `\x1b[0;31m`. That is deliberate and it is what makes a row safe to move.
+	// Rows are reordered by scrolling and written into history out of the order
+	// they were drawn in, so a sequence that only says "add red" would leave
+	// whatever was in force before it painting text that had nothing to do
+	// with it.
+	if !strings.Contains(got, ";31m") {
 		t.Fatalf("the colour was lost: %q", got)
 	}
-	if n := strings.Count(got, "\x1b[31m"); n != 1 {
+	if n := strings.Count(got, ";31m"); n != 1 {
 		t.Fatalf("the colour was emitted %d times for one run: %q", n, got)
 	}
 	if plain(got) != "red text plain\r\n" {

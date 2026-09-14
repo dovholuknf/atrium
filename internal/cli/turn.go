@@ -59,6 +59,22 @@ type turnInput struct {
 	// TranscriptPath is where this conversation is being written, which is
 	// what makes its id worth storing. See hasTranscript in session.go.
 	TranscriptPath string `json:"transcript_path"`
+	// HookEventName is which hook this payload came from.
+	//
+	// A SUBAGENT ENDING IS NOT A TURN ENDING, and without this they are the
+	// same event. A subagent is a session of its own: it runs under the same
+	// settings, in the same directory, under the same `ATRIUM_AGENT_NAME`, and
+	// the name is how every hook here says which card it belongs to. So the
+	// end of a subagent arrives looking exactly like the end of the turn that
+	// spawned it, the card goes to `ready`, and the board rings to say an
+	// agent wants you while the agent is still working.
+	//
+	// The count of running subagents is kept by its own pair of hooks and is
+	// unaffected. This only decides whether a card is reported as finished.
+	//
+	// Empty is treated as a turn ending, because a runner that does not send
+	// the field is every runner this was written for.
+	HookEventName string `json:"hook_event_name"`
 }
 
 // keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
@@ -124,6 +140,14 @@ func turnEnded(hubURL, event, name string) string {
 	// Already going round once. Whatever the daemon would say, saying it again
 	// starts a turn that ends by asking for another turn.
 	if in.StopHookActive {
+		return keepGoing
+	}
+	// A subagent finishing is not this session finishing. See HookEventName.
+	// Anything that names itself and does not name `Stop` is left alone, which
+	// covers `SubagentStop` and anything a future runner adds, and `keepGoing`
+	// is the right answer for all of them: it is what a Stop hook says when it
+	// has nothing to say.
+	if in.HookEventName != "" && !strings.EqualFold(in.HookEventName, "Stop") {
 		return keepGoing
 	}
 

@@ -361,7 +361,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	// that it does nothing.
 	run.buf.Grow(api.ScrollbackBytes(d.st))
 
-	backlog, widths, wantCols, wrapped, updates := run.subscribe()
+	backlog, widths, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
 	if len(backlog) > 0 {
 		// WHY THE SCROLLBACK STOPS WHERE IT STOPS, said at the top where
@@ -384,18 +384,42 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		if note := widthNote(widths, wantCols); note != "" {
 			_ = c.Write(ctx, websocket.MessageBinary, []byte(note))
 		}
-		// Keep flatten for this replay path. The first screen-model integration
-		// regressed visible output and needs validation against real sessions
-		// before it can replace this call.
-		if err := c.Write(ctx, websocket.MessageBinary, flatten(backlog)); err != nil {
-			return
+		// REPLAYED THROUGH A SCREEN, not stripped of everything that moves.
+		//
+		// `flatten` deletes every sequence that could overwrite something, which
+		// is the only way to make an append-only replay safe and is why it has
+		// to invent spaces where a cursor move used to be. On a real session
+		// that produced 362 padded lines out of 864 and printed every
+		// intermediate repaint in sequence, so one tool call appeared three
+		// times, twice half-drawn.
+		//
+		// The screen model runs the bytes through a grid instead and reports
+		// what the terminal would have held, plus everything that scrolled off
+		// the top. `bufRows` is the height the ring recorded, and it is the
+		// whole reason this can replace `flatten` now: without it the grid grew
+		// to whatever row got addressed, nothing ever scrolled into history,
+		// and repaints overwrote content a real terminal had already filed away.
+		//
+		// The setting is the way back. This path was wired once before on
+		// tests alone and had to be reverted, so there is a switch rather than
+		// a rebuild between the operator and the behaviour they had.
+		if replayFlat(d.st) {
+			if err := c.Write(ctx, websocket.MessageBinary, flatten(backlog)); err != nil {
+				return
+			}
+		} else {
+			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
+			sc.apply(backlog)
+			if err := c.Write(ctx, websocket.MessageBinary, []byte(sc.text())); err != nil {
+				return
+			}
 		}
-		// AND A LINE UNDER IT, so the boundary between what was flattened and
-		// what is live is visible. Without it the first redraw after attaching
-		// reads as the history having been corrupted.
+		// AND A LINE UNDER IT, so the boundary between history and live output
+		// is visible. Without it the first redraw after attaching reads as the
+		// history having been corrupted.
 		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
-			"[atrium] ---- everything above is history, laid out flat so it could not "+
-			"erase itself. live from here ----\x1b[0m\r\n"))
+			"[atrium] ---- everything above is history, replayed through a screen so it "+
+			"could not erase itself. live from here ----\x1b[0m\r\n"))
 	}
 
 	// Writer: output from the runner.

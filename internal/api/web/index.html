@@ -78,6 +78,12 @@
 
          The gear still has one. That is where you go when you are changing a
          setting. This is where you go when you are trying them. -->
+    <!-- EVERYTHING THE BOARD HAS TOLD YOU, kept. A toast is gone in seconds,
+         which is right for a toast and wrong as the only copy: a share
+         address, a save that failed, a card that just asked for something.
+         The badge counts what has arrived since this was last opened. -->
+    <button id="toastlog-open" class="icon" onclick="openToastLog()"
+      title="what the board has told you">&#128276;<span class="count"></span></button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
@@ -685,6 +691,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      No heading and no close button. A switcher that needs reading has failed:
      the field is the whole interface, and the footer says the three keys once
      for the person who has just met it. -->
+<!-- WHAT THE BOARD HAS TOLD YOU.
+     Newest first, because the reason to open this is a toast that went past
+     while you were reading something else. Rows that name a card open it, the
+     same as clicking the toast would have. -->
+<dialog id="toastlog">
+  <div class="dlg-head">
+    <div class="grow"><h2>notifications</h2></div>
+    <button onclick="clearToastLog()">clear</button>
+    <button onclick="document.getElementById('toastlog').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div id="toastlog-list" class="toastlog"></div>
+  </div>
+</dialog>
+
 <dialog id="switcher">
   <!-- `type="search"`, like every other filter field on this board, and for one
        more reason here. Chromium's autofill classifies a lone `type="text"`
@@ -2269,6 +2290,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/logs-rules.js"></script>
 <script src="/js/notify.js"></script>
 <script src="/js/toasts.js"></script>
+<!-- AFTER `toasts.js`, and it has to be. It wraps `toast`, which is a function
+     declaration and therefore hoisted, so loading this first would wrap a stub
+     and the real definition would replace the wrapper. -->
+<script src="/js/toast-log.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/notes-files.js"></script>
