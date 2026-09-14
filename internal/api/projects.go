@@ -496,7 +496,7 @@ func shellCommand(line string) (string, []string) {
 // shell this machine has is a search of its PATH, and a test that asks would
 // be a test of the machine it ran on.
 func shellArgsFor(shell, line string) (string, []string) {
-	base := strings.ToLower(filepath.Base(shell))
+	base := strings.ToLower(shellBase(shell))
 	switch {
 	case strings.HasPrefix(base, "pwsh"), strings.HasPrefix(base, "powershell"):
 		return shell, []string{"-NoLogo", "-Command", line}
@@ -508,6 +508,20 @@ func shellArgsFor(shell, line string) (string, []string) {
 		}
 		return shell, []string{"-c", line}
 	}
+}
+
+// shellBase is the last element of a shell's path, cutting on EITHER separator.
+//
+// Not `filepath.Base`, which cuts on the separator of the machine it runs on.
+// Every shell named above is a Windows shell carrying a Windows path, so on
+// Linux `filepath.Base` hands back `C:\Windows\System32\cmd.exe` whole, no
+// prefix matches, and cmd is handed `-c`. The path decides how it is read, not
+// the host, which is the same rule the gwt ledger reader already follows.
+func shellBase(p string) string {
+	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 // tail keeps the last few lines of a command's output, for the error.
