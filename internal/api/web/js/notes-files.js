@@ -140,12 +140,49 @@ function setTermFiles(open) {
   const box = document.getElementById("t-files-panel");
   if (!box) return;
   box.hidden = !open;
+  // Closed by any route means the next open starts its own history. Left set,
+  // a drawer opened from the button after a terminal click would close itself
+  // the first time an editor in it was shut.
+  if (!open) termFilesAuto = false;
   const btn = document.getElementById("t-files");
   if (btn) btn.classList.toggle("go", open);
   // The terminal's box changed, and xterm measures in characters, so it has to
   // be told. Without this the pane comes back with rows sized for the drawer.
   onTermResize();
 }
+
+// ESCAPE CLOSES THE DRAWER, and the editor first when one is open.
+//
+// Neither is a `<dialog>`, so neither gets this for free: they are panels
+// inside the terminal pane, which is what lets the drawer replace the terminal
+// rather than float over it. Everything else on this board that opens over
+// something closes on escape, and these two were the exception nobody decided
+// on.
+//
+// ONE LAYER PER PRESS, because they nest: the editor is drawn inside the
+// drawer. Closing both on one press would be right for the case the editor
+// opened the drawer, and `closeEditor` handles exactly that case by itself.
+//
+// Not routed through xterm's key handler. The drawer sets `#t-screen` to
+// `display: none`, so while it is open there is no terminal on screen and no
+// question about whether the runner wanted this key.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const drawer = document.getElementById("t-files-panel");
+  if (!drawer || drawer.hidden) return;
+  const ed = document.getElementById("t-edit");
+  if (ed && !ed.hidden) {
+    // The textarea has its own handler and has already run. Anything else with
+    // focus, a button or the list, gets the same answer from here.
+    if (e.target && e.target.id === "t-edit-text") return;
+    e.preventDefault();
+    closeEditor();
+    return;
+  }
+  e.preventDefault();
+  setTermFiles(false);
+  if (term) term.focus();
+});
 
 // Which browser is being driven, so one implementation serves both.
 //
@@ -451,10 +488,30 @@ function editorState(s) {
   if (el) el.textContent = s;
 }
 
+// Whether the drawer was opened BY opening a file, rather than by the button.
+//
+// A click on a path in the terminal opens the drawer and then the editor on
+// top of it, so shutting the editor left the drawer standing over the terminal
+// and a second escape was needed to get back to where the click started. Two
+// keys to undo one click, and the second one is a surprise, because nobody
+// opened the drawer.
+//
+// Opened by the BUTTON it stays, which is the other half of the rule: that is
+// somebody asking for the file list, and the editor closing over it should
+// leave the list they asked for.
+let termFilesAuto = false;
+
 function closeEditor() {
   const box = document.getElementById("t-edit");
   if (box) box.hidden = true;
   editing = null;
+  if (termFilesAuto) {
+    termFilesAuto = false;
+    setTermFiles(false);
+    // Back to the terminal, since that is what was on screen when the path was
+    // clicked. Without this the keyboard is left on a pane that is gone.
+    if (term) term.focus();
+  }
 }
 
 async function saveEditor() {

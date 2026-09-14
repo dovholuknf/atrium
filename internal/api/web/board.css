@@ -1481,6 +1481,41 @@
      nobody can read is a count that is not there. */
   .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; }
   .tgroup:hover .tgcount { opacity: 1; }
+  /* ── what the board has told you ─────────────────────────────────────────
+     A log of toasts, newest first. Scrolls, because the useful case is coming
+     back to something from an hour ago. */
+  #toastlog { width: min(640px, 94vw); }
+  .toastlog { display: flex; flex-direction: column; max-height: 62vh; overflow: auto; }
+  .tlrow {
+    display: flex; gap: 10px; padding: 8px 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .tlrow:last-child { border-bottom: 0; }
+  .tlrow.clickable { cursor: pointer; }
+  .tlrow.clickable:hover { background: var(--lift); }
+  /* Arrived since this was last opened. A left edge rather than a background,
+     so a run of new ones reads as one block and the text stays on the surface
+     every other row is on. */
+  .tlrow.fresh { box-shadow: inset 2px 0 0 var(--teal); }
+  .tlwhen {
+    flex: 0 0 auto; min-width: 46px; color: var(--dim);
+    font: var(--fs-xxs)/1.7 var(--mono);
+  }
+  .tlwhat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tlwhat b { color: var(--head); font-size: var(--fs-sm); font-weight: 600; }
+  .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }
+  .tltimes { color: var(--dim); font-weight: 400; }
+  /* The bell only carries a number when there is one to carry. A zero is a
+     control reporting that it has nothing to report. */
+  #toastlog-open { position: relative; }
+  #toastlog-open .count:empty { display: none; }
+  #toastlog-open .count {
+    position: absolute; top: -2px; right: -2px;
+    min-width: 14px; padding: 0 3px; border-radius: 7px;
+    background: var(--teal); color: var(--bg-2);
+    font: 600 9px/14px var(--sans); text-align: center;
+  }
+
   /* The bucket itself, marked off from the tree under it by a rule rather than
      by an indent: the rows inside are at the strip's full width on purpose,
      since they carry their whole label with no heading above them to hold the
@@ -2494,10 +2529,14 @@
   /* In the attached terminal's colours, since it sits against that terminal.
      `--term-line` and `--term-thumb-hi` are set on the layout by paintPaneBg
      and fall back to the board's own when nothing is attached. */
+  /* NO TRANSITION. The colour changes on hover and it changes at once.
+     Not a fix for anything: the terminal flickered on hovering this handle and
+     cutting the fade made no difference, which is how the search moved to the
+     compositor and ended at `will-change` on `.term-pane`. It stays cut
+     because a 140ms fade on a 2px line is decoration nobody asked for. */
   .term-grip::after {
     content: ""; position: absolute; inset: 8px 2px;
     background: var(--term-line, var(--stroke-dim)); border-radius: 2px;
-    transition: background .14s;
   }
   .term-grip:hover::after, .term-grip.dragging::after {
     background: var(--term-thumb-hi, var(--blue));
@@ -2738,6 +2777,27 @@
        next to each other. */
     border: 1px solid var(--term-edge, var(--stroke-dim));
     border-radius: var(--r-lg); overflow: hidden;
+    /* THE TERMINAL GETS A COMPOSITOR LAYER OF ITS OWN, AND KEEPS IT.
+       This pane holds a WebGL canvas. Without its own layer it shares one with
+       its siblings, and anything any of them repaints makes the compositor
+       rebuild the canvas with it: hovering the 6px resize grip flickered the
+       whole terminal, and so did leaving it.
+       MEASURED, NOT REASONED. An instrumented hover showed xterm doing
+       nothing at all: no `onRender`, no ResizeObserver callback, no lost
+       context, across a dozen enter and leave events. Nothing was
+       re-measuring or redrawing the terminal, so the flicker was never
+       xterm's and no amount of work on this side of it would have helped.
+       Two fixes were tried on the grip and neither worked, which is the part
+       worth writing down. Removing the hover transition did not fix it, so
+       the repaint is not about how long it takes. `contain: paint` on this
+       pane did not fix it either: the grip is a SIBLING, so containing this
+       box isolates what is inside it and says nothing about a neighbour
+       dirtying the layer they share. Promoting the grip itself did not fix
+       it. Promoting THIS box did, first try.
+       `will-change: transform` rather than `transform: translateZ(0)`, which
+       is the same promotion written as a hack, and rather than `contain`,
+       which is a different mechanism that this bug already ruled out. */
+    will-change: transform;
   }
   /* The bar keeps the board's colors whatever the terminal is themed.
      It is atrium's chrome, not the session's: the name, the buttons and the

@@ -3,6 +3,8 @@ package daemon
 import (
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Replay output through a screen grid to preserve partial row updates,
@@ -45,10 +47,20 @@ type screen struct {
 	wrapNext bool
 	// history is everything that has scrolled off the top, oldest first.
 	history [][]cell
+	// attr is the SGR state `sgr` is rendered from. Held apart from the
+	// string because an attribute is set and cleared independently of the
+	// others, and a string can only be appended to.
+	attr sgrState
 	// saved is DECSC, the cursor position an application stashes before
 	// drawing something and restores after.
 	savedRow, savedCol int
-	savedSGR           string
+	savedSGR           sgrState
+	// fixedRows is whether `rows` came from a record of the real terminal or
+	// from this file's own guess. A real height is a ceiling: the grid does
+	// not grow past it, because a terminal does not either. A guess has to be
+	// allowed to grow, since guessing short and refusing to grow would stack
+	// distinct rows on top of each other.
+	fixedRows bool
 	// alt is the alternate screen buffer. A full-screen program switches to it,
 	// draws, and switches back, and none of what it drew is history: that is
 	// the whole point of the buffer. What it drew is dropped.
@@ -58,11 +70,33 @@ type screen struct {
 	altCol   int
 }
 
-func newScreen(cols int) *screen {
+func newScreen(cols int) *screen { return newScreenSized(cols, 0) }
+
+// newScreenSized builds the grid at the size the output was drawn at.
+//
+// THE HEIGHT IS THE PART THAT WAS BEING GUESSED, and it decides what becomes
+// history rather than how anything wraps. A grid taller than the terminal that
+// wrote these bytes keeps rows the session had already scrolled past, and the
+// next repaint lands on top of them: content that a shorter grid would have
+// filed away is silently overwritten. That is why replaying through a screen
+// preserved LESS of a real session than not replaying through one at all.
+//
+// Zero means nothing recorded a height, which is every buffer written before
+// the ring carried one. `screenRows` stands in, and `grow` still stretches the
+// grid to any row that gets addressed, so an under-estimate costs nothing and
+// an over-estimate costs history.
+func newScreenSized(cols, rows int) *screen {
 	if cols <= 0 {
 		cols = 80
 	}
-	s := &screen{cols: cols, rows: screenRows}
+	fixed := rows > 0
+	if rows <= 0 {
+		rows = screenRows
+	}
+	if rows > screenMaxRows {
+		rows = screenMaxRows
+	}
+	s := &screen{cols: cols, rows: rows, fixedRows: fixed}
 	s.cells = make([][]cell, s.rows)
 	for i := range s.cells {
 		s.cells[i] = blankRow(cols)
@@ -78,10 +112,28 @@ func blankRow(cols int) []cell {
 	return r
 }
 
-// grow expands the grid to hold an addressed row. The original height is
-// unknown, so clamping to the initial estimate would merge distinct rows.
+// grow expands the grid to hold an addressed row.
+//
+// ONLY WHEN THE HEIGHT IS A GUESS. This was unconditional, on the reasoning
+// that the original height was unknown and clamping to an estimate would merge
+// rows that were distinct. The ring records the height now, and where it does,
+// growing is the opposite of what a terminal does and it costs the whole
+// feature.
+//
+// A terminal of thirty rows addressed at row forty-five does not become
+// forty-five rows tall. It scrolls, and the rows that go off the top are
+// history and can never be written on again. A grid that grows instead keeps
+// those rows addressable, so the next repaint lands on top of them and they
+// are gone. Measured on a real session: the expanded file listings claude
+// prints and then collapses to `+31 lines (ctrl+o to expand)` were all lost
+// this way, 154 lines of a 361 line capture, because they never scrolled.
 func (s *screen) grow(toRow int) {
 	if toRow < s.rows {
+		return
+	}
+	// A recorded height is the terminal's real height. Anything past the
+	// bottom row is clamped to it, the same as a terminal clamps it.
+	if s.fixedRows {
 		return
 	}
 	if toRow >= screenMaxRows {
@@ -406,11 +458,12 @@ func (s *screen) escape(b []byte, i int) int {
 		}
 		return len(b)
 	case '7':
-		s.savedRow, s.savedCol, s.savedSGR = s.row, s.col, s.sgr
+		s.savedRow, s.savedCol, s.savedSGR = s.row, s.col, s.attr
 		return i + 1
 	case '8':
 		s.moveTo(s.savedRow, s.savedCol)
-		s.sgr = s.savedSGR
+		s.attr = s.savedSGR
+		s.sgr = s.attr.render()
 		return i + 1
 	case 'M':
 		// Reverse index: up one, scrolling the screen down at the top.
@@ -425,6 +478,7 @@ func (s *screen) escape(b []byte, i int) int {
 		// Full reset. The screen is cleared and what was on it was still seen.
 		s.eraseDisplay(2)
 		s.moveTo(0, 0)
+		s.attr = sgrState{}
 		s.sgr = ""
 		return i + 1
 	default:
@@ -538,29 +592,166 @@ func (s *screen) csi(b []byte, start, i int) int {
 	case 'm':
 		s.setSGR(string(b[start:i-1]) + "m")
 	case 's':
-		s.savedRow, s.savedCol, s.savedSGR = s.row, s.col, s.sgr
+		s.savedRow, s.savedCol, s.savedSGR = s.row, s.col, s.attr
 	case 'u':
 		s.moveTo(s.savedRow, s.savedCol)
-		s.sgr = s.savedSGR
+		s.attr = s.savedSGR
+		s.sgr = s.attr.render()
 	}
 	return i
 }
 
-// setSGR records colour and style changes. Reset clears accumulated state;
-// other sequences append so attributes such as bold and red combine. Bound
-// the accumulated string for streams with many changes and no text.
-func (s *screen) setSGR(seq string) {
-	if seq == "\x1b[m" || seq == "\x1b[0m" || strings.HasPrefix(seq, "\x1b[0;") {
-		s.sgr = ""
-		if seq == "\x1b[m" || seq == "\x1b[0m" {
-			return
+// sgrState is the attributes in force, as a terminal holds them: ONE value per
+// attribute, each replaced when a new sequence sets it.
+//
+// This replaces a string that sequences were APPENDED to. Appending looks
+// right, because a terminal reading `31m` and then `32m` does end up green,
+// and it is wrong in the way that matters here: claude-code changes colour
+// thousands of times without ever resetting, so a single cell ended up
+// carrying `[32m[33m[90m[32m[90m[32m[90m[38;2;255;193;7m` and every run of
+// text in the replay re-emitted the whole pile. The old code capped it at 512
+// bytes and then threw the lot away, which is a leak with a lid on it.
+type sgrState struct {
+	bold, dim, italic, under, blink, inverse, hidden, strike bool
+	// fg and bg are the parameters as written, so `31`, `38;5;12` and
+	// `38;2;120;200;90` all round trip without this needing a colour model.
+	// Empty is the terminal's own default.
+	fg, bg string
+}
+
+// render writes the state as one canonical sequence, or "" when it is default.
+//
+// ALWAYS FROM A RESET, so a cell does not depend on whatever was in force
+// before it. Rows here are reordered by scrolling and written into history out
+// of the order they were drawn in, and an attribute that leaks across that
+// boundary colours text that had nothing to do with it.
+func (a sgrState) render() string {
+	if a == (sgrState{}) {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\x1b[0")
+	for _, f := range []struct {
+		on bool
+		n  string
+	}{
+		{a.bold, "1"}, {a.dim, "2"}, {a.italic, "3"}, {a.under, "4"},
+		{a.blink, "5"}, {a.inverse, "7"}, {a.hidden, "8"}, {a.strike, "9"},
+	} {
+		if f.on {
+			b.WriteString(";")
+			b.WriteString(f.n)
 		}
 	}
-	if len(s.sgr) > 512 {
-		s.sgr = seq
-		return
+	if a.fg != "" {
+		b.WriteString(";")
+		b.WriteString(a.fg)
 	}
-	s.sgr += seq
+	if a.bg != "" {
+		b.WriteString(";")
+		b.WriteString(a.bg)
+	}
+	b.WriteString("m")
+	return b.String()
+}
+
+// setSGR applies one `ESC [ ... m` to the attribute state.
+//
+// No parameters means `0`: `ESC [ m` and `ESC [ 0 m` are the same thing and
+// both clear everything, colours included.
+func (s *screen) setSGR(seq string) {
+	params := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), "m")
+	if params == "" {
+		params = "0"
+	}
+	parts := strings.Split(params, ";")
+	for i := 0; i < len(parts); i++ {
+		n, err := strconv.Atoi(strings.TrimSpace(parts[i]))
+		if err != nil {
+			continue
+		}
+		switch {
+		case n == 0:
+			s.attr = sgrState{}
+		case n == 1:
+			s.attr.bold = true
+		case n == 2:
+			s.attr.dim = true
+		case n == 3:
+			s.attr.italic = true
+		case n == 4:
+			s.attr.under = true
+		case n == 5:
+			s.attr.blink = true
+		case n == 7:
+			s.attr.inverse = true
+		case n == 8:
+			s.attr.hidden = true
+		case n == 9:
+			s.attr.strike = true
+		// 21 and 22 both end bold, and 22 ends dim along with it.
+		case n == 21 || n == 22:
+			s.attr.bold, s.attr.dim = false, false
+		case n == 23:
+			s.attr.italic = false
+		case n == 24:
+			s.attr.under = false
+		case n == 25:
+			s.attr.blink = false
+		case n == 27:
+			s.attr.inverse = false
+		case n == 28:
+			s.attr.hidden = false
+		case n == 29:
+			s.attr.strike = false
+		case n >= 30 && n <= 37, n >= 90 && n <= 97:
+			s.attr.fg = parts[i]
+		case n == 39:
+			s.attr.fg = ""
+		case n >= 40 && n <= 47, n >= 100 && n <= 107:
+			s.attr.bg = parts[i]
+		case n == 49:
+			s.attr.bg = ""
+		// EXTENDED COLOUR EATS ITS OWN PARAMETERS. `38;5;n` is one colour in
+		// three parts and `38;2;r;g;b` is one in five, so the loop has to step
+		// past them. Reading them as separate attributes is how a green
+		// component lands as "set the background to bright black".
+		case n == 38 || n == 48:
+			taken, text := extendedColour(parts, i)
+			if taken == 0 {
+				continue
+			}
+			if n == 38 {
+				s.attr.fg = text
+			} else {
+				s.attr.bg = text
+			}
+			i += taken - 1
+		}
+	}
+	s.sgr = s.attr.render()
+}
+
+// extendedColour reads `38;5;n` or `38;2;r;g;b` starting at parts[i], and
+// answers how many parts it used and the text to keep. Zero means the sequence
+// was cut short, which the ring can do at its own boundary.
+func extendedColour(parts []string, i int) (int, string) {
+	if i+1 >= len(parts) {
+		return 0, ""
+	}
+	switch parts[i+1] {
+	case "5":
+		if i+2 >= len(parts) {
+			return 0, ""
+		}
+		return 3, strings.Join(parts[i:i+3], ";")
+	case "2":
+		if i+4 >= len(parts) {
+			return 0, ""
+		}
+		return 5, strings.Join(parts[i:i+5], ";")
+	}
+	return 0, ""
 }
 
 // privateMode is `ESC [ ? ... h` or `l`. Only the screen buffer matters here.
@@ -618,6 +809,28 @@ func renderHistory(b []byte, cols int) []byte {
 	s := newScreen(cols)
 	s.apply(b)
 	return []byte(s.text())
+}
+
+// replayFlat is whether this daemon has been asked for the old flattener.
+//
+// Read on every attach rather than cached, so flipping it takes effect on the
+// next attach instead of on the next restart. An attach is a websocket upgrade
+// and one settings read is nothing beside it.
+//
+// A STORE THAT CANNOT ANSWER GETS THE NEW PATH, not the old one. A halted
+// store means the daemon is already reporting a failure, and falling back to
+// the behaviour somebody turned off would be a second surprise on top of the
+// first.
+func replayFlat(st *store.Store) bool {
+	v, err := st.Setting(store.SettingReplayFlat)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "1", "true", "yes", "flat":
+		return true
+	}
+	return false
 }
 
 // replayCols selects the last recorded width to match the newest output.

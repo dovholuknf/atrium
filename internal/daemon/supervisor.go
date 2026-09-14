@@ -57,16 +57,29 @@ import (
 // text can still be read and an empty pane cannot. See `Replay`, which carries
 // the two versions of this that withheld history instead.
 //
-// COLUMNS ONLY, not rows. Width is what decides how the bytes were composed:
-// wrapping, boxes and column positions are all a function of it. A height
-// mismatch moves a repaint up or down the screen and the runner's next draw
-// puts it right, so keying on rows as well would throw away history to buy
-// very little.
+// COLUMNS DECIDE HOW THE BYTES WERE COMPOSED, and rows decide what became
+// history.
+//
+// This used to record columns alone, on the reasoning that a height mismatch
+// only moves a repaint up or down and the runner's next draw puts it right.
+// That is true of a terminal, which is being redrawn by a live program, and
+// false of a REPLAY, which is being reconstructed by a screen model that has
+// to decide when a row scrolled off the top. Guess the height too tall and
+// rows that should have gone to history stay on the grid, where the next
+// repaint overwrites them and they are gone. Measured against a native capture
+// of the same session, that cost more real content than not modelling the
+// screen at all.
+//
+// So rows ride along. They are not used for wrapping and never will be: a mark
+// is still laid on a column change, and a height that changes on its own is
+// recorded without splitting the run, because it does not change how a single
+// byte was composed.
 
-// widthMark is where the terminal became `cols` wide, in stream position.
+// widthMark is where the terminal became this size, in stream position.
 type widthMark struct {
 	at   int64
 	cols int
+	rows int
 }
 
 // ringBuffer keeps the last N bytes written to it, and the widths they were
@@ -85,8 +98,19 @@ type ringBuffer struct {
 	marks []widthMark
 }
 
-func newRing(size, cols int) *ringBuffer {
-	return &ringBuffer{data: make([]byte, size), marks: []widthMark{{at: 0, cols: cols}}}
+// newRing starts a buffer at a width, with the default height. Every caller
+// that does not know the height, which is every test and anything that only
+// ever cared about wrapping.
+func newRing(size, cols int) *ringBuffer { return newRingSized(size, cols, 0) }
+
+func newRingSized(size, cols, rows int) *ringBuffer {
+	if rows <= 0 {
+		rows = screenRows
+	}
+	return &ringBuffer{
+		data:  make([]byte, size),
+		marks: []widthMark{{at: 0, cols: cols, rows: rows}},
+	}
 }
 
 func (r *ringBuffer) Write(p []byte) (int, error) {
@@ -119,14 +143,33 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 //
 // A repeat of the width already in force is not a mark. Two viewers agreeing
 // on eighty columns must not split the run of output they can both read.
-func (r *ringBuffer) SetWidth(cols int) {
+func (r *ringBuffer) SetWidth(cols int) { r.SetSize(cols, 0) }
+
+// SetSize records the size everything written from here on was composed at.
+//
+// A HEIGHT CHANGE ON ITS OWN DOES NOT LAY A MARK. It is recorded on the mark
+// in force, which is a correction rather than a boundary: the bytes before it
+// were composed at the same width and are still readable as one run. Splitting
+// on height would undo the merge rule below, which exists because a window
+// popped out and closed again changes the agreed size twice in a moment and
+// used to cut an hour of scrollback down to one page.
+//
+// Zero rows means the caller does not know, which is every caller written
+// before rows were recorded. The height already on the mark stands.
+func (r *ringBuffer) SetSize(cols, rows int) {
 	if cols <= 0 {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if last := r.marks[len(r.marks)-1]; last.cols == cols {
+		if rows > 0 && rows != last.rows {
+			r.marks[len(r.marks)-1].rows = rows
+		}
 		return
+	}
+	if rows <= 0 {
+		rows = r.marks[len(r.marks)-1].rows
 	}
 
 	// A WIDTH NOTHING WAS WRITTEN AT DESCRIBES NOTHING, so it is not a mark.
@@ -146,10 +189,15 @@ func (r *ringBuffer) SetWidth(cols int) {
 	if last := len(r.marks) - 1; r.marks[last].at == r.written && last > 0 {
 		r.marks = r.marks[:last]
 		if r.marks[len(r.marks)-1].cols == cols {
+			// Merged back into the earlier run, and the height still moved, so
+			// it is recorded there. The run is one run whatever its height.
+			if rows > 0 {
+				r.marks[len(r.marks)-1].rows = rows
+			}
 			return
 		}
 	}
-	r.marks = append(r.marks, widthMark{at: r.written, cols: cols})
+	r.marks = append(r.marks, widthMark{at: r.written, cols: cols, rows: rows})
 	r.forgetOldMarks()
 }
 
@@ -326,12 +374,25 @@ func (r *ringBuffer) Tail(n int) []byte {
 // other is a number in the settings. Somebody who cannot tell them apart reads
 // every short history as the limit and every long one as luck.
 func (r *ringBuffer) Replay() (out []byte, widths []int, wrapped bool) {
+	out, widths, _, wrapped = r.ReplaySized()
+	return out, widths, wrapped
+}
+
+// ReplaySized is Replay plus the height of the run these bytes end on.
+//
+// THE LAST HEIGHT, not a list of them. Width is returned as a list because a
+// reader has to be told the run it is looking at was composed at more than one
+// of them. Height is used by one caller for one purpose, building a grid to
+// replay into, and a grid has one height: the one the session was drawn at
+// when it stopped. Earlier heights moved text up and down within runs that
+// have already scrolled into history, where a screen model has no more say.
+func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	start := r.retainedStart()
 	out = collapseRedraws(r.from(start))
 	if len(out) == 0 {
-		return nil, nil, false
+		return nil, nil, 0, false
 	}
 	for _, m := range r.marks {
 		if m.at >= r.written {
@@ -347,7 +408,7 @@ func (r *ringBuffer) Replay() (out []byte, widths []int, wrapped bool) {
 		// width in force. Which is the width they were drawn at.
 		widths = []int{r.marks[len(r.marks)-1].cols}
 	}
-	return out, widths, start > 0
+	return out, widths, r.marks[len(r.marks)-1].rows, start > 0
 }
 
 // collapseRedraws keeps the last frame of repeated in-place updates.
@@ -786,7 +847,7 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	// Marked BEFORE the resize, so the first byte drawn at the new width is
 	// already on the new side of the mark. The other order leaves a repaint
 	// filed under the width it replaced, which is the whole bug.
-	r.buf.SetWidth(agreed.cols)
+	r.buf.SetSize(agreed.cols, agreed.rows)
 	return r.pty.Resize(agreed.cols, agreed.rows)
 }
 
@@ -811,7 +872,7 @@ func (r *runner) dropViewport(id any) {
 	if left == 0 {
 		return
 	}
-	r.buf.SetWidth(agreed.cols)
+	r.buf.SetSize(agreed.cols, agreed.rows)
 	_ = r.pty.Resize(agreed.cols, agreed.rows)
 }
 
@@ -839,11 +900,18 @@ func smallestViewport(all map[any]viewport) viewport {
 // Snapshot and subscription are taken together under the one lock, so a chunk
 // arriving between them can neither be lost nor sent twice.
 func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrapped bool, updates chan []byte) {
+	backlog, widths, _, wantCols, wrapped, updates = r.subscribeSized()
+	return backlog, widths, wantCols, wrapped, updates
+}
+
+// subscribeSized is subscribe, plus the height the buffer was drawn at, which
+// the replay needs to build a grid the right shape and nothing else wants.
+func (r *runner) subscribeSized() (backlog []byte, widths []int, rows, wantCols int, wrapped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cols := r.buf.CurrentWidth()
-	buf, widths, wrapped := r.buf.Replay()
+	buf, widths, rows, wrapped := r.buf.ReplaySized()
 	// THIS PROCESS ONLY. What the card held before the restart is on disk and
 	// is NOT joined on here any more.
 	//
@@ -859,11 +927,11 @@ func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrappe
 	select {
 	case <-r.done:
 		close(ch)
-		return buf, widths, cols, wrapped, ch
+		return buf, widths, rows, cols, wrapped, ch
 	default:
 	}
 	r.watchers[ch] = struct{}{}
-	return buf, widths, cols, wrapped, ch
+	return buf, widths, rows, cols, wrapped, ch
 }
 
 func (r *runner) unsubscribe(ch chan []byte) {
@@ -1093,9 +1161,13 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
-		resumed:  resumed,
-		spec:     fresh,
-		buf:      newRing(api.ScrollbackBytes(d.st), cols),
+		resumed: resumed,
+		spec:    fresh,
+		// The same height the pty was just opened at. Guessing it later means
+		// a screen model replaying this buffer builds the wrong sized grid,
+		// and a grid that is too tall keeps rows that should have scrolled
+		// into history until a repaint overwrites them.
+		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, launchRows),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

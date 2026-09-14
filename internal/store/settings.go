@@ -36,6 +36,19 @@ const (
 	SettingPruneAfter = "prune_after"
 )
 
+// SettingReplayFlat puts scrollback replay back on the old flattener.
+//
+// Empty, which is unset, means the screen model: bytes run through a grid, so
+// a repaint overwrites what it repainted and what scrolled off the top becomes
+// history. `on` means the flattener instead, which deletes every sequence that
+// could overwrite anything and pads with spaces where a cursor move was.
+//
+// A SWITCH RATHER THAN A REBUILD, because this exact change was made once on
+// the strength of its tests, looked excellent by every number, and had to be
+// reverted the moment somebody read the pane. The tests were measuring the
+// wrong thing. This is what it costs to not be in that position twice.
+const SettingReplayFlat = "replay_flat"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {
