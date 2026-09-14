@@ -630,6 +630,7 @@ function addDiscovered(c) {
   document.getElementById("h-cmd").value = c.cmd;
   document.getElementById("h-args").value = (c.args || []).join("\n");
   document.getElementById("h-resume").value = (c.resume_args || []).join("\n");
+  document.getElementById("h-prompt").value = (c.prompt_args || []).join("\n");
   document.getElementById("h-model").value = (c.model_args || []).join("\n");
   document.getElementById("h-exit").value = (c.exit_keys || []).join("\n");
   document.getElementById("h-prepare").value = "";
@@ -643,7 +644,7 @@ function linesToList(v) {
 
 function editHarness(id) {
   const h = allHarnesses.find(x => x.id === id) || {
-    id: "", label: "", cmd: "", args: [], resume_args: [], model_args: [], cwd: "", env: {},
+    id: "", label: "", cmd: "", args: [], resume_args: [], prompt_args: [], model_args: [], cwd: "", env: {},
     launch_mode: "window", rules_source: "", notes: "", enabled: false
   };
   document.getElementById("h-heading").textContent = id ? "edit " + h.label : "add a runner";
@@ -653,9 +654,11 @@ function editHarness(id) {
   document.getElementById("h-cmd").value = h.cmd || "";
   document.getElementById("h-args").value = (h.args || []).join("\n");
   document.getElementById("h-resume").value = (h.resume_args || []).join("\n");
+  document.getElementById("h-prompt").value = (h.prompt_args || []).join("\n");
   document.getElementById("h-model").value = (h.model_args || []).join("\n");
   document.getElementById("h-exit").value = (h.exit_keys || []).join("\n");
   document.getElementById("h-prepare").value = h.prepare || "";
+  document.getElementById("h-bracket").checked = !!h.bracketed_paste;
   document.getElementById("h-cwd").value = h.cwd || "";
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
@@ -687,9 +690,13 @@ function harnessFromForm() {
     cmd: document.getElementById("h-cmd").value.trim(),
     args: linesToList(document.getElementById("h-args").value),
     resume_args: linesToList(document.getElementById("h-resume").value),
+    prompt_args: linesToList(document.getElementById("h-prompt").value),
     model_args: linesToList(document.getElementById("h-model").value),
     exit_keys: linesToList(document.getElementById("h-exit").value),
     prepare: document.getElementById("h-prepare").value.trim(),
+    // Sent on every save, so editing a runner for something else does not
+    // quietly clear it: the PUT replaces the whole row.
+    bracketed_paste: document.getElementById("h-bracket").checked,
     cwd: document.getElementById("h-cwd").value.trim(),
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,
@@ -842,45 +849,48 @@ async function recogniseLink() {
   note.classList.toggle("warn", !!(got.problem || got.fetch_error));
 }
 
-// setLaunchModel puts the model control back to off, for the runner given.
+// setLaunchModel empties the model field, for the runner given.
 //
 // CALLED ON EVERY OPEN AND ON EVERY CHANGE OF RUNNER, which is what makes the
-// choice one time. Nothing is remembered between dialogs: the box starts
-// unticked, empty and hidden, and a launch that named a model leaves no trace
-// on the form or on the runner's row. The CARD keeps it, so the session comes
-// back on the same model after a restart, and that is a different question
-// from what this form offers next time.
+// choice one time. Nothing is remembered between dialogs: the field starts
+// empty, and a launch that named a model leaves no trace on the form or on the
+// runner's row. The CARD keeps it, so the session comes back on the same model
+// after a restart, and that is a different question from what this form offers
+// next time.
 //
 // A RUNNER THAT CANNOT TAKE A MODEL HIDES THE CONTROL ENTIRELY. A shell has no
 // model and would try to execute the flag, so its row leaves `model_args`
-// empty. Offering a tickbox that can only produce a refusal is worse than
+// empty. Offering a field that can only produce a refusal is worse than
 // offering nothing.
 function setLaunchModel(h) {
   const field = document.getElementById("l-model-field");
-  const on = document.getElementById("l-model-on");
   const box = document.getElementById("l-model");
-  if (!field || !on || !box) return;
+  if (!field || !box) return;
 
   const can = !!(h && (h.model_args || []).length);
   field.hidden = !can;
-  on.checked = false;
   box.value = "";
-  box.hidden = true;
   if (!can) return;
 
   const list = document.getElementById("l-model-seen");
   if (list) list.innerHTML = modelsSeen.map(m => `<option value="${esc(m)}">`).join("");
 }
 
-// Ticking the box reveals the name and puts the cursor in it, so choosing a
-// model is one click and then typing. Unticking hides it AND clears it: a name
-// left behind an unticked box is a choice that looks off and is not, which is
-// the exact confusion "one time only" was asked for.
-document.getElementById("l-model-on").addEventListener("change", e => {
-  const box = document.getElementById("l-model");
-  box.hidden = !e.target.checked;
-  if (!e.target.checked) { box.value = ""; return; }
-  box.focus();
+// setThrowaway turns the directory field off, because a throwaway has no
+// directory to choose: atrium makes one. Disabled rather than hidden, so the
+// path somebody typed before ticking the box is still there when they untick
+// it, and the field explains itself by going grey beside the sentence that
+// says why.
+function setThrowaway(on) {
+  const cwd = document.getElementById("l-cwd");
+  const recent = document.getElementById("l-recent");
+  if (!cwd) return;
+  cwd.disabled = on;
+  if (recent) recent.hidden = on;
+}
+
+document.getElementById("l-throwaway-on").addEventListener("change", e => {
+  setThrowaway(e.target.checked);
 });
 
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
@@ -950,6 +960,15 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
       "unchecked, this starts a fresh conversation in the same directory.";
   }
 
+  // A THROWAWAY IS NEVER THE DEFAULT and never left ticked from last time.
+  // Offered only when this dialog is choosing a directory at all: resuming a
+  // conversation, or starting onto a card, both already have one, and atrium
+  // does not delete a directory somebody chose.
+  const ta = document.getElementById("l-throwaway-field");
+  ta.hidden = !!resume || !!ontoTask;
+  document.getElementById("l-throwaway-on").checked = false;
+  setThrowaway(false);
+
   // THE MODEL CONTROL RESETS EVERY TIME, and that is the whole of "one time
   // only". Unticked, the box emptied and hidden, whatever was chosen last.
   // A choice that survived the dialog would be a setting somebody has to
@@ -994,11 +1013,19 @@ async function doLaunch() {
   const picker = document.getElementById("l-harness");
   const resumeOff = !document.getElementById("l-resume-field").hidden &&
     !document.getElementById("l-resume-on").checked;
+  // Nowhere to live, so atrium makes somewhere and deletes it afterwards. The
+  // directory goes up EMPTY with it: the daemon ignores the flag when a
+  // directory was named, because a directory somebody chose is not atrium's to
+  // delete, and a field left filled in from before ticking the box would mean
+  // the tick silently did nothing.
+  const throwaway = !document.getElementById("l-throwaway-field").hidden &&
+    document.getElementById("l-throwaway-on").checked;
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
-    cwd: document.getElementById("l-cwd").value.trim(),
+    throwaway,
+    cwd: throwaway ? "" : document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
     // Split on commas and never on spaces, the same rule everywhere else: a
@@ -1009,15 +1036,13 @@ async function doLaunch() {
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
       ? document.getElementById("l-prompt").value.trim() : "",
-    // Only when the box is ticked AND something was typed. An empty name with
-    // the box ticked means the default, not a model called nothing.
+    // An empty field means the runner's default, not a model called nothing.
     //
     // Sending nothing does NOT clear a card that already has one: the daemon
     // falls back to what the card was started on, so pressing start again on a
     // card does not silently move it to another model. A card keeps its model
     // for its own lifetime, and the fresh choice belongs to the next card.
-    model: document.getElementById("l-model-on").checked
-      ? document.getElementById("l-model").value.trim() : ""
+    model: document.getElementById("l-model").value.trim()
   });
   // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never
   // overwrites a card field with an empty value, so a plain launch says

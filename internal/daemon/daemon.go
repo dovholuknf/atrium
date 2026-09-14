@@ -826,6 +826,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		go func() {
 			d.startFixtures()
 			d.reopenSaved()
+			// Throwaways whose session ended when the last daemon did, so
+			// nothing was there to clean up after them. Last, because it reads
+			// which cards have a runner and the two calls above are what
+			// decide that. See throwaway.go.
+			d.sweepThrowaways()
 		}()
 		// Sessions that were lent out when the last daemon went down. A
 		// restart is not the operator withdrawing a link, so the address comes

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"runtime"
 	"slices"
@@ -650,5 +651,76 @@ func TestWriteGivesUpOnAWriterThatMakesNoProgress(t *testing.T) {
 	r := &runner{taskID: "t", pty: stuckPty{}}
 	if err := r.Write([]byte("anything")); err != io.ErrShortWrite {
 		t.Fatalf("want io.ErrShortWrite, got %v", err)
+	}
+}
+
+// A REPLAYED SPINNER IS ONE LINE, NOT A THOUSAND.
+//
+// The specimen: a progress line repainting in place, each frame carrying its
+// own token count, with no newline until the run ends. Only the last frame was
+// ever on the screen that drew it, so only the last frame is replayed.
+func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
+	r := newRing(4096, 80)
+	r.Write([]byte("the work before it\n"))
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(r, "\r\x1b[2KForging… %ds ctx %d", i, 1000+i)
+	}
+	r.Write([]byte("\ndone\n"))
+
+	got, _, _ := r.Replay()
+	if strings.Count(string(got), "Forging…") != 1 {
+		t.Fatalf("replayed the animation instead of its last frame: %q", got)
+	}
+	if !strings.Contains(string(got), "Forging… 49s ctx 1049") {
+		t.Fatalf("kept the wrong frame: %q", got)
+	}
+	if !strings.Contains(string(got), "the work before it\n") || !strings.Contains(string(got), "done\n") {
+		t.Fatalf("collapsed output either side of the run: %q", got)
+	}
+}
+
+// AND THE FRAMES ARE NEVER COMPARED. These embed a counter that changes every
+// time, which is exactly what an implementation keyed on identical bytes would
+// refuse to collapse.
+func TestFramesThatDifferAreStillOneRun(t *testing.T) {
+	r := newRing(4096, 80)
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(r, "Garnishing… %d tokens\r", i)
+	}
+
+	got, _, _ := r.Replay()
+	if strings.Count(string(got), "Garnishing…") != 1 {
+		t.Fatalf("differing frames were not collapsed: %q", got)
+	}
+	if !strings.Contains(string(got), "Garnishing… 19 tokens") {
+		t.Fatalf("a trailing carriage return took the last frame with it: %q", got)
+	}
+}
+
+// NEVER ACROSS A NEWLINE. Finished lines are history, however many of them a
+// runner draws, and a run is judged inside one line or not at all.
+func TestCompletedLinesAreNeverCollapsed(t *testing.T) {
+	r := newRing(4096, 80)
+	for i := 0; i < 5; i++ {
+		fmt.Fprintf(r, "\rstep %d\n", i)
+	}
+
+	got, _, _ := r.Replay()
+	for i := 0; i < 5; i++ {
+		if !strings.Contains(string(got), fmt.Sprintf("step %d", i)) {
+			t.Fatalf("lost a finished line to the collapse: %q", got)
+		}
+	}
+}
+
+// One carriage return in a line is a runner overwriting what it just wrote,
+// not an animation, and what it overwrote stays readable.
+func TestASingleRedrawIsLeftAlone(t *testing.T) {
+	r := newRing(4096, 80)
+	r.Write([]byte("password: \rpassword: ****\n"))
+
+	got, _, _ := r.Replay()
+	if string(got) != "password: \rpassword: ****\n" {
+		t.Fatalf("collapsed a line that was not a run: %q", got)
 	}
 }

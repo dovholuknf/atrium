@@ -227,6 +227,15 @@
     font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(var(--warn-rgb),.15); color: var(--warn);
   }
   .tab .count:empty, .tab .count.zero { display: none; }
+  /* The perms count is the one badge that asks for a hand. It is nonzero only
+     when auto mode is off AND an agent is blocked waiting on a human, so it
+     carries the danger colour and the waiting queue's pulse rather than the
+     warn tint the other counts share, which reads as an audit trail. */
+  .tab .count#c-perm {
+    background: rgba(var(--danger-rgb),.24); color: var(--danger-text);
+    box-shadow: 0 0 0 1px var(--danger);
+    animation: pulse 1.9s ease-in-out infinite;
+  }
   .grow { flex: 1; }
   .conn {
     font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: var(--sp-3);
@@ -781,7 +790,7 @@
      thought of. This names the animations instead, so a new one is covered by
      having been written rather than by being remembered. */
   @media (prefers-reduced-motion: reduce) {
-    .pulse, .chip.live.tool, .chip.auto, .gauto.on,
+    .pulse, .chip.live.tool, .chip.auto, .gauto.on, .tab .count#c-perm,
     button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
     .chip.live.tool::before, .chip.live.thinking::before, .chip.live.compacting::before {
       animation: none; opacity: 1; transform: none;
@@ -952,17 +961,61 @@
     word-break: break-all;
   }
   .dirlist { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-3); }
+  /* A row is a selection and `open` is the separate way into it, so what looks
+     chosen is what `use this one` hands back. */
+  .dirlist .drow {
+    display: flex; align-items: center; gap: var(--sp-2);
+    border-radius: var(--r-sm); border: 1px solid transparent;
+  }
+  .dirlist .drow:hover { background: var(--lift); border-color: var(--stroke-dim); }
+  .dirlist .drow.on { background: var(--lift); border-color: var(--teal); }
   .dirlist .dir {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%;
+    display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; min-width: 0;
     text-align: left; padding: var(--row-y-sm) 10px; border-radius: var(--r-sm);
-    background: transparent; border: 1px solid transparent; color: var(--label);
+    background: transparent; border: none; color: var(--label);
     font-size: var(--fs-base); cursor: pointer;
   }
-  .dirlist .dir:hover { background: var(--lift); border-color: var(--stroke-dim); }
+  .dirlist .dir .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Always drawn, never on hover. A way to descend that appears only under the
+     pointer is one nobody on a phone ever finds. */
+  .dirlist .into {
+    flex: none; margin-right: 6px; padding: 3px 8px; border-radius: var(--r-sm);
+    background: transparent; border: 1px solid var(--stroke-dim); color: var(--dim);
+    font-size: var(--fs-xs); cursor: pointer;
+  }
+  .dirlist .into:hover { color: var(--head); border-color: var(--teal); }
   .dirlist .dir .ic { color: var(--dimmest); font-size: var(--fs-xs); }
   /* A checkout, so a folder of thirty shows which few are repositories. */
   .dirlist .dir.repo .ic { color: var(--teal); }
   .dirlist .dir.repo .nm { color: var(--head); font-weight: 600; }
+  /* The projects list. A repository row, and what is already checked out for
+     it nested under the one that is open. Borrows `.dir` for the rows so a
+     repository looks the same here as it does in the picker. */
+  .projlist .proj.open { background: var(--hairline); border-radius: var(--r-sm); }
+  .projlist .proj-count { margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs); }
+  .projlist .proj-body {
+    display: flex; flex-direction: column; gap: var(--vs-1);
+    padding: 0 10px var(--vs-2) 22px;
+  }
+  .projlist .proj-path {
+    margin-left: auto; font: var(--fs-xs) var(--mono); color: var(--dimmest);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+  }
+  .projlist .proj-new { display: flex; gap: var(--sp-3); margin-top: var(--vs-2); }
+  .projlist .proj-new input { flex: 1; min-width: 0; }
+  .projlist .proj-cmd {
+    font: var(--fs-xs)/1.5 var(--sans); color: var(--dim); margin-top: var(--vs-1);
+  }
+  .dirlist .drow.repo .ic { color: var(--teal); }
+  .dirlist .drow.repo .nm { color: var(--head); font-weight: 600; }
+  /* What the dot means, said where the dots are. */
+  .dirlegend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4);
+    margin-top: var(--vs-2); font-size: var(--fs-xs); color: var(--dimmest);
+  }
+  .dirlegend .ic { color: var(--dimmest); }
+  .dirlegend .ic.repo { color: var(--teal); }
+  .dirlegend b { color: var(--dim); font-weight: 600; }
   .quickdirs { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-2); }
   /* Full width rows rather than pills. A path is long, and a row of truncated
      pills is a row of buttons you have to hover to tell apart. */
@@ -1507,24 +1560,24 @@
   /* What the session said it did. Quietly positive: a written-up card is the
      good outcome and does not need shouting about. */
   .chip.recap {
-    background: hsl(160 50% 40% / .16); border: 1px solid hsl(160 45% 45% / .4);
-    color: hsl(160 45% 72%); cursor: help;
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    color: var(--chip-accent-text); cursor: help;
   }
   /* Something you wrote and have not sent. Amber, like everything else on this
      board that is waiting on you, because that is exactly what it is: an
      instruction that goes nowhere until you send it. Quieter than a waiting
      card, since nothing is blocked and nobody is idle. */
   .chip.note {
-    background: hsl(38 60% 45% / .14); border: 1px solid hsl(38 55% 50% / .35);
-    color: hsl(38 60% 74%); cursor: help;
+    background: rgba(var(--warn-rgb),.14); border: 1px solid rgba(var(--warn-rgb),.35);
+    color: var(--warn); cursor: help;
   }
   /* Which model this session was started on, shown only when somebody chose.
      Teal, the accent every other statement of fact on a card uses, and quiet:
      it is a label rather than a warning, and a card wearing one is not in a
      different state from a card without one. */
   .chip.model {
-    background: hsl(186 60% 40% / .12); border: 1px solid hsl(186 50% 45% / .32);
-    color: hsl(186 55% 74%); cursor: help;
+    background: rgba(var(--teal-rgb),.12); border: 1px solid rgba(var(--teal-rgb),.32);
+    color: var(--teal); cursor: help;
   }
   /* And its absence, which is a fact rather than a fault. Dim enough to read
      as a gap and not as a warning: a card can perfectly well be done with
@@ -3243,7 +3296,7 @@
   }
   /* Native select arrows are drawn by the OS and cannot be recolored, so the
      control draws its own and hides the original. */
-  .dlg-body select {
+  .dlg-body select:not(.as-list) {
     appearance: none; cursor: pointer; padding-right: 34px;
     background-image:
       linear-gradient(45deg, transparent 50%, var(--label) 50%),
@@ -3253,6 +3306,14 @@
     background-repeat: no-repeat;
   }
   .dlg-body select option { background: var(--card-1); color: var(--head); }
+  /* A list box. There is no arrow to draw and nothing to open, so the row
+     padding goes on the options and the field pads around them instead. */
+  .dlg-body select.as-list {
+    padding: 4px; cursor: default; overflow-y: auto;
+  }
+  .dlg-body select.as-list option {
+    padding: 6px 8px; border-radius: var(--r-sm);
+  }
   input[type=text]:focus,
   .dlg-body textarea:focus,
   .dlg-body select:focus { outline: none; border-color: var(--blue); }

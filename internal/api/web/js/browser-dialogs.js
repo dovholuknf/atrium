@@ -4,6 +4,13 @@
 // folders to start a runner in.
 const browseDlg = document.getElementById("browse");
 let browseAt = { path: "", parent: "" };
+// What the operator PRESSED, which is what `use` hands back. The dialog used
+// to hand back the directory being listed however plainly a row looked chosen,
+// so choosing `bring-your-theme` and pressing the button gave you its parent.
+let browseSel = "";
+// This folder's children, held so the filter box can narrow them without
+// asking the daemon again.
+let browseEntries = [];
 // Which field the chosen path goes back into, so one dialog serves both the
 // launch form and the runner form.
 let browseInto_ = "l-cwd";
@@ -49,35 +56,85 @@ async function browseTo(path) {
     return;
   }
   browseAt = { path: data.path || "", parent: data.parent || "" };
+  browseSel = "";
+  browseEntries = data.entries || [];
   document.getElementById("b-path").textContent = data.path || "this machine";
   document.getElementById("b-up").disabled = !data.path;
-  document.getElementById("b-use").disabled = !data.path;
+  document.getElementById("b-filter").value = "";
+  browseList();
+}
 
-  const entries = data.entries || [];
+// The rows for what is on screen now, narrowed by whatever is in the filter.
+function browseList() {
+  const q = (document.getElementById("b-filter").value || "").trim().toLowerCase();
+  const rows = q ? browseEntries.filter(e => (e.name || "").toLowerCase().includes(q)) : browseEntries;
   const list = document.getElementById("b-list");
-  list.innerHTML = entries.length
-    ? entries.map(e => `
-        <button class="dir ${e.repo ? "repo" : ""}" data-path="${esc(e.path)}"
-          title="${esc(e.path)}">
-          <span class="ic">${e.repo ? "&#9679;" : "&#9656;"}</span>
-          <span class="nm">${esc(e.name)}</span>
-        </button>`).join("")
-    : `<div class="empty">nothing to open in here</div>`;
+  // TWO CONTROLS PER ROW, because one cannot both choose a folder and descend
+  // into it. The name selects, `open` lists what is inside.
+  list.innerHTML = rows.length
+    ? rows.map(e => `
+        <div class="drow ${e.repo ? "repo" : ""}" data-path="${esc(e.path)}">
+          <button class="dir" title="${esc(e.path)}">
+            <span class="ic">${e.repo ? "&#9679;" : "&#9656;"}</span>
+            <span class="nm">${esc(e.name)}</span>
+          </button>
+          <button class="into" title="list what is inside">open&#8202;&#8250;</button>
+        </div>`).join("")
+    : `<div class="empty">${browseEntries.length ? "nothing here matches that" : "nothing to open in here"}</div>`;
   // The path goes in an attribute and comes back through the DOM, never through
   // an inline handler: HTML escaping is not JavaScript escaping, and a
   // directory named `it's mine` breaks out of a quoted string literal.
-  list.querySelectorAll(".dir").forEach(b =>
-    b.onclick = () => browseTo(b.dataset.path));
+  list.querySelectorAll(".drow").forEach(row => {
+    const path = row.dataset.path;
+    const name = row.querySelector(".dir");
+    name.onclick = () => browsePick(path);
+    // A double press is the reflex a file manager taught everybody, so it
+    // descends as well rather than selecting the same row twice.
+    name.ondblclick = () => browseTo(path);
+    row.querySelector(".into").onclick = () => browseTo(path);
+  });
+  browseMark();
 }
+
+function browsePick(path) { browseSel = path; browseMark(); }
+
+// What is chosen, said on the row and said again on the button that uses it.
+function browseMark() {
+  document.querySelectorAll("#b-list .drow").forEach(row =>
+    row.classList.toggle("on", row.dataset.path === browseSel));
+  const target = browseSel || browseAt.path;
+  const use = document.getElementById("b-use");
+  use.disabled = !target;
+  use.textContent = browseSel ? "use " + browseName(browseSel) : "use this folder";
+}
+
+function browseName(path) {
+  const parts = String(path).split(/[\\/]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
+}
+
+document.getElementById("b-filter").addEventListener("input", browseList);
+document.getElementById("b-filter").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const typed = e.target.value.trim();
+  // A path goes there directly. Anything else is a filter, and enter on a
+  // filter that has narrowed the list to one folder opens that folder.
+  if (/[\\/]/.test(typed)) { browseTo(typed); return; }
+  const rows = document.querySelectorAll("#b-list .drow");
+  if (rows.length === 1) browseTo(rows[0].dataset.path);
+});
 
 function browseUp() { browseTo(browseAt.parent); }
 
 function useBrowsed() {
-  if (!browseAt.path) return;
+  // The row that was pressed, and the folder being listed only when no row was.
+  const path = browseSel || browseAt.path;
+  if (!path) return;
   // THE FIELD THAT ASKED. `browseInto` records which one opened the picker,
   // and there are four: launch, source, fixture and harness.
   const into = document.getElementById(browseInto_) || document.getElementById("l-cwd");
-  if (into) into.value = browseAt.path;
+  if (into) into.value = path;
   browseDlg.close();
 }
 
@@ -175,10 +232,20 @@ function askUser(opts) {
     const chField = document.getElementById("ask-choices-field");
     const choices = document.getElementById("ask-choices");
     chField.hidden = !(opts.choices && opts.choices.length);
+    // `size` draws that same select as a list box rather than a collapsed
+    // combo, for the questions whose answer comes from comparing the rows
+    // instead of picking from a couple of named modes. It is a cap and not a
+    // height: a short list is exactly as tall as it needs to be, and a long
+    // one stops here and scrolls, because the dialog's own body scrolls and a
+    // list taller than the screen puts a scrollbar inside a scrollbar.
+    let rows = 0;
     if (!chField.hidden) {
       setHTML(choices, opts.choices
         .map(c => `<option value="${esc(c.value)}">${esc(c.label)}</option>`).join(""));
       choices.value = opts.value || opts.choices[0].value;
+      rows = opts.size ? Math.min(opts.size, opts.choices.length) : 0;
+      if (rows > 1) choices.size = rows; else choices.removeAttribute("size");
+      choices.classList.toggle("as-list", rows > 1);
     }
 
     // A confirmation that can be turned off. Only recorded on the affirmative
@@ -222,6 +289,12 @@ function askUser(opts) {
     // this question, so it needs showing again like it needs opening twice.
     if (!askDlg.open) askDlg.showModal();
     if (opts.input) { input.focus(); input.select(); }
+    // A list longer than its cap opens scrolled to the top, which can be
+    // nowhere near the row that is already chosen. Showing the selection is
+    // the whole reason for drawing the rows at once.
+    if (rows > 1 && choices.selectedIndex >= 0) {
+      choices.options[choices.selectedIndex].scrollIntoView({ block: "nearest" });
+    }
   });
 }
 

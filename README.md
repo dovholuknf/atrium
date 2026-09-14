@@ -146,6 +146,21 @@ card serves a restricted handler on its own address that answers for that termin
 with an allowlist rather than a filter, so an endpoint added later is invisible to a guest until somebody adds
 it deliberately. Read-only is enforced on the socket, because a guest owns their copy of the page.
 
+**Agents under their own account, still on one board.** Running an agent as its own operating system user is the
+ordinary way to bound what it can reach, and the cost is that it disappears: its terminal is not yours to attach
+to, its `~/.claude` is its own, its transcripts are its own, and nothing on your desktop says it is there. The
+answer is a daemon per account, each dialing one hub as a room. That is the same mechanism as many machines,
+because an account already has most of what a second machine has: its own home directory, its own `~/.atrium` and
+database, and its own address file, which is why two daemons here cannot take each other's hooks. Ports are the
+one thing an account does not bring, so the second daemon is given its own `--addr` and `--http`. What travels is
+every session on every account, with what it is doing and what it is waiting for, listed in the rooms pane, and a
+permission request from another account, which you answer in your own perms tab and which releases the agent
+there. Attaching does not travel, because a pseudo terminal cannot leave the process that made it, so a remote
+row links to that account's own board and you type into the session there. A daemon launches runners under its
+own token and not under another account's, so the isolation is the account boundary itself rather than something
+atrium asserts on top of it. `shared_location` is there for the seam: it names a directory both accounts can
+read, so a script running as you can find a daemon whose per-user address file it is not allowed to open.
+
 **A way to stop that is not a kill.** `atrium stop` winds the daemon down the way ctrl-c does: event streams
 released, supervised runners given ten seconds, listeners closed in order. Killing the process closes every
 pseudo terminal at once and takes the runners with it.

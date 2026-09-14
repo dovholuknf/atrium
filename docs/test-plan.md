@@ -2297,3 +2297,95 @@ which models exist and must never decide.
 
 **Expected:** identical to before. Same command line in the decision log, no chip on the card, and the runner
 on its own default.
+
+## Y. Rooms, tested with two local accounts
+
+Rooms were built for two machines, and a second local account gives you four of the things a second machine
+gives you: its own home directory, its own `~/.atrium` and database, its own address file under its own
+`%LOCALAPPDATA%`, and its own hooks. So this runs the whole rooms path without a second box.
+
+It is also the safe way to run two daemons here. Two daemons under ONE account fight over the address file, and
+`docs/preview-design.md` says what that costs: the second one silently takes every hook on the machine, and the
+symptom is not an error, it is activity arriving at a board nobody is looking at. Different accounts have
+different `%LOCALAPPDATA%`, so the files cannot collide.
+
+**What this does NOT test, and it is the interesting half:** network latency, the overlay transport, a machine
+that goes away and comes back, and clocks that disagree. Rooms exist to survive those. This proves the protocol
+and the board and nothing about the network, so it replaces the tedious part of a two-machine test, not the part
+worth doing.
+
+Set up once. Make a second local user, log in as it, and install atrium there too.
+
+As you, the hub, on the ordinary ports:
+
+```powershell
+atrium daemon
+atrium name hub
+```
+
+As the second account. PORTS ARE PER MACHINE EVEN THOUGH EVERYTHING ELSE IS PER ACCOUNT, so this daemon must be
+given its own:
+
+```powershell
+atrium daemon --addr :7877 --http :7878
+atrium name second
+atrium room --hub http://localhost:7778 --name second --board http://localhost:7878 --local http://localhost:7878
+```
+
+### Y1. Two daemons, and neither has taken the other's hooks
+
+1. As each account, start a session on its own board and let it call a tool.
+
+**Expected:** each session's card, activity and permission requests land on the board belonging to the account
+it is running as. Nothing from the second account appears on your board except through the room, below.
+
+**The bug this prevents:** one address file serving both accounts, which looks like your board going quiet
+rather than like an error.
+
+### Y2. The room reports itself, and its cards
+
+1. On your board, open the runners page and find the rooms pane.
+
+**Expected:** `second` is listed within twenty seconds, with its host, its version and a row per session on it
+saying what that session is doing and what state it is in. The rooms pane is where they appear. They are not
+cards in your columns, because they are not yours to act on.
+
+2. Stop the second account's `atrium room` process and wait.
+
+**Expected:** after a minute the room reads as stale, which says it was here and cannot be seen now, and after
+ten it is gone from the list entirely. Its sessions do not linger in your rooms pane as a claim about an account
+nobody can reach.
+
+### Y3. A permission request crosses, and the answer crosses back
+
+1. In the second account's session, ask for something that gates.
+2. On YOUR board, the room's row says an agent there is frozen. Follow it to the perms tab and answer there.
+
+**Expected:** the request appears within a couple of seconds, because a room holding a pending request checks in
+every two seconds instead of every twenty. Approving releases the agent in the other account. The decision, and
+any rule it creates, are written in THAT account's database, not yours.
+
+### Y4. Attaching is not federated, and says so
+
+1. In the rooms pane, click the name of a session running on `second`.
+
+**Expected:** it opens that room's own board at `http://localhost:7878` on that terminal, rather than attaching
+here. The row says its terminals stay on that machine. A pseudo terminal belongs to the process that made it,
+and that process is running as another user, so this is the answer rather than a gap to file.
+
+### Y5. Your daemon does not run anything as the other account
+
+1. From your board, launch a session in a directory that only the second account can read.
+
+**Expected:** it fails on permissions, as the account YOUR daemon runs as. A runner starts under the token of
+the daemon that launched it, so one daemon supervising another account's work is not a thing atrium does.
+Dispatch the work to the room instead (section U) and the second account's daemon starts it as itself.
+
+### Y6. A script running as you can still find the other daemon
+
+1. On the second account, set `shared_location` to a path both accounts can read.
+2. Restart that daemon, then as YOU read the file at that path.
+
+**Expected:** the second daemon's address is in it, and you can reach `http://localhost:7878` from a script that
+had no way to read that account's per-user address file. Clear the setting and only the per-user file is
+written, which is right for a machine where the daemon and its callers are the same person.

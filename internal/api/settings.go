@@ -69,6 +69,11 @@ func globalAutoView(s *Server) map[string]any {
 		// Where the directory picker may look. Empty means the default set,
 		// which is the home directory plus every directory a card names.
 		SettingBrowseRoots: "browse_roots",
+		// The command that makes a worktree, and how far under a root to go
+		// looking for repositories. Read as stored, because empty means the
+		// default for both and the box has to be able to show that it is.
+		SettingWorktreeCommand: "worktree_command",
+		SettingProjectDepth:    "project_scan_depth",
 		// A second address file, for callers running as another account.
 		// Empty means only the per-user one, which is right when the daemon
 		// and its callers are the same person.
@@ -122,6 +127,13 @@ func globalAutoView(s *Server) map[string]any {
 	// default set, and the person reading it wants to know what that came out
 	// as rather than being told there is a default.
 	out["browse_roots_now"] = s.browseRootsFor()
+	// And what those two come out as. The worktree command is the only
+	// template here with a default, so an empty box is the one case where the
+	// person reading it cannot work out what would run.
+	if v, err := s.st.Setting(SettingWorktreeCommand); err == nil {
+		out["worktree_command_now"] = worktreeTemplate(v)
+	}
+	out["project_scan_depth_now"] = projectScanDepth(s)
 	// And which shell an empty box comes out as, for the same reason. This one
 	// is a search of PATH on the daemon's machine, so it is not something the
 	// person reading the box could work out for themselves.
@@ -188,6 +200,11 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where the picker may look. A pointer, because clearing it back to
 		// the default set is a request.
 		BrowseRoots *string `json:"browse_roots"`
+		// The command that makes a worktree, and how deep to look for the
+		// repositories to make one in. Pointers for the same reason as the
+		// rest: putting either back to its default is a request.
+		WorktreeCommand  *string `json:"worktree_command"`
+		ProjectScanDepth *string `json:"project_scan_depth"`
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
@@ -322,6 +339,34 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// directory. A command that is not installed fails when somebody
 		// presses the entry and says which program it could not run.
 		if err := s.st.SetSetting(SettingTerminal, strings.TrimSpace(*body.Terminal)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.WorktreeCommand != nil {
+		// Stored as typed, like the other two templates. Empty is the default
+		// rather than nothing, and `off` is nothing, which is written out here
+		// rather than left for the reader to discover from behaviour.
+		if err := s.st.SetSetting(
+			SettingWorktreeCommand, strings.TrimSpace(*body.WorktreeCommand)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.ProjectScanDepth != nil {
+		// Validated here, because a scan is a wait and a number typed by
+		// accident is the whole of a drive. Empty is the convention's two.
+		v := strings.TrimSpace(*body.ProjectScanDepth)
+		if v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 || n > maxProjectDepth {
+				writeErr(w, http.StatusBadRequest, fmt.Errorf(
+					"the project scan goes 1 to %d levels under a root, not %q",
+					maxProjectDepth, v))
+				return
+			}
+		}
+		if err := s.st.SetSetting(SettingProjectDepth, v); err != nil {
 			s.fail(w, err)
 			return
 		}
