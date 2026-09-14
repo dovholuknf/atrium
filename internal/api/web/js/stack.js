@@ -181,6 +181,7 @@ function pillCounts(segID, counts) {
 async function renderStack() {
   try { allStack = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
   lastTasks = allStack;
+  paintWorking(allStack);
   paintStack();
 }
 

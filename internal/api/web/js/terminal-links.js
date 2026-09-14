@@ -120,6 +120,17 @@ function fileLink(id, range, hit) {
     range,
     text: hit.rel,
     activate: (ev) => {
+      // LEFT BUTTON ONLY. xterm calls `activate` for any button, so a right
+      // click on a path opened the editor AND then the menu that right click
+      // was for, which is one gesture doing two things and only one of them
+      // asked for. Returning without `preventDefault` lets the browser's own
+      // menu through, which is where copy lives, and is the same rule the card
+      // menu follows when there is a selection.
+      //
+      // `button` is 0 for left, 1 for middle, 2 for right. A synthetic event
+      // with no button reads as 0, which is the right default: something that
+      // went out of its way to activate a link meant to open it.
+      if (ev && ev.button) return;
       ev.preventDefault();
       hideTip();
       openFromTerminal(id, hit);

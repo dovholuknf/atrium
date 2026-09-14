@@ -66,6 +66,14 @@
          atrium's state visible from outside this machine, and it had no
          indicator at all: two shares and one `stop sharing` left a live
          address with nothing on screen pointing at it. -->
+    <!-- HOW MANY AGENTS ARE MID-TURN, on every tab.
+         The board says what each card needs from you and nothing said how much
+         of it is moving right now. That is the number you want before you
+         restart, before you walk away, and when the machine sounds busy.
+         Left of the share chip, which is the other piece of state that is true
+         whichever view you are on. Hidden at zero: a control reporting that it
+         has nothing to report is noise. -->
+    <button id="working" class="working" onclick="switchView('terms')" hidden></button>
     <button id="sharing" class="sharing" onclick="openSharing()" hidden></button>
     <button id="gauto" onclick="toggleGlobalAuto()"></button>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>

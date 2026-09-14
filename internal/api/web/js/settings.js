@@ -115,7 +115,9 @@ function paintGroupSegs() {
   const html = opts.map(([v, label, title]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
        title="${esc(title)}">${esc(label)}</button>`).join("");
-  ["stack-group", "board-group"].forEach(id => {
+  // The strip is the third. It is rebuilt wholesale on every render, so it
+  // calls this afterwards rather than relying on having been painted once.
+  ["stack-group", "board-group", "term-group"].forEach(id => {
     const el = document.getElementById(id);
     if (el) setHTML(el, html);
   });

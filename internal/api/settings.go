@@ -135,6 +135,16 @@ func globalAutoView(s *Server) map[string]any {
 	// cannot disagree: there is one list and the daemon holds it.
 	out["board_skin"] = s.SkinOrDefault()
 	out["board_skins"] = Skins
+	// How history is replayed, and what the other answers are. Reported even
+	// when unset, because a setting that can be written and not read back is
+	// one nobody can confirm took: the only evidence was a line in the pane
+	// after detaching and attaching again.
+	mode, _ := s.st.Setting(store.SettingReplayMode)
+	if strings.TrimSpace(mode) == "" {
+		mode = "screen"
+	}
+	out["replay_mode"] = mode
+	out["replay_modes"] = []string{"raw", "screen", "flat"}
 	return out
 }
 
@@ -203,6 +213,11 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
+		// How a card's history is turned back into a terminal: `raw`, `screen`
+		// or `flat`. See `store.SettingReplayMode`. Read on every attach, so
+		// changing it here takes effect on the next attach rather than on a
+		// restart, which is the entire point of it being a setting.
+		ReplayMode *string `json:"replay_mode"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -463,6 +478,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(SettingBoardSkin, name); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.ReplayMode != nil {
+		// Refused rather than stored, for the same reason as the skin: a mode
+		// nobody implements would save, read back, and render exactly as the
+		// default did, so the setting would look like it took and do nothing.
+		mode := strings.ToLower(strings.TrimSpace(*body.ReplayMode))
+		switch mode {
+		case "", "raw", "screen", "flat":
+		default:
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"no replay mode called %q. the ones there are: raw, screen, flat", mode))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingReplayMode, mode); err != nil {
 			s.fail(w, err)
 			return
 		}

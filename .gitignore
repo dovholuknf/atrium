@@ -31,3 +31,6 @@ coverage.txt
 # OS
 .DS_Store
 Thumbs.db
+
+walkthrough
+docs/backlog

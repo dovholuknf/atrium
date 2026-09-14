@@ -36,18 +36,35 @@ const (
 	SettingPruneAfter = "prune_after"
 )
 
-// SettingReplayFlat puts scrollback replay back on the old flattener.
+// SettingReplayMode picks how a card's history is turned back into a terminal.
 //
-// Empty, which is unset, means the screen model: bytes run through a grid, so
-// a repaint overwrites what it repainted and what scrolled off the top becomes
-// history. `on` means the flattener instead, which deletes every sequence that
-// could overwrite anything and pads with spaces where a cursor move was.
+// Three answers, and they differ in WHO EMULATES THE TERMINAL:
 //
-// A SWITCH RATHER THAN A REBUILD, because this exact change was made once on
-// the strength of its tests, looked excellent by every number, and had to be
-// reverted the moment somebody read the pane. The tests were measuring the
-// wrong thing. This is what it costs to not be in that position twice.
-const SettingReplayFlat = "replay_flat"
+//   - `raw`: nobody here. The ring's bytes go down the socket untouched and
+//     xterm.js renders them, which is the same emulator already rendering the
+//     live stream. One emulator for both halves is the only arrangement where
+//     history and live cannot disagree, and it is the only one that is
+//     identical for claude, codex, ollama and a bare shell, because it
+//     interprets nothing.
+//   - `screen` (the default): a grid in `screen.go` applies the bytes and
+//     reports what the terminal would have held plus what scrolled off it.
+//     A second emulator, written here, and worse than the one in the browser.
+//   - `flat`: `flatten.go` deletes every sequence that could overwrite
+//     anything and pads with spaces where a cursor move was. Not an emulator
+//     at all, which is why it cannot get a repaint right.
+//
+// `raw` is what the design says it should be. It is not the default yet for
+// one reason, recorded in `flatten.go`: replaying a megabyte of history into a
+// terminal was measured collapsing into a couple of screens, because a
+// terminal user interface draws by moving the cursor and erasing, and on
+// replay those moves land on the history instead of on the frame they were
+// meant for. That measurement predates the screen model, which is an emulator
+// and does not collapse, so it is worth re-testing rather than inheriting.
+//
+// A SWITCH RATHER THAN A REBUILD. This rendering has been declared fixed twice
+// on the strength of tests written beside it, and reverted twice. Read on
+// every attach, so changing it takes effect on the next attach.
+const SettingReplayMode = "replay_mode"
 
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
