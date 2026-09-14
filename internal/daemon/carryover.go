@@ -373,7 +373,16 @@ func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
 			http.StatusNotFound)
 		return
 	}
-	body := stripSGR(flatten(c.bytes))
+	// THE FLATTENER, DELIBERATELY, AND NOT THE PANE'S RENDERER.
+	//
+	// This is a transcript read in a browser tab, not a terminal being
+	// reconstructed. The flattener is additive: it drops what could overwrite
+	// and keeps every version of a line that was redrawn. A grid is the
+	// opposite, and correctly so, which means a paragraph the runner painted
+	// over is gone from it. For a pane that is right. For "what did this card
+	// hold before the restart" it is the wrong trade, and the test below pins
+	// it with a redraw over a coloured line.
+	body := stripSGR(flatten(collapseRedraws(c.bytes)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	// Read in a tab rather than downloaded, which is the difference between
 	// answering the question and putting a file in somebody's downloads.

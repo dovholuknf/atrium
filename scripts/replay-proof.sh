@@ -38,9 +38,8 @@ out=$(dirname "$raw")
 strip() { sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' -e 's/\x1b\][^\x07]*\x07//g' -e 's/\r//g' "$1"; }
 
 render() {
-  ATRIUM_DUMP_IN="$raw" ATRIUM_DUMP_OUT="$out" \
-    ATRIUM_DUMP_COLS="$cols" ATRIUM_DUMP_ROWS="$rows" \
-    go test ./internal/daemon/ -run TestDumpBothReplayPaths -count=1 > /dev/null 2>&1
+  go run ./cmd/atrium replay "$raw" --mode screen --cols "$cols" --rows "$rows" \
+    --out "$out/screen.txt" 2>/dev/null
 }
 
 # HEAD's renderer, swapped in and put back. The working tree is restored on any
