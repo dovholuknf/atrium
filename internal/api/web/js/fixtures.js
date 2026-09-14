@@ -849,19 +849,9 @@ async function recogniseLink() {
   note.classList.toggle("warn", !!(got.problem || got.fetch_error));
 }
 
-// setLaunchModel empties the model field, for the runner given.
-//
-// CALLED ON EVERY OPEN AND ON EVERY CHANGE OF RUNNER, which is what makes the
-// choice one time. Nothing is remembered between dialogs: the field starts
-// empty, and a launch that named a model leaves no trace on the form or on the
-// runner's row. The CARD keeps it, so the session comes back on the same model
-// after a restart, and that is a different question from what this form offers
-// next time.
-//
-// A RUNNER THAT CANNOT TAKE A MODEL HIDES THE CONTROL ENTIRELY. A shell has no
-// model and would try to execute the flag, so its row leaves `model_args`
-// empty. Offering a field that can only produce a refusal is worse than
-// offering nothing.
+// setLaunchModel clears the field when the dialog opens or the runner changes.
+// The card remembers the model for restarts, but each launch starts with an
+// empty field. Hide the control for runners without model_args, such as shells.
 function setLaunchModel(h) {
   const field = document.getElementById("l-model-field");
   const box = document.getElementById("l-model");
@@ -876,11 +866,8 @@ function setLaunchModel(h) {
   if (list) list.innerHTML = modelsSeen.map(m => `<option value="${esc(m)}">`).join("");
 }
 
-// setThrowaway turns the directory field off, because a throwaway has no
-// directory to choose: atrium makes one. Disabled rather than hidden, so the
-// path somebody typed before ticking the box is still there when they untick
-// it, and the field explains itself by going grey beside the sentence that
-// says why.
+// setThrowaway disables directory selection because atrium creates the path.
+// Preserve the typed value so unticking the box restores it.
 function setThrowaway(on) {
   const cwd = document.getElementById("l-cwd");
   const recent = document.getElementById("l-recent");
@@ -893,17 +880,65 @@ document.getElementById("l-throwaway-on").addEventListener("change", e => {
   setThrowaway(e.target.checked);
 });
 
+// loadHarnesses fills the runner list once, and answers with it.
+//
+// Once because the list is a configuration rather than a state: a runner is
+// turned on in the runners tab and stays on, so re-reading it on every menu
+// would be a round trip for an answer that has not changed. The runners tab
+// replaces it outright when somebody edits one there.
+//
+// TWO CALLERS WANT IT AT DIFFERENT MOMENTS. The launch dialog reads it as it
+// opens, and the card menu reads it as it draws, which is a click with nothing
+// to look at yet, so neither can assume the other has been anywhere first.
+async function loadHarnesses() {
+  if (allHarnesses.length) return allHarnesses;
+  try {
+    const got = await api("/v1/harnesses");
+    allHarnesses = got.harnesses || [];
+    // What has been typed into the model box before, which rides along with
+    // the runners because both are read the moment the dialog opens.
+    modelsSeen = got.models || [];
+  } catch (e) {}
+  return allHarnesses;
+}
+
+// launchRunnerHere starts a runner in a directory WITH NO DIALOG.
+//
+// The whole form is skipped, and every field it would have asked for is left
+// empty on purpose rather than guessed at. A title, a reason, tags and a first
+// instruction are all things a human writes when a human has something to say,
+// and none of them is needed to put an agent in a directory. The daemon fills
+// in what it can see for itself, which is what it already does for a launch
+// from the command line.
+//
+// `ontoTask` is the difference between joining a card and making one, and it is
+// decided by the caller because only the caller knows whether the card it came
+// from has a session on it already. Empty means a new card in the same place.
+//
+// Lands in the terminals tab, the same destination `doLaunch` uses for "here".
+// Its own window is deliberately not offered: a second flyout under a flyout is
+// a level this menu does not draw, and a terminal already open pops out from
+// the attach entry two rows above.
+async function launchRunnerHere(harnessID, cwd, ontoTask) {
+  let task;
+  try {
+    task = await api("/v1/launch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
+    });
+  } catch (e) { tellUser("could not start it", e.message); return; }
+  if (task && task.supervised) {
+    switchView("terms");
+    openTerm(task);
+    return;
+  }
+  switchView("board");
+}
+
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
-  if (!allHarnesses.length) {
-    try {
-      const got = await api("/v1/harnesses");
-      allHarnesses = got.harnesses || [];
-      // What has been typed into the model box before, which rides along with
-      // the runners because both are read the moment this dialog opens.
-      modelsSeen = got.models || [];
-    } catch (e) {}
-  }
+  await loadHarnesses();
   const enabled = allHarnesses.filter(h => h.enabled);
   if (!enabled.length) {
     tellUser("atrium", "no runner is enabled yet. turn one on in the runners tab.");
@@ -960,10 +995,8 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
       "unchecked, this starts a fresh conversation in the same directory.";
   }
 
-  // A THROWAWAY IS NEVER THE DEFAULT and never left ticked from last time.
-  // Offered only when this dialog is choosing a directory at all: resuming a
-  // conversation, or starting onto a card, both already have one, and atrium
-  // does not delete a directory somebody chose.
+  // Reset throwaway on every open. Only offer it for a new directory choice;
+  // resumed conversations and existing cards already have directories.
   const ta = document.getElementById("l-throwaway-field");
   ta.hidden = !!resume || !!ontoTask;
   document.getElementById("l-throwaway-on").checked = false;
@@ -1013,11 +1046,8 @@ async function doLaunch() {
   const picker = document.getElementById("l-harness");
   const resumeOff = !document.getElementById("l-resume-field").hidden &&
     !document.getElementById("l-resume-on").checked;
-  // Nowhere to live, so atrium makes somewhere and deletes it afterwards. The
-  // directory goes up EMPTY with it: the daemon ignores the flag when a
-  // directory was named, because a directory somebody chose is not atrium's to
-  // delete, and a field left filled in from before ticking the box would mean
-  // the tick silently did nothing.
+  // Send an empty directory for throwaways. The daemon ignores the flag when
+  // a directory is supplied, so a previous field value must not carry through.
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
   const body = Object.assign({}, launchTarget, {
@@ -1036,12 +1066,8 @@ async function doLaunch() {
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
       ? document.getElementById("l-prompt").value.trim() : "",
-    // An empty field means the runner's default, not a model called nothing.
-    //
-    // Sending nothing does NOT clear a card that already has one: the daemon
-    // falls back to what the card was started on, so pressing start again on a
-    // card does not silently move it to another model. A card keeps its model
-    // for its own lifetime, and the fresh choice belongs to the next card.
+    // An empty model uses the runner default for new cards. Existing cards keep
+    // their saved model when no replacement is supplied.
     model: document.getElementById("l-model").value.trim()
   });
   // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never

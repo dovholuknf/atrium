@@ -141,11 +141,7 @@ async function pickSession(id, t) {
     body: `${list.length} in this directory. The one marked <b>current</b> is what ` +
       `this card would resume on its own.`,
     value: (list.find(s => s.current) || list[0]).id,
-    // Every row on screen at once, up to eight, because the pick is a
-    // comparison between them and a collapsed combo hides it behind a click.
-    // The selection still starts on `current`, which is what the body says
-    // this card resumes on its own, so pressing the button without touching
-    // anything does what it did before.
+    // Show up to eight sessions for comparison, with current selected by default.
     size: 8,
     choices: list.map(s => ({
       value: s.id,
@@ -208,17 +204,8 @@ async function forgetSessions(id, t) {
   toast("forgotten", (gone && gone.title) || pick);
 }
 
-// Keeps a throwaway, by giving it somewhere real to live.
-//
-// The undo for "gone forever", and without it nobody would start anything in a
-// throwaway worth keeping. Somebody clones a repository into one and works in
-// it for an hour, and this is what turns that hour into an ordinary directory
-// and an ordinary card.
-//
-// WHEN IT MOVES DEPENDS ON WHETHER THE SESSION IS STILL RUNNING, and the reply
-// says which happened. A live runner's working directory cannot be moved out
-// from under it, so the daemon writes the destination down and does it when
-// the session ends. With nothing running it happens now.
+// Give a throwaway a permanent directory. The response says whether it moved
+// now or will move after the running session exits.
 async function promoteCard(id, t) {
   const to = await askUser({
     title: "keep this work?",
@@ -331,6 +318,65 @@ function unshelveItem(id, t) {
   };
 }
 
+// The flyout under "new agent here": one row per runner, each of which starts
+// that runner in this card's directory on the click.
+//
+// NO DIALOG, WHICH IS THE POINT. Putting a second agent beside the first is a
+// two-part question, which runner and which directory, and the directory is
+// already answered by the card the menu is open on. Everything the launch form
+// asks beyond that is optional, so asking it made the common case a form.
+//
+// ONE FLAT LIST, IN THE RUNNERS TAB'S OWN ORDER. It was grouped, with the
+// card's own runner held back under a heading, on the reasoning that two of
+// one agent in a directory is usually a mis-click. Three headings over five
+// rows is a menu explaining itself, and the rows already say which runner is
+// which. The operator reads the names, not the argument about them.
+//
+// A runner whose command is not on this machine is left out rather than dimmed.
+// `found` is empty when nothing answered on PATH, and a row that can only fail
+// is worse than no row, since the only fix is in the runners tab.
+//
+// A SHELL IS NOT AN AGENT and is not offered here. Every card already has
+// `open a shell here` two rows up, which opens one on the card rather than
+// making a second card to hold it. A shell on this list would be the same
+// thing again with a worse outcome.
+//
+// The full form is the last row, for the launch that does have a first
+// instruction or a model to name. Nothing is lost, it is just no longer the
+// only way through.
+function newAgentSub(id, t) {
+  // A session already here means a new card in the same directory. Nothing
+  // here means this card takes the runner, which is what makes a card with a
+  // worktree and a finished session worth reopening rather than replacing.
+  const onto = t.supervised ? null : id;
+  const runnable = allHarnesses.filter(h => h.enabled && h.found && !isShellRunner(h));
+
+  const sub = runnable.map(h => ({
+    label: h.label || h.id,
+    act: () => launchRunnerHere(h.id, t.worktree, onto)
+  }));
+  // Only when there is nothing to run, which means no runner on this machine
+  // has a command that resolves. The form is still offered below it, because
+  // the form is where a runner gets pointed at something that does.
+  if (!sub.length) sub.push({ quiet: "no runner on this machine is ready" });
+  sub.push({
+    label: "fill in a form…",
+    act: () => openLaunch(t.runner || null, "", t.worktree, onto, null, "here")
+  });
+  return sub;
+}
+
+// Whether a harness row is a bare shell rather than an agent.
+//
+// BY ITS COMMAND, not by its id. `shell` is what atrium seeds the row as and
+// an operator may have renamed it, added a second one, or pointed a row called
+// something else at `pwsh`. The command is the thing that decides what starts.
+function isShellRunner(h) {
+  const cmd = (h.cmd || "").toLowerCase();
+  return h.id === "shell" ||
+    ["pwsh", "powershell", "cmd", "bash", "sh", "zsh", "fish"].includes(cmd);
+}
+
 async function cardMenu(e, id) {
   // WITH TEXT SELECTED, THIS MENU STANDS ASIDE. Both buttons.
   //
@@ -366,8 +412,11 @@ async function cardMenu(e, id) {
     machineTerminal()
   ]);
   // Once, and then held. The menu is drawn on a click and a round trip here
-  // would open it a beat late every time.
+  // would open it a beat late every time. The runners are the same bargain:
+  // "new agent here" lists them, and a menu that opened without them would
+  // show an empty flyout on the first right click of a session.
   if (!allActions.length) await loadActions();
+  await loadHarnesses();
 
   // A card that is finished has nothing to terminate, and offering it produced
   // a dialog that failed and changed nothing. Auto mode and shelving are the
@@ -436,18 +485,14 @@ async function cardMenu(e, id) {
     // them. That is occasionally what you want and never what you want by
     // accident, so the label says NEW and the tip says the rest.
     t.worktree ? {
-      label: t.supervised ? "start a new session here" : "start a session here",
-      note: t.supervised ? "a second one, alongside" : "",
+      label: "new agent here",
       help: t.supervised
         ? "One is already running here. This starts a SECOND runner in the same " +
           "directory, on its own card and its own conversation. Both will be " +
           "editing the same files."
         : "Starts a runner in this card's directory, onto this card. A fresh " +
           "conversation, not the old one.",
-      // Where it lands is decided when you start it, not afterwards. Landing
-      // somewhere and then being moved is two decisions for one intention.
-      sub: openIn(where => openLaunch(t.runner || null, "", t.worktree,
-        t.supervised ? null : id, null, where))
+      sub: newAgentSub(id, t)
     } : null,
     // Only when it can. An entry that says "cannot resume" underneath itself
     // is a menu explaining why it is there, which is a question it raised.
@@ -460,13 +505,9 @@ async function cardMenu(e, id) {
         "runner, the directory and the conversation all come off the card.",
       sub: openIn(where => resumeCard(id, t, where))
     } : null,
-    // Only where there is a directory to have collected any. Reading them is
-    // one request and the menu is drawn on a click, so it is not done here to
-    // decide whether to offer this.
-    // Only on a card that is about to delete itself, which is the only card it
-    // means anything on. Above forgetting a conversation, because it is the
-    // opposite decision about the same session and the more urgent one: this
-    // directory goes on its own unless somebody says otherwise.
+    // Offer transcript actions when the card has a directory, without fetching
+    // the list just to build the menu. Put promotion first for throwaways so
+    // the operator can keep the work before cleanup.
     t.throwaway ? {
       label: t.promote_to ? "keep it somewhere else…" : "keep this work…",
       note: t.promote_to ? "moving to " + t.promote_to : "",

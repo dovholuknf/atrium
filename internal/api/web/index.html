@@ -686,7 +686,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      the field is the whole interface, and the footer says the three keys once
      for the person who has just met it. -->
 <dialog id="switcher">
-  <input type="text" id="sw-q" class="swq" spellcheck="false" autocomplete="off"
+  <!-- `type="search"`, like every other filter field on this board, and for one
+       more reason here. Chromium's autofill classifies a lone `type="text"`
+       input and offers to fill it, which on Brave is a "New Email Alias"
+       bubble landing over the list the moment the switcher opens.
+       `autocomplete="off"` does not stop it: Chromium has ignored that for its
+       own autofill since 2015. A search field is skipped outright. -->
+  <input type="search" id="sw-q" class="swq" spellcheck="false" autocomplete="off"
     placeholder="go to a session: name, directory or tag">
   <div id="sw-list" class="swlist"></div>
   <div class="swfoot">
