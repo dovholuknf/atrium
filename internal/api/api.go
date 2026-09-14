@@ -94,6 +94,9 @@ type Server struct {
 	// tests measured the wrong thing. This is how a renderer gets run over a
 	// real session offline instead.
 	RawScrollback http.HandlerFunc
+	// TextScrollback is the same history as plain text, for reading in a tab
+	// rather than in a terminal.
+	TextScrollback http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -429,6 +432,12 @@ func (s *Server) Handler() http.Handler {
 	// because it is the supervisor's rather than the carry directory's.
 	if s.RawScrollback != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/raw", s.RawScrollback)
+	}
+	// The same history as plain text in a tab. The pane is a terminal and the
+	// terminal is what is under suspicion, so there has to be a way to read a
+	// card's scrollback that does not go through one.
+	if s.TextScrollback != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/text", s.TextScrollback)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)

@@ -320,6 +320,49 @@ func (d *Daemon) handleRawScrollback(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf)
 }
 
+// handleTextScrollback shows a card's scrollback as PLAIN TEXT IN A TAB.
+//
+// The pane is a terminal, and a terminal is the thing under suspicion, so
+// asking it whether the text is right is asking the accused. This renders the
+// same bytes and hands them over as text, so a browser tab settles what is
+// actually in a card's history without a pane, an emulator or a restart in the
+// way.
+//
+// `?mode=` picks the rendering, defaulting to whatever the board is set to.
+// `?ansi=1` keeps the colour, which a browser will show as escape gibberish
+// and a `curl` into a terminal will show as colour.
+func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	run := d.sup.get(taskID)
+	if r.URL.Query().Get("kind") == "shell" {
+		run = d.sup.getShell(taskID)
+	}
+	if run == nil {
+		http.Error(w, "no supervised terminal on this card.", http.StatusNotFound)
+		return
+	}
+	backlog, widths, rows, _ := run.buf.ReplaySized()
+	if r.URL.Query().Get("collapse") == "0" {
+		backlog = run.buf.Snapshot()
+	}
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	if mode == "" {
+		mode = replayMode(d.st)
+	}
+	out := Replay(backlog, mode, replayCols(widths, 0), rows)
+	if r.URL.Query().Get("ansi") != "1" {
+		out = stripSGR(out)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Cache-Control", "no-store")
+	// Said in the body rather than only in a header, because the first question
+	// about a rendering is always which one produced it.
+	fmt.Fprintf(w, "[atrium] %s mode, %d columns, %d rows, %d bytes in\n\n",
+		mode, replayCols(widths, 0), rows, len(backlog))
+	_, _ = w.Write(out)
+}
+
 func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	c := readCarry(d.carryDir(), taskID, api.ScrollbackBytes(d.st))

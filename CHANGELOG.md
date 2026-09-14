@@ -5,6 +5,48 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The redraw collapse was deleting lines out of the middle of paragraphs, ahead of every renderer.** This is
+  what was actually wrong with scrollback, and it was not the rendering.
+
+  `collapseRedraws` keeps the last frame of a repeated in-place update, which is what stops the flattener
+  turning a spinner that redrew four hundred times into four hundred lines. It has no grid, so it decides what
+  a frame is from carriage returns and erases. And a carriage return is not only a redraw: claude-code ends
+  every wrapped VISUAL ROW with one, so a paragraph three rows wide is a single newline-free segment with
+  three boundaries in it. It read those as three frames and kept the last.
+
+  It ran inside `Replay`, on everything, before any renderer saw a byte. Measured on one card's ring: twelve
+  findings went in, and what came out had none of their `#:`, `Sev:` and `Location:` lines and eight of their
+  twelve `Issue:` lines. Every renderer downstream then faithfully rendered the wreckage, which is why fixing
+  renderers kept not fixing it.
+
+  **It now runs only where the flattener runs.** A grid resolves a repaint by definition, so the screen model
+  and the raw path get the bytes the runner actually wrote. Same ring, same renderer, all twelve findings
+  intact. The test that pins this asserts both halves: the paragraph survives the screen replay, and
+  `collapseRedraws` still eats it, so moving it back in front of everything fails in the suite rather than in
+  somebody's terminal a week later.
+
+- **`atrium replay` renders a captured terminal stream the way an attach would.** Every change to how
+  scrollback renders is in Go, so seeing one meant a build, a wind-down, a restart with every session on the
+  board interrupted, and then reading the result by eye out of a pane. That loop is slow enough that this
+  rendering was twice declared fixed on the strength of tests written beside it and twice reverted.
+
+  It reads a file or stdin and writes stdout or a file. `--all` writes one file per mode, since the question is
+  usually which of the three is least wrong on this particular stream. `--cols` and `--rows` are the size the
+  bytes were COMPOSED at, which is not optional in any meaningful sense: a terminal user interface writes hard
+  line breaks and absolute cursor moves for a specific grid.
+
+  Three ways to get a stream, and the first is the one that settles arguments:
+
+  - **`ATRIUM_TAP_DIR`** writes every byte out of every pty to `<dir>/<card-id>.tap`, before the ring, the
+    collapse and any renderer. The only source that can tell "the renderer lost it" from "the runner never
+    printed it". Off unless the variable is set, unbounded, never cleaned up. An instrument, not a feature.
+  - **`GET /v1/tasks/{id}/scrollback/raw`** is a live card's ring, with the widths and the height in headers.
+    `?collapse=0` is the uncollapsed one, and the difference matters: asking the collapsed copy whether the
+    missing text was ever in the ring produced one confidently wrong answer before this parameter existed.
+  - **`GET /v1/tasks/{id}/scrollback/text`** is the same history as plain text in a browser tab. The pane is a
+    terminal and the terminal was under suspicion, so there had to be a way to read a card's scrollback that
+    does not go through one. `?mode=` picks the rendering, `?ansi=1` keeps the colour.
+
 - **Scrollback is replayed through a screen instead of being stripped of everything that moves.** Attaching to
   a card ran its history through `flatten`, which deletes every sequence that could overwrite something. That
   is the only way an append-only replay can be safe, and it means a cursor move has to be replaced with

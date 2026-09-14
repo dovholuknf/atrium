@@ -393,7 +393,13 @@ func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	start := r.retainedStart()
-	out = collapseRedraws(r.from(start))
+	// UNCOLLAPSED. `collapseRedraws` used to run here, on everything, which
+	// meant the flattener's pre-filter was applied to output the flattener was
+	// not going to render. It has no grid and reads a wrapped row's `\r` as a
+	// frame boundary, so it deleted whole lines from the middle of paragraphs
+	// before any renderer got a look. The flattener still asks for it, at the
+	// one call site that needs it.
+	out = r.from(start)
 	if len(out) == 0 {
 		return nil, nil, 0, false
 	}
@@ -415,6 +421,24 @@ func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped 
 }
 
 // collapseRedraws keeps the last frame of repeated in-place updates.
+//
+// ONLY EVER FOR THE FLATTENER, and running it anywhere else destroys output.
+// It has no grid, so it decides what a frame is from `\r` and the erases, and
+// `\r` is not only a redraw: claude-code ends every WRAPPED VISUAL ROW with
+// one. A paragraph three rows wide is one newline-free segment with three
+// boundaries in it, this reads them as three frames, and two rows of the
+// paragraph are thrown away before any renderer sees them.
+//
+// Measured on one card's ring: twelve findings went in, and what came out of
+// here had zero of their `#:`, `Sev:` and `Location:` lines and eight of their
+// twelve `Issue:` lines. A whole day was spent on renderers that were being
+// handed that.
+//
+// The flattener needs it, because without a grid a spinner that redrew four
+// hundred times becomes four hundred lines. The screen model does not: a grid
+// resolves a repaint by definition, which is what a grid is for. Same ring
+// through the screen model uncollapsed keeps all twelve.
+//
 // Run during replay to keep parsing off the write path. Never collapse across
 // a newline, since completed lines belong in history.
 // Detect frames by boundaries, since counters and timers change the text.

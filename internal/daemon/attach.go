@@ -416,7 +416,9 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			// of somebody when the rendering was last changed.
 			body = backlog
 		case "flat":
-			body = flatten(backlog)
+			// Collapsed first, which is the flattener's own pre-filter and
+			// belongs to nothing else. See `collapseRedraws`.
+			body = flatten(collapseRedraws(backlog))
 		default:
 			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
 			sc.apply(backlog)

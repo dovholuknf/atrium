@@ -235,6 +235,59 @@ func TestColourSurvivesAndIsNotRepeatedPerCharacter(t *testing.T) {
 	}
 }
 
+// A WRAPPED PARAGRAPH IS NOT AN ANIMATION, and the replay must not treat it as
+// one.
+//
+// claude-code ends every wrapped VISUAL ROW with a carriage return rather than
+// a newline, so one paragraph three rows wide is a single newline-free segment
+// with three carriage returns in it. `collapseRedraws` reads each of those as
+// a frame boundary and keeps only the last, which deletes the rows before it.
+//
+// That ran on everything, ahead of every renderer. Measured on a real card:
+// twelve findings went into the ring, and what came out of the collapse had
+// none of their `#:`, `Sev:` and `Location:` lines and eight of their twelve
+// `Issue:` lines. Every renderer downstream then faithfully rendered the
+// wreckage, and a day went into fixing renderers that were being handed
+// pre-broken input.
+func TestAWrappedParagraphSurvivesTheReplay(t *testing.T) {
+	const cols = 40
+	r := newRing(1<<16, cols)
+	r.Write([]byte("#: 1\r\nSev: high\r\nLocation: e2ee_tls.c:159\r\n"))
+	// One paragraph that OVERFLOWS the width, which is the shape that matters.
+	// A row shorter than the terminal followed by a carriage return really
+	// does overwrite itself, and a fixture built that way tests the terminal
+	// rather than the collapse. Here the text runs past forty columns, so the
+	// wrap has already moved the cursor down by the time the carriage return
+	// arrives and it lands at the start of the row below.
+	long := "Issue: the first row of this one runs past the width " +
+		"and keeps going onto a second row of the same paragraph"
+	r.Write([]byte(long + "\r"))
+	r.Write([]byte("and a continuation written after it\r\n"))
+
+	live, widths, rows, _ := r.ReplaySized()
+	for _, want := range []string{"#: 1", "Sev: high", "Location: e2ee_tls.c:159"} {
+		if !strings.Contains(string(live), want) {
+			t.Fatalf("the ring itself lost %q, so this test is wrong rather than the code: %q",
+				want, live)
+		}
+	}
+
+	got := plain(string(Replay(live, "screen", replayCols(widths, 0), rows)))
+	for _, want := range []string{
+		"#: 1", "Sev: high", "Location: e2ee_tls.c:159", "Issue: the first row of this one",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the screen replay lost %q: %q", want, got)
+		}
+	}
+	// And the collapse, run on the same bytes, is what used to eat them. Pinned
+	// so that moving it back in front of everything fails here rather than in
+	// somebody's pane a week later.
+	if c := string(collapseRedraws(live)); strings.Contains(c, "Issue: the first row") {
+		t.Errorf("collapseRedraws kept the paragraph, so this test no longer pins anything: %q", c)
+	}
+}
+
 // A line that leaves colour on closes it, or every line after it is painted by
 // a sequence that belonged to one.
 func TestALineClosesItsColour(t *testing.T) {

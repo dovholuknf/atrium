@@ -664,7 +664,12 @@ func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
 	}
 	r.Write([]byte("\ndone\n"))
 
-	got, _, _ := r.Replay()
+	// THROUGH THE COLLAPSE, NOT THROUGH `Replay`. The ring hands back what the
+	// runner wrote and collapsing is the flattener's pre-filter, applied where
+	// the flattener runs. It used to run on everything, which meant a renderer
+	// with a grid was handed output this had already deleted lines from.
+	live, _, _ := r.Replay()
+	got := collapseRedraws(live)
 	if strings.Count(string(got), "Forging…") != 1 {
 		t.Fatalf("replayed the animation instead of its last frame: %q", got)
 	}
@@ -683,7 +688,8 @@ func TestFramesThatDifferAreStillOneRun(t *testing.T) {
 		fmt.Fprintf(r, "Garnishing… %d tokens\r", i)
 	}
 
-	got, _, _ := r.Replay()
+	live, _, _ := r.Replay()
+	got := collapseRedraws(live)
 	if strings.Count(string(got), "Garnishing…") != 1 {
 		t.Fatalf("differing frames were not collapsed: %q", got)
 	}
