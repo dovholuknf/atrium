@@ -227,10 +227,7 @@
     font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(var(--warn-rgb),.15); color: var(--warn);
   }
   .tab .count:empty, .tab .count.zero { display: none; }
-  /* The perms count is the one badge that asks for a hand. It is nonzero only
-     when auto mode is off AND an agent is blocked waiting on a human, so it
-     carries the danger colour and the waiting queue's pulse rather than the
-     warn tint the other counts share, which reads as an audit trail. */
+  /* Use the danger colour and pulse for permission requests waiting on a human. */
   .tab .count#c-perm {
     background: rgba(var(--danger-rgb),.24); color: var(--danger-text);
     box-shadow: 0 0 0 1px var(--danger);
@@ -724,23 +721,9 @@
   /* Live activity. A running tool breathes so a moving card is distinguishable
      from a still one across a whole board, without reading it. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* The mark that moves, on the three states that are going somewhere.
-     A word has to be read and compared against the word on the card beside it,
-     and across sixteen cards that is not a glance. Motion is what a glance
-     resolves, so each moving state gets its own mark with its own movement:
-     a breathing dot for a tool, a bobbing one for thinking, a bar that squeezes
-     for a compaction.
-
-     TRANSFORM AND OPACITY ONLY, and this is the rule the whole thing rests on.
-     Those two are composited, so a moving mark costs no main thread work per
-     frame on a page that also runs a WebGL terminal. Animating a width, a
-     colour or a shadow gives that up and lays out or paints every frame,
-     sixteen times over. That is the trap, and it is why the marks are drawn in
-     `currentColor` rather than tinted per state: the colour never moves.
-
-     Nothing here applies to a card that is finished, dead or shelved, because
-     `activityChip` draws no chip for one at all. Motion means "look here", and
-     a done card is the opposite of that. */
+  /* Give tool, thinking, and compacting states distinct motion. Animate only
+     transform and opacity to avoid per-frame layout and paint work. Finished,
+     dead, and shelved cards have no activity chip. */
   .chip.live.tool::before,
   .chip.live.thinking::before,
   .chip.live.compacting::before {
@@ -752,18 +735,14 @@
   @keyframes livesqueeze { 0%, 100% { transform: scaleX(1); opacity: .95; } 50% { transform: scaleX(.2); opacity: .6; } }
   .chip.live.tool::before { animation: livebreathe 1.8s ease-in-out infinite; }
   .chip.live.thinking::before { animation: livebob 1.5s ease-in-out infinite; }
-  /* A bar rather than a dot, squeezing in on itself, because the shape is the
-     word. Left in the live teal and not in the danger colour the hot `ctx %`
-     wears: that chip predicts a compaction, this one reports one, and two
-     facts drawn the same colour read as one fact. */
+  /* Use a squeezing bar for compaction. Keep the live teal colour to distinguish
+     current activity from the context warning that predicts compaction. */
   .chip.live.compacting::before {
     width: 9px; height: 3px; border-radius: 1px;
     animation: livesqueeze 1.2s ease-in-out infinite;
   }
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
-  /* Off while the tab is not on screen. Browsers mostly throttle a hidden
-     tab's animations already, and "mostly" across sixteen cards is not a thing
-     to rely on. `stillWhenHidden` puts the class on. */
+  /* Disable activity animations in hidden tabs; stillWhenHidden sets the class. */
   body.tabhidden .chip.live::before { animation: none; }
   .chip.sub { background: rgba(var(--path-rgb),.12); color: var(--path); }
   /* How much context a session has burned, from its statusline.
@@ -961,8 +940,7 @@
     word-break: break-all;
   }
   .dirlist { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-3); }
-  /* A row is a selection and `open` is the separate way into it, so what looks
-     chosen is what `use this one` hands back. */
+  /* Highlight the selected folder; the separate open button navigates into it. */
   .dirlist .drow {
     display: flex; align-items: center; gap: var(--sp-2);
     border-radius: var(--r-sm); border: 1px solid transparent;
@@ -976,8 +954,7 @@
     font-size: var(--fs-base); cursor: pointer;
   }
   .dirlist .dir .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Always drawn, never on hover. A way to descend that appears only under the
-     pointer is one nobody on a phone ever finds. */
+  /* Keep the open button visible so it is discoverable on touchscreens. */
   .dirlist .into {
     flex: none; margin-right: 6px; padding: 3px 8px; border-radius: var(--r-sm);
     background: transparent; border: 1px solid var(--stroke-dim); color: var(--dim);
@@ -988,9 +965,7 @@
   /* A checkout, so a folder of thirty shows which few are repositories. */
   .dirlist .dir.repo .ic { color: var(--teal); }
   .dirlist .dir.repo .nm { color: var(--head); font-weight: 600; }
-  /* The projects list. A repository row, and what is already checked out for
-     it nested under the one that is open. Borrows `.dir` for the rows so a
-     repository looks the same here as it does in the picker. */
+  /* Nest worktrees under the expanded repository. Reuse picker row styling. */
   .projlist .proj.open { background: var(--hairline); border-radius: var(--r-sm); }
   .projlist .proj-count { margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs); }
   .projlist .proj-body {
@@ -1008,7 +983,7 @@
   }
   .dirlist .drow.repo .ic { color: var(--teal); }
   .dirlist .drow.repo .nm { color: var(--head); font-weight: 600; }
-  /* What the dot means, said where the dots are. */
+  /* Explain the folder and checkout icons beside the list. */
   .dirlegend {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4);
     margin-top: var(--vs-2); font-size: var(--fs-xs); color: var(--dimmest);
@@ -1506,6 +1481,48 @@
      nobody can read is a count that is not there. */
   .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; }
   .tgroup:hover .tgcount { opacity: 1; }
+  /* The bucket itself, marked off from the tree under it by a rule rather than
+     by an indent: the rows inside are at the strip's full width on purpose,
+     since they carry their whole label with no heading above them to hold the
+     prefix. */
+  .termbucket {
+    display: flex; flex-direction: column; gap: 4px;
+    padding-bottom: 6px; margin-bottom: 4px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  /* FOLDED IS A HEADING AND NOTHING ELSE, so it gives back the padding and the
+     gap it was holding for rows that are not drawn. Without this a folded
+     bucket leaves a band of empty strip that reads as a rendering fault. */
+  .termbucket.folded { padding-bottom: 0; gap: 0; }
+  /* WHILE A ROW IS OVER IT. The whole bucket lights, rather than a line drawn
+     between two rows: the rows themselves move under the pointer to show where
+     the gap is, so the only thing left to say is which container is going to
+     take the drop. */
+  .termbucket.dropover {
+    background: rgba(var(--teal-rgb), .07);
+    outline: 1px dashed rgba(var(--teal-rgb), .45);
+    outline-offset: 2px; border-radius: var(--r-sm);
+  }
+  /* An empty bucket still has to be somewhere you can aim at, so it keeps a
+     row's worth of height and says what it is for. */
+  .termbucket .bucketdrop {
+    padding: 10px 8px; text-align: center;
+    font: var(--fs-xxs)/1.4 var(--sans); color: var(--label);
+  }
+
+  /* A PINNED ROW WHOSE RUNNER HAS EXITED.
+     Faded, not hidden, and NOT struck through or tinted with the danger
+     colour: nothing went wrong. The session ended, the place it ran is still
+     yours, and the row is a bookmark until you start it again. The left edge
+     keeps its theme colour at half strength so the row is still recognisably
+     that session rather than a grey slot. */
+  .term-list .card.tab.cold { opacity: .55; }
+  .term-list .card.tab.cold:hover { opacity: .85; }
+  .term-list .card.tab.cold::before { opacity: .45; }
+  /* The one row in this strip that is a real drag. `grab` rather than `move`,
+     because the row is being picked up rather than pushed around. */
+  .termbucket .card.tab { cursor: grab; }
+  .termbucket .card.tab:active { cursor: grabbing; }
   /* On a card title it sits inline with the text, so it takes the title's
      size rather than the row's. */
   .card .title .pin {
@@ -3306,8 +3323,7 @@
     background-repeat: no-repeat;
   }
   .dlg-body select option { background: var(--card-1); color: var(--head); }
-  /* A list box. There is no arrow to draw and nothing to open, so the row
-     padding goes on the options and the field pads around them instead. */
+  /* List boxes need option padding and no dropdown arrow. */
   .dlg-body select.as-list {
     padding: 4px; cursor: default; overflow-y: auto;
   }

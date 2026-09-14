@@ -246,9 +246,18 @@ async function termMenu(e, id) {
   e.preventDefault();
   e.stopPropagation();
   const t = await api(`/v1/tasks/${id}`);
+  // The runners, for `new agent here`. Same bargain as the board's card menu:
+  // read once and held, because the menu is drawn on a click and a round trip
+  // would open it a beat late every time.
+  await loadHarnesses();
   showMenu(e, [
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     { label: "attach", act: () => attachTask(id) },
+    // THE SAME ENTRY THE BOARD'S CARD MENU HAS, because it is the same
+    // question asked from the other surface. Starting a second agent beside
+    // this one is most wanted while you are looking at the first one, which is
+    // here, and the strip was the one place it could not be reached from.
+    t.worktree ? { label: "new agent here", sub: newAgentSub(id, t) } : null,
     // The point of the whole feature, offered where you are when you need it:
     // the agent has stopped answering and you want to look at the directory
     // it is sitting in. Only for a card atrium owns a runner for, since a
@@ -385,8 +394,15 @@ function termRow(t, deep) {
   const leaf = termPathOf(t).leaf;
   const shown = deep ? leaf : full;
   return `
-    <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}"
+    <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}${
+           // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
+           // without a runner is not drawn at all. Greyed rather than removed
+           // so the bucket keeps the shape you gave it, and it still answers
+           // a click: there is nothing to attach to, so it offers to start
+           // the session again where it was.
+           t.supervised ? "" : " cold"}"
          data-id="${t.id}"
+         title="${t.supervised ? "" : "this one has exited. click to start it again here"}"
          style="${style}"
          onclick="${t.supervised
            ? `attachTask('${t.id}')`
@@ -574,45 +590,34 @@ function termCount(node) {
 // still has its own `.pinbreak`, which is the same idea in a list that has no
 // other headings in it.
 
-// The strip's reading order, in place, before anything is grouped or drawn.
-//
-// Its own function rather than four sorts inside the render, because what it
-// has to get right is not visible in a screenshot: the same sessions must come
-// out in the same order every time they are handed over, and the only way to
-// see that is to run it twice. `scripts/test-sort-order.js` does.
+// Sort the strip in place before grouping or rendering. Keeping this separate
+// lets test-sort-order.js check stability across different input orders.
 function termOrder(tasks) {
   if (sortByActivity) {
-    // Anything waiting on a human first, then by how recently it moved.
-    //
-    // Both halves are coarse: waiting is a yes or a no, and a strip of sessions
-    // nobody has touched since last night all reads the same idle second. What
-    // tied kept the order the poll delivered, and the poll does not promise
-    // one, so the strip reshuffled between two polls that said exactly the same
-    // thing and the tab you were aiming at moved out from under the cursor.
+    // Waiting sessions come first, then recent activity. Use the shared tiebreak
+    // so equal values do not cause rows to move between polls.
     tasks.sort((a, b) => {
       const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
       if (w) return w;
       return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
     });
   } else {
-    // "Sorted by name" did no sorting at all. The button said one thing and the
-    // branch behind it fell through to whatever `/v1/tasks` happened to return,
-    // so the one mode somebody picks BECAUSE it should hold still was the one
-    // that never did.
-    //
-    // By the label the row actually draws, which is `terminalLabel` falling
-    // back to the title, so the order of the rows is the order of the words on
-    // them. Grouping runs after this and keeps it: a heading nests the rows it
-    // is given, it does not re-sort them.
+    // Sort by the displayed label. Grouping preserves this order within headings.
     const named = t => terminalLabel(t) || t.display_title || "";
     tasks.sort((a, b) => named(a).localeCompare(named(b)) || cardTieBreak(a, b));
   }
-  // Pinned above everything, in either sort. A fixture you have to hunt for
-  // is not one, and this is the whole point of pinning it.
+  // Lift pinned rows with a stable second pass to preserve the order within
+  // pinned and unpinned groups.
   //
-  // A second pass rather than the first clause of the one above: sort is stable,
-  // so everything decided a moment ago survives being split into two halves.
-  tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  // WITHIN the pinned set the order is the one somebody dragged, and neither
+  // sort above gets a say. That is the difference between a bucket and a
+  // filter: activity and name both move on their own, so a set arranged by
+  // hand and then sorted by either is a set that rearranges itself while you
+  // are not looking. `pin_order` is zero on every card until the first drag,
+  // which leaves them tied and falling through to the sort underneath, so an
+  // untouched board looks exactly as it did.
+  tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
+    (a.pinned && b.pinned ? (a.pin_order || 0) - (b.pin_order || 0) : 0));
   return tasks;
 }
 
@@ -623,17 +628,23 @@ async function renderTermList() {
   let all = [];
   try { all = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
 
-  // Terminals, and only terminals.
+  // Terminals, AND the pinned bucket whether or not it is running.
   //
-  // A pinned card without one used to sit here offering `resume`, on the
-  // reasoning that a fixture vanishing the moment it stops is the opposite of
-  // a fixture. That reasoning was about the CARD, and this list is not a list
-  // of cards: it is the switcher for the pane beside it, and a row that
-  // cannot be switched to is a row that does nothing.
+  // These are two different lists sharing one strip, and the rule that tells
+  // them apart is pinning. An unpinned row is a live terminal and nothing
+  // else: it appears when a runner starts and goes when it exits, because
+  // there is nothing left to switch to. A PINNED row is somewhere you keep a
+  // session, and it stays through the exit, drawn cold.
   //
-  // Restarting a stopped session is what the stack and the board are for, and
-  // both do it better, with the whole card in front of you.
-  const tasks = all.filter(t => t.supervised);
+  // This reverses a decision recorded here, that a row which cannot be
+  // switched to is a row that does nothing. The reasoning held while pinning
+  // only meant "sort me first". It stops holding once pinning means "this is
+  // mine and I put it here": a bucket you arranged that empties itself when
+  // you quit a session is not a bucket, and putting the row back by hand is
+  // the work that pinning it was supposed to save. A cold row still does
+  // something, it just is not attaching: it holds its place, and clicking it
+  // starts the session again in the same directory, onto the same card.
+  const tasks = all.filter(t => t.supervised || t.pinned);
   // The badge counts what is actually attachable, since it is a count of live
   // terminals rather than of rows.
   badge("c-term", tasks.filter(t => t.supervised).length);
@@ -646,9 +657,15 @@ async function renderTermList() {
   // actually running, which is the same question the list is already asking.
   // clearTermPane rather than closeTerm, since closeTerm refreshes and this is
   // running inside a refresh.
-  if (termTask && !tasks.some(t => t.id === termTask.id)) clearTermPane();
+  //
+  // ATTACHABLE, not merely present. A pinned row outlives its runner now, so
+  // testing that the id is still in the list would leave the pane holding a
+  // dead terminal for as long as the row stayed pinned, which is forever.
+  if (termTask && !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
 
   termOrder(tasks);
+  const pinnedTasks = tasks.filter(t => t.pinned);
+  pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
   const toggle = `<div class="termhead">
@@ -670,7 +687,8 @@ async function renderTermList() {
     // a pill that rewrites itself every few seconds in the corner of your eye
     // answers a question nobody asked it. The board is where "how long has
     // this been sitting" belongs, and it says it better.
-    ? toggle + termGroupsHTML(tasks)
+    ? toggle + termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
+      termGroupsHTML(tasks.filter(t => !t.pinned))
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
@@ -687,6 +705,167 @@ async function renderTermList() {
     host.dataset.bridged = "1";
     host.addEventListener("scroll", placeTabBridge, { passive: true });
   }
+  wireTermDrag(host);
+}
+
+// The fold key for the pinned bucket.
+//
+// Held in the same store as the tree's folds, which is keyed by path. `*` is
+// not a legal path segment anywhere the tree builds keys from, so this cannot
+// collide with a group called `pinned`.
+const PINNED_FOLD = "*pinned";
+
+// The pinned ids in the order the strip last drew them.
+//
+// Needed because a FOLDED bucket draws no rows, so a drop onto it cannot read
+// the order off the DOM the way an open one does. Without this the drop would
+// send a one-id list and renumber that card to the front of a bucket it was
+// meant to land at the back of.
+let pinnedNow = [];
+
+// The pinned bucket: a heading, and the rows in the order somebody put them.
+//
+// FLAT, AND NOT THROUGH THE TREE, which is the one thing that makes it a
+// bucket. The tree exists to lift a shared `github/org/` prefix off a column
+// of rows that all repeat it, and it is right for the rows underneath. It is
+// wrong here: an order arranged by hand and then sorted into folders is not
+// the order any more, and the whole promise of the bucket is that a row stays
+// where it was put.
+//
+// So this is the opposite trade from the rows below, taken knowingly. These
+// rows draw their FULL label, prefix and all, because there is no heading
+// above them to carry it. That is more text per row and it is the price of the
+// row not moving.
+//
+// The heading is drawn even when the bucket is empty, because an empty bucket
+// still has to be a place you can drag the first row into. It says so.
+//
+// IT FOLDS, like every other heading in this strip. It was written as a label
+// on the reasoning that the bucket is where you put things so you can see
+// them, so a control that hides it only exists to undo the feature. That was
+// wrong in the case that actually happens: eight pinned rows is most of the
+// strip, and folding them is how you get at the ones underneath without
+// unpinning anything. The count on the heading is what makes a folded group
+// honest, and it is already there.
+//
+// A FOLDED BUCKET STILL TAKES A DROP. It is a fold, not a lid: a row dragged
+// onto it goes on the end, which is the same thing dropping past the last row
+// does when it is open.
+function termBucketHTML(pinned, folded) {
+  const rows = folded ? "" : pinned.map(t => termRow(t, false)).join("");
+  const empty = folded ? "" :
+    `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
+  return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
+      <button class="tgroup pinnedhead" onclick="toggleTermGroup('${PINNED_FOLD}')"
+        title="${folded ? "show" : "hide"} the pinned terminals"
+        ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
+        ><span class="tgname">pinned</span
+        ><span class="tgcount">${pinned.length}</span></button>
+      ${rows || empty}
+    </div>`;
+}
+
+// Where a drag started, held because `dataTransfer` cannot be read during
+// `dragover` and the drop indicator has to be drawn while the pointer moves.
+let termDragID = "";
+
+// Dragging a row into the bucket, or around inside it.
+//
+// TWO INTENTIONS, ONE GESTURE, told apart by where the row came from. A row
+// dragged in from below is being pinned, and where it lands is also where it
+// goes in the order. A row dragged within the bucket is only being moved. Both
+// end in the same write, so they are one handler.
+//
+// The DOM is reordered on the drop and the order read back off it, rather than
+// computed from the model and re-rendered. The list is rebuilt from the daemon
+// on the next poll anyway, so computing it twice is two chances to disagree,
+// and reading the rows is what the operator can actually see.
+//
+// Wired after every render, guarded on the host, because `renderTermList`
+// replaces the whole strip and an unguarded listener per render is the leak
+// the terminal's paste handler already taught this file about.
+function wireTermDrag(host) {
+  host.querySelectorAll(".card.tab").forEach(el => {
+    el.draggable = true;
+    el.ondragstart = e => {
+      termDragID = el.dataset.id;
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox refuses to start a drag with nothing set.
+      e.dataTransfer.setData("text/plain", termDragID);
+    };
+    el.ondragend = () => {
+      const aborted = !!termDragID;
+      termDragID = "";
+      host.querySelectorAll(".dropover").forEach(x => x.classList.remove("dropover"));
+      // AN ABANDONED DRAG PUTS THE STRIP BACK. `dragover` moves the row as the
+      // pointer travels, so letting go outside the bucket leaves the list
+      // showing an order that was never written. The poll would correct it
+      // within five seconds, which is five seconds of the strip claiming
+      // something untrue about where things are.
+      //
+      // Told apart from a completed drag by the id: `ondrop` runs first and
+      // clears it, so anything still set here never reached a drop.
+      if (aborted) renderTermList();
+    };
+  });
+
+  const bucket = host.querySelector(".termbucket");
+  if (!bucket) return;
+
+  bucket.ondragover = e => {
+    if (!termDragID) return;
+    // Without this the browser refuses the drop and the gesture ends in the
+    // page's own "no" cursor.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    bucket.classList.add("dropover");
+    const over = e.target.closest(".card.tab");
+    const moving = host.querySelector(`.card.tab[data-id="${termDragID}"]`);
+    if (!moving || !over || over === moving) return;
+    // Above or below the row under the pointer, decided by which half of it
+    // the pointer is in. Snapping to one side would make the last position in
+    // the bucket unreachable.
+    const box = over.getBoundingClientRect();
+    const after = e.clientY > (box.top + box.height / 2);
+    bucket.insertBefore(moving, after ? over.nextSibling : over);
+  };
+  bucket.ondragleave = e => {
+    if (!bucket.contains(e.relatedTarget)) bucket.classList.remove("dropover");
+  };
+  bucket.ondrop = async e => {
+    e.preventDefault();
+    bucket.classList.remove("dropover");
+    const id = termDragID;
+    termDragID = "";
+    if (!id) return;
+    const moving = host.querySelector(`.card.tab[data-id="${id}"]`);
+    // Dropped on the bucket but never dragged over a row in it, which is what
+    // dropping onto the heading or onto an empty bucket looks like. It goes on
+    // the end.
+    if (moving && !bucket.contains(moving)) bucket.appendChild(moving);
+    // Off the DOM when the bucket is open, because the rows are what the
+    // operator can see and computing the same answer twice is two chances to
+    // disagree. A FOLDED bucket has no rows to read, so the last drawn order
+    // stands and the dropped card goes on the end.
+    const ids = bucket.classList.contains("folded")
+      ? pinnedNow.filter(x => x !== id).concat(id)
+      : [...bucket.querySelectorAll(".card.tab")].map(x => x.dataset.id);
+    try {
+      // Pinned FIRST, and only then ordered. A card that was dragged in from
+      // below is not in the bucket as far as the daemon is concerned, so an
+      // order written before the pin would be an order over a set it is not
+      // in yet, and the next poll would drop it back out.
+      await patchTask(id, { pinned: true });
+      await api("/v1/tasks/pin-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+    } catch (err) {
+      toast("that order did not stick", err.message);
+    }
+    refresh();
+  };
 }
 
 // How long to keep trying to attach to a runner that is not there YET.
