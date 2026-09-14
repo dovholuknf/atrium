@@ -81,12 +81,8 @@ type LaunchRequest struct {
 	// keeps a repo-to-color map sends the answer rather than atrium keeping a
 	// second copy of that map. Empty leaves it to the board.
 	Theme string `json:"theme,omitempty"`
-	// Throwaway asks atrium to make a temporary directory and to delete it,
-	// the card and the conversation when the session ends. See throwaway.go.
-	//
-	// Ignored when a directory was named or a card was given, because both of
-	// those are somebody saying where this work lives, and a session whose
-	// directory somebody chose is never atrium's to delete.
+	// Throwaway requests a temporary directory, with directory, card, and
+	// transcript cleanup at exit. Ignore it when a directory or card was supplied.
 	Throwaway bool `json:"throwaway,omitempty"`
 	// IfRunning is what to do when this directory already has a card.
 	//
@@ -500,10 +496,8 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 
 	cwd := strings.TrimSpace(req.Cwd)
-	// A session with nowhere to live gets somewhere to live, made here and
-	// deleted when it ends. Only when nothing else said where: a directory
-	// that was named, or a card that already has one, is somebody's answer to
-	// that question and this must not overrule it.
+	// Create a temporary directory only for a throwaway without a supplied
+	// directory or existing card.
 	throwaway := req.Throwaway && cwd == "" && task == nil
 	if throwaway {
 		tmp, err := makeThrowawayDir()
@@ -629,14 +623,9 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		task = t
 	}
 
-	// MARKED BEFORE THE PROCESS EXISTS, because the process exiting is what
-	// reads this. A runner that falls over in its first two seconds is waited
-	// on by `awaitExit` exactly as a session that ran all day is, and a flag
-	// written after the spawn would miss it and leave the directory behind.
-	//
-	// The note is what makes "gone forever" not a surprise. A why the operator
-	// typed replaces it further down, which is the right way round: they know
-	// what this one is for and atrium only knows what happens to it.
+	// Mark the card before spawning so even an immediate exit cleans up its
+	// temporary directory. Use the default cleanup note unless the operator
+	// supplied their own reason for the session.
 	if throwaway {
 		if err := d.st.SetThrowaway(task.ID, true); err != nil {
 			return nil, err

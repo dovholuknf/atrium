@@ -1,27 +1,9 @@
-// ── the stack ───────────────────────────────────────────
-// One list of every card, ordered. The board says what is where, which is
-// worth having, but a column of thirty cards is not a reading order and a
-// waiting agent in one lane says nothing about a waiting agent in another.
-//
-// Waiting first by default, then by how long since anything happened, which is
-// the order you would work through them in.
-// Each entry is one axis, not one direction. Pressing the active pill reverses
-// it, so "newest activity" and "quietest" were the same pill twice, and
-// "needs me" was the `wants me` filter with extra steps.
-// The two clocks are named for what each measures rather than for the order it
-// puts them in. They are close enough to be confused: on a card that is ready,
-// the turn ended and the activity stopped at the same moment, so both read the
-// same number. They come apart on everything else. A card that is running has
-// been active recently and is waiting for nobody, and one frozen on a
-// permission for an hour was last active an hour ago and has wanted you for
-// that whole hour.
-//
-// `first` and `last` say which end of the axis is at the top, in words. The
-// label alone cannot: "last active" reads as most recent first, and reversed
-// it is the exact opposite under an unchanged label.
-// Every axis below is coarse enough that cards tie on it constantly, and what
-// they fall back to is `cardTieBreak` in core.js, applied where the sort is
-// run rather than written into each axis.
+// The stack lists cards across all board columns, with waiting cards first
+// by default. Each pill selects a sort field; pressing it again reverses the
+// direction. The first/last labels describe that direction.
+// Activity and wait time are separate clocks: a running card may be active
+// without waiting for the operator. Apply cardTieBreak at the sort call to
+// keep cards with equal values in a consistent order.
 const STACK_SORTS = {
   activity: {
     label: "last active",

@@ -1,20 +1,6 @@
-// The order the stack and the terminal strip put cards in, RUN rather than
-// read.
-//
-// Every axis either of them sorts on is coarser than the list it sorts. Cards
-// tie constantly: a dozen share a runner, a whole project shares a worktree,
-// and after a quiet night most of them read the same idle second. What happens
-// to cards that tie is invisible in a screenshot and is the whole of this file,
-// because the symptom is a row that moves when nothing about it changed. On the
-// strip that row is a tab somebody is reaching for with the mouse already down.
-//
-// So the invariant is one sentence, and it is the same sentence for both:
-//
-//   THE SAME CARDS COME OUT IN THE SAME ORDER, WHATEVER ORDER THEY ARRIVED IN.
-//
-// Each half also gets a card with nothing filled in, since a comparator that
-// reads a field straight off a card throws on the one card that has not got it,
-// and a throw inside a sort takes the whole repaint with it.
+// Check that stack and terminal strip order is independent of input order,
+// including ties on every sort field. Also exercise cards with missing fields
+// so a comparator cannot break the whole repaint.
 const { boardScript } = require("./board-source.js");
 
 let bad = 0;
@@ -42,10 +28,8 @@ function lift(start, end) {
 
 const tieBreak = lift("function cardTieBreak(", "\n}");
 
-// Cards that tie on every axis at once, so each axis is decided entirely by the
-// tiebreak. `created_at` deliberately runs against the array order, so a sort
-// that keeps the order it was handed comes out wrong rather than right by
-// accident.
+// Tie every sort field and vary creation time against input order, so the
+// expected result requires the tiebreak.
 const tied = (over) => over.map(id => ({
   id,
   created_at: { a: "2026-09-11T10:00:01Z", b: "2026-09-11T10:00:02Z",
@@ -60,11 +44,7 @@ const tied = (over) => over.map(id => ({
 const TIED_ORDER = "abdc";
 const arrived = ["c", "a", "d", "b"];
 
-// ── the stack ───────────────────────────────────────────
-//
-// askRank is the one thing the axes reach for that is not on the card, and it
-// is INPUT here rather than subject: which cards are asking is decided in
-// card-menu.js and has nothing to do with what happens to cards that tie.
+// Stub askRank: permission state is tested elsewhere; this tests sorting ties.
 const askRank = (t) => (t.asking ? 0 : 2);
 const { STACK_SORTS, cardTieBreak } = new Function("askRank",
   tieBreak + "\n" + lift("const STACK_SORTS = {", "\n};") +
@@ -96,12 +76,8 @@ for (const mode of Object.keys(STACK_SORTS)) {
   }
 }
 
-// ── the terminal strip ──────────────────────────────────
-//
-// `termOrder` reads `sortByActivity`, which is a `let` the toggle writes, so it
-// is handed in as a box the test can set. `isWaiting` and `terminalLabel` are
-// input for the same reason `askRank` is: what a session is waiting for, and
-// what it is called, are decided elsewhere and have their own checks.
+// Pass sort mode in a mutable object so tests can toggle it. Stub waiting
+// state and labels, whose own behavior is tested elsewhere.
 const strip = new Function("isWaiting", "terminalLabel", "mode",
   tieBreak + "\n" + lift("function termOrder(", "\n}") +
   "\nreturn (tasks) => { sortByActivity = mode.on; return termOrder(tasks); };")(

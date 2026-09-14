@@ -2,20 +2,12 @@ package store
 
 import "strings"
 
-// A card whose directory atrium made and will delete, and the way back out of
-// one.
-//
-// Three writes, and they are three because the decision arrives at three
-// different moments: the launch says "this is temporary", the operator says
-// "keep it" while the session is still running, and the end of the session is
-// where either is acted on. Nothing here deletes or moves anything: the store
-// records which of the two a card is in, and `internal/daemon` does the work
-// once the process is gone.
+// Record temporary status at launch, a promotion request while running,
+// and the final state after exit. Filesystem moves and deletion are handled
+// by the daemon once the process has stopped.
 
-// SetThrowaway marks a card as living in a directory atrium will delete.
-//
-// Written by the launch that made the directory, and by nothing else. A card
-// whose directory somebody chose is never temporary, however it was started.
+// SetThrowaway marks a directory created by launch for later cleanup.
+// Never mark a directory supplied by the operator.
 func (s *Store) SetThrowaway(id string, on bool) error {
 	return s.guard(func() error {
 		v := 0
@@ -27,17 +19,9 @@ func (s *Store) SetThrowaway(id string, on bool) error {
 	})
 }
 
-// SetPromoteTo records where a throwaway's directory should go instead of
-// being deleted.
-//
-// A PROMISE, NOT A MOVE. The session is usually still running when this is
-// called, and its working directory cannot be moved out from under it on
-// Windows. So the answer is written down and read at the end, which is the
-// same place the delete happens and therefore the only place the two can be
-// told apart.
-//
-// Empty cancels it, which is how somebody changes their mind before the
-// session ends.
+// SetPromoteTo records where to move the directory after the session exits.
+// It does not move files while the working directory is in use. An empty
+// destination cancels promotion.
 func (s *Store) SetPromoteTo(id, dir string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET promote_to = ? WHERE id = ?`,
@@ -46,11 +30,8 @@ func (s *Store) SetPromoteTo(id, dir string) error {
 	})
 }
 
-// Promoted records that a throwaway now lives somewhere real.
-//
-// One statement for three fields on purpose: a card with a new directory that
-// is still marked temporary would be deleted by the next thing that looked at
-// it, and that is not a window worth leaving open.
+// Promoted updates the path and clears temporary state atomically so cleanup
+// cannot delete a directory that has just been moved.
 func (s *Store) Promoted(id, worktree string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(

@@ -39,19 +39,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# WHERE ATRIUM IS, WHICH IS NOT NECESSARILY UNDER WHOEVER RAN THIS.
-#
-# This used to be `$env:USERPROFILE\.atrium` and that is wrong on the machine it
-# was written for. The daemon runs as its own account so that agents are not
-# running as the human, which is the whole point of rooms. The human then opens
-# a shell as himself, the daemon dies, he runs this, and it reports "there is no
-# atrium at C:\Users\<him>\.atrium\bin\atrium.exe" -- which is true, useless,
-# and names a path nobody installed anything to.
-#
-# Resolved in order of how much somebody has said: an explicit switch, then an
-# environment variable, then the running account, then every account on the
-# machine. The last one is a search rather than a guess, and it says what it
-# found.
+# Find the install using -AtriumHome, ATRIUM_HOME, the current account,
+# then other profiles. The daemon may use a dedicated account, so the
+# caller's profile is not always the right location.
 function Find-AtriumHome {
     param([string]$Explicit)
 
@@ -89,19 +79,13 @@ $exe = Join-Path $bin 'atrium.exe'
 $staged = Join-Path $bin 'atrium.next.exe'
 $aside = Join-Path $bin 'atrium.old.exe'
 
-# The address file sits in the OWNER's local app data, not in this user's.
-# Deriving it from `$env:LOCALAPPDATA` had the same bug as the line above and
-# the same symptom: a default database, an empty board, and what reads as data
-# loss.
+# Read the address file from the install owner's local app data. The caller's
+# profile could select the wrong database and show an empty board.
 $owner = Split-Path (Split-Path $home_ -Parent) -Leaf
 $addressFile = Join-Path (Split-Path $home_ -Parent) 'AppData\Local\atrium\daemon.json'
 
-# STARTING SOMEBODY ELSE'S DAEMON MAKES IT YOURS, and that is not a small thing.
-#
-# The process would run as whoever ran this. Every agent it spawns inherits that
-# account, every file it writes is owned by it, and the database under another
-# user's profile may not even be readable. A board that comes up wearing the
-# wrong identity is worse than no board, because it looks like it worked.
+# Starting here runs the daemon and its agents as the current user, even
+# when another account owns the install. Require -Force for that case.
 if ($owner -ne $env:USERNAME -and -not $Force) {
     Write-Host ("atrium is installed under " + $owner + " and you are " + $env:USERNAME + ".")
     Write-Host "starting it from here would run the daemon, and every agent it spawns, as you."

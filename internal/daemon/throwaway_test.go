@@ -42,7 +42,7 @@ func aThrowaway(t *testing.T, d *Daemon) *store.Task {
 	return got
 }
 
-// THE POINT OF THE FEATURE: the directory and the card both go.
+// Cleanup removes both the temporary directory and the card.
 func TestTheEndOfAThrowawayTakesItsDirectoryAndItsCard(t *testing.T) {
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
@@ -57,9 +57,7 @@ func TestTheEndOfAThrowawayTakesItsDirectoryAndItsCard(t *testing.T) {
 	}
 }
 
-// AN ORDINARY CARD IS NOT TOUCHED, and this is asked of the same call every
-// runner exit makes. A session in somebody's repository must be able to end
-// without its directory being considered.
+// Ordinary cards and their directories must survive the same exit handler.
 func TestAnOrdinaryCardIsNotThrownAway(t *testing.T) {
 	d := testDaemon(t)
 	dir := t.TempDir()
@@ -80,9 +78,8 @@ func TestAnOrdinaryCardIsNotThrownAway(t *testing.T) {
 	}
 }
 
-// THE GUARD. A card that says it is temporary while pointing at a directory
-// atrium did not make is a bug, and carrying it out would cost somebody their
-// work. Nothing is deleted and the card stays, so the mistake is visible.
+// Refuse cleanup outside atrium's temporary directory, even if the card is
+// marked throwaway. Keep the card so the error remains visible.
 func TestAThrowawayPointingSomewhereRealIsRefused(t *testing.T) {
 	d := testDaemon(t)
 	dir := t.TempDir()
@@ -106,8 +103,7 @@ func TestAThrowawayPointingSomewhereRealIsRefused(t *testing.T) {
 	}
 }
 
-// PROMOTING IS THE UNDO, and it happens at the end of the session because that
-// is when the directory is free to move.
+// Promotion moves the directory after the session exits.
 func TestAPromotedThrowawayMovesInsteadOfGoing(t *testing.T) {
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
@@ -134,9 +130,7 @@ func TestAPromotedThrowawayMovesInsteadOfGoing(t *testing.T) {
 	}
 }
 
-// A RESTART MUST NOT REOPEN ONE. Its directory is gone, so the launch would
-// fail and leave a dead card after every restart with nothing on it to say
-// why. See B2-06, which is what made this possible.
+// Do not reopen throwaways on restart, since their directories are deleted (B2-06).
 func TestAThrowawayIsNotReopened(t *testing.T) {
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
@@ -160,8 +154,7 @@ func TestAThrowawayIsNotReopened(t *testing.T) {
 	}
 }
 
-// THE BACKSTOP, for the case that will happen: the daemon was killed, so
-// nothing waited on the runner and nothing cleaned up after it.
+// Startup cleanup handles leftovers from a daemon killed before awaitExit.
 func TestAThrowawayLeftBySomethingThatDiedIsSweptAtStartup(t *testing.T) {
 	d := testDaemon(t)
 	task := aThrowaway(t, d)

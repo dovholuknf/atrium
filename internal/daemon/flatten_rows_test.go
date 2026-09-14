@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-// A BLOCK DRAWN BY POSITIONING COMES BACK AS LINES.
-//
-// The second half of the same defect as `spinner_boundary_test.go`. A terminal
-// user interface does not end its lines: it jumps to the next row and writes.
-// Every one of those jumps was dropped, so a sixteen line file listing arrived
-// as one 625 character line. This is that listing, from a real capture.
+// Position-based output must become separate lines. This fixture comes from
+// a captured file listing that previously flattened into one long line.
 
 // block draws rows the way claude-code does: position, write, position, write,
 // and not one newline anywhere in it.
@@ -63,10 +59,7 @@ func TestAColumnBecomesIndent(t *testing.T) {
 	}
 }
 
-// ONLY FORWARD. A move to a row at or above the one already reached is the
-// runner redrawing something it has already drawn, which is the overwrite the
-// whole file exists to refuse. It must emit nothing and leave the earlier row
-// standing.
+// Backward and same-row moves must not overwrite previously emitted output.
 func TestARowJumpBackwardsDrawsNothing(t *testing.T) {
 	in := "\x1b[5;1Hfifth row" + "\x1b[2;1Hsecond row, drawn later"
 
@@ -80,12 +73,7 @@ func TestARowJumpBackwardsDrawsNothing(t *testing.T) {
 	}
 }
 
-// EVERY FORWARD JUMP IS ONE LINE ENDING, however far it went.
-//
-// Reproducing the distance was the mistake that made the first attempt read
-// worse than the bug: a gap on a screen is rows holding OTHER content, and in
-// an append-only transcript there is nothing between the two lines. It
-// measured 376 blank lines out of 656.
+// A forward jump contributes one line ending regardless of its distance.
 func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
 	for _, in := range []string{
 		"top\x1b[2;1Hnext",   // the very next row
@@ -102,11 +90,8 @@ func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
 	}
 }
 
-// A cursor move never ADDS a blank line, and a real newline is what makes one.
-//
-// The separation between blocks survives, at one blank line. More than one is
-// squeezed on the way out, which `TestARunOfBlankLinesBecomesOne` covers, so
-// what this pins is that the row translation contributes nothing of its own.
+// Cursor moves must not add blank lines. Preserve a real newline between
+// blocks; repeated blank lines are tested separately.
 func TestARowMoveAddsNoBlankLine(t *testing.T) {
 	got := string(flatten([]byte("one\r\n\r\ntwo")))
 	if n := strings.Count(got, "\n"); n != 2 {
@@ -139,13 +124,8 @@ func TestAPrivateModeIsNotAPosition(t *testing.T) {
 	}
 }
 
-// PAGES OF EMPTY SCREEN ARE NOT HISTORY.
-//
-// These blank lines are the runner's own: measured with every escape stripped
-// and nothing else changed, 2,542 of 4,063 lines of one card's carried
-// scrollback were already empty, in 321 runs of three or more, the longest 58
-// lines. claude-code redraws a block and leaves the rest of its screen blank,
-// and every redraw adds another screenful to the history.
+// Collapse repeated blank rows left by screen redraws while keeping a
+// single blank line between blocks.
 func TestARunOfBlankLinesBecomesOne(t *testing.T) {
 	got := string(flatten([]byte("above\r\n\r\n\r\n\r\n\r\n\r\n\r\nbelow")))
 	if n := strings.Count(got, "\n"); n != 2 {
@@ -165,9 +145,7 @@ func TestOneBlankLineSurvives(t *testing.T) {
 	}
 }
 
-// EMPTY MEANS EMPTY TO AN EYE. A line carrying only a colour change and some
-// spacing shows nothing, and counting it as text is why the first attempt at
-// this barely moved: 163 runs of three or more survived it.
+// Treat lines containing only colour changes and spacing as blank.
 func TestALineOfOnlyColourCountsAsBlank(t *testing.T) {
 	in := "above\r\n" + "\x1b[m   \r\n" + "\x1b[38;2;1;2;3m \r\n" + "   \r\n" + "below"
 	got := string(flatten([]byte(in)))

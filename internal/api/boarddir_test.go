@@ -8,17 +8,9 @@ import (
 	"testing"
 )
 
-// The board can be served off disk, and the point of that is not having to
-// restart the daemon to change the page. What makes it useful rather than
-// merely possible is that the page still NOTICES: the build id has to follow
-// the files, or a refresh is the only way to know anything moved.
+// The build id must reflect changes to board files served from disk.
 
-// Pointed at the very tree that was embedded, the two have to agree.
-//
-// They are hashed the same way from the same root, so an unmodified checkout
-// served off disk is the same board as the embed and the page has nothing to
-// report. If this ever fails, every board served from a directory looks stale
-// the moment it loads.
+// An unmodified disk copy must hash to the same id as the embedded board.
 func TestADirectoryCopyOfTheBoardHasTheEmbeddedBuildID(t *testing.T) {
 	s := &Server{BoardDir: "web"}
 	if got := s.boardID(); got != BuildID {

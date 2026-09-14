@@ -69,8 +69,7 @@ function browseList() {
   const q = (document.getElementById("b-filter").value || "").trim().toLowerCase();
   const rows = q ? browseEntries.filter(e => (e.name || "").toLowerCase().includes(q)) : browseEntries;
   const list = document.getElementById("b-list");
-  // TWO CONTROLS PER ROW, because one cannot both choose a folder and descend
-  // into it. The name selects, `open` lists what is inside.
+  // The folder name selects; the separate open button navigates into it.
   list.innerHTML = rows.length
     ? rows.map(e => `
         <div class="drow ${e.repo ? "repo" : ""}" data-path="${esc(e.path)}">
@@ -232,12 +231,8 @@ function askUser(opts) {
     const chField = document.getElementById("ask-choices-field");
     const choices = document.getElementById("ask-choices");
     chField.hidden = !(opts.choices && opts.choices.length);
-    // `size` draws that same select as a list box rather than a collapsed
-    // combo, for the questions whose answer comes from comparing the rows
-    // instead of picking from a couple of named modes. It is a cap and not a
-    // height: a short list is exactly as tall as it needs to be, and a long
-    // one stops here and scrolls, because the dialog's own body scrolls and a
-    // list taller than the screen puts a scrollbar inside a scrollbar.
+    // Use size to show a list box, capped at the requested number of rows.
+    // Short lists fit their contents; longer lists scroll.
     let rows = 0;
     if (!chField.hidden) {
       setHTML(choices, opts.choices

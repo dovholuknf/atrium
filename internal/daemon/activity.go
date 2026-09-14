@@ -29,20 +29,9 @@ const (
 	ActivityThinking = "thinking"
 	ActivityTool     = "tool"
 	ActivityIdle     = "idle"
-	// ActivityCompacting is the one state here with a beginning and no end.
-	//
-	// PreCompact says it started. Claude Code fires no PostCompact, so nothing
-	// says it stopped, and a state nothing clears is a card that spins for the
-	// rest of the day. It is ended by inference instead, two ways, neither of
-	// them a hook:
-	//
-	//   - the next activity event from that session, because every one of them
-	//     goes through `set` and replaces this;
-	//   - `compactingFor` below, when no event arrives at all.
-	//
-	// Kept out of the store on purpose. `store.EventCompacted` records that a
-	// session forgot something, which is a fact about the past and stays true.
-	// This is a guess about right now.
+	// ActivityCompacting starts with PreCompact. There is no matching completion
+	// hook, so clear it on the next activity event or after compactingFor.
+	// This is transient activity; store.EventCompacted records the lasting event.
 	ActivityCompacting = "compacting"
 )
 

@@ -1,25 +1,6 @@
-# LINE ENDINGS ARE LF HERE, ON EVERY PLATFORM.
-#
-# Without this the CI job on `windows-latest` failed on its first step and
-# reported every Go file in the repository as badly formatted:
-#
-#     these files are not gofmt clean:
-#     cmd\atrium\main.go
-#     internal\agent\agent.go
-#     ...
-#
-# Nothing was wrong with any of them. A GitHub Windows runner checks out with
-# `core.autocrlf=true`, which rewrites every LF to CRLF on the way to disk, and
-# `gofmt -l` correctly says a file full of CRLF is not what it would write. The
-# blobs in git are LF, this machine is LF, and only the runner's copy was not.
-#
-# That is worth stating because the failure names the wrong thing. It reads as
-# sixty unformatted files and it is one checkout setting, and the first instinct
-# is to run `gofmt -w` over the tree, which changes nothing and fixes nothing.
-#
-# Set per extension rather than with a blanket `* text=auto`, because a blanket
-# rule renormalises everything on the next checkout and one file here cannot
-# survive that. See the bottom.
+# Keep source files as LF on every platform. Windows checkouts with
+# core.autocrlf=true otherwise make gofmt report every Go file as changed.
+# Use explicit extensions so files such as toasts.js can opt out below.
 
 *.go    text eol=lf
 *.sh    text eol=lf
@@ -33,17 +14,11 @@
 *.css   text eol=lf
 *.js    text eol=lf
 
-# PowerShell is the one thing on this repository that is Windows-first, and the
-# ecosystem's own convention is CRLF. Nothing here parses it with bash.
+# Use CRLF for Windows PowerShell scripts.
 *.ps1   text eol=crlf
 
-# NOT CONVERTED, AND NOT BECAUSE IT IS AN IMAGE.
-#
-# `toasts.js` carries two stray NUL bytes, which is why git already diffs it as
-# binary and why a patch cut without `--text` silently drops it (filed as
-# B2-51). A `text` rule would let git rewrite its line endings, and rewriting a
-# file git cannot safely read as text is how the NULs become somebody's
-# afternoon. `-text` says do not touch it either way.
+# toasts.js contains two NUL bytes (B2-51), so git treats it as binary.
+# Leave its line endings alone until those bytes are cleaned up.
 internal/api/web/js/toasts.js -text
 
 *.png   binary

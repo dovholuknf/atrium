@@ -12,22 +12,9 @@ import (
 	"strings"
 )
 
-// Keeping the work a throwaway turned out to be worth keeping.
-//
-// A throwaway session runs in a directory atrium made and deletes when the
-// session ends, and the whole feature depends on that being safe to reach for
-// without deciding anything first. It is only safe if there is a way out:
-// somebody clones a repository into a throwaway, works in it for an hour, and
-// then needs the directory to become an ordinary one rather than to be
-// destroyed with no undo.
-//
-// THE MOVE HAPPENS WHEN THE SESSION ENDS, not when the button is pressed.
-// Windows will not let a live process have its working directory renamed, and
-// the runner's working directory IS this directory. So a promote on a running
-// session writes down where it is going and the end of the session does it,
-// which is the same place the delete it replaces would have happened. With
-// nothing running there is no such obstacle and the move is immediate, because
-// making somebody start a session to move a directory would be absurd.
+// Promote a throwaway by moving its directory to a permanent path.
+// Wait for a running session to exit because Windows cannot rename its working
+// directory while it is in use. Otherwise, move it immediately.
 
 // promoteRequest is where the operator wants the directory to end up.
 type promoteRequest struct {
@@ -57,10 +44,8 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A runner is holding the directory open, so the move waits for it. The
-	// card stops saying it is temporary as far as the operator is concerned
-	// only when the move has happened, which is why the flag stays set and the
-	// destination is what changes.
+	// Keep the throwaway flag until the move succeeds. While the runner holds
+	// the directory open, record only the destination.
 	if IsSupervised != nil && IsSupervised(id) {
 		if err := s.st.SetPromoteTo(id, to); err != nil {
 			s.fail(w, err)
@@ -95,13 +80,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"task": toView(t), "to": to, "when": "now"})
 }
 
-// promoteTarget checks where the directory is being sent, before anything is
-// moved.
-//
-// Every refusal here is a way of losing the work this call exists to save: a
-// relative path resolved against whatever the daemon's own directory happens
-// to be, or a destination that already holds something, which a move would
-// either fail on or merge into.
+// promoteTarget requires an absolute, unused destination before moving files.
 func promoteTarget(raw string) (string, error) {
 	to := filepath.FromSlash(strings.TrimSpace(raw))
 	if to == "" {
@@ -121,19 +100,9 @@ func promoteTarget(raw string) (string, error) {
 	return to, nil
 }
 
-// MoveWorktree moves a directory, and the conversations that were held against
-// where it used to be.
-//
-// Exported because the daemon does this too: a promote asked for while a
-// session was running happens once that session has exited, which is inside
-// the supervisor. This side owns it because the transcripts are Claude Code's
-// files and `sessions.go` is already the one place that knows where they live.
-//
-// A RENAME FIRST AND A COPY WHEN THAT FAILS. A temporary directory is on
-// whichever volume the operating system keeps temporary files on, and the
-// place work is being promoted to is usually not that volume. Rename across
-// volumes fails, and a promote that only worked when the two happened to match
-// would fail exactly when somebody had an hour of work in it.
+// MoveWorktree moves a directory and its Claude Code transcripts.
+// The daemon also calls this after a running session exits. Try renaming first,
+// then fall back to copying for moves across volumes.
 func MoveWorktree(from, to string) error {
 	from = filepath.FromSlash(strings.TrimSpace(from))
 	if from == "" {
@@ -157,18 +126,9 @@ func MoveWorktree(from, to string) error {
 	return nil
 }
 
-// ForgetTranscripts deletes every conversation held against a directory.
-//
-// The third of the three deletions a throwaway owes, and the one that is
-// invisible when it is forgotten: Claude Code keys its transcripts on the
-// working directory, so deleting the directory leaves them orphaned under an
-// encoded name for a path that no longer exists, one set per throwaway,
-// forever.
-//
-// The whole project directory rather than one file, which is the difference
-// from `forgetSession`. That deletes a conversation somebody picked out of a
-// list; this is a directory that is about to stop existing, and every
-// transcript in it belongs to it.
+// ForgetTranscripts deletes the Claude Code project directory for this path.
+// Deleting only the working directory would leave transcripts behind, since
+// Claude Code stores them separately under an encoded path.
 func ForgetTranscripts(cwd string) error {
 	dir, err := projectDirFor(cwd)
 	if err != nil {
@@ -177,11 +137,8 @@ func ForgetTranscripts(cwd string) error {
 	return os.RemoveAll(dir)
 }
 
-// moveTranscripts makes a directory's conversations follow it.
-//
-// Nothing is merged. A destination that already has transcripts belongs to
-// work that was done there before, and folding one session's history into
-// another's is worse than leaving the old ones where they are.
+// moveTranscripts relocates conversations without merging into an existing
+// transcript directory, which may belong to earlier work at that path.
 func moveTranscripts(from, to string) {
 	src, err := projectDirFor(from)
 	if err != nil {
@@ -204,11 +161,7 @@ func moveTranscripts(from, to string) {
 	}
 }
 
-// copyTree copies a directory recursively, for the cross-volume case.
-//
-// Symlinks are copied as what they point at, which is what `fs.WalkDir`
-// reports without being asked to follow them, and is the right answer for the
-// only tree this is ever given: one somebody has been working in for an hour.
+// copyTree recursively copies the working directory for cross-volume moves.
 func copyTree(from, to string) error {
 	return filepath.WalkDir(from, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {

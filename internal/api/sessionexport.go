@@ -14,31 +14,12 @@ import (
 	"github.com/dovholuknf/atrium/internal/safepath"
 )
 
-// A conversation, written out to a file.
-//
-// Two shapes, and the second is the point: the transcript exactly as Claude
-// Code wrote it, and a reduced one that is only what the operator said and
-// what the agent said back. A conversation is the only record of why the code
-// looks like it does, and today it lives in one place, in a format nobody
-// reads, that forgetting the session deletes.
-//
-// THE SECOND PLACE THE "FILES NEVER LEAVE A CARD" RULE BENDS, after
-// `forgetSession`, and for the same reason: transcripts are not inside a card,
-// they are under the user's home directory, and the board is the only thing
-// that knows which card they belong to. So the id is not trusted. It comes
-// from the board, which got it from the listing, and it is resolved through
-// `internal/safepath` against the project directory like every path that makes
-// that round trip.
-//
-// IT STREAMS. A transcript reaches ninety megabytes in a working day, which is
-// why `sessions.go` reads the head and stops, and one line can be an entire
-// pasted file, which is why the scanner buffer goes to four megabytes here as
-// it does there. Nothing holds the whole file, in either mode.
+// Export a Claude Code transcript as raw JSONL or conversation text.
+// Transcripts live under the user's home, outside the card directory, so resolve
+// the requested session id with safepath against its project directory.
+// Stream both formats; allow lines up to four megabytes for pasted content.
 
-// exportSession writes one transcript to the response.
-//
-// `?mode=raw` is the file itself. Anything else is the reduced markdown, which
-// is the one somebody would keep, paste into a ticket, or read a week later.
+// exportSession streams raw JSONL for ?mode=raw, or reduced Markdown otherwise.
 func (s *Server) exportSession(w http.ResponseWriter, r *http.Request) {
 	task, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
@@ -82,24 +63,10 @@ func (s *Server) exportSession(w http.ResponseWriter, r *http.Request) {
 	boilDown(w, f, titleOf(full, want), want)
 }
 
-// boilDown writes the conversation and drops everything else.
-//
-// The filter is a CONTENT-SHAPE test rather than a role test, because a record
-// of type `user` is two different things: a prompt somebody typed, where
-// `message.content` is a string, and the result of a tool call, where it is an
-// array of blocks. `titleOf` already leans on exactly that. An assistant
-// record is per-block instead, since one of them can carry text, a tool call
-// and thinking together.
-//
-// A SUBAGENT'S WHOLE CONVERSATION IS IN THE SAME FILE, written inline as
-// sidechain records. Left in, another agent's exchange outweighs the
-// operator's own turns and reads as somebody else talking, so it is dropped
-// and counted, and the count is printed at the end rather than discovered.
-//
-// What it does NOT do is follow a chain. Resuming makes a new session id, so
-// one conversation can be several files, and this exports the one that was
-// asked for. The compaction marker below is printed rather than hidden, which
-// at least says where the rest of it went.
+// boilDown keeps user prompts and assistant text. Skip user tool results
+// with array content and filter assistant records by block type.
+// Skip sidechain conversations and report their count. Export only the requested
+// file, without following resume chains, and keep compaction markers visible.
 func boilDown(w io.Writer, r io.Reader, title, id string) {
 	fmt.Fprintf(w, "# %s\n\n`%s`\n\n", title, id)
 
@@ -149,23 +116,15 @@ func boilDown(w io.Writer, r io.Reader, title, id string) {
 	}
 }
 
-// injectedTags are the things that arrive as user content without anybody
-// typing them: reminders the harness adds, the block a slash command leaves
-// behind, and hook output.
-//
-// Named rather than matched as "any line opening with a bracket", which is
-// what `firstLineOf` does with one line and cannot do with a whole turn: a
-// pasted diff or a line of HTML would take the rest of the message with it.
+// injectedTags names harness reminders, slash-command output, and hook blocks.
+// Match known tags so pasted HTML or diffs are not mistaken for injected text.
 var injectedTags = []string{
 	"system-reminder", "command-name", "command-message", "command-args",
 	"local-command-stdout", "local-command-stderr", "user-prompt-submit-hook",
 }
 
-// spoken is what is left of a user turn once the injected blocks are out.
-//
-// Empty means nothing was typed, so there is no turn to print. A turn that is
-// only a slash command counts as nothing for the same reason `firstLineOf`
-// skips them: the interesting part is what the command did, not that it ran.
+// spoken removes injected blocks from a user turn. Empty turns and standalone
+// slash commands are omitted from the export.
 func spoken(s string) string {
 	var out []string
 	closing := ""
@@ -201,11 +160,7 @@ func injectedTag(line string) string {
 	return ""
 }
 
-// assistantText keeps the text blocks and drops the rest.
-//
-// Tool calls and thinking are the traffic this export exists to boil out, and
-// they are siblings of the text in the same record rather than records of
-// their own.
+// assistantText keeps text blocks and skips tool calls and thinking blocks.
 func assistantText(content any) string {
 	blocks, ok := content.([]any)
 	if !ok {

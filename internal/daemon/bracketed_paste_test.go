@@ -6,16 +6,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// WHAT AN ATTACH TELLS THE BOARD ABOUT PASTING, and why it is told rather than
-// left to be worked out.
-//
-// The board wraps a paste in bracketed paste markers so the runner reads it as
-// one paste. Its only evidence used to be the `\x1b[?2004h` the runner emits
-// once at startup and the pane parsed out of the replayed scrollback, so a pane
-// that attached after the ring had wrapped past that byte pasted raw. The
-// runner then got the paste in the operating system's own four kilobyte
-// installments, which read as a burst of typing per installment: one paste
-// arriving as five, and a peer report arriving as its tail.
+// An attach must report harness paste support even when the startup enable
+// sequence has already fallen out of scrollback.
 
 func pasteTask(t *testing.T, d *Daemon, name, runner string) *store.Task {
 	t.Helper()
@@ -42,10 +34,7 @@ func TestAnAttachSaysWhenTheRunnerAsksForBracketedPaste(t *testing.T) {
 	}
 }
 
-// A SHELL IS NEVER DECLARED FOR IT. `kind=shell` is not the harness's runner,
-// it is a command line, and a shell turns the mode on and off around each
-// prompt rather than for its whole run. Its enable is also re-emitted at every
-// prompt, so the stream is a good answer there and this one would be a guess.
+// Shell panes rely on stream detection because paste mode changes around prompts.
 func TestACardsShellIsNeverToldToBracket(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
@@ -57,10 +46,8 @@ func TestACardsShellIsNeverToldToBracket(t *testing.T) {
 	}
 }
 
-// UNKNOWN MEANS NO, which is what keeps `200~` off the screen of a runner that
-// never asked. A card whose runner is not a harness atrium knows, and a card id
-// that is not a card at all, both fall back to the board believing the stream
-// and nothing else.
+// Unknown runners and missing cards return false, leaving paste detection
+// to the stream instead of sending potentially unsupported markers.
 func TestAnUndeclaredRunnerIsNotBracketed(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()

@@ -52,11 +52,8 @@ func embeddedBoard() fs.FS {
 	return sub
 }
 
-// board is the tree the board is served and hashed from.
-//
-// A directory when one was named, the embed otherwise. Both are rooted at the
-// board itself rather than at a `web/` above it, so an unmodified directory
-// hashes to the same build id as the embed and the page has nothing to notice.
+// board returns the disk or embedded filesystem rooted at the board itself,
+// so identical files produce the same build id.
 func board(dir string) fs.FS {
 	if strings.TrimSpace(dir) == "" {
 		return embeddedBoard()
@@ -76,19 +73,8 @@ func buildID(fsys fs.FS) string {
 		if e.IsDir() {
 			return nil
 		}
-		// WHAT `go:embed` SKIPS, THIS SKIPS, or the two hashes of one tree
-		// disagree and every board served from a directory reports itself
-		// stale the moment it loads.
-		//
-		// `internal/api/web/CLAUDE.md` is a SYMLINK into another repository.
-		// `go:embed` does not follow one, so the embedded board is 35 files
-		// and a walk of the same directory finds 36. Nothing about that is
-		// visible in a diff, and the build id it produced was wrong in the one
-		// mode the build id exists to serve.
-		//
-		// Dotfiles and underscore files go for the same reason: `go:embed`
-		// leaves them out, so counting them here would be describing a board
-		// nobody is being served.
+		// Match go:embed exclusions so disk and embedded copies have the same hash.
+		// Skip symlinks, including web/CLAUDE.md, plus dotfiles and underscore files.
 		if !e.Type().IsRegular() {
 			return nil
 		}
@@ -109,12 +95,8 @@ func buildID(fsys fs.FS) string {
 	return hex.EncodeToString(sum.Sum(nil)[:8])
 }
 
-// boardID is the build id of the board this server is actually serving.
-//
-// Recomputed on every call when the board comes off disk, because that is the
-// whole point of serving it off disk: the files change under a running daemon.
-// A build id frozen at start would be the reload check switched off in exactly
-// the mode that needs it most.
+// boardID hashes the files actually being served. Recompute for disk mode
+// so the reload check notices edits without a daemon restart.
 func (s *Server) boardID() string {
 	if strings.TrimSpace(s.BoardDir) == "" {
 		return BuildID

@@ -5,21 +5,9 @@ import (
 	"testing"
 )
 
-// B2-47. A REPORT SENT BETWEEN SESSIONS ARRIVES WHOLE.
-//
-// `atrium tell` typed its text as plain keystrokes. The pseudo terminal's input
-// pipe holds about four kilobytes and a larger write is delivered in
-// installments with milliseconds between them, so a runner that decides "typed
-// or pasted" from arrival timing sees a burst per installment and acts on the
-// first one while the rest is still arriving.
-//
-// Measured in use rather than in theory: two wave reports reached their reader
-// as their closing words, which is what filed this.
-//
-// The markers make the timing irrelevant. They say where the text begins and
-// ends instead of leaving the runner to infer it from a clock. `stubbornPty`
-// below is the installments, since it refuses to take more than its `most` in
-// one write.
+// Regression for B2-47: long peer reports must arrive as one paste.
+// PTY writes can be split into chunks, which runners may interpret as separate
+// input without markers. stubbornPty simulates this by limiting each write.
 
 // longReport is a message past the pipe's four kilobytes, which is the size at
 // which this went wrong.
@@ -58,7 +46,7 @@ func TestALongPeerMessageIsBracketedAndWhole(t *testing.T) {
 	if !strings.HasSuffix(got, "\r") {
 		t.Fatal("nothing submitted the message")
 	}
-	// THE ACTUAL COMPLAINT: every byte of the report survived the installments.
+	// Verify every byte survived the short writes.
 	if !strings.Contains(got, report) {
 		t.Fatal("the report was truncated or altered on the way through")
 	}

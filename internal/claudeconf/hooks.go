@@ -90,13 +90,9 @@ var WantedHooks = []HookEvent{
 	// one than a switch statement with a comment.
 	{Hook: "Notification", Event: "waiting", Sub: "hook", Arg: "notification",
 		Why: "the session put a question on screen and is waiting on it"},
-	// A moment on the card, and a state on the badge. See store.EventCompacted
-	// for the moment, daemon.ActivityCompacting for the state.
-	//
-	// THERE IS NO PostCompact TO PAIR WITH THIS, and reaching for one is the
-	// obvious next move, so it is written down here: nothing tells atrium the
-	// compaction finished. The badge ends on the next activity event from that
-	// session, or on a two minute timeout when none arrives.
+	// Record the compaction event and show transient activity. There is no
+	// PostCompact hook, so clear the badge on the next activity event or timeout.
+	// See store.EventCompacted and daemon.ActivityCompacting.
 	{Hook: "PreCompact", Event: "compacting", Sub: "session", Arg: "compact",
 		Why: "the card records the moment this session forgot something"},
 	{Hook: "Stop", Event: "turn-end", Sub: "turn", Arg: "end",

@@ -399,10 +399,8 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	case peerMidLine:
 		return false, ""
 	case peerWatching:
-		// Bracketed here too. Nothing is sent in this branch, the text is left
-		// sitting in the prompt, and a long one arrives in installments just
-		// the same. Without the markers the runner reads the first installment
-		// as a finished line of typing and the rest lands after it.
+		// Use paste markers here too: leaving text in the prompt still needs
+		// protection against chunked input being interpreted as separate submissions.
 		body := text
 		if d.bracketedPasteFor(target.ID, false) {
 			body = "\x1b[200~" + text + "\x1b[201~"
@@ -416,11 +414,8 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 		if err := run.Write([]byte(peerBanner(from))); err != nil {
 			return false, ""
 		}
-		// AS A PASTE WHERE THE RUNNER ASKED FOR ONE. See `SayPasted`: a report
-		// longer than the pseudo terminal's four kilobyte pipe is delivered in
-		// installments, and a session reading arrival timing acts on the first
-		// one. Two wave reports reached their reader as their closing words
-		// before this, which is what filed B2-47.
+		// Send supported runners a bracketed paste so long reports stay together
+		// when the PTY splits writes. See SayPasted and B2-47.
 		say := run.Say
 		if d.bracketedPasteFor(target.ID, false) {
 			say = run.SayPasted

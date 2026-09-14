@@ -5,52 +5,18 @@ import (
 	"strings"
 )
 
-// REPLAYING HISTORY THROUGH A SCREEN, BECAUSE THE MEANING IS IN THE SCREEN.
+// Replay output through a screen grid to preserve partial row updates,
+// spinners, and redrawn prompts. Stripping cursor movement alone leaves
+// fragments because updates depend on text already on screen.
 //
-// `flatten.go` rewrites history so it cannot erase itself: it drops anything
-// that could move the cursor onto a line already written. That works for
-// output which was APPENDED, and it cannot work for output which was COMPOSED,
-// because the information it needs is not in the byte stream.
-//
-// Three failures, all the same failure, each found by an operator reading a
-// pane and none of them fixable by another rule in the flattener:
-//
-//   - `ESC[K ESC[42;7H do…)` is columns 7 onward of a row whose first six
-//     columns were drawn in an earlier frame. Alone it is the orphan `do…)`.
-//   - A spinner and a prompt redrawn together arrive as `Kneading…` on one
-//     line and its token count stranded on the next.
-//   - A block repainted as the operator typed produced `f`, `ou`, `nd`, `it`
-//     interleaved between frames: the word "i found it", one group per repaint.
-//
-// In every case the runner wrote a PATCH to a screen it could see and atrium
-// could not. So this keeps the screen. Bytes go in, a grid is maintained the
-// way a terminal maintains one, and what comes out is what was on it.
-//
-// WHAT MAKES THIS A TRANSCRIPT RATHER THAN A SNAPSHOT is the eviction. A
-// terminal that scrolls pushes the top line into its scrollback, and that
-// scrollback IS the history. Without it this would answer "what was on screen
-// at the end", which is one screenful and worse than what it replaces.
-//
-// It is not a terminal emulator in the sense of being complete. It handles what
-// claude-code, codex and a shell actually emit, measured rather than guessed,
-// and anything else is skipped rather than approximated. See `apply`.
+// Rows scrolled out of the grid become history; the final grid alone would
+// preserve only the last screenful. This handles sequences used by supported
+// runners, not a complete terminal emulator. See apply.
 
-// screenRows is the height used when the stream gives no better answer.
-//
-// THE RING RECORDS COLUMNS AND NOT ROWS, deliberately: `Replay` says width is
-// what decides how bytes were composed, and keying history on height as well
-// would throw away scrollback every time a pane changed shape.
-//
-// So the height is recovered from the bytes. Measured across six real carried
-// scrollbacks, the tallest row ever addressed was 71, 71, 66, 196, 71 and 71,
-// and NOT ONE of them set a scroll region, so `DECSTBM` cannot be used for it.
-// The grid therefore grows to the tallest row it is asked for and starts here.
-//
-// Too small is the safe direction to be wrong in: a grid shorter than the real
-// terminal scrolls sooner, which pushes lines into history early. They are
-// still in the transcript and still in order. Too tall is the dangerous one,
-// because a repaint that should have landed on a scrolled-away line lands on
-// live history instead and destroys it.
+// screenRows is the starting height when the stream provides none.
+// The ring records columns but not rows, so grow the grid as larger rows are
+// addressed. Start small: scrolling a row into history early preserves it,
+// while an oversized grid can let later repaints overwrite older content.
 const screenRows = 24
 
 // screenMaxRows bounds that growth. A runner addressing row 10,000 is a
@@ -58,12 +24,8 @@ const screenRows = 24
 // allocate a hundred megabytes of blank cells.
 const screenMaxRows = 400
 
-// cell is one character position: what is in it, and how it is painted.
-//
-// The SGR is carried as the string that set it rather than as parsed
-// attributes, because nothing here reasons about colour. It only has to come
-// out the other side attached to the same characters, and keeping the sequence
-// verbatim means a colour this code has never heard of survives anyway.
+// cell holds a character and its SGR sequence. Preserve colour sequences
+// verbatim because replay does not need to interpret individual attributes.
 type cell struct {
 	ch  rune
 	sgr string
@@ -77,11 +39,9 @@ type screen struct {
 	cells      [][]cell
 	row, col   int
 	sgr        string
-	// wrapNext is the deferred wrap every terminal implements and every naive
-	// one gets wrong. Writing to the last column does NOT move to the next
-	// line: it leaves the cursor on that column with a flag set, so a carriage
-	// return or a cursor move that follows cancels the wrap. Wrapping eagerly
-	// puts a blank line into the transcript after every full-width line.
+	// wrapNext defers wrapping until the next character. A carriage return or
+	// cursor move cancels it. Wrapping immediately after the last column would
+	// add a blank line after full-width output.
 	wrapNext bool
 	// history is everything that has scrolled off the top, oldest first.
 	history [][]cell
@@ -118,13 +78,8 @@ func blankRow(cols int) []cell {
 	return r
 }
 
-// grow makes the screen tall enough to hold the row being addressed.
-//
-// A terminal does not do this: its height is fixed and an application that
-// addresses past it is clamped. This does, because the height here is a guess
-// recovered from the stream, and clamping to a guess that is too small would
-// pile every row of a taller window onto one line. Growing is how the guess
-// corrects itself the first time the runner reaches further down than expected.
+// grow expands the grid to hold an addressed row. The original height is
+// unknown, so clamping to the initial estimate would merge distinct rows.
 func (s *screen) grow(toRow int) {
 	if toRow < s.rows {
 		return
@@ -138,11 +93,7 @@ func (s *screen) grow(toRow int) {
 	s.rows = len(s.cells)
 }
 
-// scroll moves everything up by one and puts the top line into history.
-//
-// THE EVICTION IS THE WHOLE POINT. This is the line leaving the screen, and a
-// transcript is the record of those lines. Without it the answer to "what did
-// this session do" would be the last screenful.
+// scroll moves the grid up one row and saves the top row in history.
 func (s *screen) scroll() {
 	if s.alt {
 		// The alternate screen has no scrollback, by definition. A full-screen
@@ -223,13 +174,8 @@ func (s *screen) eraseLine(mode int) {
 	}
 }
 
-// eraseDisplay is `CSI J`.
-//
-// `2` and `3` clear the whole screen, and THAT IS NOT AN ERASURE OF HISTORY.
-// What is on screen at the time has already been written, and a program
-// clearing the screen to redraw it does not mean the operator never saw what
-// was there. So the cleared lines are pushed into history first, which is what
-// a terminal with scrollback does too.
+// eraseDisplay handles CSI J. For full-screen clears (2 and 3), preserve
+// existing rows in history before clearing the grid.
 func (s *screen) eraseDisplay(mode int) {
 	s.grow(s.row)
 	switch mode {
@@ -313,13 +259,9 @@ func (s *screen) fromAlt() {
 	s.altCells = nil
 }
 
-// text renders everything the session produced: the lines that scrolled off,
-// then what is still on screen.
-//
-// Trailing blanks go, on every line and at the end, because a grid is padded
-// to its width and a transcript is not. Colour is re-emitted only where it
-// changes, so a line of one colour carries one sequence rather than one per
-// character, and a reset is written at the end of any line that left colour on.
+// text renders scrolled history followed by the current screen. Trim grid
+// padding and trailing blank rows. Emit colour only when it changes and
+// reset it at line endings.
 func (s *screen) text() string {
 	var b strings.Builder
 	rows := append(append([][]cell{}, s.history...), s.cells...)
@@ -363,12 +305,8 @@ func (s *screen) text() string {
 	return b.String()
 }
 
-// apply feeds bytes through the screen.
-//
-// ANYTHING NOT UNDERSTOOD IS SKIPPED, NOT APPROXIMATED. A sequence this does
-// not implement leaves the grid exactly as it was, which is the same outcome as
-// a terminal that does not support it. Guessing at one would put characters on
-// the screen that were never on it.
+// apply feeds bytes into the screen model. Skip unsupported sequences
+// without changing the grid.
 func (s *screen) apply(b []byte) {
 	for i := 0; i < len(b); {
 		c := b[i]
@@ -608,12 +546,9 @@ func (s *screen) csi(b []byte, start, i int) int {
 	return i
 }
 
-// setSGR remembers how the next characters are painted.
-//
-// A reset clears it. Anything else is appended, because `ESC[1m ESC[31m` is
-// bold AND red and keeping only the last would lose the bold. The run is
-// bounded, since a pathological stream of colour changes with no text between
-// them would otherwise grow one string forever.
+// setSGR records colour and style changes. Reset clears accumulated state;
+// other sequences append so attributes such as bold and red combine. Bound
+// the accumulated string for streams with many changes and no text.
 func (s *screen) setSGR(seq string) {
 	if seq == "\x1b[m" || seq == "\x1b[0m" || strings.HasPrefix(seq, "\x1b[0;") {
 		s.sgr = ""
@@ -685,16 +620,9 @@ func renderHistory(b []byte, cols int) []byte {
 	return []byte(s.text())
 }
 
-// replayCols is the width to lay history out at, for whoever wires this in.
-//
-// THE WIDTH IT WAS COMPOSED AT, not the width of the browser now attaching. A
-// repaint aimed at column 100 is meaningless against a grid 80 wide: the text
-// lands clamped at the edge and the row it was patching is wrong. `widthNote`
-// in `attach.go` already tells the operator when those two differ, and this is
-// the other half of the same fact.
-//
-// The LAST recorded width when a session was resized while it ran, because the
-// newest bytes are the ones most likely to be read and they were drawn for it.
+// replayCols selects the last recorded width to match the newest output.
+// Using the attaching browser's width would misplace cursor updates.
+// widthNote in attach.go reports a mismatch to the operator.
 func replayCols(widths []int, wantCols int) int {
 	if n := len(widths); n > 0 && widths[n-1] > 0 {
 		return widths[n-1]
