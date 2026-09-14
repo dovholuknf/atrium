@@ -628,6 +628,7 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		// smaller thing to give away, just a broken one.
 		if r.Method == http.MethodGet &&
 			(p == "/" || p == "/index.html" || p == "/sw.js" || p == "/board.css" ||
+				p == "/working.gif" ||
 				strings.HasPrefix(p, "/js/") || strings.HasPrefix(p, "/vendor/")) {
 			board.ServeHTTP(w, r)
 			return

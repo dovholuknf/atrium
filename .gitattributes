@@ -22,6 +22,7 @@
 internal/api/web/js/toasts.js -text
 
 *.png   binary
+*.gif   binary
 *.ico   binary
 *.zip   binary
 *.exe   binary
