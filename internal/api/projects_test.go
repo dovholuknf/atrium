@@ -147,6 +147,13 @@ func TestShellCommandFlags(t *testing.T) {
 		`C:\Program Files\PowerShell\7\pwsh.exe`: "-Command",
 		`powershell.exe`:                         "-Command",
 		`C:\Windows\System32\cmd.exe`:            "/c",
+
+		// Both separators, because the answer comes from the path and not
+		// from the machine reading it. Splitting with the host's separator
+		// means a Windows path read on Linux matches nothing and cmd is
+		// handed `-c`, which is how this test failed on the Linux runner
+		// while passing on Windows.
+		"/usr/local/bin/pwsh": "-Command",
 	} {
 		_, args := shellArgsFor(shell, "gwt new x -y")
 		if len(args) == 0 || args[len(args)-2] != want {
