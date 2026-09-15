@@ -65,7 +65,13 @@ if (foldKeyAt < 0) {
 }
 const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 
-const names = ["shortLabel", "termPathOf", "termTree", "termRunnerMark", "termRow",
+// `termExtraName`, `termRowName` and `termNoteDuplicates` decide what a row
+// is CALLED, not which heading it lands under, so nothing here exercises them.
+// They are lifted because `termRow` calls them, and a name it cannot resolve is
+// a ReferenceError in the middle of the markup this parses. `termSuffix` is a
+// `let` between two of them and comes along with the one above it.
+const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
+  "termNoteDuplicates", "termTree", "termRunnerMark", "termRow",
   "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
@@ -88,14 +94,25 @@ const esc = (s) => String(s)
 // The label is `terminalLabel`'s job and it has its own tests. Here it is the
 // INPUT: a fixture says what a session's label is and this hands it over.
 const terminalLabel = (t) => t.label || "";
+// `terminalParts` lives in `solo.js` beside `terminalLabel`, so it is stubbed
+// here the same way and for the same reason: what is under test is which
+// heading a row lands under, not how a label is composed. The rule it stubs is
+// the real one, which is that the branch is taken from the TASK and the rest of
+// the label is the path.
+const terminalParts = (t) => {
+  const label = terminalLabel(t);
+  const branch = String(t.branch || "").trim();
+  if (!branch || !label.endsWith(":" + branch)) return { where: "", branch: "", leaf: label };
+  return { where: label.slice(0, label.length - branch.length - 1), branch, leaf: branch };
+};
 // `isWaiting` and `over` decide whether a row's mark is drawn as working, and
 // a mark is not nesting: both answer false so every fixture takes the same
 // path through `termRunnerMark` and the markup this parses stays the markup
 // the nesting is about.
-const built = new Function("localStorage", "esc", "terminalLabel", "themeFor", "runnerMark",
-  "poppedOut", "termTask", "isWaiting", "over",
+const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
+  "themeFor", "runnerMark", "poppedOut", "termTask", "isWaiting", "over",
   src + "\nreturn { termGroupsHTML, termPathOf };")(
-  localStorage, esc, terminalLabel,
+  localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null,
   () => false, () => false);
 const { termGroupsHTML, termPathOf } = built;
@@ -214,7 +231,23 @@ const LIVE = [
   "github/openziti-test-kitchen/docpreview:aug-revisions",
   "github/netfoundry/docusaurus-shared:add-cni-draft",
 ];
-const sessions = (labels) => labels.map((label, i) => ({ id: "t" + i, label, supervised: true }));
+// A fixture is a label and, with it, the branch that label ends in. The strip
+// takes the two halves from the TASK now rather than splitting the label back
+// apart, because a field carrying a colon of its own made that split wrong:
+// a card whose branch was recorded as `main:desktop-edge-win` produced a label
+// with two colons and got a heading of its own beside the repo it belongs to.
+//
+// So a fixture may say its branch outright. `"label|branch"` is that, and a
+// plain label means the branch is whatever follows its last colon, which is
+// true of every real one here.
+const sessions = (labels) => labels.map((spec, i) => {
+  const bar = spec.indexOf("|");
+  const label = bar < 0 ? spec : spec.slice(0, bar);
+  const branch = bar < 0
+    ? (label.lastIndexOf(":") > 0 ? label.slice(label.lastIndexOf(":") + 1) : "")
+    : spec.slice(bar + 1);
+  return { id: "t" + i, label, branch, supervised: true };
+});
 
 // What the invariant says the strip must look like, worked out from the labels
 // alone rather than written down twice: a row is under the headings that spell
@@ -307,6 +340,40 @@ function checkNesting(list, what, opts = {}) {
   is(key(shuffled), key(forwards), "and in any other order");
 }
 
+// 2b. AND THE HEADINGS COME OUT IN THE SAME ORDER, not merely holding the same
+//    rows. Check 2 sorts its key before comparing, so it proves nesting and
+//    says nothing about the order the tree is drawn in. That order came from a
+//    Map built by walking the rows, which means it WAS the row order: under
+//    `sorted by activity` two repos traded places every poll while nothing
+//    about either had changed. A heading names a place. Rows under it move
+//    when the sort says so, and the place does not.
+{
+  const heading = (list) => drawn(termGroupsHTML(list)).heads
+    .map(h => h.under.concat([h.name]).join("/")).join("\n");
+  const forwards = heading(sessions(LIVE));
+  is(heading(sessions(LIVE.slice().reverse())), forwards,
+    "the headings are drawn in the same order when the rows arrive backwards");
+  is(heading(sessions([LIVE[4], LIVE[0], LIVE[8], LIVE[2], LIVE[6],
+    LIVE[1], LIVE[7], LIVE[3], LIVE[5]])), forwards,
+    "and when they arrive in activity order");
+  // Siblings, not the whole list: the tree is drawn depth first, so a parent is
+  // followed by everything under it and the full paths are not in order
+  // globally. What has to hold is that headings sharing a parent are in name
+  // order, which is the comparison somebody actually makes when they look for
+  // a repo in the strip.
+  const kids = new Map();
+  for (const path of forwards.split("\n")) {
+    const cut = path.lastIndexOf("/");
+    const parent = cut < 0 ? "" : path.slice(0, cut);
+    if (!kids.has(parent)) kids.set(parent, []);
+    kids.get(parent).push(path.slice(cut + 1));
+  }
+  for (const [parent, names] of kids) {
+    is(names.join(","), names.slice().sort((a, b) => a.localeCompare(b)).join(","),
+      `the headings under "${parent || "the root"}" are in name order`);
+  }
+}
+
 // 3. FOLDING HIDES ROWS. IT DOES NOT MOVE THEM. What is left has to be nested
 //    exactly as it was, which is the half of folding that fails quietly: a
 //    container closed one level too early spills everything after it into the
@@ -319,6 +386,37 @@ function checkNesting(list, what, opts = {}) {
   const folded = heads.find(h => h.name === "dovholuknf");
   is(folded ? folded.count : -1, 4, "a folded heading still says what is inside it");
   store.delete("atrium.termfolded");
+}
+
+// 3b. A COLON IN THE BRANCH DOES NOT INVENT A DIRECTORY.
+//
+//     A card launched from a shell had `main:desktop-edge-win` recorded as its
+//     branch. The label then carried two colons, the strip split on the last
+//     one, and `desktop-edge-win:main` became a path segment: the card got a
+//     heading of its own beside the repo it actually belongs under, with the
+//     repo name as the row.
+//
+//     Nothing validates the branch and nothing should. What is pinned here is
+//     that the two halves are taken from the task rather than parsed back out
+//     of a string they were just joined into.
+{
+  const list = sessions(LIVE.concat([
+    "github/openziti/desktop-edge-win:main:desktop-edge-win|main:desktop-edge-win",
+  ]));
+  const { heads, rows } = checkNesting(list, "with a colon in the branch");
+  if (heads.some(h => h.name.includes(":"))) {
+    console.error("FAIL: a branch's colon became a heading: " +
+      heads.filter(h => h.name.includes(":")).map(h => h.name).join(", "));
+    process.exit(1);
+  }
+  const odd = rows.find(r => r.shown === "main:desktop-edge-win");
+  if (!odd) {
+    console.error("FAIL: the row lost its branch entirely, showing " +
+      rows.map(r => JSON.stringify(r.shown)).join(", "));
+    process.exit(1);
+  }
+  is(odd.under.join("/"), "github/openziti/desktop-edge-win",
+    "a branch with a colon still nests under its own repo");
 }
 
 // 4. A SESSION WITH NO PATH IS NOT SOMEBODY ELSE'S. A directory atrium cannot

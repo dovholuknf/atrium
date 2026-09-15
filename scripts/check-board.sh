@@ -218,6 +218,25 @@ if ! node "$here/scripts/check-phone.js" "$whole" "$sw"; then
   fail=1
 fi
 
+# NO TWO ELEMENTS SHARE AN id.
+#
+# `getElementById` returns the FIRST match and says nothing about the second,
+# so a duplicate is not an error anywhere: it is a view that draws into another
+# view's hidden element. That shipped as a history tab everybody took for
+# unimplemented, and the permissions decision log it was stealing the element
+# from drew nothing at all. Two working features, each invisible.
+#
+# Checked against the page rather than the concatenation, because ids live in
+# the markup, and the markup is the only place this can be true.
+dupes=$(grep -o 'id="[^"]*"' "$page" | sort | uniq -d)
+if [ -n "$dupes" ]; then
+  echo "two elements share an id, so getElementById silently picks the first:" >&2
+  echo "$dupes" >&2
+  fail=1
+else
+  echo "every id on the page is unique."
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

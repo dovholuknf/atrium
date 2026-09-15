@@ -270,7 +270,18 @@ async function termMenu(e, id) {
     { label: "what did it do?", act: () => { current = t; openReview(); } },
     { label: "details…", act: () => openTask(id) },
     { sep: true },
-    t.pid > 0 ? { label: "terminate", danger: true, act: () => killById(id) } : null
+    // NOT `pid > 0` ALONE. The pid is a reconnect hint that is never cleared,
+    // so a card whose runner exited weeks ago still carries the number it had.
+    // The menu offered `terminate` on a codex card already sitting in `dead`,
+    // the kill signalled a pid belonging to nothing, and the server answered
+    // 200, so pressing it reported neither success nor failure and looked like
+    // the board had ignored the click.
+    //
+    // `dead` is the one status that means the process is known to have gone.
+    // `done` is not: a card is filed when its work is finished and its runner
+    // may still be sitting at a prompt, which is exactly when you want this.
+    (t.supervised || t.pid > 0) && t.status !== "dead"
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null
   ].filter(Boolean));
 }
 
@@ -329,12 +340,100 @@ async function renameTask(id, currentName) {
 // the top of the strip. A session started in a directory atrium cannot ask git
 // about is not an error and should not be filed under a heading invented for
 // it.
+// Where a row nests, and what it is called once it is there.
+//
+// THE TWO HALVES COME FROM THE TASK, NOT FROM SPLITTING THE LABEL. This split
+// on the last colon of the joined label, which is right until a field holds a
+// colon of its own. One did: a card whose branch was recorded as
+// `main:desktop-edge-win` produced a label with two colons, and the split
+// handed back `desktop-edge-win:main` as a directory. The card grew a heading
+// of its own next to the repo it belongs under.
 function termPathOf(t) {
+  const p = terminalParts(t);
   const label = terminalLabel(t) || t.display_title || "";
-  const cut = label.lastIndexOf(":");
-  const where = cut > 0 ? label.slice(0, cut) : "";
-  const leaf = cut > 0 ? label.slice(cut + 1) : label;
-  return { segs: where.split("/").filter(Boolean), leaf: leaf || label };
+  return { segs: p.where.split("/").filter(Boolean), leaf: p.leaf || label };
+}
+
+// THE NAME SOMEBODY GAVE THIS CARD, WHEN THE PATH DOES NOT ALREADY SAY IT.
+//
+// `terminalLabel` builds a label out of the worktree, the repo and the branch,
+// and never looks at what the card is called. That is right for placing a row
+// in the tree and wrong for naming it, because every session ever started in
+// one checkout derives the SAME string. Five cards on `D:/git/.../atrium` all
+// read `github/dovholuknf/atrium:main`, and the one that was waiting on the
+// operator, titled `spike: mcp-gateway in, beside, or rooms`, was drawn as an
+// anonymous `main` at the bottom of the strip.
+//
+// `display_title` differs from `title` when an override was written, which is
+// `atrium join --title` and `atrium launch --title` as well as a rename.
+//
+// SO THE OVERRIDE DOES NOT REPLACE THE LABEL, IT IS ADDED TO IT. Most cards
+// here carry one and most of those are the repo name again: `zrok-research`
+// against `github/openziti/zrok:zrok-research`. Swapping the label for it would
+// shorten ten rows to something the heading above them already said, and the
+// pinned group has no headings at all, so those rows would lose the org and the
+// repo entirely.
+//
+// Contained rather than equal, because the useful cases are exactly the ones
+// that say something new. `ziti-openwrt` is already in its own path and adds
+// nothing. `spike: mcp-gateway in, beside, or rooms` is not and is the whole
+// reason this exists.
+function termExtraName(t) {
+  const shown = String((t && t.display_title) || "").trim();
+  const base = String((t && t.title) || "").trim();
+  if (!shown || shown === base) return "";
+  const path = terminalLabel(t) || "";
+  return path.toLowerCase().includes(shown.toLowerCase()) ? "" : shown;
+}
+
+// What a row reads as, for deciding whether two of them read the same.
+function termRowName(t) {
+  const extra = termExtraName(t);
+  const path = terminalLabel(t) || (t && t.display_title) || "";
+  return extra ? path + " " + extra : path;
+}
+
+// TWO ROWS THAT READ THE SAME ARE TWO ROWS YOU CANNOT CHOOSE BETWEEN.
+//
+// Naming by hand fixes the cards somebody has named and nothing else. Three
+// sessions in one checkout that nobody renamed still derive one string, and
+// the strip offers three identical rows, one of which is live, one of which
+// has exited and one of which belongs to another runner entirely.
+//
+// So a row whose name is not its own says what makes it different. The runner
+// when that tells them apart, which is the common case and the readable one,
+// and the tail of the card id when it does not, which is ugly and is still
+// better than two rows that cannot be told apart at all.
+//
+// Held per render rather than computed per row: the question is about the
+// whole drawn list and a row cannot answer it alone. Keyed by card id so the
+// answer survives the tree walk, which visits rows in an order this does not
+// know about.
+let termSuffix = new Map();
+
+function termNoteDuplicates(tasks) {
+  const by = new Map();
+  for (const t of tasks) {
+    const k = termRowName(t);
+    if (!k) continue;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(t);
+  }
+  const out = new Map();
+  for (const group of by.values()) {
+    if (group.length < 2) continue;
+    // Only when the runner is a different answer for every one of them. Two
+    // claude sessions both labelled `(claude)` is the same problem with more
+    // characters in it.
+    const runners = new Set(group.map(t => String(t.runner || "").trim()));
+    const byRunner = runners.size === group.length && !runners.has("");
+    for (const t of group) {
+      out.set(t.id, byRunner
+        ? ` (${String(t.runner).trim()})`
+        : ` (${String(t.id).slice(-4)})`);
+    }
+  }
+  termSuffix = out;
 }
 
 // The strip as a tree of headings.
@@ -429,7 +528,12 @@ function termRow(t, deep) {
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
-  const shown = deep ? leaf : full;
+  // Both empty for most rows. See termExtraName and termNoteDuplicates.
+  const extra = termExtraName(t);
+  const tail = termSuffix.get(t.id) || "";
+  const shown = (deep ? leaf : full) + tail;
+  // The hover keeps the whole address whatever the row had room to draw.
+  const hover = full + tail + (extra ? ": " + extra : "");
   return `
     <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
@@ -451,8 +555,19 @@ function termRow(t, deep) {
             title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
-            class="tname" title="${esc(full)}">${esc(shown)}</span><span
-            class="tshort" title="${esc(full)}"
+            class="tname" title="${esc(hover)}">${esc(shown)}</span>${
+              // WHAT THIS SESSION IS FOR, after where it lives.
+              //
+              // A SIBLING OF `.tname`, NOT A CHILD OF IT. `.tname` is
+              // `direction: rtl` so that a name too long for the strip keeps
+              // its tail, and an inline box added inside an rtl one is laid
+              // out at the LEFT, which would put the note in front of the
+              // address it is annotating.
+              extra
+                ? `<span class="tnote" title="${esc(hover)}">${esc(extra)}</span>`
+                : ""
+            }<span
+            class="tshort" title="${esc(hover)}"
             >${esc(shortLabel(t))}</span>
         </div>
         ${poppedOut(t.id)
@@ -667,7 +782,17 @@ function termNodeHTML(node, depth, path, folded) {
   // every time, so somebody can read it without working out which rule applied
   // to which row.
   let inner = node.name ? node.rows.map(t => termRow(t, true)).join("") : "";
-  for (const kid of node.kids.values()) {
+  // HEADINGS ARE ALWAYS IN NAME ORDER, whatever the rows under them are sorted
+  // by.
+  //
+  // The children arrive in a Map, so iterating it draws them in the order the
+  // rows happened to build them in, which is the row sort. Under `by activity`
+  // that order changes every poll, so `ziti` and `ziti-sdk-csharp` swapped
+  // places while nothing about either had changed. A heading names a place,
+  // and a place does not become more urgent, so it has no business moving.
+  // Rows inside a heading still follow whichever sort is on: that is the thing
+  // the sort was asked about.
+  for (const kid of [...node.kids.values()].sort((a, b) => a.name.localeCompare(b.name))) {
     inner += termNodeHTML(kid, depth + 1, at, folded);
   }
   // The root has no heading, so it has nothing to indent under and no guide to
@@ -731,6 +856,13 @@ async function renderTermList() {
   // the one you are most likely to be on while something is working, and it is
   // the view that does not call `renderBoard`.
   if (typeof paintWorking === "function") paintWorking(all);
+  // AND THE BOARD'S COPY OF THE LIST. `renderBoard` and `renderStack` both set
+  // this and only one of the three runs per poll, so on the terminals view it
+  // was whatever the last visit to another view left behind. The alert for a
+  // card arriving reads it, and a stale list means a card that turned up while
+  // you were watching a terminal is announced whenever you next look at the
+  // board, or not at all.
+  lastTasks = all;
 
   // Terminals, AND the pinned bucket whether or not it is running.
   //
@@ -768,6 +900,9 @@ async function renderTermList() {
   if (termTask && !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
 
   termOrder(tasks);
+  // Before anything is drawn, and over the rows that will BE drawn: a card
+  // filtered out above cannot be confused with one on screen.
+  termNoteDuplicates(tasks);
   const pinnedTasks = tasks.filter(t => t.pinned);
   pinnedNow = pinnedTasks.map(t => t.id);
 

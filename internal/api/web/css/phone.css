@@ -1,0 +1,171 @@
+  /* ── narrow ─────────────────────────────────────────────
+     A phone is not a small desktop. Columns, one line rows and a side by side
+     terminal all assume width that is not there, so each becomes something
+     else rather than being squeezed. */
+  @media (max-width: 900px) {
+    .bar { padding: 10px 12px; gap: var(--sp-3); flex-wrap: wrap; row-gap: var(--sp-3); }
+    .wordmark { font-size: var(--fs-xl); letter-spacing: .2em; }
+    nav { order: 3; width: 100%; overflow-x: auto; gap: var(--sp-1); padding-bottom: 2px; }
+    .tab { font-size: var(--fs-lg); padding: 8px 13px; white-space: nowrap; }
+    .tab .count { font-size: var(--fs-base); }
+    .grow { display: none; }
+    button.newagent { font-size: var(--fs-md); padding: 8px 14px; }
+    button.icon { font-size: var(--fs-2xl); padding: 6px 9px; }
+    .conn { font-size: var(--fs-md); }
+    main { padding: 14px 12px; }
+
+    /* One column at a time. A kanban that scrolls sideways on a phone means
+       never seeing the column you want. */
+    .board { flex-direction: column; overflow-x: visible; }
+    .board .col, .board .col.folded { flex: 1 1 auto; min-width: 0; width: 100%; }
+
+    /* Rows stop being rows. Truncating to an ellipsis on a narrow screen hides
+       the only part that matters. */
+    .row.line { flex-wrap: wrap; gap: var(--sp-2) 10px; padding: 10px 12px; }
+    .row.line .grow { flex: 1 1 100%; order: 5; }
+    .row.line .ell { white-space: normal; overflow: visible; }
+    .row.line .tool { min-width: 0; }
+    .row.line button { margin-left: auto; }
+    .row { flex-wrap: wrap; }
+
+    /* A pending request is the one card that must not compress. Its command
+       box and scope have to keep the full width, or the thing being decided
+       is the thing you cannot read. */
+    .row.perm .who { flex: 1 1 100%; min-width: 0; order: 2; }
+    .row.perm .actions { flex: 1 1 100%; order: 1; justify-content: flex-start; }
+    .row.perm .actions button { flex: 1 1 auto; }
+    .row.perm .hints { width: 100%; }
+    textarea.cmd.edit, input.pat, pre.diff { width: 100%; min-width: 0; }
+    .scope { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+    .patview { width: fit-content; max-width: 100%; }
+    .wait { min-width: 0; font-size: var(--fs-xl); }
+    /* A fixed track is worth 74px when there is room for it and is the first
+       thing to give up when there is not. Which day a card started is the
+       least urgent fact on the row. */
+    .stackrow .since { display: none; }
+
+    .filters { gap: var(--sp-2); }
+    .filters input[type=search] { min-width: 100%; order: -1; }
+    .matchcount { margin-left: 0; }
+    .seg { flex-wrap: wrap; }
+
+    /* The terminal takes the whole screen, with its session list above it
+       rather than beside it. The layout still fills the window, so the pane
+       gets whatever the list leaves. */
+    .term-layout { flex-direction: column; }
+    .term-list {
+      flex: 0 0 auto; flex-direction: row; max-height: none;
+      overflow-x: auto; overflow-y: hidden; padding-bottom: 4px;
+    }
+    /* The width, the handle and the slide-over are answers to the list being
+       a COLUMN beside the terminal. Here it is a row above it, where none of
+       the three means anything, so all of them are undone: a stored width
+       from a wide window must not survive into this layout. */
+    .term-layout.tl-off .term-list,
+    .term-layout.tl-mini .term-list {
+      position: static; transform: none; width: auto; flex-basis: auto;
+      box-shadow: none; background: none; border: 0; padding: 3px 3px 6px;
+    }
+    .tl-mini .tname { display: inline; }
+    .tl-mini .tshort, .term-grip, .term-rail, .tl-off .term-rail { display: none; }
+    .tl-mini .term-list .card .title { display: -webkit-box; text-align: left; }
+    .tl-mini .term-list .card .title .rmark { display: inline-block; margin: 0 4px 0 0; }
+    /* No gutter to cross when the list is a row above the terminal. */
+    .tabbridge { display: none; }
+    .term-list .card { flex: 0 0 auto; min-width: 190px; }
+    .term-bar { gap: var(--sp-3); padding: 8px 10px; }
+    /* The name TRUNCATES, it does not take a row of its own.
+       `width: 100%` here was written for a phone, where a bar is a stack and
+       an extra row costs nothing. A popped-out window is 894px, which lands
+       inside this breakpoint and is not a phone: the rule pushed every button
+       onto a second row, and a bar that grows a row changes the terminal's
+       height under a grid xterm has already measured in characters.
+       `.term-who` already ellipsises, so there is nothing to add here. */
+    /* HORIZONTAL GAP IS MARGIN. Same rule as the base `#t-screen`, and for the
+       same reason, which is written out in full there. `padding: 6px` was the
+       shorthand, so it set the horizontal padding too and quietly undid the
+       fix for every window narrower than 900px. */
+    #t-screen { padding: 6px 0; margin: 6px 4px; }
+    .term-help { display: none; }
+
+    dialog { width: 96vw; }
+    .dlg-body { padding: 14px; }
+    .subhead { font-size: var(--fs-base); }
+    #toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
+    #held { font-size: var(--fs-base); padding: 7px 12px; }
+  }
+
+  /* Very narrow: drop anything that is decoration. */
+  @media (max-width: 520px) {
+    .wordmark { display: none; }
+    /* The chips used to wrap and a narrow screen hid one to stop a card
+       growing a third row. They scroll sideways now, so nothing needs
+       hiding, and hiding by position would drop whichever chip happened to
+       be second rather than the least useful one. */
+    .term-list .card { min-width: 150px; }
+    #t-screen { height: 55vh; }
+  }
+
+  /* A phone.
+     `docs/charon.md` calls answering approvals from away the gap that matters
+     most: a gate you cannot answer from away is a gate you turn off. The way
+     to reach the board from a phone already exists and is the overlay, so what
+     was missing is only that this screen was unusable at that width.
+     Aimed at the permissions queue rather than the whole board. Reading a
+     kanban on a phone is not a thing anybody wants; answering a blocked agent
+     from the sofa is. */
+  @media (max-width: 480px) {
+    /* Tabs scroll rather than wrap, so the header stays one line and the
+       count badges stay beside their own tab. */
+    header nav {
+      overflow-x: auto; flex-wrap: nowrap;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    header nav::-webkit-scrollbar { display: none; }
+    /* The two widest things in the header, and neither is what you came for. */
+    .newagent, .conn { display: none; }
+
+    .row.perm { padding: 12px; }
+    /* Room to read the command, which is the thing being decided on. */
+    .row.perm .cmd.edit { font-size: var(--fs-sm); }
+    .row.perm .diff { max-height: 40vh; overflow: auto; }
+
+    /* THE QUESTION ABOVE THE ANSWER, AND THAT IS THE WHOLE POINT OF THESE TWO
+       LINES.
+
+       The 900px block puts `.actions` at order 1 and `.who` at order 2, which
+       is right where it was written for: a popped-out window is one card on
+       one screen, and the buttons are the only thing in it you came for.
+
+       On a phone the same two rules put `approve once` directly under the
+       header with the command it would approve below the fold. The first
+       thing your thumb finds is the decision, and nothing you have read is
+       above it. Everything else in this block is about not pressing the wrong
+       button; this is about not pressing any of them blind. */
+    .row.perm .who { order: 1; }
+    .row.perm .actions { order: 2; }
+
+    /* Two by two, full width, and big enough to hit with a thumb. The four
+       are deliberately not shrunk to fit one row: approve and never sitting
+       side by side at eight millimetres is how the wrong one gets pressed. */
+    .row.perm .actions {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      width: 100%; margin-top: 10px;
+    }
+    /* 44px is the floor every touch guideline agrees on, and padding alone did
+       not reach it: these came out at 42 and the scope chips at 37. */
+    .row.perm .actions button { width: 100%; min-height: 44px; padding: 12px 8px; }
+    .row.perm .hints { gap: 6px; }
+    .row.perm .hints button { min-height: 44px; padding: 8px 12px; }
+
+    /* A toast is a strip here, not a panel.
+       Wrapped at this width a command runs to five lines, which made each
+       toast 194px tall, and three of them 69% of the screen, drawn on top of
+       the queue they were telling you about. The rest of the cap is in
+       `toast()`, which keeps one at a time at this width. */
+    #toasts .toast span {
+      display: -webkit-box; -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3; overflow: hidden;
+    }
+  }
+

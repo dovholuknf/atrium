@@ -3,6 +3,9 @@ package daemon
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -128,7 +131,27 @@ func TestAGuestGetsTheWholeBoard(t *testing.T) {
 	task := sharedCard(t, d, "lent")
 	h := d.guestHandler(task.ID)
 
-	for _, path := range []string{"/", "/sw.js", "/board.css", "/js/core.js", "/js/boot.js"} {
+	paths := []string{"/", "/sw.js", "/js/core.js", "/js/boot.js"}
+	// Every stylesheet, found on disk rather than named here.
+	//
+	// The list used to say `/board.css`, which is a file that no longer
+	// exists: the stylesheet is a directory of them now. A test naming one
+	// path would have gone on passing while a guest was refused the other
+	// five, and the symptom on their end is an unstyled page, not an error.
+	entries, err := os.ReadDir(filepath.Join("..", "api", "web", "css"))
+	if err != nil {
+		t.Fatalf("cannot read the board's stylesheets: %v", err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".css") {
+			paths = append(paths, "/css/"+e.Name())
+		}
+	}
+	if len(paths) == 4 {
+		t.Fatal("found no stylesheets, so this test is proving nothing about them")
+	}
+
+	for _, path := range paths {
 		rec := guestGet(h, path)
 		if rec.Code != http.StatusOK {
 			t.Errorf("a guest asking for %s got %d. the board cannot load without it", path, rec.Code)

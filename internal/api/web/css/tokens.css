@@ -1,0 +1,158 @@
+  /* The palette, the type and space ladders, the radii and the shadows, plus the page reset that uses them.
+     Loads first because every other file in css/ reads these custom properties, and a property read before it
+     is defined resolves to nothing. */
+  :root {
+    /* Half the palette is spelled as channels because CSS cannot take a hex and add alpha to it, and most of
+       these colours are used at full strength in one place and as a tint in another. A tint written as its own
+       `rgba(...)` is a second copy a skin cannot reach, so the skin repaints the solids and every tinted
+       surface stays at the old hue.
+
+       So the triple defines the colour and the solid derives from it. A skin overrides one value and both
+       forms follow. A colour with no tinted use stays a plain hex. */
+    --sink-rgb: 4,11,20;          /* the recess behind inputs, lists and code */
+    --bg1-rgb: 7,19,34;
+    --shell0-rgb: 13,33,53;
+    --shell1-rgb: 8,22,37;
+    --chip-rgb: 23,58,87;
+    --stroke-rgb: 44,95,132;
+    --stroke-dim-rgb: 37,80,111;
+    --teal-rgb: 0,227,176;
+    --warn-rgb: 255,198,77;
+    --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255;
+    /* What a shadow is made of, which on a dark board is darker than anything the shadow falls on. */
+    --shadow-rgb: 2,6,9;
+
+    --bg-2: rgb(var(--sink-rgb));
+    --bg-1: rgb(var(--bg1-rgb));
+    --shell-0: rgb(var(--shell0-rgb));
+    --shell-1: rgb(var(--shell1-rgb));
+    --chip: rgb(var(--chip-rgb));
+    --stroke: rgb(var(--stroke-rgb));
+    --stroke-dim: rgb(var(--stroke-dim-rgb));
+    --teal: rgb(var(--teal-rgb));
+    --warn: rgb(var(--warn-rgb));
+    --danger: rgb(var(--danger-rgb));
+    /* The blue-tinted accent a folder rule wears, so a scope reads differently from a command pattern. It has
+       a name because it carries a meaning, and confusing the two is how a rule ends up wider than anyone
+       agreed to. */
+    --path: rgb(var(--path-rgb));
+
+    --bg-0: #0B1B2E;
+    --blue: #28C2FF;
+    --card-0: #12293F; --card-1: #0A1A2B;
+    --grid: #1B3B5A;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4;
+    --dim: #5E819C; --dimmest: #456C88;
+    --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    /* Where a button goes when the pointer is over it. Named so a skin can move it. */
+    --btn-hover: #1D4666;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+    /* One tone for text on a danger surface. Spelling near-identical pinks out per rule gives each one a
+       chance to miss the skin. */
+    --danger-text: #FFC3C9;
+
+    /* Warn and accent at the tints they are used at, so changing --warn moves every surface derived from it. */
+    --warn-bg: rgba(var(--warn-rgb),.13);
+    --warn-bg-soft: rgba(var(--warn-rgb),.05);
+    --warn-stroke: rgba(var(--warn-rgb),.3);
+    --teal-bg: rgba(var(--teal-rgb),.10);
+
+    /* Two families and one size ladder. Every size on the page comes from here multiplied by --uiscale, so
+       making the interface bigger moves all of it. Scaling one region leaves the rest at fixed pixels, which
+       reads as inconsistent rather than as small. */
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+    --uiscale: 1;
+    --fs-xxs: calc(10.5px * var(--uiscale));
+    --fs-xs:  calc(11.5px * var(--uiscale));
+    --fs-sm:  calc(12.5px * var(--uiscale));
+    --fs-base: calc(13.5px * var(--uiscale));
+    --fs-md:  calc(14.5px * var(--uiscale));
+    --fs-lg:  calc(16px * var(--uiscale));
+    --fs-xl:  calc(18px * var(--uiscale));
+    --fs-2xl: calc(20px * var(--uiscale));
+    --fs-3xl: calc(23px * var(--uiscale));
+
+    /* Space between things, scaling with the text. Padding is not on this ladder: a chip's 1px 8px and a
+       dialog's 20px 22px are tuned to their own content, and bucketing them would move hit areas and break
+       alignment for nothing.
+
+       Spacing carries a second multiplier that the type ladder does not use. --uiscale moves text and space
+       together, which answers "I cannot read this" and not "I want more rows on screen". Shrinking the type to
+       fit more work in view makes the work harder to read, so the names stay legible and the room between them
+       goes instead.
+
+       --density is vertical only. Applied to both axes, `tightest` jammed a toolbar's controls into each other
+       and clipped the labels at the left of a bar while barely moving row heights, because most of a row's
+       height was hardcoded padding that was not on any ladder. So `--sp-*` is horizontal and scales with the
+       text, and `--vs-*` is vertical and is the one --density moves. */
+    --density: 1;
+    --sp-1: calc(4px * var(--uiscale));
+    --sp-2: calc(6px * var(--uiscale));
+    --sp-3: calc(9px * var(--uiscale));
+    --sp-4: calc(13px * var(--uiscale));
+    --sp-5: calc(17px * var(--uiscale));
+    --sp-6: calc(24px * var(--uiscale));
+
+    --vs-1: calc(4px * var(--uiscale) * var(--density));
+    --vs-2: calc(6px * var(--uiscale) * var(--density));
+    --vs-3: calc(9px * var(--uiscale) * var(--density));
+    --vs-4: calc(13px * var(--uiscale) * var(--density));
+    --vs-5: calc(17px * var(--uiscale) * var(--density));
+    --vs-6: calc(24px * var(--uiscale) * var(--density));
+
+    /* A row's own padding, which is most of the height of a list. There are three because a board card, a
+       stack row and a one-line history entry hold different amounts of content. */
+    --row-y: calc(15px * var(--uiscale) * var(--density));
+    --row-y-sm: calc(8px * var(--uiscale) * var(--density));
+    --row-y-xs: calc(5px * var(--uiscale) * var(--density));
+    --row-x: calc(20px * var(--uiscale));
+
+    /* Corners do not scale. A 12px radius on a panel reads the same whatever size the text inside it is. */
+    --r-xs: 3px; --r-sm: 6px; --r-md: 9px; --r-lg: 12px; --r-pill: 999px;
+    /* How strongly a project group tints itself. The hue comes from the group's own name, so only the strength
+       is a decision, and it is made here. Turn these up to make the blocks louder, down to make them a hint. */
+    --group-fill: .22; --group-edge: .37; --card-tint: .07;
+    --shadow-card: 0 10px 22px rgba(var(--shadow-rgb),.45);
+    --shadow-lift: 0 16px 30px rgba(var(--shadow-rgb),.62);
+    --shadow-pop: 0 14px 34px rgba(var(--shadow-rgb),.75);
+    --shadow-dialog: 0 30px 70px rgba(var(--shadow-rgb),.8);
+
+  }
+  * { box-sizing: border-box; }
+  /* An author rule with a display value outranks the browser's built-in
+     [hidden] rule, so .board's display:grid kept the board visible on every
+     tab. This has to win. */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  /* The page fills the window and never scrolls as a whole. The views that
+     need to scroll do it inside themselves.
+
+     This replaces measuring the header and subtracting it from 100dvh. That
+     arithmetic was always a few pixels out in one direction or the other,
+     because the thing being measured changes height after the measurement:
+     fonts settle, a badge appears, the nav wraps. Being over by two pixels is
+     a page scrollbar on every screen, which is what this was. A flex column
+     has nothing to be wrong about. */
+  body {
+    margin: 0; color: var(--body);
+    height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font: var(--fs-xl)/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 60px 60px; opacity: .32;
+    mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 40%, transparent 100%);
+  }
+  .accent-text {
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+

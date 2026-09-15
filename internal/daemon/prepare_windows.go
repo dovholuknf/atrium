@@ -55,6 +55,10 @@ Get-ChildItem env: | Select-Object Name,Value | ConvertTo-Json -Compress -Depth 
 
 	cmd := exec.CommandContext(ctx, shell, "-NonInteractive", "-Command", script)
 	cmd.Dir = cwd
+	// `-NonInteractive` already says nobody is going to type into this, so the
+	// console it would otherwise open is there to be looked at and cannot be
+	// used. See hideWindow.
+	hideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {

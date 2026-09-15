@@ -28,7 +28,7 @@ LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
 check: test
 	bash scripts/check-board.sh
 	bash scripts/check-skins.sh
-	node scripts/check-contrast.js internal/api/web/board.css
+	node scripts/check-contrast.js internal/api/web/css
 	pwsh -NoProfile -File scripts/check-powershell.ps1 || \
 		powershell.exe -NoProfile -File scripts/check-powershell.ps1
 

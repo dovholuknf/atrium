@@ -1008,6 +1008,44 @@ function isEditing() {
     .some(f => f.dataset.touched === "1" || (f.defaultValue !== undefined && f.value !== f.defaultValue));
 }
 
+// IS SOMETHING SELECTED RIGHT NOW.
+//
+// Every list on this board is drawn by assigning `innerHTML`, which throws
+// away the nodes a selection is anchored in, so the selection goes with them.
+// Repainting on a timer therefore means dragging across a card title and
+// watching the highlight vanish under the cursor before it can be copied. The
+// poll caused it and the event stream causes it too, so raising the interval
+// only makes it rarer, which is worse: a bug that fires once a minute is one
+// nobody can reproduce on purpose.
+//
+// Held SILENTLY, with no banner, unlike an edit in progress. A half-finished
+// permission rule is state worth announcing that the board is sitting on. A
+// selection lasts as long as it takes to press ctrl-c, and a banner appearing
+// every time somebody drags across a word would be the more irritating of the
+// two problems.
+//
+// Nothing can wedge here: a selection is cleared by the next click anywhere,
+// and `keepUpWithSelection` repaints the moment it collapses rather than
+// leaving the board a poll behind.
+function isSelecting() {
+  const sel = typeof getSelection === "function" ? getSelection() : null;
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+  return String(sel).length > 0;
+}
+
+// Catch up as soon as the selection goes away.
+//
+// Without this the board stays as stale as whatever withheld the repaint,
+// which is up to a full poll after a copy that took a second. `selectionchange`
+// fires on the document for every change including the collapse, and the guard
+// on `heldUpdate` means it costs nothing on the ordinary case where no repaint
+// was ever withheld.
+function keepUpWithSelection() {
+  document.addEventListener("selectionchange", () => {
+    if (heldUpdate && !isSelecting() && !isEditing()) refreshSoon();
+  });
+}
+
 function showHeld(show) {
   document.getElementById("held").classList.toggle("on", !!show);
 }
@@ -1071,6 +1109,9 @@ async function refresh() {
     // are what tell you something arrived.
     heldUpdate = true;
     showHeld(true);
+  } else if (isSelecting()) {
+    // Withheld without saying so. See `isSelecting`.
+    heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
     repaintLists();
@@ -1120,6 +1161,29 @@ async function refresh() {
         body: readyBecause(t)
       }));
     }
+    // A CARD THAT WAS NOT THERE BEFORE, whoever made it.
+    //
+    // `atrium launch` from a shell, a script, an intake source or another
+    // agent all put a card on the board with nothing on screen saying so, and
+    // the board is usually behind something else when they do. The waiting
+    // alert above cannot cover this: it filters `justStarted` out on purpose,
+    // because a session coming up is not a session wanting you.
+    //
+    // NO SPECIAL CASE FOR ONES YOU STARTED YOURSELF, and none is needed. A
+    // desktop notification is already suppressed while the board is in front,
+    // so pressing launch on the board gets a toast and a card appearing while
+    // you are in another window gets the notification. The distinction the
+    // code would have had to guess at is one the browser already knows.
+    //
+    // From `lastTasks` rather than its own request: every view fetches the
+    // tasks already, and a second copy arriving a moment later is a second
+    // answer to keep in step.
+    if (lastTasks && lastTasks.length) {
+      alerting.check("arrived", lastTasks.filter(t => !over(t)), t => ({
+        title: `${t.display_title} is on the board`,
+        body: t.why || t.worktree || "a new card"
+      }));
+    }
     if (perms) {
       badge("c-perm", perms.length);
       // Named too. "permission needed" told you something needed answering and
@@ -1144,6 +1208,10 @@ async function refresh() {
 
   api("/v1/health").then(h => {
     checkBuild(h.build);
+    // Before anything else reads it. A daemon that is still putting sessions
+    // back says so here, and the arrival alert re-seeds rather than announcing
+    // six terminals you restarted yourself.
+    alerting.settling(!!h.settling);
     const el = document.getElementById("halted");
     el.style.display = h.halted ? "flex" : "none";
     if (h.halted) {
@@ -1166,6 +1234,15 @@ function connect() {
     conn.classList.add("live");
     label.textContent = "live";
     loadGlobalAuto();
+    // Assume the daemon is coming up until it says otherwise.
+    //
+    // The tasks and the health poll are two requests that do not arrive in a
+    // fixed order, so the first list of cards after a restart can be read
+    // before the flag that explains it. This stream opening is the earliest
+    // thing that happens when a daemon comes back, so the assumption is made
+    // here and the next health poll either confirms it or clears it a few
+    // seconds later.
+    alerting.settling(true);
   };
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "halted"]
@@ -1268,6 +1345,25 @@ function connect() {
     alerting.play("permission");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
     toast(title, body + ". the runners tab says why", "runners");
+  });
+  // Atrium is asking a registry whether a newer runner is published, and a
+  // launch is waiting on the answer.
+  //
+  // The only place atrium holds up something you pressed on a request that
+  // leaves the machine. Bounded at a few seconds, but a button that does
+  // nothing for three of them reads as a hang, so it says so instead.
+  es.addEventListener("runner-check", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    const el = document.getElementById("conn-t");
+    if (!el) return;
+    if (d.checking) {
+      el.dataset.was = el.dataset.was || el.textContent;
+      el.textContent = `checking ${d.label || d.runner || "runner"}`;
+      return;
+    }
+    el.textContent = el.dataset.was || "live";
+    delete el.dataset.was;
   });
   // A theme was brought, edited or deleted. Every window reloads the table and
   // repaints its own terminal, because a palette is shared: two boards open on

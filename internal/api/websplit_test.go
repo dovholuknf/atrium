@@ -38,10 +38,23 @@ func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
 
 	// `/` rather than `/index.html`: the file server redirects the explicit
 	// name to the directory, which is what a browser asks for anyway.
-	for _, path := range []string{"/", "/board.css"} {
-		if rec := get(path); rec.Code != http.StatusOK || rec.Body.Len() == 0 {
-			t.Errorf("%s answered %d with %d bytes. it is part of the board and has to "+
-				"be embedded and served", path, rec.Code, rec.Body.Len())
+	if rec := get("/"); rec.Code != http.StatusOK || rec.Body.Len() == 0 {
+		t.Errorf("/ answered %d with %d bytes. it is part of the board and has to "+
+			"be embedded and served", rec.Code, rec.Body.Len())
+	}
+
+	// Every stylesheet the page links, discovered from the page rather than
+	// named here. The board's CSS is a set of files now and a list written in
+	// this test would be a second place to remember, which is how a new one
+	// ships unembedded.
+	for _, f := range styleFiles(t) {
+		rec := get("/css/" + f.name)
+		if rec.Code != http.StatusOK {
+			t.Errorf("the page links /css/%s and the handler answers %d", f.name, rec.Code)
+			continue
+		}
+		if rec.Body.String() != f.body {
+			t.Errorf("/css/%s is served as something other than the file on disk", f.name)
 		}
 	}
 
@@ -64,7 +77,11 @@ func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
 // to get half an old board and half a new one.
 func TestTheSplitBoardIsNotCached(t *testing.T) {
 	h := webHandler("")
-	for _, path := range []string{"/", "/board.css", "/js/core.js"} {
+	paths := []string{"/", "/js/core.js"}
+	for _, f := range styleFiles(t) {
+		paths = append(paths, "/css/"+f.name)
+	}
+	for _, path := range paths {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if !strings.Contains(rec.Header().Get("Cache-Control"), "no-store") {

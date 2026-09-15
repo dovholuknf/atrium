@@ -12,14 +12,26 @@
 
 set -euo pipefail
 
-# The stylesheet, which is where the skins are. It used to be a `<style>` block
-# inside `index.html`, and the indentation the awk below matches on is the
-# indentation it had in there, which is why board.css kept it.
-board="$(dirname "$0")/../internal/api/web/board.css"
-[ -f "$board" ] || { echo "no board stylesheet at $board" >&2; exit 1; }
-
+# The stylesheets, which are where the skins are. This was a `<style>` block
+# inside `index.html`, then `board.css`, and is now a directory of files. The
+# indentation the awk below matches on is the indentation it had in the style
+# block, which every move has kept.
+#
+# EVERY FILE, CONCATENATED, and not the one the skins happen to be in today. A
+# skin block is a run of custom properties and nothing stops a later file adding
+# more of them, so naming one file here would check part of the palette and
+# report the rest as absent.
+web="$(dirname "$0")/../internal/api/web"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+
+board="$work/all.css"
+if [ -d "$web/css" ]; then
+  cat "$web/css"/*.css > "$board"
+elif [ -f "$web/board.css" ]; then
+  cp "$web/board.css" "$board"
+fi
+[ -s "$board" ] || { echo "no board stylesheet under $web" >&2; exit 1; }
 
 # Every `body[data-skin="x"] { ... }` block, flattened to `skin var` pairs.
 awk '

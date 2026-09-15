@@ -48,6 +48,19 @@ func (d *Daemon) startFixtures() {
 		return
 	}
 
+	// Named before the first one is started, and as a whole list. See
+	// settling.go: the board stays quiet about arrivals until every one of
+	// these has come back, which is the only definition of "still coming up"
+	// that does not depend on guessing how long a cold claude takes.
+	//
+	// A fixture has no card until it starts one, so it is expected under its
+	// own identity and reported the same way.
+	ids := make([]string, 0, len(wanted))
+	for _, f := range wanted {
+		ids = append(ids, "fixture:"+f.ID)
+	}
+	d.settle.expect(ids)
+
 	log.Printf("[atrium] starting %d fixture(s)", len(wanted))
 	// One report for the batch, not one per fixture.
 	//
@@ -67,7 +80,12 @@ func (d *Daemon) startFixtures() {
 		if i > 0 {
 			time.Sleep(fixtureGap)
 		}
-		if err := d.startFixture(f); err != nil {
+		// Started or failed, this one is no longer something atrium is waiting
+		// to come back. A fixture whose worktree has gone would otherwise hold
+		// the window open to the backstop.
+		err := d.startFixture(f)
+		d.settle.arrived("fixture:" + f.ID)
+		if err != nil {
 			failed = append(failed, FixtureFault{Label: fixtureName(f), Reason: err.Error()})
 			continue
 		}

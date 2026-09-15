@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	neturl "net/url"
@@ -183,6 +184,27 @@ func (s *Store) Offer(item IntakeItem) (*Task, bool, error) {
 		}
 		if existing != nil {
 			task = existing
+			// AN ITEM THAT HAS MOVED ON REWRITES THE CARD IT ALREADY HAS.
+			//
+			// The key is what makes two offers the same work, and the rest of
+			// the item is what that work currently is. A source whose key is
+			// stable and whose title is not is the common case rather than an
+			// odd one: a runner update card says which version is available,
+			// and a second release before anybody actioned the first used to
+			// arrive as a SECOND CARD saying the same sentence, because the
+			// version was in the key. Putting it in the body instead only
+			// works if the body can change.
+			//
+			// ONLY WHILE IT IS STILL IN THE INBOX. Once a card has been
+			// started it has a session, a worktree and possibly a history, and
+			// a poller overwriting its title an hour later would be rewriting
+			// something the operator is working in. Everything past backlog is
+			// left exactly alone.
+			if existing.Status == StatusBacklog {
+				if err := s.refreshOffered(existing, item); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 
@@ -216,6 +238,76 @@ func (s *Store) Offer(item IntakeItem) (*Task, bool, error) {
 		return nil, false, err
 	}
 	return task, created, nil
+}
+
+// refreshOffered brings a card in the inbox up to date with the item that
+// raised it.
+//
+// Called from inside `Offer`'s guarded block, so it uses the connection
+// directly. Wrapping it in another `guard` would be a second lock on a store
+// that holds one.
+//
+// WHAT IT WILL NOT DO IS WIDEN. Every field here is one a source wrote in the
+// first place, and a source that stops sending one leaves what was there
+// rather than blanking it. The operator editing a prompt before pressing start
+// is a documented use of the inbox (`SetPrompt`), so an empty incoming prompt
+// must never wipe it.
+func (s *Store) refreshOffered(t *Task, item IntakeItem) error {
+	title := orKeep(item.Title, t.Title)
+	why := orKeep(item.Why, t.Why)
+	prompt := orKeep(item.Prompt, t.Prompt)
+	url := orKeep(item.URL, t.URL)
+	ext := orKeep(item.ExternalID, t.ExternalID)
+	tags := t.Tags
+	if len(item.Tags) > 0 {
+		tags = item.Tags
+	}
+	raw, err := json.Marshal(orEmptyTags(tags))
+	if err != nil {
+		return err
+	}
+	// Nothing to say is the common case: a source posts everything it can see
+	// on every tick and almost all of it is unchanged. A write here would
+	// touch `last_activity_at` on every card in the inbox on every tick, which
+	// is the age the board sorts and draws.
+	if title == t.Title && why == t.Why && prompt == t.Prompt &&
+		url == t.URL && ext == t.ExternalID && sameTags(tags, t.Tags) {
+		return nil
+	}
+	if _, err := s.db.Exec(`UPDATE task SET title = ?, why = ?, prompt = ?, url = ?,
+		external_id = ?, tags = ?, last_activity_at = ? WHERE id = ?`,
+		title, why, prompt, url, ext, string(raw), ts(now()), t.ID); err != nil {
+		return err
+	}
+	t.Title, t.Why, t.Prompt, t.URL, t.ExternalID, t.Tags = title, why, prompt, url, ext, tags
+	return nil
+}
+
+// orKeep prefers what arrived and falls back to what is already there.
+func orKeep(incoming, have string) string {
+	if strings.TrimSpace(incoming) == "" {
+		return have
+	}
+	return incoming
+}
+
+func orEmptyTags(t []string) []string {
+	if t == nil {
+		return []string{}
+	}
+	return t
+}
+
+func sameTags(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Offered lists the inbox, newest first.

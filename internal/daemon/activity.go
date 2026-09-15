@@ -175,6 +175,20 @@ func (a *activityTracker) get(taskID string) *Activity {
 			out.Running[i] = s
 		}
 	}
+	// THE COUNT CAN BE LOWER THAN THE LIST, AND THAT IS DELIBERATE.
+	//
+	// An unknown stop takes the tally down and finds nothing to remove, which
+	// `TestAnUnknownStopStillCountsDown` pins on purpose: the stop is a fact
+	// even when the start that would have named it was lost, and the agent it
+	// could not match is still the honest thing to keep listing.
+	//
+	// So `"subagents": 0` beside a `running` array with an entry in it is a
+	// state this is allowed to serve, and it was observed in the wild. Any
+	// client deciding whether there is anything to SHOW has to look at both.
+	// The board's badge gated on the count alone and drew nothing for a
+	// session that had subagents running, which is the report this note comes
+	// from. Clamping here was tried and is wrong: it would make the number
+	// claim an agent had not finished when the runner said it had.
 	return &out
 }
 

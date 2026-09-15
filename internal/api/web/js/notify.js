@@ -205,7 +205,16 @@ const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
   // Ids we have already alerted for, so a 5s refresh does not re-ring.
-  let knownPerms = null, knownWaiting = null;
+  //
+  // A MAP RATHER THAN A VARIABLE PER KIND. There were two, named, and every
+  // site that read one did it with a ternary on the kind, so adding a third
+  // meant editing four places to get one new alert. `null` until the first
+  // pass, which is what makes a reload silent about what was already there.
+  const known = {};
+
+  // Set from `/v1/health` while the daemon is bringing sessions back. See
+  // internal/daemon/settling.go.
+  let settlingNow = false;
 
   const btn = document.getElementById("sound");
   const paint = () => {
@@ -329,10 +338,20 @@ const alerting = (() => {
   const nagged = {};
 
   return {
-    check, nag, play, preview, save, unlock, notify,
+    check, nag, play, preview, save, unlock, notify, settling,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
+
+  // Whether the daemon is still putting back what it had before it restarted.
+  //
+  // Held here rather than read at each call site, because the thing that
+  // learns it is the health poll and the thing that needs it is `check`, and
+  // those are two different requests that do not arrive in a fixed order.
+  function settling(on) {
+    if (on === undefined) return settlingNow;
+    settlingNow = !!on;
+  }
   function nag(perms) {
     const now = Date.now();
     perms.forEach(p => {
@@ -385,9 +404,27 @@ const alerting = (() => {
   // that was already there.
   function check(kind, items, describe) {
     const ids = new Set(items.map(i => i.id));
-    const prev = kind === "permission" ? knownPerms : knownWaiting;
+    // A RESTART IS NOT A PILE OF NEW AGENTS. While the daemon says it is still
+    // coming up, a card arriving or going quiet is a session being put back
+    // rather than something that just happened, so this re-seeds instead of
+    // diffing, which is what a fresh page load does and for the same reason.
+    //
+    // BOTH `arrived` AND `waiting`. The first pass only covered arrivals, and
+    // what came through instead was "X is ready" for a session that had
+    // finished its turn BEFORE the restart: the card was marked dead when its
+    // pid went, came back on the reopen, and reported the same state it was
+    // already in. `justStarted` does not cover it, because the card is old.
+    //
+    // PERMISSIONS STILL RING. An agent that comes back up already blocked is
+    // frozen right now, and that is the one thing during a restart worth being
+    // interrupted for.
+    if (settlingNow && (kind === "arrived" || kind === "waiting")) {
+      known[kind] = ids;
+      return;
+    }
+    const prev = known[kind] === undefined ? null : known[kind];
     if (prev === null) {
-      if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
+      known[kind] = ids;
       // A permission that is already pending when the page loads still needs
       // answering. Staying silent about it meant every reload swallowed the
       // alert for whatever was already blocked, which during a working session
@@ -408,7 +445,7 @@ const alerting = (() => {
       return;
     }
     const fresh = items.filter(i => !prev.has(i.id));
-    if (kind === "permission") knownPerms = ids; else knownWaiting = ids;
+    known[kind] = ids;
     if (!fresh.length) return;
 
     // Held briefly, so several agents finishing together are one alert rather
@@ -464,7 +501,10 @@ const alerting = (() => {
     // agent blocked mid-tool and one that just finished its turn read the
     // same, and those want different amounts of hurry.
     const title = fresh.length > 1
-      ? `${fresh.length} ${kind === "permission" ? "agents need permission" : "agents are ready"}`
+      ? `${fresh.length} ${{
+        permission: "agents need permission",
+        arrived: "new agents on the board",
+      }[kind] || "agents are ready"}`
       : d.title;
     // A pile names who, since the count alone does not, and the names are the
     // reason to look now rather than in a minute.

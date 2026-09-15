@@ -622,13 +622,20 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		// and the board is only a terminal in this window because of a
 		// fragment the server never sees.
 		//
-		// `/board.css` and `/js/` are the board itself, split into files. They
-		// are as static as the page that loads them, and a guest refused them
-		// gets an unstyled document with no script on it, which is not a
-		// smaller thing to give away, just a broken one.
+		// `/css/` and `/js/` are the board itself, split into files. They are
+		// as static as the page that loads them, and a guest refused them gets
+		// an unstyled document with no script on it, which is not a smaller
+		// thing to give away, just a broken one.
+		//
+		// PREFIXES, NOT NAMES, and that is the point of serving them under a
+		// directory. This used to name `/board.css` outright, so splitting the
+		// stylesheet would have left a guest with a page that fetched six
+		// files and was refused all of them. A guest board that renders as
+		// unstyled HTML is the failure, and nothing here would have said why.
 		if r.Method == http.MethodGet &&
-			(p == "/" || p == "/index.html" || p == "/sw.js" || p == "/board.css" ||
+			(p == "/" || p == "/index.html" || p == "/sw.js" ||
 				p == "/working.gif" ||
+				strings.HasPrefix(p, "/css/") ||
 				strings.HasPrefix(p, "/js/") || strings.HasPrefix(p, "/vendor/")) {
 			board.ServeHTTP(w, r)
 			return

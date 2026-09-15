@@ -1,0 +1,389 @@
+
+  /* A question mark that explains a section without permanently spending
+     screen space on the explanation. */
+  .help {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%; flex: none;
+    border: 1px solid var(--stroke); color: var(--label);
+    font: 600 var(--fs-xxs)/1 var(--sans); cursor: help; position: relative;
+    text-transform: none; letter-spacing: 0;
+  }
+  .help:hover, .help:focus { border-color: var(--teal); color: var(--chip-accent-text); outline: none; }
+  .help:focus::after { opacity: 1; visibility: visible; }
+  details > summary.col-head .help { margin-left: 2px; }
+  /* The bubble sits against its label. The panel itself is positioned in JS,
+     because CSS alone cannot know whether it would fall off the window. */
+  dialog#sharedlg { width: min(640px, 94vw); }
+  dialog#sharedlg .toolbar { justify-content: flex-end; margin-top: 14px; }
+  dialog#ask { width: min(700px, 94vw); }
+  dialog#ask .dlg-head { border-bottom: none; padding-bottom: 0; }
+  .asktext {
+    font-size: var(--fs-md); line-height: 1.6; color: var(--body);
+    white-space: pre-line; margin-bottom: 16px;
+  }
+  .asktext code {
+    display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.65); border: 1px solid var(--stroke-dim);
+    /* Not break-all: a command has to break at its spaces, so a flag is never
+       cut in half. anywhere covers the path, which has none. */
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    word-break: normal; overflow-wrap: anywhere;
+  }
+  .asktext b { color: var(--head); font-weight: 600; }
+  dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
+
+  /* Above everything, because it is always ABOUT something and is drawn
+     against it. It shared a layer with the card menu, so explaining a menu
+     entry put the explanation behind the menu, and behind the flyout the
+     entry had just opened. There is nothing a tooltip should ever be under. */
+  #tip {
+    position: fixed; z-index: 400; max-width: 420px; pointer-events: none;
+    background: var(--shell-0); color: var(--body);
+    border: 1px solid var(--stroke); border-radius: var(--r-md); padding: 11px 14px;
+    font: 400 var(--fs-base)/1.55 var(--sans); text-align: left; letter-spacing: 0;
+    white-space: pre-line; box-shadow: var(--shadow-pop);
+    opacity: 0; visibility: hidden; transition: opacity .13s;
+    /* Long paths wrap. Forcing the panel wider than the window clipped the
+       text and grew a scrollbar. */
+    overflow-wrap: anywhere;
+  }
+  #tip.on { opacity: 1; visibility: visible; }
+
+  .filters { display: flex; gap: var(--sp-3); align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
+  .filters input[type=search] {
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--head); flex: 1; min-width: 160px;
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 7px 11px;
+  }
+  .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
+  /* Names what a row of pills does. Two unlabeled rows read as one bank, and
+     the sort row looked like more filters. */
+  .barlabel {
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dimmest); flex: none;
+    min-width: 52px;
+  }
+  /* A second labeled bank on the same row needs a bigger gap than the one
+     between pills, or "group" reads as another sort pill. */
+  .filters .barlabel:not(:first-child) { margin-left: var(--sp-4); min-width: 0; }
+  .seg { display: flex; gap: var(--sp-1); }
+  .seg button {
+    padding: 6px 12px; font-size: var(--fs-sm); background: transparent;
+    border-color: var(--stroke-dim); color: var(--dim);
+  }
+  .seg button.on {
+    background: var(--chip); color: var(--head); border-color: var(--stroke);
+  }
+  /* A `?` riding on a segment button, for a choice whose two sides need a
+     paragraph each. The button has to become a flex line for it, or the circle
+     sits on the text baseline and drags the row taller. */
+  .seg button:has(.help) { display: inline-flex; align-items: center; gap: 7px; }
+  /* A multi-select segment. Its pills add up rather than replacing each other,
+     so an on one is marked more strongly: with an exclusive segment the single
+     highlight is unambiguous, and with several on at once it has to read as
+     chosen rather than merely last clicked. */
+  .seg.multi button.on {
+    border-color: var(--teal); color: var(--head);
+    box-shadow: inset 0 0 0 1px rgba(var(--teal-rgb),.25);
+  }
+  /* How many a pill would give you. Dimmer than its label, since it is the
+     answer to a question you did not have to click to ask. */
+  .pillcount {
+    font-style: normal; font-family: var(--mono); font-size: var(--fs-xs);
+    color: var(--teal); margin-left: 3px;
+  }
+  .seg button.on .pillcount { color: var(--head); }
+  /* Nothing there. Shown rather than blanked, because a missing number reads
+     as "not counted" and this one means "none". */
+  .pillcount.zero { color: var(--dimmest); }
+  .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
+  button.big { font-size: var(--fs-base); padding: 10px 18px; }
+  button.go.big { box-shadow: 0 0 18px rgba(var(--teal-rgb),.14); }
+
+  /* Toast: the in-page counterpart to a desktop notification, for when the
+     tab is visible and a browser notification would be suppressed. */
+  #held {
+    position: fixed; left: 50%; top: 74px; transform: translateX(-50%) translateY(-12px);
+    z-index: 55; display: none; opacity: 0; transition: opacity .18s, transform .18s;
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    color: var(--chip-accent-text); font-size: var(--fs-sm); padding: 8px 16px; border-radius: var(--r-pill);
+    box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.6);
+  }
+  #held.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
+  #held:hover { border-color: var(--teal); }
+
+  /* Bottom right, and click-through everywhere except the toasts themselves,
+     so a dialog underneath stays usable.
+     column-reverse so the newest is nearest the corner and the older ones
+     rise away from it, rather than the stack shifting under the pointer as
+     one arrives. */
+  #toasts {
+    position: fixed; right: 20px; bottom: 20px;
+    left: auto; top: auto; z-index: 200;
+    margin: 0; padding: 0; border: none; background: none; overflow: visible;
+    max-width: min(420px, 88vw); pointer-events: none;
+    display: flex; flex-direction: column-reverse; gap: var(--sp-3);
+  }
+  #toasts:empty { display: none; }
+  #toasts .toast { pointer-events: auto; }
+  .toast {
+    display: flex; align-items: flex-start; gap: var(--sp-4); cursor: pointer;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-left: 3px solid var(--warn);
+    border-radius: var(--r-md); padding: 13px 15px;
+    box-shadow: 0 18px 40px rgba(var(--shadow-rgb),.7);
+    animation: toastin .22s ease-out;
+  }
+  .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
+  .toast.leaving { animation: toastout .2s ease-in forwards; }
+  @keyframes toastin { from { transform: translateY(14px); opacity: 0; } }
+  @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
+  .toast .body { flex: 1; min-width: 0; }
+  .toast b { display: block; color: var(--head); font-size: var(--fs-base); margin-bottom: 3px; }
+  /* How many times the same message arrived. Empty until the second one, so a
+     toast that happened once says nothing about counting. */
+  .toast .ntimes:not(:empty) {
+    display: inline-block; margin: 0 0 3px; padding: 1px 6px; border-radius: 999px;
+    background: var(--warn-stroke); color: var(--head);
+    font: 600 var(--fs-xs)/1.4 var(--mono);
+  }
+  /* Breaks at spaces, and mid-word only when a single word cannot fit.
+     break-all cuts wherever the line ends whatever is there, which was chosen
+     for toasts carrying a command or a path and is wrong now that most of them
+     carry a sentence: "wants your next instr / uction". A path still breaks,
+     because overflow-wrap steps in when a word genuinely does not fit. */
+  .toast span {
+    font: var(--fs-sm)/1.45 var(--mono); color: var(--dim);
+    word-break: normal; overflow-wrap: anywhere;
+  }
+  .toast .x, .toast .copy {
+    flex: none; color: var(--dimmest); font-size: var(--fs-lg); line-height: 1;
+    background: none; border: none; padding: 0 2px; cursor: pointer;
+  }
+  .toast .copy { font-size: var(--fs-base); opacity: .6; }
+  .toast .x:hover, .toast .copy:hover { color: var(--head); opacity: 1; }
+  .hints { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: 7px; }
+  button.hint {
+    font: 500 var(--fs-xs)/1.5 var(--mono); padding: 2px 9px; border-radius: var(--r-sm);
+    background: var(--chip); border-color: transparent; color: var(--label);
+  }
+  button.hint:hover { border-color: var(--teal); color: var(--chip-accent-text); }
+
+  /* Collapsible sections. The caret sits right next to its label, and the
+     count is pushed away on its own, so the three do not spread apart. */
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary.col-head {
+    justify-content: flex-start; gap: var(--sp-3); cursor: pointer;
+    padding: 4px 3px; border-radius: var(--r-sm); user-select: none;
+  }
+  details > summary.col-head:hover { color: var(--head); background: rgba(var(--chip-rgb),.35); }
+  details > summary.col-head::before {
+    content: "\25B8"; font-size: var(--fs-xl); line-height: 1; color: var(--teal);
+    display: inline-block; transition: transform .15s; width: 12px;
+  }
+  details[open] > summary.col-head::before { transform: rotate(90deg); }
+  details > summary.col-head .n { margin-left: auto; }
+  /* Keep the bubble beside its label rather than letting the flex row fling
+     it to the far edge. */
+  .col-head > .help { margin-right: auto; }
+
+  button {
+    font: 600 var(--fs-md)/1 var(--sans); color: var(--body); cursor: pointer;
+    background: var(--chip); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 9px 16px; transition: all .14s;
+  }
+  button:hover {
+    color: var(--head); border-color: var(--blue);
+    background: var(--btn-hover); transform: translateY(-1px);
+  }
+  button:active { transform: translateY(0); }
+  /* A control that cannot do anything has to look like it cannot. Without a
+     rule here a disabled button keeps full contrast, the hover lift and the
+     pointer cursor, and reads as a button that is ignoring you. The picker is
+     where it shows: `up` and `use this one` are both disabled at a root. */
+  button:disabled,
+  button:disabled:hover,
+  button:disabled:active {
+    opacity: .38; cursor: not-allowed; transform: none; box-shadow: none;
+    color: var(--body); background: var(--chip); border-color: var(--stroke-dim);
+  }
+  button.go {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  button.go:hover { border-color: var(--teal); box-shadow: 0 0 14px rgba(var(--teal-rgb),.22); }
+  button.no:hover { border-color: var(--danger); color: var(--danger-text); box-shadow: 0 0 14px rgba(var(--danger-rgb),.18); }
+  button.icon {
+    padding: 8px 13px; font-size: var(--fs-3xl); line-height: 1; color: var(--teal);
+    background: transparent; border-color: transparent;
+  }
+  button.icon:hover { border-color: var(--stroke-dim); }
+  button.icon.muted { color: var(--dimmest); }
+  /* Sound is on, but the browser has not let this page make any yet. */
+  button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }
+  @keyframes nudge { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  button.newagent { font-size: var(--fs-xl); padding: 10px 20px; white-space: nowrap; }
+  /* Narrow: the plus alone. The word is what wraps, and the plus has never
+     meant anything else here. */
+  @media (max-width: 1150px) {
+    button.newagent { font-size: 0; padding: 10px 14px; }
+    button.newagent::before { content: "+"; font-size: var(--fs-2xl); }
+  }
+
+  /* ── detail dialog ──────────────────────────────────── */
+  dialog {
+    padding: 0; width: min(720px, 94vw); color: var(--body);
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog);
+    /* PINNED, NOT CENTRED. A browser centres a dialog on its own size, so a
+       dialog whose content changes height moves. The settings panes are five
+       different heights, and switching between them slid the whole window up
+       and down under the pointer, which put the control you were reaching for
+       somewhere else by the time you got there.
+
+       Top is fixed and the horizontal centring is done here, on the VIEWPORT
+       rather than on the dialog, so the width can change without moving it
+       either. */
+    position: fixed; top: 5vh; margin: 0 auto; max-height: 90vh;
+    inset-inline: 0;
+  }
+  /* For rows read down as a table, or content that is commands. A wrapped
+     command has to be reassembled before it can be trusted. */
+  dialog.wide { width: min(1280px, 96vw); }
+  dialog::backdrop { background: rgba(var(--sink-rgb),.74); backdrop-filter: blur(3px); }
+  /* THE TRAY DOES NOT BLUR THE BOARD. Every other dialog here is a thing you
+     came to do, and hiding what is behind it is the point. This one is a list
+     of things that happened TO the board, and reading it while the board is a
+     blur means checking one against the other by memory. Dimmed, not hidden,
+     and a click outside still closes it. */
+  #toastlog::backdrop { background: rgba(var(--sink-rgb),.34); backdrop-filter: none; }
+  /* One command, with its own heading and its own copy button. Separated
+     rather than run together, because they are pasted one at a time into
+     different places. */
+  .step { margin-bottom: var(--vs-4); }
+  .steptop {
+    display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: 6px;
+  }
+  .steptop b { font-size: var(--fs-md); color: var(--head); }
+  pre.code {
+    margin: 0; padding: 12px 14px; overflow-x: auto;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-md); white-space: pre;
+  }
+  /* A path is there to be pasted somewhere else, so it carries its own copy
+     button rather than being selected by hand. */
+  .copypath { display: inline-flex; align-items: center; gap: 6px; }
+  .copypath button { padding: 2px 8px; font-size: var(--fs-xxs); }
+  .dlg-head {
+    padding: 18px 22px 15px; border-bottom: 1px solid var(--stroke-dim);
+    display: flex; align-items: flex-start; gap: var(--sp-4);
+  }
+  .dlg-head h2 { margin: 0 0 8px; font-size: var(--fs-xl); color: var(--head); font-weight: 600; }
+  /* Tall enough that a form with a dozen fields is scrolled rarely rather
+     than constantly. The head and foot are fixed, so this is the only part
+     that moves. */
+  .dlg-body { padding: 20px 22px; max-height: 78vh; overflow-y: auto; }
+  .field { margin-bottom: 20px; }
+  label.eyebrow {
+    display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em;
+    text-transform: uppercase; color: var(--label); margin-bottom: 8px;
+  }
+  /* Every field in a dialog gets the same treatment. Textareas and selects
+     used to fall through to the browser default, which on a dark page is a
+     small white box at whatever width the rows attribute implied. */
+  input[type=text],
+  input[type=password],
+  input[type=number],
+  .dlg-body textarea,
+  .dlg-body select {
+    font: var(--fs-md)/1.5 var(--sans); color: var(--head); width: 100%;
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-md); padding: 10px 12px; transition: border-color .14s;
+  }
+  .dlg-body textarea {
+    font-family: var(--mono); font-size: var(--fs-base); min-height: 84px;
+    resize: vertical; display: block;
+  }
+  /* Native select arrows are drawn by the OS and cannot be recolored, so the
+     control draws its own and hides the original. */
+  .dlg-body select:not(.as-list) {
+    appearance: none; cursor: pointer; padding-right: 34px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--label) 50%),
+      linear-gradient(135deg, var(--label) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .dlg-body select option { background: var(--card-1); color: var(--head); }
+  /* List boxes need option padding and no dropdown arrow. */
+  .dlg-body select.as-list {
+    padding: 4px; cursor: default; overflow-y: auto;
+  }
+  .dlg-body select.as-list option {
+    padding: 6px 8px; border-radius: var(--r-sm);
+  }
+  input[type=text]:focus,
+  .dlg-body textarea:focus,
+  .dlg-body select:focus { outline: none; border-color: var(--blue); }
+  input[type=text]::placeholder,
+  .dlg-body textarea::placeholder { color: var(--dimmest); }
+  /* A dialog took its own copy of the scrollbar rules before there was a
+     universal one, with a different radius and a different inset, so a dialog
+     and the list behind it disagreed about what a scrollbar looks like. It
+     inherits now. */
+  .statuses { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .statuses button.on {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  /* A bordered panel, like every other list on the board. The left rule and
+     the dots it used to carry belonged to a vertical timeline, and a table
+     does not need a spine drawn down the side of it. */
+  .timeline {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.35); overflow: hidden;
+  }
+  .ev { position: relative; padding: 7px 0 7px 22px; font-size: var(--fs-sm); }
+  .ev::before {
+    content: ""; position: absolute; left: -4px; top: 14px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--stroke);
+  }
+  .ev.key::before { background: linear-gradient(90deg, var(--teal), var(--blue)); }
+  .ev .k { color: var(--head); font-weight: 600; margin-right: 9px; }
+  .ev .t { font-family: var(--mono); color: var(--dimmest); font-size: var(--fs-xs); }
+  .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
+  .ev .d b { color: var(--head); font-weight: 600; }
+
+  /* The audit log as a table. One row per event, columns that line up all the
+     way down, so a screenful is read by scanning one column rather than by
+     reading every entry. Three stacked lines per event fit six on a screen and
+     said nothing a row of five cells does not. */
+  .evtable { display: table; width: 100%; }
+  .evr {
+    display: grid; align-items: baseline; gap: var(--sp-3);
+    grid-template-columns: 74px 62px 46px minmax(0, 1fr) minmax(0, 190px);
+    padding: 5px 13px; border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.28);
+    font-size: var(--fs-sm);
+  }
+  .evr:last-child { border-bottom: none; }
+  .evr:hover { background: rgba(var(--chip-rgb),.4); }
+  .evr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The verdict, colored, because scanning an audit log is looking for what
+     got through. */
+  .c-verdict { font-weight: 600; color: var(--label); }
+  .c-verdict.ok { color: var(--chip-accent-text); }
+  .c-verdict.no { color: var(--warn); }
+  .c-verdict.pending { color: var(--label); }
+  .c-at { font-family: var(--mono); font-size: var(--fs-xs); color: var(--dimmest); }
+  .c-tool { color: var(--head); font-weight: 600; font-size: var(--fs-xs); }
+  .c-cmd { font-family: var(--mono); font-size: var(--fs-xs); color: var(--dim); }
+  .c-by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
+  /* Narrow: the command is what matters, so the columns either side of it go
+     first and it keeps the width. */
+  @media (max-width: 900px) {
+    .evr { grid-template-columns: 66px 56px minmax(0, 1fr); }
+    .evr .c-tool, .evr .c-by { display: none; }
+  }
+
