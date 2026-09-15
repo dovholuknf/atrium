@@ -1,3 +1,8 @@
+  /* The frame around every view: the header and its tabs, the halt banner, the guest-only page, the `main`
+     element, and the scrollbar styling for the whole board.
+
+     Loads after tokens.css and before everything that draws inside main. The scrollbar block near the bottom
+     is universal, so anything loaded later that wants its own bar has to say so and will win on specificity. */
   /* ── header ─────────────────────────────────────────── */
   header {
     position: sticky; top: 0; z-index: 20;
@@ -5,14 +10,12 @@
     background: linear-gradient(180deg, rgba(var(--bg1-rgb),.94), rgba(var(--bg1-rgb),.72));
     border-bottom: 1px solid var(--stroke-dim);
   }
-  /* One line, always. Nothing here wraps: a button that breaks across two
-     lines reads as broken rather than as tight, and the header is the one
-     row on screen whose shape people navigate by.
-     The tabs give up their width first, since they can scroll; the actions on
-     the right keep theirs. */
-  /* THE HEADER ANSWERS TO DENSITY TOO. It is on screen in every view, so it
-     is the one strip whose height is paid on every tab, and it was the last
-     thing still using fixed padding while everything under it tightened. */
+  /* One line, always. A button that breaks across two lines reads as broken, and the header is the row people
+     navigate by. The tabs give up their width first because they can scroll, and the actions on the right keep
+     theirs.
+
+     The padding answers to --density as well as --uiscale. The header is on screen in every view, so its
+     height is paid on every tab. */
   .bar {
     display: flex; align-items: center; gap: var(--sp-5);
     padding: calc(11px * var(--uiscale) * var(--density)) var(--row-x);
@@ -66,9 +69,8 @@
   #halted strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: var(--fs-sm); }
   #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--danger-text); }
 
-  /* The whole page, for a share opened without its fragment. `body.guestonly`
-     takes the board away rather than leaving it empty behind this, because an
-     empty board is exactly what somebody read as a second copy of their own. */
+  /* The whole page, for a share opened without its fragment. `body.guestonly` takes the board away rather than
+     leaving it empty behind this, because an empty board reads as a second copy of your own. */
   #guestonly {
     max-width: 46rem; margin: 12vh auto 0; padding: 0 var(--sp-5);
     color: var(--body); font-size: var(--fs-md); line-height: 1.6;
@@ -84,118 +86,92 @@
   body.guestonly main,
   body.guestonly #halted { display: none !important; }
 
-  /* Capped so a row's trailing buttons stay near its content. On an ultrawide
-     an uncapped row puts the actions a foot away from what they act on. */
-  /* Full width. A cap here left a third of a wide screen empty while a diff
-     was scrolling inside a box, which is the wrong trade. */
-  /* Takes what the header leaves and scrolls inside itself. min-height:0 is
-     what lets it actually shrink: a flex item defaults to its content's
-     height, which would push the page taller than the window again. */
-  /* main never scrolls. The view inside it does.
-     A scrollbar on main is drawn inside main's padding, over the right edge of
-     whatever is showing, which put it on top of the terminal. A view that owns
-     its own scrolling keeps the bar inside itself where it belongs, and the
-     terminal, which never needs to scroll, never grows one.
+  /* Full width, with no cap. A cap left a third of a wide screen empty while a diff scrolled inside a box.
 
-     A column as well as a flex item: the board asked for 100% of main and then
-     sat below the group bar and inside main's padding, so the total was always
-     taller by exactly the bar plus the padding. Percentage heights cannot see
-     their siblings; flex can. */
+     main never scrolls. The view inside it does. A scrollbar on main is drawn inside main's padding, over the
+     right edge of whatever is showing, which put it on top of the terminal.
+
+     min-height:0 is what lets main shrink at all. A flex item defaults to its content's height, which pushes
+     the page taller than the window.
+
+     It is a flex column as well as a flex item. The board asked for 100% of main and then sat below the group
+     bar and inside main's padding, so the total was taller by the bar plus the padding. A percentage height
+     cannot see its siblings and flex can. */
   main {
     position: relative; z-index: 1; padding: 20px 26px;
     flex: 1 1 auto; min-height: 0; overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* The views that fill what is left. Everything else in main keeps its own
-     height and these take the remainder, whichever one is showing. */
+  /* The views that fill what is left. Everything else in main keeps its own height. */
   main > .board,
   main > #stack,
   main > #perms,
   main > #runners,
   main > #terms { flex: 1 1 auto; min-height: 0; }
-  /* The ones that can be taller than the window scroll themselves. The board
-     scrolls per lane and the terminal never scrolls at all, so neither is
-     here. */
+  /* The ones that can be taller than the window scroll themselves. The board scrolls per lane and the terminal
+     never scrolls, so neither is here. */
   main > #perms,
   main > #runners { overflow-y: auto; overflow-x: hidden; }
-  /* The stack scrolls its LIST, not itself.
-     Its filter pills, sort pills and search box were inside the scroll box, so
-     they left the top of the screen as soon as there were enough cards to
-     scroll: the controls that decide what you are looking at, gone exactly when
-     the list is long enough to need them. The scrollbar ran up past them too,
-     which is what made it look like part of the bar rather than part of the
-     list. */
+  /* The stack scrolls its list rather than itself, so the filter pills, sort pills and search box stay on
+     screen once there are enough cards to scroll. Inside the scroll box they left the top of the screen
+     exactly when the list got long enough to need them, and the scrollbar ran up past them as well. */
   main > #stack {
     display: flex; flex-direction: column; overflow: hidden; gap: 0;
   }
   #stack > .filters { flex: 0 0 auto; }
   #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   /* ── scrollbars ─────────────────────────────────────── */
-  /* EVERY scrollbar on the board, in one rule, with one carve-out.
-     Written universally on purpose. This page has twenty-odd boxes that can
-     scroll: the stack, the perms list, the runners page, each board lane, the
-     file lists, the session switcher, every dialog body, the overlay log,
-     every wide code block, the nav on a narrow window. Styling them by name
-     meant styling the five somebody had noticed, and the sixteenth arrived as
-     the operating system's grey strip, which on a dark board is the one part
-     of it that is not the board. A new scrolling box should inherit this
-     without anybody remembering to come back here.
+  /* Every scrollbar on the board, in one universal rule, with one carve-out.
 
-     THE CARVE-OUT IS THE WHOLE TERMINAL, AND IT IS `#t-screen *`, NOT
-     `.xterm-viewport`. Read this before narrowing it.
+     The page has twenty-odd boxes that can scroll: the stack, the perms list, the runners page, each board
+     lane, the file lists, the session switcher, every dialog body, the overlay log, every wide code block, and
+     the nav on a narrow window. Styling them by name styles the five somebody noticed, and the sixteenth
+     arrives as the operating system's grey strip. A new scrolling box inherits this without anybody coming
+     back here.
 
-     Two separate reasons, and getting one right is not enough:
+     The carve-out is `#t-screen *`, the whole terminal subtree, and not `.xterm-viewport`. Read this before
+     narrowing it, because there are two reasons and fixing one still leaves the other:
 
-       1. The fit addon works out how many columns fit by MEASURING its
-          viewport's scrollbar. Anything that changes that width makes xterm
-          draw rows wider than the box and the text runs underneath the bar.
-       2. xterm renders five elements, not one. `.xterm`, `.xterm-viewport`,
-          `.xterm-screen`, the canvases, and `textarea.xterm-helper-textarea`,
-          which is a 20x20 box parked at the cursor. Excluding the viewport by
-          name left the other four inside a universal rule, and one of them
-          answered it with a second scrollbar down the right of the terminal,
-          beside xterm's own.
+       1. The fit addon works out how many columns fit by measuring its viewport's scrollbar. Anything that
+          changes that width makes xterm draw rows wider than the box, and the text runs under the bar.
+       2. xterm renders five elements: `.xterm`, `.xterm-viewport`, `.xterm-screen`, the canvases, and
+          `textarea.xterm-helper-textarea`, a 20x20 box parked at the cursor. Excluding the viewport by name
+          left the other four inside the universal rule, and one of them grew a second scrollbar down the right
+          of the terminal beside xterm's own.
 
-     So the exclusion is the SUBTREE. Nothing under `#t-screen` gets a
-     scrollbar from this board; xterm owns its own geometry completely, and the
-     only thing set on it is at `.xterm-viewport` further down.
+     So nothing under `#t-screen` gets a scrollbar from this board. xterm owns its own geometry, and the only
+     thing set on it is at `.xterm-viewport` in terminal.css.
 
-     `scrollbar-color` only paints and cannot move anything, so it is set on
-     `html` and inherits everywhere, the terminal included, which is what the
-     terminal already asked for.
+     `scrollbar-color` only paints and cannot move anything, so it is set on `html` and inherits everywhere
+     including the terminal, which is what the terminal wants.
 
-     Firefox reads the two `scrollbar-*` properties and ignores the pseudo
-     elements; Chromium is the other way round. Both are set. Neither is a
-     fallback for the other.
+     Firefox reads the two `scrollbar-*` properties and ignores the pseudo elements. Chromium is the other way
+     round. Both are set, and neither is a fallback for the other.
 
-     `:where()` rather than a bare `:not()`, and that is load-bearing. A
-     universal rule is a DEFAULT, so it has to lose every argument: three
-     places hide their bar on purpose with `scrollbar-width: none`, and a plain
-     `*:not(.xterm-viewport)` carries the specificity of the class inside it
-     and would have out-ranked all of them. `:where()` scores zero, so anything
-     with an opinion still wins. */
+     `:where()` rather than a bare `:not()` is load-bearing. A universal rule has to lose every argument, and
+     three places hide their bar with `scrollbar-width: none`. A plain `*:not(.xterm-viewport)` carries the
+     specificity of the class inside it and outranks all of them. `:where()` scores zero. */
   html { scrollbar-color: var(--stroke-dim) transparent; }
   *:where(:not(#t-screen, #t-screen *)) { scrollbar-width: thin; }
   *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar { width: 10px; height: 10px; }
   *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-track { background: transparent; }
   *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb {
     background: var(--stroke-dim); border-radius: var(--r-pill);
-    /* Inset by a transparent border, so the thumb reads as a slim pill in a
-       gutter rather than as a block filling the channel. */
+    /* Inset by a transparent border, so the thumb reads as a slim pill in a gutter rather than as a block
+       filling the channel. */
     border: 2px solid transparent; background-clip: padding-box;
   }
   *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb:hover {
     background-color: var(--stroke);
   }
-  /* Both bars meet in the corner on a box that scrolls two ways. Left alone it
-     is a light square that belongs to no theme. */
+  /* Where both bars meet on a box that scrolls two ways. Left alone it is a light square belonging to no
+     theme. */
   *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-corner { background: transparent; }
 
-  /* Room for the bar on the boxes whose content reaches their right edge.
-     A scrollbar is drawn INSIDE the padding box, so without this a row's
-     border sits under it and the two mush together. Not a negative margin to
-     claim the space back: `main` clips, so a box wider than main loses exactly
-     the strip the bar is in, and the last of the content with it. */
+  /* Room for the bar on the boxes whose content reaches their right edge. A scrollbar is drawn inside the
+     padding box, so without this a row's border sits under it. The space is not claimed back with a negative
+     margin, because main clips and a box wider than main loses the strip the bar is in along with the last of
+     the content. */
   #stack-list,
   main > #perms,
   main > #runners,

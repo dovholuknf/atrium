@@ -1,3 +1,9 @@
+  /* The board's lanes and columns, the card groups, the cards and their chips, the card action menu, the colour
+     swatches, the directory browser and project picker, and the review screen.
+
+     Load order matters: this comes after chrome.css and before rows.css and terminal.css, and several rules in
+     those later files rely on coming after these. `.tl-mini .term-list .card .title` in terminal.css overrides
+     `.card .title` from here at the same specificity. */
   /* ── board ──────────────────────────────────────────── */
   /* One row, always. Seven columns wrapped onto a second row under the width
      cap, which reads as two boards rather than one. Scroll sideways instead. */
@@ -14,62 +20,46 @@
        measurement was always a couple of pixels out. */
     min-height: 0;
   }
-  /* Each lane scrolls its own cards, with its heading outside the scroll area.
-     Scrolling the whole page instead took the headings off screen, and a
-     column of cards with nothing saying which lane they are in has lost the
-     one thing the lane is for. Sticky was not an option: .board scrolls
-     sideways, which makes it a scroll container and stops sticky working
-     against the window.
-
-     Bounded height also ends the tall-column problem, since a lane with thirty
-     cards is now a lane with a scrollbar. */
-  /* Height from the board, which already accounts for its own padding, rather
-     than recomputing it and being taller than the box it sits in. */
+  /* Each lane scrolls its own cards, with its heading outside the scroll area, so scrolling never takes the
+     heading off screen. Sticky cannot do it: .board scrolls sideways, which makes it a scroll container and
+     stops sticky working against the window. A bounded height also gives a lane of thirty cards a scrollbar. */
+  /* Height from the board, which already accounts for its own padding. Recomputing it made the lane taller than
+     the box it sits in. */
   .board .col {
-    /* A basis of 268, not 0. Every column starts at a width a card is
-       readable in, and the weight then divides only the SURPLUS. With a basis
-       of zero the weight divided the whole board, so two against one was two
-       thirds against one third whatever the numbers meant, and the quiet
-       column was squeezed below what its own cards need. */
+    /* A basis of 268 so every column starts at a width a card is readable in, and the weight then divides only
+       the surplus. With a basis of zero the weight divided the whole board, and a quiet column got squeezed
+       below what its own cards need. */
     flex: 1 1 268px; min-width: 268px;
     display: flex; flex-direction: column; max-height: 100%;
   }
   .board .col > .cards {
     overflow-y: auto; overflow-x: hidden; min-height: 0;
-    /* The scrollbar and the room for it are set once, with the other scrolling
-       views, near the top of this stylesheet. A lane is narrow, so it takes
-       that room back: unlike the stack it has no width to spare. */
+    /* The scrollbar and the room for it are set once, with the other scrolling views, near the top of this
+       stylesheet. A lane is narrow, so it takes that room back. */
     margin-right: -8px;
-    /* Room for the lift. A card rises 2px on hover and this box clips, so the
-       first card's top border went under the heading and the card looked like
-       it was sliding behind it. The margin takes the space back so nothing
-       else moves. */
+    /* Room for the lift. A card rises 2px on hover and this box clips, so the first card's top border slid
+       under the heading. The negative margin takes the space back so nothing else moves. */
     padding-top: 3px; margin-top: -3px;
-    /* One card per row, filling the lane.
-       Packing them side by side once a lane was wide made that lane read
-       differently from every other one, and made each card narrower the more
-       work it held, which is backwards. Every lane takes an equal share of the
-       width above, so a card is as wide as its lane and they all match. */
+    /* One card per row, filling the lane. Packing them side by side in a wide lane made that lane read
+       differently from the rest, and made each card narrower the more work it held. Every lane takes an equal
+       share of the width above, so a card is as wide as its lane and they all match. */
     display: grid; gap: 0; align-content: start; grid-template-columns: 1fr;
   }
   .board .col > .cards > .cardgroup { grid-column: 1 / -1; }
   /* A folded column shrinks to its header so the rest get the room. */
   .board .col.folded { flex: 0 0 auto; min-width: 0; }
-  /* So does an empty one. It still has to be wide enough to read its own
-     heading and to be a target you can drop a card onto, so it shrinks to
-     content rather than to nothing. The transition is here because these
-     change while you watch: a column emptying should read as the others
-     growing, not as the board jumping. */
+  /* So does an empty one. It still has to be wide enough to read its own heading and to be a drop target, so it
+     shrinks to content rather than to nothing. The transition is here because a column emptying should read as
+     the others growing rather than as the board jumping. */
   .board .col { transition: flex-grow .18s ease, flex-basis .18s ease; }
   .board .col.vacant { flex: 0 1 auto; min-width: 0; }
   .board .col.vacant > .cards { min-width: 0; }
   /* The word `empty` is the whole content of a narrow column, so it must not
      force the column back open. */
   .board .col.vacant .empty { white-space: nowrap; font-size: var(--fs-xs); }
-  /* The heading is now the widest thing in an empty column, so it is what
-     decides how much room the column gives back. Tightened rather than
-     truncated: `NEEDS PERM...` would be unreadable, and these five labels are
-     the one piece of text on the board that has to stay scannable. */
+  /* The heading is the widest thing in an empty column, so it decides how much room the column gives back.
+     Tightened instead of truncated, because `NEEDS PERM...` would be unreadable and these five labels have to
+     stay scannable. */
   .board .col.vacant > .col-head {
     font-size: var(--fs-xs); letter-spacing: .1em; color: var(--dim);
   }
@@ -79,8 +69,8 @@
     border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); padding: 13px 12px 10px;
     min-height: 108px;
   }
-  /* A collapsed column keeps its header and count but gives its space back.
-     needs-input can hold dozens of cards and drown everything else. */
+  /* A collapsed column keeps its header and count but gives its space back. needs-input can hold dozens of
+     cards and drown everything else. */
   .col.folded { min-height: 0; padding-bottom: 10px; }
   .col.folded .cards { display: none; }
   .col-head {
@@ -88,10 +78,9 @@
     font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
     color: var(--label); margin-bottom: 12px; padding: 0 3px;
   }
-  /* Only inside the board does it follow the board's size. The same class is
-     used for the perms and rules headings, which have no board to scale with. */
-  /* A swimlane heading names the whole column, so it outranks a group inside
-     it and a card's chips. */
+  /* Only inside the board does it follow the board's size. The same class is used for the perms and rules
+     headings, which have no board to scale with. */
+  /* A swimlane heading names the whole column, so it outranks a group inside it and a card's chips. */
   .board .col-head { font-size: var(--fs-base); }
   .col > .col-head { cursor: pointer; user-select: none; margin-bottom: 12px; }
   .col > .col-head:hover { color: var(--head); }
@@ -108,15 +97,14 @@
   }
   .flash { animation: flash 1.1s ease-out 2; }
   .col-head .n { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
-  /* The count is pushed to the right edge; the ? sits with the label. */
+  /* The count is pushed to the right edge. The ? sits with the label. */
   .col > .col-head .n { margin-left: auto; }
   .col > .col-head .help { margin-left: 7px; }
   .col[data-column="needs-input"] .col-head,
   .col[data-column="needs-permission"] .col-head { color: var(--warn); }
 
-  /* A column holding more than one status splits into collapsible groups.
-     done and dead are both over, so they share a column rather than taking two
-     across the board, but they are still different answers. */
+  /* A column holding more than one status splits into collapsible groups. done and dead are both over, so they
+     share a column, but they are still different answers. */
   .cardgroup { margin-bottom: 10px; }
   .cardgroup > summary {
     display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
@@ -134,36 +122,25 @@
   .cardgroup > summary .gn { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
   .cardgroup > summary .chip.sweep { margin-left: auto; margin-right: 0; }
 
-  /* A project group. Colored from a hash of its name, so a project keeps the
-     same color without anyone configuring one, and the bar down the left is
-     what makes two groups in a column tell apart at a glance. */
-  /* A tinted block, not just a bar down the left.
-     The bar alone made the cards read as a list that happened to start below a
-     heading. A wash of the group's own hue at low alpha, with an outline in
-     the same hue, makes the block itself the thing the eye groups, so which
-     cards belong to which project is answered before any of it is read.
-     Low enough not to compete with a card. The cards inside carry their own
-     background and their own left edge for status, and a tint that fought
-     those would cost the more urgent signal to win the less urgent one. */
+  /* A project group. Colored from a hash of its name, so a project keeps the same color with nothing to
+     configure, and two groups in one column tell apart at a glance. */
+  /* A wash of the group's own hue at low alpha, with an outline in the same hue, so the block itself is what
+     the eye groups. The bar alone made the cards read as a list that happened to start below a heading. The
+     alpha stays low: the cards inside carry their own background and their own left edge for status, and a tint
+     that fought those would cost the more urgent signal. */
   .cardgroup.project {
     border: 1px solid hsl(var(--ghue) 60% 55% / var(--group-edge));
     border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);
     background: hsl(var(--ghue) 60% 45% / var(--group-fill));
     border-radius: var(--r-xs) 9px 9px 3px;
-    /* Now that the block has a fill and an outline, the cards inside need to
-       sit off both. They were flush against the right edge and the bottom one
-       was flush against the border, which reads as clipped rather than as
-       contained. Small on the right: horizontal room is what a card title
-       needs and a column is already the narrowest thing on the board. */
+    /* The block has a fill and an outline, so the cards inside have to sit off both or they read as clipped.
+       Small on the right, because horizontal room is what a card title needs and a column is already the
+       narrowest thing on the board. */
     padding: 0 5px 6px 9px; margin-bottom: 12px;
   }
-  /* A trace of the group's hue on the cards inside it, so a card that has been
-     scrolled away from its heading still says which project it belongs to.
-     Much weaker than the block, and its own variable, because the two are
-     answering different questions: the block says "these belong together" and
-     wants to be seen, the card says "and so does this one" and must not
-     compete with the left edge, which is carrying status and is the more
-     urgent signal. Set `--card-tint` to 0 to turn it off entirely. */
+  /* A trace of the group's hue on the cards inside, so a card scrolled away from its heading still says which
+     project it belongs to. Much weaker than the block, and on its own variable, because it must not compete
+     with the left edge carrying status. Set `--card-tint` to 0 to turn it off entirely. */
   .cardgroup.project .card {
     background:
       linear-gradient(hsl(var(--ghue) 60% 45% / var(--card-tint)),
@@ -178,9 +155,8 @@
     font-size: var(--fs-lg); width: 13px; color: hsl(var(--ghue) 65% 60%);
   }
   .cardgroup.project > summary .gn { font-size: var(--fs-md); }
-  /* Sized against the card titles under it rather than against the pills
-     above. A group name is a heading for what follows, and at the pill size it
-     read as another filter that had drifted down the page. */
+  /* Sized against the card titles under it, not the pills above. At the pill size a group name read as another
+     filter that had drifted down the page. */
   .cardgroup.project > summary .gname {
     color: hsl(var(--ghue) 70% 72%); font-family: var(--mono); font-size: var(--fs-lg);
     font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -191,55 +167,44 @@
   }
   /* Nested inside a status group, the indent would stack. */
   .cardgroup .cardgroup.project { margin-left: 0; }
-  /* The pinned group. Louder than a project group on purpose: it is the one
-     you asked to always be able to find, and a wash the same strength as
-     everything else around it would defeat that. */
+  /* The pinned group, louder than a project group. It is the one you asked to always be able to find, and a
+     wash the same strength as everything around it would defeat that. */
   .cardgroup.project.pins {
     border-left-color: var(--warn);
     background: hsl(var(--ghue) 70% 50% / calc(var(--group-fill) + .06));
   }
-  /* Warn, moved toward the skin's own text colour rather than left at the raw
-     value. `--warn` is a mid amber, and the pinned block is the loudest wash
-     on the board, so at the fixed hue this group is drawn at the name scored
-     2.73 on `linen` and 2.95 to 3.08 on the other three light skins. The same
-     defect as the hover that raised lightness to a fixed 85%, arrived at from
-     the other direction. Blending toward `--head` darkens it on a light skin
-     and lightens it on a dark one, and it still reads as amber.
-     `scripts/check-contrast.js` found this and holds it. */
+  /* Warn, blended toward the skin's own text colour instead of left at the raw value. `--warn` is a mid amber,
+     and the pinned block is the loudest wash on the board, so at the fixed hue this group is drawn at, the name
+     scored 2.73 on `linen` and 2.95 to 3.08 on the other three light skins. Blending toward `--head` darkens it
+     on a light skin and lightens it on a dark one, and it still reads as amber. `scripts/check-contrast.js`
+     found this and holds it. */
   .cardgroup.project.pins > summary .gname {
     color: color-mix(in srgb, var(--warn) 60%, var(--head));
   }
 
-  /* One line: the name and its chips on the same row.
-     Two rows per card meant a column of eight filled the screen, so seeing
-     what a column held took scrolling, which is the one thing a column exists
-     to save you. The name takes the room it needs, the chips take what is
-     left, and they scroll sideways rather than wrapping the card tall again. */
+  /* One line: the name and its chips on the same row. Two rows per card meant a column of eight filled the
+     screen, so seeing what a column held took scrolling. The name takes the room it needs, the chips take what
+     is left, and they scroll sideways rather than wrapping the card tall again. */
   .card {
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     /* No group hue here. See the rule under `.cardgroup.project .card`. */
     border: 1px solid var(--stroke); border-radius: var(--r-md);
-    /* ON THE LADDER, both axes. The vertical was `8px * density` and the
-       horizontal a bare `12px`, so neither answered to text size: turning the
-       type up grew the chips and the name inside the card and left the room
-       around them where it was, which reads as a card that has run out of
-       space rather than as one with tight padding. */
+    /* Both axes on the ladder. With a bare `12px` horizontal and `8px * density` vertical, neither answered to
+       text size, so turning the type up grew the chips and the name and left the room around them where it
+       was, and the card read as out of space. */
     padding: var(--row-y-sm) calc(12px * var(--uiscale));
     margin-bottom: var(--vs-2); cursor: pointer;
     box-shadow: var(--shadow-card);
     transition: transform .16s ease, border-color .16s, box-shadow .16s;
   }
-  /* The name and its chips share a row. `why` is not on that row: it is a
-     sentence, and putting it in a flex line with the chips made it a third
-     item squeezed against the right edge with nowhere to wrap. */
+  /* The name and its chips share a row. `why` is a sentence, so it stays off that row: in a flex line with the
+     chips it became a third item squeezed against the right edge with nowhere to wrap. */
   .card .card-line {
     display: flex; align-items: center; gap: var(--sp-3);
   }
-  /* A card hovers in its group's color. A single blue for every card meant
-     the one thing you were pointing at stopped saying which project it was in,
-     which is the moment that answer matters most. --ghue is inherited from the
-     group, so a card outside one falls back to blue. */
+  /* A card hovers in its group's color. With a single blue, the card you were pointing at stopped saying which
+     project it was in. --ghue is inherited from the group, so a card outside one falls back to blue. */
   .card:hover {
     transform: translateY(-1px);
     border-color: var(--hover, var(--blue));
@@ -257,13 +222,12 @@
   .card .title {
     color: var(--head); font-weight: 600; font-size: var(--fs-md);
     display: flex; align-items: center; gap: var(--sp-2);
-    /* Shrinks before the chips do, since a truncated name is still readable
-       and a truncated duration is not. */
+    /* Shrinks before the chips do, since a truncated name is still readable and a truncated duration is not. */
     min-width: 0; flex: 0 1 auto;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  /* The stack's mark is 39px because a stack row is tall. On a one-line card
-     it sits inside the title, so it matches the text rather than dwarfing it. */
+  /* The stack's mark is 39px because a stack row is tall. On a one-line card it sits inside the title, so it
+     matches the text rather than dwarfing it. */
   .card .title .rmark {
     flex: none; width: 21px; height: 21px; border-radius: var(--r-sm);
   }
@@ -279,30 +243,27 @@
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
     animation: pulse 1.9s ease-in-out infinite;
   }
-  /* Opacity only. The box-shadow ripple this used to animate forced a full
-     repaint every frame; opacity composites on the GPU for near-zero CPU. */
+  /* Opacity only. Animating a box-shadow ripple forced a full repaint every frame. Opacity composites on the
+     GPU for near-zero CPU. */
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: .55; }
   }
-  /* `align-items: center`, because the default is `stretch` and a row of chips
-     is a row of different heights: one carries a glyph, the rest carry text.
-     Stretched, the shortest was pulled to the tallest and gained padding it
-     was never given. */
+  /* `align-items: center`, because the default `stretch` pulled the shortest chip up to the tallest and gave it
+     padding it was never set. A chip carrying a glyph is taller than one carrying text. */
   .chips { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .chip {
     font: 500 var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border-radius: var(--r-sm);
     background: var(--chip); color: var(--label); border: 1px solid transparent;
-    /* Most chips carry a duration that ticks, and a proportional `1` makes the
-       whole pill breathe in and out as the minutes pass. */
+    /* Most chips carry a duration that ticks, and a proportional `1` makes the whole pill breathe in and out
+       as the minutes pass. */
     font-variant-numeric: tabular-nums;
   }
   .chip.accent {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  /* A color per runner, so which harness a session is takes no reading. The
-     four are the seeded ones; anything else falls back to the neutral chip
-     rather than being given a color that means nothing. */
+  /* A color per runner, so which harness a session is takes no reading. These four are the seeded ones.
+     Anything else falls back to the neutral chip rather than a color that means nothing. */
   .chip.runner { background: var(--chip); color: var(--label); font-weight: 600; }
   .chip.runner[data-runner="claude"] {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke);
@@ -318,9 +279,8 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
-  /* Published. Danger rather than warn, and the same mark as the header, so a
-     card that is reachable from outside this machine says so in the colour
-     that means it. */
+  /* Published. Danger rather than warn, and the same mark as the header, so a card reachable from outside this
+     machine says so in the colour that means it. */
   .chip.shared {
     background: rgba(var(--danger-rgb),.16); border-color: var(--danger);
     color: var(--danger-text);
@@ -330,12 +290,10 @@
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;
   }
-  /* Live activity. A running tool breathes so a moving card is distinguishable
-     from a still one across a whole board, without reading it. */
+  /* Live activity. A running tool breathes, so a moving card reads as moving from across a whole board. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* Give tool, thinking, and compacting states distinct motion. Animate only
-     transform and opacity to avoid per-frame layout and paint work. Finished,
-     dead, and shelved cards have no activity chip. */
+  /* Distinct motion for the tool, thinking and compacting states. Animate only transform and opacity, to avoid
+     per-frame layout and paint work. Finished, dead and shelved cards have no activity chip. */
   .chip.live.tool::before,
   .chip.live.thinking::before,
   .chip.live.compacting::before {
@@ -347,39 +305,35 @@
   @keyframes livesqueeze { 0%, 100% { transform: scaleX(1); opacity: .95; } 50% { transform: scaleX(.2); opacity: .6; } }
   .chip.live.tool::before { animation: livebreathe 1.8s ease-in-out infinite; }
   .chip.live.thinking::before { animation: livebob 1.5s ease-in-out infinite; }
-  /* Use a squeezing bar for compaction. Keep the live teal colour to distinguish
-     current activity from the context warning that predicts compaction. */
+  /* A squeezing bar for compaction, still in the live teal, so current activity stays apart from the context
+     warning that predicts compaction. */
   .chip.live.compacting::before {
     width: 9px; height: 3px; border-radius: 1px;
     animation: livesqueeze 1.2s ease-in-out infinite;
   }
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
-  /* Disable activity animations in hidden tabs; stillWhenHidden sets the class. */
+  /* No activity animation in a hidden tab. `stillWhenHidden` sets the class. */
   body.tabhidden .chip.live::before { animation: none; }
   .chip.sub { background: rgba(var(--path-rgb),.12); color: var(--path); }
-  /* How much context a session has burned, from its statusline.
-     Quiet until it matters. Most of a session's life is spent under half a
-     window, and a chip that is lit the whole time is a chip you stop reading,
-     so the colour only arrives when the number starts deciding something. */
+  /* How much context a session has burned, from its statusline. Most of a session's life is spent under half a
+     window, so the colour only arrives when the number starts deciding something. */
   .chip.ctx { background: var(--hairline); color: var(--dim); }
   .chip.ctx.warm { background: var(--warn-bg); color: var(--warn); }
   .chip.ctx.hot {
     background: rgba(var(--danger-rgb),.16); border-color: var(--danger);
     color: var(--danger-text);
   }
-  /* A rolling account limit, drawn only when it is close enough to change a
-     plan. Below that it is a fact about billing and not about this card. */
+  /* A rolling account limit, drawn only when it is close enough to change a plan. Below that it is a fact about
+     billing and not about this card. */
   .chip.limit { background: var(--warn-bg); color: var(--warn); }
-  /* Nothing heard, and no process id to check. Dimmed rather than warned
-     about: it may be working, and a card that shouts is a card you distrust. */
+  /* Nothing heard, and no process id to check. Dimmed rather than warned about, since it may still be
+     working. */
   .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
   .card.nocontact { opacity: .68; }
   .card.nocontact:hover { opacity: 1; }
-  /* Everything that repeats forever, stopped, in ONE place.
-     Scattered per-rule opt-outs are how two of these came to animate through
-     reduced motion for months: the block only named the chips somebody
-     thought of. This names the animations instead, so a new one is covered by
-     having been written rather than by being remembered. */
+  /* Every forever-repeating animation stopped in one place. Scattered per-rule opt-outs let two of these
+     animate through reduced motion for months, because the block only named the chips somebody thought of.
+     Naming the animations here covers a new one as soon as it is written. */
   @media (prefers-reduced-motion: reduce) {
     .pulse, .chip.live.tool, .chip.auto, .gauto.on, .tab .count#c-perm,
     button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
@@ -387,17 +341,10 @@
       animation: none; opacity: 1; transform: none;
     }
   }
-  /* A card's text is SELECTABLE, and there is nothing here that stops it.
-     This is the whole reason dragging a card is gone: a card carries a path, a
-     branch, a wire name and an error, and every one of those is something you
-     want on the clipboard. A drag gesture takes the pointer before a selection
-     can start, and no amount of care in the handler gives it back.
-
-     So three rules used to live here and are gone with it: the dragged card's
-     opacity, the insertion line drawn on its neighbor, and the tint on the
-     column being dropped into. No `user-select: none` replaced them. The ones
-     left on this page are on headings you click to fold, which select nothing
-     worth copying. */
+  /* A card's text is selectable and nothing here stops it. That is why dragging a card is gone: a card carries
+     a path, a branch, a wire name and an error, all things you want on the clipboard, and a drag gesture takes
+     the pointer before a selection can start. Do not add `user-select: none` here. The ones left on this page
+     are on headings you click to fold, which select nothing worth copying. */
 
   /* The card action menu. */
   #cardmenu {
@@ -411,26 +358,23 @@
     display: block; width: 100%; text-align: left; padding: 7px 11px;
     border: none; background: transparent; color: var(--label);
     font-size: var(--fs-base); border-radius: var(--r-sm); cursor: pointer;
-    /* The positioning context for `#cardmenu .sub`, which is absolute and is
-       drawn inside the row that owns it. */
+    /* The positioning context for `#cardmenu .sub`, which is absolute and drawn inside the row that owns it. */
     position: relative;
   }
   #cardmenu button:hover { background: var(--lift); color: var(--head); }
   #cardmenu button.danger { color: var(--warn); }
-  /* An entry that still works but does less than its name suggests. Dimmed,
-     not disabled: disabling unshelve would strand a card on the shelf. */
+  /* An entry that still works but does less than its name suggests. Dimmed and not disabled, because disabling
+     unshelve would strand a card on the shelf. */
   #cardmenu button.limited { color: var(--dim); }
   #cardmenu button .note {
     display: block; font-size: var(--fs-xs); color: var(--dimmest); margin-top: 2px;
   }
   #cardmenu button.limited .note { color: var(--warn); opacity: .8; }
-  /* A toggle. The label names the thing and the lamp says whether it is on,
-     so the entry reads as a state rather than as an instruction whose meaning
-     you have to invert to learn what is true now. */
-  /* A NUMBER YOU CAN HOLD DOWN OR TYPE INTO. The rest of this menu is rows
-     you press once, so this one is deliberately shaped like a control rather
-     than like an entry: no hover highlight across the whole row, because the
-     row does nothing and only the three things in it do. */
+  /* A toggle. The label names the thing and the lamp says whether it is on, so the entry reads as a state and
+     not as an instruction you have to invert to learn what is true now. */
+  /* A number you can hold down or type into. The rest of this menu is rows you press once, so this one is
+     shaped like a control: no hover highlight across the whole row, because the row does nothing and only the
+     controls in it do. */
   #cardmenu .stepper {
     display: flex; align-items: center; gap: 4px; padding: 5px 11px;
     color: var(--label); font-size: var(--fs-base);
@@ -447,10 +391,9 @@
     border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
     background: var(--shell-1); color: var(--head);
     font: var(--fs-base) var(--mono);
-    /* The browser's own spinners, gone. There are two buttons either side of
-       this doing the same job at a size a pointer can hit. Firefox answers the
-       appearance properties here and Chromium answers the pseudo elements
-       below, so both are set. */
+    /* The browser's own spinners, gone: two buttons either side already do the job at a size a pointer can
+       hit. Firefox answers the appearance properties here and Chromium answers the pseudo elements below, so
+       both are set. */
     -moz-appearance: textfield; appearance: textfield;
   }
   #cardmenu .stepper .stepval::-webkit-inner-spin-button,
@@ -464,66 +407,60 @@
     background: var(--chip); border: 1px solid var(--stroke-dim); color: var(--dimmest);
   }
   #cardmenu button.toggle.on { color: var(--head); }
-  /* On, and not yours to change. The lamp still says what is true; the label
-     is dim because pressing it does nothing, and `.toggle.on` would otherwise
-     brighten it back up and undo the one signal that says so. */
+  /* On, and not yours to change. The lamp still says what is true. The label stays dim because pressing it does
+     nothing, and `.toggle.on` would otherwise brighten it back up and undo the one signal that says so. */
   #cardmenu button.toggle.on.limited { color: var(--dim); }
   #cardmenu button.toggle.on .lamp {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke);
     color: var(--chip-accent-text);
   }
-  /* The card's mark as the notification will draw it. Same PNG, at the size
-     Windows uses, so a glyph that comes out as a box comes out as a box here. */
+  /* The card's mark as the notification will draw it. Same PNG, at the size Windows uses, so a glyph that comes
+     out as a box comes out as a box here. */
   .iconpreview { display: flex; align-items: center; flex: none; }
   .iconpreview img {
     width: 32px; height: 32px; border-radius: var(--r-sm); display: block;
     border: 1px solid var(--stroke-dim);
   }
 
-  /* A row that opens a flyout rather than doing something. The caret says so,
-     since a row that ignores a click and has no other sign is a broken row. */
+  /* A row that opens a flyout rather than doing something. The caret says so, since a row that ignores a click
+     and has no other sign is a broken row. */
   #cardmenu button .more {
     margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs);
   }
   #cardmenu button.toggle .more, #cardmenu button .lamp + .more { margin-left: 0; }
-  /* Drawn INSIDE the row that owns it, and overlapping it by a few pixels, so
-     the pointer never crosses a gap where neither is hovered and the flyout
-     vanishes on the way to it. */
+  /* Drawn inside the row that owns it, overlapping it by a few pixels, so the pointer never crosses a gap where
+     neither is hovered and the flyout vanishes on the way to it. */
   #cardmenu .sub {
     display: none; position: absolute; left: 100%; top: -5px; margin-left: -6px;
     padding: 5px; min-width: 168px; border-radius: var(--r-md);
     background: var(--shell-0); border: 1px solid var(--stroke);
     box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55); z-index: 2;
   }
-  /* OPENED AND CLOSED BY SCRIPT, not by `:hover`.
-     `:hover` closes a flyout the instant the pointer leaves the row, and the
-     row is 30px tall: reaching across to a flyout entry means travelling
-     diagonally, and clipping the edge for one frame took the whole thing away.
-     The class is added on enter and removed after a delay on leave, so a slip
-     is survivable. See `wireFlyouts`. */
+  /* Opened and closed by script, not by `:hover`. `:hover` closes a flyout the instant the pointer leaves the
+     row, and the row is 30px tall, so reaching a flyout entry diagonally clipped the edge for one frame and
+     took the whole thing away. The class is added on enter and removed after a delay on leave, so a slip is
+     survivable. See `wireFlyouts`. */
   #cardmenu button.subopen .sub { display: block; }
   #cardmenu .subitem {
     display: flex; align-items: center; gap: var(--sp-3); padding: 7px 11px;
     border-radius: var(--r-sm); color: var(--label); cursor: pointer;
-    /* `in its own window` wrapped onto two lines in a flyout wide enough for
-       it, because the box was sized by its shortest entry. The flyout grows
-       instead. */
+    /* `in its own window` wrapped onto two lines because the box was sized by its shortest entry. The flyout
+       grows instead. */
     white-space: nowrap;
   }
   /* Room for the bubble, which is drawn against the entry it explains. */
   #cardmenu button .help { margin-left: 7px; }
   #cardmenu .subitem:hover { background: var(--lift); color: var(--head); }
   #cardmenu .subitem svg { flex: none; }
-  /* A group inside a flyout, and a line saying what a group cannot do.
-     Neither is a target: no hover, no pointer, nothing to press. A heading
+  /* A group inside a flyout, and a line saying what a group cannot do. Neither is a target, because a heading
      that lights up under the pointer is a heading somebody will click. */
   #cardmenu .subhead {
     display: block; padding: 8px 11px 4px; white-space: nowrap;
     font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase;
     color: var(--dimmest);
   }
-  /* The first one needs no gap above it: the flyout's own padding is enough,
-     and a heading floating below the top edge reads as a dropped row. */
+  /* The first one needs no gap above it. The flyout's own padding is enough, and a heading floating below the
+     top edge reads as a dropped row. */
   #cardmenu .subhead:first-child { padding-top: 3px; }
   #cardmenu .subnote {
     display: block; padding: 5px 11px 7px; white-space: nowrap;
@@ -533,8 +470,8 @@
   #cardmenu.flip .sub { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
   #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
 
-  /* Recoloring a group. Hues only, at the lightness the board draws them at,
-     so every swatch is a color a group can actually be. */
+  /* Recoloring a group. Hues only, at the lightness the board draws them at, so every swatch is a color a group
+     can actually be. */
   .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: 4px; }
   .swatch {
     width: 34px; height: 34px; border-radius: var(--r-md); cursor: pointer; padding: 0;
@@ -543,9 +480,8 @@
   }
   .swatch:hover { border-color: var(--head); }
 
-  /* A folder scope reads differently from a command pattern, so it looks
-     different. Getting the two confused is how a rule ends up wider than
-     anyone agreed to. */
+  /* A folder scope reads differently from a command pattern, so it looks different. Confusing the two is how a
+     rule ends up wider than anyone agreed to. */
   .hint.path { border-color: rgba(var(--path-rgb),.35); color: var(--path); }
   .patview.path,
   code.path { color: var(--path); }
@@ -556,7 +492,7 @@
     word-break: break-all;
   }
   .dirlist { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-3); }
-  /* Highlight the selected folder; the separate open button navigates into it. */
+  /* Highlight the selected folder. The separate open button navigates into it. */
   .dirlist .drow {
     display: flex; align-items: center; gap: var(--sp-2);
     border-radius: var(--r-sm); border: 1px solid transparent;
@@ -578,10 +514,9 @@
   }
   .dirlist .into:hover { color: var(--head); border-color: var(--teal); }
   .dirlist .dir .ic { color: var(--dimmest); font-size: var(--fs-xs); }
-  /* A checkout, so a folder of thirty shows which few are repositories. Two
-     selectors because `repo` lands on different elements in the two lists the
-     picker draws: on the `.dir` button in the project list, and on the `.drow`
-     wrapper in the directory browser. */
+  /* A checkout, so a folder of thirty shows which few are repositories. Two selectors because `repo` lands on
+     different elements in the two lists the picker draws: on the `.dir` button in the project list, and on the
+     `.drow` wrapper in the directory browser. */
   .dirlist .dir.repo .ic,
   .dirlist .drow.repo .ic { color: var(--teal); }
   .dirlist .dir.repo .nm,
@@ -611,8 +546,8 @@
   .dirlegend .ic.repo { color: var(--teal); }
   .dirlegend b { color: var(--dim); font-weight: 600; }
   .quickdirs { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-2); }
-  /* Full width rows rather than pills. A path is long, and a row of truncated
-     pills is a row of buttons you have to hover to tell apart. */
+  /* Full width rows rather than pills. A path is long, and a row of truncated pills is a row of buttons you
+     have to hover to tell apart. */
   .quickdir {
     font: var(--fs-sm) var(--mono); padding: 6px 11px; border-radius: var(--r-sm);
     background: var(--hairline); border: 1px solid var(--stroke-dim);
@@ -640,9 +575,8 @@
   .rev-group[open] > summary::before { content: "\25BE"; }
   .rev-group > summary .tool { color: var(--head); font-weight: 600; }
   .rev-group > summary .n { color: var(--dimmest); font: var(--fs-base) var(--mono); }
-  /* The same table the card's own history uses: verdict, count, command,
-     what answered it. Two lists of the same decisions read as two different
-     things when only one of them is a table. */
+  /* The same table the card's own history uses: verdict, count, command, what answered it. Two lists of the
+     same decisions read as two different things when only one of them is a table. */
   .rev-rows {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
     background: rgba(var(--sink-rgb),.35); overflow: hidden; margin-top: 6px;

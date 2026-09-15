@@ -272,13 +272,19 @@ async function loadFiles(path, ctx) {
   // onclick attribute, and HTML escaping does nothing about that.
   const host = document.getElementById(ctx.list);
   host.querySelectorAll(".frow.dir").forEach(el => {
-    el.onclick = () => loadFiles(el.dataset.dir, ctx);
+    el.onclick = () => { if (!droppedASelection()) loadFiles(el.dataset.dir, ctx); };
   });
   host.querySelectorAll(".chip.open").forEach(el => {
-    el.onclick = ev => { ev.stopPropagation(); openOnDaemon(ctx.id, el.dataset.open); };
+    el.onclick = ev => {
+      ev.stopPropagation();
+      if (!droppedASelection()) openOnDaemon(ctx.id, el.dataset.open);
+    };
   });
   host.querySelectorAll(".chip.edit").forEach(el => {
-    el.onclick = ev => { ev.stopPropagation(); openEditor(ctx.id, el.dataset.edit); };
+    el.onclick = ev => {
+      ev.stopPropagation();
+      if (!droppedASelection()) openEditor(ctx.id, el.dataset.edit);
+    };
   });
   // A tick must not also walk into the directory it is on.
   host.querySelectorAll(".fpick").forEach(el => {
@@ -286,6 +292,27 @@ async function loadFiles(path, ctx) {
     el.onchange = () => paintPicked(ctx);
   });
   paintPicked(ctx);
+}
+
+// Did this click just finish selecting text, rather than mean anything?
+//
+// Dragging across a filename to copy it ends in a `click` on whatever was under
+// the pointer when the button came up, and the file rows answer a click by
+// walking into a directory or opening an editor. So copying a path out of the
+// list opened the thing you were copying the name of.
+//
+// CHECKED AT CLICK TIME, WHICH IS THE ONLY MOMENT IT ANSWERS CORRECTLY. A plain
+// click collapses whatever was selected on mousedown, so by the time the click
+// arrives there is no selection and this is false. A drag keeps its selection
+// through mouseup, so the click that ends one sees it and this is true. That
+// means an unrelated selection elsewhere on the page does NOT block a click
+// here, which is the behaviour you want and is easy to get wrong by testing for
+// a selection earlier in the sequence.
+//
+// `isSelecting` is the board's existing answer to the same question, used to
+// hold repaints while somebody is mid-drag. Same test, so the two cannot drift.
+function droppedASelection() {
+  return typeof isSelecting === "function" && isSelecting();
 }
 
 // The download button, painted from what is ticked.

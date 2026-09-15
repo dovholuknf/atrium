@@ -1,17 +1,17 @@
+  /* The file browser, plus the note and the question a card carries and the messages queued for it.
+     `.filelist .frow` is declared here and rows.css re-declares it to add a grid column, so this file has to
+     stay ahead of rows.css in the load order. */
   /* ── the file browser ───────────────────────────────── */
-  /* Shaped like a repository listing rather than like a file manager: one
-     directory at a time, a breadcrumb across the top, folders first, and the
-     facts about a row right-aligned in their own tracks so the eye can run
-     down them. Miller columns and a tree both want horizontal room, and the
-     place this matters most is a popped-out window at 900px. */
+  /* Shaped like a repository listing: one directory at a time, a breadcrumb across the top, folders first, and
+     the facts about a row right-aligned in their own tracks so the eye can run down them. Miller columns and a
+     tree both want horizontal room, and the place this matters most is a popped-out window at 900px. */
   .filebar {
     display: flex; gap: var(--sp-2); align-items: center; margin-bottom: 6px;
     flex-wrap: wrap;
   }
   .filebar code { font-size: var(--fs-xs); color: var(--dim); }
-  /* The path as steps you can press, not a string with an `up` button beside
-     it. Walking three deep and back was three presses of a control that says
-     nothing about where it goes. */
+  /* The path as steps you can press. An `up` button costs three presses to walk back out of three directories,
+     and it says nothing about where it goes. */
   .crumbs {
     display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
     font: var(--fs-xs) var(--mono); min-width: 0; flex: 1 1 auto;
@@ -21,8 +21,7 @@
     white-space: nowrap;
   }
   .crumbs .crumb:hover { background: var(--lift); color: var(--head); }
-  /* Where you are. Not pressable, because pressing it reloads what is already
-     on screen. */
+  /* Where you are. Not pressable, because pressing it reloads what is already on screen. */
   .crumbs .crumb.here { color: var(--head); cursor: default; }
   .crumbs .crumb.here:hover { background: none; }
   .crumbs .sep { color: var(--dimmest); }
@@ -30,9 +29,8 @@
     max-height: 240px; overflow-y: auto;
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
   }
-  /* A grid, not a flex row, so the size, the time and the actions line up down
-     the list however long a name is. The name takes what is left; the other
-     three are as wide as their widest content and no wider. */
+  /* A grid rather than a flex row, so the size, the time and the actions line up down the list however long a
+     name is. The name takes what is left, and the other three are as wide as their widest content. */
   .filelist .frow {
     display: grid; grid-template-columns: 1fr auto auto auto;
     gap: var(--sp-3); align-items: center;
@@ -47,8 +45,8 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .filelist .frow.dir .fname { color: var(--teal); }
-  /* The glyph. Colored by what the file is, so a directory of Go and a
-     directory of markdown are tellable apart before reading a word. */
+  /* The glyph. Coloured by what the file is, so a directory of Go and a directory of markdown are tellable
+     apart before reading a word. */
   .filelist .ficon { flex: none; display: block; color: var(--dimmest); }
   .filelist .frow.dir .ficon { color: var(--teal); }
   .filelist .ficon.go { color: var(--blue); }
@@ -62,21 +60,19 @@
   }
   .filelist .fwhen {
     color: var(--dimmest); font-family: var(--mono); white-space: nowrap;
-    /* Room for the widest form this ever prints, so the column does not jog
-       between `today 08:06` and `sep 4`. */
+    /* Room for the widest form this ever prints, so the column does not jog between `today 08:06` and
+       `sep 4`. */
     min-width: 15ch; text-align: right;
   }
-  /* The two actions, on the row that the pointer is over. Always present in
-     the layout, so nothing shifts when they appear: a row whose contents move
-     under the cursor is a row you click the wrong part of. */
+  /* The two actions, on the row the pointer is over. Always present in the layout, so nothing shifts when they
+     appear: a row whose contents move under the cursor is a row you click the wrong part of. */
   .filelist .facts { display: flex; gap: var(--sp-2); visibility: hidden; }
   .filelist .frow:hover .facts, .filelist .frow:focus-within .facts { visibility: visible; }
   .filelist .facts .chip { text-decoration: none; cursor: pointer; }
   .filelist .chip { text-decoration: none; }
-  /* Tags already in use, offered so the second card spells one the same way
-     as the first. */
-  /* Messages said and not yet arrived. Dimmed, because the interesting state
-     is how many are stacked up, not what each one said. */
+  /* Tags already in use, offered so the second card spells one the same way as the first. */
+  /* Messages said and not yet arrived. Dimmed, because the interesting fact is how many are stacked up rather
+     than what each one said. */
   .queued { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
   .queued .q {
     display: flex; gap: var(--sp-2); align-items: baseline;
@@ -86,8 +82,7 @@
   .queued .q .txt {
     color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1;
   }
-  /* A hook that is offered rather than wanted. Quieter, because it being off
-     is a decision rather than a gap. */
+  /* A hook that is offered rather than wanted. Quieter, because it being off is a decision and not a gap. */
   .row.line.optional .tool { color: var(--label); }
   .hintline.warn { color: var(--warn); }
   .tagsuggest { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: 8px; }
@@ -102,57 +97,49 @@
   .why {
     font-size: var(--fs-sm); color: var(--dim); margin-top: 9px; padding-top: 8px;
     border-top: 1px solid rgba(var(--stroke-rgb),.35); font-style: italic;
-    /* A note is free text, so it can be one long unbroken run. Without this it
-       sets its own minimum width and pushes the card wider than its lane. */
+    /* A note is free text, so it can be one long unbroken run. Without this it sets its own minimum width and
+       pushes the card wider than its lane. */
     min-width: 0; overflow-wrap: anywhere;
   }
-  /* On a card it is a sentence under the name, so it wraps and stays quiet.
-     Tighter than the default spacing above, since the card is now one line and
-     a full separator under it made the note look like a second card. */
+  /* On a card it is a sentence under the name, so it wraps and stays quiet. Tighter than the default spacing
+     above: the card is one line, and a full separator under it made the note look like a second card. */
   .card .why {
     margin-top: 7px; padding-top: 6px; font-size: var(--fs-xs);
     white-space: normal;
   }
-  /* On a stack row it shares the line with everything else, so it gets one
-     line and an ellipsis rather than growing the row. */
+  /* On a stack row it shares the line with everything else, so it gets one line and an ellipsis rather than
+     growing the row. */
   .stackrow .who .why {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     margin-top: 4px; padding-top: 4px;
   }
-  /* A QUESTION, WHICH IS NOT A NOTE. See `askLine`.
-     Never italic and never dim: `why` owns that voice, and the whole point is
-     that these two do not read alike. It wears the warn tints instead, which
-     is what everything else meaning "somebody is waiting" wears, and the
-     border down the left is what makes it a quote rather than a sentence
-     somebody left behind. */
+  /* A question, which is not a note. See `askLine`. Never italic and never dim, since `why` owns that voice and
+     these two must not read alike. It wears the warn tints that everything else meaning "somebody is waiting"
+     wears, and the border down the left makes it a quote rather than a sentence somebody left behind. */
   .ask {
     font-size: var(--fs-sm); color: var(--body); margin-top: 9px;
     padding: 6px 9px; border-left: 2px solid var(--warn);
     background: var(--warn-bg-soft); border-radius: 0 4px 4px 0;
-    /* Free text, so it can be one long unbroken run. Without this it sets its
-       own minimum width and pushes the card wider than its lane. */
+    /* Free text, so it can be one long unbroken run. Without this it sets its own minimum width and pushes the
+       card wider than its lane. */
     min-width: 0; overflow-wrap: anywhere;
   }
   .ask .asklabel {
     display: block; color: var(--warn); font-size: var(--fs-xxs);
     letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px;
   }
-  /* Pressing it answers it, so it says so under the pointer. The border is what
-     brightens rather than the text: the question is already the loudest thing
-     on the row and making it louder still reads as a state change. */
-  /* How many more questions are behind this one.
-     In the ask's own warn colour rather than a quieter grey: it is part of the
-     question, and a card waiting on six things is not a quieter fact than one
-     waiting on one. It cannot wrap on its own, so it stays attached to the
-     text it qualifies. */
+  /* Pressing it answers it, so it says so under the pointer. The border brightens rather than the text: the
+     question is already the loudest thing on the row, and making it louder reads as a state change. */
+  /* How many more questions are behind this one, in the ask's own warn colour rather than a quieter grey, since
+     a card waiting on six things is not a quieter fact than one waiting on one. It cannot wrap on its own, so
+     it stays attached to the text it qualifies. */
   .ask .askmore {
     margin-left: 7px; padding: 1px 6px; border-radius: 999px;
     background: var(--warn-bg); color: var(--warn);
     font-size: var(--fs-xxs); letter-spacing: .03em; white-space: nowrap;
   }
-  /* The questions behind the one the dialog is showing. Indented under it and
-     quieter than it: the field above is the one being answered, and these are
-     what is still waiting after it. */
+  /* The questions behind the one the dialog is showing. Indented under it and quieter: the field above is the
+     one being answered, and these are what is still waiting after it. */
   .askrest { margin-top: 8px; }
   .askrestone {
     padding: 4px 0 4px 9px; border-left: 1px solid var(--warn-stroke);
@@ -160,17 +147,16 @@
   }
   .ask.act { cursor: pointer; }
   .ask.act:hover { background: var(--warn-bg); }
-  /* The same gesture in the card dialog. The textarea is read only, so a click
-     lands here rather than in a field that would take the caret and do
-     nothing, and the border on the left is what says this is the question
-     rather than another thing to fill in. */
+  /* The same gesture in the card dialog. The textarea is read only, so a click lands here rather than in a
+     field that would take the caret and do nothing, and the border on the left says this is the question rather
+     than another thing to fill in. */
   .askfield {
     cursor: pointer; border-left: 2px solid var(--warn); padding-left: 9px;
   }
   .askfield textarea { cursor: pointer; }
   .card .ask { font-size: var(--fs-xs); margin-top: 7px; }
-  /* On a stack row it shares the line with everything else, so the label sits
-     beside the question and the whole thing gets one line. */
+  /* On a stack row it shares the line with everything else, so the label sits beside the question and the whole
+     thing gets one line. */
   .stackrow .who .ask {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     margin-top: 4px; padding: 2px 7px;
