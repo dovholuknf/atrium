@@ -1,13 +1,19 @@
+  /* The terminal theme editor, and every board skin.
+
+     Load order is tokens, chrome, cards, sharing, notify, files, rows, terminal, dialogs, phone, themes. This
+     file loads last: each `:root[data-skin=...]` block overrides the `:root` palette in `css/tokens.css`, and
+     at the same specificity it only wins by coming later. The `:root` defaults live in `css/tokens.css` and the
+     skin blocks live here, so anything checking that the two agree has to read both files. */
+
   /* ── the terminal theme editor ─────────────────────────
-     THE TERMINAL'S COLOURS, which are the other system. The skins below are
-     the board around it. See the header on that block.
+     The terminal's colours. The skins below are the board around it, and the
+     header on that block explains the difference.
 
      Every colour is two controls on one line: the operating system's colour
-     picker, and the hex beside it. Both are needed and neither is enough. The
-     picker is how you nudge a green that is slightly too dark, and it is the
-     only one of the two that shows you the colour. The hex is how you paste
-     the value you already have, which is what somebody bringing a scheme they
-     have used for years is actually doing. */
+     picker, and the hex beside it. The picker is how you nudge a green that is
+     slightly too dark, and it is the only one of the two that shows you the
+     colour. The hex is how you paste a value you already have, which is what
+     somebody bringing a scheme they have used for years is doing. */
   .thgrid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: var(--vs-2) var(--sp-3);
@@ -31,13 +37,11 @@
      saying so at the box is the difference between a fix and a hunt. */
   .thslot input[type="text"].bad { border-color: var(--danger); color: var(--danger-text); }
 
-  /* WHAT A THEME LOOKS LIKE, without needing a session attached.
-     The terminal bar's picker previews against real output and is the better
-     answer whenever there IS real output. There is not always: a theme brought
-     at nine in the morning has nothing running yet, and an editor that can only
-     be judged with a session open is an editor nobody opens first. So this is
-     the ansi block and a line of ordinary terminal text, painted from the boxes
-     above as they change. */
+  /* What a theme looks like without a session attached. The terminal bar's
+     picker previews against real output and is better whenever there is real
+     output, but a theme brought in at nine in the morning has nothing running
+     yet. So this is the ansi block and a line of ordinary terminal text,
+     painted from the boxes above as they change. */
   .thsample {
     font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
     padding: var(--sp-3) var(--sp-4); border-radius: 8px;
@@ -46,44 +50,34 @@
   .thsample .sw { display: inline-block; width: 1.6em; text-align: center; }
 
   /* ── skins ─────────────────────────────────────────────
-     THE BOARD'S OWN COLOURS. Not the terminal's.
+     The board's own colours, not the terminal's. There are two theme systems
+     in this page and confusing them is the trap. A terminal theme is sixteen
+     ANSI colours plus a foreground, a background and a cursor, handed to
+     `term.options.theme`, and there are fifty two of them. It belongs to one
+     terminal, and two terminals side by side may reasonably differ. A skin is
+     the chrome around them, and it cannot differ, because there is one board.
 
-     There are two theme systems in this page and confusing them is the trap.
-     A TERMINAL theme is sixteen ANSI colours plus a foreground, a background
-     and a cursor, handed to `term.options.theme`, and there are fifty two of
-     them. It belongs to a terminal, and two terminals side by side may
-     reasonably differ. A SKIN is the chrome around them, and it cannot differ,
-     because there is one board.
+     Each block below moves the palette and nothing else. The type ladder, the
+     space ladder, the radii and the shadow geometry are layout, and `--uiscale`
+     and `--density` already answer the size question for the operator.
 
-     Each block below overrides the palette and NOTHING ELSE. The type ladder,
-     the space ladder, the radii and the shadow geometry are layout, not
-     colour: a skin that moved them would be a different board rather than the
-     same board in another colour, and `--uiscale` and `--density` already
-     answer the size question and belong to the operator.
+     The skin goes on `:root`, not on `body`. The palette derives its solids
+     from its triples: `--teal` is declared as `rgb(var(--teal-rgb))`, and a
+     custom property resolves against the element it is declared on, so `--teal`
+     on `:root` reads `:root`'s own triple and nothing lower down can change it.
+     Overriding the triples on `body` left every derived colour at the default
+     while every plain hex changed: the right background with blue borders, blue
+     pills and a teal accent. Moving the skin and the derivations apart brings
+     that back, and it looks like a skin that is nearly right.
 
-     ON `:root`, NOT ON `body`, AND THAT IS NOT A DETAIL.
+     Every skin declares the same set. One missing falls through to the default
+     and leaves a single wrong-coloured element nobody notices for a month, so
+     `scripts/check-skins.sh` counts them rather than trusting the eye.
 
-     The palette derives its solids from its triples: `--teal` is declared as
-     `rgb(var(--teal-rgb))`. A custom property is resolved against the element
-     it is DECLARED on, so `--teal` on `:root` reads `:root`'s own triple and
-     nothing lower down can change that. Overriding the triples on `body` left
-     every derived colour at the default while every plain hex changed, which
-     came out as a board with the right background and blue borders, blue
-     pills and a teal accent.
-
-     So the skin goes on the same element the derivations do. Anything that
-     moves them apart brings the whole failure back, and it does not look like
-     a failure: it looks like a skin that is nearly right.
-
-     Every skin declares the same set. A skin missing one falls through to the
-     default and produces one wrong-coloured element that nobody notices for a
-     month, so `scripts/check-skins.sh` counts them rather than trusting the
-     eye.
-
-     ALL TEN ARE DARK, deliberately. `--lift` and `--hairline` are white at low
-     alpha and every shadow is near-black, so light would need a second set of
-     those rather than a different palette, and the terminal underneath is dark
-     whatever the board does. A light board is a separate piece of work. */
+     All ten here are dark. `--lift` and `--hairline` are white at low alpha and
+     every shadow is near-black, so light needs a second set of those rather
+     than a different palette, and the terminal underneath is dark whatever the
+     board does. */
 
   /* Neutral near-black and ice cyan. The one that gets out of the way. */
   :root[data-skin="graphite"] {
@@ -114,7 +108,7 @@
   }
 
   /* Forest black and lime. The only skin where the accent is louder than the
-     warning, which suits a board you look at rather than watch. */
+     warning. */
   :root[data-skin="moss"] {
     --sink-rgb: 5,12,8; --bg1-rgb: 8,18,13;
     --shell0-rgb: 14,30,21; --shell1-rgb: 9,21,15;
@@ -234,21 +228,18 @@
   }
 
   /* ── the light ones ────────────────────────────────────
-     WHAT MADE THESE POSSIBLE is `--lift`, `--lift-strong` and `--hairline`
-     becoming part of a skin. They are white at low alpha on every dark skin,
-     which is how a hovered row lifts off its background. On a light one that
-     is invisible, so light skins use BLACK at low alpha and a hover reads as a
-     press rather than a glow.
+     These work because `--lift`, `--lift-strong` and `--hairline` are part of a
+     skin. They are white at low alpha on a dark skin, which is how a hovered
+     row lifts off its background, and invisible on a light one. So light skins
+     use black at low alpha, and a hover reads as a press rather than a glow.
 
-     The shadows follow the same rule through `--shadow-rgb`: near-black under
-     a dark board is right, and under a light one it wants to be the tinted
-     grey of the paper rather than a hole.
+     `--shadow-rgb` follows the same rule: near-black under a dark board, and
+     the tinted grey of the paper under a light one, so a shadow is not a hole.
 
-     The recess is INVERTED here, and it is the thing most likely to look wrong
-     if a colour is edited by eye. On a dark skin `--sink-rgb` is darker than
-     the page, so an input reads as a hole. On a light skin it is darker too,
-     which still reads as a hole. It is the CARDS that flip: they go lighter
-     than the page rather than darker. */
+     The recess is inverted here, which is what most often looks wrong if a
+     colour is edited by eye. `--sink-rgb` is darker than the page on either
+     kind, so an input still reads as a hole. It is the cards that flip: they go
+     lighter than the page rather than darker. */
 
   /* Warm white and ink. The one that reads like a printed page. */
   :root[data-skin="paper"] {

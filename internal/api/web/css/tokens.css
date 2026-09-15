@@ -121,20 +121,16 @@
 
   }
   * { box-sizing: border-box; }
-  /* An author rule with a display value outranks the browser's built-in
-     [hidden] rule, so .board's display:grid kept the board visible on every
-     tab. This has to win. */
+  /* An author rule with a display value outranks the browser's built-in [hidden] rule, so .board's
+     display:grid kept the board visible on every tab. This has to win. */
   [hidden] { display: none !important; }
   html, body { height: 100%; }
-  /* The page fills the window and never scrolls as a whole. The views that
-     need to scroll do it inside themselves.
+  /* The page fills the window and never scrolls as a whole. The views that need to scroll do it inside
+     themselves.
 
-     This replaces measuring the header and subtracting it from 100dvh. That
-     arithmetic was always a few pixels out in one direction or the other,
-     because the thing being measured changes height after the measurement:
-     fonts settle, a badge appears, the nav wraps. Being over by two pixels is
-     a page scrollbar on every screen, which is what this was. A flex column
-     has nothing to be wrong about. */
+     A flex column rather than 100dvh minus a measured header. The header changes height after it is measured,
+     because fonts settle, a badge appears and the nav wraps, and being two pixels over is a page scrollbar on
+     every screen. */
   body {
     margin: 0; color: var(--body);
     height: 100%; display: flex; flex-direction: column; overflow: hidden;

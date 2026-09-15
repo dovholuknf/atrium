@@ -1,4 +1,11 @@
 
+  /* Help bubbles, the ask and share dialogs, the tooltip, the filter bar and its segmented pills, big buttons,
+     the held banner, toasts, and the card detail dialog.
+
+     Load order is tokens, chrome, cards, sharing, notify, files, rows, terminal, dialogs, phone, themes. This
+     file has to sit where it does: it builds on the ones above it, and phone.css below overrides it at the same
+     specificity, so it only wins by coming later. */
+
   /* A question mark that explains a section without permanently spending
      screen space on the explanation. */
   .help {
@@ -24,18 +31,17 @@
   .asktext code {
     display: block; margin: 8px 0; padding: 9px 11px; border-radius: var(--r-sm);
     background: rgba(var(--sink-rgb),.65); border: 1px solid var(--stroke-dim);
-    /* Not break-all: a command has to break at its spaces, so a flag is never
-       cut in half. anywhere covers the path, which has none. */
+    /* A command breaks at its spaces, so a flag is never cut in half, and
+       overflow-wrap covers a path, which has none. */
     font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: normal; overflow-wrap: anywhere;
   }
   .asktext b { color: var(--head); font-weight: 600; }
   dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
 
-  /* Above everything, because it is always ABOUT something and is drawn
-     against it. It shared a layer with the card menu, so explaining a menu
-     entry put the explanation behind the menu, and behind the flyout the
-     entry had just opened. There is nothing a tooltip should ever be under. */
+  /* Above everything. A tooltip is always about something and is drawn against
+     it, and sharing a layer with the card menu hid the explanation behind the
+     menu entry it explained. */
   #tip {
     position: fixed; z-index: 400; max-width: 420px; pointer-events: none;
     background: var(--shell-0); color: var(--body);
@@ -43,8 +49,8 @@
     font: 400 var(--fs-base)/1.55 var(--sans); text-align: left; letter-spacing: 0;
     white-space: pre-line; box-shadow: var(--shadow-pop);
     opacity: 0; visibility: hidden; transition: opacity .13s;
-    /* Long paths wrap. Forcing the panel wider than the window clipped the
-       text and grew a scrollbar. */
+    /* Long paths wrap. A panel forced wider than the window clips its text and
+       grows a scrollbar. */
     overflow-wrap: anywhere;
   }
   #tip.on { opacity: 1; visibility: visible; }
@@ -56,8 +62,8 @@
     border-radius: var(--r-sm); padding: 7px 11px;
   }
   .filters input[type=search]:focus { outline: none; border-color: var(--blue); }
-  /* Names what a row of pills does. Two unlabeled rows read as one bank, and
-     the sort row looked like more filters. */
+  /* Names what a row of pills does. Unlabelled, two rows read as one bank and
+     the sort row looks like more filters. */
   .barlabel {
     font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .14em;
     text-transform: uppercase; color: var(--dimmest); flex: none;
@@ -78,23 +84,22 @@
      paragraph each. The button has to become a flex line for it, or the circle
      sits on the text baseline and drags the row taller. */
   .seg button:has(.help) { display: inline-flex; align-items: center; gap: 7px; }
-  /* A multi-select segment. Its pills add up rather than replacing each other,
-     so an on one is marked more strongly: with an exclusive segment the single
-     highlight is unambiguous, and with several on at once it has to read as
-     chosen rather than merely last clicked. */
+  /* A multi-select segment. Its pills add up instead of replacing each other,
+     so an on one is marked more strongly: with several lit at once the
+     highlight has to read as chosen rather than as last clicked. */
   .seg.multi button.on {
     border-color: var(--teal); color: var(--head);
     box-shadow: inset 0 0 0 1px rgba(var(--teal-rgb),.25);
   }
-  /* How many a pill would give you. Dimmer than its label, since it is the
-     answer to a question you did not have to click to ask. */
+  /* How many a pill would give you. Dimmer than its label, because it answers
+     a question you did not have to click to ask. */
   .pillcount {
     font-style: normal; font-family: var(--mono); font-size: var(--fs-xs);
     color: var(--teal); margin-left: 3px;
   }
   .seg button.on .pillcount { color: var(--head); }
-  /* Nothing there. Shown rather than blanked, because a missing number reads
-     as "not counted" and this one means "none". */
+  /* Nothing there. Still shown, because a missing number reads as "not
+     counted" and this one means "none". */
   .pillcount.zero { color: var(--dimmest); }
   .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
   button.big { font-size: var(--fs-base); padding: 10px 18px; }
@@ -113,10 +118,9 @@
   #held:hover { border-color: var(--teal); }
 
   /* Bottom right, and click-through everywhere except the toasts themselves,
-     so a dialog underneath stays usable.
-     column-reverse so the newest is nearest the corner and the older ones
-     rise away from it, rather than the stack shifting under the pointer as
-     one arrives. */
+     so a dialog underneath stays usable. column-reverse keeps the newest
+     nearest the corner and pushes older ones up, so the stack does not shift
+     under the pointer as one arrives. */
   #toasts {
     position: fixed; right: 20px; bottom: 20px;
     left: auto; top: auto; z-index: 200;
@@ -148,10 +152,9 @@
     font: 600 var(--fs-xs)/1.4 var(--mono);
   }
   /* Breaks at spaces, and mid-word only when a single word cannot fit.
-     break-all cuts wherever the line ends whatever is there, which was chosen
-     for toasts carrying a command or a path and is wrong now that most of them
-     carry a sentence: "wants your next instr / uction". A path still breaks,
-     because overflow-wrap steps in when a word genuinely does not fit. */
+     break-all cuts wherever the line ends, which turns a sentence into "wants
+     your next instr / uction". A long path still breaks, because overflow-wrap
+     steps in when a word genuinely does not fit. */
   .toast span {
     font: var(--fs-sm)/1.45 var(--mono); color: var(--dim);
     word-break: normal; overflow-wrap: anywhere;
@@ -169,8 +172,8 @@
   }
   button.hint:hover { border-color: var(--teal); color: var(--chip-accent-text); }
 
-  /* Collapsible sections. The caret sits right next to its label, and the
-     count is pushed away on its own, so the three do not spread apart. */
+  /* Collapsible sections. The caret sits next to its label and the count is
+     pushed to the far end, so the label and its caret stay together. */
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
   details > summary.col-head {
@@ -198,10 +201,10 @@
     background: var(--btn-hover); transform: translateY(-1px);
   }
   button:active { transform: translateY(0); }
-  /* A control that cannot do anything has to look like it cannot. Without a
-     rule here a disabled button keeps full contrast, the hover lift and the
-     pointer cursor, and reads as a button that is ignoring you. The picker is
-     where it shows: `up` and `use this one` are both disabled at a root. */
+  /* A control that cannot do anything has to look like it cannot. Without this
+     a disabled button keeps full contrast, the hover lift and the pointer
+     cursor. The picker is where it shows: `up` and `use this one` are both
+     disabled at a root. */
   button:disabled,
   button:disabled:hover,
   button:disabled:active {
@@ -236,15 +239,13 @@
     background: linear-gradient(180deg, var(--card-0), var(--card-1));
     border: 1px solid var(--stroke); border-radius: var(--r-lg);
     box-shadow: var(--shadow-dialog);
-    /* PINNED, NOT CENTRED. A browser centres a dialog on its own size, so a
-       dialog whose content changes height moves. The settings panes are five
-       different heights, and switching between them slid the whole window up
-       and down under the pointer, which put the control you were reaching for
-       somewhere else by the time you got there.
+    /* Pinned, not centred. A browser centres a dialog on its own size, so one
+       whose content changes height moves: the settings panes are five
+       different heights, and switching between them slid the window up and
+       down under the pointer.
 
-       Top is fixed and the horizontal centring is done here, on the VIEWPORT
-       rather than on the dialog, so the width can change without moving it
-       either. */
+       Top is fixed, and the horizontal centring is done here against the
+       viewport, so the width can change without moving it either. */
     position: fixed; top: 5vh; margin: 0 auto; max-height: 90vh;
     inset-inline: 0;
   }
@@ -252,15 +253,14 @@
      command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
   dialog::backdrop { background: rgba(var(--sink-rgb),.74); backdrop-filter: blur(3px); }
-  /* THE TRAY DOES NOT BLUR THE BOARD. Every other dialog here is a thing you
-     came to do, and hiding what is behind it is the point. This one is a list
-     of things that happened TO the board, and reading it while the board is a
-     blur means checking one against the other by memory. Dimmed, not hidden,
-     and a click outside still closes it. */
+  /* The tray does not blur the board. Every other dialog here is something you
+     came to do, so hiding what is behind it is the point. This one lists
+     things that happened to the board, and reading it against a blur means
+     checking one against the other from memory. Dimmed instead, and a click
+     outside still closes it. */
   #toastlog::backdrop { background: rgba(var(--sink-rgb),.34); backdrop-filter: none; }
-  /* One command, with its own heading and its own copy button. Separated
-     rather than run together, because they are pasted one at a time into
-     different places. */
+  /* One command, with its own heading and its own copy button. Kept apart
+     because they are pasted one at a time into different places. */
   .step { margin-bottom: var(--vs-4); }
   .steptop {
     display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: 6px;
@@ -281,17 +281,16 @@
     display: flex; align-items: flex-start; gap: var(--sp-4);
   }
   .dlg-head h2 { margin: 0 0 8px; font-size: var(--fs-xl); color: var(--head); font-weight: 600; }
-  /* Tall enough that a form with a dozen fields is scrolled rarely rather
-     than constantly. The head and foot are fixed, so this is the only part
-     that moves. */
+  /* Tall enough that a form with a dozen fields rarely needs scrolling. The
+     head and foot are fixed, so this is the only part that moves. */
   .dlg-body { padding: 20px 22px; max-height: 78vh; overflow-y: auto; }
   .field { margin-bottom: 20px; }
   label.eyebrow {
     display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em;
     text-transform: uppercase; color: var(--label); margin-bottom: 8px;
   }
-  /* Every field in a dialog gets the same treatment. Textareas and selects
-     used to fall through to the browser default, which on a dark page is a
+  /* Every field in a dialog gets the same treatment. Left out, a textarea or a
+     select falls through to the browser default, which on a dark page is a
      small white box at whatever width the rows attribute implied. */
   input[type=text],
   input[type=password],
@@ -330,17 +329,16 @@
   .dlg-body select:focus { outline: none; border-color: var(--blue); }
   input[type=text]::placeholder,
   .dlg-body textarea::placeholder { color: var(--dimmest); }
-  /* A dialog took its own copy of the scrollbar rules before there was a
-     universal one, with a different radius and a different inset, so a dialog
-     and the list behind it disagreed about what a scrollbar looks like. It
-     inherits now. */
+  /* No scrollbar rules here. A dialog once carried its own copy with a
+     different radius and inset, so it and the list behind it disagreed about
+     what a scrollbar looks like. It inherits the universal one. */
   .statuses { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .statuses button.on {
     background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
   }
-  /* A bordered panel, like every other list on the board. The left rule and
-     the dots it used to carry belonged to a vertical timeline, and a table
-     does not need a spine drawn down the side of it. */
+  /* A bordered panel, like every other list on the board. No rule down the
+     left: that belonged to a vertical timeline, and a table does not need a
+     spine drawn beside it. */
   .timeline {
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
     background: rgba(var(--sink-rgb),.35); overflow: hidden;
@@ -356,10 +354,10 @@
   .ev .d { display: block; color: var(--dim); margin-top: 3px; word-break: break-word; }
   .ev .d b { color: var(--head); font-weight: 600; }
 
-  /* The audit log as a table. One row per event, columns that line up all the
-     way down, so a screenful is read by scanning one column rather than by
-     reading every entry. Three stacked lines per event fit six on a screen and
-     said nothing a row of five cells does not. */
+  /* The audit log as a table. One row per event, with columns that line up all
+     the way down, so a screenful is read by scanning one column. Three stacked
+     lines per event fit six on a screen and said no more than a row of five
+     cells. */
   .evtable { display: table; width: 100%; }
   .evr {
     display: grid; align-items: baseline; gap: var(--sp-3);

@@ -131,6 +131,22 @@ function fileLink(id, range, hit) {
       // with no button reads as 0, which is the right default: something that
       // went out of its way to activate a link meant to open it.
       if (ev && ev.button) return;
+      // A DRAG THAT SELECTED TEXT IS NOT A CLICK ON A LINK.
+      //
+      // Dragging across a path to copy it ends in a `click` on whatever was
+      // under the pointer, and xterm calls `activate` for that. So selecting a
+      // filename opened it in the editor, which is the one thing you were not
+      // asking for: you were copying the name.
+      //
+      // `term.hasSelection()` and not `getSelection()`. The terminal draws on a
+      // canvas and keeps its own selection, so the document knows nothing about
+      // it and the board's `isSelecting` is false here however much is
+      // highlighted on screen.
+      //
+      // No `preventDefault` on this path, for the same reason the right button
+      // gets none: whatever the browser would have done with a click that ended
+      // a selection is better than opening a file.
+      if (term && term.hasSelection && term.hasSelection()) return;
       ev.preventDefault();
       hideTip();
       openFromTerminal(id, hit);

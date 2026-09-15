@@ -1,19 +1,18 @@
+  /* The toast log and its bell, the terminal list buckets, the chips a card wears to report a fact, the session
+     switcher, and the popped-out single-terminal window. */
   /* ── what the board has told you ─────────────────────────────────────────
      A log of toasts, newest first. Scrolls, because the useful case is coming
      back to something from an hour ago. */
-  /* A TRAY DOWN THE RIGHT EDGE, not a box in the middle.
-     A log is a column and the thing it is a log OF is the board behind it, so
-     it takes the height and gives back the width. Centred it covered the cards
-     it was describing and wasted two thirds of its own area on margins.
-     `margin: 0 0 0 auto` is what pins a `<dialog>` to an edge: the default
-     centres it by giving it equal margins, and the top layer has no other
-     anchor. `max-height` and `max-width` are both overridden because the
-     browser's own defaults for a dialog are a fraction of the viewport. */
-  /* `[open]`, AND THE ATTRIBUTE IS LOAD-BEARING. A `<dialog>` is hidden by the
-     browser's own `dialog:not([open]) { display: none }`, and any `display` set
-     without that qualifier beats it: the tray stayed on the right edge with
-     nothing in it, over the terminal's buttons, for the rest of the session.
-     Every other dialog here escapes this by never setting `display` at all. */
+  /* A tray down the right edge. A log is a column and what it is a log of is the board behind it, so it takes
+     the height and gives back the width. Centred, it covered the cards it was describing and spent two thirds
+     of its own area on margins.
+     `margin: 0 0 0 auto` is what pins a `<dialog>` to an edge: the default centres it with equal margins, and
+     the top layer has no other anchor. `max-height` and `max-width` are both overridden because a dialog's own
+     browser defaults are a fraction of the viewport. */
+  /* The `[open]` qualifier is load-bearing. A `<dialog>` is hidden by the browser's own
+     `dialog:not([open]) { display: none }`, and any `display` set without that qualifier beats it, leaving the
+     tray on the right edge with nothing in it over the terminal's buttons. Every other dialog here escapes this
+     by never setting `display` at all. */
   #toastlog[open] {
     width: min(420px, 92vw); max-width: none;
     height: 100vh; max-height: 100vh;
@@ -23,15 +22,14 @@
     display: flex; flex-direction: column;
     animation: trayin .16s ease-out;
   }
-  /* From off the right edge, so it reads as arriving from where it lives
-     rather than fading in on top of the board. */
+  /* From off the right edge, so it reads as arriving from where it lives rather than fading in over the
+     board. */
   @keyframes trayin { from { transform: translateX(100%); } to { transform: none; } }
   @media (prefers-reduced-motion: reduce) { #toastlog { animation: none; } }
-  /* The head stays put and the list scrolls under it. In a full height tray
-     the clear button would otherwise be a screen away from the newest entry,
-     which is the one you came for. */
-  /* Tighter than a dialog's, because a tray is narrow and the heading is one
-     word. The shared padding is sized for a form with a sentence under it. */
+  /* The head stays put and the list scrolls under it. In a full height tray the clear button would otherwise be
+     a screen away from the newest entry, which is the one you came for. */
+  /* Tighter than a dialog's, because a tray is narrow and the heading is one word. The shared padding is sized
+     for a form with a sentence under it. */
   #toastlog .dlg-head { flex: 0 0 auto; padding: 12px 14px; align-items: center; }
   #toastlog .dlg-head h2 { margin: 0; font-size: var(--fs-md); }
   #toastlog .dlg-body { flex: 1; min-height: 0; display: flex; padding: 0; }
@@ -43,9 +41,8 @@
   .tlrow:last-child { border-bottom: 0; }
   .tlrow.clickable { cursor: pointer; }
   .tlrow.clickable:hover { background: var(--lift); }
-  /* Arrived since this was last opened. A left edge rather than a background,
-     so a run of new ones reads as one block and the text stays on the surface
-     every other row is on. */
+  /* Arrived since this was last opened. A left edge rather than a background, so a run of new ones reads as one
+     block and the text stays on the surface every other row is on. */
   .tlrow.fresh { box-shadow: inset 2px 0 0 var(--teal); }
   .tlwhen {
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
@@ -55,8 +52,8 @@
   .tlwhat b { color: var(--head); font-size: var(--fs-sm); font-weight: 600; }
   .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }
   .tltimes { color: var(--dim); font-weight: 400; }
-  /* The bell only carries a number when there is one to carry. A zero is a
-     control reporting that it has nothing to report. */
+  /* The bell only carries a number when there is one to carry. A zero is a control reporting that it has
+     nothing to report. */
   #toastlog-open { position: relative; }
   #toastlog-open .count:empty { display: none; }
   #toastlog-open .count {
@@ -66,75 +63,63 @@
     font: 600 9px/14px var(--sans); text-align: center;
   }
 
-  /* The bucket itself, marked off from the tree under it by a rule rather than
-     by an indent: the rows inside are at the strip's full width on purpose,
-     since they carry their whole label with no heading above them to hold the
+  /* The bucket itself, marked off from the tree under it by a rule rather than an indent. The rows inside stay
+     at the strip's full width, since they carry their whole label with no heading above them to hold the
      prefix. */
   .termbucket {
     display: flex; flex-direction: column; gap: 4px;
     padding-bottom: 6px; margin-bottom: 4px;
     border-bottom: 1px solid var(--hairline);
   }
-  /* FOLDED IS A HEADING AND NOTHING ELSE, so it gives back the padding and the
-     gap it was holding for rows that are not drawn. Without this a folded
-     bucket leaves a band of empty strip that reads as a rendering fault. */
+  /* Folded, a bucket is only a heading, so it gives back the padding and the gap it held for rows that are not
+     drawn. Without this it leaves a band of empty strip that reads as a rendering fault. */
   .termbucket.folded { padding-bottom: 0; gap: 0; }
-  /* WHILE A ROW IS OVER IT. The whole bucket lights, rather than a line drawn
-     between two rows: the rows themselves move under the pointer to show where
-     the gap is, so the only thing left to say is which container is going to
-     take the drop. */
+  /* While a row is over it. The whole bucket lights rather than a line being drawn between two rows: the rows
+     themselves move under the pointer to show where the gap is, so all that is left to say is which container
+     takes the drop. */
   .termbucket.dropover {
     background: rgba(var(--teal-rgb), .07);
     outline: 1px dashed rgba(var(--teal-rgb), .45);
     outline-offset: 2px; border-radius: var(--r-sm);
   }
-  /* An empty bucket still has to be somewhere you can aim at, so it keeps a
-     row's worth of height and says what it is for. */
+  /* An empty bucket still has to be somewhere you can aim at, so it keeps a row's worth of height and says what
+     it is for. */
   .termbucket .bucketdrop {
     padding: 10px 8px; text-align: center;
     font: var(--fs-xxs)/1.4 var(--sans); color: var(--label);
   }
 
-  /* A PINNED ROW WHOSE RUNNER HAS EXITED.
-     Faded, not hidden, and NOT struck through or tinted with the danger
-     colour: nothing went wrong. The session ended, the place it ran is still
-     yours, and the row is a bookmark until you start it again. Washed hard
-     enough that a glance down the strip separates live from cold without
-     reading anything: the colour is mostly drained as well as dimmed, since
-     opacity alone over a light background still leaves a saturated mark. The
-     left edge keeps a trace of its theme colour so the row is still that
-     session rather than an anonymous grey slot, and hover brings it most of
-     the way back because a row you are pointing at is one you are about to
-     read. */
+  /* A pinned row whose runner has exited. Faded rather than hidden, and not struck through or tinted with the
+     danger colour, because nothing went wrong: the session ended, the place it ran is still yours, and the row
+     is a bookmark until you start it again. Washed hard enough that a glance down the strip separates live from
+     cold without reading anything, and the colour is drained as well as dimmed, since opacity alone over a
+     light background still leaves a saturated mark. The left edge keeps a trace of its theme colour so the row
+     is still that session, and hover brings it most of the way back. */
   .term-list .card.tab.cold { opacity: .3; filter: grayscale(.65); }
   .term-list .card.tab.cold:hover { opacity: .8; filter: grayscale(.2); }
   .term-list .card.tab.cold::before { opacity: .25; }
-  /* The one row in this strip that is a real drag. `grab` rather than `move`,
-     because the row is being picked up rather than pushed around. */
+  /* The one row in this strip that is a real drag. `grab` rather than `move`, because the row is being picked
+     up rather than pushed around. */
   .termbucket .card.tab { cursor: grab; }
   .termbucket .card.tab:active { cursor: grabbing; }
-  /* On a card title it sits inline with the text, so it takes the title's
-     size rather than the row's. */
+  /* On a card title it sits inline with the text, so it takes the title's size rather than the row's. */
   .card .title .pin {
     font-size: var(--fs-xl); width: auto; padding: 0; margin-right: 5px;
   }
 
-  /* Work you started and left. Drawn back, not hidden: findable is the point
-     of the bucket, and not competing with what you are doing now is the point
-     of greying it. Restored on hover, since reading it is why you opened it. */
+  /* Work you started and left. Greyed rather than hidden, so it stays findable without competing with what you
+     are doing now. Restored on hover, since reading it is why you opened it. */
   .cardgroup.dormant { opacity: .55; filter: saturate(.35); }
   .cardgroup.dormant:hover { opacity: 1; filter: none; }
   .cardgroup.dormant > summary .gname { font-style: italic; }
 
-  /* The subagent chip opens a list, so it has to look like something to press.
-     Everything else on a card is a label. */
+  /* The subagent chip opens a list, so it has to look like something to press. Everything else on a card is a
+     label. */
   .chip.sub { cursor: pointer; }
   .chip.sub:hover,
   .chip.sub.open { border-color: var(--teal); color: var(--head); }
-  /* The subagents themselves, under the card that spawned them. Indented to
-     the runner mark, so they read as belonging to the row above rather than as
-     rows in their own right: a subagent is not a card and must not look like
-     one. */
+  /* The subagents themselves, under the card that spawned them. Indented to the runner mark so they read as
+     belonging to the row above: a subagent is not a card and must not look like one. */
   .subagents {
     margin-top: 6px; padding-left: 26px;
     border-left: 2px solid var(--stroke-dim); margin-left: 6px;
@@ -148,67 +133,59 @@
   .subagents .sub-kind { font-family: var(--mono); color: var(--chip-accent-text); }
   .subagents .sub-age { color: var(--dimmest); font-family: var(--mono); margin-left: auto; }
 
-  /* A tag, colored from its own name by the hash the groups use, so the same
-     tag looks the same wherever it appears. */
+  /* A tag, coloured from its own name by the hash the groups use, so the same tag looks the same wherever it
+     appears. */
   .chip.tag {
     background: hsl(var(--ghue) 60% 50% / .16);
     border: 1px solid hsl(var(--ghue) 60% 55% / .38);
     color: hsl(var(--ghue) 70% 76%); cursor: pointer;
   }
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
-  /* Where the work came from. Deliberately not colored per source: atrium
-     does not know what a source is, and a palette per system would be atrium
-     claiming to. One quiet chip that happens to be a link. */
+  /* Where the work came from. Not coloured per source: atrium does not know what a source is, and a palette per
+     system would claim that it does. One quiet chip that happens to be a link. */
   .chip.origin {
     background: transparent; border: 1px dashed var(--line);
     color: var(--dim); text-decoration: none; font-family: var(--mono);
   }
   a.chip.origin:hover { color: var(--teal); border-color: var(--teal); }
-  /* What the session said it did. Quietly positive: a written-up card is the
-     good outcome and does not need shouting about. */
+  /* What the session said it did. Quietly positive: a written-up card is the good outcome and does not need
+     shouting about. */
   .chip.recap {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: help;
   }
-  /* Something you wrote and have not sent. Amber, like everything else on this
-     board that is waiting on you, because that is exactly what it is: an
-     instruction that goes nowhere until you send it. Quieter than a waiting
-     card, since nothing is blocked and nobody is idle. */
+  /* Something you wrote and have not sent. Amber like everything else on this board that is waiting on you,
+     since that is what it is. Quieter than a waiting card, because nothing is blocked and nobody is idle. */
   .chip.note {
     background: rgba(var(--warn-rgb),.14); border: 1px solid rgba(var(--warn-rgb),.35);
     color: var(--warn); cursor: help;
   }
-  /* Which model this session was started on, shown only when somebody chose.
-     Teal, the accent every other statement of fact on a card uses, and quiet:
-     it is a label rather than a warning, and a card wearing one is not in a
-     different state from a card without one. */
+  /* Which model this session was started on, shown only when somebody chose. Teal, the accent every other
+     statement of fact on a card uses, and quiet: a card wearing one is not in a different state from a card
+     without one. */
   .chip.model {
     background: rgba(var(--teal-rgb),.12); border: 1px solid rgba(var(--teal-rgb),.32);
     color: var(--teal); cursor: help;
   }
-  /* And its absence, which is a fact rather than a fault. Dim enough to read
-     as a gap and not as a warning: a card can perfectly well be done with
+  /* And its absence, which is a fact rather than a fault. Dim enough to read as a gap: a card can be done with
      nothing to say about it. */
   .chip.norecap {
     background: transparent; border: 1px dashed var(--line);
     color: var(--dimmest); cursor: help;
   }
-  /* A file being dragged over the terminal. An outline rather than an overlay,
-     because an overlay would cover the thing you are dropping onto and hide
-     whichever session you were checking you had the right one. */
+  /* A file being dragged over the terminal. An outline rather than an overlay, which would cover the terminal
+     you were checking you had the right one of. */
   #t-screen.dropping {
     outline: 2px dashed var(--teal); outline-offset: -4px;
   }
   /* ── go there now ─────────────────────────────────────────────────────────
      The switcher: one key, a filter, Enter.
 
-     A modal <dialog> and nothing else. It draws over a terminal, over the card
-     dialog and over the settings, and the browser's top layer is the only
-     place that is reliably above an open modal. The toast host learned that
-     the hard way, and the note above `raiseToasts` says so at length.
+     A modal <dialog>. It draws over a terminal, over the card dialog and over the settings, and the browser's
+     top layer is the only place reliably above an open modal. See the note above `raiseToasts`.
 
-     A column with a scrolling middle, so sixteen sessions and two open at the
-     same size and neither pushes the field off the screen. */
+     A column with a scrolling middle, so sixteen sessions and two open at the same size and neither pushes the
+     field off the screen. */
   #switcher { width: min(560px, 92vw); padding: 0; border-radius: 12px; }
   #switcher .swq {
     width: 100%; box-sizing: border-box; font-size: var(--fs-lg);
@@ -217,9 +194,8 @@
     outline: none;
   }
   #switcher .swlist { max-height: 46vh; overflow: auto; padding: 6px; }
-  /* The ROW is the click target, and nothing inside it is focusable. Every
-     keystroke has to keep reaching the field, so a row that could take focus
-     would be a row that swallows the next thing you type. */
+  /* The row is the click target, and nothing inside it is focusable. Every keystroke has to keep reaching the
+     field, so a row that could take focus would swallow the next thing you type. */
   #switcher .swrow {
     display: flex; align-items: baseline; gap: 8px;
     padding: 7px 10px; border-radius: 8px; cursor: pointer;
@@ -229,9 +205,8 @@
     color: var(--head); font-size: var(--fs-md); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
   }
-  /* The directory, truncated from the LEFT. What tells two sessions apart is
-     the end of the path, and every one of these paths opens with the same
-     three segments. */
+  /* The directory, truncated from the left. What tells two sessions apart is the end of the path, and every one
+     of these opens with the same three segments. */
   #switcher .swdir {
     color: var(--dim); font-size: var(--fs-xs); direction: rtl; text-align: left;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -250,70 +225,55 @@
     padding: 0 5px; color: var(--body); font-family: inherit;
   }
   #switcher .empty { padding: 18px 12px; text-align: center; }
-  /* One terminal in its own window: the same page with everything that is not
-     the terminal hidden.
+  /* One terminal in its own window: the same page with everything that is not the terminal hidden.
 
-     Hidden rather than removed, so every code path keeps working. The session
-     list, the card dialog and the settings all still exist here and are simply
-     never shown, which is what makes this a mode of the board rather than a
-     second application. The switcher is the exception and always was meant to
-     be: it is the one thing a window with no list still needs. */
+     Hidden rather than removed, so every code path keeps working. The session list, the card dialog and the
+     settings all still exist here and are simply never shown, which makes this a mode of the board and not a
+     second application. The switcher is the exception, since it is the one thing a window with no list still
+     needs. */
   body.solo header,
   body.solo #board-bar,
-  /* There is no list in this window, so there is nothing to resize, nothing
-     to reveal and no gutter to bridge. The handle and the rail were sitting
-     down the left edge of a popped-out terminal offering to drag a list that
-     is `display: none`. */
+  /* There is no list in this window, so there is nothing to resize and no gutter to bridge. The handle and the
+     rail sat down the left edge of a popped-out terminal offering to drag a list that is `display: none`. */
   body.solo .term-list,
   body.solo .term-grip,
   body.solo .term-rail,
   body.solo .tabbridge,
   body.solo .term-help { display: none !important; }
-  /* Every view except the terminal, gone from the stylesheet rather than left
-     to `switchView`. The board is the visible view until the card is fetched
-     and attached, so without this the window opens on a board for as long as
-     that round trip takes. It is also the second half of the lock in
-     `switchView`: a view this window can never show cannot be shown by a path
-     nobody has found yet. */
+  /* Every view except the terminal, gone from the stylesheet rather than left to `switchView`. The board is the
+     visible view until the card is fetched and attached, so without this the window opens on a board for as
+     long as that round trip takes. It is also the second half of the lock in `switchView`: a view this window
+     can never show cannot be shown by a path nobody has found yet. */
   body.solo #board,
   body.solo #stack,
   body.solo #perms,
   body.solo #runners,
   body.solo #history { display: none !important; }
   body.solo main { padding: 0; }
-  /* The layout is flex, so the pane simply takes what the hidden list gave up.
-     A grid property here would have been inert, which is the kind of thing
-     that looks fine until somebody opens the window. */
-  /* Fills what main gives it, rather than declaring a viewport height of its
-     own. `100dvh` was a second opinion about how tall the window is, and any
-     disagreement with main's flex column is an overflow the page scrolls to
-     resolve, which puts a scrollbar over the terminal. */
+  /* The layout is flex, so the pane takes what the hidden list gave up. A grid property here would be inert. */
+  /* Fills what main gives it rather than declaring a viewport height of its own. `100dvh` is a second opinion
+     about how tall the window is, and any disagreement with main's flex column is an overflow the page scrolls
+     to resolve, which puts a scrollbar over the terminal. */
   body.solo .term-layout { gap: 0; height: 100%; min-height: 0; }
   body.solo .term-pane { border: none; border-radius: 0; }
-  /* Detach would leave a window with nothing in it, and closing the window is
-     the same gesture with fewer steps. Pop out would open a window from a
-     window. */
+  /* Detach would leave a window with nothing in it, and closing the window is the same gesture with fewer
+     steps. Pop out would open a window from a window. */
   body.solo #t-popout { display: none; }
-  /* Answering the request here works and is what this block is for. Going to
-     the perms tab does not, because there is no perms tab in this window, and
-     a button that does nothing is worse than one that is not there. Approve
-     once and block once are both still offered. */
+  /* Answering the request here works. Going to the perms tab does not, because this window has no perms tab,
+     and a button that does nothing is worse than one that is not there. Approve once and block once are both
+     still offered. */
   body.solo .term-perm .to-perms { display: none; }
-  /* A popped-out window is around 900px, which is inside the phone breakpoint,
-     so the toast stretched itself edge to edge across a window whose whole
-     content is one terminal. That rule is right for a phone and wrong here:
-     narrow is a shape, not a screen.
-     Narrower than the board's toast as well. This window already carries the
-     alert in its title bar, so what is on screen only has to be legible, not
-     load-bearing. Class plus id outranks the media query's bare id whatever
-     order they end up in. */
+  /* A popped-out window is around 900px, which is inside the phone breakpoint, so the toast stretched itself
+     edge to edge across a window whose whole content is one terminal. That rule is right for a phone and wrong
+     here. Narrower than the board's toast as well: this window already carries the alert in its title bar, so
+     what is on screen only has to be legible. Class plus id outranks the media query's bare id whatever order
+     they end up in. */
   body.solo #toasts {
     left: auto; right: 14px; bottom: 14px; max-width: min(320px, 70vw);
   }
   body.solo .toast { padding: 10px 12px; }
 
-  /* Getting a file back out. A fold, because most of the time you are not
-     after one. */
+  /* Getting a file back out. A fold, because most of the time you are not after one. */
   .foldy { cursor: pointer; user-select: none; }
   .foldy::before { content: "\25B8 "; display: inline-block; transition: transform .12s; }
   .foldy.open::before { transform: rotate(90deg); }
