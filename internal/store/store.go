@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -350,6 +351,64 @@ func (t *Task) Display(field, observed string) string {
 
 // DisplayTitle is the title a client should render.
 func (t *Task) DisplayTitle() string { return t.Display("title", t.Title) }
+
+// DisplayRepo is the repository a client should render, in three tiers.
+//
+// An override first, because a human typed it. Then whatever the launcher
+// recorded, because whoever made the worktree knew. Then, and only then, a
+// guess read off the path.
+//
+// THE GUESS IS NOT STORED AND NOT OBSERVED DATA. It is computed on the way out
+// and nothing writes it back, so a launcher that starts sending the real answer
+// tomorrow wins immediately and a wrong guess costs one override to correct.
+// `docs/architecture-v2.md` says atrium is not learning git, and this does not:
+// it reads a directory name out of a string it already has, the same way the
+// board's own default grouping rule has always done.
+func (t *Task) DisplayRepo() string {
+	if v, ok := t.Overrides["repo"]; ok && v != "" {
+		return v
+	}
+	if strings.TrimSpace(t.Repo) != "" {
+		return t.Repo
+	}
+	return InferRepo(t.Worktree)
+}
+
+// forgeDir matches the directory a checkout tree is kept under.
+//
+// Prefix rather than exact, so `github`, `github.com` and `github-enterprise`
+// all answer. The shape below them is the one every forge uses and the one the
+// board's `DEFAULT_GROUP_BY` already keys on: <forge>/<org>/<repo>.
+var forgeDir = regexp.MustCompile(`(?i)^(github|gitlab|bitbucket|gitea|codeberg)`)
+
+// InferRepo reads a repository name out of a worktree path.
+//
+// The case this exists for: a card launched without `--repo`, whose worktree is
+// several directories BELOW the checkout. Without a repo to anchor on, the
+// terminal strip fell back to the last three path segments, so
+//
+//	D:/worktrees/github/openziti/desktop-edge-win/more-debug-skill-updates/doc/troubleshooting/debug-skill
+//
+// drew as three nested headings called doc, troubleshooting and debug-skill,
+// each holding one row. Three directories that mean nothing, arranged as though
+// they meant something.
+//
+// Returns empty when the path does not have the shape. An empty answer leaves
+// every caller exactly where it was, which is the point: this improves the
+// cards it recognises and cannot make any other card worse.
+func InferRepo(worktree string) string {
+	segs := strings.FieldsFunc(
+		strings.ReplaceAll(strings.TrimSpace(worktree), `\`, "/"),
+		func(r rune) bool { return r == '/' })
+	// The forge, then the org, then the repo. Two segments have to follow it,
+	// or what was found is the tail of a path rather than the start of a tree.
+	for i, s := range segs {
+		if forgeDir.MatchString(s) && i+2 < len(segs) {
+			return segs[i+2]
+		}
+	}
+	return ""
+}
 
 // AutoOn reports whether auto mode is in force for this card right now.
 //

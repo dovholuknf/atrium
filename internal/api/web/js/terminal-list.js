@@ -252,6 +252,16 @@ async function termMenu(e, id) {
   await loadHarnesses();
   showMenu(e, [
     { label: "rename…", act: () => renameTask(id, t.display_title) },
+    // Beside rename because they are the same kind of act: both write an
+    // override, both survive the runner reconnecting and reporting for itself.
+    // Rename decides what the row says, this decides where it sits.
+    //
+    // Only where there is a path to place it against. A card with no worktree
+    // is not in the tree at all, so there is nothing for this to move.
+    t.worktree
+      ? { label: "which repo…", note: t.display_repo || "guessing",
+          act: () => setTaskRepo(id, t.display_repo) }
+      : null,
     { label: "attach", act: () => attachTask(id) },
     // THE SAME ENTRY THE BOARD'S CARD MENU HAS, because it is the same
     // question asked from the other surface. Starting a second agent beside
@@ -326,6 +336,32 @@ async function renameTask(id, currentName) {
     "reconnects and reports its own name again.", currentName || "");
   if (name === null) return;
   await patchTask(id, { overrides: { title: name.trim() } });
+  refresh();
+}
+
+// WHICH REPOSITORY THIS IS, when the answer read off the path is wrong.
+//
+// The daemon resolves the repo in three tiers: this override, then whatever the
+// launcher recorded, then a guess read out of the worktree. The guess handles
+// the ordinary case and cannot handle a checkout kept somewhere that does not
+// look like `<forge>/<org>/<repo>`, so this is the way out of that.
+//
+// It decides WHERE THE ROW SITS, not what it is called. The strip's headings
+// are built by anchoring on the repo inside the worktree path, so a card with
+// the wrong one lands under the wrong heading, or under three headings named
+// after directories below the checkout. Renaming is the other entry and answers
+// a different question.
+//
+// Empty clears it, which is what `SetOverrides` does with an empty value, and
+// then the guess applies again. That is the undo.
+async function setTaskRepo(id, current) {
+  const repo = await askText("which repository is this",
+    "Decides where this session sits in the terminal list, which groups by " +
+    "forge, org and repo read out of the worktree path. Atrium guesses this " +
+    "when nothing told it. Leave it empty to go back to the guess.",
+    current || "");
+  if (repo === null) return;
+  await patchTask(id, { overrides: { repo: repo.trim() } });
   refresh();
 }
 

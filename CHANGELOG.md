@@ -5,6 +5,52 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board has a sort, and it is on screen.** It always had one and it was `rank`, the order the card
+  menu's up and down writes. That is a real answer for a column you arrange by hand and no answer at all for
+  the rest: a card's rank is set while it is live and nothing touches it when the work ends, so the finished
+  column came out ten days, nine, eight, one, forty seconds, ten days again.
+
+  A `sort` segment now sits beside `group` in the board's own bar: activity, name, manual. Activity is the
+  default. It applies INSIDE the grouping, so it orders the cards within every project or tag without touching
+  which groups exist or what order they come in. Group headings stay alphabetical, which is the rule the
+  terminal strip already follows and for the same reason: a heading that moved with its contents would make
+  the list rearrange itself while you read it.
+
+  `manual` is rank, and it exists because rank still does. The card menu's "move it up or down" now hides
+  itself unless manual is selected, since otherwise it writes a field the next paint throws away, which is a
+  control that visibly does nothing.
+
+- **Atrium works out which repository a card belongs to, and lets you correct it.** A session launched without
+  `--repo` had nothing for the terminal strip to anchor on, so the label fell back to the last three segments
+  of the worktree path. For a worktree kept below its checkout that is three directories that mean nothing,
+  drawn as three nested headings holding one row:
+
+  ```
+  D:/worktrees/github/openziti/desktop-edge-win/more-debug-skill-updates/doc/troubleshooting/debug-skill
+  -> doc > troubleshooting > debug-skill
+  ```
+
+  `DisplayRepo` resolves in three tiers: an override, then whatever the launcher recorded, then a guess read
+  off the path by looking for `<forge>/<org>/<repo>`. **The guess is computed on the way out and never
+  stored**, so a launcher that starts sending the real answer wins immediately, and atrium still is not
+  learning git: it reads a directory name out of a string it already has, the same shape the board's default
+  grouping rule has always keyed on. A path it does not recognise answers empty, which leaves every caller
+  where it was.
+
+  It ships as `display_repo` beside `display_title` rather than replacing `repo`, so a client can still ask
+  whether atrium was TOLD the repo. And a `which repo…` entry sits beside `rename…` in the terminal row menu,
+  because they are the same act: both write an override that survives a reconnect. Rename decides what the row
+  says, this decides where it sits. Empty clears it and the guess applies again.
+
+- **Selecting text no longer opens what you were selecting.** Dragging across a filename to copy it ends in a
+  click on whatever was under the pointer, and both file surfaces answered that by opening the thing.
+
+  Two different tests, because they are two different selections. The file rows use the board's existing
+  `isSelecting`, checked at click time, which is the only moment it answers correctly: a plain click collapses
+  the selection on mousedown and a drag keeps it through mouseup, so an unrelated selection elsewhere on the
+  page does not block a click here. Terminal path links use `term.hasSelection()`, because xterm draws on a
+  canvas and keeps its own selection that the document knows nothing about.
+
 - **A card with subagents running showed no badge, because the badge was gated on the tally alone.**
 
   The tally and the named list are allowed to disagree, and `subagent_test.go` pins that on purpose: an unknown

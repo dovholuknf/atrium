@@ -421,6 +421,10 @@ function switchView(name) {
   // The board's toolbar is a sibling of the board rather than a child, so that
   // redrawing the columns does not take the control you just clicked with it.
   document.getElementById("board-bar").hidden = name !== "board";
+  // Painted on the way in rather than once at boot. The group pills are drawn
+  // by `paintGroupMode`, which runs whenever the mode changes and therefore may
+  // never have run; this needs the same, and the bar is cheap to redraw.
+  if (name === "board") paintBoardSort();
   // Fetched when you go there rather than on every poll. It is a question you
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
@@ -1370,7 +1374,7 @@ async function renderBoard() {
     if (!col.hideWhenEmpty) return true;
     return all.some(t => col.statuses.includes(t.status));
   }).map(col => {
-    const mine = all.filter(t => col.statuses.includes(t.status));
+    const mine = columnOrder(all.filter(t => col.statuses.includes(t.status)));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
     // A column with nothing to SHOW gives its width back rather than holding
     // an equal share for nothing. On a normal morning three of the five are
@@ -1487,6 +1491,78 @@ async function renderBoard() {
   }
 }
 
+// What order the cards come out in, inside whatever they are grouped by.
+//
+// The board used to draw whatever order the API returned, which is `rank`.
+// Rank is the order somebody set by hand with the card menu's up and down, and
+// nothing else writes it. That is a real answer for a column you arrange
+// yourself and no answer at all for the rest: a card's rank was set while it
+// was live and nothing touches it when the work ends, so the finished column
+// came out ten days, nine, eight, one, forty seconds, ten days again.
+//
+// So the order is a choice now, and it is on screen. The same two the terminals
+// page offers, because they are the same question asked about the same cards
+// and a third vocabulary would be one more thing to hold. `manual` is the third
+// only because rank still exists and something has to be able to reach it.
+//
+// APPLIED INSIDE THE GROUPING, NOT ACROSS IT. `cardsHTML` buckets by project or
+// tag while preserving the order it was handed, so sorting here sorts within
+// every group without touching which groups there are or what order they come
+// in. Group headings stay alphabetical, which is the rule the terminal strip
+// already follows and for the same reason: a heading that moved with its
+// contents would make the list rearrange itself while you read it.
+const BOARD_SORTS = {
+  activity: {
+    label: "activity",
+    title: "most recently active first. for a card that is over, that is when it finished"
+  },
+  name: {
+    label: "name",
+    title: "a to z, by what the card is called"
+  },
+  manual: {
+    label: "manual",
+    title: "the order you set with a card's move up and move down. that is the only " +
+      "thing that writes it, so this is the one sort that holds still"
+  }
+};
+
+const BOARD_SORT_KEY = "atrium.boardsort";
+
+// Activity by default, which is what the board was reaching for and missing.
+function boardSortMode() {
+  const v = localStorage.getItem(BOARD_SORT_KEY);
+  return BOARD_SORTS[v] ? v : "activity";
+}
+
+function setBoardSort(v) {
+  if (!BOARD_SORTS[v]) return;
+  localStorage.setItem(BOARD_SORT_KEY, v);
+  paintBoardSort();
+  refresh();
+}
+
+function paintBoardSort() {
+  const el = document.getElementById("board-sort");
+  if (!el) return;
+  const mode = boardSortMode();
+  setHTML(el, Object.entries(BOARD_SORTS).map(([v, s]) =>
+    `<button class="${v === mode ? "on" : ""}" onclick="setBoardSort('${v}')"
+       title="${esc(s.title)}">${esc(s.label)}</button>`).join(""));
+}
+
+function columnOrder(cards) {
+  const mode = boardSortMode();
+  // Rank is what the API already ordered by, so manual is the list untouched.
+  if (mode === "manual") return cards;
+  const by = mode === "name"
+    ? (a, b) => (a.display_title || "").localeCompare(b.display_title || "")
+    : (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0);
+  // `cardTieBreak` is the shared one. Two cards at the same age with no
+  // tiebreak swap places between polls, which reads as the board twitching.
+  return cards.slice().sort((a, b) => by(a, b) || cardTieBreak(a, b));
+}
+
 // Statuses the daemon will delete. Anything else has no clear control, because
 // pressing one that does nothing is worse than not having it.
 const PRUNABLE = ["done", "dead"];
@@ -1570,10 +1646,17 @@ function moveItem(id, t) {
 // still sort every column and nothing could set it, which is a column ordered
 // by a number nobody can reach.
 //
-// Offered as a pair and never hidden. Pressing one at the end of a list does
-// nothing, which is what the end of a list is, and hiding the entry there
-// would move every row under the pointer between one card and the next.
+// Offered as a pair and never hidden AT THE END OF A LIST. Pressing one there
+// does nothing, which is what the end of a list is, and hiding the entry would
+// move every row under the pointer between one card and the next.
+//
+// Hidden when the board is not sorted by hand, which is a different case and
+// the opposite answer. Rank is still written, and then the sort throws it away
+// on the next paint, so the entry would be a control that visibly does nothing.
+// That is worse than one that does nothing at the end of a list, because there
+// is no end of a list to blame it on.
 function nudgeItems(id) {
+  if (boardSortMode() !== "manual") return null;
   return {
     label: "move it up or down",
     help: "Its place in this column, which is yours to set: nothing else " +
