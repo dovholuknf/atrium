@@ -27,6 +27,12 @@ wearTheMark();
 // popped-out terminal has its own document and its own visibility.
 stillWhenHidden();
 
+// A repaint withheld because text was selected has to be taken up again the
+// moment the selection goes. Registered here rather than in the board branch
+// below: a popped-out window never withholds one, so the listener costs it a
+// comparison and nothing else.
+keepUpWithSelection();
+
 // The brought themes, in every window and for the same reason as the skin: a
 // popped-out terminal has its own document and its own copy of the table, and
 // one window in somebody's own colours beside one in atrium's reads as a bug in
@@ -42,13 +48,24 @@ loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); });
 // for it, because the whole question there is whether to draw a board at all.
 guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
 
+// HOW OFTEN THE PAGE ASKS AGAIN, when nothing has told it to.
+//
+// The poll is the backstop, not the mechanism. Everything that changes arrives
+// on the event stream and repaints as it lands, so this is here for what the
+// stream cannot say: a connection that dropped without closing, a counter that
+// only ticks with the clock, a daemon that came back while the tab was buried.
+//
+// Declared above the boot block that reads it, since `const` throws until its
+// own line has run. See the temporal dead zone note at the top of this file.
+const POLL_MS = 10000;
+
 if (termOnly()) {
   // The same stream and the same interval as the board. `refresh` sends a
   // popped-out window down `soloRefresh`, so this costs one card's worth of
   // polling rather than a second board's.
   bootTerminalOnly().then(() => {
     connect();
-    setInterval(refresh, 5000);
+    setInterval(refresh, POLL_MS);
   });
 } else {
   bootBoard();
@@ -100,7 +117,7 @@ async function bootBoard() {
       history.replaceState(navState(), "");
     }
   }, soloRollCall);
-  setInterval(refresh, 5000);
+  setInterval(refresh, POLL_MS);
   // Every other way this page goes away: a manual reload, a close, a
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.
@@ -137,7 +154,7 @@ function wearTheMark() {
 // this page is the only place that can say so.
 //
 // Nothing is polled and nothing is connected after this. Every request the
-// board makes is refused here, and a page retrying them every five seconds
+// board makes is refused here, and a page retrying them on the poll
 // would be a share with a heartbeat and nothing to show for it.
 function showGuestPage() {
   document.title = "atrium: one terminal";

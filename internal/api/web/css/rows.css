@@ -1,0 +1,602 @@
+  /* ── stack + perms ──────────────────────────────────── */
+  .panel {
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7));
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: var(--sp-5);
+    padding: var(--row-y) var(--row-x);
+    border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.5); cursor: pointer;
+    transition: background .14s;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: rgba(var(--chip-rgb),.4); }
+  .wait {
+    font: 700 var(--fs-2xl)/1 var(--mono); color: var(--warn); min-width: 62px; text-align: right;
+  }
+  /* Wraps rather than compresses. The action buttons do not shrink, so on a
+     narrow row a plain flex:1 left the content column at a hundred pixels and
+     the thing being decided became unreadable. A flex basis makes the buttons
+     drop to their own line instead. */
+  .row .who { flex: 1 1 320px; min-width: 0; }
+  /* Direct child only. As a descendant selector this also matched the bold
+     used for word emphasis inside a diff, and won on specificity, which put
+     every emphasised word on its own full width line. */
+  .row .who > b { display: block; color: var(--head); font-weight: 600; font-size: var(--fs-md); }
+  .row .who span { font-size: var(--fs-sm); color: var(--dim); }
+  /* Rule and decision rows are list entries, not cards. They get read in bulk,
+     so they stay tight enough to scan a screenful at a time. */
+  .row.compact { padding: var(--row-y-sm) 15px; gap: var(--sp-4); align-items: center; }
+  .row.compact .who b { font-size: var(--fs-lg); font-weight: 500; }
+  .row.compact .who b code { font-family: var(--mono); color: var(--head); }
+  .row.compact .who span { font-size: var(--fs-base); color: var(--dimmest); }
+  .row.compact .chip { font-size: var(--fs-sm); padding: 2px 9px; }
+  .row.compact button { padding: 4px 12px; font-size: var(--fs-base); }
+  .row.compact .cmd { font-size: var(--fs-base); padding: 6px 10px; margin-top: 5px; }
+
+  /* One line per entry: everything on a single row, the wide field truncates. */
+  .row.line {
+    display: flex; align-items: baseline; gap: var(--sp-4); cursor: default;
+    padding: var(--row-y-sm) 16px; font-size: var(--fs-md);
+  }
+  .row.line:hover { background: rgba(var(--chip-rgb),.5); }
+  .row.line .stamp { font: var(--fs-base)/1 var(--mono); color: var(--dim); flex: none; }
+  .row.line .stamp time { color: var(--label); }
+  .row.line .stamp i { color: var(--dimmest); font-style: normal; }
+  .row.line .tool { color: var(--head); font-weight: 600; flex: none; min-width: 64px; }
+  .row.line code { font: var(--fs-base)/1.5 var(--mono); color: var(--body); }
+  .row.line .grow { flex: 1; min-width: 0; }
+  .row.line .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Actions keep their size. Left to shrink they lose their labels before the
+     text column gives up any of its width. */
+  .row.line button { flex: none; }
+  .row.line .by { color: var(--dimmest); font-size: var(--fs-base); flex: none; }
+  /* Whether a runner's command is really there. */
+  .row.line .by.found { color: var(--chip-accent-text); }
+  .row.line .by.missing { color: var(--warn); }
+  .row.line button[disabled] { opacity: .4; cursor: not-allowed; }
+  .row.line .by code { color: var(--label); }
+  /* Which session asked. With several running, the same command means
+     different things from different agents. */
+  .asker {
+    color: var(--chip-accent-text); font-size: var(--fs-sm); font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .row.line .asker { flex: none; max-width: 150px; }
+  /* The stack: one row per card, the same facts the board shows. */
+  .stackrow { cursor: pointer; align-items: center; }
+  .stackrow:hover { background: var(--lift); }
+  .stackrow.attn { border-left: 3px solid var(--warn); }
+  .stackrow .wait {
+    flex: none; min-width: 78px; font-family: var(--mono); color: var(--warn);
+    text-align: right; line-height: 1.25;
+    /* Every digit the same width, so `1` and `4` occupy the same room and the
+       column stops shifting as the ages tick over. Mono already does this;
+       stated anyway because the fallbacks in the stack may not. */
+    font-variant-numeric: tabular-nums;
+  }
+  .stackrow .wait.quiet { color: var(--dimmest); }
+  /* The day it started, under how long ago that was. Two different questions,
+     and a duration alone cannot answer which day a card carried over from. */
+  /* When atrium first saw this card. Not under the age: two durations stacked
+     in one column read as one measurement in two units, and they are different
+     questions, how stale this is and which day it started.
+     Last in the row and outside the chip group, rather than inside it. The
+     chips vary in number and width from card to card, so a date carried along
+     at the end of them landed in a different place on every row and the eye
+     could not run down the column. Its own fixed track at the right edge is a
+     column again.
+     Fixed width rather than fitted, for the same reason: `Thu 4 Sep` and
+     `Mon 12 May` differ by a character and would shift the whole track.
+     Centred against the row like the chips, since it is now their sibling
+     rather than a passenger inside the card's name, which is line one of three
+     and read as crooked beside them.
+     Quiet, and first to go when the row is narrow. */
+  /* Wide enough for the longest thing it ever says.
+     74px fitted `today 08:06` and cut `yesterday 16:06`, which is the form it
+     wears for most of the list. A fixed track narrower than its own content
+     is the one width that cannot work: the text has nowhere to go and the
+     row clips it. `ch` rather than pixels, so it stays right when the text
+     size setting moves. */
+  .stackrow .since {
+    font-style: normal; font-size: var(--fs-xxs); font-weight: 400;
+    font-family: var(--mono); color: var(--dimmest); letter-spacing: 0;
+    white-space: nowrap; flex: 0 0 auto; width: 19ch; text-align: right;
+    align-self: center; padding-left: var(--sp-3); overflow: hidden;
+  }
+  .stackrow .who { flex: 1 1 320px; min-width: 0; }
+  .stackrow .who b { display: flex; align-items: center; gap: var(--sp-2); color: var(--head); }
+  .stackrow .who span {
+    display: block; font: var(--fs-xs) var(--mono); color: var(--dimmest);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .stackrow .who .why { font-family: var(--sans); color: var(--dim); font-style: italic; }
+  /* One block rather than loose flex items. As siblings of a three-line who
+     column their vertical placement followed whatever that column did, which
+     put them across the row's bottom border. As one centred group they sit
+     against the middle of the row whatever height it is. */
+  /* Shrinkable, and allowed to wrap inside itself.
+     `flex: none` with a percentage cap meant the group kept its full width
+     whatever the row could spare, so a card with several tags pushed the date
+     past the right edge and the scroll container cut it off. The whole point
+     of the fixed date track is that it is always in the same place, which it
+     cannot be if something before it can shove it. Now the chips give way
+     first: they wrap, the name truncates, and the date does not move. */
+  .stackrow .chips {
+    display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+    gap: var(--sp-2); flex: 0 1 auto; min-width: 0; align-self: center;
+  }
+  .stackrow .chip { flex: none; white-space: nowrap; }
+  /* The runner's mark on the terminal bar, in front of the name the way a card
+     carries it. Smaller than the stack's, which sits in a row tall enough for
+     three lines of text: this bar is one line, and a 39px square in it pushes
+     everything else down. */
+  #t-mark { display: flex; flex: none; }
+  #t-mark:empty { display: none; }
+  #t-mark .rmark { width: 26px; height: 26px; border-radius: var(--r-sm); }
+  #t-mark .rmark svg { width: 17px; height: 17px; }
+  /* The worktree. The chip itself is a LABEL and is selectable text: only the
+     glyph in front of it is a button. A pressable target the width of the bar
+     is one you hit by accident every time you reach for what is behind it. */
+  /* CHIPS SIT ON A LINE, THEY DO NOT STRETCH TO THE TALLEST.
+     `.chips` is a flex row and a flex row stretches its items by default, so
+     the path chip, which is taller because it carries an icon, was pulling
+     every chip beside it to its own height. A stretched chip keeps its text at
+     the TOP of the box it was given, which is why `pid 21088` looked like it
+     had floated up out of its pill. */
+  #t-chips { align-items: center; }
+  /* `inline-flex`, so the glyph and the path sit on one centred line. As
+     inline content the button aligned on the text baseline, which puts a
+     square icon low against lowercase letters and is what made it look like
+     it was falling out of the chip. */
+  #t-chips .chip.path {
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: text; user-select: text;
+  }
+  /* `all: unset` rather than a list of overrides. A button carries a padding,
+     a border, a background, a font and a line-height of its own, and undoing
+     four of the five left the fifth to make the chip taller than every chip
+     beside it. This is a glyph that happens to be pressable. */
+  .copybit {
+    all: unset; cursor: pointer; color: inherit; opacity: .65;
+    display: inline-flex; align-items: center;
+  }
+  .copybit:hover { opacity: 1; color: var(--teal); }
+  /* A picture does not want the padding a word does. */
+  #t-cog, #t-files { font-size: var(--fs-lg); padding: 5px 9px; line-height: 1; }
+  /* The theme picker, while it is up. Sized to the longest name so the bar
+     does not change width as you arrow through, which would move every button
+     beside it and change the terminal's box under a fitted grid. */
+  .themepicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+  .themepicker[hidden] { display: none; }
+  /* The floating panel for trying skins.
+     Above the dialogs, because it is opened FROM one and the dialog closes
+     behind it, and a panel that ended up underneath would look like the button
+     did nothing. */
+  #skinlab {
+    position: fixed; z-index: 400; width: 288px;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog);
+  }
+  #skinlab[hidden] { display: none; }
+  /* The handle. The whole strip, not a corner: a small target on a small panel
+     is a panel people give up on moving. */
+  .lab-grip {
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    padding: 10px 12px; cursor: grab; touch-action: none;
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .lab-grip:active { cursor: grabbing; }
+  /* NOWRAP, so the strip is one line at every text size. A title that wraps at
+     one setting and not another changes the panel's height, and a panel that
+     changes height while you are stepping through a list moves under the
+     pointer you are clicking with. */
+  .lab-title {
+    font: 600 var(--fs-xxs)/1.2 var(--sans); letter-spacing: .16em;
+    text-transform: uppercase; color: var(--label);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lab-body { padding: 12px; display: flex; flex-direction: column; gap: var(--vs-3); }
+  .lab-row { display: flex; align-items: center; gap: var(--sp-2); }
+  .lab-row select {
+    flex: 1 1 auto; min-width: 0; font: var(--fs-sm) var(--mono);
+    background: var(--shell-0); color: var(--head);
+    border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 5px 6px;
+  }
+  .lab-step { flex: none; padding: 5px 10px; font-size: var(--fs-lg); line-height: 1; }
+  .lab-answers button { flex: 1 1 auto; padding: 7px 6px; font-size: var(--fs-xs); }
+  .lab-hint { font: var(--fs-xxs)/1.45 var(--sans); color: var(--dim); }
+  /* Which of a card's two terminals. A segmented pair rather than two loose
+     buttons: they are one choice, and spacing them apart would read as two
+     unrelated things to press. */
+  .termkind { display: inline-flex; flex: none; }
+  .termkind[hidden] { display: none; }
+  .termkind button {
+    padding: 5px 12px; font-size: var(--fs-xs); border-radius: 0;
+    background: transparent; color: var(--dim); border-color: var(--stroke-dim);
+  }
+  .termkind button:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+  .termkind button:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; margin-left: -1px; }
+  .termkind button:hover { background: var(--lift); transform: none; }
+  /* The one you are looking at. Filled rather than outlined, because an
+     outline on one of two adjacent buttons reads as focus rather than as
+     state. */
+  .termkind button.on {
+    background: var(--chip); color: var(--head); border-color: var(--stroke);
+  }
+  .themepick {
+    flex: none; width: 20ch; font: var(--fs-sm) var(--mono);
+    background: var(--shell-0); color: var(--head);
+    border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 4px 6px;
+  }
+  /* The directory, over the terminal rather than beside it. In a popped-out
+     window there is no width to split, and two halves too narrow to use is
+     worse than one that swaps. The terminal keeps running underneath. */
+  .term-files {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    padding: 10px 12px; gap: var(--sp-3);
+  }
+  .term-files[hidden] { display: none; }
+  .term-files .filebar { display: flex; align-items: center; gap: var(--sp-3); }
+  /* Room for the bar. The bar itself is painted by the universal rule near the
+     top of this stylesheet, along with every other one on the board.
+     `max-height: none` because `.filelist` carries a 240px cap that is right
+     inside the card dialog, where the list is one field among several, and
+     wrong here, where the drawer IS the pane and there is nothing else in it
+     to leave room for. */
+  /* The drawer wears the terminal's colors, because it sits on the terminal's
+     background. Every one of these falls back to the board's own value, so a
+     pane with no session attached looks exactly as it did. */
+  .term-files .filelist {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding-right: 12px; max-height: none;
+    border-color: var(--term-line, var(--stroke-dim));
+  }
+  .term-files .filelist .frow { border-bottom-color: var(--term-line, var(--stroke-dim)); }
+  .term-files .filelist .frow:hover { background: var(--term-line, var(--lift)); }
+  .term-files .filelist .fname { color: var(--term-fg, var(--body)); }
+  .term-files .filelist .ficon { color: var(--term-fg, var(--dimmest)); opacity: .75; }
+  .term-files .filelist .frow.dir .fname,
+  .term-files .filelist .frow.dir .ficon { color: var(--term-thumb-hi, var(--teal)); opacity: 1; }
+  .term-files .fsize, .term-files .fwhen { color: var(--term-fg, var(--dimmest)); opacity: .6; }
+  .term-files .fpick { accent-color: var(--term-thumb-hi, var(--teal)); }
+  /* Destructive, and it says so before it is pressed. */
+  .chip.no { background: var(--warn-bg); color: var(--warn); cursor: pointer;
+             border: 1px solid var(--warn-stroke); }
+  .chip.no:hover { background: var(--warn-stroke); color: var(--head); }
+  .term-files .crumbs .crumb { color: var(--term-fg, var(--dim)); opacity: .75; }
+  .term-files .crumbs .crumb.here { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
+  .term-files .crumbs .crumb:hover { background: var(--term-line, var(--lift)); opacity: 1; }
+  .term-files .hintline { color: var(--term-fg, var(--dimmest)); opacity: .7; }
+  .fedit textarea {
+    background: var(--term-bg, var(--bg-2));
+    color: var(--term-fg, var(--head));
+    border-color: var(--term-line, var(--stroke-dim));
+  }
+  .fedit textarea:focus { border-color: var(--term-thumb-hi, var(--teal)); }
+  .fedit .filebar code { color: var(--term-fg, var(--dim)); }
+  /* The editor takes the drawer, the same way the drawer takes the pane. Two
+     of them side by side in a 900px window is two things too narrow to use. */
+  .fedit { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .fedit[hidden] { display: none; }
+  .term-files:has(.fedit:not([hidden])) .filelist,
+  .term-files:has(.fedit:not([hidden])) > .filebar,
+  .term-files:has(.fedit:not([hidden])) > .hintline { display: none; }
+  .fedit textarea {
+    flex: 1 1 auto; min-height: 0; resize: none;
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    background: var(--bg-2); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 10px 12px;
+    /* A tab is a tab in a file, not a way out of the box. */
+    tab-size: 4;
+  }
+  .fedit textarea:focus { outline: none; border-color: var(--teal); }
+  /* A tick per row, and it must not swallow the click that walks a directory. */
+  .filelist .fpick { flex: none; margin: 0; accent-color: var(--teal); cursor: pointer; }
+  .filelist .frow { grid-template-columns: auto 1fr auto auto auto; }
+  /* The drawer takes the pane, so the terminal must give it up rather than
+     both claiming the same room. */
+  .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
+
+  /* A fixture whose last start failed, and the reason under it. Two rows
+     rather than one, because the reason is a command line or a path and
+     truncating it into the row would hide the half that identifies it.
+     The pair is bracketed by the same warn color so they read as one entry
+     rather than as a row and an unrelated row. */
+  .row.line.broke { border-bottom: none; }
+  .row.line.why-broke {
+    border-left: 3px solid var(--warn); padding-left: 9px; background: var(--lift);
+  }
+  .row.line.why-broke code { color: var(--warn); }
+
+  /* A chip that is a mark rather than a word. Square, so it reads as a button
+     next to `attach` instead of a very short label, and the svg is centred by
+     the grid rather than by the line height it does not have.
+     Not scoped to the stack: the same mark sits on a board card. */
+  /* SIZED FROM THE TEXT, like every chip beside it. It was 22 by 19 fixed
+     pixels, so it matched its neighbours at one text size and at no other:
+     bigger text grew the chips around it and left this one a different height,
+     and the pop-out mark ended up the odd one out on the row.
+
+     `1em` on the glyph ties it to the chip's own font size, which is where the
+     neighbours get their height from too. */
+  .chip.icon {
+    display: inline-grid; place-items: center; padding: 1px 7px;
+  }
+  .chip.icon svg { display: block; width: 1em; height: 1em; }
+  /* The harness, on the left where the eye starts, instead of a word among the
+     chips on the right. Same colors as the runner chip so the two agree. */
+  .rmark {
+    flex: none; width: 39px; height: 39px; display: grid; place-items: center;
+    border-radius: var(--r-sm); align-self: center;
+    /* The fallback, first, so the per-runner rules below win. */
+    color: var(--label); background: var(--chip);
+  }
+  .rmark svg { width: 26px; height: 26px; display: block; }
+  /* Claude's own color, not the board's accent. A mark that means "which
+     harness" has to look like the harness. */
+  .rmark[data-runner="claude"] { color: #E8825A; background: rgba(232,130,90,.14); }
+  .rmark[data-runner="codex"]  { color: #A8BEFF; background: rgba(140,170,255,.14); }
+  .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
+  .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(var(--warn-rgb),.10); }
+
+  /* ── the mark moves while the runner does ────────────────────────────────
+     A ring around the harness mark, in the mark's own colour, so a row in the
+     strip says whether that session is working without spending any width on
+     saying it. `currentColor` is what makes it the session's colour rather
+     than the board's: the per-runner rules above set `color`, and the ring
+     inherits it.
+
+     ON TOP OF THE MARK, NOT BESIDE IT. A second element in the row is width
+     the strip does not have, and the mark is already the thing the eye lands
+     on first.
+
+     Three states, three motions, the same three the board's live chips use and
+     for the same reasons. Keeping them in step matters more than any one of
+     them being ideal: `thinking` in the strip and `thinking` on the board have
+     to read as one fact about one session. */
+  /* A SPINNER OVER THE MARK, as an animated image.
+     `working.gif` is generated by `scripts/gen-working-gif.go` and committed.
+     Generated rather than downloaded so the frame count, the speed and the
+     colour are readable and changeable, which bytes from somewhere else are
+     not.
+
+     AN IMAGE RATHER THAN CSS, and the measurement is the reason. The first
+     version animated `opacity` and `transform`, the pair every account calls
+     cheap because they run on the compositor without layout or paint. On a
+     real board with a dozen sessions the tab went from 7-9% of a core to
+     14-20%: right about the kind of work, wrong about the amount, because each
+     animated mark becomes its own compositor layer. A gif is decoded once, its
+     frames are cached, and what is left is one small blit at a rate this file
+     chooses rather than whatever the display refreshes at.
+
+     WHAT IT COSTS: the colour is baked in. The CSS version took
+     `currentColor`, so a mark wore its own session's theme. This is a neutral
+     grey that reads on every skin.
+
+     ON TOP OF THE MARK, not beside it. A second element in the row is width
+     the strip does not have, and the mark is already where the eye lands.
+
+     NO RING AROUND IT. There was one, in the session's colour, from before the
+     gif existed: it was the whole indicator then, and became a second circle
+     around a circle the moment the spinner landed inside it. Two rings for one
+     fact. The gif says working on its own. */
+  .rmark.working { position: relative; }
+  .rmark.working::after {
+    content: ""; position: absolute; inset: -3px;
+    border-radius: inherit; pointer-events: none;
+    background: url("/working.gif") center / 62% 62% no-repeat;
+  }
+  /* THE GLYPH UNDERNEATH IS HIDDEN, NOT DIMMED.
+     It was `opacity: .35`, to keep the spinner legible on a 21px mark while
+     still saying which runner this is. The spinner is a disc drawn over the
+     MIDDLE of that mark, so what survived was the parts of the glyph outside
+     it: claude's asterisk has arms that reach the corners, and one of them
+     came out from under the spinner as a small orange dot at the lower right.
+     It reads as a status light, which is the one thing it is not, and the
+     board has real ones a few pixels away.
+     The runner is still on every row that is not working, and in the hover, so
+     nothing is lost for the seconds this is spinning. No animation on this: it
+     is a state, not a second moving part. */
+  .rmark.working svg { opacity: 0; }
+  /* STILL, NOT BREATHING, AND THAT WAS MEASURED RATHER THAN ARGUED.
+     These pulsed: `opacity` and `transform` only, which are the two properties
+     that animate on the compositor without layout or paint, and which every
+     account of this says are the cheap ones. On this board, with a dozen
+     sessions on screen, the tab went from 7 to 9 percent of a core to 14 to 20.
+     The theory was right about the kind of work and wrong about the amount:
+     each mark is its own compositor layer and a dozen of them next to a WebGL
+     canvas is not free.
+     A ring that is either there or not says the same thing. What is lost is
+     motion catching the eye, and what is bought back is ten percent of a core
+     that a terminal beside it wants. */
+  /* Rewriting its context, which is worth telling apart from working because
+     the right response to it is to do nothing: a message sent now lands in a
+     conversation about to forget it. The spinner goes and a ring in the
+     session's colour takes its place, so the two states are a moving thing and
+     a still one rather than two moving things to compare. */
+  .rmark.working.compacting::after {
+    background: none;
+    border: 2px solid currentColor;
+    border-color: currentColor transparent currentColor transparent;
+  }
+  .rmark.working.compacting svg { opacity: 1; }
+  /* No `prefers-reduced-motion` and no `tabhidden` rule for the ring, which
+     does not move. The gif does, and neither setting can stop an image: a
+     browser plays it whatever the tab is doing. That is the price of the frame
+     rate being this file's to choose rather than the display's. */
+
+  /* A project group in the stack. Its panel carries the color down the left
+     edge, the same as a group on the board. */
+  .stackgroup { margin-bottom: var(--vs-4); }
+  .stackgroup > summary {
+    display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
+    list-style: none; padding: var(--sp-2) 3px; user-select: none;
+  }
+  .stackgroup > summary::-webkit-details-marker { display: none; }
+  /* A REAL TARGET, not a few pixels of glyph.
+     It is the only control on this row and it was smaller than the count
+     beside it: eleven pixels wide, at whatever size the text around it
+     happened to be, which is a control sized by what it sits in rather than by
+     what it is for. Now a square with the glyph centred in it, so the thing
+     you press is the size of the thing it does. The whole summary still
+     toggles, so this is about it looking like a control and being findable
+     with a pointer, not about being the only way in. */
+  .stackgroup > summary::before {
+    content: "\25B8"; color: hsl(var(--ghue) 65% 60%);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 22px; height: 22px; border-radius: var(--r-sm);
+    font-size: var(--fs-xl); line-height: 1;
+    transition: transform .15s, background .12s;
+  }
+  .stackgroup > summary:hover::before { background: var(--lift); }
+  .stackgroup[open] > summary::before { transform: rotate(90deg); }
+  .stackgroup > summary .gname {
+    color: hsl(var(--ghue) 70% 72%); font: 600 var(--fs-base) var(--mono);
+  }
+  /* TOWARDS THE SKIN'S OWN TEXT COLOUR, not towards white.
+     Hovering used to raise the lightness to 85%, which is more prominent on a
+     dark board and nearly invisible on a light one: on `paper` the group name
+     went pale yellow against near-white paper and the hover barely registered.
+     Blending toward `--head` moves it darker on a light skin and lighter on a
+     dark one, which is the same intention expressed in a way that survives
+     both, and it needs no new per-skin variable. */
+  .stackgroup > summary:hover .gname {
+    color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head));
+  }
+  .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
+  /* The same block treatment the board's groups get, from the same two
+     variables. It had only the bar down the left, so the two views coloured
+     the same grouping differently and the stack read as a flat list with
+     coloured headings in it. */
+  .stackgroup > .panel {
+    border: 1px solid hsl(var(--ghue) 60% 55% / var(--group-edge));
+    border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);
+    background: hsl(var(--ghue) 60% 45% / var(--group-fill));
+    padding: 0 5px 6px 0;
+  }
+  /* A decision nobody saw. Marked apart from a rule, which somebody wrote. */
+  .by .auto { color: var(--warn); font-weight: 600; }
+  /* Actions only assert themselves for the row you are pointing at, so a long
+     list stays calm but the live row is obvious. */
+  .row.line button {
+    padding: 4px 12px; font-size: var(--fs-base);
+    opacity: .55; transition: opacity .12s, border-color .12s, color .12s;
+  }
+  .row.line:hover button { opacity: 1; }
+
+  .subhead {
+    font-size: var(--fs-sm); color: var(--dim); margin: -4px 0 12px; max-width: 78ch;
+  }
+  .subhead code { font-family: var(--mono); color: var(--label); font-size: var(--fs-sm); }
+  .subhead b { color: var(--body); font-weight: 600; }
+  .cmd {
+    font: var(--fs-sm)/1.5 var(--mono); color: var(--head); background: rgba(var(--sink-rgb),.65);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 8px 11px;
+    margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  /* Grows to hold the whole command: two visible lines of a long one is not
+     enough to decide on. The cap is high, and only stops a pasted heredoc from
+     pushing the buttons out of reach. Past it, scroll. */
+  textarea.cmd.edit {
+    display: block; width: 100%; resize: vertical; margin: 0; min-height: 44px;
+    max-height: 80vh; overflow-y: auto; transition: border-color .14s;
+  }
+  textarea.cmd.edit:focus { outline: none; border-color: var(--teal); }
+  .actions { display: flex; gap: var(--sp-3); flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  /* A pending request always wraps: its content is what you are reading. */
+  .row.perm { flex-wrap: wrap; }
+  .row.perm .who { flex: 1 1 100%; order: 2; min-width: 0; }
+  .row.perm .actions { flex: 1 1 100%; order: 1; justify-content: flex-start; }
+
+  .row .who label.eyebrow { margin: 11px 0 4px; }
+  /* The card's own hint sits under its label, not shouted in caps. */
+  .row .who .hintline { margin: 0 0 6px; }
+  .row.perm textarea.cmd.edit { width: 100%; }
+  /* One box on the card: the command. The rule pattern sits on a plain line
+     under it, editable in place without looking like a second field. */
+  /* The change itself, so a decision is made on what happens rather than on
+     which file it happens to. */
+  details.change { margin-top: 10px; }
+  details.change > summary {
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--label); cursor: pointer; padding: 4px 0; user-select: none;
+  }
+  details.change > summary::before {
+    content: "\25B8"; display: inline-block; width: 13px; color: var(--teal);
+    font-size: var(--fs-lg); transition: transform .15s;
+  }
+  details.change[open] > summary::before { transform: rotate(90deg); }
+  details.change > summary:hover { color: var(--head); }
+  /* Drag the bottom edge to make it as tall as the change deserves. The
+     default is enough to read a small edit without scrolling. */
+  pre.diff {
+    margin: 6px 0 0; padding: 10px 12px; overflow: auto;
+    height: 260px; min-height: 90px; resize: vertical;
+    background: rgba(var(--sink-rgb),.65); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); font: var(--fs-base)/1.5 var(--mono); white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Context recedes, changed lines carry a marker in the gutter, and the
+     changed words inside a replaced line are brightest. */
+  pre.diff i { display: block; font-style: normal; padding: 0 6px 0 22px; position: relative; }
+  pre.diff i.ctx { color: var(--dim); opacity: .65; }
+  pre.diff i.del, pre.diff i.add { font-weight: 500; }
+  pre.diff i.del {
+    background: rgba(var(--danger-rgb),.14); color: var(--danger-text);
+    box-shadow: inset 3px 0 0 var(--danger);
+  }
+  pre.diff i.add {
+    background: rgba(var(--teal-rgb),.12); color: var(--chip-accent-text);
+    box-shadow: inset 3px 0 0 var(--teal);
+  }
+  pre.diff i.del::before,
+  pre.diff i.add::before {
+    position: absolute; left: 9px; opacity: .8; font-weight: 700;
+  }
+  pre.diff i.del::before { content: "-"; }
+  pre.diff i.add::before { content: "+"; }
+  /* display:inline is load bearing. The row's own `.who b` rule makes bold
+     text a block, which put every emphasised word on its own line. */
+  pre.diff i b {
+    display: inline; font-weight: 700; border-radius: var(--r-xs); padding: 0 2px;
+    /* `--lift-strong` rather than a white tint, so this reads on a light skin
+       as well. A colour written as its own rgba literal is a second copy a
+       skin cannot reach, which is the palette rule in `web/CLAUDE.md`. */
+    background: var(--lift-strong); color: var(--head);
+  }
+  pre.diff i.hdr { color: var(--dimmest); margin-top: 8px; padding-left: 6px; }
+
+  .scope {
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(var(--stroke-rgb),.35);
+    display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap;
+  }
+  .scope .lbl { font-size: var(--fs-xs); color: var(--dimmest); flex: none; }
+  .patview {
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    border-radius: var(--r-sm); padding: 2px 8px; word-break: break-all;
+  }
+  .scope .hints { margin-top: 0; width: 100%; }
+  button.hint.on {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke);
+    color: var(--chip-accent-text);
+  }
+  .picker { display: flex; gap: var(--sp-3); align-items: center; }
+  .picker select {
+    font: var(--fs-md)/1.4 var(--sans); color: var(--head); flex: 1;
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-md); padding: 9px 11px;
+  }
+  .picker select:focus { outline: none; border-color: var(--blue); }
+  input[type=range] { width: 100%; accent-color: var(--teal); }
+  .hintline { display: block; font-size: var(--fs-sm); color: var(--dimmest); margin-top: 7px; }
+  /* Beside a label, not under the field. A requirement discovered by pressing
+     the button and being refused is a requirement stated too late. */
+  .req {
+    font-size: var(--fs-xs); letter-spacing: .04em; text-transform: none;
+    color: var(--warn); margin-left: 6px; font-weight: 500;
+  }
+  .toolbar { display: flex; gap: var(--sp-3); margin-top: 12px; flex-wrap: wrap; align-items: center; }
+

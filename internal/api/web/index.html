@@ -39,7 +39,20 @@
      want. A URL is the one with a scheme in it and the more specific claim, so
      it goes first. -->
 <script src="/vendor/xterm-addon-web-links.js"></script>
-<link rel="stylesheet" href="/board.css">
+<!-- This order is the cascade, not an alphabetical list. Several rules rely on coming after another rule of the
+     same specificity, so reordering these links changes what the board looks like. tokens first because every
+     other file reads its custom properties, phone and themes last because they override what is above them. -->
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/chrome.css">
+<link rel="stylesheet" href="/css/cards.css">
+<link rel="stylesheet" href="/css/sharing.css">
+<link rel="stylesheet" href="/css/notify.css">
+<link rel="stylesheet" href="/css/files.css">
+<link rel="stylesheet" href="/css/rows.css">
+<link rel="stylesheet" href="/css/terminal.css">
+<link rel="stylesheet" href="/css/dialogs.css">
+<link rel="stylesheet" href="/css/phone.css">
+<link rel="stylesheet" href="/css/themes.css">
 </head>
 <body>
 <header>
@@ -235,7 +248,13 @@ Exports honor whatever filter is applied.">?</span>
         <span class="barlabel">sort by</span>
         <div class="seg" id="hist-sort"></div>
       </div>
-      <div id="history-list"></div>
+      <!-- `perm-history-list`, NOT `history-list`. There were two elements
+           with that id, this one and the card history in the history view, and
+           two functions called `renderHistory` to go with them. The later
+           script won the name and `getElementById` returned the first element,
+           so the history TAB drew into this hidden block and this block was
+           never drawn at all. Neither view worked and both looked unbuilt. -->
+      <div id="perm-history-list"></div>
     </details>
   </div>
 
@@ -1877,6 +1896,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <option value="">none, use atrium json</option>
         <option value="claude">claude code settings.json</option>
       </select>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-package">npm package</label>
+      <input type="text" id="h-package" spellcheck="false" placeholder="@anthropic-ai/claude-code">
+      <span class="hintline">so atrium can say a newer one is published, just before it starts this
+        runner. read off disk and from the registry, never by running the runner to ask. leave it
+        empty for anything a platform installer put there, which has no version atrium can check.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="h-notes">notes</label>

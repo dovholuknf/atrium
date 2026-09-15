@@ -281,11 +281,15 @@ function stackGroupsHTML(list, g) {
       return `<div class="panel">` + stackRows(mine) + `</div>`;
     }
     const key = "stack:" + name;
-    const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+    // Its own namespace, and deliberately not the board's. The stack draws one
+    // group per project and the board draws one per project PER COLUMN, so the
+    // board had a fold key that moved under a card and this never did. Sharing
+    // the key now would silently fold the stack from the board and back.
+    const fold = "proj:" + key;
+    const shut = isFolded(fold) ? "" : " open";
     return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}"
-      data-morph-key="${esc(key)}">
-      <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
-        oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
+      data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
+      <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
@@ -918,7 +922,7 @@ async function renderPerms() {
   sizeCommands();
 
   renderRules();
-  renderHistory();
+  renderPermHistory();
 }
 
 // Grows every command box to hold its whole command.
@@ -951,7 +955,15 @@ addEventListener("resize", sizeCommands);
 // appear in the pending queue, so this is the only place they are visible.
 let allHistory = [];
 
-async function renderHistory() {
+// PERMISSION DECISIONS, which is not the card history in the history view.
+//
+// Named apart because they were not. Both were `renderHistory`, both drew into
+// `#history-list`, runners.js loads second and took the name, and
+// `getElementById` handed it the first element in the document, which is this
+// one. So the history tab painted into a hidden block belonging to the
+// permissions pane, and the permissions pane painted nothing. Two working
+// features, each invisible, each looking like it had never been written.
+async function renderPermHistory() {
   try {
     allHistory = (await api("/v1/permissions/history?limit=300")).permissions || [];
   } catch (e) { return; }
@@ -986,7 +998,7 @@ function paintHistory() {
   // A rule name is a link to the rule. Reading "a rule allowed this" and then
   // scrolling a list of a hundred and thirty to find which one is the work
   // this saves.
-  setHTML(document.getElementById("history-list"), list.length
+  setHTML(document.getElementById("perm-history-list"), list.length
     ? `<div class="panel">` + list.map(p => `
         <div class="row line">
           <span class="chip ${p.decision === "approve" ? "accent" : "warn"}">${p.decision}</span>

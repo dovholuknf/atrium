@@ -1263,6 +1263,27 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN pin_order INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// Which package this runner is installed from, so atrium can find out
+		// whether a newer one is published WITHOUT RUNNING THE RUNNER.
+		//
+		// On the row rather than in a table of runner names, which is the same
+		// rule the intake source that this replaces kept: atrium drives claude,
+		// codex, ollama and bare shells as peers and learns nothing about any
+		// of them. What it learns here is what an operator wrote in a field.
+		//
+		// Empty means this runner has no version atrium can ask about, which
+		// is the correct answer for a bare shell and for anything installed by
+		// a platform installer.
+		name: "0052_harness_package",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN package TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET package = '@anthropic-ai/claude-code'
+			   WHERE package = '' AND cmd LIKE '%claude%'`,
+			`UPDATE harness SET package = '@openai/codex'
+			   WHERE package = '' AND cmd LIKE '%codex%'`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

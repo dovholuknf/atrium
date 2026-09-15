@@ -1,0 +1,452 @@
+  /* Auto mode, warn colored: nothing is asking you, and the card says so
+     rather than leaving it in settings.
+     It breathes. A session running unattended is the one state where a card
+     that looks like every other card is a problem, so this is the only thing
+     on the board that moves without something happening. */
+  .chip.auto {
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid var(--warn-stroke); font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .chip.auto::before {
+    content: "\25CF"; margin-right: 5px; font-size: .8em; vertical-align: 1px;
+  }
+  /* And the whole card, so it is visible from across the board rather than
+     only once you are reading the chips. */
+  .card.autoon, .stackrow.autoon {
+    border-color: var(--warn-stroke);
+    background: linear-gradient(180deg, var(--warn-bg), transparent 60%);
+  }
+  .stackrow.autoon { border-left: 3px solid var(--warn); }
+  /* Global auto, in the header. Quiet while it is gating, and impossible to
+     miss while it is not: the whole point is that nothing else on screen will
+     tell you nobody is being asked. */
+  .gauto {
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--dimmest); border-color: var(--stroke-dim); background: transparent;
+  }
+  /* INLINE-BLOCK AND ALIGNED TO THE MIDDLE, not left on the baseline.
+     A filled circle's baseline is its bottom edge, so beside uppercase letters
+     with no descenders it rode low. `vertical-align` fixes that where it sits
+     rather than making the button a flex container, which is a bigger change
+     than a dot being 1px out is worth. */
+  .gauto::before {
+    content: "\25CF"; display: inline-block; vertical-align: middle;
+    font-size: .9em; line-height: 1; margin-right: 6px;
+    position: relative; top: -1px;
+  }
+  /* Narrow: the label goes, the dot and its color stay. What matters is
+     whether it is on, and the color says that on its own. */
+  @media (max-width: 1150px) {
+    .gauto { font-size: 0; padding: 7px 10px; }
+    .gauto::before { margin-right: 0; font-size: var(--fs-md); }
+  }
+  .gauto.on {
+    color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
+  }
+  /* PUBLISHED, and it wears the danger colour rather than the accent.
+     Sharing is not a state to be pleased about at a glance: it is one to
+     notice and decide about, and the thing it is closest to is a warning that
+     something is reachable from outside this machine. The stop sign reads
+     before the words do. */
+  .sharing {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--danger-text); border-color: var(--danger);
+    background: rgba(var(--danger-rgb),.14);
+  }
+  .sharing[hidden] { display: none; }
+  .sharing::before { content: "\26D4"; font-size: 1.05em; line-height: 1; }
+  .sharing:hover { border-color: var(--danger); background: rgba(var(--danger-rgb),.24); }
+  /* HOW MANY ARE MID-TURN. The share chip's shape, so the two read as one row
+     of facts about the board, and the teal rather than the danger colour
+     because work in flight is the normal state and a share is the one that
+     wants looking at. Still, like everything else in this header: the mark on
+     each terminal row already says which, and a header that ticked would be
+     the third thing animating for one fact. */
+  .working {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--teal); border-color: rgba(var(--teal-rgb),.55);
+    background: rgba(var(--teal-rgb),.12);
+  }
+  .working[hidden] { display: none; }
+  .working::before { content: "\25CF"; font-size: .8em; line-height: 1; }
+  .working:hover { border-color: var(--teal); background: rgba(var(--teal-rgb),.22); }
+  /* An address beside the button that copies it. */
+  .copyrow { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; }
+  .copyrow input {
+    flex: 1 1 auto; min-width: 0;
+    font: var(--fs-sm)/1.4 var(--mono); padding: 7px 8px;
+  }
+  .copyrow button { flex: none; }
+  .sharerow {
+    display: flex; align-items: flex-start; gap: var(--sp-3);
+    padding: 11px 0; border-bottom: 1px solid var(--stroke-dim);
+  }
+  .sharerow:last-child { border-bottom: none; }
+  /* A machine reporting into this one. One panel per room, its cards listed
+     rather than drawn as cards: they cannot be acted on from here, so giving
+     them a card's affordances would be a promise this board cannot keep. */
+  .roomrow { margin-bottom: var(--vs-3); }
+  .roomcards { display: flex; flex-direction: column; gap: 2px; }
+  .roomcard {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--row-y-sm) 0; font-size: var(--fs-sm); color: var(--body);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .roomcard:last-child { border-bottom: none; }
+  /* Path candidates, over the terminal. Positioned at the bottom because that
+     is where the prompt is, and it covers output rather than the line being
+     typed. */
+  #t-complete {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 30;
+    display: flex; flex-wrap: wrap; gap: var(--sp-2);
+    max-height: 40%; overflow: auto;
+    padding: 8px 10px; border-radius: var(--r-md);
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: var(--shadow-pop);
+  }
+  #t-complete[hidden] { display: none; }
+  #t-complete .cand {
+    font: var(--fs-sm)/1.3 var(--mono); color: var(--body);
+    padding: 2px 7px; border-radius: var(--r-sm); background: var(--lift);
+  }
+  /* A full-width heading, so the list below it wraps as its own block rather
+     than flowing around a first item that happens to be a sentence. */
+  #t-complete .candhead {
+    flex: 0 0 100%; font-size: var(--fs-sm); color: var(--dim);
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    padding-bottom: 4px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  #t-complete .candhead code { font: var(--fs-sm) var(--mono); color: var(--head); }
+  #t-complete .candmore { color: var(--dimmest); }
+  /* Pushed right, because it is the same line every time and belongs where the
+     eye stops rather than where it starts. */
+  #t-complete .candhint { margin-left: auto; color: var(--dimmest); }
+  /* Sharing, while it is happening.
+     Creating a share is several seconds of somebody else's server, and for all
+     of them the board showed the button unchanged. A failure then arrived as a
+     paragraph about something that had never appeared to start. These are the
+     real steps, in order, and the one in progress is the only moving thing on
+     the screen. */
+  .shsteps { margin: 2px 0 4px; }
+  .shstep {
+    display: flex; align-items: flex-start; gap: var(--sp-3);
+    padding: 7px 0; font-size: var(--fs-md); color: var(--dimmest);
+  }
+  .shstep .mark {
+    flex: none; width: 1.15em; height: 1.15em; margin-top: .14em;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .92em; line-height: 1;
+  }
+  .shstep.now { color: var(--head); }
+  .shstep.ok { color: var(--body); }
+  .shstep.ok .mark { color: var(--chip-accent-text); }
+  .shstep.bad { color: var(--danger); }
+  .shspin {
+    width: 1em; height: 1em; border-radius: 50%;
+    border: 2px solid rgba(var(--stroke-rgb),.85);
+    border-top-color: var(--teal);
+    animation: shspin .7s linear infinite;
+  }
+  @keyframes shspin { to { transform: rotate(360deg); } }
+  /* Slowed rather than stopped. The whole job of this element is to say the
+     wait is atrium's and not a dead button, and a frozen spinner says the
+     opposite of that. */
+  @media (prefers-reduced-motion: reduce) { .shspin { animation-duration: 2.6s; } }
+  .shwhy {
+    margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm);
+    background: rgba(var(--danger-rgb),.13); border: 1px solid var(--danger);
+    font-size: var(--fs-sm); line-height: 1.55; color: var(--body);
+  }
+  /* ── overlays ────────────────────────────────────────── */
+  /* One panel per way out, each carrying its own mark, its own color and its
+     own state. They sit in the gear next to each other, so they have to be
+     told apart at a glance rather than by reading the heading. */
+  /* Section headings in the settings dialog. It grew from one thing into six,
+     and an unbroken column of fields makes the last of them unfindable. */
+  .s-section {
+    margin: 26px 0 14px; padding-bottom: 8px; font: 600 var(--fs-sm)/1 var(--sans);
+    letter-spacing: .16em; text-transform: uppercase; color: var(--teal);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .s-section:first-child { margin-top: 0; }
+
+  /* The spine. Headings alone stopped being enough once finding a setting
+     meant scrolling past every other setting and knowing roughly how old it
+     was. The grouping boxes are the worst of it: the tallest thing in the
+     dialog and the least often changed.
+
+     Still a modal rather than a seventh tab. Settings is where you go from
+     wherever you are and come straight back, and a modal returns you there for
+     free. */
+  .pane-split { display: flex; gap: 18px; align-items: flex-start; }
+  .pane-nav {
+    flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;
+    gap: 2px; position: sticky; top: 0;
+  }
+  .pane-nav button {
+    text-align: left; background: transparent; border: 1px solid transparent;
+    color: var(--dim); padding: 7px 10px; border-radius: var(--r-sm);
+    font: 500 var(--fs-sm)/1.2 var(--sans); cursor: pointer; white-space: nowrap;
+  }
+  .pane-nav button:hover { color: var(--head); background: var(--stroke-dim); }
+  .pane-nav button.on {
+    color: var(--teal); border-color: var(--stroke-dim);
+    background: rgba(var(--sink-rgb),.5);
+  }
+  .panes { flex: 1 1 auto; min-width: 0; }
+  /* One sentence under a pane's heading saying what the pane is for.
+     A pane holding a button and an empty table says nothing about itself, and
+     the help bubble beside the heading only says it to somebody who already
+     suspected there was something to read. */
+  .pane-lead {
+    margin: 0 0 14px; max-width: 78ch;
+    font: var(--fs-base)/1.55 var(--sans); color: var(--dim);
+  }
+  /* On the runners page the heading IS the pane, and it keeps its help bubble,
+     so unlike the settings dialog it stays on screen. Given room, since it is
+     now the top of a page rather than a divider in the middle of one. */
+  .panes .r-section { margin-top: 0; }
+  /* The heading is the nav entry once there is a nav, so it would be said
+     twice. Kept in the markup because it is what the panes are cut on. */
+  .panes .s-section { display: none; }
+  .pane[hidden] { display: none; }
+  /* Narrow enough that a nav beside the panes leaves no room for either. */
+  @media (max-width: 640px) {
+    .pane-split { flex-direction: column; }
+    .pane-nav { flex-direction: row; flex-wrap: wrap; position: static; }
+  }
+  .ov {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.35); padding: 14px 15px; margin-bottom: 12px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .ov.live { border-color: var(--chip-accent-stroke); box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset; }
+  .ov-head { display: flex; align-items: flex-start; gap: var(--sp-4); }
+  .ov-head b { display: block; color: var(--head); font-size: var(--fs-lg); }
+  .ov-head > .grow > span {
+    display: block; color: var(--dim); font-size: var(--fs-sm); margin-top: 3px;
+  }
+  .ov-mark {
+    flex: none; width: 40px; height: 40px; display: grid; place-items: center;
+    border-radius: var(--r-md);
+  }
+  /* The marks carry their own colors, so the tile behind each one is tinted
+     to match rather than recoloring the logo. */
+  .ov-mark svg { width: 27px; height: 27px; display: block; }
+  .ov-mark[data-kind="zrok"] { background: rgba(155,243,22,.12); }
+  .ov-mark[data-kind="ziti"] { background: rgba(140,199,255,.12); }
+  /* Sharing right now. Green and steady rather than pulsing: unlike auto mode
+     this is a thing you went and turned on, and it is not a hazard. */
+  .ov-live {
+    flex: none; font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--chip-accent-text);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+    border-radius: var(--r-pill); padding: 5px 10px;
+  }
+  .ov-live::before { content: "\25CF"; margin-right: 5px; }
+  .ov-body { margin-top: 12px; }
+  .ov-field { margin-bottom: 12px; }
+  .ov-field:last-child { margin-bottom: 0; }
+  .ov-field .hintline { margin-top: 4px; }
+  /* The address is what you came for, so it gets a line of its own. */
+  .ov-addr {
+    display: flex; align-items: center; gap: var(--sp-3); margin-top: 12px;
+    padding: 9px 11px; border-radius: var(--r-sm);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+  }
+  /* THE SAME ROW, QUIETER. The address is the thing you hand somebody and the
+     share name is the thing you look up later, so one is in the accent colours
+     and the other is not, and they still line up as a pair. */
+  .ov-share {
+    display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px;
+    padding: 7px 11px; border-radius: var(--r-sm);
+    background: var(--chip); border: 1px solid var(--stroke-dim);
+  }
+  .ov-share .eyebrow { flex: none; }
+  .ov-share code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-base) var(--mono); color: var(--head);
+  }
+  .ov-addr code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
+  }
+  .ov-err {
+    margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: var(--warn-bg); border: 1px solid var(--warn-stroke);
+    color: var(--warn); font-size: var(--fs-sm);
+  }
+  .ov-note {
+    margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
+    color: var(--dim); font-size: var(--fs-xs); line-height: 1.5;
+  }
+  .ov-note code { font-family: var(--mono); color: var(--label); }
+  .ov-missing { margin-top: 10px; color: var(--dim); font-size: var(--fs-sm); }
+  .ov-missing a { color: var(--teal); }
+  /* What is already done. Quiet: the point of this line is that there is
+     nothing left to do in here. */
+  .ov-ready {
+    margin-top: 10px; font-size: var(--fs-xs); color: var(--chip-accent-text);
+  }
+  .ov-ready::before { content: "\2713"; margin-right: 6px; }
+  /* Above the configure fold on purpose. This is read with a finger over the
+     start button, and a panel you have to expand to see it in is one nobody
+     expands. */
+  .ov-acct {
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
+  }
+  .ov-acct-row { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .ov-acct-n { font: 600 var(--fs-sm)/1.4 var(--mono); color: var(--head); }
+  .ov-acct-n span { font-family: var(--sans); font-weight: 400; color: var(--dim); }
+  .ov-acct .hintline { margin-top: 6px; display: block; }
+  .ov-acct button {
+    font-size: var(--fs-xs); padding: 3px 9px; margin-left: auto;
+  }
+  /* Error weight, because the next press of start is already refused rather
+     than at risk. */
+  .ov-acct.stop { background: var(--warn-bg); border-color: var(--warn-stroke); }
+  .ov-acct.stop .ov-acct-n, .ov-acct.stop b { color: var(--warn); }
+  /* The step that stands between a tool being installed and it being usable.
+     Set apart, because it is a form with a verb rather than settings. */
+  .ov-setup {
+    margin-top: 12px; padding: 13px 14px; border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.45); border: 1px solid var(--stroke-dim);
+  }
+  .ov-setup > b { display: block; color: var(--head); font-size: var(--fs-md); }
+  .ov-setup > p {
+    margin: 5px 0 14px; color: var(--dim); font-size: var(--fs-sm); line-height: 1.55;
+  }
+  .ov-setup textarea {
+    font: var(--fs-sm)/1.5 var(--mono); resize: vertical; min-height: 62px;
+  }
+  .ov-link { color: var(--teal); font-size: var(--fs-sm); align-self: center; }
+  /* A token that reads as good, and one that does not. */
+  .hintline.ok { color: var(--chip-accent-text); }
+  .hintline.bad { color: var(--warn); }
+  .ov-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
+  /* Stands where the start button stood, at the same height, so pressing it
+     does not make the panel jump under the pointer. */
+  .ov-busy {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 7px 2px; font-size: var(--fs-sm); color: var(--head);
+  }
+  .ov-actions .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The configuration, folded. Matches the log's summary so the two rows at
+     the bottom of an overlay read as the same kind of thing. */
+  .ov-fold > summary {
+    cursor: pointer; color: var(--label); font-size: var(--fs-xs); user-select: none;
+    letter-spacing: .04em; padding: 4px 0;
+  }
+  .ov-fold > summary:hover { color: var(--head); }
+  .ov-fold[open] > summary { color: var(--head); margin-bottom: 4px; }
+  .ov-log { margin-top: 10px; }
+  .ov-log > summary {
+    cursor: pointer; color: var(--dimmest); font-size: var(--fs-xs); user-select: none;
+  }
+  .ov-log > summary:hover { color: var(--label); }
+  .ov-log pre.code { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  /* The start order of a fixture. Its whole job is to say which is first. */
+  .row.line .ord {
+    flex: none; min-width: 20px; text-align: right; font-family: var(--mono);
+    font-size: var(--fs-xs); color: var(--dimmest);
+  }
+  /* The theme a terminal is using, clickable to change it. */
+  .chip.theme { cursor: pointer; }
+  .chip.theme:hover { border-color: var(--teal); color: var(--head); }
+  /* The star. Faint until it is on, since an unpinned card carries one too
+     and a row of bright stars says nothing. */
+  /* Sized against the runner mark beside it, not against the body text. It
+     sits in a row of 39px tiles and at label size read as a stray character. */
+  .pin {
+    flex: none; cursor: pointer; color: var(--stroke); font-size: var(--fs-3xl);
+    line-height: 1; align-self: center; padding: 0 4px; transition: color .14s;
+    width: 30px; text-align: center;
+  }
+  .pin:hover { color: var(--warn); }
+  .pin.on, .pinned > .pin { color: var(--warn); }
+  /* A pinned row, marked down its edge the way a waiting one is, so the top
+     of the list is obviously deliberate rather than a sort you do not
+     recognize. */
+  .stackrow.pinned { box-shadow: inset 3px 0 0 var(--warn-stroke); }
+  /* THE TWO HEADINGS OVER THE STACK: `pinned`, and `the rest`. Two ranked
+     lists were drawn as one, so the only reading available was that the sort
+     was broken. Naming one side left the other as the unlabelled half, which
+     read as a caption for everything above it.
+
+     Still a rule with a word on it rather than a heading proper: it separates
+     two halves of one list, and it must not compete with a group name. The
+     first one has no line above it to sit under, which is what `:first-child`
+     takes off. */
+  .pinbreak {
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: 6px 12px 2px; color: var(--label);
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .pinbreak::after {
+    content: ""; flex: 1; height: 1px; background: var(--hairline);
+  }
+  .pinbreak:first-child { padding-top: 2px; }
+  /* WHERE A SESSION LIVES, in the terminal switcher.
+     Eleven entries repeated `github/` eleven times and the characters telling
+     them apart were the last few, so the list was widest where it said least
+     and was already cutting the FRONT off entries to keep the leaf. A heading
+     holds the shared prefix once.
+     Built on `.pinbreak` because it is the same object, a rule with a word on
+     it, and the strip is too narrow for two kinds of heading to be worth
+     telling apart. It is a LABEL and not a control: no click target and no
+     accordion, so the complaint about a group heading toggling when you click
+     the space around it cannot arrive here, and three levels of it would have
+     multiplied that. */
+  /* THE GUIDE DOWN THE LEFT OF A GROUP, which is what makes this read as a
+     tree rather than as headings with rows loose between them.
+     One border on the container rather than line drawing glyphs per row. The
+     line is continuous because the box is, and depth costs an indent rather
+     than a rule per level that has to agree with every other one. */
+  .tnest {
+    margin-left: 9px; padding-left: 9px;
+    border-left: 1px solid var(--hairline);
+  }
+  /* A HEADING DIRECTLY UNDER A HEADING SITS TIGHT TO IT.
+     Every level carries its own top margin, so `github` followed immediately
+     by `openziti` paid for both and left a band of empty strip between two
+     lines that belong together. The gap is worth having between a group and
+     the rows above it and is dead space between two names. */
+  .tnest > .tgroup:first-child { margin-top: 1px; }
+  /* A HEADING IS A BUTTON, and only as wide as the thing you press.
+     The complaint this answers is about the board's group headings, where the
+     whole width toggles: clicking what looks like empty space beside a name
+     folds what you were reading. The caret and the name are the control, the
+     rule filling the rest of the row is decoration and outside it. */
+  /* FLEX, NOT INLINE-FLEX, and `fit-content` for the width.
+     Inline-flex made a heading behave like a word, so two headings in a row
+     sat side by side: a folded `openziti` and the `dovholuknf` after it came
+     out on one line reading as a single heading with two names in it. Flex is
+     block level and takes the line, and `fit-content` keeps the button only as
+     wide as the caret and the name, which is the whole point of it not being
+     the full-width click target. */
+  .tgroup {
+    display: flex; width: fit-content; align-items: center; gap: 5px;
+    margin: 5px 0 1px; padding: 1px 6px 1px 2px;
+    border: none; border-radius: var(--r-sm); background: transparent;
+    color: var(--label); cursor: pointer;
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
+  }
+  .tgroup:hover { background: var(--lift); color: var(--head); }
+  .tgroup .tcaret { font-size: 9px; opacity: .8; width: 9px; text-align: center; }
+  .tgroup .tgname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* What is inside, so folding hides it rather than losing it.
+     THE HEADING'S OWN FONT AND COLOUR, inherited rather than styled. It was a
+     pill in the chip colours at nine pixels, which made the one number that
+     says how much a fold is hiding the quietest thing on the row. A count
+     nobody can read is a count that is not there. */
+  .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; }
+  .tgroup:hover .tgcount { opacity: 1; }

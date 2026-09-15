@@ -1,0 +1,631 @@
+  /* The terminal wants room. A cramped terminal is worse than no terminal,
+     because output reflows and stops matching what the runner drew. */
+  /* min-width:0 on both is load bearing. A flex item defaults to min-content
+     width, and xterm sizes its own element, so without it the terminal pushes
+     the pane wider than the window and the toolbar falls off the right edge. */
+  /* Fills whatever is left below the header, measured rather than guessed.
+     --shell is set from the real header height on load and on resize, so the
+     terminal reaches the bottom of the window at any zoom or bar wrap. */
+  .term-layout {
+    display: flex; gap: var(--sp-4); align-items: stretch; min-width: 0;
+    flex: 1 1 auto; min-height: 0; position: relative;
+    /* Nothing here may make the page itself scroll. A page scrollbar sits over
+       the terminal, which is the overlap that keeps coming back. */
+    overflow: hidden;
+  }
+  /* Dragged to a width, not given one. 260px is right for `atrium:main` and
+     wrong for a worktree three orgs deep, and the person who knows which of
+     those is on screen is the one looking at it.
+     Kept in localStorage rather than on the daemon: it is a fact about this
+     screen, and a width synced from a 32in monitor is wrong on a laptop. */
+  .term-list {
+    flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column; gap: var(--sp-3);
+    min-height: 0; overflow-y: auto; overflow-x: hidden;
+    /* Room for the lift on hover and for a focus ring, or the top card's
+       border is clipped by the scroll container. */
+    padding: 3px 3px 6px;
+    /* ITS OWN SURFACE, so the page's grid does not show through it.
+       `body::before` lays a 60px grid over the whole page at a third opacity,
+       which is a texture behind the board and reads as a defect behind a list:
+       it draws bands across the strip that line up with nothing in it, and the
+       first question anybody asks is what those bands mean.
+       It was invisible while this list was wall to wall cards. Group headings
+       leave gaps, and gaps are where it came through. */
+    background: var(--shell-0); border-radius: var(--r-md);
+  }
+  /* The list's own controls, above the entries and scrolling with them.
+     Same height as the terminal's bar, so the two headers read as one line
+     across the view instead of one sitting a few pixels above the other. */
+  .termhead {
+    display: flex; align-items: center; gap: var(--sp-2);
+    min-height: var(--barh); box-sizing: border-box; flex: none;
+  }
+
+  /* The drag handle.
+     Nine pixels wide with a two pixel line painted down the middle: a handle
+     you can see is not the same as a handle you can hit, and a 2px target is
+     one you miss. */
+  /* Six pixels of track, not nine. The line inside it is 2px, and the rest was
+     dead space either side that read as a gap between the list and the
+     terminal rather than as something to grab. The hit area is widened by the
+     ::before below instead, so it is easy to catch without looking wide. */
+  .term-grip {
+    flex: 0 0 6px; align-self: stretch; position: relative; cursor: col-resize;
+    background: none; border: 0; padding: 0; border-radius: 0;
+  }
+  /* Pointer target, invisible, wider than the line. A 2px control is honest
+     about how much room it takes and miserable to hit. */
+  .term-grip::before {
+    content: ""; position: absolute; inset: 0 -4px; z-index: 1;
+  }
+  /* In the attached terminal's colours, since it sits against that terminal.
+     `--term-line` and `--term-thumb-hi` are set on the layout by paintPaneBg
+     and fall back to the board's own when nothing is attached. */
+  /* NO TRANSITION. The colour changes on hover and it changes at once.
+     Not a fix for anything: the terminal flickered on hovering this handle and
+     cutting the fade made no difference, which is how the search moved to the
+     compositor and ended at `will-change` on `.term-pane`. It stays cut
+     because a 140ms fade on a 2px line is decoration nobody asked for. */
+  .term-grip::after {
+    content: ""; position: absolute; inset: 8px 2px;
+    background: var(--term-line, var(--stroke-dim)); border-radius: 2px;
+  }
+  .term-grip:hover::after, .term-grip.dragging::after {
+    background: var(--term-thumb-hi, var(--blue));
+  }
+  /* While dragging, the cursor belongs to the whole page. The pointer leaves
+     the handle constantly during a drag and a cursor that flickers back to an
+     arrow reads as the drag having been dropped. */
+  body.gripping { cursor: col-resize; user-select: none; }
+
+  /* Collapsed: the mark, eight characters, and the colour of the left edge.
+     The edge is what actually carries "this one wants you", so the mode that
+     drops everything else keeps that. */
+  .tl-mini .term-list { flex-basis: 104px; }
+  /* NO GRIP IN MINI. The width is fixed here, so the grip took the pointer,
+     showed a resize cursor, lit up on hover and then did nothing at all, which
+     reads as broken rather than as unavailable. It is hidden in `off` for the
+     same reason and always was. */
+  .tl-mini .term-grip { display: none; }
+  /* ONE ROW, not three. Stacking the star, the mark and the name gave each of
+     them a line of its own, so the mode that exists to take less room took
+     more of it: a collapsed entry was taller than the full one it replaced.
+     The star goes entirely. Pinning is a decision, and a decision does not
+     belong on the control you shrank to get it out of the way. It is on the
+     card in `full`, and in the right-click menu in both. */
+  .tl-mini .term-list .card { padding: 6px 4px; }
+  .tl-mini .term-list .card .chips, .tl-mini .term-list .card .title .pin { display: none; }
+  /* THE HEADINGS SURVIVE `mini`, and the star above does not. That looks
+     inconsistent and is the point.
+     The star goes because pinning is a DECISION and a decision does not
+     belong on the control you shrank to get it out of the way. A heading is
+     not a control. It is the shape of the list, and with no stars here it is
+     the only thing left saying the order is deliberate rather than a sort you
+     do not recognize. Hiding it with the star would inherit a rule written
+     about a different kind of thing.
+     Tightened to fit 104px: the padding comes in, the letter-spacing comes
+     off, the indent goes, and the name is cut rather than wrapped, since a
+     heading reading `dovholuknf` over `atrium` is worse than one that is
+     visibly abbreviated. */
+  .tl-mini .tgroup { margin: 5px 0 2px; padding: 2px 3px 2px 1px; letter-spacing: 0; gap: 3px; }
+  /* The name goes and the caret and the count stay. At 104px a heading spends
+     its whole width on `openziti` and leaves nothing for the rows, and the
+     shape of the list is carried by the indent and the guide anyway. The title
+     attribute still names it on hover, and the count is what a folded group
+     needs to say. */
+  .tl-mini .tgroup .tgname { display: none; }
+  .tl-mini .tnest { margin-left: 5px; padding-left: 5px; }
+  .tl-mini .term-list .card .title {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  /* STILL A GRID. `.rmark` centres its glyph with `display: grid` and
+     `place-items: center`, and overriding the display to `block` threw that
+     away, so an 12px mark sat in the top left corner of an 18px box. Only the
+     size changes here. */
+  .tl-mini .term-list .card .title .rmark {
+    margin: 0; width: 18px; height: 18px;
+  }
+  .tl-mini .term-list .card .title .rmark svg { width: 12px; height: 12px; }
+  /* The SORT goes, the collapse button stays. Hiding both took away the only
+     way back to the full list: `off` has the rail to hover, and `mini` had
+     nothing at all, so shrinking the list was a one-way trip until you found
+     the localStorage key. */
+  .tl-mini .termsort:not(.tlcycle) { display: none; }
+  .tl-mini .termhead { justify-content: center; }
+  .tl-mini .termhead .grow { display: none; }
+  /* The group buttons wrap onto as many lines as they need, which in a strip
+     this narrow is two or three. They are five short words and reading them is
+     the whole control. */
+  .termgroups { flex-wrap: wrap; gap: 4px; }
+  .termgroups .barlabel { font-size: var(--fs-xxs); }
+  .termgroups .seg { flex-wrap: wrap; }
+  /* Nothing of it survives `mini`, which is eight characters and a mark. */
+  .tl-mini .termgroups, .tl-off .termgroups { display: none; }
+  /* Which of the two names is showing is a CSS question, so both are rendered
+     and neither has to be recomputed when the mode changes. */
+  .tshort { display: none; }
+  .tl-mini .tname { display: none; }
+  .tl-mini .tshort {
+    display: block; font: 600 var(--fs-xs)/1.3 var(--mono); color: var(--head);
+    letter-spacing: -.2px; white-space: nowrap;
+  }
+
+  /* Hidden, and it SLIDES OVER the terminal rather than pushing it aside.
+     Nothing reflows, so a pointer crossing the left edge never re-fits xterm,
+     which measures itself in characters and repaints the whole grid to do it. */
+  .term-layout.tl-off { position: relative; }
+  /* STARTS AFTER THE RAIL, not on top of it. The rail is the thing holding
+     this open: it is 18px of always-present strip on the left, and a flyout
+     anchored at `left: 0` laid its cards over it, so the first column of every
+     entry was under a control that stays lit on purpose. */
+  .tl-off .term-list {
+    position: absolute; left: 18px; top: 0; bottom: 0; z-index: 40;
+    flex-basis: auto; width: var(--termw, 260px);
+    background: var(--shell-0); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-lg); box-shadow: 0 18px 40px rgba(var(--shadow-rgb),.45);
+    padding: 8px; transform: translateX(calc(-100% - 28px));
+    transition: transform .16s ease;
+  }
+  .tl-off .term-rail:hover ~ .term-list,
+  .tl-off .term-list:hover, .tl-off .term-list:focus-within { transform: translateX(0); }
+  .tl-off .term-grip { display: none; }
+  /* The strip you hover to get it back. Always there, always in the same
+     place, and it stays lit under the list so the way out is visible while
+     the list is over the terminal. */
+  .term-rail { display: none; }
+  .tl-off .term-rail {
+    display: flex; align-items: flex-start; justify-content: center;
+    flex: 0 0 18px; align-self: stretch; z-index: 41;
+    padding: 0; border: 0; border-radius: 3px; cursor: pointer;
+    background: linear-gradient(180deg, var(--stroke-dim), transparent 60%);
+    color: var(--dim); font-size: var(--fs-sm); line-height: 1;
+  }
+  /* SAYS WHAT IT DOES. The list carries a `»` for this, and in this mode the
+     list is the thing that is hidden, so the only way back was a bare strip
+     nobody could tell was a control. */
+  .tl-off .term-rail::before { content: "\00BB"; padding-top: 10px; }
+  .tl-off .term-rail:hover { background: var(--blue); color: var(--head); }
+  /* AN ENTRY IS A BOARD CARD. Same element, same class, same rules, so the
+     density setting, the hover, the group hue and the waiting edge all arrive
+     here for free and cannot drift from the board.
+     What the list adds is below, and it is only three things: no bottom
+     margin (the column has a gap), the attached one marked, and the two names
+     that swap when the list collapses. */
+  /* NO LIFT. A board card rises 2px under the pointer, which is fine when it
+     is a card in a column. Here it is a tab joined to the terminal beside it,
+     and lifting it slides that join two pixels out of true: the edge, the
+     bridge and the pane stop lining up and the whole thing reads as broken
+     rather than as hovered. The border already says which one you are on. */
+  .term-list .card { margin-bottom: 0; }
+  .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
+
+  /* A TAB, IN ITS OWN TERMINAL'S COLOURS.
+     `--tabc` and `--tabbg` come off the session's theme, set inline where the
+     entry is rendered, so the green session has a green edge and the one you
+     are attached to is filled with the same background you are looking at.
+     The list stops being a column of names and becomes a row of tabs onto the
+     panes behind it, which is what it has always been. */
+  .term-list .card.tab::before {
+    opacity: 1; width: 4px; background: var(--tabc, var(--blue));
+  }
+  /* Square on the side facing the terminal, rounded on the side facing away,
+     which is what makes it read as attached to the pane rather than as a
+     rectangle near it. The gutter between them stays, because the list
+     scrolls and a card that reached across it would be clipped by its own
+     scroll container. */
+  .term-list .card.on {
+    background: var(--tabbg, var(--shell-0));
+    border-color: var(--tabc, var(--stroke));
+    border-right-color: transparent;
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
+  }
+  /* The name has to stay readable ON the terminal's background, which for a
+     light theme is a light one. */
+  .term-list .card.on .title, .term-list .card.on .title .tshort { color: var(--tabc); }
+  /* Hovering says which one, and says it in that session's colour rather than
+     in one blue for all of them. */
+  .term-list .card.tab { --hover: var(--tabc, var(--blue)); }
+
+  /* THE PIECE THAT CROSSES THE GUTTER.
+     The attached card cannot reach the pane itself: the list scrolls, so it
+     clips its own children horizontally and a negative margin is simply cut
+     off. So the span between them is drawn as a separate element, a sibling of
+     both, positioned over the gap and the drag handle.
+     Above the handle on purpose. The colour running over the divider is the
+     whole point: it says these two are one surface, and a 2px line through
+     the middle of it says they are two. */
+  .tabbridge {
+    position: absolute; z-index: 45; pointer-events: none;
+    background: var(--tabbg, var(--shell-0));
+    border-top: 1px solid var(--tabc, var(--stroke));
+    border-bottom: 1px solid var(--tabc, var(--stroke));
+    box-sizing: border-box;
+  }
+  .tabbridge[hidden] { display: none; }
+  /* ONE LINE, CUT AT THE FRONT.
+     A board column is wide and this one is a few hundred pixels, so cutting at
+     the end gave `github/dovholuknf/dotfil…`: every entry truncated inside the
+     org name, which is the part they all share, and the leaf, which is the
+     part that tells them apart, was the part thrown away.
+
+     Wrapping to two lines said it and cost the row height. Cutting at the
+     FRONT says it in one: `…holuknf/dotfiles`. The last characters are the
+     answer to which session this is.
+
+     `direction: rtl` is how that is done. `text-overflow` clips at the END of
+     the line, and in an rtl box the end is the left, so the ellipsis lands
+     there and the tail survives. It is on `.tname` alone rather than on the
+     title, because on the title it would send the star and the runner mark to
+     the right of the name. */
+  .term-list .card .title {
+    display: flex; align-items: center; gap: 4px; line-height: 1.3;
+    flex: 1 1 auto; min-width: 0; white-space: nowrap;
+  }
+  .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
+  .term-list .card .title .rmark { flex: none; }
+  .term-list .card .title .tname {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    direction: rtl; text-align: left;
+  }
+  /* WHAT A SESSION IS FOR, BESIDE WHERE IT LIVES.
+     The address is derived from the directory and the branch, so every session
+     ever started in one checkout draws the same string. This is the card's own
+     title when it says something the address does not, which is what tells two
+     of them apart. See `termExtraName`.
+
+     It gives way before the address does: `flex: 0 1 auto` against the
+     address's `1 1 auto`, so a narrow strip spends what room there is on which
+     session this is and lets the annotation truncate first. Dimmed for the
+     same reason, and it carries the same hover so either half answers.
+
+     Hidden in `mini`, where `.tname` is hidden too and the entry is a mark and
+     a short name. */
+  .term-list .card .title .tnote {
+    flex: 0 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--dimmest); font-size: var(--fs-sm);
+  }
+  .term-list .card .title .tnote::before { content: "\00b7"; margin: 0 4px; }
+  .tl-mini .term-list .card .title .tnote { display: none; }
+  /* THE POP-OUT MARK IS NEVER SQUEEZED.
+     It says this session is showing in a window of its own, and it is the one
+     thing on the entry that changes what a click does. Narrowing the list used
+     to shrink it to nothing, so the click that would have raised that window
+     landed on the card and did something else. The name gives way instead,
+     which it can afford to: it is already truncating. */
+  .term-list .card .card-line > .chips { flex: none; overflow: visible; }
+  /* MINI, after the single-line rules above so they do not undo it.
+     The entry is an icon and a short name and nothing else, so both are
+     centred in the column rather than left-aligned against an edge that is
+     only a few pixels away. `.tname` stops being rtl here: a short name is not
+     truncated, and an rtl box left-aligns it in a way that looks like a
+     rendering fault next to a centred icon. */
+  .tl-mini .term-list .card .card-line { justify-content: center; }
+  .tl-mini .term-list .card .title {
+    flex: 0 1 auto; justify-content: center; gap: 3px;
+  }
+  .tl-mini .term-list .card .title .tname { direction: ltr; text-align: center; }
+  .tl-mini .term-list .card .title .tshort { text-align: center; }
+  button.termsort {
+    align-self: flex-start; font-size: var(--fs-sm); padding: 5px 11px;
+    background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
+  }
+  button.termsort:hover { color: var(--head); border-color: var(--blue); }
+  /* The pair sits together, so they read as one control with two directions
+     rather than as two unrelated buttons that happen to be adjacent.
+     `align-self: center` undoes the `flex-start` above: the sort button beside
+     them is a pill of text and these are single glyphs, so anchoring all three
+     to the top left the chevrons riding high against it. */
+  button.tlcycle {
+    align-self: center; padding: 4px 8px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 26px;
+  }
+  button.tlcycle + button.tlcycle { margin-left: -1px; }
+
+  /* The pane behind the terminal, in the terminal's own color once one is
+     attached. The margin around `#t-screen` and the pane's rounded corners
+     both show through, and in the board's blue they framed a red session in a
+     color it had nothing to do with. */
+  .term-pane {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    background: var(--term-bg,
+      linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7)));
+    /* The same edge the tab wears, so the card, the bridge and the pane read
+       as one outline in one colour rather than three things that happen to be
+       next to each other. */
+    border: 1px solid var(--term-edge, var(--stroke-dim));
+    border-radius: var(--r-lg); overflow: hidden;
+    /* THE TERMINAL GETS A COMPOSITOR LAYER OF ITS OWN, AND KEEPS IT.
+       This pane holds a WebGL canvas. Without its own layer it shares one with
+       its siblings, and anything any of them repaints makes the compositor
+       rebuild the canvas with it: hovering the 6px resize grip flickered the
+       whole terminal, and so did leaving it.
+       MEASURED, NOT REASONED. An instrumented hover showed xterm doing
+       nothing at all: no `onRender`, no ResizeObserver callback, no lost
+       context, across a dozen enter and leave events. Nothing was
+       re-measuring or redrawing the terminal, so the flicker was never
+       xterm's and no amount of work on this side of it would have helped.
+       Two fixes were tried on the grip and neither worked, which is the part
+       worth writing down. Removing the hover transition did not fix it, so
+       the repaint is not about how long it takes. `contain: paint` on this
+       pane did not fix it either: the grip is a SIBLING, so containing this
+       box isolates what is inside it and says nothing about a neighbour
+       dirtying the layer they share. Promoting the grip itself did not fix
+       it. Promoting THIS box did, first try.
+       `will-change: transform` rather than `transform: translateZ(0)`, which
+       is the same promotion written as a hack, and rather than `contain`,
+       which is a different mechanism that this bug already ruled out. */
+    will-change: transform;
+  }
+  /* The bar keeps the board's colors whatever the terminal is themed.
+     It is atrium's chrome, not the session's: the name, the buttons and the
+     cog belong to the board, and a bar that turned dark red with the terminal
+     read as part of the session, which is the one thing it is not. The pane
+     below it takes the theme, so the line between them says which is which. */
+  /* One height for both headers, so the list's controls sit on the same line
+     as the terminal's rather than a few pixels above them. Declared once and
+     used by both, because two paddings that happen to agree today do not. */
+  .term-layout { --barh: 44px; }
+  .term-bar {
+    display: flex; align-items: center; gap: var(--sp-4); padding: 10px 14px;
+    min-height: var(--barh); box-sizing: border-box;
+    border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
+    flex: 0 0 auto;
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.92), rgba(var(--shell1-rgb),.92));
+  }
+  /* The mark and the name, always together and always on one line. It shrinks
+     by truncating the name rather than by wrapping: a bar that grows a second
+     row changes the terminal's height under a grid xterm has already measured
+     in characters. */
+  .term-who {
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-width: 0; flex: 0 1 auto;
+  }
+  .term-bar strong {
+    color: var(--head); font-size: var(--fs-lg);
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* An exited runner. The scrollback stays readable, since it carries the exit
+     and the resume id, but the pane stops looking like a live session. */
+  .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
+  .term-pane.dead .term-bar strong { color: var(--dim); }
+  .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
+  /* A GLYPH IS NOT A WORD. The padding above is tuned for `ctrl-c` and `exit`
+     and is roughly twice as wide as it should be around a single character, so
+     the folder and the cog sat in buttons with more air than content. Squared
+     off instead: equal padding on all four sides, sized from the glyph. */
+  .term-bar button.icon {
+    padding: 6px 8px; min-width: 0; line-height: 1.15;
+  }
+  /* No height of its own. The bar and the help line take what they need and
+     this takes the rest, so nothing has to guess how tall they are. */
+  /* THE HORIZONTAL GAP IS A MARGIN, NOT PADDING. Do not put it back.
+     Found in devtools against a live popped-out terminal, which is the only
+     way anything about xterm's geometry gets settled.
+     xterm fits to this element's CONTENT box and draws its viewport, with its
+     scrollbar, across the full width of it. Horizontal PADDING sits inside
+     that box, so the bar landed on top of the last column of text and the
+     right-hand characters read as running underneath it. A MARGIN is outside
+     the box entirely: xterm gets a narrower element, fits to it exactly, and
+     the gap is still there.
+     The vertical gap is gone entirely. It was harmless, in that nothing
+     measures height in characters the way width is measured in columns, and
+     20px of padding plus 20px of margin was 40px of the terminal's own
+     background between the last line and the help text, which reads as the
+     session having stopped saying anything. */
+  /* Waiting for the daemon, or for a session to come back. Centred over the
+     terminal, in the terminal's own colours. */
+  .termwait {
+    position: absolute; z-index: 35; left: 50%; top: 42%;
+    transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 12px 18px; border-radius: var(--r-lg);
+    /* THE PAIR COMES FROM ONE SYSTEM, AND SO DOES THE FALLBACK. That second
+       half is the part that was missing, and it is why this banner has now
+       been wrong twice.
+
+       The original defect: background from the board, text from the terminal.
+       Two colours chosen by two different people, a skin and a terminal theme,
+       and on a light skin with a light theme it was pale text on a white pill.
+       The fix quoted below is right and was written as `var(--term-x,
+       --board-x)` per property, which quietly reintroduced it. Two independent
+       `var()` fallbacks resolve INDEPENDENTLY: with nothing attached the two
+       variables do not necessarily go missing together, so whichever one was
+       left over from a previous attach paired with the other one's board
+       fallback and the banner was unreadable again.
+
+       THE RULE: a pair is chosen once, not per property. There is no fallback
+       here at all, and the whole pair comes from the board in one rule below
+       when there is no theme. `paintPaneBg` owns the `themed` class and clears
+       every theme variable together, so the two states are the only two
+       states.
+
+       The reasoning that still holds, from the first fix: a terminal theme's
+       foreground and background are designed to be legible together, so taking
+       both from the same theme is correct for every theme including ones
+       nobody has written yet. Detecting "is this light" would be a guess that
+       needs revisiting per theme. */
+    background: var(--term-bg);
+    border: 1px solid var(--term-edge);
+    color: var(--term-fg); font: var(--fs-base)/1.4 var(--mono);
+    box-shadow: 0 18px 44px rgba(var(--shadow-rgb),.55); max-width: 80%; text-align: left;
+  }
+  /* NOTHING ATTACHED, so the whole banner is the board's. One rule setting
+     every colour on it, which is what makes it impossible for half of this to
+     resolve from a terminal theme and half from a skin. */
+  .term-pane:not(.themed) .termwait {
+    background: var(--shell-0);
+    border-color: var(--stroke);
+    color: var(--head);
+  }
+  .termwait[hidden] { display: none; }
+  .termwait .spin {
+    width: 13px; height: 13px; flex: none; border-radius: 50%;
+    border: 2px solid var(--term-line);
+    border-top-color: var(--term-thumb-hi);
+    animation: termspin 900ms linear infinite;
+  }
+  .term-pane:not(.themed) .termwait .spin {
+    border-color: var(--stroke); border-top-color: var(--teal);
+  }
+  @keyframes termspin { to { transform: rotate(360deg); } }
+
+  /* Floating over the top-right of the terminal, in the terminal's colours,
+     because it belongs to the session rather than to the board. */
+  .findbar {
+    position: absolute; z-index: 30; top: 6px; right: 16px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 6px; border-radius: var(--r-md);
+    background: var(--term-bg, var(--shell-0));
+    border: 1px solid var(--term-line, var(--stroke));
+    box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.5);
+  }
+  .findbar[hidden] { display: none; }
+  .findbar input {
+    background: rgba(var(--shadow-rgb),.25); border: 1px solid var(--term-line, var(--stroke-dim));
+    color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
+    padding: 4px 8px; width: 230px; font: var(--fs-sm)/1.3 var(--mono);
+  }
+  .findbar input:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }
+  .findbar button {
+    all: unset; cursor: pointer; padding: 3px 7px; border-radius: var(--r-sm);
+    color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
+  }
+  /* The hover tint comes from the terminal too. A white tint is invisible on a
+     light theme, which is the same bug as the restart banner one rule up. */
+  .findbar button:hover { opacity: 1; background: var(--term-line, var(--lift)); }
+  /* A toggle that is ON has to look different from one being hovered, or the
+     only way to know whether case matters is to try it both ways. */
+  .findbar button.findtog.on {
+    opacity: 1; background: var(--term-thumb, rgba(255,255,255,.16));
+    color: var(--term-fg, var(--head));
+  }
+  .findcount {
+    font: var(--fs-xs)/1.2 var(--mono); color: var(--term-fg, var(--dimmest));
+    opacity: .7; min-width: 54px; text-align: right;
+  }
+  /* The paste box, in the middle rather than in a corner, because it is
+     asking for something and the find bar is not. It has to be the thing you
+     are looking at, since the whole point is that the next ctrl-v goes here
+     instead of into the terminal. */
+  .pastebox {
+    position: absolute; z-index: 40; left: 50%; top: 18%;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+    width: min(560px, 88%); padding: 10px;
+    border-radius: var(--r-md);
+    background: var(--term-bg, var(--shell-0));
+    border: 1px solid var(--term-line, var(--stroke));
+    box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.6);
+  }
+  .pastebox[hidden] { display: none; }
+  .pastebox-say {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
+    opacity: .8;
+  }
+  .pastebox textarea {
+    background: rgba(var(--shadow-rgb),.25);
+    border: 1px solid var(--term-line, var(--stroke-dim));
+    color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
+    padding: 6px 8px; min-height: 96px; resize: vertical;
+    font: var(--fs-sm)/1.35 var(--mono);
+  }
+  .pastebox textarea:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }
+  .pastebox-row { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .pastebox button {
+    all: unset; cursor: pointer; padding: 3px 9px; border-radius: var(--r-sm);
+    color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
+  }
+  .pastebox button:hover { opacity: 1; background: rgba(255,255,255,.08); }
+  /* Positioning context for the find bar. The pane already clips, which is
+     what keeps the bar inside the terminal. */
+  .term-pane { position: relative; }
+
+  #t-screen {
+    flex: 1 1 auto; min-height: 0; min-width: 0;
+    /* A little air under the bar, and none at the bottom. The first line of
+       output sitting against the bar read as clipped. */
+    padding: 6px 0 0; margin: 0 5px; overflow: hidden;
+    /* The attached session's own background, so the strip xterm does not
+       reach is the terminal's color rather than the board's. Falls back to
+       nothing when there is no terminal, which is when the pane should look
+       like the rest of the board. */
+    background: var(--term-bg, transparent);
+  }
+  #t-screen .xterm { height: 100%; width: 100%; }
+  /* WHY A TERMINAL JUMPED TO THE BOTTOM WHENEVER IT WAS FOCUSED, and the fix
+     is one rule rather than the four attempts that came before it.
+     xterm parks a 20x20 textarea at the CURSOR to receive keystrokes, so an
+     input method draws its candidates in the right place. The cursor is at the
+     bottom. A browser scrolls a focused element into view, so every path that
+     focused that textarea took the viewport with it: clicking the terminal,
+     returning to the window, closing the find bar.
+     Nothing calls a scroll function, which is why patching every scroll API
+     found nothing and why preserving the position afterwards was a fight. The
+     browser is not going to stop scrolling to a focused element, so the answer
+     is to stop the element from being somewhere that requires scrolling.
+     Pinned to the top-left of the terminal, which is always in view. The cost
+     is that an input method composes at the corner instead of at the cursor,
+     which is the whole of what this position bought. */
+  #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
+  .term-list .card .chip { white-space: nowrap; }
+
+  /* NEVER set a width here. Color only.
+     The fit addon works out how many columns fit by measuring the viewport's
+     scrollbar, and a declared width changes that measurement out from under it,
+     so xterm draws rows a couple of characters too wide and the text runs
+     underneath the bar. This was found once, written down, then overridden on a
+     theory that it was a fit() timing problem. It is not. Leave the geometry to
+     the browser.
+
+     `scrollbar-width` is the same mistake in Firefox's spelling, so it is gone
+     too. `scrollbar-color` only paints, so that one stays.
+
+     THE OTHER HALF OF THIS RULE IS AT THE TOP OF THE STYLESHEET, under
+     "scrollbars", and both halves have to hold. The board paints every
+     scrollbar on the page from one universal rule, and that rule excludes
+     `#t-screen *` as a subtree. Excluding `.xterm-viewport` alone is not
+     enough and was tried: xterm renders five elements, and one of the other
+     four answered the universal rule with a second scrollbar down the right of
+     the terminal, beside xterm's own. If a terminal ever grows a bar it should
+     not have, that exclusion is where to look, not here. */
+  #t-screen .xterm-viewport {
+    background: transparent !important;
+    scrollbar-color: var(--term-thumb, var(--stroke-dim)) var(--term-bg, var(--bg-2));
+  }
+  #t-screen .xterm-viewport::-webkit-scrollbar-track {
+    background: var(--term-bg, var(--bg-2));
+  }
+  #t-screen .xterm-viewport::-webkit-scrollbar-thumb {
+    background: var(--term-thumb, var(--stroke-dim)); border-radius: var(--r-sm);
+  }
+  #t-screen .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--term-thumb-hi, var(--stroke));
+  }
+  /* Sits ON the terminal's background, so it takes the terminal's colours.
+     The board's dim grey over a dark green pane was the one piece of chrome
+     that had not been told which surface it was on. `--term-fg` is the theme's
+     foreground, faded, since this is a footnote and not output. */
+  .term-help {
+    padding: 5px 14px; border-top: 1px solid var(--term-line, var(--stroke-dim));
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dimmest));
+    opacity: .55; flex: 0 0 auto;
+    /* One line. It is a reminder of four shortcuts, and it was taking three
+       rows off the bottom of the terminal to say them. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* A request while attached: the runner is blocked and the terminal shows
+     nothing, so the question has to appear where you are looking. */
+  .term-perm {
+    display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap;
+    padding: 12px 14px; border-bottom: 1px solid var(--warn);
+    background: linear-gradient(90deg, rgba(var(--warn-rgb),.16), rgba(var(--warn-rgb),.04));
+  }
+  .term-perm .who { flex: 1; min-width: 240px; }
+  .term-perm b { display: block; color: var(--warn); font-size: var(--fs-base); }
+  .term-perm code {
+    display: block; margin-top: 5px; font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
+    word-break: break-all;
+  }

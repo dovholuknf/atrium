@@ -72,6 +72,16 @@ type LaunchRequest struct {
 	Org    string `json:"org,omitempty"`
 	Host   string `json:"host,omitempty"`
 	Branch string `json:"branch,omitempty"`
+	// Interactive marks a launch somebody pressed, as opposed to one that
+	// happened on its own.
+	//
+	// NOT ON THE WIRE. Set by the board's launch handler and by nothing else,
+	// so a fixture coming up at boot, a source's queued launch and a peer
+	// asking for one are all automated by default. The one thing it decides is
+	// whether the runner version check is allowed to hold the launch up: there
+	// is somebody in front of an interactive launch to read the answer, and
+	// nobody in front of the others. See runnerupdate.go.
+	Interactive bool `json:"-"`
 	// Window is which pile this card belongs to, and it is the board's
 	// grouping key. `active-work`, `pull-requests`, `tangent`, `discourse`, a
 	// repo name, or anything else: atrium stores the string and groups by it
@@ -462,6 +472,12 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if !h.Enabled {
 		return nil, fmt.Errorf("%s is not enabled. turn it on in harness settings first", h.Label)
 	}
+	// Is there a newer one, asked here because here is the only moment the
+	// answer changes anything: updating replaces the binary, so it has to
+	// happen while the runner is NOT running, and thirty seconds from now it
+	// will be. Never fails a launch, and only holds one up when a person
+	// pressed it. See runnerupdate.go.
+	d.checkRunnerUpdate(h, req.Interactive)
 	if err := d.resumeIsFree(req.Resume); err != nil {
 		return nil, err
 	}

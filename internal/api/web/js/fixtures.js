@@ -645,7 +645,7 @@ function linesToList(v) {
 function editHarness(id) {
   const h = allHarnesses.find(x => x.id === id) || {
     id: "", label: "", cmd: "", args: [], resume_args: [], prompt_args: [], model_args: [], cwd: "", env: {},
-    launch_mode: "window", rules_source: "", notes: "", enabled: false
+    launch_mode: "window", rules_source: "", package: "", notes: "", enabled: false
   };
   document.getElementById("h-heading").textContent = id ? "edit " + h.label : "add a runner";
   document.getElementById("h-id").value = h.id;
@@ -663,6 +663,7 @@ function editHarness(id) {
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
   document.getElementById("h-rules").value = h.rules_source || "";
+  document.getElementById("h-package").value = h.package || "";
   document.getElementById("h-notes").value = h.notes || "";
   document.querySelectorAll("#h-mode button").forEach(b =>
     b.classList.toggle("on", b.dataset.v === (h.launch_mode || "window")));
@@ -701,6 +702,9 @@ function harnessFromForm() {
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,
     rules_source: document.getElementById("h-rules").value,
+    // Sent on every save for the same reason bracketed paste is: the PUT
+    // replaces the whole row, so a field left out is a field cleared.
+    package: document.getElementById("h-package").value.trim(),
     notes: document.getElementById("h-notes").value.trim()
   };
 }

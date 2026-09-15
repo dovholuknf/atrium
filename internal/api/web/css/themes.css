@@ -1,0 +1,396 @@
+  /* ── the terminal theme editor ─────────────────────────
+     THE TERMINAL'S COLOURS, which are the other system. The skins below are
+     the board around it. See the header on that block.
+
+     Every colour is two controls on one line: the operating system's colour
+     picker, and the hex beside it. Both are needed and neither is enough. The
+     picker is how you nudge a green that is slightly too dark, and it is the
+     only one of the two that shows you the colour. The hex is how you paste
+     the value you already have, which is what somebody bringing a scheme they
+     have used for years is actually doing. */
+  .thgrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--vs-2) var(--sp-3);
+  }
+  .thslot { display: flex; align-items: center; gap: var(--sp-2); }
+  .thslot label {
+    flex: 1; font-size: var(--fs-xs); color: var(--label);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* A native colour input draws its own swatch with its own padding and border,
+     which at this size is mostly border. Stripped back to the swatch. */
+  .thslot input[type="color"] {
+    width: 30px; height: 26px; padding: 0; flex: none;
+    border: 1px solid var(--stroke-dim); border-radius: 4px; background: none; cursor: pointer;
+  }
+  .thslot input[type="text"] {
+    width: 82px; flex: none; font-family: var(--mono); font-size: var(--fs-xs);
+    text-transform: lowercase;
+  }
+  /* A colour that is not a colour yet. The daemon would refuse it on save, and
+     saying so at the box is the difference between a fix and a hunt. */
+  .thslot input[type="text"].bad { border-color: var(--danger); color: var(--danger-text); }
+
+  /* WHAT A THEME LOOKS LIKE, without needing a session attached.
+     The terminal bar's picker previews against real output and is the better
+     answer whenever there IS real output. There is not always: a theme brought
+     at nine in the morning has nothing running yet, and an editor that can only
+     be judged with a session open is an editor nobody opens first. So this is
+     the ansi block and a line of ordinary terminal text, painted from the boxes
+     above as they change. */
+  .thsample {
+    font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+    padding: var(--sp-3) var(--sp-4); border-radius: 8px;
+    border: 1px solid var(--stroke-dim); overflow-x: auto; white-space: pre;
+  }
+  .thsample .sw { display: inline-block; width: 1.6em; text-align: center; }
+
+  /* ── skins ─────────────────────────────────────────────
+     THE BOARD'S OWN COLOURS. Not the terminal's.
+
+     There are two theme systems in this page and confusing them is the trap.
+     A TERMINAL theme is sixteen ANSI colours plus a foreground, a background
+     and a cursor, handed to `term.options.theme`, and there are fifty two of
+     them. It belongs to a terminal, and two terminals side by side may
+     reasonably differ. A SKIN is the chrome around them, and it cannot differ,
+     because there is one board.
+
+     Each block below overrides the palette and NOTHING ELSE. The type ladder,
+     the space ladder, the radii and the shadow geometry are layout, not
+     colour: a skin that moved them would be a different board rather than the
+     same board in another colour, and `--uiscale` and `--density` already
+     answer the size question and belong to the operator.
+
+     ON `:root`, NOT ON `body`, AND THAT IS NOT A DETAIL.
+
+     The palette derives its solids from its triples: `--teal` is declared as
+     `rgb(var(--teal-rgb))`. A custom property is resolved against the element
+     it is DECLARED on, so `--teal` on `:root` reads `:root`'s own triple and
+     nothing lower down can change that. Overriding the triples on `body` left
+     every derived colour at the default while every plain hex changed, which
+     came out as a board with the right background and blue borders, blue
+     pills and a teal accent.
+
+     So the skin goes on the same element the derivations do. Anything that
+     moves them apart brings the whole failure back, and it does not look like
+     a failure: it looks like a skin that is nearly right.
+
+     Every skin declares the same set. A skin missing one falls through to the
+     default and produces one wrong-coloured element that nobody notices for a
+     month, so `scripts/check-skins.sh` counts them rather than trusting the
+     eye.
+
+     ALL TEN ARE DARK, deliberately. `--lift` and `--hairline` are white at low
+     alpha and every shadow is near-black, so light would need a second set of
+     those rather than a different palette, and the terminal underneath is dark
+     whatever the board does. A light board is a separate piece of work. */
+
+  /* Neutral near-black and ice cyan. The one that gets out of the way. */
+  :root[data-skin="graphite"] {
+    --sink-rgb: 6,8,11; --bg1-rgb: 12,15,19;
+    --shell0-rgb: 22,26,32; --shell1-rgb: 14,18,23;
+    --chip-rgb: 34,40,49; --stroke-rgb: 60,69,82; --stroke-dim-rgb: 44,52,63;
+    --teal-rgb: 110,231,249; --warn-rgb: 245,185,59; --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255; --shadow-rgb: 0,0,0;
+    --bg-0: #101318; --blue: #7C9CFF; --card-0: #1A1E25; --card-1: #111419; --grid: #262C35;
+    --head: #F5F7FA; --body: #B6BFCB; --label: #949FAD; --dim: #6B7583; --dimmest: #515A67;
+    --chip-accent: #0F2E31; --chip-accent-stroke: #1C5257; --chip-accent-text: #93E0EA;
+    --btn-hover: #2C3540; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Warm charcoal and copper. Reads like a workshop rather than a console. */
+  :root[data-skin="oxide"] {
+    --sink-rgb: 14,10,8; --bg1-rgb: 22,16,13;
+    --shell0-rgb: 33,25,20; --shell1-rgb: 24,18,14;
+    --chip-rgb: 54,39,30; --stroke-rgb: 96,66,48; --stroke-dim-rgb: 71,50,37;
+    --teal-rgb: 255,150,74; --warn-rgb: 245,196,80; --danger-rgb: 255,107,107;
+    --path-rgb: 214,167,255; --shadow-rgb: 10,4,2;
+    --bg-0: #191210; --blue: #E8A87C; --card-0: #241B16; --card-1: #16100C; --grid: #3A2A20;
+    --head: #FBF4EF; --body: #CDB6A4; --label: #AC9583; --dim: #806B5C; --dimmest: #635144;
+    --chip-accent: #3A2411; --chip-accent-stroke: #6B4120; --chip-accent-text: #F2C39A;
+    --btn-hover: #4A3325; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Forest black and lime. The only skin where the accent is louder than the
+     warning, which suits a board you look at rather than watch. */
+  :root[data-skin="moss"] {
+    --sink-rgb: 5,12,8; --bg1-rgb: 8,18,13;
+    --shell0-rgb: 14,30,21; --shell1-rgb: 9,21,15;
+    --chip-rgb: 24,50,34; --stroke-rgb: 46,92,62; --stroke-dim-rgb: 35,70,47;
+    --teal-rgb: 163,230,53; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 147,197,253; --shadow-rgb: 2,8,4;
+    --bg-0: #0A1710; --blue: #5EEAD4; --card-0: #10241A; --card-1: #081410; --grid: #1C3A28;
+    --head: #F2FBF4; --body: #A7C9B2; --label: #86AC94; --dim: #63866F; --dimmest: #4B6955;
+    --chip-accent: #17330F; --chip-accent-stroke: #2E5C1C; --chip-accent-text: #C7EE8F;
+    --btn-hover: #2A5238; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Aubergine and orchid. Danger goes pink here so it still separates from
+     the accent, which is the one thing a purple skin can get wrong. */
+  :root[data-skin="plum"] {
+    --sink-rgb: 12,6,16; --bg1-rgb: 19,10,26;
+    --shell0-rgb: 30,17,41; --shell1-rgb: 21,12,29;
+    --chip-rgb: 50,30,66; --stroke-rgb: 92,58,120; --stroke-dim-rgb: 68,43,89;
+    --teal-rgb: 217,138,255; --warn-rgb: 250,204,21; --danger-rgb: 255,107,143;
+    --path-rgb: 147,180,255; --shadow-rgb: 6,2,10;
+    --bg-0: #150C1C; --blue: #7DD3FC; --card-0: #201430; --card-1: #120A18; --grid: #33204A;
+    --head: #F9F2FF; --body: #C0AFD0; --label: #A18FB3; --dim: #7A6890; --dimmest: #5D4E70;
+    --chip-accent: #2E1240; --chip-accent-stroke: #572270; --chip-accent-text: #E0B4F5;
+    --btn-hover: #45276B; --danger-text: #FFC3D2;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Brown-black and gold. The warmest, and the one that survives a bright
+     room best. */
+  :root[data-skin="ember"] {
+    --sink-rgb: 13,9,6; --bg1-rgb: 20,14,9;
+    --shell0-rgb: 31,22,14; --shell1-rgb: 22,16,10;
+    --chip-rgb: 52,37,22; --stroke-rgb: 99,71,38; --stroke-dim-rgb: 73,53,29;
+    --teal-rgb: 255,183,77; --warn-rgb: 255,214,102; --danger-rgb: 255,107,107;
+    --path-rgb: 200,170,255; --shadow-rgb: 8,4,1;
+    --bg-0: #17100A; --blue: #FFCC80; --card-0: #221810; --card-1: #140E09; --grid: #3A2A18;
+    --head: #FFF7EC; --body: #D0BBA1; --label: #B09B80; --dim: #85705A; --dimmest: #665443;
+    --chip-accent: #3A2708; --chip-accent-stroke: #6B4712; --chip-accent-text: #F5CE8A;
+    --btn-hover: #4C3418; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Cold slate and ice blue, at the highest contrast of the ten. The one to
+     reach for on a laptop outdoors. */
+  :root[data-skin="glacier"] {
+    --sink-rgb: 8,13,18; --bg1-rgb: 13,20,27;
+    --shell0-rgb: 21,32,43; --shell1-rgb: 15,23,31;
+    --chip-rgb: 33,49,66; --stroke-rgb: 62,92,122; --stroke-dim-rgb: 46,69,92;
+    --teal-rgb: 125,211,252; --warn-rgb: 253,224,71; --danger-rgb: 251,113,133;
+    --path-rgb: 165,180,252; --shadow-rgb: 1,5,9;
+    --bg-0: #0E1620; --blue: #A5B4FC; --card-0: #16222E; --card-1: #0C131A; --grid: #1F3345;
+    --head: #F8FBFF; --body: #B9C9D8; --label: #98AABC; --dim: #718799; --dimmest: #566A7B;
+    --chip-accent: #0C2B3A; --chip-accent-stroke: #185066; --chip-accent-text: #A5DFF5;
+    --btn-hover: #2A4560; --danger-text: #FFC3CC;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* True black, one white accent, one red. For an OLED panel, and for the
+     days when colour is noise. */
+  :root[data-skin="noir"] {
+    --sink-rgb: 0,0,0; --bg1-rgb: 8,8,8;
+    --shell0-rgb: 18,18,18; --shell1-rgb: 11,11,11;
+    --chip-rgb: 32,32,32; --stroke-rgb: 68,68,68; --stroke-dim-rgb: 48,48,48;
+    --teal-rgb: 240,240,240; --warn-rgb: 245,197,66; --danger-rgb: 255,84,84;
+    --path-rgb: 160,160,160; --shadow-rgb: 0,0,0;
+    --bg-0: #0A0A0A; --blue: #C8C8C8; --card-0: #161616; --card-1: #0C0C0C; --grid: #242424;
+    --head: #FFFFFF; --body: #B8B8B8; --label: #989898; --dim: #6E6E6E; --dimmest: #545454;
+    --chip-accent: #1C1C1C; --chip-accent-stroke: #3C3C3C; --chip-accent-text: #E8E8E8;
+    --btn-hover: #333333; --danger-text: #FFC0C0;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Indigo, magenta and cyan. The loud one, and the only one where the two
+     accents are a pair rather than a lead and a follow. */
+  :root[data-skin="vapor"] {
+    --sink-rgb: 8,6,20; --bg1-rgb: 13,10,31;
+    --shell0-rgb: 22,17,48; --shell1-rgb: 15,12,34;
+    --chip-rgb: 38,30,74; --stroke-rgb: 76,60,146; --stroke-dim-rgb: 56,45,108;
+    --teal-rgb: 244,114,255; --warn-rgb: 250,204,21; --danger-rgb: 255,90,120;
+    --path-rgb: 103,232,249; --shadow-rgb: 3,1,9;
+    --bg-0: #0F0B24; --blue: #67E8F9; --card-0: #191338; --card-1: #0C0919; --grid: #2A2158;
+    --head: #F7F2FF; --body: #B6ABDA; --label: #9589C0; --dim: #6F639C; --dimmest: #564C7C;
+    --chip-accent: #33104A; --chip-accent-stroke: #5E1F80; --chip-accent-text: #F0AFFB;
+    --btn-hover: #3C2E78; --danger-text: #FFC3CF;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Warm taupe and terracotta. Paper-coloured text on earth, which is the
+     least screen-like the board gets while staying dark. */
+  :root[data-skin="sandstone"] {
+    --sink-rgb: 15,12,10; --bg1-rgb: 24,20,16;
+    --shell0-rgb: 36,30,25; --shell1-rgb: 26,22,17;
+    --chip-rgb: 58,49,40; --stroke-rgb: 105,88,71; --stroke-dim-rgb: 78,66,53;
+    --teal-rgb: 232,124,77; --warn-rgb: 240,196,102; --danger-rgb: 232,90,90;
+    --path-rgb: 174,176,255; --shadow-rgb: 10,7,5;
+    --bg-0: #1A1512; --blue: #E8B98C; --card-0: #262019; --card-1: #16120E; --grid: #3E342A;
+    --head: #FBF6F0; --body: #CBBBA9; --label: #AB9B89; --dim: #7F7161; --dimmest: #625649;
+    --chip-accent: #3D2415; --chip-accent-stroke: #703F22; --chip-accent-text: #F0B78E;
+    --btn-hover: #4E3A29; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* The default, taken further down. Same family, less light, for a dark room
+     and a long night. */
+  :root[data-skin="abyss"] {
+    --sink-rgb: 2,7,10; --bg1-rgb: 4,12,17;
+    --shell0-rgb: 8,22,30; --shell1-rgb: 5,15,21;
+    --chip-rgb: 15,40,52; --stroke-rgb: 30,80,100; --stroke-dim-rgb: 22,60,76;
+    --teal-rgb: 45,212,191; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 125,211,252; --shadow-rgb: 0,3,5;
+    --bg-0: #041018; --blue: #38BDF8; --card-0: #0A1E29; --card-1: #030D13; --grid: #113040;
+    --head: #EFFAFF; --body: #93B4C4; --label: #7597A8; --dim: #567585; --dimmest: #405A68;
+    --chip-accent: #073730; --chip-accent-stroke: #0E6155; --chip-accent-text: #7FE3D3;
+    --btn-hover: #17495C; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* ── the light ones ────────────────────────────────────
+     WHAT MADE THESE POSSIBLE is `--lift`, `--lift-strong` and `--hairline`
+     becoming part of a skin. They are white at low alpha on every dark skin,
+     which is how a hovered row lifts off its background. On a light one that
+     is invisible, so light skins use BLACK at low alpha and a hover reads as a
+     press rather than a glow.
+
+     The shadows follow the same rule through `--shadow-rgb`: near-black under
+     a dark board is right, and under a light one it wants to be the tinted
+     grey of the paper rather than a hole.
+
+     The recess is INVERTED here, and it is the thing most likely to look wrong
+     if a colour is edited by eye. On a dark skin `--sink-rgb` is darker than
+     the page, so an input reads as a hole. On a light skin it is darker too,
+     which still reads as a hole. It is the CARDS that flip: they go lighter
+     than the page rather than darker. */
+
+  /* Warm white and ink. The one that reads like a printed page. */
+  :root[data-skin="paper"] {
+    --sink-rgb: 238,234,226; --bg1-rgb: 247,244,238;
+    --shell0-rgb: 252,250,246; --shell1-rgb: 243,240,233;
+    --chip-rgb: 226,221,211; --stroke-rgb: 176,168,154; --stroke-dim-rgb: 209,202,190;
+    --teal-rgb: 0,140,112; --warn-rgb: 176,110,0; --danger-rgb: 190,45,45;
+    --path-rgb: 82,82,190; --shadow-rgb: 120,110,90;
+    --bg-0: #FBF9F4; --blue: #2A6FB0; --card-0: #FFFFFF; --card-1: #F7F4EE; --grid: #E4DFD4;
+    --head: #1C1A16; --body: #4A463E; --label: #6A6459; --dim: #8A8377; --dimmest: #A9A294;
+    --chip-accent: #D7EFE6; --chip-accent-stroke: #8FCBB8; --chip-accent-text: #0B5B47;
+    --btn-hover: #E8E3D8; --danger-text: #8A1F1F;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cool white and a strong blue. The brightest of the set. */
+  :root[data-skin="daylight"] {
+    --sink-rgb: 233,237,242; --bg1-rgb: 244,247,250;
+    --shell0-rgb: 251,252,254; --shell1-rgb: 240,243,247;
+    --chip-rgb: 219,226,235; --stroke-rgb: 160,174,190; --stroke-dim-rgb: 202,211,222;
+    --teal-rgb: 0,132,150; --warn-rgb: 168,116,0; --danger-rgb: 198,40,60;
+    --path-rgb: 70,90,200; --shadow-rgb: 90,105,125;
+    --bg-0: #F8FAFC; --blue: #1D63C4; --card-0: #FFFFFF; --card-1: #F3F6FA; --grid: #DDE4EC;
+    --head: #101823; --body: #3D4956; --label: #5C6875; --dim: #7C8794; --dimmest: #9BA5B1;
+    --chip-accent: #D3ECF2; --chip-accent-stroke: #85C2D2; --chip-accent-text: #0A4C58;
+    --btn-hover: #E1E8F0; --danger-text: #8C1526;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cream and brown. Warmest, lowest contrast, easiest at night with the
+     lights on. */
+  :root[data-skin="linen"] {
+    --sink-rgb: 236,229,216; --bg1-rgb: 245,239,228;
+    --shell0-rgb: 251,247,239; --shell1-rgb: 242,236,224;
+    --chip-rgb: 227,217,199; --stroke-rgb: 178,163,138; --stroke-dim-rgb: 210,199,178;
+    --teal-rgb: 150,92,30; --warn-rgb: 168,120,20; --danger-rgb: 176,58,48;
+    --path-rgb: 108,92,180; --shadow-rgb: 130,112,84;
+    --bg-0: #FAF5EB; --blue: #8A6A34; --card-0: #FFFDF8; --card-1: #F5EFE3; --grid: #E6DDC9;
+    --head: #241E14; --body: #52483A; --label: #6F6454; --dim: #8E8271; --dimmest: #ADA391;
+    --chip-accent: #EFE0C8; --chip-accent-stroke: #C9AC79; --chip-accent-text: #5E4415;
+    --btn-hover: #EBE2D0; --danger-text: #7C2019;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Pale blue-grey and indigo. Light without being white. */
+  :root[data-skin="frost"] {
+    --sink-rgb: 226,232,240; --bg1-rgb: 238,243,249;
+    --shell0-rgb: 247,250,253; --shell1-rgb: 235,240,247;
+    --chip-rgb: 214,223,235; --stroke-rgb: 152,168,190; --stroke-dim-rgb: 196,208,224;
+    --teal-rgb: 30,110,168; --warn-rgb: 160,112,10; --danger-rgb: 192,52,72;
+    --path-rgb: 88,80,200; --shadow-rgb: 82,98,120;
+    --bg-0: #EEF3F9; --blue: #4657C8; --card-0: #FBFDFF; --card-1: #E9EFF7; --grid: #D6DFEC;
+    --head: #16202E; --body: #3F4B5C; --label: #5D6A7C; --dim: #7C8798; --dimmest: #9AA4B4;
+    --chip-accent: #D8E3F5; --chip-accent-stroke: #8FA6D4; --chip-accent-text: #1E3468;
+    --btn-hover: #DCE5F1; --danger-text: #86192E;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* ── the lighter darks ─────────────────────────────────
+     Not light, and not as deep as the first ten. For a room with a window in
+     it, where true black reads as a hole and full contrast is tiring. */
+
+  /* Mid blue-grey. Graphite with the lights on. */
+  :root[data-skin="slate"] {
+    --sink-rgb: 26,32,40; --bg1-rgb: 34,41,51;
+    --shell0-rgb: 46,55,68; --shell1-rgb: 37,45,56;
+    --chip-rgb: 58,69,85; --stroke-rgb: 96,111,132; --stroke-dim-rgb: 74,87,105;
+    --teal-rgb: 94,214,205; --warn-rgb: 240,190,80; --danger-rgb: 246,120,120;
+    --path-rgb: 160,178,250; --shadow-rgb: 12,16,22;
+    --bg-0: #2A323E; --blue: #7FB2F0; --card-0: #333C4A; --card-1: #262E39; --grid: #43505F;
+    --head: #F4F7FB; --body: #C2CBD7; --label: #A3AEBD; --dim: #8391A2; --dimmest: #6B7889;
+    --chip-accent: #1D4A45; --chip-accent-stroke: #2F7A70; --chip-accent-text: #A5E8DF;
+    --btn-hover: #465365; --danger-text: #FFD3D7;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Muted purple-grey. Plum without the saturation. */
+  :root[data-skin="dusk"] {
+    --sink-rgb: 32,27,40; --bg1-rgb: 41,35,51;
+    --shell0-rgb: 54,46,67; --shell1-rgb: 44,37,55;
+    --chip-rgb: 66,57,82; --stroke-rgb: 110,96,134; --stroke-dim-rgb: 85,74,105;
+    --teal-rgb: 200,160,246; --warn-rgb: 240,196,96; --danger-rgb: 246,124,150;
+    --path-rgb: 150,178,250; --shadow-rgb: 16,12,22;
+    --bg-0: #322A3E; --blue: #9BC0F2; --card-0: #3B3349; --card-1: #2C2637; --grid: #4E4460;
+    --head: #F7F3FC; --body: #CBC0D8; --label: #ADA0BD; --dim: #8E82A0; --dimmest: #756A86;
+    --chip-accent: #3A2450; --chip-accent-stroke: #5F3E80; --chip-accent-text: #DEC2F4;
+    --btn-hover: #4F4363; --danger-text: #FFD5DE;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Mid green-grey and sage. Moss with the volume down. */
+  :root[data-skin="fern"] {
+    --sink-rgb: 25,34,29; --bg1-rgb: 33,44,37;
+    --shell0-rgb: 44,58,49; --shell1-rgb: 36,48,40;
+    --chip-rgb: 55,72,60; --stroke-rgb: 96,124,104; --stroke-dim-rgb: 73,95,79;
+    --teal-rgb: 150,206,120; --warn-rgb: 236,196,90; --danger-rgb: 240,126,120;
+    --path-rgb: 146,182,236; --shadow-rgb: 10,16,12;
+    --bg-0: #29352C; --blue: #86C7B4; --card-0: #323F35; --card-1: #242E27; --grid: #405142;
+    --head: #F3F8F3; --body: #BFCEC1; --label: #A0B3A3; --dim: #829685; --dimmest: #6B7D6E;
+    --chip-accent: #24401C; --chip-accent-stroke: #3E6B31; --chip-accent-text: #BFE3A6;
+    --btn-hover: #435743; --danger-text: #FFD5D2;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Warm mid grey. Sandstone lifted out of the dark. */
+  :root[data-skin="clay"] {
+    --sink-rgb: 38,32,28; --bg1-rgb: 48,41,36;
+    --shell0-rgb: 62,53,46; --shell1-rgb: 51,44,38;
+    --chip-rgb: 76,66,57; --stroke-rgb: 124,108,92; --stroke-dim-rgb: 96,84,72;
+    --teal-rgb: 236,150,104; --warn-rgb: 240,198,110; --danger-rgb: 238,120,112;
+    --path-rgb: 168,172,240; --shadow-rgb: 20,15,12;
+    --bg-0: #3A322C; --blue: #E3B48C; --card-0: #453B33; --card-1: #332C26; --grid: #574A40;
+    --head: #FAF5F0; --body: #D2C5B9; --label: #B4A597; --dim: #948779; --dimmest: #7B6F63;
+    --chip-accent: #4A2E1B; --chip-accent-stroke: #7A4F2E; --chip-accent-text: #F0C3A0;
+    --btn-hover: #5A4C41; --danger-text: #FFD4D0;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Brighter blue. The default family, lifted and louder. */
+  :root[data-skin="cobalt"] {
+    --sink-rgb: 18,30,48; --bg1-rgb: 24,40,62;
+    --shell0-rgb: 33,54,82; --shell1-rgb: 27,44,68;
+    --chip-rgb: 41,67,102; --stroke-rgb: 72,116,172; --stroke-dim-rgb: 55,90,136;
+    --teal-rgb: 80,224,208; --warn-rgb: 252,200,80; --danger-rgb: 250,116,124;
+    --path-rgb: 150,180,255; --shadow-rgb: 6,12,22;
+    --bg-0: #16263D; --blue: #56A8FF; --card-0: #1E3252; --card-1: #142339; --grid: #2C4468;
+    --head: #F3F8FF; --body: #B9CCE2; --label: #97AEC9; --dim: #7791AE; --dimmest: #617A94;
+    --chip-accent: #12463F; --chip-accent-stroke: #1E7568; --chip-accent-text: #92E9DC;
+    --btn-hover: #2E4C74; --danger-text: #FFD2D5;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Airy teal-grey and mint. The lightest of the darks. */
+  :root[data-skin="mint"] {
+    --sink-rgb: 24,36,36; --bg1-rgb: 32,47,47;
+    --shell0-rgb: 43,62,62; --shell1-rgb: 35,51,51;
+    --chip-rgb: 53,76,76; --stroke-rgb: 92,128,128; --stroke-dim-rgb: 70,99,99;
+    --teal-rgb: 110,226,196; --warn-rgb: 240,198,92; --danger-rgb: 242,124,124;
+    --path-rgb: 148,180,240; --shadow-rgb: 8,16,16;
+    --bg-0: #283A3A; --blue: #6FC5D6; --card-0: #314646; --card-1: #223232; --grid: #3F5A5A;
+    --head: #F2FAF8; --body: #BDD0CC; --label: #9DB4B0; --dim: #7F9793; --dimmest: #697E7A;
+    --chip-accent: #16413A; --chip-accent-stroke: #276B5E; --chip-accent-text: #A3E7D6;
+    --btn-hover: #3F5C5C; --danger-text: #FFD3D3;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }

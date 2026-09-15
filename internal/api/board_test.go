@@ -162,3 +162,62 @@ func scriptFiles(t *testing.T) []scriptFile {
 	}
 	return out
 }
+
+// styleFiles returns the board's stylesheets IN THE ORDER THE PAGE LINKS THEM.
+//
+// Same reasoning as `scriptFiles` and a sharper version of it. The stylesheet
+// used to be one file, and splitting it means the cascade is now spelled by the
+// order of the `<link>` tags: two rules of equal specificity are resolved by
+// which came last, so a file moved up the list changes what the board looks
+// like and nothing fails. Read off the page for that reason. A directory
+// listing is alphabetical, which is a different order that happens to parse.
+//
+// A file on disk and not in the page is also a failure here, for the reason
+// that applies to a stylesheet rather than a script: it styles nothing, and the
+// selectors in it look live to anybody reading them.
+func styleFiles(t *testing.T) []scriptFile {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out []scriptFile
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		const open = `<link rel="stylesheet" href="/css/`
+		if !strings.HasPrefix(line, open) {
+			continue
+		}
+		name, _, ok := strings.Cut(strings.TrimPrefix(line, open), `"`)
+		if !ok {
+			t.Fatalf("could not read a stylesheet name out of %q", line)
+		}
+		if seen[name] {
+			t.Fatalf("index.html links css/%s twice. a stylesheet loaded twice is "+
+				"its own last word, which is not what the order says", name)
+		}
+		seen[name] = true
+		body, err := os.ReadFile(filepath.Join("web", "css", name))
+		if err != nil {
+			t.Fatalf("index.html links css/%s and it is not there: %v", name, err)
+		}
+		out = append(out, scriptFile{name: name, body: string(body)})
+	}
+	if len(out) == 0 {
+		t.Fatal("index.html links no stylesheets under /css/, so this test is proving nothing")
+	}
+
+	ondisk, err := os.ReadDir(filepath.Join("web", "css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ondisk {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".css") && !seen[e.Name()] {
+			t.Errorf("web/css/%s is never linked by index.html, so it styles nothing "+
+				"and reads as live", e.Name())
+		}
+	}
+	return out
+}

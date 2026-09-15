@@ -59,11 +59,16 @@ tool that already works.
 | --- | --- |
 | `github-assigned.ps1` | Open issues assigned to you, through `gh`. |
 | `zendesk-open.ps1` | Open support tickets, by identifier only. Read the header before using it. |
-| `runner-updates.ps1` | Runners with a newer version on npm. Reads this board's own harness rows. |
 
-`runner-updates.ps1` is the one to read for what a deduplication key is FOR. Its key is the package and the
-version that is available, so it raises one card for a release and then reports nothing until the next one.
-There is no state file and nothing to reset, because the inbox already knows what it has been told.
+`runner-updates.ps1` used to be here and is gone. Atrium checks for a newer runner itself now, in Go, at the
+moment before it starts one, and never by running the runner to ask its version. See
+`internal/daemon/runnerupdate.go`. Delete the source row if you still have one configured: the two would raise
+the same card and only one of them stops raising a second copy on the next release.
+
+It is still the example to read for what a deduplication key is FOR, and for how to get it wrong. Its key was
+the package AND the version, so each release raised a NEW card and the one nobody had actioned stayed in the
+inbox beside it. The key names the work, not the state of the work. Put the version in the title, where a
+second offer can rewrite it.
 
 ## Writing your own
 

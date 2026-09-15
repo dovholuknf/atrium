@@ -771,14 +771,36 @@ function selftest(skins, bound) {
 }
 
 // ── run ────────────────────────────────────────────────────────────────────
+// One path, or a directory of them.
+//
+// The board's CSS was one file and is now several, and this has to see all of
+// them at once: a pair binds a colour from one rule to a background from
+// another, and those two can now live in different files. Reading one would
+// report a pair as unbound rather than as failing, which is the quiet way to
+// stop checking something.
+//
+// Given a directory, the files are read in name order. That is not the cascade,
+// and it does not need to be: this resolves a pair by specificity and by which
+// rule was seen last, and the two rules of a pair are not competing with each
+// other. What matters is that all of them are here.
 const page = process.argv[2];
 const report = process.argv.includes("--report");
 if (!page) {
-  console.error("usage: node scripts/check-contrast.js <index.html> [--report]");
+  console.error("usage: node scripts/check-contrast.js <file.css|dir> [--report]");
   process.exit(2);
 }
 
-const css = fs.readFileSync(page, "utf8");
+let css;
+if (fs.statSync(page).isDirectory()) {
+  const files = fs.readdirSync(page).filter(f => f.endsWith(".css")).sort();
+  if (!files.length) {
+    console.error(`no stylesheets in ${page}`);
+    process.exit(2);
+  }
+  css = files.map(f => fs.readFileSync(require("path").join(page, f), "utf8")).join("\n");
+} else {
+  css = fs.readFileSync(page, "utf8");
+}
 const skins = parseSkins(css);
 if (skins.size < 2) {
   console.error(`found ${skins.size} skins in ${page}. expected the whole set: the parser is broken.`);

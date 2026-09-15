@@ -501,10 +501,16 @@ function activityChip(t) {
     : esc(a.what);
   // "Running Bash for 40 minutes" says something the tool name alone does not.
   const age = a.seconds > 5 ? ` ${ago(a.seconds)}` : "";
-  const sub = a.subagents > 0
+  // The count OR the list. The daemon keeps the count at least as large as the
+  // list, so these agree, and the badge is drawn off whichever says there is
+  // something to show rather than trusting one of them. A named subagent that
+  // did not raise the tally is still a subagent, and gating on the number
+  // alone is what hid them.
+  const subs = Math.max(a.subagents || 0, (a.running || []).length);
+  const sub = subs > 0
     ? `<span class="chip sub" title="${esc(subagentTitle(a))}"
          onclick="event.stopPropagation();toggleSubagents(this)"
-         >&#8618; ${a.subagents}</span>`
+         >&#8618; ${subs}</span>`
     : "";
   // Compacting is the one state worth explaining, because the right response
   // to it is to do nothing: the session is rewriting what it knows, so a
@@ -1209,14 +1215,15 @@ function pickGroupHue(name) {
 // pinned card that is idle.
 function pinnedGroupHTML(pins, keyPrefix) {
   if (!pins.length) return "";
-  const key = keyPrefix + ": pinned";
-  const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+  const key = keyPrefix + ": pinned";
+  const fold = "proj:pinned";
+  const shut = isFolded(fold) ? "" : " open";
   // A fixed hue rather than one derived from a name. Every other group takes
   // its color from what it is called; this one is not a project and borrowing
   // a project's color would say it was.
   return `<details class="cardgroup project pins"${shut} style="--ghue:41"
-    data-morph-key="${esc(key)}">
-    <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')">
+    data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
+    <summary>
       <span class="gname">&#9733; pinned</span>
       <span class="gn">${pins.length}</span>
     </summary>
@@ -1251,7 +1258,13 @@ function cardsHTML(cards, g, keyPrefix) {
     const mine = byName.get(name);
     if (!name) return mine.map(cardHTML).join("");
     const key = keyPrefix + ":" + name;
-    const shut = foldedColumns().includes("proj:" + key) ? "" : " open";
+    // FOLDED BY NAME, BOARD WIDE, and not by name-within-column. A card that
+    // changes status moves to another column, where a group of the same name
+    // is a different group and used to be drawn open. So collapsing a project
+    // and then watching one of its cards block read as the board deciding to
+    // pop the group back open, which is exactly what it looked like.
+    const fold = "proj:" + name;
+    const shut = isFolded(fold) ? "" : " open";
     // Work you started and left. Drawn back rather than hidden: the point of
     // the bucket is that it is findable, and the point of greying it is that
     // it does not compete with what you are doing now.
@@ -1259,9 +1272,9 @@ function cardsHTML(cards, g, keyPrefix) {
     // Keyed by the group's own name, so reordering the groups moves them
     // rather than rewriting each one with the next one's contents.
     return `<details class="cardgroup project${cold}"${shut}
-      style="--ghue:${groupHue(name)}" data-morph-key="${esc(key)}">
-      <summary onclick="rememberProject(event, '${esc(key).replace(/'/g, "&#39;")}')"
-        oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
+      style="--ghue:${groupHue(name)}" data-morph-key="${esc(key)}"
+      data-fold="${esc(fold)}">
+      <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
@@ -1270,14 +1283,44 @@ function cardsHTML(cards, g, keyPrefix) {
   }).join("");
 }
 
-function rememberProject(e, key) {
-  const folded = foldedColumns();
-  const open = e.currentTarget.parentElement.open;
-  const i = folded.indexOf("proj:" + key);
-  if (open && i < 0) folded.push("proj:" + key);
-  if (!open && i >= 0) folded.splice(i, 1);
-  localStorage.setItem("atrium.folded", JSON.stringify(folded));
-}
+// Is this group shut?
+function isFolded(key) { return foldedColumns().includes(key); }
+
+// Every fold on the board is written down from ONE listener, on the event the
+// browser fires when a `<details>` actually changes state.
+//
+// It used to be an `onclick` on each summary, which recorded the state being
+// LEFT rather than the state arrived at, and only for the one way of getting
+// there. Anything that opened a group without a click, and every repaint that
+// re-asserted the attribute, went unrecorded, so the stored answer and what
+// was on screen could disagree and the next paint would pick the stored one.
+// The symptom is a group you shut opening on its own.
+//
+// `toggle` does not bubble, so this captures. One listener rather than one per
+// element, because the board's markup is rebuilt by `morphChildren` and a
+// listener attached to an element does not survive being replaced.
+addEventListener("toggle", e => {
+  const el = e.target;
+  if (!el || el.nodeType !== 1 || !el.dataset) return;
+  const key = el.dataset.fold;
+  if (!key) return;
+  const list = foldedColumns();
+  const i = list.indexOf(key);
+  // `el.open` is the state ARRIVED AT here, unlike the click handler this
+  // replaced, so there is no off-by-one to reason about.
+  const shut = !el.open;
+  // NOTHING TO WRITE IS THE COMMON CASE AND IT HAS TO RETURN HERE. A repaint
+  // re-asserts the `open` attribute, setting an attribute fires `toggle`, and
+  // a `refresh()` below on a toggle that changed nothing is a repaint loop.
+  if (shut === (i >= 0)) return;
+  if (shut) list.push(key); else list.splice(i, 1);
+  localStorage.setItem("atrium.folded", JSON.stringify(list));
+  // A column's WIDTH depends on whether any of its groups are open: a column
+  // with everything shut is rows of nothing taking a fifth of the board.
+  // Waiting for the next poll means reading a freshly opened group in a narrow
+  // column for five seconds.
+  refresh();
+}, true);
 
 // The last set of cards either view drew, so something built on demand can
 // find the card it belongs to without re-fetching. Written by both, because
@@ -1457,9 +1500,10 @@ const PRUNABLE = ["done", "dead"];
 // a group with no key is destroyed and rebuilt every paint, which takes the
 // scroll position and any selection inside it along.
 function groupHTML(status, cards, g) {
-  const shut = foldedColumns().includes("group:" + status) ? "" : " open";
-  return `<details class="cardgroup" data-status="${esc(status)}"${shut}>
-    <summary onclick="rememberGroup(event, '${status}')">
+  const shut = isFolded("group:" + status) ? "" : " open";
+  return `<details class="cardgroup" data-status="${esc(status)}"${shut}
+    data-fold="group:${esc(status)}">
+    <summary>
       <span class="gname">${esc(status)}</span>
       <span class="gn">${cards.length}</span>
       ${PRUNABLE.includes(status) && cards.length
@@ -1472,22 +1516,8 @@ function groupHTML(status, cards, g) {
 }
 
 // Groups reuse the folded-columns list, prefixed, so open and shut survives a
-// reload the same way a column does.
-function rememberGroup(e, status) {
-  const key = "group:" + status;
-  const folded = foldedColumns();
-  const open = e.currentTarget.parentElement.open;
-  // The toggle has not happened yet, so `open` is the state being left.
-  const i = folded.indexOf(key);
-  if (open && i < 0) folded.push(key);
-  if (!open && i >= 0) folded.splice(i, 1);
-  localStorage.setItem("atrium.folded", JSON.stringify(folded));
-  // Redrawn now, because the column's WIDTH depends on whether any of its
-  // groups are open: a finished column with both groups shut is six rows of
-  // nothing taking a fifth of the board. Waiting for the next poll would mean
-  // expanding a group and reading it in a narrow column for five seconds.
-  refresh();
-}
+// reload the same way a column does. Written down by the `toggle` listener
+// above, which every group on the board shares.
 
 // ── moving a card by hand ───────────────────────────────
 //

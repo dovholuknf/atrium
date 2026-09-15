@@ -134,6 +134,15 @@ func (d *Daemon) reopenSaved() {
 		return
 	}
 
+	// The whole list, before the first one starts. See settling.go: these are
+	// the cards the board must not announce as new, and there is no interval
+	// that reliably covers ten claude sessions resuming on a cold machine.
+	ids := make([]string, 0, len(wanted))
+	for _, t := range wanted {
+		ids = append(ids, t.ID)
+	}
+	d.settle.expect(ids)
+
 	log.Printf("[atrium] reopening %d terminal(s) that were open before the restart", len(wanted))
 	reopened := 0
 	for i, t := range wanted {
@@ -160,7 +169,12 @@ func (d *Daemon) reopenSaved() {
 			// without anybody noticing.
 			Model: t.Model,
 		}
-		if _, err := d.Launch(req); err != nil {
+		_, err := d.Launch(req)
+		// Back, or never coming. Both end the wait on this card: a worktree
+		// that has gone would otherwise keep the board quiet until the
+		// backstop.
+		d.settle.arrived(t.ID)
+		if err != nil {
 			// Logged and stepped over, one card at a time. A worktree that has
 			// been deleted, a harness that has been disabled, or a claude that
 			// is no longer on PATH must not stop the rest coming back.

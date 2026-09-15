@@ -89,6 +89,14 @@ type Daemon struct {
 	// docs/activity-design.md.
 	act *activityTracker
 
+	// settle is how long this daemon still calls an arriving card part of its
+	// own restart rather than news. See settling.go.
+	settle settling
+
+	// up holds the runner version lookups in flight, so a wave of launches
+	// produces one request. See runnerupdate.go.
+	up updates
+
 	// nats holds any overlay listener the board is being served on, so it can
 	// be reached from somewhere else. See overlay_native.go.
 	nats   map[overlayKind]*native
@@ -182,6 +190,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Recognise = d.Recognise
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
+	d.ap.Settling = d.Settling
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
 	d.ap.OpenShell = d.handleShellOpen
@@ -338,6 +347,10 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
 	}
+	// Somebody is looking at a dialog waiting for this, which is the one case
+	// where the version check is allowed to hold a launch up. Set here rather
+	// than read off the body so nothing on the wire can claim it.
+	req.Interactive = true
 	return d.Launch(req)
 }
 
@@ -817,6 +830,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// name off them. A board being looked at must not act on what it is
 	// drawing.
 	if !d.opts.Passive {
+		// Everything below puts cards back that were here before. Say so, so
+		// the board re-seeds rather than announcing each one as news. See
+		// settling.go, and note this opens BEFORE the goroutine: a window that
+		// started inside it would race the first fixture.
+		d.settle.begin()
 		// Terminals that come up with the daemon, and then the ones that were
 		// simply open when it stopped. In the background, so a runner that is
 		// slow to start cannot delay the board answering: a board that is not
@@ -826,6 +844,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// fixture is what pins it, themes it and decides how it resumes. See
 		// `reopenSaved`.
 		go func() {
+			// Cleared at the end of this function and nowhere else.
+			//
+			// Without it the window closes in the gap BETWEEN the two stages:
+			// `startFixtures` empties the set it named, and `reopenSaved` has
+			// not named its own yet, so for an instant nothing is pending and
+			// the board decides the restart is over. That instant is where the
+			// arrivals it was supposed to swallow actually land.
+			defer d.settle.arrived(settleBoot)
 			d.startFixtures()
 			d.reopenSaved()
 			// Throwaways whose session ended when the last daemon did, so

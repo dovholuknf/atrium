@@ -5,6 +5,126 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card with subagents running showed no badge, because the badge was gated on the tally alone.**
+
+  The tally and the named list are allowed to disagree, and `subagent_test.go` pins that on purpose: an unknown
+  stop takes the count down and finds nothing to remove, on the grounds that a stop is a fact even when the
+  start that would have named it was lost. So `"subagents": 0` served beside a `running` array with a live
+  entry in it is a state the daemon may legitimately produce. It was observed in the wild, on a session with
+  two agents working.
+
+  The board drew the badge off `a.subagents > 0` and therefore drew nothing. It now takes
+  `max(count, named.length)`, which is the only reading that cannot hide an agent atrium can actually name.
+
+  Clamping the count in the daemon was tried first and reverted: it makes the number claim an agent has not
+  finished when the runner said it had, and it broke two tests that exist to say so. The disagreement is the
+  design. Reading only half of it was the bug.
+
+- **The history tab was implemented twice, under one name, and neither copy worked.** It looked unbuilt and
+  was not.
+
+  `index.html` had two elements with `id="history-list"`, and two functions called `renderHistory` to go with
+  them: the card history in the history view, and the permission decision log in the permissions pane.
+  `runners.js` loads after `stack.js`, so it won the name, and `getElementById` returns the FIRST match, which
+  is the permissions one. So opening the history tab drew ninety one cards into a hidden block belonging to
+  another view, and the decision log drew nothing at all. Two working features, each invisible, each looking
+  like nobody had written it.
+
+  The permissions side is now `renderPermHistory` into `#perm-history-list`. Nothing about either feature
+  changed.
+
+  **`scripts/check-board.sh` now fails on a duplicate id**, because none of the existing checks could see this
+  one: the markup is valid, every script parses, and the only symptom is a view painting into another view's
+  element. It reports every offender rather than the first.
+
+- **The restart quiesce is bounded by the SET of cards coming back, not by a duration.** The first version was
+  a floor, a tail and a cap. It reported `settling: true` correctly and the toasts arrived anyway, because ten
+  sessions coming back is not an interval anybody can name in advance: `--resume` is slow, the gap between
+  launches is deliberate, and on a cold machine the whole parade runs minutes.
+
+  Atrium already knows exactly which cards it is about to restore, because it read the list in order to
+  restore them. So it names the whole list before starting the first one and stays settling until every one has
+  arrived or failed. Failing counts, or a deleted worktree would keep the board quiet until the backstop. The
+  clock is left in as a backstop and as an opening grace for daemons with nothing to restore, whose sessions
+  rejoin through their own hooks.
+
+  One entry stands for the startup sequence itself, held for its whole duration. Without it the window closes
+  in the gap between `startFixtures` emptying its list and `reopenSaved` naming its own, and that instant is
+  exactly where the arrivals landed.
+
+  **`waiting` is suppressed during the window too, not just `arrived`.** What came through the first fix was
+  "X is ready" for a session that had finished its turn BEFORE the restart: the card was marked dead when its
+  pid went, came back on the reopen, and reported the state it was already in. `justStarted` does not catch it,
+  because the card is old. Permission requests still ring throughout.
+
+- **A group you collapse stays collapsed.** Two things were wrong and the second one was hiding behind the
+  first.
+
+  A project group's folded state was keyed by name WITHIN A COLUMN, so `dovholuknf/atrium` in `running` and
+  `dovholuknf/atrium` in `needs permission` were different groups that happened to be called the same thing.
+  A card blocking on a tool call moves between those columns, so shutting a group and then watching one of its
+  cards block drew an open group with the same name one column over. From the front it reads as the board
+  deciding to pop the group open because something inside it updated, which is exactly what it was reported
+  as. Project groups now fold board-wide by name.
+
+  The state was also written down by an `onclick` on the summary, which records the state being LEFT rather
+  than the one arrived at, and only for one way of getting there. It is now one capturing `toggle` listener
+  for every group on the board and the stack, which is the event the browser fires whenever a `<details>`
+  actually changes, by any means. Note the early return in it: a repaint re-asserts the `open` attribute,
+  setting an attribute fires `toggle`, and a refresh on a toggle that changed nothing is a repaint loop.
+
+  Existing folds are forgotten once, because the key changed shape.
+
+  `board.js` also carried a literal NUL byte where a space belonged, in `": pinned"`. It worked, because the
+  same wrong byte was on both sides of the comparison, and it is gone.
+
+- **A restart no longer announces itself six times.** The cards that were running die with the old daemon, the
+  fixtures come back a moment later, and to the board's arrival alert every one of those is a card that was
+  not there a second ago. So restarting six terminals rang six times to say that the thing you had just
+  restarted had restarted.
+
+  The board cannot work this out on its own: a session coming back and a session somebody started arrive the
+  same way. So the daemon says it is still coming up, on `/v1/health`, which every page already polls and
+  already reads for the build id, and while that is true the board re-seeds what it knows instead of diffing
+  against it. Bounded, so a fixture that takes two minutes does not buy two minutes of silence.
+
+  **Permission requests still ring throughout.** An agent that comes back up already blocked is the one thing
+  during a restart worth being interrupted for.
+
+- **Atrium checks for a newer runner itself, just before it starts one, and never by running the runner.**
+  `scripts/sources/runner-updates.ps1` is deleted. It was a source on a ten minute timer and three things were
+  wrong with it.
+
+  It ran `claude --version` and `codex --version` to find out what was installed, which is a whole agent
+  binary starting up to print one line, and on Windows each one allocated a console window in front of
+  whatever you were doing: `hideWindow` covers the command atrium spawns and not its grandchildren. The
+  installed version is now read out of the package's own `package.json`, and the published one comes from a
+  single request to the registry. No process is started.
+
+  It asked every ten minutes forever, including the twenty three hours a day nobody was about to start a
+  runner. The answer only changes anything at one moment, because updating replaces the binary and therefore
+  has to happen while the runner is not running. So that is when it is asked.
+
+  And its deduplication key was the package AND the version, so each release raised a new card and the one
+  nobody had actioned stayed in the inbox beside it. Two releases meant two rows saying the same sentence.
+
+  **A launch somebody pressed waits for the answer. A launch that happened on its own does not.** There is
+  somebody in front of the first to read it and nobody in front of a fixture at boot. Only the first caller
+  goes and asks: a wave of launches does not become a wave of requests, and the ones that lose do not queue
+  behind the one that won. The wait is bounded at four seconds and says so on the board while it is happening,
+  because this is the only place atrium holds up something you pressed on a request that leaves the machine.
+
+  Which package a runner comes from is a field on the harness row, seeded for claude and codex and editable
+  like everything else. Atrium still knows nothing about any runner: it knows a row named something to ask
+  about.
+
+- **An intake item that has moved on rewrites the card it already has.** `store.Offer` used to answer "this is
+  known, here is the card" and leave the card exactly as it was, which is why a key had to carry the state of
+  the work to say anything new. It now refreshes the title, why, prompt, url and tags of a card **that is
+  still in the inbox**. Anything past `backlog` has a session and a history and is left alone, and a field the
+  source did not send leaves what was there rather than blanking it, so a prompt you edited before pressing
+  start survives the next tick.
+
 - **The redraw collapse was deleting lines out of the middle of paragraphs, ahead of every renderer.** This is
   what was actually wrong with scrollback, and it was not the rendering.
 

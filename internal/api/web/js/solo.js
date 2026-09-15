@@ -39,6 +39,32 @@ function windowTitle(task) {
   return label ? label + " - atrium" : "atrium terminal";
 }
 
+// Where a session lives and what it is on, kept apart.
+//
+// `terminalLabel` joins these with a colon and the strip's tree used to take
+// them apart again by splitting on the last one. That is fine until a field
+// carries a colon of its own, and one did: a card launched from a shell had
+// `main:desktop-edge-win` stored as its BRANCH, so the joined label was
+// `github/openziti/desktop-edge-win:main:desktop-edge-win`, the split kept
+// `desktop-edge-win:main` as a path segment, and the card got a heading of its
+// own beside the repo it belongs to.
+//
+// Nothing here validates the branch, deliberately. A branch is whatever git
+// says and atrium does not get to have opinions about it. What this fixes is
+// the round trip: the two halves are handed over as two values, so no amount
+// of punctuation in either can make the reader mistake one for the other.
+function terminalParts(task) {
+  if (!task) return { where: "", branch: "" };
+  const label = terminalLabel(task);
+  const branch = String(task.branch || "").trim();
+  // The label falls back to `display_title` when there is no path to show, and
+  // then there is no `where` to split off.
+  if (!branch || !label.endsWith(":" + branch)) {
+    return { where: "", branch: "", leaf: label };
+  }
+  return { where: label.slice(0, label.length - branch.length - 1), branch, leaf: branch };
+}
+
 function terminalLabel(task) {
   if (!task) return "";
   const path = String(task.worktree || "").replace(/\\/g, "/").replace(/\/+$/, "");

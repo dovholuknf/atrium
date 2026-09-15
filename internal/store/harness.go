@@ -79,6 +79,16 @@ type Harness struct {
 	// the board also needs this configuration. Shells use stream detection
 	// because they toggle the mode around each prompt.
 	BracketedPaste bool `json:"bracketed_paste"`
+	// Package is where this runner is installed from, so atrium can ask
+	// whether a newer one is published without running the runner to find out.
+	//
+	// An npm package name today, because both runners that have one come from
+	// npm. It is the NAME OF A THING TO ASK ABOUT and not a registry client:
+	// atrium reads the version out of the installed package's own metadata and
+	// asks the public registry what the latest is, and does neither if this is
+	// empty. A bare shell has no version and ollama ships as a platform
+	// installer, so empty is the right answer for both and means "do not ask".
+	Package string `json:"package"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -123,6 +133,7 @@ func DefaultHarnesses() []Harness {
 			PromptArgs:  []string{"{prompt}"},
 			ModelArgs:   []string{"--model", "{model}"},
 			RulesSource: "claude", Sort: 10, BracketedPaste: true,
+			Package: "@anthropic-ai/claude-code",
 			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
@@ -140,7 +151,7 @@ func DefaultHarnesses() []Harness {
 			ResumeArgs:     []string{"resume", "{resume}"},
 			PromptArgs:     []string{"{prompt}"},
 			ModelArgs:      []string{"--model", "{model}"},
-			BracketedPaste: true,
+			BracketedPaste: true, Package: "@openai/codex",
 			RulesSource:    "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
@@ -180,7 +191,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model, &bracketed); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -219,7 +230,7 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args, bracketed_paste`
+	model_args, bracketed_paste, package`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -324,7 +335,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			bracketed = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -333,11 +344,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				rules_source = excluded.rules_source, notes = excluded.notes,
 				sort = excluded.sort, prompt_args = excluded.prompt_args,
 				model_args = excluded.model_args,
-				bracketed_paste = excluded.bracketed_paste`,
+				bracketed_paste = excluded.bracketed_paste,
+				package = excluded.package`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
-			bracketed)
+			bracketed, strings.TrimSpace(h.Package))
 		return err
 	})
 	if err != nil {

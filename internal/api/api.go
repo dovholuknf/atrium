@@ -55,6 +55,11 @@ type Server struct {
 	// an operator-written command, and looking at the directory the templates
 	// named needs the daemon's filesystem rather than the browser's.
 	Recognise func(url string) (*store.Resolved, error)
+	// Settling reports whether the daemon is still bringing back the sessions
+	// it had before it restarted. Supplied by the daemon, which is the only
+	// thing that knows it is mid-boot. Nil in a build without it, which reads
+	// as "not settling" and is the behavior that existed before.
+	Settling func() bool
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -498,6 +503,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{"ok": !halted, "halted": halted, "build": s.boardID()}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
+	}
+	// Here for the same reason `build` is: this is the one thing every page
+	// already asks, on a timer and on every reconnect, and a restart is
+	// exactly when a page is reconnecting. See internal/daemon/settling.go.
+	if s.Settling != nil && s.Settling() {
+		body["settling"] = true
 	}
 	writeJSON(w, http.StatusOK, body)
 }
