@@ -69,7 +69,13 @@ function terminalLabel(task) {
   if (!task) return "";
   const path = String(task.worktree || "").replace(/\\/g, "/").replace(/\/+$/, "");
   const segs = path.split("/").filter(Boolean);
-  const repo = String(task.repo || "").trim();
+  // `display_repo` and not `repo`: the daemon resolves an override, then what
+  // the launcher recorded, then a guess read off the path. A card launched
+  // without a repo used to leave this empty, and with nothing to anchor on the
+  // label fell back to the last three path segments. For a worktree kept below
+  // its checkout that is three directories that mean nothing, which the strip
+  // then drew as three nested headings holding one row.
+  const repo = String(task.display_repo || task.repo || "").trim();
   const branch = String(task.branch || "").trim();
 
   // Last match, not first: a repo called `ziti` under `.../github/openziti/ziti`

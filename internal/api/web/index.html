@@ -124,11 +124,19 @@
 </div>
 
 <main>
-  <!-- The board has no sort: a column IS the order. Grouping is the one thing
-       here worth reaching without opening the gear. -->
+  <!-- A column is a bucket, not an order, and for a long time this said the
+       board had no sort because of that. It did have one: whatever `rank`
+       happened to be, which is the drag order and means nothing once a card is
+       over. The finished column came out ten days, nine, eight, one, forty
+       seconds, ten days again, and nothing on screen explained it because
+       there was nothing to explain.
+       Both controls sit here rather than in the gear: they change what you are
+       looking at, and a control that does that belongs next to the thing. -->
   <div class="filters" id="board-bar" hidden>
     <span class="barlabel">group</span>
     <div class="seg groupseg" id="board-group"></div>
+    <span class="barlabel">sort</span>
+    <div class="seg" id="board-sort"></div>
   </div>
   <div id="board" class="board" hidden></div>
   <!-- Every card as one list. The board answers "what is where"; this answers

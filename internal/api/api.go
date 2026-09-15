@@ -518,8 +518,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 type view struct {
 	*store.Task
 	DisplayTitle string `json:"display_title"`
-	IdleSeconds  int64  `json:"idle_seconds"`
-	WaitSeconds  int64  `json:"wait_seconds"`
+	// DisplayRepo is the repo a client should render: an override, else what
+	// the launcher recorded, else a guess read off the worktree path.
+	//
+	// Beside `display_title` and resolved the same way, rather than replacing
+	// `repo`. A client that wants to know whether atrium was TOLD the repo
+	// still asks `repo`, which is the difference between what is known and
+	// what is shown. See store.DisplayRepo.
+	DisplayRepo string `json:"display_repo"`
+	IdleSeconds int64  `json:"idle_seconds"`
+	WaitSeconds int64  `json:"wait_seconds"`
 	// Observed marks a session atrium is only watching. The board uses it to
 	// offer resume rather than a prompt box, and to stay quiet about it.
 	Observed bool `json:"observed"`
@@ -592,6 +600,7 @@ func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
 		DisplayTitle: t.DisplayTitle(),
+		DisplayRepo:  t.DisplayRepo(),
 		IdleSeconds:  int64(time.Since(t.LastActivityAt).Seconds()),
 		Observed:     t.Observed(),
 	}
