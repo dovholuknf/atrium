@@ -18,7 +18,11 @@ async function renderFixtures() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allFixtures.map((f, i) => `
+  // `i` and `mine` are the position WITHIN THE MACHINE, not within the merged
+  // list. A fixture's number is the order it starts in on its own machine, and
+  // the move buttons reorder it there, so counting across three rooms would
+  // number them 1 to 12 and grey out the wrong arrows.
+  setHTML(host, roomGroups(allFixtures, (f, i, mine) => `
     <div class="row line${f.last_error ? " broke" : ""}">
       <span class="chip ${f.enabled ? "accent" : ""}">${f.enabled ? "on" : "off"}</span>
       <span class="ord">${i + 1}</span>
@@ -27,13 +31,13 @@ async function renderFixtures() {
       <span class="by">${esc(f.harness)}</span>
       ${f.resume ? `<span class="by">resumes</span>` : `<span class="by">fresh</span>`}
       ${f.theme ? `<span class="chip">${esc(f.theme)}</span>` : ""}
-      ${roomChipFor(f)}
-      <button onclick="moveFixture('${esc(f.id)}', -1)" ${i === 0 ? "disabled" : ""}
+      <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',-1)"
+        ${i === 0 ? "disabled" : ""}
         title="start this one earlier">&#9650;</button>
-      <button onclick="moveFixture('${esc(f.id)}', 1)"
-        ${i === allFixtures.length - 1 ? "disabled" : ""}
+      <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',1)"
+        ${i === mine.length - 1 ? "disabled" : ""}
         title="start this one later">&#9660;</button>
-      <button onclick="startFixtureNow('${esc(f.id)}')"
+      <button onclick="startFixtureNow('${esc(f.id)}','${esc(f.room || "")}')"
         title="start it now, without restarting atrium">start</button>
       <button onclick="editFixture('${esc(f.id)}','${esc(f.room || "")}')">edit</button>
     </div>` +
@@ -47,7 +51,7 @@ async function renderFixtures() {
       <span class="chip warn">did not start</span>
       <code class="grow ell" title="${esc(f.last_error)}">${esc(f.last_error)}</code>
       ${f.last_run_at ? `<span class="by">${esc(firstSeen(f.last_run_at))}</span>` : ""}
-    </div>` : "")).join("") + `</div>`);
+    </div>` : "")));
 }
 
 // Reordering by swapping sort values with the neighbor.
@@ -55,12 +59,18 @@ async function renderFixtures() {
 // The list is short and hand written, so this is two writes rather than a
 // fractional rank scheme. Midpoint insertion earns its keep on a board with
 // hundreds of cards, not on a list of five.
-async function moveFixture(id, delta) {
-  const i = allFixtures.findIndex(f => f.id === id);
+async function moveFixture(id, room, delta) {
+  // WITHIN ITS OWN MACHINE. The order a fixture starts in is an order on that
+  // machine, so the neighbour it swaps with has to be one of its own. Across a
+  // merged list it would trade sort values with a row on another machine and
+  // neither would move.
+  const mine = (allFixtures || []).filter(f => (f.room || "") === (room || ""));
+  const i = mine.findIndex(f => f.id === id);
   const j = i + delta;
-  if (i < 0 || j < 0 || j >= allFixtures.length) return;
+  if (i < 0 || j < 0 || j >= mine.length) return;
+  if (!await chooseWriteRoom(mine[i], "fixture")) return;
 
-  const a = allFixtures[i], b = allFixtures[j];
+  const a = mine[i], b = mine[j];
   const at = a.sort, bt = b.sort;
   // Equal sorts fall back to creation order, which makes a swap a no-op. Give
   // them distinct ones based on position instead.
@@ -190,7 +200,8 @@ async function deleteFixture() {
   renderFixtures();
 }
 
-async function startFixtureNow(id) {
+async function startFixtureNow(id, room) {
+  if (!await chooseWriteRoom(rowOf(allFixtures, id, room), "fixture")) return;
   try {
     await api(`/v1/fixtures/${id}/start`, { method: "POST" });
     toast("starting", "it will appear in terminals");

@@ -349,6 +349,37 @@ func TestTaggingFollowsMembershipOnAnOpenStream(t *testing.T) {
 	}
 }
 
+// A ROOM WHOSE LISTENER STOPS IS GONE, not frozen in the list.
+//
+// A hub that is also a room serves a second listener, and turning that off
+// cancels it while the hub keeps running. Nothing is watching that room any
+// more, so nothing would ever notice it had stopped beating.
+func TestARoomWhoseListenerStopsIsForgotten(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 30 * time.Second, Warm: 1})
+
+	// Its own context, the way a hub's own room gets one.
+	own, stopOwn := context.WithCancel(context.Background())
+	go func() { _ = hub.Serve(own, ln) }()
+
+	rctx, stopRoom := context.WithCancel(context.Background())
+	defer stopRoom()
+	r := &Room{Name: "inhouse", Dial: plain{addr: ln.Addr().String()},
+		Handler: http.NotFoundHandler(),
+		T:       Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
+	go func() { _ = r.Run(rctx) }()
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("inhouse") })
+
+	// The listener stops. Well inside `Silence`, so a heartbeat timeout cannot
+	// be what removes it.
+	stopOwn()
+	waitFor(t, 5*time.Second, func() bool { return !hub.Has("inhouse") })
+}
+
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {

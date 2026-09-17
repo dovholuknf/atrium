@@ -90,15 +90,23 @@ func hubCmd() *cobra.Command {
 				}
 			}()
 
-			// THE HUB AS A ROOM AS WELL, when asked. Started here rather than
-			// before the listener because it attaches over that same hub, and
-			// stopped by the same context as everything else.
-			if asRoom {
-				stopRoom, err := hubAsRoom(ctx, h, roomName, roomDB, roomAgent)
-				if err != nil {
+			// THE HUB AS A ROOM AS WELL, which is a switch rather than only a
+			// flag: it is turned on and off from the board while the hub keeps
+			// running, and what it was left as is what it comes back as.
+			//
+			// The flag still exists, and it only ever turns it ON. A hub
+			// started without it that was left on last time stays on, because
+			// the absence of a flag is not somebody asking for anything.
+			own := &ownRoom{
+				parent: ctx, hub: h, dir: keys.Dir,
+				name: orDefault(roomName, defaultRoomName()),
+				db:   orDefault(roomDB, defaultRoomDB()), agent: roomAgent,
+			}
+			proxy.SetOwnRoom(own)
+			if asRoom || wasOn(keys.Dir) {
+				if err := own.Set(true); err != nil {
 					return err
 				}
-				defer stopRoom()
 			}
 
 			srv := &http.Server{

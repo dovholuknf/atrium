@@ -540,7 +540,7 @@ async function renderRunners() {
   // and one that fails on first use looking like atrium is broken. The daemon
   // resolves it the same way launching does, so what this shows is what will
   // actually run.
-  document.getElementById("harness-list").innerHTML = `<div class="panel">` + allHarnesses.map(h => `
+  document.getElementById("harness-list").innerHTML = roomGroups(allHarnesses, h => `
     <div class="row line">
       <span class="chip ${h.enabled ? "accent" : ""}">${h.enabled ? "on" : "off"}</span>
       <span class="tool">${esc(h.label)}</span>
@@ -551,12 +551,11 @@ async function renderRunners() {
         : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
       ${hooksChip(h)}
-      ${roomChipFor(h)}
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
         onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
           h.enabled ? "disable" : "enable"}</button>
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
-    </div>`).join("") + `</div>`;
+    </div>`);
 
   renderDiscovered();
   renderFixtures();
@@ -656,7 +655,7 @@ async function renderActions() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allActions.map(a => `
+  setHTML(host, roomGroups(allActions, a => `
     <div class="row line">
       <span class="chip ${a.enabled ? "accent" : ""}">${a.enabled ? "on" : "off"}</span>
       <span class="tool">${esc(a.label)}</span>
@@ -665,9 +664,8 @@ async function renderActions() {
         >and exit</span>` : ""}
       ${a.tag ? `<span class="chip tag" style="--ghue:${groupHue(a.tag)}">${esc(a.tag)}</span>` : ""}
       ${a.runner ? `<span class="by">${esc(a.runner)}</span>` : ""}
-      ${roomChipFor(a)}
       <button data-edit="${esc(a.id)}" data-room="${esc(a.room || "")}">edit</button>
-    </div>`).join("") + `</div>`);
+    </div>`));
   host.querySelectorAll("button[data-edit]").forEach(b => {
     b.onclick = () => editAction(b.dataset.edit, b.dataset.room);
   });
@@ -760,7 +758,7 @@ async function renderSources() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allSources.map(s => `
+  setHTML(host, roomGroups(allSources, s => `
     <div class="row line">
       <span class="chip ${s.enabled ? "accent" : s.last_error ? "warn" : ""}"
         >${s.enabled ? "on" : s.last_error ? "off" : "off"}</span>
@@ -769,9 +767,8 @@ async function renderSources() {
         esc([s.cmd].concat(s.args || []).join(" "))}</code>
       <span class="by" title="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
       ${sourceStateChip(s)}
-      ${roomChipFor(s)}
       <button onclick="editSource('${esc(s.id)}','${esc(s.room || "")}')">edit</button>
-    </div>`).join("") + `</div>`);
+    </div>`));
 }
 
 // How a source is doing, as one chip.
@@ -946,7 +943,7 @@ async function renderRecognisers() {
 
   // In the order they are asked, which is the order they are drawn. Somebody
   // debugging "why did the wrong row answer" is looking for exactly this.
-  setHTML(host, `<div class="panel">` + allRecognisers.map(r => `
+  setHTML(host, roomGroups(allRecognisers, r => `
     <div class="row line">
       <span class="chip ${r.enabled ? "accent" : ""}">${r.enabled ? "on" : "off"}</span>
       <span class="by" title="asked in this order, lowest first">${esc(String(r.rank))}</span>
@@ -956,9 +953,8 @@ async function renderRecognisers() {
       ${r.last_error ? `<span class="chip warn" title="${
         esc("the fetch failed " + r.failures + " time(s) in a row: " + r.last_error)
       }">fetch failing</span>` : ""}
-      ${roomChipFor(r)}
       <button class="editrec" data-id="${esc(r.id)}" data-room="${esc(r.room || "")}">edit</button>
-    </div>`).join("") + `</div>`);
+    </div>`));
 
   // THE ID COMES BACK THROUGH THE DOM, not through an inline handler. An id is
   // operator-typed free text, and HTML escaping does nothing about an

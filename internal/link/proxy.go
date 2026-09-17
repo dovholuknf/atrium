@@ -51,6 +51,8 @@ type Proxy struct {
 	// single transport.
 	mu      sync.Mutex
 	clients map[string]*http.Client
+	// own is this hub running agents on its own machine, when it can.
+	own OwnRoom
 
 	// feeds is the one upstream event stream per room, and the boards watching
 	// them. See events.go.
@@ -423,12 +425,44 @@ func isStream(r *http.Request) bool {
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
+// OwnRoom is a hub that can also run agents on its own machine.
+//
+// AN INTERFACE RATHER THAN THE THING ITSELF, because starting a room means a
+// database, a supervisor and pseudo terminals, and this package holds none of
+// those and should not learn about them to own a switch. Whoever builds the hub
+// implements it. A hub that cannot do it leaves this nil and the board asks
+// nothing about it.
+type OwnRoom interface {
+	// On reports whether it is running right now.
+	On() bool
+	// Set starts or stops it, and remembers the answer for next time.
+	Set(on bool) error
+	// Name is what the room is called when it is on.
+	Name() string
+}
+
+// SetOwnRoom wires that switch up. Optional: without it the board hides the
+// control rather than offering one that cannot work.
+func (p *Proxy) SetOwnRoom(o OwnRoom) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.own = o
+}
+
+func (p *Proxy) ownRoom() OwnRoom {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.own
+}
+
 // serveHubAPI answers the few things only the hub knows.
 func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch strings.TrimPrefix(r.URL.Path, "/_hub/") {
 	case "rooms":
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.hub.Rooms()})
+	case "room":
+		p.serveOwnRoom(w, r)
 	case "health":
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok": true, "rooms": len(p.hub.Rooms()),
@@ -437,4 +471,38 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// serveOwnRoom reads and sets whether this hub also runs agents.
+//
+// OFF IS THE DEFAULT AND TURNING IT ON IS A DECISION, which is why it is a
+// switch a human throws rather than something that happens when a hub notices
+// it could. A hub holding a database is a hub whose restart is no longer free,
+// and that freedom is the whole reason the two halves are separate.
+func (p *Proxy) serveOwnRoom(w http.ResponseWriter, r *http.Request) {
+	own := p.ownRoom()
+	if own == nil {
+		// Not "off". Not available at all, which the board draws as nothing
+		// rather than as a switch that would do nothing.
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})
+		return
+	}
+	if r.Method == http.MethodPost {
+		var body struct {
+			On bool `json:"on"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"error":%q}`, "could not read that: "+err.Error())
+			return
+		}
+		if err := own.Set(body.On); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, `{"error":%q}`, err.Error())
+			return
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"available": true, "on": own.On(), "name": own.Name(),
+	})
 }
