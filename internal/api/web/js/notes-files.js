@@ -506,8 +506,64 @@ async function openEditor(taskID, path) {
   // Typed into means unsaved, said plainly, because a text box that looks the
   // same saved and unsaved is one you close without meaning to.
   box.oninput = () => editorState("not saved");
+  paintEditorElsewhere();
   document.getElementById("t-edit").hidden = false;
   box.focus();
+}
+
+// ── the same file, somewhere else ───────────────────────────────────────────
+
+// paintEditorElsewhere names the machine on the button that opens the file
+// there, and hides it when there is nothing configured to open it with.
+//
+// THE MACHINE IS IN THE LABEL because it is the whole decision. `files/open`
+// runs a command where the FILE is, which is where the agent is and not
+// necessarily where you are: over a share it opens a window beside somebody
+// else. A button called `open` would be a trap; one called `open on sg4` is a
+// choice.
+function paintEditorElsewhere() {
+  const b = document.getElementById("t-edit-there");
+  if (!b) return;
+  // The room the card is on, when the board is looking at several. On a plain
+  // daemon there is no name to use and "where the file is" is still the honest
+  // description: it is not this browser.
+  const where = (typeof termTask !== "undefined" && termTask && termTask.room) || "";
+  const cmd = (pastePrefs && pastePrefs.editor_command) || "";
+  b.hidden = !cmd;
+  b.textContent = where ? "open on " + where : "open where the file is";
+  b.title = cmd
+    ? "runs " + cmd + " on the machine the file is on, which is not this browser"
+    : "";
+}
+
+// openFileTab reads the file in a browser tab, served by atrium.
+//
+// NOT THE FILE'S OWN BYTES ON THE BOARD'S ORIGIN. `downloadFile` is always an
+// attachment and always octet-stream, deliberately: serving an HTML file out
+// of a working directory inline would be attacker-authored script running on
+// the origin that holds the settings, the grouping expression and every card.
+// That rule is not worth a convenience.
+//
+// So the tab gets atrium's own reader, which renders the file as TEXT whatever
+// it contains. Same origin, nothing executed, and it works from another
+// machine because the bytes still come from the room.
+function openFileTab() {
+  if (!editing) return;
+  const url = "/read.html#" + encodeURIComponent(editing.taskID) +
+    "/" + encodeURIComponent(editing.path);
+  window.open(url, "_blank", "noopener");
+}
+
+// openFileThere opens it with the editor command, on the machine it is on.
+async function openFileThere() {
+  if (!editing) return;
+  try {
+    await api(`/v1/tasks/${editing.taskID}/files/open`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: editing.path })
+    });
+  } catch (e) { toast("could not open it there", e.message); return; }
+  toast("opened", "on the machine the file is on");
 }
 
 function editorState(s) {

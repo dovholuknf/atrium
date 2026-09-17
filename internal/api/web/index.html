@@ -418,6 +418,17 @@ Exports honor whatever filter is applied.">?</span>
             <div class="filebar">
               <code class="grow ell" id="t-edit-where"></code>
               <span class="by" id="t-edit-state"></span>
+              <!-- THE SAME FILE, SOMEWHERE ELSE. This editor is a panel in a
+                   drawer, which is right for changing one line and cramped for
+                   reading a long file next to the terminal that produced it.
+                   `new tab` is atrium serving it to this browser, so it works
+                   from another machine. `open on` runs the editor command
+                   where the FILE is, which is where the agent is and not
+                   necessarily where you are: the button says which machine so
+                   that is a choice rather than a surprise. -->
+              <button id="t-edit-tab" onclick="openFileTab()"
+                title="read it in a browser tab, served by atrium">new tab</button>
+              <button id="t-edit-there" onclick="openFileThere()"></button>
               <button class="go" onclick="saveEditor()">save</button>
               <button onclick="closeEditor()">close</button>
             </div>
@@ -1264,11 +1275,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          filled in: guessing an editor means atrium picks a program to run on
          your machine, and a wrong guess is a process you did not want. -->
     <div class="field">
-      <label class="eyebrow" for="s-editor">open a file with</label>
+      <label class="eyebrow" for="s-editor">editor command</label>
       <div class="picker">
-        <input id="s-editor" spellcheck="false"
+        <input id="s-editor" spellcheck="false" data-saves="saveEditorCommand"
           placeholder="empty means the open button does nothing">
-        <button onclick="saveEditorCommand()">save</button>
       </div>
       <span class="hintline">Runs on <b>the machine atrium is on</b>, not the one this browser is on.
         That is the point over an overlay: the file is where the agent is. <code>{path}</code> is where the
@@ -1282,7 +1292,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          the file has to exist somewhere the agent can open it. The choice is
          whether that somewhere is your repository or a scratch directory. -->
     <div class="field">
-      <label class="eyebrow" for="s-pastekeep">a pasted file</label>
+      <label class="eyebrow" for="s-pastekeep">pasted files go</label>
       <div class="picker">
         <select id="s-pastekeep" onchange="savePastePrefs()">
           <option value="keep">stays in the card, under .atrium/incoming</option>
@@ -1296,10 +1306,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
 
     <div class="field">
-      <label class="eyebrow" for="s-pastepre">and is announced as</label>
+      <label class="eyebrow" for="s-pastepre">what is typed before a pasted path</label>
       <div class="picker">
-        <input id="s-pastepre" spellcheck="false" placeholder="just the path, on its own">
-        <button onclick="savePastePrefs()">save</button>
+        <input id="s-pastepre" spellcheck="false" data-saves="savePastePrefs"
+          placeholder="just the path, on its own">
       </div>
       <span class="hintline">Typed in front of the path, into the line you are already writing. Nothing is
         submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part
@@ -1312,12 +1322,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          terminates here, so every request over one looks like loopback and
          nothing can be decided by address. -->
     <div class="field">
-      <label class="eyebrow" for="s-browseroots">the picker may open</label>
+      <label class="eyebrow" for="s-browseroots">directories the picker may open</label>
       <div class="picker">
-        <textarea id="s-browseroots" spellcheck="false" rows="3"
+        <textarea id="s-browseroots" spellcheck="false" rows="3" data-saves="saveBrowseRoots"
           placeholder="one directory per line. empty means your home directory and every card's directory"
           ></textarea>
-        <button onclick="saveBrowseRoots()">save</button>
       </div>
       <span class="hintline">One per line. Leave it empty and the picker offers your home directory plus
         every directory a card already uses, which is where work already is. Anything outside is refused
@@ -1327,11 +1336,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
     <!-- Configure the external command that creates worktrees and controls their layout. -->
     <div class="field">
-      <label class="eyebrow" for="s-worktreecmd">make a worktree with</label>
+      <label class="eyebrow" for="s-worktreecmd">worktree command</label>
       <div class="picker">
-        <input id="s-worktreecmd" spellcheck="false"
+        <input id="s-worktreecmd" spellcheck="false" data-saves="saveWorktreeCommand"
           placeholder="empty means gwt new {branch} -y">
-        <button onclick="saveWorktreeCommand()">save</button>
       </div>
       <span class="hintline">Run in the repository, on <b>the machine atrium is on</b>, through a
         shell, because the tool that does this is often a shell function rather than a program.
@@ -1343,11 +1351,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
 
     <div class="field">
-      <label class="eyebrow" for="s-projdepth">and looks for repositories</label>
+      <label class="eyebrow" for="s-projdepth">how deep to look for repositories</label>
       <div class="picker">
-        <input id="s-projdepth" spellcheck="false" inputmode="numeric"
+        <input id="s-projdepth" spellcheck="false" inputmode="numeric" data-saves="saveProjectDepth"
           placeholder="empty means 2 levels under each of those places">
-        <button onclick="saveProjectDepth()">save</button>
       </div>
       <span class="hintline">Levels under each place above. Two matches
         <code>&lt;root&gt;/&lt;org&gt;/&lt;repo&gt;</code>, which is the usual arrangement. A
@@ -1362,11 +1369,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          either gets told the port or gets a profile path hardcoded into it,
          and both are the thing the file was written to prevent. -->
     <div class="field">
-      <label class="eyebrow" for="s-shared-loc">also leave my address at</label>
+      <label class="eyebrow" for="s-shared-loc">shared address file</label>
       <div class="picker">
-        <input id="s-shared-loc" spellcheck="false"
+        <input id="s-shared-loc" spellcheck="false" data-saves="saveSharedLocation"
           placeholder="empty means only this account can find the daemon">
-        <button onclick="saveSharedLocation()">save</button>
       </div>
       <span class="hintline">A file a <b>different account</b> can read, so a script running as somebody
         else finds the board without being told the port. A directory you both already reach is the
@@ -1383,11 +1389,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          WORKAROUND for a shell that always came up as cmd, so the escape
          hatch was unreachable by the person who needed it. -->
     <div class="field">
-      <label class="eyebrow" for="s-shell">a shell opens</label>
+      <label class="eyebrow" for="s-shell">shell command</label>
       <div class="picker">
-        <input id="s-shell" spellcheck="false"
+        <input id="s-shell" spellcheck="false" data-saves="saveShellCommand"
           placeholder="empty means whatever this machine has">
-        <button onclick="saveShellCommand()">save</button>
       </div>
       <span class="hintline">The shell behind the <b>shell</b> button on a terminal. Empty searches this
         machine: <code>pwsh</code>, then <code>powershell</code>, then the command shell. Set it when
@@ -1401,13 +1406,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          other is how somebody pays for 512MB of daemon and still scrolls back
          five thousand lines. -->
     <div class="field">
-      <label class="eyebrow" for="s-sbmb">a terminal remembers</label>
+      <label class="eyebrow" for="s-sbmb">scrollback a terminal keeps</label>
       <div class="picker">
-        <input id="s-sbmb" type="number" min="1" placeholder="16" style="max-width:110px">
+        <input id="s-sbmb" type="number" min="1" placeholder="16" data-saves="saveScrollback"
+          style="max-width:110px">
         <span class="unit">MB in the daemon</span>
-        <input id="s-sblines" type="number" min="1" placeholder="50000" style="max-width:130px">
+        <input id="s-sblines" type="number" min="1" placeholder="50000" data-saves="saveScrollback"
+          style="max-width:130px">
         <span class="unit">lines in the browser</span>
-        <button onclick="saveScrollback()">save</button>
       </div>
       <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
         the lot over when you attach, so nothing older than that can reach the page at all. The browser

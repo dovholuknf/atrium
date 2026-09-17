@@ -106,6 +106,10 @@ var borrowed = map[string]bool{
 	// answer is what the board draws, and drawing nothing was worse.
 	"/v1/auth":     true,
 	"/v1/overlays": true,
+	// Whether a zrok account is enabled on that machine. Read while the
+	// overlays pane draws, so refusing it left the pane unable to say whether
+	// sharing was even possible.
+	"/v1/overlays/zrok/account": true,
 }
 
 // firstRoom is a room to borrow an answer from, chosen the same way every time
