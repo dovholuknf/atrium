@@ -639,7 +639,19 @@ let termKindFor = "";
 function paintTermKind() {
   const wrap = document.getElementById("t-kind");
   if (!wrap) return;
-  wrap.hidden = !(termTask && termTask.supervised);
+  // AND NOT ON A CARD WHOSE RUNNER IS ITSELF A SHELL.
+  //
+  // `agent | shell` on a shell card offers to switch between a shell and a
+  // shell, and calls the first one an agent. There is one terminal on that
+  // card and a second would be the same program in the same directory.
+  //
+  // The deeper oddity is that a shell is a runner at all: the machine already
+  // owns one, in the `shell_command` setting that `shellFor` reads every time,
+  // and the runner row is a copy of it frozen at first run. This hides the
+  // symptom rather than settling that.
+  const shellCard = !!(termTask && isShellRunner({ id: termTask.runner || "",
+    cmd: termTask.runner || "" }));
+  wrap.hidden = !(termTask && termTask.supervised) || shellCard;
   const agent = document.getElementById("t-kind-agent");
   const shell = document.getElementById("t-kind-shell");
   if (agent) agent.classList.toggle("on", termKind !== "shell");
