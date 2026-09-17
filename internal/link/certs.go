@@ -5,7 +5,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -18,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -198,6 +196,19 @@ func (k Keys) Fingerprint() (string, error) {
 type token struct {
 	// T is the transport: empty or "direct", "ziti", "zrok".
 	T string `json:"t,omitempty"`
+	// N is THE NAME THE HUB GAVE THIS ROOM, and it is in every kind of token.
+	//
+	// The hub names the room. You add a room on the hub, that name is minted in
+	// here, and the room is called what this says. It does not choose and it
+	// does not ask the transport.
+	//
+	// That closes a hole by construction rather than by a check. What came
+	// before carried no name: a room named itself at enrolment and the hub
+	// signed whatever it asked for, so one secret authorised any name, and the
+	// hub carried a hand-written refusal for a room claiming a name already
+	// attached. A secret that authorises exactly one name leaves nothing to
+	// claim.
+	N string `json:"n,omitempty"`
 	A string `json:"a,omitempty"` // direct: address, host:port
 	F string `json:"f,omitempty"` // direct: CA fingerprint
 	S string `json:"s,omitempty"` // direct: one-time secret
@@ -208,6 +219,8 @@ type token struct {
 // Join is a parsed join string, in the terms the caller needs.
 type Join struct {
 	Transport string
+	// Name is what the hub decided to call this room.
+	Name string
 	// Direct.
 	Addr, Pin, Secret string
 	// Ziti.
@@ -216,43 +229,25 @@ type Join struct {
 	ShareToken string
 }
 
-// pending is a join secret waiting to be spent.
+// MintToken produces the line a human pastes, for one named room.
 //
-// ON DISK, NOT IN MEMORY, and that is the whole reason this file exists rather
-// than a map. The hub is the half being restarted constantly. A token minted,
-// printed, and then invalidated because somebody restarted the hub before
-// pasting it is a setup that fails for a reason nobody would guess.
-type pending struct {
-	Hash    string    `json:"hash"`
-	Expires time.Time `json:"expires"`
-}
-
-// MintToken produces the line a human pastes.
-func (k Keys) MintToken(addr string) (string, error) {
+// THE SECRET IS THE CALLER'S. It comes from the hub's store, bound there to the
+// room this token names, and this function only wraps it up with the address
+// and the fingerprint. Minting it here would mean two places deciding what a
+// credential is, and the store is the one that can say which room it belongs
+// to.
+func (k Keys) MintToken(addr, name, secret string) (string, error) {
 	fp, err := k.Fingerprint()
 	if err != nil {
 		return "", err
 	}
-	var raw [24]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
+	if strings.TrimSpace(name) == "" {
+		return "", errors.New("a join string has to say which room it is for")
 	}
-	secret := base64.RawURLEncoding.EncodeToString(raw[:])
-
-	// THE SECRET IS HASHED BEFORE IT IS STORED, the same way a password is. A
-	// hub's state directory is not a place a working credential belongs, and
-	// the hub never needs the original: it only ever compares.
-	sum := sha256.Sum256([]byte(secret))
-	list, _ := k.pendings()
-	list = append(keepLive(list), pending{
-		Hash:    base64.RawURLEncoding.EncodeToString(sum[:]),
-		Expires: time.Now().Add(tokenLife),
-	})
-	if err := k.savePendings(list); err != nil {
-		return "", err
+	if strings.TrimSpace(secret) == "" {
+		return "", errors.New("a direct join string needs a secret from the hub's store")
 	}
-
-	body, err := json.Marshal(token{T: "direct", A: addr, F: fp, S: secret})
+	body, err := json.Marshal(token{T: "direct", N: name, A: addr, F: fp, S: secret})
 	if err != nil {
 		return "", err
 	}
@@ -266,8 +261,32 @@ func (k Keys) MintToken(addr string) (string, error) {
 // ziti a policy decided who may dial before any of this ran, and under zrok the
 // share token IS the credential. Minting a second one here would be ceremony
 // that looks like security.
-func MintOverlayToken(kind, service, shareToken string) (string, error) {
-	t := token{T: kind}
+//
+// THE NAME IS STILL HERE, and that is the part the transport cannot supply.
+// zrok private is the case with no answer: the hub knows a connection arrived
+// through its own share and not who sent it, so two rooms on one share could
+// each call themselves the other. The name comes from the hub either way, so
+// the identity does not change with the network.
+//
+// ── AND THE NAME IS NOT PROVEN, WHICH IS NOT SETTLED ────
+//
+// This string is base64 JSON with nothing signed in it. Over direct mTLS the
+// name is spent from a secret and then carried in a certificate the hub signed,
+// so editing the string changes nothing. Here there is no certificate and no
+// secret, so a participant the overlay already lets through can edit the name
+// and attach as any room the hub has a row for.
+//
+// That is no weaker than what came before, where a room named itself outright.
+// It is weaker than what decision 7 says, and the difference is deliberately
+// left open rather than closed with an invented credential: the zrok and
+// OpenZiti experience gets its own round of questions, and what binds a room to
+// an overlay identity is the first of them. The hub says so at startup rather
+// than implying a guarantee it is not keeping.
+func MintOverlayToken(kind, name, service, shareToken string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", errors.New("a join string has to say which room it is for")
+	}
+	t := token{T: kind, N: name}
 	switch kind {
 	case "ziti":
 		if strings.TrimSpace(service) == "" {
@@ -313,8 +332,19 @@ func ParseToken(s string) (Join, error) {
 		// refused, so a string minted by an older hub still works.
 		j.Transport = "direct"
 	}
+	j.Name = strings.TrimSpace(t.N)
 	j.Addr, j.Pin, j.Secret = t.A, t.F, t.S
 	j.Service, j.ShareToken = t.V, t.K
+
+	// EVERY JOIN STRING NAMES A ROOM, whatever transport it is for. One that
+	// does not was minted before the hub did the naming, and it would enrol a
+	// room the hub has no row for: not on the list, not in the inventory, and
+	// with nothing to attach a setting or a deletion to.
+	if j.Name == "" {
+		return j, errors.New(
+			"that join string does not say which room it is for. it was made before the " +
+				"hub named its rooms. add the room on the hub and paste the string it prints")
+	}
 
 	switch j.Transport {
 	case "direct":
@@ -336,82 +366,17 @@ func ParseToken(s string) (Join, error) {
 	return j, nil
 }
 
-// spendLock serialises the read-modify-write on `pending.json`.
-//
-// WITHOUT IT, "GOOD ONCE" IS NOT TRUE. Enrolment runs in a goroutine per
-// connection, so two can interleave: both read the same list, the first writes
-// it back without secret X, and the second writes back ITS copy, which still
-// has X in it. A spent secret is resurrected on disk and works a second time.
-//
-// A process-wide mutex rather than a file lock, because exactly one hub ever
-// owns a state directory. If that stops being true this needs to become a lock
-// on the file.
-var spendLock sync.Mutex
-
-// spend consumes a secret, once.
-func (k Keys) spend(secret string) error {
-	spendLock.Lock()
-	defer spendLock.Unlock()
-
-	sum := sha256.Sum256([]byte(secret))
-	want := base64.RawURLEncoding.EncodeToString(sum[:])
-
-	list, err := k.pendings()
-	if err != nil {
-		return errors.New("this hub has no join strings outstanding")
-	}
-	live := keepLive(list)
-	for i, p := range live {
-		// Constant time, because this compares a secret and the cost of doing
-		// it properly is one function call.
-		if subtle.ConstantTimeCompare([]byte(p.Hash), []byte(want)) == 1 {
-			live = append(live[:i], live[i+1:]...)
-			return k.savePendings(live)
-		}
-	}
-	// ONLY WRITTEN WHEN SOMETHING EXPIRED. Rewriting the file on every failed
-	// attempt would let anybody who can open a connection force disk writes in
-	// a loop, and enrolment is deliberately reachable without a credential.
-	if len(live) != len(list) {
-		_ = k.savePendings(live)
-	}
-	return errors.New("that join string has been used already, or it expired. " +
-		"run `atrium2 hub token` for a fresh one")
-}
-
-func keepLive(list []pending) []pending {
-	out := list[:0]
-	for _, p := range list {
-		if time.Now().Before(p.Expires) {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func (k Keys) pendings() ([]pending, error) {
-	raw, err := os.ReadFile(k.path("pending.json"))
-	if err != nil {
-		return nil, err
-	}
-	var out []pending
-	return out, json.Unmarshal(raw, &out)
-}
-
-func (k Keys) savePendings(list []pending) error {
-	raw, err := json.Marshal(list)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(k.path("pending.json"), raw, 0o600)
-}
-
 // ── enrolment ────────────────────────────────────────────
 
 // enrolReq is what a joining room sends.
 type enrolReq struct {
 	Secret string `json:"secret"`
-	Room   string `json:"room"`
+	// Self is what the machine calls itself, and it is NEVER what it is called.
+	//
+	// The name comes from the secret, which the hub bound to one room when it
+	// minted the token. This is the observed half of the same fact, kept so the
+	// two can be shown side by side, and it decides nothing.
+	Self string `json:"self,omitempty"`
 	// CSR is DER. The key that made it stays on the room.
 	CSR []byte `json:"csr"`
 }
@@ -436,12 +401,15 @@ func NewCSR(room string) (*ecdsa.PrivateKey, []byte, error) {
 	return key, der, err
 }
 
-// sign turns a room's request into a certificate.
+// sign turns a room's request into a certificate for the name the hub chose.
 //
-// THE NAME IS TAKEN FROM THE REQUEST AND NOTHING ELSE IS. Whatever else a CSR
-// carries, only the common name and the public key survive into the
-// certificate, because everything else would be a field a room chose about
-// itself and the hub then treated as true.
+// THE PUBLIC KEY IS THE ONLY THING TAKEN FROM THE REQUEST. Not the common name,
+// not an extension, not a subject alternative name: everything else in a CSR is
+// a field the room wrote about itself, and putting any of it in a certificate
+// the hub signs would be the hub vouching for a claim it never checked.
+//
+// `room` comes from the secret that was spent, which the hub bound to one room
+// when it minted the token.
 func (k Keys) sign(csrDER []byte, room string) ([]byte, error) {
 	csr, err := x509.ParseCertificateRequest(csrDER)
 	if err != nil {
@@ -454,12 +422,13 @@ func (k Keys) sign(csrDER []byte, room string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// NO FALLING BACK TO THE COMMON NAME IN THE REQUEST. That fallback is what
+	// let a room name itself, and a signed certificate is exactly the thing
+	// that must not carry a name nobody on the hub chose.
 	name := strings.TrimSpace(room)
 	if name == "" {
-		name = strings.TrimSpace(csr.Subject.CommonName)
-	}
-	if name == "" {
-		return nil, errors.New("a room needs a name")
+		return nil, errors.New("the hub has no name for this room, so there is " +
+			"nothing to sign. add the room on the hub first")
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),

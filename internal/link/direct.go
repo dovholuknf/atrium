@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,15 @@ type Direct struct {
 	// Pin is the hub authority's fingerprint, on the room's side only. Empty on
 	// a room that has already enrolled, because it then has the CA itself.
 	Pin string
+	// Spend consumes a join secret and answers the name the hub minted it for.
+	// The hub's side only.
+	//
+	// A FUNCTION RATHER THAN A STORE, because this package must not learn that
+	// the hub has a database. What a credential IS belongs to the transport,
+	// and what a room is CALLED belongs to the hub, and this is the one line
+	// where the two meet. Nil refuses enrolment, which is what a test over a
+	// pipe and a hub with no store both want.
+	Spend func(secret string) (string, error)
 }
 
 // ── the hub's side ───────────────────────────────────────
@@ -155,11 +165,25 @@ func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) 
 	if err := readJSON(br, &req); err != nil {
 		return "", err
 	}
-	if err := d.Keys.spend(req.Secret); err != nil {
+	if d.Spend == nil {
+		err := errors.New("this hub is not set up to enrol rooms")
 		_ = writeJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
 	}
-	certDER, err := d.Keys.sign(req.CSR, req.Room)
+	// THE SECRET SAYS WHICH ROOM THIS IS. Not the frame, not the request, and
+	// not the certificate request's common name: all three are things the
+	// caller wrote about itself. Spending the secret is both the proof and the
+	// answer, in one step, which is what leaves nothing to claim.
+	name, err := d.Spend(req.Secret)
+	if err != nil {
+		_ = writeJSON(conn, enrolResp{Error: err.Error()})
+		return "", err
+	}
+	if self := strings.TrimSpace(req.Self); self != "" && !equalFold(self, name) {
+		// Observed beside the override, and the log is where it first shows up.
+		log.Printf("[hub] the machine joining as %q calls itself %q", name, self)
+	}
+	certDER, err := d.Keys.sign(req.CSR, name)
 	if err != nil {
 		_ = writeJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
@@ -172,7 +196,7 @@ func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) 
 	if err := writeJSON(conn, enrolResp{OK: true, Cert: certDER, CA: ca.Raw}); err != nil {
 		return "", err
 	}
-	return req.Room, nil
+	return name, nil
 }
 
 // ── the room's side ──────────────────────────────────────
@@ -310,10 +334,18 @@ func pinnedTo(want string) func([][]byte, [][]*x509.Certificate) error {
 }
 
 // Enrol runs the join: dial pinned, send a request, save what comes back.
-func (d Direct) Enrol(ctx context.Context, room, secret string) error {
-	key, csr, err := NewCSR(room)
+//
+// `self` is what this machine calls itself. It is sent and it decides nothing:
+// THE NAME COMES BACK IN THE CERTIFICATE. The room is called what the hub
+// signed, which is the name the hub minted into the token, and the returned
+// string is that name so the caller can say it out loud.
+func (d Direct) Enrol(ctx context.Context, self, secret string) (string, error) {
+	// The common name here is ignored by the hub, which signs the name it
+	// already has. Sent anyway rather than left empty, because a signing
+	// request with no subject is a thing several tools refuse to parse.
+	key, csr, err := NewCSR(self)
 	if err != nil {
-		return err
+		return "", err
 	}
 	cfg := &tls.Config{
 		MinVersion:            tls.VersionTLS13,
@@ -323,39 +355,53 @@ func (d Direct) Enrol(ctx context.Context, room, secret string) error {
 	dialer := &tls.Dialer{NetDialer: &net.Dialer{}, Config: cfg}
 	conn, err := dialer.DialContext(ctx, "tcp", d.Addr)
 	if err != nil {
-		return fmt.Errorf("could not reach the hub at %s: %w", d.Addr, err)
+		return "", fmt.Errorf("could not reach the hub at %s: %w", d.Addr, err)
 	}
 	defer conn.Close()
 
 	br := bufio.NewReader(conn)
 	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
-		return err
+		return "", err
 	}
-	if err := writeJSON(conn, hello{V: Version, Kind: "enrol", Room: room}); err != nil {
-		return err
+	if err := writeJSON(conn, hello{V: Version, Kind: "enrol", Room: self}); err != nil {
+		return "", err
 	}
 	var w welcome
 	if err := readJSON(br, &w); err != nil {
-		return err
+		return "", err
 	}
 	if !w.OK {
-		return errors.New(w.Error)
+		return "", errors.New(w.Error)
 	}
-	if err := writeJSON(conn, enrolReq{Secret: secret, Room: room, CSR: csr}); err != nil {
-		return err
+	if err := writeJSON(conn, enrolReq{Secret: secret, Self: self, CSR: csr}); err != nil {
+		return "", err
 	}
 	var resp enrolResp
 	if err := readJSON(br, &resp); err != nil {
-		return err
+		return "", err
 	}
 	if !resp.OK {
-		return errors.New(resp.Error)
+		return "", errors.New(resp.Error)
 	}
-	if err := d.Keys.SaveRoom(key, resp.Cert, resp.CA, d.Addr, room); err != nil {
-		return err
+
+	// WHAT THIS ROOM IS CALLED IS READ BACK OUT OF THE CERTIFICATE.
+	//
+	// Not taken from the token, and not from what was asked for. The
+	// certificate is what every later connection presents and what the hub
+	// reads to decide where a request goes, so it is the only answer that
+	// cannot disagree with the hub. A token whose name somebody edited by hand
+	// changes nothing here: the signed name wins.
+	c, err := x509.ParseCertificate(resp.Cert)
+	if err != nil {
+		return "", fmt.Errorf("the hub sent a certificate this room cannot read: %w", err)
 	}
-	if c, err := x509.ParseCertificate(resp.Cert); err == nil {
-		log.Printf("[join] enrolled as %s", describeCert(c))
+	name := strings.TrimSpace(c.Subject.CommonName)
+	if name == "" {
+		return "", errors.New("the hub signed a certificate with no name in it")
 	}
-	return nil
+	if err := d.Keys.SaveRoom(key, resp.Cert, resp.CA, d.Addr, name); err != nil {
+		return "", err
+	}
+	log.Printf("[join] enrolled as %s", describeCert(c))
+	return name, nil
 }

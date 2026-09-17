@@ -5,6 +5,51 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The hub knows which rooms exist, and it names them.**
+
+  A hub held nothing at all, which made its restart free and left it unable to answer the one question only it
+  can: have I already made that room. A join string authorised a join rather than a join AS ANYTHING IN
+  PARTICULAR, so a room named itself at enrolment and the hub signed whatever it asked for.
+
+  The hub now has a store of its own, `internal/hubstore`. It still holds no WORK: no sessions, no terminals,
+  no agent processes, and no authority over any of them, so stopping it still costs nobody a session. What it
+  holds is its own truth, which nothing else can answer. Which rooms exist, what they are called, how they may
+  connect, their join secrets, and which are on their way out.
+
+  **The hub names the room, and the name is minted into the join string.** You add a room on the hub, and the
+  secret that authorises it is bound to that one name. Spending it is the proof and the answer in one step, so
+  there is nothing left for a room to claim and no hand-written check refusing a name already taken. The room
+  reads its own name back out of the certificate the hub signed rather than out of the string it was handed:
+  editing the string changes nothing, because the string is not what the hub reads afterwards. `--name` on the
+  room is gone, and so is the fallback that let a signing request supply a name when the hub had none.
+
+  A room the hub has no record of cannot attach, even holding a certificate this hub signed. That is checked on
+  every heartbeat rather than only at attach, because the store is a file and forcing a room out is another
+  process writing to it.
+
+  New commands, all of which work whether or not a hub is running:
+
+  - `atrium2 hub room add <name>` writes the room down and prints its join string, once
+  - `atrium2 hub room ls` lists every room, connected or not, with what each calls itself beside what it is
+    called
+  - `atrium2 hub room token <name>` mints a fresh string and retires the old one, because the hub holds a hash
+    and cannot show what it printed before
+  - `atrium2 hub room mark <name>` puts a room on its way out, reversibly
+  - `atrium2 hub room rm <name>` refuses a room that is not marked, one the hub last saw holding cards, and any
+    room heard from in the last twenty seconds. `--force` is for a machine that is never coming back and says
+    what it does not do.
+
+  `atrium2 hub token` is gone with the anonymous join it printed. An empty hub now says how to give itself a
+  room instead of printing a string that would have enrolled anything under any name.
+
+  The cache and the audit log are in the schema and nothing writes to them yet. Rooms over zrok and OpenZiti
+  still name themselves, which is what they always did and is not what the direct path now does: the hub says
+  so at startup rather than implying a guarantee it is not keeping. See `docs/decisions.md` 18.
+
+  The store halts rather than degrading, the same posture `internal/store` already has, and refuses to start on
+  a database it cannot read. The room listener closes and stays closed, so rooms park on the backoff they
+  already have, and the board stays up to say what broke.
+
 - **One alert per event, in one form, wherever you are looking.**
 
   A chime with no notification behind it, every time a session was popped out into its own window. The beep is

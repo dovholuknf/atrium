@@ -36,6 +36,22 @@ type Hub struct {
 	// that carries identity itself answers true. Nil means "yes", which is
 	// right for a test over a pipe and nowhere else.
 	Authenticated func(net.Conn) bool
+	// Attaching is asked before a room is adopted, and may refuse it.
+	//
+	// TWO THINGS AT ONCE, and they are the same thing seen from both ends.
+	// It is where a hub checks that the room dialling in is one it has a record
+	// of, and it is where the observed half of that record gets written: what
+	// the machine calls itself and what it is running.
+	//
+	// A CERTIFICATE IS NOT A RECORD. A room whose row was forced out still
+	// holds papers this hub signed, and would otherwise attach to a hub that
+	// has forgotten it exists: not on the list, nothing to name it, and no way
+	// to mark it for deletion again. The error is shown to the room, so it must
+	// read as an instruction rather than as a refusal.
+	//
+	// Nil accepts everything, which is right for a test over a pipe and for a
+	// hub that has no store.
+	Attaching func(name, host, version string) error
 
 	mu    sync.Mutex
 	rooms map[string]*attached
@@ -194,6 +210,18 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 
 // control adopts a room and holds its control connection.
 func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn, br *bufio.Reader) {
+	// ASKED BEFORE ANYTHING IS ADOPTED, so a room the hub has no record of is
+	// turned away rather than half joined. Refusing later would mean it is in
+	// the map, being proxied to, while the hub says it does not exist.
+	if h.Attaching != nil {
+		if err := h.Attaching(name, hi.Host, hi.Version); err != nil {
+			log.Printf("[hub] refused %q: %v", name, err)
+			_ = writeJSON(conn, welcome{OK: false, Error: err.Error()})
+			conn.Close()
+			return
+		}
+	}
+
 	session := newSession()
 	a := &attached{
 		name: name, version: hi.Version, host: hi.Host, session: session,
@@ -301,6 +329,26 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 		case <-a.done:
 			return
 		case <-t.C:
+			// ASKED AGAIN, EVERY BEAT, and not only when a room first attaches.
+			//
+			// A room's record can go while it is attached: the hub's store is a
+			// file, and `atrium2 hub room rm --force` is another process
+			// writing to it. Checking only at attach would leave the hub
+			// proxying to a room it no longer has any record of, which is the
+			// one state nothing else in the design knows how to describe.
+			//
+			// It is also what keeps "last heard from" true rather than a
+			// timestamp from whenever the link happened to be established, so
+			// anything asking whether a room is live has something honest to
+			// read.
+			if h.Attaching != nil {
+				if err := h.Attaching(a.name, a.host, a.version); err != nil {
+					log.Printf("[hub] letting %q go: %v", a.name, err)
+					a.close("this hub no longer has a record of this room")
+					h.forget(a.name, a)
+					return
+				}
+			}
 			a.mu.Lock()
 			quiet := time.Since(a.lastBeat)
 			a.mu.Unlock()

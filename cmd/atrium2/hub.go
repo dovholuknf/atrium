@@ -89,7 +89,18 @@ func hubCmd() *cobra.Command {
 					orDefault(db, filepath.Join(keys.Dir, "hub.db")))
 			}
 
-			side, err := openHub(transport, keys, port, service)
+			// SPENDING A SECRET IS WHAT SAYS WHICH ROOM THIS IS, and the store
+			// is the only thing that can answer it. Handed to the transport
+			// rather than reached for, so `internal/link` never learns the hub
+			// has a database.
+			side, err := openHub(transport, keys, port, service,
+				func(secret string) (string, error) {
+					r, err := store.Spend(secret)
+					if err != nil {
+						return "", err
+					}
+					return r.Name, nil
+				})
 			if err != nil {
 				return err
 			}
@@ -139,6 +150,34 @@ func hubCmd() *cobra.Command {
 			h.Authenticated = func(c net.Conn) bool {
 				return link.IsInProc(c) || side.auth(c)
 			}
+			// A ROOM THIS HUB HAS NO RECORD OF DOES NOT ATTACH, even holding a
+			// certificate this hub signed, because a certificate is not a
+			// record: a room that was forced out still has its papers. The
+			// same call writes down the observed half of what it says about
+			// itself, which is the only moment the hub hears it.
+			// WHAT THIS TRANSPORT ACTUALLY PROVES, said out loud at startup.
+			//
+			// Direct mTLS spends a secret bound to one room and hands back a
+			// certificate carrying that name, so a room is what the hub signed.
+			// An overlay proves somebody may connect and says nothing about
+			// which room they are, so the name is asserted by the room and
+			// checked only against the list. Nobody should have to read
+			// `certs.go` to find that out.
+			if transport != "" && transport != "direct" {
+				log.Printf("[hub] rooms over %s prove they may connect, not which room "+
+					"they are. a name here is taken on trust and checked against the "+
+					"list, and binding one to an overlay identity is an open question",
+					transport)
+			}
+			h.Attaching = func(name, host, ver string) error {
+				r, err := store.ByName(name)
+				if err != nil {
+					return fmt.Errorf("this hub has no room called %q. "+
+						"`atrium2 hub room add %s` on the hub makes one, and prints "+
+						"the string to paste here", name, name)
+				}
+				return store.Seen(r.ID, host, ver)
+			}
 
 			// The board this hub serves. From disk when told to, so the loop is
 			// edit, save, reload, with no rebuild at all.
@@ -166,7 +205,7 @@ func hubCmd() *cobra.Command {
 			// started without it that was left on last time stays on, because
 			// the absence of a flag is not somebody asking for anything.
 			own := &ownRoom{
-				parent: ctx, hub: h, dir: keys.Dir,
+				parent: ctx, hub: h, dir: keys.Dir, store: store,
 				name: orDefault(roomName, defaultRoomName()),
 				db:   orDefault(roomDB, defaultRoomDB()), agent: roomAgent,
 			}
@@ -190,7 +229,7 @@ func hubCmd() *cobra.Command {
 				return fmt.Errorf("board listener: %w", err)
 			}
 
-			greet(side, board, id)
+			greet(store, side, board, id)
 
 			go func() {
 				<-ctx.Done()
@@ -227,35 +266,7 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&roomDB, "room-db", "", "its database, with --room")
 	c.Flags().StringVar(&roomAgent, "room-agent", "127.0.0.1:7802",
 		"where its agents report, with --room")
-	c.AddCommand(tokenCmd())
-	return c
-}
-
-// tokenCmd mints another join string, for the second room or a lost one.
-func tokenCmd() *cobra.Command {
-	var dir, port string
-	c := &cobra.Command{
-		Use:   "token",
-		Short: "Print a fresh join string",
-		Long: "Join strings are good once and for an hour. This prints another without\n" +
-			"disturbing a running hub, which is what you want for a second room or\n" +
-			"for one you pasted into the wrong window.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			keys := link.Keys{Dir: orDefault(dir, hubDir())}
-			if _, err := keys.Fingerprint(); err != nil {
-				return fmt.Errorf("this machine is not a hub yet. run `atrium2 hub` first")
-			}
-			tok, err := keys.MintToken(advertised(port))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), tok)
-			return nil
-		},
-	}
-	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
-	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	c.AddCommand(hubRoomsCmd())
 	return c
 }
 
@@ -263,25 +274,59 @@ func tokenCmd() *cobra.Command {
 //
 // WRITTEN AS THE NEXT THING TO DO, not as a status dump. Somebody running this
 // for the first time has one question, "now what", and the answer is one line
-// they can select with a double click.
-func greet(side *hubSide, boardAddr, id string) {
-	tok, err := side.token()
-	if err != nil {
-		log.Printf("[hub] could not mint a join string: %v", err)
-		return
-	}
+// they can type.
+//
+// IT NO LONGER PRINTS A JOIN STRING, and that is the visible half of the hub
+// naming its rooms. There is nobody to mint one for until a room has been added
+// and given a name, and a string that would enrol anything under any name is
+// exactly what went away. An empty hub says what it is and how to give it a
+// room, which is a board that explains itself rather than one that quietly
+// became something else.
+func greet(store *hubstore.Store, side *hubSide, boardAddr, id string) {
 	fmt.Println()
 	fmt.Println("  the board is at   http://localhost" + portOf(boardAddr))
 	fmt.Println("  rooms dial in on  " + side.says)
 	fmt.Println("  board build       " + id)
 	fmt.Println()
-	fmt.Println("  Nothing is on it yet, because a hub holds nothing. On the machine your")
-	fmt.Println("  agents run on, paste this:")
+
+	rooms, err := store.Rooms()
+	if err != nil {
+		log.Printf("[hub] could not read the room list: %v", err)
+		return
+	}
+	if len(rooms) == 0 {
+		fmt.Println("  No rooms yet, and a hub with no room has nothing to show. Give it one:")
+		fmt.Println()
+		fmt.Println("      atrium2 hub room add <name>")
+		fmt.Println()
+		fmt.Println("  That prints a join string for that name and nothing else. Paste it into")
+		fmt.Println("  `atrium2 join` on the machine your agents are on.")
+		fmt.Println()
+		return
+	}
+	fmt.Printf("  %d room(s) on this hub:\n", len(rooms))
+	for _, r := range rooms {
+		fmt.Println("      " + r.Name + "   " + sinceHeard(r))
+	}
 	fmt.Println()
-	fmt.Println("      atrium2 join " + tok)
+	fmt.Println("  `atrium2 hub room ls` says more. `atrium2 hub room add <name>` adds one.")
 	fmt.Println()
-	fmt.Println("  It is good once and for an hour. `atrium2 hub token` prints another.")
-	fmt.Println()
+}
+
+// sinceHeard is a room's line on that list, in the terms somebody reads it in.
+func sinceHeard(r hubstore.Room) string {
+	switch {
+	case r.Marked():
+		return "marked for deletion"
+	case r.LastSeen == nil:
+		// The state the durable list exists for. A room that has never
+		// connected is inventory, not work.
+		return "never connected"
+	case r.LikelyAttached():
+		return "attached"
+	default:
+		return "last heard from " + r.LastSeen.Local().Format("2006-01-02 15:04")
+	}
 }
 
 // boardFrom picks the board this hub serves and hashes it.

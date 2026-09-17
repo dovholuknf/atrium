@@ -30,8 +30,19 @@ type hubSide struct {
 	// enrol is nil for a transport that carries its own identity.
 	enrol func(conn net.Conn, br *bufio.Reader) (string, error)
 	auth  func(net.Conn) bool
-	// token is the join string to print.
-	token func() (string, error)
+	// joinString wraps up a paste-able line for ONE NAMED ROOM.
+	//
+	// The name and the secret both come from the hub's store, which is the only
+	// thing that can say which room a credential belongs to. This assembles
+	// what the transport adds: an address and a fingerprint, or a service, or a
+	// share.
+	//
+	// The secret is ignored by every transport that carries its own identity,
+	// and the name never is. Under zrok private the hub knows a connection came
+	// through its own share and not who sent it, so the name is the only thing
+	// standing between two rooms on one share and either of them being the
+	// other.
+	joinString func(name, secret string) (string, error)
 	// release is called on the way out. Only zrok has anything to release.
 	release func()
 	// says is the line describing where rooms dial in.
@@ -39,18 +50,25 @@ type hubSide struct {
 }
 
 // openHub prepares one side of one transport.
-func openHub(kind string, keys link.Keys, linkAddr, service string) (*hubSide, error) {
+//
+// `spend` answers a join secret with the room the hub minted it for. It comes
+// from the hub's store and is handed in here rather than reached for, because
+// `internal/link` must not learn that the hub has a database.
+func openHub(kind string, keys link.Keys, linkAddr, service string,
+	spend func(string) (string, error)) (*hubSide, error) {
 	switch kind {
 	case "", "direct":
 		if err := keys.EnsureCA(link.Hosts(advertised(linkAddr))); err != nil {
 			return nil, fmt.Errorf("could not set this hub up: %w", err)
 		}
-		d := link.Direct{Addr: linkAddr, Keys: keys}
+		d := link.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
 		return &hubSide{
-			listen:  d.Listen,
-			enrol:   d.ServeEnrolment,
-			auth:    link.DirectAuthenticated,
-			token:   func() (string, error) { return keys.MintToken(advertised(linkAddr)) },
+			listen: d.Listen,
+			enrol:  d.ServeEnrolment,
+			auth:   link.DirectAuthenticated,
+			joinString: func(name, secret string) (string, error) {
+				return keys.MintToken(advertised(linkAddr), name, secret)
+			},
 			release: func() {},
 			says:    advertised(linkAddr),
 		}, nil
@@ -62,9 +80,11 @@ func openHub(kind string, keys link.Keys, linkAddr, service string) (*hubSide, e
 			// NIL, AND THAT IS THE POINT. There is nothing to enrol: the
 			// network decided who may dial this service before atrium existed.
 			// The hub says so plainly if a room tries.
-			enrol:   nil,
-			auth:    link.ZitiAuthenticated,
-			token:   func() (string, error) { return link.MintOverlayToken("ziti", service, "") },
+			enrol: nil,
+			auth:  link.ZitiAuthenticated,
+			joinString: func(name, _ string) (string, error) {
+				return link.MintOverlayToken("ziti", name, service, "")
+			},
 			release: z.Close,
 			says:    "the ziti service " + service,
 		}, nil
@@ -76,10 +96,12 @@ func openHub(kind string, keys link.Keys, linkAddr, service string) (*hubSide, e
 			return nil, err
 		}
 		return &hubSide{
-			listen:  z.Listen,
-			enrol:   nil,
-			auth:    link.ZrokAuthenticated,
-			token:   func() (string, error) { return link.MintOverlayToken("zrok", "", shareToken) },
+			listen: z.Listen,
+			enrol:  nil,
+			auth:   link.ZrokAuthenticated,
+			joinString: func(name, _ string) (string, error) {
+				return link.MintOverlayToken("zrok", name, "", shareToken)
+			},
 			release: z.Release,
 			says:    "a private zrok share",
 		}, nil
