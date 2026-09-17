@@ -73,6 +73,39 @@ var merged = map[string]struct {
 	"/v1/rules":       {field: "rules"},
 }
 
+// borrowed are reads the board needs to draw itself at all, which are answered
+// by ONE room rather than refused.
+//
+// They are machine-shaped and merging them would be a lie: four machines have
+// four editor commands and four sets of terminal themes. But none of them is
+// being asked as a question about a machine. The board asks for its settings to
+// decide how to render, and answering "pick a room first" left it collecting
+// 409s and drawing empty panes, which is worse than one machine's answer.
+//
+// Reading only. Writing one still asks, because that is a question about a
+// machine and the answer matters.
+var borrowed = map[string]bool{
+	"/v1/settings": true,
+	"/v1/themes":   true,
+	"/v1/rooms":    true,
+	"/v1/hooks":    true,
+}
+
+// firstRoom is a room to borrow an answer from, chosen the same way every time
+// so two requests in one page load cannot disagree.
+func (p *Proxy) firstRoom() string {
+	rooms := p.hub.Rooms()
+	names := make([]string, 0, len(rooms))
+	for _, r := range rooms {
+		names = append(names, r.Name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	return names[0]
+}
+
 // aggregate answers a list endpoint from every attached room.
 //
 // ONE ROOM FAILING IS NOT THE REQUEST FAILING. A room that is mid-restart, or
