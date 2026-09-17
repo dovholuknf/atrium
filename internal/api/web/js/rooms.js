@@ -58,6 +58,13 @@ function roomNow() {
 // to this one's. A reload is one line and cannot be half done.
 function pickRoom(name) {
   try {
+    // WHAT THE NEXT PAGE PUTS OVER ITSELF WHILE IT COMES UP. Read by an inline
+    // script in the head, before the first paint, because the reload shows the
+    // stack and then jumps to the view you were on and the frame in between is
+    // somebody else's screen. See the head of index.html.
+    sessionStorage.setItem("atrium.switching", name || "all rooms");
+  } catch (e) {}
+  try {
     if (name) localStorage.setItem(ROOM_KEY, name);
     else localStorage.removeItem(ROOM_KEY);
     // AND THE TERMINAL YOU WERE READING IS FORGOTTEN, because it was on the
@@ -398,6 +405,72 @@ function eventsURL() {
   return room ? "/v1/events/room/" + encodeURIComponent(room) : "/v1/events/hub";
 }
 
+// ── the cover, while a room is being changed ────────────────────────────────
+
+// nameTheSwitch fills in which room is being moved to.
+//
+// The cover is already up by the time this runs: the head script put it there
+// before the first paint, and this only writes the name into it. Naming it
+// from here rather than from the head keeps the part that has to happen before
+// anything is drawn down to one line.
+function nameTheSwitch() {
+  let to = "";
+  try { to = sessionStorage.getItem("atrium.switching") || ""; } catch (e) {}
+  if (!to) return;
+  const what = document.querySelector("#switching .s-what");
+  if (what) what.innerHTML = `switching to <b>${esc(to)}</b>`;
+  // A COVER THAT NEVER LIFTS IS WORSE THAN THE FLASH IT HID. Boot has paths
+  // that never reach the line which takes it away: a guest page, a terminal
+  // only window, anything that throws on the way. Eight seconds is far longer
+  // than a board takes to come up and far shorter than somebody will sit
+  // looking at a spinner before reaching for F5.
+  setTimeout(doneSwitching, 8000);
+}
+
+// doneSwitching takes the cover away, once the board is on the right view.
+//
+// The flag is cleared FIRST. A reload during the switch would otherwise come
+// up covered again, and a cover with nothing behind it to wait for is a board
+// that looks hung.
+function doneSwitching() {
+  let was = "";
+  try {
+    was = sessionStorage.getItem("atrium.switching") || "";
+    sessionStorage.removeItem("atrium.switching");
+  } catch (e) {}
+  document.documentElement.classList.remove("switching");
+  if (was) landOnATerminal();
+}
+
+// landOnATerminal picks up this room's session, after a switch.
+//
+// THE REMEMBERED CARD WAS ON THE MACHINE YOU JUST LEFT, so `pickRoom` forgets
+// it: waiting for a session that is not here was the bug before this. But
+// forgetting it alone means arriving at the terminals view with a list of one
+// and an empty pane beside it, which is the board making you click the only
+// thing there.
+//
+// So the equivalent card on THIS machine is opened instead. Most recently
+// active, because that is the one "where was I" means on a machine you have
+// not been looking at.
+//
+// Only when there is nothing else going on: still on the terminals view, still
+// nothing attached, and something to attach to. Any of those failing means
+// somebody has already decided, and a board that overrides that is a board
+// arguing with you.
+async function landOnATerminal() {
+  if (typeof isViewing === "function" && !isViewing("terms")) return;
+  if (typeof termTask !== "undefined" && termTask) return;
+  let tasks = [];
+  try { tasks = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  const live = tasks
+    .filter(t => t.supervised && !t.archived_at)
+    .sort((a, b) => String(b.last_activity_at || "").localeCompare(String(a.last_activity_at || "")));
+  if (!live.length) return;
+  if (typeof termTask !== "undefined" && termTask) return;
+  attachTask(live[0].id);
+}
+
 // ── finding out whether this is a hub at all ────────────────────────────────
 
 // loadHubRooms asks what is attached. Answers false when this is a plain daemon,
@@ -429,6 +502,7 @@ async function loadHubRooms() {
 // startRooms wires the chip up. Called once, before the event stream opens,
 // because `eventsURL` cannot answer until the probe has.
 async function startRooms() {
+  nameTheSwitch();
   if (!await loadHubRooms()) return;
   // A BACKSTOP POLL, and it is not the primary signal. The merged stream says
   // `rooms` the moment membership changes, but a board scoped to one room is

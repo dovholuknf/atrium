@@ -109,6 +109,11 @@ async function bootBoard() {
   setTimeout(() => {
     refresh();
     restoreWhereYouWere();
+    // AND THE COVER COMES OFF, on the view you were reading rather than on the
+    // one the markup starts with. Here rather than earlier because this line
+    // above is what puts the board back where it was, and uncovering before it
+    // would show exactly the frame the cover exists to hide. See `pickRoom`.
+    if (typeof doneSwitching === "function") doneSwitching();
     // WHERE THIS VISIT STARTED, recorded once so it can be returned to.
     //
     // Without it the first `navPush` finds no state of ours and REPLACES the

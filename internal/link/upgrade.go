@@ -186,6 +186,16 @@ func (h *Hub) serveUpgrade(conn net.Conn, hi hello) {
 		return
 	}
 	defer f.Close()
+	// STILL THE FILE THAT WAS DESCRIBED? Hashed at startup, and a release
+	// directory is a place somebody drops new files into while the hub runs.
+	// The room's own check is what makes this safe, so this exists to SAY so:
+	// without it the symptom is a room rejecting every download with nothing
+	// on the hub explaining why.
+	if st, err := f.Stat(); err == nil && st.Size() != b.Size {
+		log.Printf("[hub] %s is %d bytes now and %d when this hub started. "+
+			"the room will reject it. restart this hub to offer what is there",
+			b.Path, st.Size(), b.Size)
+	}
 	if err := writeJSON(conn, welcome{OK: true}); err != nil {
 		return
 	}
@@ -224,29 +234,39 @@ type Upgrades struct {
 type taker struct {
 	mu   sync.Mutex
 	busy bool
-	// done is the hash it has already installed, so a hub that keeps offering
-	// the same build after a restart is answered with silence rather than an
-	// upgrade loop.
-	done string
+	// settled is every hash this room has finished with, whether it installed
+	// it or rejected it.
+	//
+	// A FAILURE COUNTS AS SETTLED, and that is not giving up quietly. The hub
+	// repeats its offer on every reconnect, so a build that does not match its
+	// hash would otherwise be fetched again on every reconnect: tens of
+	// megabytes across the network, every time, for a result that cannot
+	// change until the offer does. The mismatch is logged loudly once, which
+	// is the part somebody needs to see.
+	//
+	// It is keyed by hash, so a hub that fixes the problem and offers a
+	// different build is tried immediately.
+	settled map[string]bool
 }
 
 func (t *taker) start(sha string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.busy || t.done == sha {
+	if t.busy || t.settled[sha] {
 		return false
 	}
 	t.busy = true
 	return true
 }
 
-func (t *taker) finish(sha string, ok bool) {
+func (t *taker) finish(sha string, _ bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.busy = false
-	if ok {
-		t.done = sha
+	if t.settled == nil {
+		t.settled = map[string]bool{}
 	}
+	t.settled[sha] = true
 }
 
 // consider is the room deciding what to do about an offer.
@@ -277,7 +297,11 @@ func (r *Room) consider(ctx context.Context, o *Offer) {
 		err := r.fetchUpgrade(ctx, *o)
 		r.taking.finish(o.SHA256, err == nil)
 		if err != nil {
-			log.Printf("[link] could not take the hub's build: %v", err)
+			// LOUDLY, AND ONCE. This build will not be tried again until the
+			// hub offers a different one, so this line is the only record
+			// that something was wrong with it.
+			log.Printf("[link] REFUSED the hub's build %s: %v", o.Version, err)
+			log.Printf("[link] it will not be tried again unless the hub offers a different one")
 		}
 	}()
 }

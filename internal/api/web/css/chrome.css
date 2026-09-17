@@ -61,6 +61,34 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
 
+  /* ── changing rooms ─────────────────────────────────────
+     A reload shows the view the markup says (the stack) and then the script puts you back on the one you were
+     reading, so a switch made from the terminals meant watching somebody else's screen draw on the way past.
+     `html.switching` is set by an inline script in the head, before the first paint, so the board underneath is
+     never seen mid-change. Removed once the board is on the right view. */
+  #switching { display: none; }
+  html.switching #switching {
+    display: flex; position: fixed; inset: 0; z-index: 500;
+    align-items: center; justify-content: center;
+    background: var(--bg-1);
+  }
+  /* The board is not merely covered, it is not drawn. A cover over a live board still lets a terminal attach,
+     a poll land and a pane repaint underneath, which is work thrown away and, on a slow machine, a cover that
+     arrives after the flash it was meant to hide. */
+  html.switching body > header,
+  html.switching body > main { visibility: hidden; }
+  #switching .s-card {
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
+    color: var(--dim); font: 500 var(--fs-lg)/1 var(--mono);
+  }
+  #switching .s-spin {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid var(--stroke); border-top-color: var(--teal);
+    animation: s-turn .7s linear infinite;
+  }
+  @keyframes s-turn { to { transform: rotate(360deg); } }
+  #switching .s-what b { color: var(--teal); font-weight: 600; }
+
   /* ── which room ─────────────────────────────────────────
      Only ever drawn on a hub, which is an atrium that serves this board and holds nothing. It reads as a
      counter and behaves as a selector: `2/2 rooms` is every machine at once, a name is one machine and the

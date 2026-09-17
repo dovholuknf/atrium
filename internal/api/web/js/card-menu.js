@@ -391,16 +391,37 @@ function newAgentSub(id, t) {
   // here means this card takes the runner, which is what makes a card with a
   // worktree and a finished session worth reopening rather than replacing.
   const onto = t.supervised ? null : id;
-  const runnable = allHarnesses.filter(h => h.enabled && h.found && !isShellRunner(h));
+  // THE RUNNERS ON THIS CARD'S MACHINE, AND NO OTHERS.
+  //
+  // `allHarnesses` is merged across every attached room when the board is
+  // looking at all of them, so a hub with two rooms listed `claude code`
+  // twice, identically, and picking either was a coin toss. It is not even an
+  // ambiguous question: this starts a runner in THIS CARD'S DIRECTORY, which
+  // is on this card's machine, so the only runners that could possibly do it
+  // are that machine's.
+  //
+  // `t.room` is empty on a plain daemon and on a board scoped to one room,
+  // where every row is from the same place and this filter passes everything.
+  const mine = (allHarnesses || []).filter(h => (h.room || "") === (t.room || ""));
+  const runnable = mine.filter(h => h.enabled && h.found && !isShellRunner(h));
 
   const sub = runnable.map(h => ({
     label: h.label || h.id,
-    act: () => launchRunnerHere(h.id, t.worktree, onto)
+    act: () => launchRunnerHere(h.id, t.worktree, onto, t.room)
   }));
-  // Only when there is nothing to run, which means no runner on this machine
+  // WHICH MACHINE THESE ARE ON, said once above them, and only when there is
+  // more than one machine to confuse them with. Without it the list is right
+  // and looks arbitrary: two rooms with the same runners drew the same names
+  // and nothing said why one set was missing.
+  if (t.room) sub.unshift({ quiet: "on " + t.room });
+  // Only when there is nothing to run, which means no runner on that machine
   // has a command that resolves. The form is still offered below it, because
   // the form is where a runner gets pointed at something that does.
-  if (!sub.length) sub.push({ quiet: "no runner on this machine is ready" });
+  if (!sub.length) {
+    sub.push({ quiet: t.room
+      ? `no runner on ${t.room} is ready`
+      : "no runner on this machine is ready" });
+  }
   sub.push({
     label: "fill in a form…",
     act: () => openLaunch(t.runner || null, "", t.worktree, onto, null, "here")

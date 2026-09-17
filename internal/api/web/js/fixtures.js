@@ -1024,12 +1024,18 @@ async function loadHarnesses() {
 // Its own window is deliberately not offered: a second flyout under a flyout is
 // a level this menu does not draw, and a terminal already open pops out from
 // the attach entry two rows above.
-async function launchRunnerHere(harnessID, cwd, ontoTask) {
+async function launchRunnerHere(harnessID, cwd, ontoTask, room) {
+  // ON THE CARD'S OWN MACHINE. The directory is that machine's, so the launch
+  // has to land there whichever room the board happens to be looking at. Empty
+  // on a plain daemon and on a scoped board, where the request is already
+  // going to the only place it could.
+  const headers = { "Content-Type": "application/json" };
+  if (room) headers["X-Atrium-Room"] = room;
   let task;
   try {
     task = await api("/v1/launch", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
