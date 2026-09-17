@@ -88,7 +88,9 @@
   .sharerow:last-child { border-bottom: none; }
   /* A machine reporting into this one. One panel per room, its cards listed rather than drawn as cards, since
      they cannot be acted on from here and a card's affordances would be a promise this board cannot keep. */
-  .roomrow { margin-bottom: var(--vs-3); }
+  /* Padded like a row, because it is one. `.panel` draws the box and nothing else, so without this the name
+     and the line under it sat hard against the border. */
+  .roomrow { margin-bottom: var(--vs-3); padding: var(--row-y) var(--row-x); }
   .roomcards { display: flex; flex-direction: column; gap: 2px; }
   .roomcard {
     display: flex; align-items: center; gap: var(--sp-3);
