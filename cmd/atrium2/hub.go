@@ -178,6 +178,24 @@ func hubCmd() *cobra.Command {
 				}
 				return store.Seen(r.ID, host, ver)
 			}
+			// WHAT A ROOM SAYS IT IS HOLDING, TAKEN WHOLE. Anything the hub
+			// was keeping for that room and is not in this is discarded,
+			// because it is no longer there, and the discard is written down
+			// rather than being silent. See `Announce` in internal/hubstore.
+			h.Cached = func(name string, cards []link.CardState) error {
+				r, err := store.ByName(name)
+				if err != nil {
+					return err
+				}
+				out := make([]hubstore.Card, 0, len(cards))
+				for _, c := range cards {
+					out = append(out, hubstore.Card{
+						ID: c.ID, Status: c.Status, Payload: c.Payload,
+					})
+				}
+				_, err = store.Announce(r.ID, out)
+				return err
+			}
 
 			// The board this hub serves. From disk when told to, so the loop is
 			// edit, save, reload, with no rebuild at all.

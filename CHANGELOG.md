@@ -5,6 +5,34 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room tells its hub what it is holding, so a hub whose room is offline shows what was there.**
+
+  Rooms push, the hub writes it down. Not polled: the room is the only thing that knows something changed, and
+  a timer is either late or wasteful and is usually both. The room watches its own event stream and sends when
+  something happens, with a ceiling of a couple of seconds so a busy machine cannot thrash the hub's database,
+  and an announcement identical to the last one is dropped rather than sent. That last part is what keeps a
+  noisy room from being a noisy database: activity, output and telemetry all publish events and none of them
+  are cached, so most of what wakes the announcer up has nothing to say.
+
+  **What is cached is exactly what the room persists.** There is a new endpoint, `GET /v1/state`, that answers
+  with the stored rows rather than the view `/v1/tasks` returns. The view carries what is true only this
+  second: whether a card is supervised, what tool it is running, its telemetry, how long it has been idle. The
+  obvious answer was to send the view and strip those, and the obvious answer is a field list that goes stale
+  the day somebody adds a live field. Sending the stored row cannot drift, because there is nothing to keep in
+  step.
+
+  **The announcement is taken whole.** Anything the hub was holding that is not in it is discarded, because it
+  is no longer there. No merging and no row-by-row reconciliation. A discard is written to the audit log, which
+  is what turns "I am sure there was a card there" from an argument into a lookup. An announcement that
+  discarded nothing is not logged: a line every couple of seconds saying nothing was lost is a log nobody can
+  read.
+
+  **The cache is read only when the room is not answering.** While a room is connected it is asked, every time,
+  and the cache is written and never read. There is no third state where some of what you are reading is
+  current and some is remembered and nothing says which.
+
+  `atrium2 hub room log` prints that audit, for one room or all of them, and it outlives the rooms it is about.
+
 - **A room's settings are behind that room's cog, not in a list called "this machine".**
 
   `settings -> this machine` had grown into nine unrelated things: the editor command, where pasted files land,

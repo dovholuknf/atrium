@@ -63,6 +63,15 @@ type welcome struct {
 	Session string `json:"session,omitempty"`
 	// Warm is how many data connections to bring up straight away.
 	Warm int `json:"warm,omitempty"`
+	// Caches says this hub keeps a record of what its rooms are holding, and
+	// so is worth telling.
+	//
+	// ASKED ONCE, AT THE HANDSHAKE, rather than found out by being refused.
+	// A hub with no store is a normal thing: it is what every test builds and
+	// what a hub whose store has not been wired up is. Without this the room
+	// dials, is told no, and logs a failure on every change for the life of
+	// the attachment, which reads as something being broken.
+	Caches bool `json:"caches,omitempty"`
 }
 
 // note is a line on the control connection, after the handshake. One struct
@@ -199,10 +208,10 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind:
+	case "control", "data", "enrol", upgradeKind, announceKind:
 	default:
 		_ = writeJSON(conn, welcome{OK: false,
-			Error: "a connection is control, data, enrol or upgrade"})
+			Error: "a connection is control, data, enrol, upgrade or announce"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})

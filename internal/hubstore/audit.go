@@ -89,7 +89,47 @@ func (s *Store) Audit(limit int) ([]Entry, error) {
 	return out, err
 }
 
-// AuditFor reads the log for one room, newest first.
+// AuditByName reads the log for a room BY THE NAME IT WAS CALLED, newest first.
+//
+// THE ONE THAT WORKS AFTER THE ROOM IS GONE, which is the case this table
+// exists for. `AuditFor` takes an id, so it can only answer for a room that is
+// still on the list, and the question somebody actually asks is about the
+// machine that was forced out last week.
+//
+// Folded the same way a room name is compared everywhere else, so asking about
+// `Sparta` finds what was written about `sparta`.
+func (s *Store) AuditByName(name string, limit int) ([]Entry, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	var out []Entry
+	err := s.guard(func() error {
+		rows, err := s.db.Query(
+			`SELECT id, at, room_id, room_name, kind, detail
+			   FROM room_audit WHERE LOWER(room_name) = ?
+			  ORDER BY at DESC, id DESC LIMIT ?`, fold(name), limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		out = out[:0]
+		for rows.Next() {
+			var e Entry
+			var at string
+			if err := rows.Scan(&e.ID, &at, &e.RoomID, &e.RoomName, &e.Kind, &e.Detail); err != nil {
+				return err
+			}
+			if t, err := time.Parse(TimeFormat, at); err == nil {
+				e.At = t
+			}
+			out = append(out, e)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// AuditFor reads the log for one room that is still on the list, newest first.
 func (s *Store) AuditFor(roomID string, limit int) ([]Entry, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200

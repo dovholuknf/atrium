@@ -369,6 +369,23 @@ func TestTheLogOutlivesTheRoomItIsAbout(t *testing.T) {
 	if !found {
 		t.Fatalf("forcing a room out left no record of it: %+v", log)
 	}
+
+	// AND IT CAN STILL BE LOOKED UP BY NAME, which is the only handle anybody
+	// has left. Asking by id needs a room row, and the room row is the thing
+	// that just went: the question "what happened to that laptop" arrives after
+	// there is nothing to resolve. Found by review.
+	byName, err := s.AuditByName("SPARTA", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byName) == 0 {
+		t.Fatal("a removed room's log cannot be found by the name it had")
+	}
+	for _, e := range byName {
+		if !strings.EqualFold(e.RoomName, "sparta") {
+			t.Fatalf("the lookup returned another room's line: %+v", e)
+		}
+	}
 }
 
 // ANYTHING NOT IN THE ANNOUNCEMENT IS DISCARDED. No merging, nothing kept on
@@ -461,6 +478,36 @@ func TestADiscardIsWrittenDown(t *testing.T) {
 	}
 	if !strings.Contains(said, "2 card(s) were discarded") {
 		t.Fatalf("the newest announcement reads %q", said)
+	}
+}
+
+// AND AN ANNOUNCEMENT THAT LOST NOTHING IS NOT WRITTEN DOWN.
+//
+// A room announces on every change, which on a busy machine is every couple of
+// seconds. A line each time saying nothing was lost is a log nobody can read,
+// and a log nobody can read answers nothing when somebody comes looking for the
+// card they are sure was there.
+func TestAnOrdinaryUpdateDoesNotFillTheLog(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sparta")
+
+	if _, err := s.Announce(r.ID, []Card{{ID: "a", Status: "running"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Announce(r.ID, []Card{
+		{ID: "a", Status: "done"}, {ID: "b", Status: "running"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	log, err := s.AuditFor(r.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range log {
+		if e.Kind == "announced" {
+			t.Fatalf("an announcement that discarded nothing was written down: %s", e.Detail)
+		}
 	}
 }
 

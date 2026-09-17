@@ -462,6 +462,16 @@ The discard is not silent. Coming back produces an audit entry along the lines o
 Wholesale replacement is the right rule and it is also the one that can quietly lose something a person
 remembers seeing. The log is what makes that answerable afterwards instead of being a thing nobody can explain.
 
+### The outcome
+
+**Built 2026-09-17.** Announcements are taken whole and the discard is written down, with one refinement: a
+line is written when something was DISCARDED, and not for every announcement. A card that is new or changed has
+not been lost, it is on the board. A line every two seconds saying nothing was lost is a log nobody can read,
+and the point of this one is that somebody can.
+
+`atrium2 hub room log` prints it, for one room or all of them, and it answers for a room that has been forced
+out, since that is the case it is mostly for.
+
 ------------
 
 ## 14. How the cache stays current while a room is connected
@@ -496,6 +506,25 @@ An unclean disconnect loses the last window of changes, so a card that finished 
 show as running. Decision 13 corrects that wholesale when the room returns, which is why the window being
 small matters more than it being exact.
 
+### The outcome
+
+**Built 2026-09-17.** The room watches its own event stream and announces on change, with a two second ceiling,
+over a connection it dials for the purpose. An announcement identical to the last one is dropped, which is what
+stops a working agent rewriting the hub's cache every two seconds for as long as it works.
+
+**"Exactly what the room persists" is a new endpoint rather than a field list.** `/v1/state` answers with the
+stored rows; `/v1/tasks` answers with a view that carries what is true only this second. Stripping the live
+fields from the view would have been a list to maintain, and the day somebody adds a field to that view is the
+day the hub starts remembering it.
+
+Two failures found in review and worth writing down, because both turn a room's bad day into lost history:
+
+- A room whose store has halted answers with an error rather than a card list. Read carelessly that is an empty
+  announcement, and an empty announcement means "everything you were holding for me is gone". A room in trouble
+  must not be able to tell the hub its work no longer exists.
+- A room holding nothing must still be able to say so. Go marshals an empty list as `null`, which is exactly
+  what "I could not tell you" looks like on the wire, so the endpoint sends a list either way.
+
 ------------
 
 ## 15. When is the cache read?
@@ -512,6 +541,12 @@ the answer. The hub does not serve a remembered card next to a live one and hope
 This is what makes decision 12 simple to reason about: the board is either showing a live room, or it is showing
 what a room last said and marked as such. There is no third state where some rows are fresh and some are
 remembered and nothing says which.
+
+### The outcome
+
+**Built 2026-09-17, on the reading side.** The hub's inventory only fetches a room's cached card count when
+that room is not attached, and `atrium2 hub room ls` does the same. **Serving cached CARDS to the board is not
+built**: that is item 6, along with everything else about how an offline room draws.
 
 ------------
 

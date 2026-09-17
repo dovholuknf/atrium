@@ -40,7 +40,67 @@ func hubRoomsCmd() *cobra.Command {
 			"join string, so the string authorises exactly one name and the machine that\n" +
 			"pastes it does not choose what it is called.",
 	}
-	c.AddCommand(roomAddCmd(), roomListCmd(), roomTokenCmd(), roomMarkCmd(), roomRemoveCmd())
+	c.AddCommand(roomAddCmd(), roomListCmd(), roomTokenCmd(), roomMarkCmd(),
+		roomRemoveCmd(), roomLogCmd())
+	return c
+}
+
+// roomLogCmd is what makes wholesale replacement answerable.
+//
+// A room coming back replaces everything the hub was holding for it, which is
+// the right rule and is also the one that can quietly lose something a person
+// remembers seeing. This is where "I am sure there was a card there" stops
+// being an argument and becomes a lookup.
+//
+// It outlives its subject. Forcing out a machine that is never coming back
+// removes the room and leaves this, because the record of having done that is
+// exactly what somebody wants afterwards.
+func roomLogCmd() *cobra.Command {
+	var f hubStoreFlags
+	var limit int
+	c := &cobra.Command{
+		Use:   "log [name]",
+		Short: "What has happened to this hub's rooms, newest first",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := f.open()
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+
+			var entries []hubstore.Entry
+			if len(args) == 1 {
+				// BY NAME, NOT BY LOOKING THE ROOM UP FIRST. Resolving the name
+				// through the room list would mean this command stops working
+				// at exactly the moment it is most wanted: after the room was
+				// forced out and somebody is asking what happened to it.
+				entries, err = store.AuditByName(args[0], limit)
+			} else {
+				entries, err = store.Audit(limit)
+			}
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if len(entries) == 0 {
+				if len(args) == 1 {
+					fmt.Fprintf(out, "nothing has ever been written down about a room "+
+						"called %q on this hub\n", args[0])
+					return nil
+				}
+				fmt.Fprintln(out, "nothing has happened to a room on this hub yet")
+				return nil
+			}
+			for _, e := range entries {
+				fmt.Fprintf(out, "%s  %-12s %-20s %s\n",
+					e.At.Local().Format("2006-01-02 15:04:05"), e.RoomName, e.Kind, e.Detail)
+			}
+			return nil
+		},
+	}
+	f.bind(c)
+	c.Flags().IntVar(&limit, "limit", 50, "how many lines")
 	return c
 }
 
@@ -227,10 +287,15 @@ func roomListCmd() *cobra.Command {
 				if r.SelfName != "" && !strings.EqualFold(r.SelfName, r.Name) {
 					line += "   (calls itself " + r.SelfName + ")"
 				}
-				if cards > 0 {
-					// Said as cached, because it is. The only authoritative
-					// answer comes from the room itself.
-					line += fmt.Sprintf("   [%d card(s) last seen]", cards)
+				// THE CACHE IS READ ONLY WHEN THE ROOM IS NOT ANSWERING.
+				//
+				// Not a rule about staleness, a rule about there being one
+				// answer. A room that is here can be asked, and printing a
+				// remembered number beside a live room is the third state
+				// decision 15 exists to rule out: some of what you are reading
+				// is current, some is remembered, and nothing says which.
+				if cards > 0 && !r.LikelyAttached() {
+					line += fmt.Sprintf("   [%d card(s) when last heard from]", cards)
 				}
 				if ok, until, err := store.Outstanding(r.ID); err == nil && ok {
 					line += "   join string good until " +
