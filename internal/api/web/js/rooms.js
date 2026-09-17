@@ -198,22 +198,21 @@ async function ownRoomPanel() {
         >${own.on ? "stop running agents here" : "run agents here too"}</button>
     </div>
     <div class="hintline">${own.on
-      ? `This hub holds a database, so restarting it now interrupts what is running here. ` +
-        `The rooms attached from elsewhere are unaffected either way.`
-      : `A hub serves the board and holds nothing, which is what makes it safe to restart ` +
-        `at any moment. Turn this on to run agents on this machine as well, and that stops ` +
-        `being true of this machine.`}</div>
+      ? `Agents started here stop when the hub stops. Agents on the other rooms do not.`
+      : `You can start agents on the other rooms, not on this one. Turning this on costs ` +
+        `you the free restart: agents here would stop with the hub.`}</div>
   </div>`;
 }
 
 // setOwnRoom throws that switch and redraws.
 async function setOwnRoom(on) {
+  // ONE SENTENCE OF CONSEQUENCE, and it is the one that is not guessable.
+  // Everything else about this is visible the moment it is on.
   if (on && !await askUser({
     title: "run agents on this machine?",
-    body: "This hub will hold a database and pseudo terminals of its own, so restarting it " +
-      "will interrupt whatever is running here. Rooms attached from other machines are " +
-      "unaffected either way.",
-    buttons: [{ label: "cancel", value: null }, { label: "run agents here", value: true, style: "go" }]
+    body: "Stopping the hub will then stop them. Right now you can restart it whenever you " +
+      "like, because nothing is running here.",
+    buttons: [{ label: "cancel", value: null }, { label: "do it", value: true, style: "go" }]
   })) return;
   try {
     await plainFetch("/_hub/room", {
