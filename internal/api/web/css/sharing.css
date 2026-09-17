@@ -183,6 +183,27 @@
 
      Still a modal rather than a seventh tab. Settings is where you go from wherever you are and come straight
      back, and a modal returns you there for free. */
+  /* ── reading a pane of settings ──────────────────────────
+     `this machine` is nine independent settings and it read as a form to be filled in and submitted: a save
+     button beside every box, each a different width because the box in front of it was, and a paragraph of
+     explanation under each one competing with the next field for attention.
+
+     Three rules fix it. The boxes are one width, so the eye has a column to run down. The explanations are
+     narrower than the boxes and quieter, so they read as a footnote to the field rather than as the field.
+     And the save buttons are gone: a `change` event saves each one on its own, which is what they always
+     were. See `wireSelfSaving`. */
+  #settings .field > .picker > input:not([type=number]),
+  #settings .field > .picker > textarea,
+  #settings .field > .picker > select { flex: 1 1 auto; min-width: 0; }
+  #settings .field .hintline { max-width: 68ch; line-height: 1.55; }
+  /* A saved field says so where you were looking. The toast says WHAT happened and this says WHERE, which on
+     a pane of nine boxes is the half that stops you checking you edited the one you meant. */
+  #settings .justsaved {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 1px rgba(var(--teal-rgb), .5);
+    transition: border-color .2s, box-shadow .2s;
+  }
+
   .pane-split { display: flex; gap: 18px; align-items: flex-start; }
   .pane-nav {
     flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;

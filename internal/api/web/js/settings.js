@@ -1,6 +1,15 @@
 // ── settings dialog ─────────────────────────────────────
 const settingsDlg = document.getElementById("settings");
-document.getElementById("gear").onclick = () => { paintSettings(); settingsDlg.showModal(); };
+document.getElementById("gear").onclick = () => {
+  // A fresh visit asks again which machine it is editing, if it has to ask.
+  settingsRoom = "";
+  paintSettings();
+  // Every field that saves itself, wired once. Here rather than at load
+  // because the panes are cut up at runtime and this is the moment they are
+  // all certain to exist. See `wireSelfSaving`.
+  wireSelfSaving();
+  settingsDlg.showModal();
+};
 
 function soundOptions(selected) {
   return Object.entries(SOUNDS)
@@ -99,6 +108,65 @@ function toggleGrouping() {
 // One setting behind both, so turning grouping off on the stack turns it off
 // on the board too. Grouping is a way of reading the same cards, not a
 // property of one screen.
+// ── settings that save themselves ───────────────────────────────────────────
+//
+// EIGHT SAVE BUTTONS ON ONE PANE was the state of `this machine`, one beside
+// every box, each a different width because the box in front of it was. The
+// pane read as a form to be filled in and submitted, which it is not: these
+// are independent settings and each one is done the moment you have typed it.
+//
+// A `change` event, which fires on blur and only when the value actually
+// changed. Tabbing through the pane saves nothing. Typing and leaving saves
+// once. The existing save functions are unchanged and still say what happened,
+// so a failure is still a toast rather than a silent loss.
+//
+// `data-saves` names the function on the element. Wiring it from the markup
+// keeps the list of what-saves-what next to the fields rather than in a table
+// here that has to be kept in step with them.
+// settingsRoom is which machine this pane is editing, asked once per opening.
+//
+// Asked ONCE rather than per field: nine boxes each asking which machine is
+// worse than the question. Cleared when the dialog opens, so it is a decision
+// about this visit rather than one made yesterday and still in force.
+let settingsRoom = "";
+
+function wireSelfSaving() {
+  document.querySelectorAll("#settings [data-saves]").forEach(el => {
+    if (el.dataset.wired) return;
+    el.dataset.wired = "1";
+    el.addEventListener("change", async () => {
+      const fn = window[el.dataset.saves];
+      if (typeof fn !== "function") return;
+      // WHICH MACHINE, when the board is looking at all of them. Every setting
+      // on this pane belongs to one machine, and a hub with two rooms refuses
+      // a write that names none. Asked once and remembered for the rest of the
+      // pane, because being asked again for every box you touch is worse than
+      // the question. See `chooseWriteRoom` in js/rooms.js.
+      if (typeof hubIsHub !== "undefined" && hubIsHub &&
+          typeof roomNow === "function" && !roomNow()) {
+        if (!settingsRoom) {
+          if (!await chooseWriteRoom(null, "setting")) return;
+          settingsRoom = writeRoom;
+        } else {
+          writeRoom = settingsRoom;
+        }
+      }
+      try {
+        await fn();
+        flashSaved(el);
+      } catch (e) {}
+    });
+  });
+}
+
+// A GREEN EDGE FOR A MOMENT. The save functions toast, which says what
+// happened but not WHERE, and on a pane of nine boxes "saved" alone leaves you
+// checking you edited the one you meant.
+function flashSaved(el) {
+  el.classList.add("justsaved");
+  setTimeout(() => el.classList.remove("justsaved"), 1400);
+}
+
 function paintGroupSegs() {
   const p = groupingPrefs();
   const mode = p.on ? (p.mode || "project") : "off";
