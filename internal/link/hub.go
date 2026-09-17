@@ -382,6 +382,13 @@ func (a *attached) request(n int) {
 	_ = writeJSON(a.control, note{Need: n})
 }
 
+// dialer is `Dial` bound to one room, in the shape `http.Transport` wants.
+func (h *Hub) dialer(room string) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return h.Dial(ctx, room)
+	}
+}
+
 // Room reports what is attached under a name.
 type Attached struct {
 	Name    string    `json:"name"`
