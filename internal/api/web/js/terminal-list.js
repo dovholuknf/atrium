@@ -682,6 +682,18 @@ function termGroupsHTML(list) {
   // is in. Every other mode has no path to nest, so it draws flat.
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : null;
   const g = typeof grouper === "function" ? grouper() : null;
+  // OFF MEANS OFF, and it did not.
+  //
+  // `grouper()` answers null for two different reasons: grouping is switched
+  // OFF, or the mode is one this strip draws its own way. Both arrived here as
+  // "no grouper", and the fallback is the path tree, so pressing `off` swapped
+  // one set of headings for another set of headings. The one thing it could not
+  // do was stop grouping.
+  //
+  // `p.on` is the question that was being skipped. Off is a flat list in the
+  // order it was handed over, which is what sorting by activity means when
+  // nothing is allowed to reorder it into buckets.
+  if (p && !p.on) return list.map(t => termRow(t, false)).join("");
   if (!g || !p || (p.mode === "project" && !String(p.by || "").trim())) {
     return termNodeHTML(termTree(list), 0, "", folded);
   }

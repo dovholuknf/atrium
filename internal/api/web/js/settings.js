@@ -108,9 +108,13 @@ function paintGroupSegs() {
       "cut the cards the way whatever launched them said to: pull requests, tangents, " +
       "support threads. a card that was not told falls back to its project"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
-    ["recency", "by when",
+    // `by age`, not `by when`. There is a SORT control beside this one, and
+    // `by when` reads as an answer to that: it sounds like an ordering, so
+    // pressing it and getting five headings looks like sorting that did not
+    // work. It cuts the cards into age buckets, which is what age means.
+    ["recency", "by age",
       "today, yesterday, this week, this month, and everything older, which is dormant"],
-    ["off", "off", "one flat list"]
+    ["off", "off", "one flat list, in the order the sort above put them"]
   ];
   const html = opts.map(([v, label, title]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
