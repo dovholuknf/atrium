@@ -42,7 +42,10 @@ housekeeping.
 
 ### The outcome
 
-Not built yet.
+**The cog is there, 2026-09-17**, on every room in the list, holding what the hub knows about that room and the
+one change the board is allowed to make to it. **The settings themselves have not moved yet**: the editor
+command, the picker roots, the worktree command, the shell and the rest are still under `settings -> this
+machine`, and moving them is the next piece of work. The cog says so rather than pretending.
 
 ------------
 
@@ -534,6 +537,14 @@ most.
 **The room counter is what reports the other half.** `1/2 rooms` says a room is missing, in the one place whose
 job is to say so.
 
+### The outcome
+
+**The counter is built, 2026-09-17.** It reads live over ever-connected, so a room that is offline is counted as
+missing and a room that has never connected is not counted at all: nothing is missing because of it.
+
+**The board and the stack are not done.** Offline rooms' cards, the divider, the collapsed group and the
+live-only badges are item 6 and are still to come.
+
 ------------
 
 ## 17. Does a hub with a database still restart freely?
@@ -605,7 +616,9 @@ ancillary noise and must never become a concept in the UI. Worth seeing at a gla
 
 ### The outcome
 
-Not built yet.
+**Built 2026-09-17.** A small chip beside the room's name: `mTLS`, `ziti`, `zrok`, or `here` for the hub's own
+room, which reaches it over a pipe inside one process. The tooltip says what each one means, which is the only
+place the word "transport" appears at all.
 
 ------------
 

@@ -109,7 +109,17 @@ function paintRooms() {
 
   const room = roomNow();
   const live = hubRooms.length;
-  const known = Math.max(live, room ? 1 : 0);
+  // THE DENOMINATOR IS WHAT IS MISSING, and this is the one place whose job is
+  // to say so. Every count on this board is live only, on purpose: a badge
+  // saying three agents want permission on a laptop that is shut is a number
+  // you cannot act on and will look at anyway. `1/2 rooms` is where the other
+  // half is reported, and nowhere else.
+  //
+  // A room that has NEVER connected is not counted either. It cannot have
+  // cards, so nothing is missing because of it: it is inventory, and the rooms
+  // tab is where inventory lives.
+  const everConnected = hubInventory.filter(r => r.attached || r.first_seen).length;
+  const known = Math.max(live, everConnected, room ? 1 : 0);
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
   const label = document.getElementById("rooms-t");
@@ -237,32 +247,229 @@ async function hubAttachedRows() {
   await loadHubRooms();
   if (!hubIsHub) return "";
   const own = await ownRoomPanel();
-  const room = roomNow();
-  if (!hubRooms.length) {
+  const rooms = hubInventory;
+
+  if (!rooms.length) {
     return own + `<div class="panel"><div class="empty">
-      This atrium is a hub. It serves this board and holds nothing, so until a room
-      attaches there is nothing to show and no agents to run.
+      This atrium is a hub. It serves the board and holds no work, so until a room
+      is added there is nothing to show and no agents to run.
       <a href="#" onclick="openRoomJoin();return false;">Add a room</a>.
     </div></div>`;
   }
-  // NO BUTTON TO FOCUS A ROOM. The counter in the header is the selector, and
-  // a second control doing the same thing in a different place is a second
-  // thing to find, to keep in step and to be surprised by. This list says what
-  // is there; the header says which one you are in.
-  return own + hubRooms.map(r => {
-    const here = room === r.name;
-    return `<div class="panel roomrow">
-      <div class="col-head" style="margin:0 0 8px">
-        <span>${esc(r.name)}</span>
-        <span class="chip live idle">attached ${esc(shortTime(r.since))}</span>
-        ${here ? `<span class="chip">the board is scoped to this one</span>` : ""}
-        <span class="grow"></span>
-        <span class="by">${esc(r.host || "")}${r.version ? " &middot; " + esc(r.version) : ""}</span>
-      </div>
-      <div class="hintline">Its agents, its terminals and its database are on that machine and
-        reachable through this board. Restarting this hub does not touch them.</div>
-    </div>`;
-  }).join("");
+
+  // LIVE, THEN OFFLINE, THEN NEVER CONNECTED, and the order is the design.
+  // What is running is what the board is for and is never pushed down the page
+  // by what is not. A room that has never connected cannot have cards, so this
+  // tab is the only place it appears at all: it is inventory, not work.
+  const live = rooms.filter(r => r.attached);
+  const off = rooms.filter(r => !r.attached && r.first_seen);
+  const never = rooms.filter(r => !r.attached && !r.first_seen);
+
+  const group = (title, hint, list) => !list.length ? "" :
+    `<div class="col-head roomgroup"><span>${esc(title)}</span>
+       <span class="grow"></span><span class="by">${esc(hint)}</span></div>` +
+    list.map(roomRow).join("");
+
+  return own +
+    group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
+    group("not answering", "what they last said is remembered, and cannot be acted on", off) +
+    group("never connected", "added here, and has not dialled in yet", never);
+}
+
+// roomRow is one room, however it is doing.
+//
+// NO BUTTON TO FOCUS A ROOM. The counter in the header is the selector, and a
+// second control doing the same thing in a different place is a second thing to
+// find, to keep in step and to be surprised by. This list says what is there.
+// The header says which one you are in.
+function roomRow(r) {
+  const here = roomNow() === r.name;
+  // WHAT THE MACHINE CALLS ITSELF, BESIDE WHAT IT IS CALLED, never instead of.
+  // The hub's name is the name and routes. The machine's own is observed, and
+  // what a machine reports never overwrites what a human typed.
+  const self = r.self_name && r.self_name.toLowerCase() !== String(r.name).toLowerCase()
+    ? `<span class="by">calls itself ${esc(r.self_name)}</span>` : "";
+  return `<div class="panel roomrow">
+    <div class="col-head" style="margin:0 0 8px">
+      <span>${esc(r.name)}</span>
+      ${transportBadge(r.transport)}
+      ${roomState(r)}
+      ${r.marked || r.state === "marked-for-deletion"
+        ? `<span class="chip no">marked for deletion</span>` : ""}
+      ${here ? `<span class="chip">the board is scoped to this one</span>` : ""}
+      <span class="grow"></span>
+      ${self}
+      <button class="ghost roomcog" data-room="${esc(r.name)}"
+        title="settings for this room">&#9881;</button>
+    </div>
+    <div class="hintline">${roomLine(r)}</div>
+  </div>`;
+}
+
+// transportBadge is how a room reaches this hub.
+//
+// A BADGE AND NOTHING MORE. Worth seeing at a glance, never worth a column:
+// transport is ancillary noise and must not become a concept in the UI.
+function transportBadge(t) {
+  const marks = {
+    direct: ["mTLS", "a direct connection, over mutual TLS"],
+    ziti: ["ziti", "over an OpenZiti service"],
+    zrok: ["zrok", "over a private zrok share"],
+    "zrok-public": ["zrok", "over a public zrok share"],
+    local: ["here", "this hub's own machine, over a pipe inside one process"],
+  };
+  const m = marks[t] || [t || "?", "how this room reaches the hub"];
+  return `<span class="chip" title="${esc(m[1])}">${esc(m[0])}</span>`;
+}
+
+// roomState is the one chip that says how the room is doing.
+function roomState(r) {
+  if (r.attached) return `<span class="chip live idle">attached ${esc(shortTime(r.since))}</span>`;
+  if (!r.first_seen) {
+    return r.waiting ? `<span class="chip">waiting to join</span>`
+      : `<span class="chip">no join string outstanding</span>`;
+  }
+  return `<span class="chip no">last heard from ${esc(shortTime(r.last_seen))}</span>`;
+}
+
+// roomLine is the sentence under a room, and it is different for each state
+// because the useful thing to say about each one is different.
+function roomLine(r) {
+  if (r.attached) {
+    return `Its agents, its terminals and its database are on that machine and reachable
+      through this board. Restarting this hub does not touch them.`;
+  }
+  if (!r.first_seen) {
+    return r.waiting
+      ? `A join string was minted for this name and has not been used. Paste it into
+         <code>atrium2 join</code> on the machine that will be this room.`
+      : `Nothing has ever connected as this room. <code>atrium2 hub room token
+         ${esc(r.name)}</code> on the hub prints a fresh join string.`;
+  }
+  // AN OFFLINE ROOM CANNOT BE ACTED ON, and saying so here is cheaper than
+  // letting somebody find out by clicking. The cache is what was last heard,
+  // shown as such, and the only authoritative answer comes from the room.
+  const cards = r.cards
+    ? `${r.cards} card${r.cards === 1 ? "" : "s"} were on it when it was last heard from, and
+       what is shown of them is remembered rather than current. `
+    : "";
+  return cards + `Nothing on this room can be opened or changed until it is back.`;
+}
+
+// loadInventory asks what rooms EXIST, which is a different question from what
+// is attached and has its own endpoint for exactly that reason.
+//
+// `/_hub/rooms` is the live list, and the picker, the grouping, the counters
+// and the question about where a write lands all mean that one. A laptop
+// somebody shut last week belongs on this tab and nowhere else.
+//
+// A hub with no record of its rooms answers `durable: false` and hands back
+// what is attached. Drawn the same way, because a hub that can only see what is
+// connected is telling the truth about what it knows.
+let hubInventory = [];
+async function loadInventory() {
+  try {
+    const got = await plainFetch("/_hub/inventory");
+    if (!got.ok) throw new Error("no inventory");
+    const out = await got.json();
+    hubInventory = (out.rooms || []).slice().sort((a, b) =>
+      String(a.name).localeCompare(String(b.name)));
+  } catch (e) {
+    hubInventory = hubRooms.map(r => Object.assign({ attached: true }, r));
+  }
+  return hubInventory;
+}
+
+// The cog is wired by DELEGATION, not by an inline handler, and that is a rule
+// rather than a preference.
+//
+// A room name is durable data somebody typed, and building `onclick="openRoomCog(
+// '...')"` out of it means hand-escaping a string for two nested contexts at
+// once: an HTML attribute and the JavaScript inside it. Entity escaping does not
+// do that job, because character references are decoded BEFORE the handler is
+// compiled, so a name carrying a quote either breaks the button or runs as code.
+// The board may be served over an overlay, which makes that worth ruling out by
+// construction instead of by trusting the name check on the way in.
+//
+// The name rides in a `data-` attribute, where it is only ever text, and the
+// listener reads it back as a string. There is no second context to escape for.
+document.addEventListener("click", e => {
+  const cog = e.target.closest && e.target.closest(".roomcog");
+  if (!cog) return;
+  e.preventDefault();
+  openRoomCog(cog.getAttribute("data-room") || "");
+});
+
+// openRoomCog is the settings for one room.
+//
+// THE COG IS PER ROOM BECAUSE THE SETTINGS ARE. A room is the unit, not a
+// machine: one machine can hold more than one room, and a hub can be a room
+// itself. Everything that is a fact about one room belongs behind here.
+//
+// What it holds today is what the hub knows. The editor command, where pasted
+// files land, the picker roots, the worktree command, the shell and the
+// scrollback are still in `settings -> this machine`, and moving them here is
+// the next piece of work.
+async function openRoomCog(name) {
+  const r = hubInventory.find(x => String(x.name) === String(name));
+  if (!r) { tellUser("rooms", "that room is not on this hub any more"); return; }
+  const marked = r.state === "marked-for-deletion";
+  const when = t => t ? new Date(t).toLocaleString() : "never";
+
+  const facts = [
+    ["called", esc(r.name) + " <span class=\"by\">by this hub, and this is the " +
+      "name that routes</span>"],
+    ["calls itself", esc(r.self_name || "nothing has connected yet")],
+    ["reaches the hub", esc(r.transport || "")],
+    ["running", esc(r.version || "not known yet")],
+    ["first connected", esc(when(r.first_seen))],
+    ["last heard from", esc(when(r.last_seen))],
+  ];
+
+  const body = `<table class="kv">` + facts
+    .map(f => `<tr><td class="by">${f[0]}</td><td>${f[1]}</td></tr>`).join("") +
+    `</table>
+    <p>${marked
+      ? `This room is marked for deletion. It starts no new cards, everything already
+         running carries on as normal, and taking the mark back off puts it straight
+         back into ordinary service.`
+      : `Marking a room for deletion stops new cards being started on it and changes
+         nothing else. Nothing is destroyed and it is one click to undo.`}</p>
+    <p class="by">Its own settings, the editor command and the rest, are still under
+      settings. Moving them here is the next piece of work.</p>
+    <p class="by">Adding a room, replacing its join string and removing one are done at a
+      terminal on the hub, under "atrium2 hub room". The board does not mint credentials:
+      atrium has no login, and this page may be reachable from elsewhere.</p>`;
+
+  const pick = await askUser({
+    title: "room " + r.name,
+    body: body,
+    buttons: [
+      { label: "close", value: null },
+      {
+        label: marked ? "take the mark off" : "mark for deletion",
+        value: "mark", style: marked ? "go" : "no"
+      },
+    ],
+  });
+  if (pick === "mark") await markRoom(r.name, !marked);
+}
+
+// markRoom is the one change the board can make to a room.
+async function markRoom(name, marked) {
+  try {
+    const got = await plainFetch("/_hub/inventory/mark", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, marked: !!marked })
+    });
+    if (!got.ok) {
+      const why = await got.json().catch(() => ({}));
+      throw new Error(why.error || "the hub refused that");
+    }
+  } catch (e) { tellUser("rooms", e.message); return; }
+  hubRead = 0;
+  await loadHubRooms();
+  renderRooms();
 }
 
 // ── which room a change lands in ────────────────────────────────────────────
@@ -495,6 +702,12 @@ async function loadHubRooms() {
   hubIsHub = true;
   hubRooms = (got.rooms || []).slice().sort((a, b) =>
     String(a.name).localeCompare(String(b.name)));
+  // THE DURABLE LIST COMES WITH IT, because the header's counter needs both
+  // halves: how many rooms are answering, and how many exist to answer. Asked
+  // here rather than only when the rooms tab is open, or the counter would
+  // report nothing missing until somebody went looking for it, which is the
+  // opposite of what a counter is for.
+  await loadInventory();
   paintRooms();
   return true;
 }
