@@ -240,7 +240,13 @@ fact, which is the shape of the bug that made a shell both a runner and a machin
 
 ### The outcome
 
-Not built yet.
+**Built over direct mTLS, 2026-09-17.** The name is minted into the token, the secret is bound to that room in
+the hub's store, and spending it is both the proof and the answer in one step. The certificate carries the name
+the hub chose, the room reads its own name back out of that certificate rather than out of the string it was
+given, and `--name` on the room is gone. The fallback that let `sign` take a name from the signing request is
+gone with it, which is the line the hole actually lived on.
+
+**Not proven over ziti or zrok**, where there is no secret to spend and no certificate to sign. See 18.
 
 ------------
 
@@ -261,8 +267,17 @@ regenerates the token rather than revealing the old one.
 
 ### The outcome
 
-Not built yet. A one-time secret exists, `spend()` makes it single-use, and there is no row, no list, and no
-regenerate.
+**Built 2026-09-17.** `atrium2 hub room add <name>` writes the row and prints the string, once. `ls` shows every
+room whether or not it has ever connected, with what it calls itself beside what it is called. `token <name>`
+mints a fresh one and retires the old, because the hub holds a hash and cannot show what it printed before.
+`mark` and `rm` are there too, with `rm` refusing a room that is not marked, a room whose cards the hub last saw
+on it, and any room heard from in the last twenty seconds.
+
+A room the hub has no record of cannot attach, even holding a certificate this hub signed, and that is checked
+on every heartbeat rather than only at attach: the store is a file, and forcing a room out is another process
+writing to it.
+
+The board's version of this list is item 3 and is still to come.
 
 ------------
 
@@ -363,7 +378,13 @@ minutes after something went wrong.
 
 ### The outcome
 
-Not built yet.
+**The store is built, 2026-09-17**, as `internal/hubstore`: rooms, names, transports, secrets, deletion state,
+the cache tables and the audit log. Postgres-portable in the way the room's schema already is. It halts rather
+than degrading, and it refuses to start on a database it cannot read, which is asked at open rather than found
+at the first query.
+
+**The backups are not built.** Tiered snapshots and an easy restore are item 8 and are still to come, and the
+halt is only as tolerable as they make it.
 
 ------------
 
@@ -585,5 +606,57 @@ ancillary noise and must never become a concept in the UI. Worth seeing at a gla
 ### The outcome
 
 Not built yet.
+
+------------
+
+## 18. What proves a room's name over an overlay?
+
+**Raised 2026-09-17 while building 2. NOT SETTLED. This one is a question, not a decision.**
+
+### How it came up
+
+Decision 7 says the hub names the room and the name travels in the join token. Building that made the direct
+mTLS path hold it exactly: the secret is bound to one room in the hub's store, spending it answers with that
+room's name, and the name goes into a certificate the hub signs. Editing the token changes nothing, because the
+token is not what the hub reads afterwards.
+
+A review of that work pointed out that the same guarantee does not hold for the other two transports, and it is
+right.
+
+### The gap, stated plainly
+
+A ziti or zrok join string is base64 JSON with nothing signed in it. There is no secret to spend and no
+certificate to issue, so the name is a field the room sends. On attach the hub checks that a row by that name
+exists and nothing more.
+
+**So anybody the overlay already lets through can edit the name and attach as any room on the hub.** Over zrok
+private that is exactly the case decision 7 named as having no answer: the hub knows a connection arrived
+through its own share and not who sent it.
+
+### What it is not
+
+It is not a regression. Before this work a room named itself outright on every transport, and the hub signed
+whatever it asked for. The overlay path is no weaker than it was. The direct path got much stronger, and the
+difference between them is now visible.
+
+### Why it is written down rather than fixed
+
+Fixing it means deciding what binds a room to an overlay identity, and that is the first of the questions the
+zrok and OpenZiti round is for. The obvious answers each carry a decision nobody has made:
+
+- a store-minted secret spent on first attach, which needs something durable to remember afterwards, which is a
+  new kind of credential
+- the OpenZiti identity itself, recorded on first attach and refused if it changes, which works for ziti and has
+  nothing to offer zrok private
+- a shared secret sent on every hello, which is a bearer token by another name
+
+Guessing here would invent a credential nobody agreed to, in the one area explicitly held back for its own
+round of questions.
+
+### What is done in the meantime
+
+The hub says so at startup, in the log, whenever it is listening on a transport that does not prove which room
+is calling. `certs.go` says the same where those tokens are minted. Nothing claims a guarantee it is not
+keeping.
 
 ------------

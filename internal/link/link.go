@@ -115,8 +115,8 @@ func DefaultTimings() Timings {
 		Warm: 4,
 		// Ten seconds is a long time to wait for a local socket and a short
 		// time to wait for one over an overlay on a bad network.
-		DialWait:   10 * time.Second,
-		Backoff: time.Second,
+		DialWait: 10 * time.Second,
+		Backoff:  time.Second,
 		// FIVE SECONDS, NOT THIRTY, and the reason is the whole point of the
 		// split. A hub is the disposable half: it is restarted to change a
 		// stylesheet, and it is back within a second. A ceiling of thirty

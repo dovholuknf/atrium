@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,6 @@ import (
 
 func joinCmd() *cobra.Command {
 	var (
-		name     string
 		dir      string
 		db       string
 		human    string
@@ -38,10 +38,13 @@ func joinCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "join <join string>",
 		Short: "Run the agents here and attach them to a hub",
-		Long: "Takes the line `atrium2 hub` printed, and does everything else.\n\n" +
+		Long: "Takes the line `atrium2 hub room add` printed, and does everything else.\n\n" +
 			"It makes this room a key, gets a certificate from that hub, saves both, and\n" +
 			"then runs. The private key never leaves this machine: the hub signs a request\n" +
 			"and never sees the key that made it.\n\n" +
+			"THE HUB DECIDES WHAT THIS ROOM IS CALLED. The name was chosen when the room\n" +
+			"was added there and it travels in the join string, so there is nothing to\n" +
+			"pick here. This machine's own name is still reported, and shown beside it.\n\n" +
 			"After the first time, `atrium2 room` runs with what was saved and needs no\n" +
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
@@ -50,10 +53,14 @@ func joinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if strings.TrimSpace(name) == "" {
-				name = defaultRoomName()
-			}
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+
+			// WHAT THIS MACHINE CALLS ITSELF, WHICH IS NOT WHAT IT IS CALLED.
+			// Sent so the hub can show the two side by side, and it decides
+			// nothing: this is `docs/architecture-v2.md`'s observed-versus-
+			// overrides rule, where the hub's name is the override.
+			self := defaultRoomName()
+			name := j.Name
 
 			// ONLY THE DIRECT TRANSPORT HAS ANYTHING TO ENROL. Under ziti and
 			// zrok the network already decided who may connect, so joining is
@@ -61,7 +68,11 @@ func joinCmd() *cobra.Command {
 			if j.Transport == "direct" {
 				d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
 				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-				err = d.Enrol(ctx, name, j.Secret)
+				// THE NAME COMES BACK OUT OF THE SIGNED CERTIFICATE rather than
+				// out of the string that was pasted. They are the same name
+				// unless somebody edited the string, and when they differ the
+				// hub's signature is the one that decides where requests go.
+				name, err = d.Enrol(ctx, self, j.Secret)
 				cancel()
 				if err != nil {
 					return err
@@ -71,12 +82,14 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println()
 			fmt.Println("  joined over " + j.Transport + " as \"" + name + "\".")
+			if !strings.EqualFold(name, self) {
+				fmt.Println("  this machine calls itself \"" + self + "\", which the hub shows beside it.")
+			}
 			fmt.Println("  starting the room. `atrium2 room` is all it takes from now on.")
 			fmt.Println()
 			return runRoom(keys, db, human, agent)
 		},
 	}
-	c.Flags().StringVar(&name, "name", "", "what to call this room (default: this machine's name)")
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
 	c.Flags().StringVar(&human, "http", "127.0.0.1:7810", "the room's own board, for when the hub is down")
@@ -153,6 +166,11 @@ type ownRoom struct {
 	parent context.Context
 	hub    *link.Hub
 	dir    string
+	// store is where this room gets written down, the same as any other. It
+	// crosses no network and enrols nothing, and it is still a room: the list
+	// describes everything that can run agents, and the machine you are sitting
+	// at is not an exception.
+	store *hubstore.Store
 
 	name, db, agent string
 
@@ -188,6 +206,15 @@ func (o *ownRoom) Set(on bool) error {
 		log.Printf("[hub] stopped being a room. its agents keep running, unsupervised, " +
 			"until something ends them")
 		return o.remember(false)
+	}
+	// ON THE LIST BEFORE IT IS RUNNING, the same order every other room follows:
+	// the row comes first and the connection comes later. Refusing here means
+	// the hub's room never starts unlisted, which is the state nothing else in
+	// the design knows how to describe.
+	if o.store != nil {
+		if _, err := o.store.EnsureLocal(o.name); err != nil {
+			return err
+		}
 	}
 	ctx, cancel := context.WithCancel(o.parent)
 	if err := hubAsRoom(ctx, o.hub, o.name, o.db, o.agent); err != nil {

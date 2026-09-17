@@ -246,6 +246,74 @@ func TestTheFirstTimeARoomConnectedDoesNotMove(t *testing.T) {
 	}
 }
 
+// THE HUB'S OWN ROOM IS A ROW LIKE ANY OTHER, and turning it off and on again
+// must not make a second one.
+func TestTheHubsOwnRoomIsWrittenDownOnce(t *testing.T) {
+	s := open(t)
+
+	first, err := s.EnsureLocal("sg4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.EnsureLocal("sg4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != again.ID {
+		t.Fatal("turning the hub's own room on twice made two rooms")
+	}
+	if first.Transport != TransportLocal {
+		t.Fatalf("the hub's own room reaches itself over %q", first.Transport)
+	}
+}
+
+// AND IT MUST NOT ADOPT SOMEBODY ELSE'S ROW.
+//
+// The hub's own room is named after the machine by default, and a real room
+// dialling in from elsewhere could already hold that name. Taking the row over
+// would point an in-process room at another machine's identity and break both.
+// Found by review.
+func TestTheHubsOwnRoomWillNotTakeOverARealOne(t *testing.T) {
+	s := open(t)
+	added(t, s, "sg4")
+
+	_, err := s.EnsureLocal("sg4")
+	if err == nil {
+		t.Fatal("the hub's own room took over a room that dials in over the network")
+	}
+	if !strings.Contains(err.Error(), "--room-name") {
+		t.Fatalf("the refusal does not say how to fix it: %v", err)
+	}
+}
+
+// WHETHER A ROOM IS STILL THERE, AS AN INFERENCE AND NOT A CLAIM.
+//
+// Nothing outside the hub's process can know whether a socket is open. What the
+// store can say is how recently the hub wrote down hearing from it, which is
+// enough for a command line to refuse to force out a room that is plainly still
+// running and not enough for anything that has to be right.
+func TestARoomHeardFromRecentlyReadsAsStillThere(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sparta")
+
+	if got, _ := s.Get(r.ID); got.LikelyAttached() {
+		t.Fatal("a room that has never connected reads as attached")
+	}
+	if err := s.Seen(r.ID, "box", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(r.ID); !got.LikelyAttached() {
+		t.Fatal("a room heard from a moment ago does not read as attached")
+	}
+
+	real := now
+	defer func() { now = real }()
+	now = func() time.Time { return real().Add(Lively + time.Second) }
+	if got, _ := s.Get(r.ID); got.LikelyAttached() {
+		t.Fatal("a room nobody has heard from still reads as attached")
+	}
+}
+
 // MARKING IS REVERSIBLE, which is the whole reason it is safe to press.
 func TestMarkingForDeletionCanBeTakenBack(t *testing.T) {
 	s := open(t)

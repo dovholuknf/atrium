@@ -58,8 +58,14 @@ var migrations = []struct {
 				self_name     TEXT NOT NULL DEFAULT '',
 				-- Ancillary noise that earns a badge and never a concept: how
 				-- this room reaches the hub.
+				-- "local" is the hub's own room, which reaches the hub over a
+				-- pipe inside one process and crosses no network at all. It is
+				-- a row like any other, because decision 3 says the list
+				-- describes everything that can run agents, and a settings cog
+				-- with nothing to attach to was the problem that started all
+				-- of this.
 				transport     TEXT NOT NULL DEFAULT 'direct'
-				                CHECK (transport IN ('direct','ziti','zrok','zrok-public')),
+				                CHECK (transport IN ('direct','ziti','zrok','zrok-public','local')),
 				state         TEXT NOT NULL DEFAULT 'active'
 				                CHECK (state IN ('active','marked-for-deletion')),
 				created_at    TEXT NOT NULL,

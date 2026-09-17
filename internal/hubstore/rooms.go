@@ -40,6 +40,9 @@ const (
 	// TransportZrokPublic is the one decision 5 is least convinced by. It is
 	// here so a row can hold it, and nothing offers it yet.
 	TransportZrokPublic = "zrok-public"
+	// TransportLocal is the hub's own room: a pipe inside one process, which
+	// crosses no network and has nothing to enrol.
+	TransportLocal = "local"
 )
 
 // Room is one row: everything the hub knows about a room without asking it.
@@ -69,6 +72,25 @@ func (r Room) EverConnected() bool { return r.FirstSeen != nil }
 // Marked reports whether this room is on its way out.
 func (r Room) Marked() bool { return r.State == StateMarked }
 
+// Lively is how recently a room must have been heard from for another process
+// to treat it as attached.
+//
+// Four times the hub's heartbeat, which refreshes `last_seen_at` on every beat.
+// Long enough that one slow moment does not read as a disconnection, short
+// enough that a room which went away a minute ago does not read as present.
+const Lively = 20 * time.Second
+
+// LikelyAttached is an INFERENCE, and the name says so on purpose.
+//
+// Whether a room is attached is a fact about a socket in the hub's process, and
+// nothing outside that process can know it. What this reads is how recently the
+// hub wrote down having heard from it. That is enough for a command line to
+// refuse to force out a room that is plainly still there, and it is not enough
+// for anything that must be right: the hub itself asks its own connection list.
+func (r Room) LikelyAttached() bool {
+	return r.LastSeen != nil && now().Sub(*r.LastSeen) < Lively
+}
+
 // Add writes a room down and gives it a name.
 //
 // THE HUB NAMES THE ROOM. That name is minted into the join token, the room
@@ -84,7 +106,7 @@ func (s *Store) Add(name, transport string) (*Room, error) {
 		transport = TransportDirect
 	}
 	switch transport {
-	case TransportDirect, TransportZiti, TransportZrok, TransportZrokPublic:
+	case TransportDirect, TransportZiti, TransportZrok, TransportZrokPublic, TransportLocal:
 	default:
 		return nil, fmt.Errorf("no transport called %q. rooms reach a hub over "+
 			"direct, ziti or zrok", transport)
@@ -111,6 +133,39 @@ func (s *Store) Add(name, transport string) (*Room, error) {
 	}
 	s.Log(r, "added", "named by the hub, reachable over "+transport)
 	return r, nil
+}
+
+// EnsureLocal writes down the hub's own room, if it is not already there.
+//
+// THE HUB'S OWN ROOM IS A ROOM. It appears on the list beside every other one,
+// because the list describes everything that can run agents and a machine you
+// are sitting at is not an exception to that. It is also what decision 1's
+// settings cog needs something to attach to.
+//
+// Idempotent, because turning the hub's room off and on again is a switch on
+// the board rather than a reinstallation. Nothing here is enrolled: the
+// connection never leaves the process, so there is no credential to mint and no
+// secret to show once.
+func (s *Store) EnsureLocal(name string) (*Room, error) {
+	r, err := s.ByName(name)
+	if err == nil {
+		// THE NAME BEING FREE IS NOT THE SAME AS THE ROOM BEING THIS ONE.
+		//
+		// A machine called `sg4` could already be on this hub as a real room
+		// dialling in over the network, and the hub's own room defaults to the
+		// machine's name. Taking that row over would point the hub's in-process
+		// room at another machine's identity and quietly break both.
+		if r.Transport != TransportLocal {
+			return nil, fmt.Errorf("this hub already has a room called %q that reaches "+
+				"it over %s. give its own room a different name with --room-name",
+				r.Name, r.Transport)
+		}
+		return r, nil
+	}
+	if !errors.Is(err, ErrNoSuchRoom) {
+		return nil, err
+	}
+	return s.Add(name, TransportLocal)
 }
 
 // checkName refuses names that would not survive being a room.
