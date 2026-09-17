@@ -52,6 +52,12 @@ type Hub struct {
 	// Nil accepts everything, which is right for a test over a pipe and for a
 	// hub that has no store.
 	Attaching func(name, host, version string) error
+	// Cached is handed everything a room says it is holding, whole.
+	//
+	// Nil means this hub keeps no cache, which is what a hub with no store is,
+	// and a room that announces to one is told so rather than left waiting.
+	// See announce.go.
+	Cached func(name string, cards []CardState) error
 
 	mu    sync.Mutex
 	rooms map[string]*attached
@@ -199,6 +205,12 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		h.control(ctx, name, hi, conn, br)
 	case "data":
 		h.data(name, hi, conn, br)
+	case announceKind:
+		// A ROOM SAYING WHAT IT IS HOLDING. Its own connection rather than a
+		// line on the control one, because a card list is not small. See
+		// `announce.go`.
+		defer conn.Close()
+		h.serveAnnouncement(name, conn, br)
 	case upgradeKind:
 		// A ROOM ASKING FOR THE BINARY IT WAS OFFERED. It dialled this, which
 		// is the whole design: the hub never reaches into a room. See
@@ -266,7 +278,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	h.mu.Unlock()
 
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
-	if err := writeJSON(conn, welcome{OK: true, Session: session, Warm: h.T.Warm}); err != nil {
+	if err := writeJSON(conn, welcome{
+		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
+	}); err != nil {
 		a.close(err.Error())
 		return
 	}

@@ -140,7 +140,19 @@ func (s *Store) Announce(roomID string, cards []Card) (Changes, error) {
 	if err != nil {
 		return ch, err
 	}
-	s.Log(r, "announced", ch.String())
+	// LOGGED WHEN SOMETHING WAS DISCARDED, and not otherwise.
+	//
+	// The log exists because wholesale replacement is the right rule and is
+	// also the one that can quietly lose something a person remembers seeing.
+	// A card that is new or changed has not been lost: it is on the board. A
+	// card that is gone is the one nobody can account for afterwards.
+	//
+	// The alternative is a line per announcement, which on a busy room is a
+	// line every couple of seconds saying nothing happened, and a log nobody
+	// can read is a log that answers nothing.
+	if ch.Gone > 0 {
+		s.Log(r, "announced", ch.String())
+	}
 	return ch, nil
 }
 

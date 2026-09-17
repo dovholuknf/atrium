@@ -196,6 +196,16 @@ func (r *Room) attach(ctx context.Context) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go r.beat(ctx, conn)
+	// WHAT IS HERE, SAID ONCE ON ATTACHING AND THEN ON CHANGE. The hub caches
+	// it so a board can still show this room when it is not answering. It ends
+	// with the attachment, because the next one starts by saying everything
+	// again. See `announce.go`.
+	//
+	// Only to a hub that said it keeps one. A hub with no store is a normal
+	// thing and announcing at it would be a failure logged on every change.
+	if w.Caches {
+		go r.announce(ctx, w.Session)
+	}
 
 	for {
 		var n note

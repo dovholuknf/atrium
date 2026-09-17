@@ -339,6 +339,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/overlays/zrok/account", s.zrokAccount)
 	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
+	// What a hub may cache about this room. See state.go: the stored rows, not
+	// the view, because the view carries what is true only this second.
+	mux.HandleFunc("GET /v1/state", s.roomState)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	// Every question this card is waiting on, oldest first.
 	//
