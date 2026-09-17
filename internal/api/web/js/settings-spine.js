@@ -1298,11 +1298,11 @@ function connect() {
   // in the header is the thing that has to move, and a poll would make a room
   // attaching take up to ten seconds to show.
   //
-  // The event says WHICH rooms, and `loadRooms` is asked anyway rather than
+  // The event says WHICH rooms, and `loadHubRooms` is asked anyway rather than
   // trusting it: the chip draws a host and an uptime the event does not carry,
   // and one source of truth is worth one request.
   es.addEventListener("rooms", () => {
-    loadRooms();
+    loadHubRooms();
     // The cards belong to the rooms that are gone or newly here.
     refreshSoon();
   });

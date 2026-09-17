@@ -196,9 +196,9 @@ function eventsURL() {
 
 // ── finding out whether this is a hub at all ────────────────────────────────
 
-// loadRooms asks what is attached. Answers false when this is a plain daemon,
+// loadHubRooms asks what is attached. Answers false when this is a plain daemon,
 // which is how everything above turns itself off.
-async function loadRooms() {
+async function loadHubRooms() {
   let got;
   try {
     got = await plainFetch("/_hub/rooms");
@@ -219,11 +219,11 @@ async function loadRooms() {
 // startRooms wires the chip up. Called once, before the event stream opens,
 // because `eventsURL` cannot answer until the probe has.
 async function startRooms() {
-  if (!await loadRooms()) return;
+  if (!await loadHubRooms()) return;
   // A BACKSTOP POLL, and it is not the primary signal. The merged stream says
   // `rooms` the moment membership changes, but a board scoped to one room is
   // not on that stream, so this is what keeps its counter honest.
-  setInterval(loadRooms, 10000);
+  setInterval(loadHubRooms, 10000);
   document.addEventListener("click", e => {
     const menu = document.getElementById("rooms-menu");
     if (!menu || menu.hidden) return;
