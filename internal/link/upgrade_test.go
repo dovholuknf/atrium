@@ -240,6 +240,24 @@ func TestAnOfferIsTakenOnce(t *testing.T) {
 	}
 }
 
+// AND A BUILD THAT FAILED IS NOT FETCHED AGAIN EITHER.
+//
+// The hub repeats its offer on every reconnect. A build that does not match
+// its own hash would otherwise be pulled across the network again on every
+// one of them, tens of megabytes at a time, for a result that cannot change
+// until the offer does. A different build is still tried at once.
+func TestARejectedBuildIsNotFetchedAgain(t *testing.T) {
+	var tk taker
+	tk.start("bad")
+	tk.finish("bad", false)
+	if tk.start("bad") {
+		t.Error("a build that was already rejected was fetched again")
+	}
+	if !tk.start("good") {
+		t.Error("a different build was refused after a rejected one")
+	}
+}
+
 // EACH ROOM IS OFFERED THE BUILD FOR ITS OWN MACHINE, which is the difference
 // between this feature working on a mixed fleet and doing nothing there.
 //

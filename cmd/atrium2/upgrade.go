@@ -56,7 +56,14 @@ func installUpgrade(path string, o link.Offer) error {
 	base := strings.TrimSuffix(filepath.Base(self), exeSuffix())
 	aside := filepath.Join(dir, base+".old"+exeSuffix())
 
-	_ = os.Remove(aside) // last time's, now that nothing is running it
+	// LAST TIME'S, NOW THAT NOTHING IS RUNNING IT. On Windows a file that is
+	// still open cannot be deleted, and if that happens the rename below fails
+	// and the upgrade is refused with the old binary untouched, which is the
+	// safe outcome and an opaque one. So it is said.
+	if err := os.Remove(aside); err != nil && !os.IsNotExist(err) {
+		log.Printf("[link] %s is still there and could not be removed: %v", aside, err)
+		log.Printf("[link] something is probably still running it. this upgrade will not go in")
+	}
 	if err := os.Rename(self, aside); err != nil && !os.IsNotExist(err) {
 		return err
 	}

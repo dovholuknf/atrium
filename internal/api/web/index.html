@@ -56,6 +56,27 @@
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
+<!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
+     The board comes up on the stack, because that is what the markup says, and
+     then the script puts you back on the view you were reading. Between those
+     is a frame of somebody else's screen: you leave the terminals, watch the
+     stack draw, and arrive back at the terminals. It reads as the board
+     glitching rather than as a room being changed.
+     This is in the HEAD and inline on purpose. Every other script on this page
+     is at the end of the body, which is after the first paint, so nothing down
+     there can prevent a flash of a view you did not ask for. This runs before
+     anything is drawn.
+     Only when a switch is in flight. An ordinary reload is not covered up,
+     because an ordinary reload is not going anywhere. -->
+<script>
+  try {
+    var to = sessionStorage.getItem("atrium.switching");
+    if (to) {
+      document.documentElement.className += " switching";
+      document.documentElement.dataset.switchingTo = to;
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 <header>
@@ -2195,6 +2216,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      same way: a body-level element, fixed, positioned from the thing that
      opened it. -->
 <div class="rooms-menu" id="rooms-menu" hidden></div>
+
+<!-- What is over the board while a room is being changed. Drawn from the
+     attribute the head script set, so it names the room before any of this
+     page's own JavaScript has run. -->
+<div id="switching"><div class="s-card">
+  <div class="s-spin"></div>
+  <div class="s-what">switching rooms</div>
+</div></div>
 
 <!-- Browsing the DAEMON's filesystem, not the browser's. The board is meant to
      be opened from a phone and over an overlay network, and the browser's own
