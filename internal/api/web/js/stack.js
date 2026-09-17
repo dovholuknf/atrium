@@ -534,7 +534,10 @@ async function resumePinned(id) {
 // Clicking one filters to it, since seeing a tag and wanting only that is the
 // same motion.
 function tagChips(t) {
-  return (t.tags || []).map(tag =>
+  // The room the card is on, first, and only when looking at several. It is a
+  // tag because that is what it is: something true about the card that you may
+  // want to see only cards of. See `js/rooms.js`.
+  return roomChip(t) + (t.tags || []).map(tag =>
     `<span class="chip tag" style="--ghue:${groupHue(tag)}"
        title="show only ${esc(tag)}"
        onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"

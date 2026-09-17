@@ -141,6 +141,14 @@
     color: hsl(var(--ghue) 70% 76%); cursor: pointer;
   }
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
+  /* WHICH MACHINE THIS CARD IS ON, drawn only when looking at several at once. Not coloured per room: a room
+     is a machine and there is no palette of machines, so it wears the one colour the hub uses for itself.
+     Clicking it focuses the whole board on that room, which is the thing you wanted when you noticed it. */
+  .chip.room {
+    background: rgba(var(--teal-rgb), .12); border: 1px solid rgba(var(--teal-rgb), .42);
+    color: var(--teal); font-family: var(--mono); cursor: pointer;
+  }
+  .chip.room:hover { background: rgba(var(--teal-rgb), .26); }
   /* Where the work came from. Not coloured per source: atrium does not know what a source is, and a palette per
      system would claim that it does. One quiet chip that happens to be a link. */
   .chip.origin {

@@ -61,6 +61,43 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
 
+  /* ── which room ─────────────────────────────────────────
+     Only ever drawn on a hub, which is an atrium that serves this board and holds nothing. It reads as a
+     counter and behaves as a selector: `2/2 rooms` is every machine at once, a name is one machine and the
+     whole board is that machine's atrium.
+
+     Sits beside the connection dot and is styled like it, because they answer neighbouring questions: one says
+     whether the board is live, the other says what it is live to. */
+  .rooms {
+    font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 5px 11px; border-radius: var(--r-pill);
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+  }
+  .rooms:hover { color: var(--head); border-color: var(--stroke); }
+  .rooms .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+  /* Scoped to one room, which is a mode worth seeing from across the desk. */
+  .rooms.scoped { color: var(--teal); border-color: var(--teal); }
+  /* Nothing attached. The hub is up and has nothing to show, which is a normal state every time a room
+     restarts and must not look like the board being broken. */
+  .rooms.cold .dot { background: var(--warn); box-shadow: none; }
+  .rooms-menu {
+    position: absolute; top: 100%; right: var(--sp-5); z-index: 30; min-width: 16rem;
+    display: flex; flex-direction: column; padding: var(--sp-2);
+    border: 1px solid var(--stroke); border-radius: var(--r-md);
+    background: var(--bg1); box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  }
+  .rooms-menu button {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: var(--sp-3) var(--sp-4); border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--body); text-align: left; cursor: pointer;
+  }
+  .rooms-menu button:hover { background: var(--chip); }
+  .rooms-menu button.on { color: var(--teal); }
+  .rooms-menu button strong { font: 600 var(--fs-lg)/1.3 var(--mono); }
+  .rooms-menu button span { font-size: var(--fs-sm); color: var(--dim); }
+  .rooms-menu .none { padding: var(--sp-4); font-size: var(--fs-sm); color: var(--dim); line-height: 1.5; }
+
   #halted {
     display: none; padding: 13px 26px; gap: var(--sp-4); align-items: baseline;
     background: linear-gradient(90deg, rgba(var(--danger-rgb),.18), rgba(var(--danger-rgb),.04));

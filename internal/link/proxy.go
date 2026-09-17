@@ -67,11 +67,20 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 
 	p.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
-			// A FIXED, MEANINGLESS TARGET. Which connection this goes down is
-			// decided by the transport below, not by this URL, so the host
-			// exists only because net/http insists a request has one.
+			// A HOST PER ROOM, AND THE ROOM'S NAME IS IN IT ON PURPOSE.
+			//
+			// Nothing resolves this name: which connection the request goes
+			// down is decided by `DialContext` below, from the room on the
+			// context. But `http.Transport` KEYS ITS CONNECTION POOL BY HOST,
+			// and `DialContext` only runs when the pool has nothing to reuse.
+			//
+			// With one fixed host, a request for beta would happily reuse an
+			// idle connection dialled to alpha and land in the wrong room,
+			// which is a click in the aggregate view opening somebody else's
+			// card. Putting the room in the host gives each one its own pool.
 			r.Out.URL.Scheme = "http"
-			r.Out.URL.Host = "room.atrium.internal"
+			name, _ := r.Out.Context().Value(roomKey{}).(string)
+			r.Out.URL.Host = hostFor(name)
 			// THE TAG COMES OFF BEFORE THE ROOM SEES IT. A room minted the
 			// bare id and knows nothing about `room~id`, so sending the tagged
 			// form would be a 404 on every card clicked from an aggregate list.
@@ -138,6 +147,18 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 
 // roomKey carries the chosen room from the rewrite into the dial.
 type roomKey struct{}
+
+// hostFor is the synthetic host a room's requests are addressed to.
+//
+// It exists to key the connection pool, and nothing ever resolves it. Lowercase
+// because a host is case-insensitive and `Alpha` and `alpha` are one room, and
+// because two spellings would be two pools to the same place.
+func hostFor(room string) string {
+	if room == "" {
+		return "room.atrium.internal"
+	}
+	return keyOf(room) + ".room.atrium.internal"
+}
 
 // roomFor answers which room a request is for, and whether it named one.
 //
@@ -233,13 +254,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	room, named := p.roomFor(r)
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
+		if r.URL.Path == "/v1/health" {
+			p.health(w, r)
+			return
+		}
 		if p.aggregate(w, r, r.URL.Path) {
 			return
 		}
 		// A write, or a read nothing knows how to merge. Asked rather than
-		// guessed at. `/v1/health` is the exception below, because the board
-		// polls it to decide atrium is up at all.
-		if rooms := p.hub.Rooms(); len(rooms) > 1 && r.URL.Path != "/v1/health" {
+		// guessed at.
+		if rooms := p.hub.Rooms(); len(rooms) > 1 {
 			needsARoom(w, rooms)
 			return
 		}

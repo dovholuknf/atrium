@@ -1227,7 +1227,11 @@ async function refresh() {
 }
 
 function connect() {
-  const es = new EventSource("/v1/events");
+  // `/v1/events` on a plain daemon, and one of the hub's two spellings when a
+  // hub is serving this. An EventSource sets no headers, so the room this
+  // board is scoped to can only be said in the URL. See `js/rooms.js`.
+  const es = new EventSource(
+    typeof eventsURL === "function" ? eventsURL() : "/v1/events");
   const conn = document.getElementById("conn");
   const label = document.getElementById("conn-t");
   // A reconnect means the daemon went and came back, and everything held in
@@ -1289,6 +1293,19 @@ function connect() {
   // only drawn on the runners pane, and `renderDispatch` is a single fetch, so
   // this redraws rather than trying to patch a row.
   es.addEventListener("dispatch", () => { renderDispatch(); });
+  // A ROOM CAME OR WENT. Only the merged stream carries this, because a board
+  // scoped to one room is talking to that room and not to the hub. The counter
+  // in the header is the thing that has to move, and a poll would make a room
+  // attaching take up to ten seconds to show.
+  //
+  // The event says WHICH rooms, and `loadRooms` is asked anyway rather than
+  // trusting it: the chip draws a host and an uptime the event does not carry,
+  // and one source of truth is worth one request.
+  es.addEventListener("rooms", () => {
+    loadRooms();
+    // The cards belong to the rooms that are gone or newly here.
+    refreshSoon();
+  });
   es.addEventListener("overlays", e => {
     let next;
     try { next = JSON.parse(e.data) || []; } catch (err) { return; }
