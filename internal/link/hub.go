@@ -39,23 +39,27 @@ type Hub struct {
 
 	mu    sync.Mutex
 	rooms map[string]*attached
-	// offer is what this hub is running, described so a room can decide
-	// whether it wants it. Nil means this hub offers nothing, which is the
-	// default and what every hub does until `Offers` is called. See
-	// `upgrade.go`.
-	offer *Offer
+	// builds are the binaries this hub can hand out, one per platform. Empty
+	// means it offers nothing, which is the default until `Offers` is called.
+	// See `upgrade.go`.
+	builds []Build
 }
 
-// Offers tells rooms what this hub is running.
+// Offers tells rooms what binaries this hub has.
 //
-// SAYING, NOT DOING. A hub can describe its binary and serve it to a room that
-// asks. It can never install one: the room decides whether it wants it,
+// SAYING, NOT DOING. A hub can describe a build and serve it to a room that
+// asks for it. It can never install one: the room decides whether it wants it,
 // fetches it itself, and checks what arrived. See `upgrade.go` for why it is
 // this way round.
-func (h *Hub) Offers(o *Offer) {
+//
+// ONE PER PLATFORM, because rooms are on other machines and that is the point
+// of them. A hub holding only its own binary is useful to a fleet that matches
+// it and useless to any other, which would make this feature do nothing for
+// exactly the people with several kinds of machine.
+func (h *Hub) Offers(builds ...Build) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.offer = o
+	h.builds = builds
 }
 
 // attached is one room's live link.
@@ -183,8 +187,8 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// A ROOM ASKING FOR THE BINARY IT WAS OFFERED. It dialled this, which
 		// is the whole design: the hub never reaches into a room. See
 		// `upgrade.go`.
-		log.Printf("[hub] room %q is taking this build", name)
-		h.serveUpgrade(conn)
+		log.Printf("[hub] room %q is taking a %s/%s build", name, hi.OS, hi.Arch)
+		h.serveUpgrade(conn, hi)
 	}
 }
 
@@ -247,11 +251,13 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// and never finds out what the room decided. A room that wants it dials
 	// for it. See `upgrade.go`.
 	h.mu.Lock()
-	offer := h.offer
+	builds := h.builds
 	h.mu.Unlock()
-	if worthOffering(offer, hi) {
-		log.Printf("[hub] telling %q about %s, which it may take or ignore", name, offer.Version)
-		_ = writeJSON(conn, note{Offer: offer})
+	if b := forRoom(builds, hi); b != nil {
+		log.Printf("[hub] telling %q about %s for %s/%s, which it may take or ignore",
+			name, b.Version, b.OS, b.Arch)
+		offer := b.Offer
+		_ = writeJSON(conn, note{Offer: &offer})
 	}
 
 	for {
