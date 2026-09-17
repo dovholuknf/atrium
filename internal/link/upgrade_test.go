@@ -21,14 +21,14 @@ import (
 // learns of a build after a room attached says nothing until that room comes
 // back, which it does on every hub restart, which is when a hub's binary can
 // have changed anyway.
-func offering(t *testing.T, up *Upgrades, o *Offer) (*Hub, *Room, func()) {
+func offering(t *testing.T, up *Upgrades, builds ...Build) (*Hub, *Room, func()) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 5 * time.Second, Warm: 1})
-	hub.Offers(o)
+	hub.Offers(builds...)
 	ctx, stop := context.WithCancel(context.Background())
 	go func() { _ = hub.Serve(ctx, ln) }()
 
@@ -39,6 +39,17 @@ func offering(t *testing.T, up *Upgrades, o *Offer) (*Hub, *Room, func()) {
 	}
 	go func() { _ = r.Run(ctx) }()
 	return hub, r, func() { stop(); ln.Close() }
+}
+
+// selfBuild is an offer backed by the test binary, which is a real file of the
+// size and hash claimed, so a fetch has something to actually transfer.
+func selfBuild(t *testing.T, o Offer) Build {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Build{Offer: o, Path: self}
 }
 
 // selfSum is what the test binary hashes to, which is what the hub will offer:
@@ -78,10 +89,10 @@ func TestARoomTakesTheBuildItWasOffered(t *testing.T) {
 		},
 	}
 	sum, size := selfSum(t)
-	hub, _, done := offering(t, up, &Offer{
+	hub, _, done := offering(t, up, selfBuild(t, Offer{
 		Version: "v2", SHA256: sum, Size: size,
 		OS: runtime.GOOS, Arch: runtime.GOARCH,
-	})
+	}))
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
@@ -128,8 +139,8 @@ func TestAHubCannotUpgradeARoomThatDidNotAgree(t *testing.T) {
 		},
 	}
 	sum, size := selfSum(t)
-	hub, _, done := offering(t, up, &Offer{Version: "v2", SHA256: sum, Size: size,
-		OS: runtime.GOOS, Arch: runtime.GOARCH})
+	hub, _, done := offering(t, up, selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
+		OS: runtime.GOOS, Arch: runtime.GOARCH}))
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
@@ -157,8 +168,8 @@ func TestAnotherPlatformsBuildIsRefused(t *testing.T) {
 		},
 	}
 	sum, size := selfSum(t)
-	hub, _, done := offering(t, up, &Offer{Version: "v2", SHA256: sum, Size: size,
-		OS: "plan9", Arch: "sparc64"})
+	hub, _, done := offering(t, up, selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
+		OS: "plan9", Arch: "sparc64"}))
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
@@ -186,11 +197,11 @@ func TestABuildThatDoesNotMatchItsHashIsNotInstalled(t *testing.T) {
 		},
 	}
 	_, size := selfSum(t)
-	hub, _, done := offering(t, up, &Offer{
+	hub, _, done := offering(t, up, selfBuild(t, Offer{
 		Version: "v2", Size: size,
 		SHA256: "0000000000000000000000000000000000000000000000000000000000000000",
 		OS:     runtime.GOOS, Arch: runtime.GOARCH,
-	})
+	}))
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
@@ -229,10 +240,41 @@ func TestAnOfferIsTakenOnce(t *testing.T) {
 	}
 }
 
+// EACH ROOM IS OFFERED THE BUILD FOR ITS OWN MACHINE, which is the difference
+// between this feature working on a mixed fleet and doing nothing there.
+//
+// A hub that can only hand out its own binary is useful to rooms exactly like
+// it and useless to every other, and rooms are on other machines by definition.
+func TestEachRoomIsOfferedItsOwnPlatform(t *testing.T) {
+	builds := []Build{
+		{Offer: Offer{Version: "v2", OS: "linux", Arch: "amd64"}, Path: "linux"},
+		{Offer: Offer{Version: "v2", OS: "windows", Arch: "amd64"}, Path: "windows"},
+		{Offer: Offer{Version: "v2", OS: "darwin", Arch: "arm64"}, Path: "mac"},
+	}
+	for _, c := range []struct{ os, arch, want string }{
+		{"linux", "amd64", "linux"},
+		{"windows", "amd64", "windows"},
+		{"darwin", "arm64", "mac"},
+		// No build for it. Said with silence rather than with the nearest
+		// thing, which would be a binary that cannot run.
+		{"darwin", "amd64", ""},
+		{"freebsd", "amd64", ""},
+	} {
+		got := forRoom(builds, hello{Upgrades: true, Version: "v1", OS: c.os, Arch: c.arch})
+		name := ""
+		if got != nil {
+			name = got.Path
+		}
+		if name != c.want {
+			t.Errorf("%s/%s was offered %q, expected %q", c.os, c.arch, name, c.want)
+		}
+	}
+}
+
 // The hub does not bother a room that has nothing to gain, which keeps the log
 // quiet and the offer meaningful.
 func TestAHubOnlySaysSomethingWorthSaying(t *testing.T) {
-	o := &Offer{Version: "v2", OS: "linux", Arch: "amd64"}
+	builds := []Build{{Offer: Offer{Version: "v2", OS: "linux", Arch: "amd64"}, Path: "x"}}
 	cases := []struct {
 		why  string
 		hi   hello
@@ -242,17 +284,21 @@ func TestAHubOnlySaysSomethingWorthSaying(t *testing.T) {
 		{"another os", hello{Upgrades: true, Version: "v1", OS: "windows", Arch: "amd64"}, false},
 		{"another arch", hello{Upgrades: true, Version: "v1", OS: "linux", Arch: "arm64"}, false},
 		{"the same version", hello{Upgrades: true, Version: "v2", OS: "linux", Arch: "amd64"}, false},
+		// AN OLDER ROOM SAYS NOTHING ABOUT ITS PLATFORM, and guessing it must
+		// be like the hub is how a Linux machine ends up holding a Windows
+		// binary. Silence costs it an upgrade it never asked for.
+		{"a room too old to say", hello{Upgrades: true, Version: "v1"}, false},
 		{"a room that wants it", hello{Upgrades: true, Version: "v1", OS: "linux", Arch: "amd64"}, true},
 	}
 	for _, c := range cases {
-		if got := worthOffering(o, c.hi); got != c.want {
+		if got := forRoom(builds, c.hi) != nil; got != c.want {
 			t.Errorf("%s: offered=%v, expected %v", c.why, got, c.want)
 		}
 	}
 	// TWO `dev` BUILDS ARE DIFFERENT BINARIES most of the time, and handing a
 	// room the build you just made is the entire point during development.
-	dev := &Offer{Version: "dev", OS: "linux", Arch: "amd64"}
-	if !worthOffering(dev, hello{Upgrades: true, Version: "dev", OS: "linux", Arch: "amd64"}) {
+	dev := []Build{{Offer: Offer{Version: "dev", OS: "linux", Arch: "amd64"}, Path: "x"}}
+	if forRoom(dev, hello{Upgrades: true, Version: "dev", OS: "linux", Arch: "amd64"}) == nil {
 		t.Error("one dev build was not offered to a room running another")
 	}
 }

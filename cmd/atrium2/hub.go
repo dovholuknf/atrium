@@ -31,6 +31,11 @@ func hubCmd() *cobra.Command {
 		files     string
 		open      bool
 
+		// Binaries to offer rooms, one per platform. Empty means this hub can
+		// only offer what it is running, which is no use to a room on another
+		// kind of machine. See `builds.go`.
+		buildDir string
+
 		// The hub being a room too. Off unless asked for: see `--room`.
 		asRoom    bool
 		roomName  string
@@ -63,16 +68,17 @@ func hubCmd() *cobra.Command {
 			defer ln.Close()
 
 			h := link.NewHub(link.Timings{})
-			// WHAT THIS HUB IS RUNNING, so a room that asked to be told can be
-			// told. Hashed once here rather than per attach: it is fifty
-			// megabytes and it cannot change while this process is running.
+			// WHAT THIS HUB CAN HAND OUT, so a room that asked to be told can
+			// be told. Hashed once here rather than per attach: these are tens
+			// of megabytes each and they cannot change under a running hub.
 			//
-			// A failure is logged and ignored. Not being able to describe your
-			// own binary is not a reason to refuse to serve a board.
-			if o, err := link.Offered(version); err != nil {
-				log.Printf("[hub] cannot describe this binary, so rooms will not be offered it: %v", err)
-			} else {
-				h.Offers(o)
+			// One per platform, because a room is on another machine and a hub
+			// that can only offer its own binary is no use to a fleet that is
+			// not all the same. See `builds.go`.
+			builds := hubBuilds(buildDir, version)
+			h.Offers(builds...)
+			if what := saysWhatItHas(builds); what != "" {
+				log.Printf("[hub] builds on offer, for rooms that asked: %s", what)
 			}
 			h.Enrol = side.enrol
 			// A ROOM IN THIS PROCESS IS NOT ASKED FOR PAPERS. Every other room
@@ -156,6 +162,8 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&files, "board", "",
 		"serve the board from this directory instead of the built-in copy")
 	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
+	c.Flags().StringVar(&buildDir, "builds", "",
+		"a directory of atrium2_<os>_<arch> binaries to offer rooms that asked for upgrades")
 	// OFF BY DEFAULT, and that is the design rather than caution. A hub that
 	// holds a database is a hub whose restart is no longer free, which is the
 	// one property this whole split exists to buy.

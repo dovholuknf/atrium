@@ -67,77 +67,120 @@ const upgradeKind = "upgrade"
 // upgrade request with an endless stream.
 const upgradeLimit = 200 << 20
 
-// Offered is what a hub is running, for a room to compare itself against.
+// Build is one binary a hub can hand out, and where it keeps it.
 //
-// Built once when the hub starts, because hashing fifty megabytes on every
-// room attach would be fifty megabytes per reconnect and the answer cannot
-// change: a running process cannot have its own binary swapped under it on
-// either platform without the swap being a different file.
-func Offered(version string) (*Offer, error) {
+// ── ONE HUB, SEVERAL PLATFORMS ───────────────────────────
+//
+// A hub can only ever describe binaries it has, and the one it is certain to
+// have is its own. That is enough for a fleet of one kind of machine and
+// useless for any other: a Windows hub with a Linux room can say nothing that
+// room could run, so the feature would quietly do nothing for exactly the
+// people who need it most. Rooms are on other machines, which is the entire
+// reason they are rooms.
+//
+// So a hub holds a SET, keyed by what it runs on, and answers each room with
+// the one that matches. Its own binary is simply the entry for its own
+// platform, and a hub given nothing else still works for rooms like itself.
+//
+// `Path` never goes on the wire. A room is told what a build IS, not where the
+// hub keeps it.
+type Build struct {
+	Offer
+	Path string
+}
+
+// Offered describes the binary this hub is running.
+//
+// Hashed once at startup, because hashing fifty megabytes per room attach
+// would be fifty megabytes per reconnect and the answer cannot change: a
+// running process cannot have its own image swapped under it on either
+// platform without the swap producing a different file.
+func Offered(version string) (Build, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return nil, err
+		return Build{}, err
 	}
-	f, err := os.Open(self)
+	return Describe(self, version, runtime.GOOS, runtime.GOARCH)
+}
+
+// Describe hashes a binary so it can be offered.
+//
+// The platform is passed in rather than guessed at, because the whole point is
+// binaries for machines this one is not.
+func Describe(path, version, goos, arch string) (Build, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return Build{}, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return Build{}, err
+	}
+	if st.IsDir() {
+		return Build{}, errors.New(path + " is a directory")
 	}
 	sum := sha256.New()
 	if _, err := io.Copy(sum, f); err != nil {
-		return nil, err
+		return Build{}, err
 	}
-	return &Offer{
-		Version: version,
-		SHA256:  hex.EncodeToString(sum.Sum(nil)),
-		Size:    st.Size(),
-		OS:      runtime.GOOS,
-		Arch:    runtime.GOARCH,
+	return Build{
+		Offer: Offer{
+			Version: version,
+			SHA256:  hex.EncodeToString(sum.Sum(nil)),
+			Size:    st.Size(),
+			OS:      goos,
+			Arch:    arch,
+		},
+		Path: path,
 	}, nil
 }
 
-// worthOffering reports whether a room would have any use for this.
+// forRoom picks the build a room could actually run, or nothing.
 //
-// Asked on the HUB only to avoid saying something pointless. The room asks the
-// same questions again and its answers are the ones that count.
-func worthOffering(o *Offer, hi hello) bool {
-	if o == nil || !hi.Upgrades {
-		return false
+// A ROOM THAT SAYS NOTHING ABOUT ITS PLATFORM IS OFFERED NOTHING. An older
+// room predates these fields, and guessing that it must be like the hub is the
+// guess that ends with a Linux machine holding a Windows binary. Silence is
+// the safe answer and costs that room an upgrade it never asked for.
+func forRoom(builds []Build, hi hello) *Build {
+	if !hi.Upgrades || hi.OS == "" || hi.Arch == "" {
+		return nil
 	}
-	if hi.OS != "" && hi.OS != o.OS {
-		return false
+	for i := range builds {
+		b := &builds[i]
+		if b.OS != hi.OS || b.Arch != hi.Arch {
+			continue
+		}
+		// Same version, nothing to say. `dev` is deliberately excluded from
+		// that shortcut: two `dev` builds are different binaries most of the
+		// time, and during development handing a room the build you just made
+		// is the entire point.
+		if hi.Version == b.Version && b.Version != "dev" {
+			return nil
+		}
+		return b
 	}
-	if hi.Arch != "" && hi.Arch != o.Arch {
-		return false
-	}
-	// Same version, nothing to say. `dev` is deliberately excluded from that
-	// shortcut: two `dev` builds are different binaries most of the time, and
-	// during development being able to hand a room the build you just made is
-	// the entire point.
-	return hi.Version != o.Version || o.Version == "dev"
+	return nil
 }
 
-// serveUpgrade writes the hub's own binary down a connection a room dialled
-// asking for it.
-func (h *Hub) serveUpgrade(conn net.Conn) {
+// serveUpgrade writes a binary down a connection a room dialled asking for it.
+//
+// WHICH binary is decided here, from what the room says it runs on, and not by
+// the room naming a file. A room asking for a path would be a room reading the
+// hub's disk.
+func (h *Hub) serveUpgrade(conn net.Conn, hi hello) {
 	defer conn.Close()
 	h.mu.Lock()
-	o := h.offer
+	builds := h.builds
 	h.mu.Unlock()
-	if o == nil {
-		_ = writeJSON(conn, welcome{OK: false, Error: "this hub has nothing to offer"})
+
+	b := forRoom(builds, hello{Upgrades: true, OS: hi.OS, Arch: hi.Arch})
+	if b == nil {
+		_ = writeJSON(conn, welcome{OK: false,
+			Error: "this hub has no " + hi.OS + "/" + hi.Arch + " build"})
 		return
 	}
-	self, err := os.Executable()
-	if err != nil {
-		_ = writeJSON(conn, welcome{OK: false, Error: err.Error()})
-		return
-	}
-	f, err := os.Open(self)
+	f, err := os.Open(b.Path)
 	if err != nil {
 		_ = writeJSON(conn, welcome{OK: false, Error: err.Error()})
 		return
