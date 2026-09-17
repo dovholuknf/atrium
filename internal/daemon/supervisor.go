@@ -1150,6 +1150,67 @@ type launchSpec struct {
 	env  []string
 }
 
+// declareATerminal says what the pseudo terminal atrium just opened is.
+//
+// ── why this is not guesswork ────────────────────────────
+//
+// Programs decide whether to emit colour by reading `TERM` and `COLORTERM`.
+// Without them, claude prints its banner in plain white and a board full of
+// agents looks broken in a way nobody can trace: the palette is right, the
+// theme is right, and the child simply decided not to use them.
+//
+// It cost nothing while atrium was always started from a terminal, because
+// the child inherited that terminal's markers. It stops being free the moment
+// the daemon is started by anything else -- a service, a scheduled task, a
+// detached process, a room dialling a hub -- and the failure is silent.
+//
+// ── what is declared ─────────────────────────────────────
+//
+// `xterm-256color`, because the far end is xterm.js and that is what it is.
+// `truecolor` for `COLORTERM`, because xterm.js renders 24 bit colour and
+// claude's own banner is a 24 bit orange.
+//
+// ANYTHING ALREADY SET WINS. A harness row naming a `TERM` is somebody saying
+// they know better about their own runner, and this is a default rather than
+// a policy.
+func declareATerminal(env []string) []string {
+	has := func(key string) bool {
+		for _, kv := range env {
+			if i := strings.Index(kv, "="); i > 0 && strings.EqualFold(kv[:i], key) {
+				return true
+			}
+		}
+		return false
+	}
+	out := env
+	if !has("TERM") {
+		out = append(out, "TERM=xterm-256color")
+	}
+	if !has("COLORTERM") {
+		out = append(out, "COLORTERM=truecolor")
+	}
+	// AND THE ONE NODE ACTUALLY READS.
+	//
+	// `TERM` and `COLORTERM` are the unix answer and most things honour them.
+	// Node does not: its `supports-color` asks whether stdout is a TTY, and
+	// under a daemon started detached with its own output redirected to a file
+	// that check comes back false even though the CHILD is on a pseudo
+	// terminal this process opened. Claude Code is Node, which is why its
+	// banner came out white while everything else about the terminal was
+	// right.
+	//
+	// `3` is truecolor, matching COLORTERM, because the far end is xterm.js.
+	//
+	// This is a claim about the child and not about atrium: it is only ever
+	// set for a runner atrium is putting ON A PSEUDO TERMINAL, where "is this
+	// a terminal" has one correct answer and it is yes. Window-mode launches
+	// never reach here.
+	if !has("FORCE_COLOR") {
+		out = append(out, "FORCE_COLOR=3")
+	}
+	return out
+}
+
 // spawnPTY starts a runner under a pseudo terminal and returns its pid.
 func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env []string) (int, error) {
 	return d.spawnPTYResume(taskID, cmdName, args, cwd, env, false, nil)
@@ -1180,7 +1241,18 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	sizeAtLaunch(p, cols)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
-	c.Env = env
+	// ATRIUM MADE THIS TERMINAL, SO ATRIUM SAYS WHAT IT IS.
+	//
+	// A program decides whether to use colour by reading the environment, and
+	// until now that environment was whatever the DAEMON happened to be started
+	// with. Started from a terminal it carried the terminal's markers and
+	// everything was in colour; started from a service, a scheduled task or a
+	// detached process it carried none, and every agent came out monochrome for
+	// a reason nobody could see from the board.
+	//
+	// That is a bad thing to leave to chance: the child is on a pseudo terminal
+	// this process opened, and whether it is a terminal is not in doubt.
+	c.Env = declareATerminal(env)
 	if err := c.Start(); err != nil {
 		p.Close()
 		return 0, fmt.Errorf("could not start %s: %w", cmdName, err)
