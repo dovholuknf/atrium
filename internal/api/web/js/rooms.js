@@ -173,17 +173,10 @@ function roomChip(t) {
 
 // ── the rooms pane ──────────────────────────────────────────────────────────
 
-// hubAttachedRows is the attached rooms, as rows for the rooms pane.
-//
-// Drawn beside the machines that check in rather than in a pane of their own.
-// They are two ways of being the same thing and splitting them is what made a
-// hub with two rooms show an empty room list. See `renderRooms` in runners.js.
 // ownRoomPanel is the switch for running agents on the hub's own machine.
 //
-// OFF IS THE DEFAULT AND SAYING SO IS HALF THE CONTROL. A hub holding a
-// database is a hub whose restart is no longer free, and that freedom is the
-// reason the two halves are separate at all. So the switch says what it costs
-// rather than being a checkbox called "room".
+// OFF BY DEFAULT. A hub holding a database is a hub whose restart is no longer
+// free, and that freedom is the reason the two halves are separate at all.
 async function ownRoomPanel() {
   let own;
   try { own = await plainFetch("/_hub/room").then(r => r.json()); } catch (e) { return ""; }
@@ -197,23 +190,17 @@ async function ownRoomPanel() {
       <button class="${own.on ? "no" : "go"}" onclick="setOwnRoom(${own.on ? "false" : "true"})"
         >${own.on ? "stop running agents here" : "run agents here too"}</button>
     </div>
-    <div class="hintline">${own.on
-      ? `Agents started here stop when the hub stops. Agents on the other rooms do not.`
-      : `You can start agents on the other rooms, not on this one. Turning this on costs ` +
-        `you the free restart: agents here would stop with the hub.`}</div>
+    <div class="hintline">Restarting the hub also stops any agents running on it.
+      Agents on the other rooms keep going.</div>
   </div>`;
 }
 
 // setOwnRoom throws that switch and redraws.
+//
+// NO CONFIRMATION. It is one click to undo, the button says what it does, and
+// that agents on a machine stop when that machine's atrium stops is not news to
+// anybody. A dialog here would be ceremony around a toggle.
 async function setOwnRoom(on) {
-  // ONE SENTENCE OF CONSEQUENCE, and it is the one that is not guessable.
-  // Everything else about this is visible the moment it is on.
-  if (on && !await askUser({
-    title: "run agents on this machine?",
-    body: "Stopping the hub will then stop them. Right now you can restart it whenever you " +
-      "like, because nothing is running here.",
-    buttons: [{ label: "cancel", value: null }, { label: "do it", value: true, style: "go" }]
-  })) return;
   try {
     await plainFetch("/_hub/room", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -225,6 +212,11 @@ async function setOwnRoom(on) {
   renderRooms();
 }
 
+// hubAttachedRows is the attached rooms, as rows for the rooms pane.
+//
+// Drawn beside the machines that check in rather than in a pane of their own.
+// They are two ways of being the same thing, and splitting them is what made a
+// hub with two rooms show an empty room list. See `renderRooms` in runners.js.
 async function hubAttachedRows() {
   await loadHubRooms();
   if (!hubIsHub) return "";
