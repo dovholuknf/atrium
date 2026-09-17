@@ -1,0 +1,160 @@
+package link
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"strings"
+	"time"
+)
+
+// The frames, and there are five of them.
+//
+// ONE JSON OBJECT PER LINE, and then the connection stops being framed at all.
+// A data connection says hello and from that byte on it is an ordinary HTTP/1.1
+// socket in both directions. That is what lets a websocket upgrade and a large
+// download work without this package knowing they exist.
+//
+// The control connection keeps speaking lines for its whole life, because it is
+// the only thing that needs to: a hub asking for more connections, and a room
+// saying it is still there.
+
+// hello is the first line on every connection, in both kinds.
+type hello struct {
+	V int `json:"v"`
+	// Kind is "control" or "data".
+	Kind string `json:"kind"`
+	// Room is what the operator named this room. It is a label, not an
+	// identity: the client CERTIFICATE decides who this is. A room that lies
+	// here gets its certificate's name used instead, and the mismatch is
+	// logged, because a name that disagrees with a certificate is either a
+	// mistake or the beginning of an attempt.
+	Room string `json:"room"`
+	// Session ties a data connection to the control connection that was asked
+	// for it, so two rooms enrolling at once cannot cross their pools.
+	Session string `json:"session,omitempty"`
+	// What this room is, for the board to show. Observed, never trusted.
+	Version string `json:"version,omitempty"`
+	Host    string `json:"host,omitempty"`
+}
+
+// welcome is the hub's answer to a hello.
+type welcome struct {
+	OK bool `json:"ok"`
+	// Error is why not, in the operator's words. A version mismatch says which
+	// versions, because "handshake failed" sends somebody to a packet capture
+	// for a thing the sentence could have told them.
+	Error string `json:"error,omitempty"`
+	// Session is minted by the hub on the control connection and echoed by
+	// every data connection that follows.
+	Session string `json:"session,omitempty"`
+	// Warm is how many data connections to bring up straight away.
+	Warm int `json:"warm,omitempty"`
+}
+
+// note is a line on the control connection, after the handshake. One struct
+// rather than a type tag per message, because there are two kinds of thing to
+// say and a tagged union of two is ceremony.
+type note struct {
+	// Need asks the room for this many more data connections.
+	Need int `json:"need,omitempty"`
+	// Beat is a room saying it is still there, and a hub saying the same back.
+	// The echo is not decoration: it is how a room finds out its socket is a
+	// half-open one that will never error on write.
+	Beat int64 `json:"beat,omitempty"`
+	// Bye is a side closing deliberately, so the other end logs a shutdown
+	// rather than a failure.
+	Bye string `json:"bye,omitempty"`
+}
+
+// handshakeWait bounds the hello exchange. A connection that opens and then
+// says nothing is either a port scanner or a broken room, and either way it
+// must not hold a slot.
+const handshakeWait = 10 * time.Second
+
+// maxLine bounds a frame. Nothing here is large, and an unbounded ReadString on
+// a socket somebody else controls is a memory exhaustion waiting to be found.
+const maxLine = 64 << 10
+
+// writeJSON writes one frame and a newline.
+func writeJSON(w io.Writer, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if len(raw) > maxLine {
+		return errors.New("frame too large")
+	}
+	_, err = w.Write(append(raw, '\n'))
+	return err
+}
+
+// readJSON reads one frame, bounded.
+//
+// TAKES A *bufio.Reader AND KEEPS IT. A data connection stops being framed
+// after the hello, and whatever the bufio.Reader has already buffered is the
+// first bytes of HTTP. Reading the hello with a throwaway reader eats them, and
+// the symptom is a first request that hangs while every later one works, which
+// is a bad afternoon.
+func readJSON(br *bufio.Reader, v any) error {
+	line, err := br.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if len(line) > maxLine {
+		return errors.New("frame too large")
+	}
+	return json.Unmarshal([]byte(strings.TrimSpace(line)), v)
+}
+
+// sayHello is the room's side of the handshake.
+func sayHello(conn net.Conn, br *bufio.Reader, h hello) (welcome, error) {
+	var w welcome
+	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+		return w, err
+	}
+	h.V = Version
+	if err := writeJSON(conn, h); err != nil {
+		return w, err
+	}
+	if err := readJSON(br, &w); err != nil {
+		return w, err
+	}
+	if !w.OK {
+		return w, fmt.Errorf("the hub refused this room: %s", w.Error)
+	}
+	// CLEARED, and this is load bearing. The deadline above is for the
+	// handshake. Leaving it set would kill a terminal fifteen seconds into
+	// somebody reading their scrollback.
+	return w, conn.SetDeadline(time.Time{})
+}
+
+// hearHello is the hub's side.
+func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
+	var h hello
+	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+		return h, err
+	}
+	if err := readJSON(br, &h); err != nil {
+		return h, err
+	}
+	if h.V != Version {
+		// SAID OUT LOUD BEFORE HANGING UP. A room on an old binary against a
+		// new hub is the ordinary consequence of upgrading one and not the
+		// other, and it deserves a sentence rather than a closed socket.
+		_ = writeJSON(conn, welcome{OK: false, Error: fmt.Sprintf(
+			"this hub speaks link version %d and that room speaks %d. "+
+				"update whichever is older", Version, h.V)})
+		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
+	}
+	switch h.Kind {
+	case "control", "data", "enrol":
+	default:
+		_ = writeJSON(conn, welcome{OK: false, Error: "a connection is control, data or enrol"})
+		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
+	}
+	return h, conn.SetDeadline(time.Time{})
+}
