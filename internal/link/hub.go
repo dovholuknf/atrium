@@ -48,6 +48,11 @@ type attached struct {
 	host    string
 	session string
 	since   time.Time
+	// key identifies the credential this room attached with, so a reconnect
+	// can be told from somebody else claiming the same name. Empty on a
+	// transport that carries no key of its own, where the network has already
+	// decided and there is nothing here to defend.
+	key string
 
 	// control is the connection the room dialled first, and the only one that
 	// stays framed. Writing to it asks for more data connections.
@@ -178,8 +183,28 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// room's side, so the room redials while the hub may still be holding a
 	// half-open version of the previous link. Keeping both would mean requests
 	// going down a socket nothing is reading.
+	//
+	// BUT ONLY THE SAME KEY MAY DO IT, and that check is the difference
+	// between a reconnect and a takeover.
+	//
+	// A join secret authorises a name of the caller's choosing, so somebody
+	// holding one could enrol under the name of a room that is already
+	// attached, dial, and have the hub evict the real room and serve theirs to
+	// the browser instead. Comparing the certificate's public key means a
+	// reconnect is the same room proving it is the same room, and a different
+	// key under a taken name is refused rather than obeyed.
+	a.key = peerKey(conn)
 	h.mu.Lock()
-	if old, ok := h.rooms[keyOf(name)]; ok {
+	old, taken := h.rooms[keyOf(name)]
+	if taken && old.key != "" && a.key != "" && old.key != a.key {
+		h.mu.Unlock()
+		log.Printf("[hub] refused a second %q: a different certificate is already attached", name)
+		_ = writeJSON(conn, welcome{OK: false, Error: "a different room is already attached " +
+			"under that name. pick another name, or stop the one that is there"})
+		conn.Close()
+		return
+	}
+	if taken {
 		old.close("replaced by a newer connection from the same room")
 	}
 	h.rooms[keyOf(name)] = a
@@ -320,7 +345,14 @@ func (h *Hub) Dial(ctx context.Context, room string) (net.Conn, error) {
 
 	// Ask for a replacement BEFORE waiting, not after. Asking afterwards means
 	// every request under load pays the dial latency it was supposed to avoid.
-	a.request(1)
+	//
+	// Only when the pool is actually short, though. Asking on every request
+	// made the room dial a fresh connection per board request under load, most
+	// of which arrived to a full pool and were closed on sight: a whole
+	// handshake per request, for nothing.
+	if len(a.idle) < a.want {
+		a.request(1)
+	}
 
 	select {
 	case c := <-a.idle:
@@ -402,6 +434,11 @@ func (h *Hub) Only() string {
 	}
 	return ""
 }
+
+// peerKey fingerprints the credential a connection presented, so a reconnect
+// can be distinguished from an impersonation. Set by the transport, for the
+// same reason `identify` is.
+var peerKey = func(net.Conn) string { return "" }
 
 // identify asks the transport who authenticated, as a name.
 //

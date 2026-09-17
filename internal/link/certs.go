@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -190,10 +191,29 @@ func (k Keys) Fingerprint() (string, error) {
 
 // token is what gets pasted. Short field names because this is printed in a
 // terminal and read by a person deciding whether it looks like a secret.
+//
+// ONE STRING FOR ALL THREE TRANSPORTS, so `atrium2 join <thing>` is the only
+// command anybody learns. Which transport it is arrives in the string rather
+// than in a flag the person pasting would have to be told about separately.
 type token struct {
-	A string `json:"a"` // address, host:port
-	F string `json:"f"` // CA fingerprint
-	S string `json:"s"` // one-time secret
+	// T is the transport: empty or "direct", "ziti", "zrok".
+	T string `json:"t,omitempty"`
+	A string `json:"a,omitempty"` // direct: address, host:port
+	F string `json:"f,omitempty"` // direct: CA fingerprint
+	S string `json:"s,omitempty"` // direct: one-time secret
+	V string `json:"v,omitempty"` // ziti: the service name
+	K string `json:"k,omitempty"` // zrok: the private share token
+}
+
+// Join is a parsed join string, in the terms the caller needs.
+type Join struct {
+	Transport string
+	// Direct.
+	Addr, Pin, Secret string
+	// Ziti.
+	Service string
+	// Zrok.
+	ShareToken string
 }
 
 // pending is a join secret waiting to be spent.
@@ -232,7 +252,37 @@ func (k Keys) MintToken(addr string) (string, error) {
 		return "", err
 	}
 
-	body, err := json.Marshal(token{A: addr, F: fp, S: secret})
+	body, err := json.Marshal(token{T: "direct", A: addr, F: fp, S: secret})
+	if err != nil {
+		return "", err
+	}
+	return tokenPrefix + base64.RawURLEncoding.EncodeToString(body), nil
+}
+
+// MintOverlayToken makes a join string for a transport that carries its own
+// identity.
+//
+// NO SECRET AND NO FINGERPRINT, because there is nothing for them to do. Under
+// ziti a policy decided who may dial before any of this ran, and under zrok the
+// share token IS the credential. Minting a second one here would be ceremony
+// that looks like security.
+func MintOverlayToken(kind, service, shareToken string) (string, error) {
+	t := token{T: kind}
+	switch kind {
+	case "ziti":
+		if strings.TrimSpace(service) == "" {
+			return "", errors.New("a ziti join string needs a service name")
+		}
+		t.V = service
+	case "zrok":
+		if strings.TrimSpace(shareToken) == "" {
+			return "", errors.New("a zrok join string needs a share token")
+		}
+		t.K = shareToken
+	default:
+		return "", errors.New("no transport called " + kind)
+	}
+	body, err := json.Marshal(t)
 	if err != nil {
 		return "", err
 	}
@@ -241,29 +291,68 @@ func (k Keys) MintToken(addr string) (string, error) {
 
 // ParseToken reads one back, with a sentence rather than a decoder error when
 // somebody pastes half of it.
-func ParseToken(s string) (string, string, string, error) {
+func ParseToken(s string) (Join, error) {
+	var j Join
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, tokenPrefix) {
-		return "", "", "", errors.New(
+		return j, errors.New(
 			"that does not look like a join string. it starts with " + tokenPrefix +
 				" and comes from `atrium2 hub` on the machine running the hub")
 	}
 	body, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, tokenPrefix))
 	if err != nil {
-		return "", "", "", errors.New("that join string is damaged. copy the whole line")
+		return j, errors.New("that join string is damaged. copy the whole line")
 	}
 	var t token
 	if err := json.Unmarshal(body, &t); err != nil {
-		return "", "", "", errors.New("that join string is damaged. copy the whole line")
+		return j, errors.New("that join string is damaged. copy the whole line")
 	}
-	if t.A == "" || t.F == "" || t.S == "" {
-		return "", "", "", errors.New("that join string is missing part of itself")
+	j.Transport = t.T
+	if j.Transport == "" {
+		// Written before there was more than one. Read as direct rather than
+		// refused, so a string minted by an older hub still works.
+		j.Transport = "direct"
 	}
-	return t.A, t.F, t.S, nil
+	j.Addr, j.Pin, j.Secret = t.A, t.F, t.S
+	j.Service, j.ShareToken = t.V, t.K
+
+	switch j.Transport {
+	case "direct":
+		if j.Addr == "" || j.Pin == "" || j.Secret == "" {
+			return j, errors.New("that join string is missing part of itself")
+		}
+	case "ziti":
+		if j.Service == "" {
+			return j, errors.New("that ziti join string names no service")
+		}
+	case "zrok":
+		if j.ShareToken == "" {
+			return j, errors.New("that zrok join string carries no share token")
+		}
+	default:
+		return j, errors.New("that join string is for a transport this build does not have: " +
+			j.Transport)
+	}
+	return j, nil
 }
+
+// spendLock serialises the read-modify-write on `pending.json`.
+//
+// WITHOUT IT, "GOOD ONCE" IS NOT TRUE. Enrolment runs in a goroutine per
+// connection, so two can interleave: both read the same list, the first writes
+// it back without secret X, and the second writes back ITS copy, which still
+// has X in it. A spent secret is resurrected on disk and works a second time.
+//
+// A process-wide mutex rather than a file lock, because exactly one hub ever
+// owns a state directory. If that stops being true this needs to become a lock
+// on the file.
+var spendLock sync.Mutex
 
 // spend consumes a secret, once.
 func (k Keys) spend(secret string) error {
+	spendLock.Lock()
+	defer spendLock.Unlock()
+
 	sum := sha256.Sum256([]byte(secret))
 	want := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -280,8 +369,12 @@ func (k Keys) spend(secret string) error {
 			return k.savePendings(live)
 		}
 	}
-	// SAVED ANYWAY, so expired entries are swept by the attempt that noticed.
-	_ = k.savePendings(live)
+	// ONLY WRITTEN WHEN SOMETHING EXPIRED. Rewriting the file on every failed
+	// attempt would let anybody who can open a connection force disk writes in
+	// a loop, and enrolment is deliberately reachable without a credential.
+	if len(live) != len(list) {
+		_ = k.savePendings(live)
+	}
 	return errors.New("that join string has been used already, or it expired. " +
 		"run `atrium2 hub token` for a fresh one")
 }
@@ -400,18 +493,54 @@ func (k Keys) SaveRoom(key *ecdsa.PrivateKey, certDER, caDER []byte, hub, room s
 	return os.WriteFile(k.path("room.json"), raw, 0o600)
 }
 
+// SaveOverlayRoom writes what a room needs for a transport that carries its own
+// identity. There is no certificate to keep, only where the hub is.
+func (k Keys) SaveOverlayRoom(j Join, room, identity string) error {
+	if err := os.MkdirAll(k.Dir, 0o700); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(map[string]string{
+		"transport": j.Transport, "room": room,
+		"service": j.Service, "share": j.ShareToken,
+		"identity": identity, "hub": j.Addr,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(k.path("room.json"), raw, 0o600)
+}
+
+// Saved is everything a room wrote down when it joined.
+type Saved struct {
+	Transport string
+	Room      string
+	Hub       string
+	Service   string
+	Share     string
+	Identity  string
+}
+
 // Joined reads back what a room saved, so `atrium2 room` needs no arguments.
-func (k Keys) Joined() (hub, room string, err error) {
+func (k Keys) Joined() (Saved, error) {
+	var s Saved
 	raw, err := os.ReadFile(k.path("room.json"))
 	if err != nil {
-		return "", "", errors.New(
+		return s, errors.New(
 			"this machine has not joined a hub yet. run `atrium2 join <join string>`")
 	}
 	var m map[string]string
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return "", "", err
+		return s, err
 	}
-	return m["hub"], m["room"], nil
+	s = Saved{
+		Transport: m["transport"], Room: m["room"], Hub: m["hub"],
+		Service: m["service"], Share: m["share"], Identity: m["identity"],
+	}
+	if s.Transport == "" {
+		// Written before there was more than one.
+		s.Transport = "direct"
+	}
+	return s, nil
 }
 
 // ── file helpers ─────────────────────────────────────────
