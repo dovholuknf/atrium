@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,12 @@ var merged = map[string]struct {
 	"/v1/recognisers": {field: "recognisers"},
 	"/v1/actions":     {field: "actions"},
 	"/v1/rules":       {field: "rules"},
+
+	// The queue of work handed to machines, and what was decided about
+	// permission requests. Both are lists of things that happened on a
+	// machine, so all of them together is the answer a hub wants.
+	"/v1/dispatch":            {field: "dispatches"},
+	"/v1/permissions/history": {field: "permissions", idField: "id", taskField: "task_id"},
 }
 
 // borrowed are reads the board needs to draw itself at all, which are answered
@@ -89,6 +96,16 @@ var borrowed = map[string]bool{
 	"/v1/themes":   true,
 	"/v1/rooms":    true,
 	"/v1/hooks":    true,
+	// Runners this machine has that are not set up yet. Merging would be a
+	// list of one machine's `ollama` beside another's, which is a table of
+	// things to add somewhere unspecified.
+	"/v1/harnesses/discover": true,
+	// WHO MAY OPEN THE BOARD, AND WHERE IT IS PUBLISHED, which
+	// `docs/hub-room-requirements.md` says belong to the hub: there is one
+	// board and publishing it is the hub's job. Until they move, one room's
+	// answer is what the board draws, and drawing nothing was worse.
+	"/v1/auth":     true,
+	"/v1/overlays": true,
 }
 
 // firstRoom is a room to borrow an answer from, chosen the same way every time
@@ -197,6 +214,127 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(body)
 	return true
+}
+
+// history is every machine's finished work, in one list, newest first.
+//
+// ── why this is not a row in `merged` ────────────────────
+//
+// History is PAGED, and paging is where a naive fan-out quietly goes wrong.
+// Asking four rooms for fifty rows each and concatenating gives two hundred,
+// and asking again at offset fifty then skips whatever the first answer had
+// already shown. The board would lose rows and nothing would look broken.
+//
+// So the hub asks every room for everything up to the end of the page being
+// drawn, merges, sorts, and cuts the page out of the merged list. Page three
+// costs re-reading pages one and two from each room, which is a few hundred
+// rows of already-indexed reads and is the price of the pages being correct.
+//
+// ── and this one IS sorted ───────────────────────────────
+//
+// `docs/hub-room-requirements.md` says cross-room order is not a guarantee,
+// and that stands for the live lists: they carry no shared clock and sorting
+// them would claim one. History is different. Every row has a creation time,
+// the whole point of the list is chronology, and "newest first" is what it
+// means. So it is sorted here, on the field the rooms themselves order by.
+func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
+	rooms := p.hub.Rooms()
+	if len(rooms) == 0 {
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 {
+		limit = 50
+	}
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Everything up to the end of the page being drawn, from each room.
+	ask := *r.URL
+	vals := ask.Query()
+	vals.Set("limit", strconv.Itoa(offset+limit))
+	vals.Set("offset", "0")
+	ask.RawQuery = vals.Encode()
+	scan := r.Clone(r.Context())
+	scan.URL = &ask
+
+	type answer struct {
+		room  string
+		rows  []any
+		total float64
+		err   error
+	}
+	out := make([]answer, len(rooms))
+	var wg sync.WaitGroup
+	for i, room := range rooms {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			out[i].room = name
+			body := p.askRoomBody(scan, name)
+			if body == nil {
+				out[i].err = errStatus(http.StatusBadGateway)
+				return
+			}
+			out[i].rows, _ = body["tasks"].([]any)
+			out[i].total, _ = body["total"].(float64)
+		}(i, room.Name)
+	}
+	wg.Wait()
+
+	all := []map[string]any{}
+	var quiet []string
+	total := 0
+	for _, a := range out {
+		if a.err != nil {
+			quiet = append(quiet, a.room)
+			continue
+		}
+		total += int(a.total)
+		for _, row := range a.rows {
+			obj, ok := row.(map[string]any)
+			if !ok {
+				continue
+			}
+			obj["room"] = a.room
+			if id, ok := obj["id"].(string); ok {
+				obj["id"] = tagFor(a.room, id)
+			}
+			all = append(all, obj)
+		}
+	}
+	// Newest first, the same order every room used. Ties break on the tagged
+	// id so the sort is stable and a page boundary cannot show one row twice.
+	sort.SliceStable(all, func(i, j int) bool {
+		a, _ := all[i]["created_at"].(string)
+		b, _ := all[j]["created_at"].(string)
+		if a != b {
+			return a > b
+		}
+		ai, _ := all[i]["id"].(string)
+		bj, _ := all[j]["id"].(string)
+		return ai > bj
+	})
+
+	page := []map[string]any{}
+	if offset < len(all) {
+		end := offset + limit
+		if end > len(all) {
+			end = len(all)
+		}
+		page = all[offset:end]
+	}
+	body := map[string]any{"tasks": page, "total": total, "offset": offset}
+	if len(quiet) > 0 {
+		sort.Strings(quiet)
+		body["rooms_quiet"] = quiet
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // health is the board asking whether atrium is up, in aggregate.

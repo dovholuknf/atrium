@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -306,6 +307,105 @@ func TestTheBoardCanStillReadItsSettings(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusConflict {
 		t.Fatalf("a write answered %d, expected 409", res.StatusCode)
+	}
+}
+
+// ledger answers `/v1/history` for one room: `n` rows, newest first, paged.
+func ledger(room string, n int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/v1/history" {
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		if limit <= 0 {
+			limit = 50
+		}
+		rows := []string{}
+		for i := 0; i < n; i++ {
+			if i < offset || len(rows) >= limit {
+				continue
+			}
+			// Newest first, and interleaved between rooms: alpha's are on the
+			// even minutes and beta's on the odd ones, so a merge that just
+			// concatenated would be visibly out of order.
+			min := 58 - i*2
+			if room == "beta" {
+				min--
+			}
+			rows = append(rows, fmt.Sprintf(
+				`{"id":"%s-%d","created_at":"2026-09-17T12:%02d:00Z","display_title":"%s %d"}`,
+				room, i, min, room, i))
+		}
+		fmt.Fprintf(w, `{"tasks":[%s],"total":%d,"offset":%d}`,
+			strings.Join(rows, ","), n, offset)
+	})
+}
+
+// HISTORY IS EVERY MACHINE'S, IN ORDER, AND PAGING IT MUST NOT LOSE ROWS.
+//
+// Asking four rooms for fifty rows each and concatenating gives two hundred,
+// and asking again at offset fifty then skips whatever the first answer had
+// already shown. The board would lose rows and nothing would look broken.
+func TestHistoryMergesInOrderAndPagesWithoutLosingRows(t *testing.T) {
+	front, _, done := two(t, ledger("alpha", 6), ledger("beta", 6))
+	defer done()
+
+	read := func(offset, limit int) ([]string, int) {
+		t.Helper()
+		res, err := http.Get(fmt.Sprintf("%s/v1/history?limit=%d&offset=%d", front.URL, limit, offset))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var body struct {
+			Tasks []map[string]any `json:"tasks"`
+			Total int              `json:"total"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, 0, len(body.Tasks))
+		for _, row := range body.Tasks {
+			id, _ := row["id"].(string)
+			if room, _ := row["room"].(string); room == "" {
+				t.Errorf("a history row lost its room: %v", row)
+			}
+			ids = append(ids, id)
+		}
+		return ids, body.Total
+	}
+
+	// EVERY ROOM'S ROWS, INTERLEAVED BY TIME, not one room's then the other's.
+	first, total := read(0, 4)
+	if total != 12 {
+		t.Errorf("the total was %d, expected both rooms counted", total)
+	}
+	want := []string{"alpha~alpha-0", "beta~beta-0", "alpha~alpha-1", "beta~beta-1"}
+	if strings.Join(first, ",") != strings.Join(want, ",") {
+		t.Errorf("page one came back as %v, expected %v", first, want)
+	}
+
+	// AND THE NEXT PAGE CARRIES ON rather than starting over. This is the one
+	// that fails if each room is asked for its own page and the answers are
+	// concatenated.
+	second, _ := read(4, 4)
+	seen := map[string]bool{}
+	for _, id := range first {
+		seen[id] = true
+	}
+	for _, id := range second {
+		if seen[id] {
+			t.Errorf("%s was shown on both pages", id)
+		}
+	}
+	if len(second) != 4 {
+		t.Errorf("page two had %d rows: %v", len(second), second)
+	}
+	if second[0] != "alpha~alpha-2" {
+		t.Errorf("page two starts at %s, so rows between the pages were dropped", second[0])
 	}
 }
 

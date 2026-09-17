@@ -622,6 +622,7 @@ function historyRow(t) {
     <span class="grow ell" title="${esc(t.recap || t.why || t.worktree || "")}">${
       esc(t.recap || t.why || t.worktree || "")}</span>
     ${originChip(t)}
+    ${roomChipFor(t)}
     ${t.recap
       ? `<span class="chip recap" title="${esc(t.recap)}">recap</span>`
       : `<span class="by" title="no account of what this session did">&mdash;</span>`}

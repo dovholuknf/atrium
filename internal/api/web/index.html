@@ -903,6 +903,148 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          somebody arrives with. It also has to pair with `share this session`
          on a card, since there are two kinds of exposing now and the two names
          have to tell them apart. -->
+    <!-- FIRST, because it is the one everybody opens this dialog for: how the
+         board looks, how big it is, how it groups. Named `board` rather than
+         `the board` so the nav reads as a column of nouns beside `this
+         machine` and `notifications`. -->
+    <h3 class="s-section">board</h3>
+    <!-- The board's own colours, which are NOT the terminal's. A terminal
+         theme is picked on the terminal bar and belongs to that terminal. This
+         is the chrome around them, there is one of it, and it is stored on the
+         daemon so it follows to another browser and to a phone. -->
+    <div class="field">
+      <label class="eyebrow" for="s-skin">how the board looks</label>
+      <div class="picker">
+        <select id="s-skin" onchange="saveSkin()"></select>
+        <!-- The dialog covers the board, and the board is what you are judging.
+             This closes it and leaves a small panel you can drag anywhere and
+             walk the list with, against the real thing. -->
+        <button onclick="openSkinLab()" title="close this and try them against the real board"
+          >try them &#9673;</button>
+      </div>
+      <span class="hintline">Changes as you pick. <b>try them</b> closes this dialog and leaves a
+        small panel you can move anywhere, so you can walk every tab and open a card while you
+        decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
+        keeps its own.</span>
+    </div>
+    <!-- The OTHER theme system, reachable from here because the terminal bar's
+         edit button needs a terminal and somebody bringing their colours at
+         nine in the morning has not started one yet. -->
+    <div class="field">
+      <label class="eyebrow">the terminal's colours</label>
+      <div class="picker">
+        <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
+          >bring or edit a theme</button>
+      </div>
+      <span class="hintline">Not the board. This is the sixteen ANSI colours a session is drawn in,
+        and each card keeps its own choice. Import a <b>Windows Terminal</b> scheme, or edit any of
+        them. Themes are kept on the daemon, so one brought here is there in every browser and on
+        your phone. <b>Which</b> theme a card wears is picked on that terminal's own bar, against
+        real output.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-cardsize">text size</label>
+      <div class="picker">
+        <select id="s-cardsize">
+          <option value="0.9">smaller</option>
+          <option value="1">normal</option>
+          <option value="1.1">a little bigger</option>
+          <option value="1.25">bigger</option>
+          <option value="1.45">biggest</option>
+        </select>
+      </div>
+      <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
+        size in the page comes off one scale, so none of it is left behind.</span>
+    </div>
+    <!-- Separate from text size on purpose. Shrinking the type to fit more
+         rows on screen makes the rows harder to read, which is the wrong
+         trade: the names should stay legible and the room between them should
+         go. -->
+    <div class="field">
+      <label class="eyebrow" for="s-density">whitespace</label>
+      <div class="picker">
+        <select id="s-density">
+          <option value="1.35">roomy</option>
+          <option value="1">normal</option>
+          <option value="0.72">tight</option>
+          <option value="0.5">tighter</option>
+          <!-- The floor. Below this the padding is gone rather than small, and
+               rows start touching, which costs more in readability than the
+               extra row is worth. -->
+          <option value="0.3">tightest</option>
+        </select>
+      </div>
+      <span class="hintline">How much room around things, without changing how big anything reads.
+        Tight fits about a third more rows on a screen.</span>
+    </div>
+
+    <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
+         A browser keeps a handful of accelerators for itself, the list differs
+         per browser, and a page asking to keep one is sometimes refused
+         SILENTLY. That is the worst shape a default can have: it works on the
+         machine it was chosen on and does nothing anywhere else. So the
+         default is one that survives Chrome, Edge and Brave, this field names
+         the browser that takes it, and anybody it fails for rebinds it in two
+         seconds without reading anything.
+
+         Stored in this browser rather than on the daemon, which is the
+         opposite of every setting above it and is the point: which key is
+         free is a fact about the BROWSER, so a value synced from the desktop
+         would arrive wrong. -->
+    <div class="field">
+      <label class="eyebrow">the key that opens the switcher</label>
+      <div class="picker">
+        <button id="s-switchkey" onclick="captureSwitchKey(this)"></button>
+        <button onclick="resetSwitchKey()">use the default</button>
+      </div>
+      <span class="hintline">Press the button, then press the keys you want. Needs
+        <b>ctrl</b>, <b>alt</b> or <b>cmd</b> in it, or it would fire while you are typing into a
+        session. <b>ctrl-shift-k</b> is the default: Chrome, Edge and Brave leave it alone, and a
+        terminal does not use it. <b>Firefox takes it for the Web Console</b> and will not give it
+        back, so rebind to <b>alt-k</b> there. <b>ctrl-k</b> works in every browser and costs you
+        readline's kill-line in every session, which is the trade it looks like.</span>
+    </div>
+
+    <!-- Focus on hover is opt-in. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
+        <span>hovering a session types into it</span>
+      </label>
+      <span class="hintline">Moving the pointer onto a terminal gives it the keyboard, so typing
+        goes to the session without clicking first. It waits a moment, so crossing the pane on the
+        way somewhere else does not take the focus, and it never takes it while a dialog is open or
+        while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
+    </div>
+
+    <!-- Grouping. The rule is the operator's, because their worktree layout
+         already has conventions atrium has no way to know. -->
+    <div class="field">
+      <label class="eyebrow">group cards</label>
+      <div class="picker">
+        <button id="s-group-toggle" onclick="toggleGrouping()"></button>
+        <!-- Says what it resets. `use the defaults` sat under a pane that now
+             opens with a skin picker and a text size, and read as a reset for
+             all of it. It only ever touched the two grouping expressions. -->
+        <button onclick="resetGrouping()">reset the grouping rule</button>
+      </div>
+      <span class="hintline">Groups cards inside every column. The default reads a project out of
+        the worktree path.</span>
+    </div>
+    <div class="field" id="s-group-code" hidden>
+      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code></label>
+      <textarea id="s-group-by" rows="8" spellcheck="false"></textarea>
+      <span class="hintline">The body of a function taking <code>task</code>. Return the group name,
+        or <code>""</code> to leave a card ungrouped. <code>task</code> has
+        <code>worktree</code>, <code>runner</code>, <code>status</code>, <code>title</code>,
+        <code>why</code> and <code>pid</code>.</span>
+    </div>
+    <div class="field" id="s-order-code" hidden>
+      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code></label>
+      <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
+      <span class="hintline">The body of a comparator over two group names. Broken code falls back
+        to the default and says so rather than blanking the board.</span>
+    </div>
     <h3 class="s-section">expose the board</h3>
     <div class="field">
       <div id="overlays"></div>
@@ -993,7 +1135,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="auth-said"></span>
     </div>
 
-    <h3 class="s-section">alerts</h3>
+    <!-- `notifications`, not `alerts`. Everything under it is a notification:
+         the desktop one the operating system draws, the toast, the sound. An
+         alert is what the board calls its own red banner, and two names for
+         one idea sent people to the wrong pane looking for the sound. -->
+    <h3 class="s-section">notifications</h3>
     <div class="field">
       <label class="eyebrow">volume</label>
       <input type="range" id="s-vol" min="0" max="100" step="5">
@@ -1275,144 +1421,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-sbcost" hidden></span>
     </div>
 
-    <h3 class="s-section">the board</h3>
-    <!-- The board's own colours, which are NOT the terminal's. A terminal
-         theme is picked on the terminal bar and belongs to that terminal. This
-         is the chrome around them, there is one of it, and it is stored on the
-         daemon so it follows to another browser and to a phone. -->
-    <div class="field">
-      <label class="eyebrow" for="s-skin">how the board looks</label>
-      <div class="picker">
-        <select id="s-skin" onchange="saveSkin()"></select>
-        <!-- The dialog covers the board, and the board is what you are judging.
-             This closes it and leaves a small panel you can drag anywhere and
-             walk the list with, against the real thing. -->
-        <button onclick="openSkinLab()" title="close this and try them against the real board"
-          >try them &#9673;</button>
-      </div>
-      <span class="hintline">Changes as you pick. <b>try them</b> closes this dialog and leaves a
-        small panel you can move anywhere, so you can walk every tab and open a card while you
-        decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
-        keeps its own.</span>
-    </div>
-    <!-- The OTHER theme system, reachable from here because the terminal bar's
-         edit button needs a terminal and somebody bringing their colours at
-         nine in the morning has not started one yet. -->
-    <div class="field">
-      <label class="eyebrow">the terminal's colours</label>
-      <div class="picker">
-        <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
-          >bring or edit a theme</button>
-      </div>
-      <span class="hintline">Not the board. This is the sixteen ANSI colours a session is drawn in,
-        and each card keeps its own choice. Import a <b>Windows Terminal</b> scheme, or edit any of
-        them. Themes are kept on the daemon, so one brought here is there in every browser and on
-        your phone. <b>Which</b> theme a card wears is picked on that terminal's own bar, against
-        real output.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-cardsize">text size</label>
-      <div class="picker">
-        <select id="s-cardsize">
-          <option value="0.9">smaller</option>
-          <option value="1">normal</option>
-          <option value="1.1">a little bigger</option>
-          <option value="1.25">bigger</option>
-          <option value="1.45">biggest</option>
-        </select>
-      </div>
-      <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
-        size in the page comes off one scale, so none of it is left behind.</span>
-    </div>
-    <!-- Separate from text size on purpose. Shrinking the type to fit more
-         rows on screen makes the rows harder to read, which is the wrong
-         trade: the names should stay legible and the room between them should
-         go. -->
-    <div class="field">
-      <label class="eyebrow" for="s-density">whitespace</label>
-      <div class="picker">
-        <select id="s-density">
-          <option value="1.35">roomy</option>
-          <option value="1">normal</option>
-          <option value="0.72">tight</option>
-          <option value="0.5">tighter</option>
-          <!-- The floor. Below this the padding is gone rather than small, and
-               rows start touching, which costs more in readability than the
-               extra row is worth. -->
-          <option value="0.3">tightest</option>
-        </select>
-      </div>
-      <span class="hintline">How much room around things, without changing how big anything reads.
-        Tight fits about a third more rows on a screen.</span>
-    </div>
-
-    <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
-         A browser keeps a handful of accelerators for itself, the list differs
-         per browser, and a page asking to keep one is sometimes refused
-         SILENTLY. That is the worst shape a default can have: it works on the
-         machine it was chosen on and does nothing anywhere else. So the
-         default is one that survives Chrome, Edge and Brave, this field names
-         the browser that takes it, and anybody it fails for rebinds it in two
-         seconds without reading anything.
-
-         Stored in this browser rather than on the daemon, which is the
-         opposite of every setting above it and is the point: which key is
-         free is a fact about the BROWSER, so a value synced from the desktop
-         would arrive wrong. -->
-    <div class="field">
-      <label class="eyebrow">the key that opens the switcher</label>
-      <div class="picker">
-        <button id="s-switchkey" onclick="captureSwitchKey(this)"></button>
-        <button onclick="resetSwitchKey()">use the default</button>
-      </div>
-      <span class="hintline">Press the button, then press the keys you want. Needs
-        <b>ctrl</b>, <b>alt</b> or <b>cmd</b> in it, or it would fire while you are typing into a
-        session. <b>ctrl-shift-k</b> is the default: Chrome, Edge and Brave leave it alone, and a
-        terminal does not use it. <b>Firefox takes it for the Web Console</b> and will not give it
-        back, so rebind to <b>alt-k</b> there. <b>ctrl-k</b> works in every browser and costs you
-        readline's kill-line in every session, which is the trade it looks like.</span>
-    </div>
-
-    <!-- Focus on hover is opt-in. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
-        <span>hovering a session types into it</span>
-      </label>
-      <span class="hintline">Moving the pointer onto a terminal gives it the keyboard, so typing
-        goes to the session without clicking first. It waits a moment, so crossing the pane on the
-        way somewhere else does not take the focus, and it never takes it while a dialog is open or
-        while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
-    </div>
-
-    <!-- Grouping. The rule is the operator's, because their worktree layout
-         already has conventions atrium has no way to know. -->
-    <div class="field">
-      <label class="eyebrow">group cards</label>
-      <div class="picker">
-        <button id="s-group-toggle" onclick="toggleGrouping()"></button>
-        <!-- Says what it resets. `use the defaults` sat under a pane that now
-             opens with a skin picker and a text size, and read as a reset for
-             all of it. It only ever touched the two grouping expressions. -->
-        <button onclick="resetGrouping()">reset the grouping rule</button>
-      </div>
-      <span class="hintline">Groups cards inside every column. The default reads a project out of
-        the worktree path.</span>
-    </div>
-    <div class="field" id="s-group-code" hidden>
-      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code></label>
-      <textarea id="s-group-by" rows="8" spellcheck="false"></textarea>
-      <span class="hintline">The body of a function taking <code>task</code>. Return the group name,
-        or <code>""</code> to leave a card ungrouped. <code>task</code> has
-        <code>worktree</code>, <code>runner</code>, <code>status</code>, <code>title</code>,
-        <code>why</code> and <code>pid</code>.</span>
-    </div>
-    <div class="field" id="s-order-code" hidden>
-      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code></label>
-      <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
-      <span class="hintline">The body of a comparator over two group names. Broken code falls back
-        to the default and says so rather than blanking the board.</span>
-    </div>
 
   </div>
 </dialog>

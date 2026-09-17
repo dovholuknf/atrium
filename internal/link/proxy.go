@@ -266,6 +266,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.health(w, r)
 			return
 		}
+		// Paged, sorted and cut at the hub, which a row in the merge table
+		// cannot express. See `history`.
+		if r.URL.Path == "/v1/history" && r.Method == http.MethodGet && len(p.hub.Rooms()) > 0 {
+			p.history(w, r)
+			return
+		}
 		if p.aggregate(w, r, r.URL.Path) {
 			return
 		}
