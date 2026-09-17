@@ -101,6 +101,23 @@ room answered first.
    The launch dialog's room field when there is more than one.
 5. **Moving skin, auth and overlays to the hub.**
 
+6. **An MCP panel on the runners page.** Which MCP servers a launched session gets, why, and a way to change
+   it. Raised 2026-09-17 after a session came up with none and there was no way to see why from the board.
+
+   The mechanism it has to expose, because it is not guessable: the `claude` harness carries
+   `--strict-mcp-config`, which means a session gets ONLY the servers in the files named by `--mcp-config` and
+   ignores the user, project and local configs a plain terminal would pick up. It was added so that servers
+   which prompt for authentication could not hang a launch, and no config file was named because a relative
+   `.mcp.json` is missing in most worktrees and a missing file fails startup.
+
+   The resolution is an ABSOLUTE path, which `C:\Users\claude\.atrium\mcp.json` now is. The panel should show
+   that file's servers, say that strict mode is on and what it excludes, and let the file be edited. The
+   existing test `TestNoMCPConfigFileIsNamed` in `internal/store` pins the old behaviour and will need its
+   reasoning updated rather than deleted: the objection was to a RELATIVE path, and it is still correct about
+   that.
+
+------------
+
 ### Running it
 
 Ports 8000 (board), 8001 (link), 8010 (room), 8011 (room agent). Binary
