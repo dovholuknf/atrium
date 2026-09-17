@@ -26,11 +26,12 @@ import (
 
 func joinCmd() *cobra.Command {
 	var (
-		name  string
-		dir   string
-		db    string
-		human string
-		agent string
+		name     string
+		dir      string
+		db       string
+		human    string
+		agent    string
+		identity string
 	)
 	c := &cobra.Command{
 		Use:   "join <join string>",
@@ -43,7 +44,7 @@ func joinCmd() *cobra.Command {
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			addr, pin, secret, err := link.ParseToken(args[0])
+			j, err := link.ParseToken(args[0])
 			if err != nil {
 				return err
 			}
@@ -51,16 +52,23 @@ func joinCmd() *cobra.Command {
 				name = defaultRoomName()
 			}
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
-			d := link.Direct{Addr: addr, Keys: keys, Pin: pin}
 
-			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-			err = d.Enrol(ctx, name, secret)
-			cancel()
-			if err != nil {
+			// ONLY THE DIRECT TRANSPORT HAS ANYTHING TO ENROL. Under ziti and
+			// zrok the network already decided who may connect, so joining is
+			// writing down where the hub is and starting.
+			if j.Transport == "direct" {
+				d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
+				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+				err = d.Enrol(ctx, name, j.Secret)
+				cancel()
+				if err != nil {
+					return err
+				}
+			} else if err := keys.SaveOverlayRoom(j, name, identity); err != nil {
 				return err
 			}
 			fmt.Println()
-			fmt.Println("  joined " + addr + " as \"" + name + "\".")
+			fmt.Println("  joined over " + j.Transport + " as \"" + name + "\".")
 			fmt.Println("  starting the room. `atrium2 room` is all it takes from now on.")
 			fmt.Println()
 			return runRoom(keys, db, human, agent)
@@ -71,6 +79,8 @@ func joinCmd() *cobra.Command {
 	c.Flags().StringVar(&db, "db", "", "the room's database")
 	c.Flags().StringVar(&human, "http", "127.0.0.1:7810", "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
+	c.Flags().StringVar(&identity, "identity", "",
+		"a ziti identity file, when the join string is for a ziti service")
 	return c
 }
 
@@ -97,7 +107,14 @@ func roomCmd() *cobra.Command {
 
 // runRoom starts the daemon and attaches it to the hub.
 func runRoom(keys link.Keys, db, human, agent string) error {
-	hub, name, err := keys.Joined()
+	saved, err := keys.Joined()
+	if err != nil {
+		return err
+	}
+	dial, err := roomDialer(link.Join{
+		Transport: saved.Transport, Addr: saved.Hub,
+		Service: saved.Service, ShareToken: saved.Share,
+	}, keys, saved.Identity)
 	if err != nil {
 		return err
 	}
@@ -144,8 +161,8 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 	// hub is down is a room with nobody watching it, which is exactly what it
 	// was before anybody built a hub.
 	room := &link.Room{
-		Name:    name,
-		Dial:    link.Direct{Addr: hub, Keys: keys},
+		Name:    saved.Room,
+		Dial:    dial,
 		Handler: d.BoardHandler(),
 		Version: version,
 		Host:    hostname(),
@@ -157,8 +174,8 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 	}()
 
 	fmt.Println()
-	fmt.Println("  room     " + name)
-	fmt.Println("  hub      " + hub)
+	fmt.Println("  room     " + saved.Room)
+	fmt.Println("  hub      " + dial.Describe())
 	fmt.Println("  database " + db)
 	fmt.Println("  own board http://" + human + "   (for when the hub is down)")
 	fmt.Println()

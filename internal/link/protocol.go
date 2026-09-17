@@ -2,12 +2,12 @@ package link
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"time"
 )
 
@@ -100,14 +100,34 @@ func writeJSON(w io.Writer, v any) error {
 // the symptom is a first request that hangs while every later one works, which
 // is a bad afternoon.
 func readJSON(br *bufio.Reader, v any) error {
-	line, err := br.ReadString('\n')
-	if err != nil {
-		return err
+	// BOUNDED WHILE READING, NOT AFTER, and the difference is the whole point
+	// of this loop existing instead of a one-line `ReadString`.
+	//
+	// `bufio.Reader.ReadString` has no size limit. It appends until it finds
+	// the delimiter or the connection fails, so checking the length of what it
+	// returned is checking an allocation that has already happened. An
+	// unauthenticated peer, which enrolment deliberately allows, could open a
+	// connection and stream gigabytes with no newline in it.
+	//
+	// `ReadSlice` fills the buffered reader and returns `ErrBufferFull` rather
+	// than growing, so this reads in bounded pieces and gives up the moment the
+	// total passes the limit. A check on the result is not a bound. The bound
+	// has to be on the read.
+	var line []byte
+	for {
+		chunk, err := br.ReadSlice('\n')
+		line = append(line, chunk...)
+		if len(line) > maxLine {
+			return errors.New("frame too large")
+		}
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return err
+		}
 	}
-	if len(line) > maxLine {
-		return errors.New("frame too large")
-	}
-	return json.Unmarshal([]byte(strings.TrimSpace(line)), v)
+	return json.Unmarshal(bytes.TrimSpace(line), v)
 }
 
 // sayHello is the room's side of the handshake.

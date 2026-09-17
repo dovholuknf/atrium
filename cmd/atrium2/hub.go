@@ -23,11 +23,13 @@ import (
 
 func hubCmd() *cobra.Command {
 	var (
-		board string
-		port  string
-		dir   string
-		files string
-		open  bool
+		board     string
+		port      string
+		dir       string
+		transport string
+		service   string
+		files     string
+		open      bool
 	)
 	c := &cobra.Command{
 		Use:   "hub",
@@ -42,20 +44,21 @@ func hubCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			keys := link.Keys{Dir: orDefault(dir, hubDir())}
-			if err := keys.EnsureCA(link.Hosts(advertised(port))); err != nil {
-				return fmt.Errorf("could not set this hub up: %w", err)
+			side, err := openHub(transport, keys, port, service)
+			if err != nil {
+				return err
 			}
+			defer side.release()
 
-			d := link.Direct{Addr: port, Keys: keys}
-			ln, err := d.Listen()
+			ln, err := side.listen()
 			if err != nil {
 				return err
 			}
 			defer ln.Close()
 
 			h := link.NewHub(link.Timings{})
-			h.Enrol = d.ServeEnrolment
-			h.Authenticated = link.DirectAuthenticated
+			h.Enrol = side.enrol
+			h.Authenticated = side.auth
 
 			// The board this hub serves. From disk when told to, so the loop is
 			// edit, save, reload, with no rebuild at all.
@@ -88,7 +91,7 @@ func hubCmd() *cobra.Command {
 				return fmt.Errorf("board listener: %w", err)
 			}
 
-			greet(keys, port, board, id)
+			greet(side, board, id)
 
 			go func() {
 				<-ctx.Done()
@@ -104,6 +107,10 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&board, "addr", ":7800", "where the browser reaches the board")
 	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
 	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
+	c.Flags().StringVar(&transport, "transport", "direct",
+		"how rooms reach this hub: direct, ziti or zrok")
+	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
+	c.Flags().StringVar(&zitiIdentity, "identity", "", "the ziti identity file, with --transport ziti")
 	c.Flags().StringVar(&files, "board", "",
 		"serve the board from this directory instead of the built-in copy")
 	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
@@ -144,15 +151,15 @@ func tokenCmd() *cobra.Command {
 // WRITTEN AS THE NEXT THING TO DO, not as a status dump. Somebody running this
 // for the first time has one question, "now what", and the answer is one line
 // they can select with a double click.
-func greet(keys link.Keys, linkAddr, boardAddr, id string) {
-	tok, err := keys.MintToken(advertised(linkAddr))
+func greet(side *hubSide, boardAddr, id string) {
+	tok, err := side.token()
 	if err != nil {
 		log.Printf("[hub] could not mint a join string: %v", err)
 		return
 	}
 	fmt.Println()
 	fmt.Println("  the board is at   http://localhost" + portOf(boardAddr))
-	fmt.Println("  rooms dial in on  " + advertised(linkAddr))
+	fmt.Println("  rooms dial in on  " + side.says)
 	fmt.Println("  board build       " + id)
 	fmt.Println()
 	fmt.Println("  Nothing is on it yet, because a hub holds nothing. On the machine your")

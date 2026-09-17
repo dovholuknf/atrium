@@ -102,16 +102,35 @@ func (d Direct) Listen() (net.Listener, error) {
 // simply leaves the claim alone.
 func init() {
 	identify = func(c net.Conn) string {
-		tc, ok := c.(*tls.Conn)
-		if !ok {
-			return ""
+		if cert := peerCert(c); cert != nil {
+			return cert.Subject.CommonName
 		}
-		st := tc.ConnectionState()
-		if len(st.PeerCertificates) == 0 {
-			return ""
-		}
-		return st.PeerCertificates[0].Subject.CommonName
+		return ""
 	}
+	// The PUBLIC KEY, not the serial or the fingerprint of the whole
+	// certificate. A room that is reissued a certificate keeps its key, so
+	// this stays stable across a renewal while still being something only the
+	// holder of that key can present.
+	peerKey = func(c net.Conn) string {
+		cert := peerCert(c)
+		if cert == nil {
+			return ""
+		}
+		sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+		return base64.RawURLEncoding.EncodeToString(sum[:])
+	}
+}
+
+func peerCert(c net.Conn) *x509.Certificate {
+	tc, ok := c.(*tls.Conn)
+	if !ok {
+		return nil
+	}
+	st := tc.ConnectionState()
+	if len(st.PeerCertificates) == 0 {
+		return nil
+	}
+	return st.PeerCertificates[0]
 }
 
 // DirectAuthenticated reports whether a connection presented a client
