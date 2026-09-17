@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,7 @@ func hubCmd() *cobra.Command {
 		board     string
 		port      string
 		dir       string
+		db        string
 		transport string
 		service   string
 		files     string
@@ -47,14 +49,46 @@ func hubCmd() *cobra.Command {
 		Short: "Serve the board. Holds nothing and can be restarted at will",
 		Long: "Serves the board on a port your browser opens, and listens on a second port\n" +
 			"for rooms to dial in to.\n\n" +
-			"THE HUB HOLDS NOTHING. No database, no cards, no scrollback. Everything the\n" +
-			"board shows comes from a room, live. That is what makes it safe to restart\n" +
-			"while somebody's agent is mid-sentence.\n\n" +
+			"THE HUB HOLDS NO WORK. No sessions, no terminals, no agent processes, and\n" +
+			"no authority over any of them. Everything the board shows about a connected\n" +
+			"room comes from that room, live. That is what makes it safe to restart while\n" +
+			"somebody's agent is mid-sentence.\n\n" +
+			"It does keep a small store of its own: which rooms exist, what they are\n" +
+			"called, their join strings, and a cache of what each one last said so an\n" +
+			"offline room still shows what was there. None of that is work, and none of\n" +
+			"it is authoritative while a room is connected.\n\n" +
 			"On first run it makes itself a certificate authority and prints a join string.\n" +
 			"Paste that into `atrium2 join` on the machine your agents are on.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			keys := link.Keys{Dir: orDefault(dir, hubDir())}
+
+			// THE HUB'S OWN STORE, and opening it is the first thing that can
+			// refuse to start.
+			//
+			// It holds no work: no sessions, no terminals, no agent processes.
+			// It holds which rooms exist, what they are called, their join
+			// secrets, which are on their way out, and a cache of what each one
+			// last said. Nobody else can answer any of that, because the
+			// question is whether a room exists at all.
+			//
+			// A failure here is tier one. A hub that keeps serving while it
+			// cannot remember which rooms exist will mint a second room under a
+			// name it has forgotten. That the work is safe on the rooms is not
+			// a reason to stay up: it is the reason the halt costs little.
+			store, err := hubstore.Open(orDefault(db, filepath.Join(keys.Dir, "hub.db")))
+			if err != nil {
+				return fmt.Errorf("the hub's store: %w", err)
+			}
+			defer store.Close()
+			if store.Fresh() {
+				// SAID LOUDLY, because a hub pointed at the wrong directory
+				// looks exactly like every room having vanished, and the rooms
+				// themselves would still be dialling in and being refused.
+				log.Printf("[hub] made a new store at %s. no rooms are on it yet",
+					orDefault(db, filepath.Join(keys.Dir, "hub.db")))
+			}
+
 			side, err := openHub(transport, keys, port, service)
 			if err != nil {
 				return err
@@ -66,6 +100,23 @@ func hubCmd() *cobra.Command {
 				return err
 			}
 			defer ln.Close()
+
+			// WHAT A HALT DOES, and it is the daemon's posture one level up.
+			//
+			// The room listener closes and stays closed, so rooms see a refused
+			// connection, which is the one failure their client already absorbs
+			// silently: every one parks on the backoff it already has and burns
+			// nothing. The board stays up to say what broke, because a hub that
+			// vanishes explains nothing.
+			//
+			// The work is untouched. Every session is on a room, on a machine
+			// this process does not own.
+			store.OnHalt = func(cause error) {
+				log.Printf("[hub] THE STORE HAS HALTED: %v", cause)
+				log.Printf("[hub] rooms can no longer attach. the board stays up. " +
+					"the agents on every room are unaffected and keep running")
+				_ = ln.Close()
+			}
 
 			h := link.NewHub(link.Timings{})
 			// WHAT THIS HUB CAN HAND OUT, so a room that asked to be told can
@@ -155,6 +206,8 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&board, "addr", ":7800", "where the browser reaches the board")
 	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
 	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
+	c.Flags().StringVar(&db, "db", "",
+		"the hub's own store: which rooms exist and what they last said (default: under --dir)")
 	c.Flags().StringVar(&transport, "transport", "direct",
 		"how rooms reach this hub: direct, ziti or zrok")
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
