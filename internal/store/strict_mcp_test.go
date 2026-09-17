@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,16 +57,29 @@ func TestNoMCPConfigFileIsNamed(t *testing.T) {
 	}
 }
 
-// The flag is claude's spelling. A shell handed it would try to execute it.
-func TestAShellIsNotGivenTheFlag(t *testing.T) {
+// THE FLAG IS CLAUDE'S SPELLING and belongs to nothing else. Anything handed
+// it would try to execute it, and the backfill that adds it is a `LIKE
+// '%claude%'` over the command, which is the kind of match that catches a
+// neighbour.
+//
+// This used to name the shell row, which no longer exists: a shell is the
+// machine's, not a runner.
+func TestOnlyClaudeIsGivenClaudesFlag(t *testing.T) {
 	s := openTestStore(t)
 
-	h, err := s.Harness("shell")
+	rows, err := s.Harnesses()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if carries(h.Args, "--strict-mcp-config") {
-		t.Fatalf("a shell was given claude's flag: %q", h.Args)
+	for _, h := range rows {
+		if strings.Contains(strings.ToLower(h.Cmd), "claude") {
+			continue
+		}
+		for _, args := range [][]string{h.Args, h.ResumeArgs} {
+			if carries(args, "--strict-mcp-config") {
+				t.Errorf("%s (%s) was given claude's flag: %q", h.ID, h.Cmd, args)
+			}
+		}
 	}
 }
 

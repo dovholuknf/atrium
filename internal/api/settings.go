@@ -130,6 +130,18 @@ func globalAutoView(s *Server) map[string]any {
 	// is a search of PATH on the daemon's machine, so it is not something the
 	// person reading the box could work out for themselves.
 	out["shell_command_now"] = shellpick.Chosen()
+	// AND WHETHER IT IS ACTUALLY THERE.
+	//
+	// `Chosen` always answers something: the search ends at `cmd.exe` or
+	// `/bin/sh` whether or not either exists, because a floor that reports
+	// nothing would leave the board unable to say anything at all. So the
+	// board has no way to know a shell cannot be opened until it tries, and
+	// what it draws in the meantime is a button that fails.
+	//
+	// The override is checked rather than the search, since the override is
+	// what would run. Somebody who typed a name with a spelling mistake into
+	// `shell_command` is the case this exists for.
+	out["shell_command_ok"] = shellIsThere(s.st)
 	// What the board is wearing, and everything it could wear. The list is
 	// sent rather than written into the page so the picker and the validator
 	// cannot disagree: there is one list and the daemon holds it.
@@ -503,4 +515,29 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	out := globalAutoView(s)
 	out["drained"] = drained
 	writeJSON(w, http.StatusOK, out)
+}
+
+// shellIsThere reports whether a shell could actually be opened on this
+// machine.
+//
+// The board draws a control that opens one, and it had no way to know the
+// answer before pressing it. `shellpick.Chosen` always names something,
+// because its search ends at `cmd.exe` or `/bin/sh` whether or not either is
+// installed: a floor that reported nothing would leave the board unable to say
+// what an empty box means.
+//
+// So the name is resolved on PATH, the same lookup the daemon does when it
+// starts one. The override wins, since the override is what would run, and a
+// spelling mistake typed into `shell_command` is the case this exists for.
+func shellIsThere(st *store.Store) bool {
+	name := ""
+	if v, err := st.Setting(SettingShellCommand); err == nil {
+		if fields := strings.Fields(strings.TrimSpace(v)); len(fields) > 0 {
+			name = fields[0]
+		}
+	}
+	if name == "" {
+		name, _ = shellpick.Pick()
+	}
+	return name != "" && LookPath(name) != ""
 }

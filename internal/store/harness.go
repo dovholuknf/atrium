@@ -6,8 +6,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"github.com/dovholuknf/atrium/internal/shellpick"
 )
 
 // Harness is a runner atrium knows how to start: claude, codex, ollama, a bare
@@ -110,13 +108,9 @@ const (
 // Only claude is enabled, because it is the only one whose invocation is known
 // to work on this machine. The rest are scaffolding with a plausible command,
 // left off until their command line is confirmed.
-// SEEDED ONCE, ON FIRST RUN, which is the honest limit of this half of the
-// fix. A database that already has a `shell` row keeps whatever it was seeded
-// with, because a harness is a row the operator may have edited and rewriting
-// it on every start would throw that away. Anybody whose row says `pwsh` on a
-// machine without it edits the row or the `shell_command` setting.
+// SEEDED ONCE, ON FIRST RUN. A harness is a row the operator may have edited,
+// and rewriting it on every start would throw that away.
 func DefaultHarnesses() []Harness {
-	shellCmd, shellArgs := shellpick.Pick()
 	return []Harness{
 		// Use a PTY by default so atrium can attach, terminate, and check liveness.
 		// Window mode remains available for runners that need to outlive the daemon.
@@ -134,7 +128,7 @@ func DefaultHarnesses() []Harness {
 			ModelArgs:   []string{"--model", "{model}"},
 			RulesSource: "claude", Sort: 10, BracketedPaste: true,
 			Package: "@anthropic-ai/claude-code",
-			Notes: "resume needs a session id, which only a runner that reports one can supply",
+			Notes:   "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			// `codex resume <SESSION_ID>` takes the same uuid codex puts in
@@ -152,7 +146,7 @@ func DefaultHarnesses() []Harness {
 			PromptArgs:     []string{"{prompt}"},
 			ModelArgs:      []string{"--model", "{model}"},
 			BracketedPaste: true, Package: "@openai/codex",
-			RulesSource:    "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
+			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
 		{
@@ -161,23 +155,26 @@ func DefaultHarnesses() []Harness {
 			ExitKeys: []string{"ctrl-d"},
 			Notes:    "set the model in args. ollama has no permission config to import",
 		},
-		{
-			// Not an agent. A plain shell in the chosen directory, running as
-			// whoever started the daemon, shown in the browser like any other
-			// supervised runner. Useful for the times the answer is a command
-			// rather than a conversation, and for watching one from a phone.
-			// THE SAME ANSWER THE CARD'S OWN SHELL GIVES. This said `pwsh`
-			// unconditionally, which is a guess that is right on this machine
-			// and wrong on any Windows without PowerShell 7 installed, where
-			// it produces a harness that cannot start. The board would then be
-			// offering two shells that disagree, since the other one resolved
-			// to `COMSPEC`.
-			ID: "shell", Label: "shell", Enabled: false,
-			Cmd: shellCmd, Args: shellArgs, LaunchMode: LaunchPTY, Sort: 40,
-			ExitKeys: []string{"exit"},
-			Notes: "a plain shell, not an agent. runs as whoever started the daemon, " +
-				"reports nothing about itself, and its card shows the terminal and nothing else",
-		},
+		// THERE IS NO `shell` RUNNER, AND THAT IS THE POINT.
+		//
+		// There was one, and it was a second answer to a question the machine
+		// had already answered. A shell is not something atrium can be
+		// configured to start: it is a property of the machine, held in the
+		// `shell_command` setting and found by `internal/shellpick` when that
+		// is empty, and `shellFor` reads it FRESH every time a shell is
+		// opened. The runner row was a copy of that taken on first run and
+		// then frozen, so changing the setting moved one shell and left the
+		// other one starting the program from months ago.
+		//
+		// It fitted the shape badly too. A runner is a command, a way to
+		// resume, a way to be given a prompt and a model, a set of hooks and a
+		// rules file. A shell has none of those. Half the row was blank and
+		// the other half was ignored, and `isShellRunner` existed purely to
+		// keep it out of the list of things that can be started as an agent.
+		//
+		// A shell is still one press away, on the terminal of any card that
+		// has one, which is where somebody wants a shell: beside the agent, in
+		// its directory. See `shellFor` in internal/daemon/shell.go.
 	}
 }
 
