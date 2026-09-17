@@ -273,3 +273,33 @@ func TestThereIsAlwaysAShellToTry(t *testing.T) {
 		t.Fatalf("the windows fallback is %q, which is not a shell", cmd)
 	}
 }
+
+
+// SHELLS CAN BE SWITCHED OFF ON A MACHINE, and `off` is the word, the same one
+// the worktree command already takes for the same idea.
+//
+// There used to be a switch by accident: a shell was a runner, so disabling
+// that row stopped shells being opened. Removing the row removed the switch
+// with it, and the only way left to stop atrium opening one would have been to
+// name a command that does not exist.
+func TestShellsCanBeTurnedOff(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	if cmd, _ := d.shellFor(); cmd == "" {
+		t.Fatal("a machine with no setting reported no shell")
+	}
+	if err := d.st.SetSetting(SettingShellCommand, "off"); err != nil {
+		t.Fatal(err)
+	}
+	if cmd, args := d.shellFor(); cmd != "" || len(args) != 0 {
+		t.Fatalf("off still names a shell: %q %q", cmd, args)
+	}
+	// Case is not the point. Somebody typing `OFF` means the same thing.
+	if err := d.st.SetSetting(SettingShellCommand, " OFF "); err != nil {
+		t.Fatal(err)
+	}
+	if cmd, _ := d.shellFor(); cmd != "" {
+		t.Fatalf("OFF was read as a command called %q", cmd)
+	}
+}

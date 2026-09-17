@@ -222,6 +222,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
+		// WHICH SHELL A PANE OPENS, or `off` for none at all.
+		//
+		// This field was missing while the board posted it and the settings
+		// pane drew a box for it, so the box has never done anything: the
+		// value was decoded into a struct that had nowhere to put it and
+		// dropped, and the answer came back with the old value, which reads
+		// exactly like a save that worked.
+		//
+		// Nothing rejected it either. The guard above is a rule about one
+		// specific pair of fields and not a check that every key is known.
+		ShellCommand *string `json:"shell_command"`
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
@@ -476,6 +487,20 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.ShellCommand != nil {
+		// Stored as typed, including `off`, which means this machine opens no
+		// shells at all. Not validated against PATH: a name that is wrong
+		// today is right the moment the thing is installed, and refusing it
+		// would mean the box cannot be filled in before the tool is. What the
+		// name comes out as, and whether it resolves, are both reported back
+		// by `shell_command_now` and `shell_command_ok`.
+		if err := s.st.SetSetting(SettingShellCommand,
+			strings.TrimSpace(*body.ShellCommand)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.BoardSkin != nil {
 		// Refused rather than stored, unlike the browse roots above, and the
 		// two differ for a reason. A root that does not exist yet is a list
@@ -530,11 +555,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 // starts one. The override wins, since the override is what would run, and a
 // spelling mistake typed into `shell_command` is the case this exists for.
 func shellIsThere(st *store.Store) bool {
+	v := ""
+	if got, err := st.Setting(SettingShellCommand); err == nil {
+		v = strings.TrimSpace(got)
+	}
+	// OFF MEANS NO SHELL ON THIS MACHINE, and it is the same word the worktree
+	// command already uses for the same idea. See `worktreeTemplate`.
+	//
+	// There was an off switch and it was an accident: the shell was a runner,
+	// and disabling that row turned shells off. Removing the row removed the
+	// switch with it, which left the only way to stop atrium opening a shell
+	// being to name a command that does not exist.
+	if strings.EqualFold(v, "off") {
+		return false
+	}
 	name := ""
-	if v, err := st.Setting(SettingShellCommand); err == nil {
-		if fields := strings.Fields(strings.TrimSpace(v)); len(fields) > 0 {
-			name = fields[0]
-		}
+	if fields := strings.Fields(v); len(fields) > 0 {
+		name = fields[0]
 	}
 	if name == "" {
 		name, _ = shellpick.Pick()
