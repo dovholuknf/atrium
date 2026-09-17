@@ -22,10 +22,13 @@
      just drawing terminals. Matched to the core by hash, not by guess:
      xterm 5.5.0, addon-fit 0.10.0, addon-webgl 0.18.0. -->
 <script src="/vendor/xterm-addon-webgl.js"></script>
-<!-- Finding something in the scrollback. Ctrl-F does nothing on its own here:
-     the browser's own find walks the DOM, and a WebGL terminal has no DOM to
-     walk, so the text on screen is invisible to it. This addon searches
-     xterm's buffer, which is the only place that text exists.
+<!-- Finding something in the scrollback, on ctrl-shift-f. The browser's own
+     find walks the DOM, and a WebGL terminal has no DOM to walk, so the text on
+     screen is invisible to it. This addon searches xterm's buffer, which is the
+     only place that text exists.
+     Ctrl-f is deliberately left to the browser. The board is a page as well as
+     a terminal, and a document full of card names and paths is exactly what the
+     browser's find is good at.
      addon-search 0.15.0, from the same wave as the rest. -->
 <script src="/vendor/xterm-addon-search.js"></script>
 <!-- A URL in the output, clickable. Without this the address of the board
@@ -409,7 +412,21 @@ Exports honor whatever filter is applied.">?</span>
           <span class="spin"></span><span id="t-wait-say"></span>
         </div>
         <div class="findbar" id="t-find" hidden>
-          <input id="t-find-q" spellcheck="false" placeholder="find in this session"
+          <!-- `type="search"` and the four ignore attributes are aimed at
+               EXTENSIONS, not at the browser. A password manager or an email
+               alias extension decides what to offer from the shape of an
+               input, and a bare `type="text"` with no autocomplete hint is the
+               shape they guess at: one of them drew a "create a random email
+               that forwards to your inbox" card over this find bar.
+               None of these is a standard that anything is obliged to honour.
+               They are the flags the common extensions actually read, which is
+               the most a page can do: 1Password, LastPass and Dashlane each
+               read their own, and `type="search"` is the honest description
+               anyway. If one still injects here, that extension is the place
+               to turn it off. -->
+          <input id="t-find-q" type="search" spellcheck="false" autocomplete="off"
+            data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+            placeholder="find in this session"
             oninput="runFind(false)"
             onkeydown="if (event.key === 'Enter') { event.preventDefault();
                          runFind(true, event.shiftKey); }
@@ -855,7 +872,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         card.</span>
     </div>
 
-    <h3 class="s-section">who may open it</h3>
+    <!-- A SUB-HEADING, not a section, so it stays in this pane.
+         The login only ever applies to the published board, so somebody asking
+         about it is already here looking at what publishes it. As its own
+         entry in the nav it read as an unrelated setting, and the zrok panel
+         above says the board has no login while this says it does. -->
+    <h4 class="s-sub">who may open it</h4>
     <div class="field">
       <label class="check">
         <input type="checkbox" id="auth-on" onchange="saveAuth()">
@@ -1936,10 +1958,61 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="goRunners('runners');document.getElementById('launch').close()">configure</button>
       </div>
     </div>
+    <div class="field">
+      <label class="eyebrow" for="l-cwd">working directory</label>
+      <!-- `projects` first, because it is the control that answers this field.
+           It knows which repositories exist and it can create the worktree that
+           does not exist yet, which is the case you are usually in. `browse` is
+           the escape hatch for a directory that is not a repository.
+
+           The six buttons that stood under this are gone. They listed the
+           directories that already HAVE cards, which reads as a recommendation
+           and is a report: a directory was on it because something was already
+           running there. Starting a second agent beside an existing one is
+           answered by `new agent here` on that card, which cannot pick the
+           wrong directory. See docs/backlog/backlog-2026-09-14-005.md. -->
+      <div class="picker">
+        <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
+        <button class="go" onclick="openProjects('l-cwd')">projects</button>
+        <button onclick="openBrowse()">browse</button>
+      </div>
+    </div>
+    <!-- Only shown when there is a conversation to pick up. Checked by
+         default: if you had one, continuing it is almost always the intent.
+         NOT folded, unlike everything below it. It appears only when it
+         applies, it is on by default, and a default-on control hidden behind a
+         disclosure is a decision made for you out of sight. -->
+    <div class="field" id="l-resume-field" hidden>
+      <label class="check">
+        <input type="checkbox" id="l-resume-on" checked>
+        <span>pick up where it left off</span>
+      </label>
+      <span class="hintline" id="l-resume-note"></span>
+    </div>
+
+    <!-- EVERYTHING BELOW IS OPTIONAL AND SAYS SO BY BEING SHUT.
+         Ten controls, one of which has to be answered. The other nine were the
+         same size in the same column with the same label treatment, so reading
+         the form meant reading nine things to find out none of them applied.
+         Most were added so a SCRIPT could pass them: `atrium launch` takes
+         --tags, --prompt, --why and the rest, and the dialog grew a field per
+         flag, operated by a human who has none of those answers yet.
+         Folded, not deleted. Every one is reachable from the CLI and from an
+         intake item, and this dialog is the only place a human can see what a
+         recogniser or a script filled in. `openMore` opens it when anything
+         inside is non-empty, so an arriving intake item is never launched from
+         behind a closed fold. The state is deliberately not remembered: a form
+         that remembers being open is a form that is open.
+         See docs/backlog/backlog-2026-09-14-004.md. -->
+    <details id="l-more">
+      <summary>more</summary>
     <!-- Paste a pull request, an issue or a ticket and the rest of this form
          fills itself in. Atrium learns nothing about the system it came from:
          a recogniser is a pattern and a set of templates, and whoever wrote
-         the row did the understanding. -->
+         the row did the understanding.
+         This leaves entirely once backlog-2026-09-14-003 gives it its own
+         door. Folded until then rather than removed, because nothing else can
+         do it yet. -->
     <div class="field" id="l-link-field">
       <label class="eyebrow" for="l-url">paste a link</label>
       <div class="picker">
@@ -1948,18 +2021,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button id="l-recognise" onclick="recogniseLink()">recognise</button>
       </div>
       <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
-        below, and nothing starts until you press start.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="l-cwd">working directory</label>
-      <div class="picker">
-        <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
-        <!-- Choose a repository or create a worktree from the board. -->
-        <button onclick="openProjects('l-cwd')">projects</button>
-        <button onclick="openBrowse()">browse</button>
-      </div>
-      <span class="hintline">Directories already on the board. Click one to use it.</span>
-      <div class="quickdirs" id="l-recent"></div>
+        below, and nothing starts until you press launch.</span>
     </div>
     <!-- Offer a temporary directory below the directory picker, with cleanup
          behavior explained before launch. -->
@@ -1971,15 +2033,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">Atrium makes a temporary directory and starts here. When the
         session ends the directory, the card and the conversation are all deleted. If it turns
         out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
-    </div>
-    <!-- Only shown when there is a conversation to pick up. Checked by
-         default: if you had one, continuing it is almost always the intent. -->
-    <div class="field" id="l-resume-field" hidden>
-      <label class="check">
-        <input type="checkbox" id="l-resume-on" checked>
-        <span>pick up where it left off</span>
-      </label>
-      <span class="hintline" id="l-resume-note"></span>
     </div>
     <!-- Which model, for THIS launch and nothing else.
          Empty every time this opens, and nothing is written to the runner's
@@ -2024,7 +2077,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="l-prompt-note">Sent as the runner's opening
         argument. A runner with no way to take one will say so.</span>
     </div>
-    <div class="toolbar"><button class="go big" onclick="doLaunch()">start it</button></div>
+    </details>
+    <!-- `launch`, which is the verb. It said `start it`, a sentence where every
+         other button here is a word, and `atrium launch` is what the CLI calls
+         the same act. One verb for both surfaces. -->
+    <div class="toolbar"><button class="go big" onclick="doLaunch()">launch</button></div>
   </div>
 </dialog>
 

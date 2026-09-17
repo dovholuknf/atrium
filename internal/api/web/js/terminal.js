@@ -562,16 +562,23 @@ function openTerm(task) {
       return false;
     }
 
-    // FIND. Both bindings, because both are muscle memory: ctrl-f is the
-    // browser's and ctrl-shift-f is what several editors use for "find in
-    // everything". Here they open the same bar, since there is one buffer to
-    // search.
+    // FIND, on ctrl-SHIFT-f only.
     //
-    // `preventDefault` matters. The browser's own find is useless on this
-    // terminal: it walks the DOM and a WebGL terminal draws to a canvas, so
-    // ctrl-f opened a find box that could never match a single character of
-    // what is on screen.
-    if (ctrl && e.code === "KeyF") { e.preventDefault(); openFind(); return false; }
+    // It used to take ctrl-f as well, on the grounds that the browser's own
+    // find is useless here: it walks the DOM and a WebGL terminal draws to a
+    // canvas, so ctrl-f opened a box that could never match a character of
+    // what is on screen. That reasoning holds for the GRID and not for the
+    // page, and this handler cannot tell which one somebody meant. The board
+    // is a document full of card names and paths, so ctrl-f goes back to the
+    // browser everywhere, including here.
+    //
+    // `preventDefault` still matters, to stop the browser's find opening on
+    // top of the bar this just opened.
+    if (ctrl && e.shiftKey && e.code === "KeyF") {
+      e.preventDefault();
+      openFind();
+      return false;
+    }
 
     // PASTE IS NOT PREVENTED HERE, and that is the whole fix.
     //

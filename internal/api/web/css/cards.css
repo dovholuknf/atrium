@@ -545,16 +545,9 @@
   .dirlegend .ic { color: var(--dimmest); }
   .dirlegend .ic.repo { color: var(--teal); }
   .dirlegend b { color: var(--dim); font-weight: 600; }
-  .quickdirs { display: flex; flex-direction: column; gap: var(--vs-1); margin-top: var(--vs-2); }
-  /* Full width rows rather than pills. A path is long, and a row of truncated pills is a row of buttons you
-     have to hover to tell apart. */
-  .quickdir {
-    font: var(--fs-sm) var(--mono); padding: 6px 11px; border-radius: var(--r-sm);
-    background: var(--hairline); border: 1px solid var(--stroke-dim);
-    color: var(--dim); cursor: pointer; text-align: left; width: 100%;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .quickdir:hover { color: var(--head); border-color: var(--teal); }
+  /* `.quickdirs` and `.quickdir` stood here, styling the six directory buttons under the launch dialog's path
+     field. Both the markup and the code that filled them are gone: the list reported which directories already
+     had cards, which is not a reason to start another one there. See docs/backlog/backlog-2026-09-14-005.md. */
   .check { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; color: var(--label); }
   .check input { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; }
 

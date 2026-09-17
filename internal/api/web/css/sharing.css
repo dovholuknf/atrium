@@ -167,6 +167,14 @@
   }
   .s-section:first-child { margin-top: 0; }
 
+  /* A divider INSIDE a pane, for a group that belongs to the pane it is in rather than beside it. Quieter than
+     a section heading and it stays on screen, since a pane's own heading is hidden once the nav exists. */
+  .s-sub {
+    margin: 30px 0 14px; padding-bottom: 8px; font: 600 var(--fs-sm)/1 var(--sans);
+    letter-spacing: .16em; text-transform: uppercase; color: var(--head);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+
   /* The spine. Headings alone stopped being enough once finding a setting meant scrolling past every other
      setting. The grouping boxes are the worst of it: the tallest thing in the dialog and the least often
      changed.
@@ -386,15 +394,14 @@
      loose between them. One border on the container rather than line drawing glyphs per row: the line is
      continuous because the box is, and depth costs an indent rather than a rule per level that has to agree
      with every other one. */
+  /* `padding-bottom` here rather than a gap on the list. A nest is the thing that ENDS, so the space belongs at
+     the bottom of one and not between every child of the strip: the list's own gap separated a heading from
+     its first row by the same distance it separated two unrelated repos, which is what made a three deep nest
+     read as six loose lines. */
   .tnest {
-    margin-left: 9px; padding-left: 9px;
+    margin-left: 9px; padding-left: 9px; padding-bottom: 5px;
     border-left: 1px solid var(--hairline);
   }
-  /* A heading directly under a heading sits tight to it. Every level carries its own top margin, so `github`
-     followed immediately by `openziti` paid for both and left a band of empty strip between two lines that
-     belong together. That gap is worth having between a group and the rows above it, and is dead space between
-     two names. */
-  .tnest > .tgroup:first-child { margin-top: 1px; }
   /* A heading is a button, and only as wide as the thing you press. On the board's group headings the whole
      width toggles, so clicking what looks like empty space beside a name folds what you were reading. Here the
      caret and the name are the control, and the rule filling the rest of the row is decoration outside it. */
@@ -403,9 +410,14 @@
      on one line reading as a single heading with two names in it. Flex is block level and takes the line, and
      `fit-content` keeps the button only as wide as the caret and the name, which is the point of it not being
      the full-width click target. */
+  /* The caret, the name and the count read as one label, so they sit at 1px rather than 5px: at 5px the caret
+     floated off the word it belongs to and a three level nest looked like three separate controls.
+     No margin. The strip used to space every child of `.term-list` with a flex `gap`, which paid the same
+     distance between a heading and its own first row as between two unrelated groups, and then each heading
+     added a top margin on top of that. The space now belongs to `.tnest`, which is the thing that ends. */
   .tgroup {
-    display: flex; width: fit-content; align-items: center; gap: 5px;
-    margin: 5px 0 1px; padding: 1px 6px 1px 2px;
+    display: flex; width: fit-content; align-items: center; gap: 1px;
+    padding: 1px 6px 1px 2px;
     border: none; border-radius: var(--r-sm); background: transparent;
     color: var(--label); cursor: pointer;
     font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;

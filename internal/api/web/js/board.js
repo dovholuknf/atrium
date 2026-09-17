@@ -499,7 +499,7 @@ function activityChip(t) {
   // outlasts the status change that filed the card, so this is a second line
   // of defence rather than the fix: whatever put a live session in `done` is
   // the bug, and this stops it looking like a feature.
-  if (!a || !a.what || isWaiting(t) || over(t) || t.status === "shelved") return "";
+  if (!a || !a.what || isWaiting(t) || t.status === "shelved" || staleActivity(t)) return "";
   const label = a.what === "tool"
     ? (a.tool ? `running ${esc(a.tool)}` : "running a tool")
     : esc(a.what);

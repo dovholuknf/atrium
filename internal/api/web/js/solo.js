@@ -140,7 +140,55 @@ const popOuts = new Map();
 //
 // Async because ONE of those four answers has to be asked for rather than
 // worked out. See `stillOutThere`.
+// WHERE A CARD WAS LAST LOOKED AT, so resuming does not have to ask.
+//
+// Resume used to offer `in terminals` and `in its own window` every time, which
+// is a placement decision asked at the wrong moment: the card already had an
+// answer and the operator had to reconstruct it to reply correctly.
+//
+// Nothing recorded it. `popOuts` is a map of window handles belonging to this
+// page and `soloHeld` is a claim with a TTL, so both answer "is it open right
+// now" and neither survives the runner stopping, which is exactly when resume
+// is asked.
+//
+// In `localStorage`, for the reason `TERM_FOLDED` gives: this is a property of
+// how somebody is reading the board, not of the card. Two browsers are allowed
+// to disagree about where a card shows, and a placement followed across
+// machines would be a window opening on the wrong desk.
+const TERM_PLACE = "atrium.placement";
+
+function placements() {
+  try { return JSON.parse(localStorage.getItem(TERM_PLACE) || "{}"); }
+  catch (e) { return {}; }
+}
+
+// `window` or `here`. Written wherever a terminal is actually opened, so it
+// records what happened rather than what was asked for.
+function rememberPlace(id, where) {
+  if (!id) return;
+  const all = placements();
+  if (all[id] === where) return;
+  all[id] = where;
+  localStorage.setItem(TERM_PLACE, JSON.stringify(all));
+}
+
+// Where this card was last seen. `here` when nothing was ever recorded, which
+// is the destination that needs no permission and cannot be blocked.
+function lastPlace(id) {
+  return placements()[id] === "window" ? "window" : "here";
+}
+
+// Dropped when a card is forgotten, so the file does not grow a row per card
+// that ever existed.
+function forgetPlace(id) {
+  const all = placements();
+  if (!(id in all)) return;
+  delete all[id];
+  localStorage.setItem(TERM_PLACE, JSON.stringify(all));
+}
+
 async function popOutTask(id) {
+  rememberPlace(id, "window");
   const held = popOuts.get(id);
   if (held && !held.closed) { held.focus(); return "raised"; }
 

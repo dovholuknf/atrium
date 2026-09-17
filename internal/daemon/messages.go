@@ -276,7 +276,20 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
-	if run := d.sup.get(taskID); run != nil {
+	//
+	// UNLESS THERE IS A DIALOG ON THAT SCREEN. `Say` writes the text and then
+	// writes Enter, and an Enter landing on a prompt answers it with whatever
+	// option was highlighted. Nothing reports that: the operator sees a
+	// message they sent, and separately a tool call approved by nobody.
+	//
+	// Only for a prompt atrium did not raise. While its own gate holds a
+	// request the runner is blocked inside a hook and draws nothing, so there
+	// is nothing on screen to hit. See `dialogRaised`.
+	//
+	// It falls through to the queue, which is where every message goes for an
+	// unsupervised card anyway, so this is a delivery atrium already knows how
+	// to make rather than a refusal.
+	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
 		if err := run.Say(body.Text); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
@@ -339,7 +352,9 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	delivered := "queued"
-	if run := d.sup.get(taskID); run != nil {
+	// Queued rather than typed while a dialog is on that screen. Same reason
+	// as `handleMessage` above: `Say` ends with an Enter.
+	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
 		if err := run.Say(note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
