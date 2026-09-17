@@ -61,6 +61,14 @@ type Room struct {
 	FirstSeen *time.Time `json:"first_seen_at,omitempty"`
 	LastSeen  *time.Time `json:"last_seen_at,omitempty"`
 	Version   string     `json:"version,omitempty"`
+	// ClearedAt is when this room last said, while connected, that it is
+	// holding nothing.
+	//
+	// THE ROOM'S OWN CONFIRMATION, and the only kind there is. The hub cannot
+	// see whether a directory was cleaned up or a session really ended, so it
+	// does not decide: it waits to be told, by the room, in the only way a room
+	// speaks about itself. Cleared the moment that stops being true.
+	ClearedAt *time.Time `json:"cleared_at,omitempty"`
 }
 
 // EverConnected reports whether this room has ever dialled in.
@@ -234,7 +242,7 @@ func (s *Store) ByName(name string) (*Room, error) {
 }
 
 const roomCols = `SELECT id, name, self_name, transport, state, created_at,
-	first_seen_at, last_seen_at, version`
+	first_seen_at, last_seen_at, version, cleared_at`
 
 func (s *Store) one(where string, args ...any) (*Room, error) {
 	var r *Room
@@ -257,9 +265,9 @@ type scanner interface{ Scan(...any) error }
 
 func scanRoom(sc scanner) (*Room, error) {
 	var r Room
-	var created, first, last string
+	var created, first, last, cleared string
 	if err := sc.Scan(&r.ID, &r.Name, &r.SelfName, &r.Transport, &r.State,
-		&created, &first, &last, &r.Version); err != nil {
+		&created, &first, &last, &r.Version, &cleared); err != nil {
 		return nil, err
 	}
 	if t, err := time.Parse(TimeFormat, created); err == nil {
@@ -267,6 +275,7 @@ func scanRoom(sc scanner) (*Room, error) {
 	}
 	r.FirstSeen = parseOrNil(first)
 	r.LastSeen = parseOrNil(last)
+	r.ClearedAt = parseOrNil(cleared)
 	return &r, nil
 }
 

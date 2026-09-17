@@ -52,7 +52,7 @@ func (i inventory) Known() ([]link.Known, error) {
 		k := link.Known{
 			Name: r.Name, SelfName: r.SelfName, Transport: r.Transport,
 			State: r.State, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen,
-			Version: r.Version,
+			Version: r.Version, ClearedAt: r.ClearedAt,
 		}
 		if a, ok := live[fold(r.Name)]; ok {
 			k.Attached = true

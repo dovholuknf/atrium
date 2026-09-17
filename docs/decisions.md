@@ -335,7 +335,20 @@ knows, so the room says so.
 
 ### The outcome
 
-Not built yet.
+**Built 2026-09-17.** Marking now does what it promised: a marked room starts no new work, and everything
+already on it carries on and can still be renamed, answered, shelved and finished.
+
+**The room's confirmation is an empty announcement.** That fell out of the cache rather than needing anything
+new: a room announcing what it holds is the only way a room speaks about itself, so a room announcing that it
+holds nothing IS the confirmation. It is withdrawn the moment the room has work again, so it cannot go stale
+into a removal.
+
+The order that leaves is: mark it, clear its cards, let it say so, stop it, remove it. Each refusal names what
+is missing. `--force` is unchanged and still says what it does not do.
+
+**The board still does not delete.** Marking is the one change it can make to a room, for the same reason it
+cannot mint a join string: atrium has no login and that page may be reachable from elsewhere. Removing a room
+is done at a terminal on the hub, where being there is the credential.
 
 ------------
 

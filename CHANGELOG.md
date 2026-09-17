@@ -5,6 +5,27 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Deleting a room is four steps, and the room takes one of them.**
+
+  Marking a room for deletion now does the thing it promised: **that room starts no new work.** Launching,
+  raising a card, posting intake or queueing a dispatch onto it is refused with the reason. Everything already
+  running carries on and can still be renamed, answered, shelved and finished, because work in flight is meant
+  to be worked out normally. Marking is still one click to undo and still destroys nothing.
+
+  **The room confirms it is finished, and the confirmation is the room saying it holds nothing.** The hub cannot
+  see whether a directory was cleaned up, a throwaway deleted or a session really ended, so it does not decide:
+  it waits to be told, in the one way a room speaks about itself. That is withdrawn the moment the room has work
+  again, so a confirmation cannot go stale into a removal.
+
+  So the ordinary path is: mark it, clear its cards, let it say so, stop it, remove it. A connected room is
+  never deleted, and one that never said it was finished is refused by name with what to do about it.
+
+  `--force` is still there for a machine that is never coming back, and still says what it does not do: it
+  removes the hub's record and nothing else.
+
+  `atrium2 hub room log` prints the whole of that, for one room or all of them, and answers for a room that has
+  already been removed.
+
 - **A machine that is not answering still shows its work, and nothing on it can be touched.**
 
   A shut laptop used to drop off the board entirely, which reads as the work having gone. Its cards are drawn

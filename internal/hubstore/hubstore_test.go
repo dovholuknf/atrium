@@ -335,6 +335,63 @@ func TestMarkingForDeletionCanBeTakenBack(t *testing.T) {
 	}
 }
 
+// A ROOM SAYING IT IS DONE IS AN EMPTY ANNOUNCEMENT, AND NOTHING ELSE.
+//
+// The hub cannot see whether a directory was cleaned up, a throwaway deleted or
+// a session really ended, so it does not decide. It waits to be told, by the
+// room, in the one way a room speaks about itself.
+func TestARoomConfirmsItIsDoneBySayingItHoldsNothing(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sparta")
+
+	if got, _ := s.Get(r.ID); got.ClearedAt != nil {
+		t.Fatal("a room that has never said anything counts as finished")
+	}
+	if _, err := s.Announce(r.ID, []Card{{ID: "a", Status: "running"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(r.ID); got.ClearedAt != nil {
+		t.Fatal("a room holding work counts as finished")
+	}
+
+	if _, err := s.Announce(r.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(r.ID); got.ClearedAt == nil {
+		t.Fatal("a room that said it holds nothing was not taken at its word")
+	}
+
+	// AND IT IS WITHDRAWN THE MOMENT THAT STOPS BEING TRUE. A room that emptied
+	// at lunchtime and has picked up three cards since is not a room anybody
+	// has finished with, and a stale confirmation is what a removal would rest
+	// on.
+	if _, err := s.Announce(r.ID, []Card{{ID: "b", Status: "running"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(r.ID); got.ClearedAt != nil {
+		t.Fatal("a room with work on it again still counts as finished")
+	}
+
+	// BOTH DIRECTIONS ARE WRITTEN DOWN: the first is what a removal rests on,
+	// the second is what explains a removal being refused.
+	log, err := s.AuditFor(r.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var said, unsaid bool
+	for _, e := range log {
+		if e.Kind == "clear" {
+			said = true
+		}
+		if e.Kind == "not-clear" {
+			unsaid = true
+		}
+	}
+	if !said || !unsaid {
+		t.Fatalf("the room's word about being finished was not recorded both ways: %+v", log)
+	}
+}
+
 // FORCING A ROOM OUT REMOVES THE HUB'S RECORD AND NOTHING ELSE, and the record
 // of having done it has to survive, because that is the thing somebody will
 // come looking for when the machine turns up again still holding cards.
