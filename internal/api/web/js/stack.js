@@ -179,11 +179,23 @@ function pillCounts(segID, counts) {
 }
 
 async function renderStack() {
-  try { allStack = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
-  lastTasks = allStack;
+  let everything;
+  try { everything = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  // SPLIT ONCE, HERE. Everything the rest of this file counts, filters, sorts
+  // and searches is work on a machine that is answering, so every number on
+  // the page is live only without anybody remembering to filter for it. The
+  // pills are the ones that matter: `ready 3` including a card on a shut
+  // laptop is three things to do when there are two.
+  allStack = everything.filter(t => !t.offline);
+  offlineStack = everything.filter(t => t.offline);
+  lastTasks = everything;
   paintWorking(allStack);
   paintStack();
 }
+
+// offlineStack is what the rooms that are not answering last said they held.
+// Drawn in its own group at the bottom and counted nowhere.
+let offlineStack = [];
 
 function paintStack() {
   const q = (document.getElementById("stack-q").value || "").toLowerCase();
@@ -241,24 +253,58 @@ function paintStack() {
   list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   if (!list.length) {
+    // The offline group is still drawn under it. A board whose only work is on
+    // a machine that is not answering would otherwise say "no agents yet",
+    // which is the one thing it must not say about work that exists.
     setHTML(document.getElementById("stack-list"),
       `<div class="panel"><div class="empty">${allStack.length
-        ? "nothing matches that filter" : "no agents yet"}</div></div>`);
+        ? "nothing matches that filter"
+        : offlineStack.length ? "nothing is running right now" : "no agents yet"}</div></div>` +
+      stackOfflineHTML(offlineStack));
     return;
   }
 
   // The same grouping the board uses, from the same setting, so turning it on
   // in one place turns it on everywhere. The chosen sort still orders the rows
   // inside each group.
+  //
+  // WORK ON A MACHINE THAT IS NOT ANSWERING GOES LAST AND COMES SHUT, the same
+  // as on the board and for the same reason. It is not in `list`, because it
+  // was taken out before anything counted or filtered: see `renderStack`.
   const g = grouper();
-  setHTML(document.getElementById("stack-list"), g
-    ? stackGroupsHTML(list, g)
-    : `<div class="panel">` + stackRows(list) + `</div>`);
+  const live = list.length
+    ? (g ? stackGroupsHTML(list, g) : `<div class="panel">` + stackRows(list) + `</div>`)
+    : "";
+  setHTML(document.getElementById("stack-list"), live + stackOfflineHTML(offlineStack));
 
   if (groupingFault) {
     toast("grouping code", groupingFault);
     groupingFault = "";
   }
+}
+
+// stackOfflineHTML is the rows whose machine is not answering.
+//
+// Shut unless somebody opened it, which is the opposite default to every other
+// group here. The fold list records what was changed FROM its default, so the
+// same entry means the same thing for both kinds: somebody had an opinion about
+// this one. See the toggle listener in board.js, which knows about the
+// `offline:` prefix.
+function stackOfflineHTML(rows) {
+  if (!rows.length) return "";
+  const open = isFolded("offline:stack") ? " open" : "";
+  const rooms = [...new Set(rows.map(t => t.room).filter(Boolean))].sort();
+  return `<details class="stackgroup offline" data-fold="offline:stack"${open}>
+    <summary>
+      <span class="gname">not answering</span>
+      <span class="gn">${rows.length}</span>
+      <span class="chip">${esc(rooms.join(", "))}</span>
+    </summary>
+    <div class="hintline">What ${rooms.length === 1 ? "that machine" : "those machines"} last
+      said. Nothing here can be opened or changed until
+      ${rooms.length === 1 ? "it is" : "they are"} back.</div>
+    <div class="panel">${stackRows(rows)}</div>
+  </details>`;
 }
 
 // The stack split into project groups, each its own panel so the color reads
@@ -412,10 +458,13 @@ function stackRow(t) {
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
       ${stateChip(t, w)}
-      ${t.status === "backlog" ? `<span class="chip attach"
+      ${t.offline ? `<span class="chip nocontact"
+        title="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
+        >&#128683;</span>` : ""}
+      ${t.status === "backlog" && !t.offline ? `<span class="chip attach"
         title="start this, with what the source already knew filled in"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
-      ${t.supervised ? `<span class="chip attach"
+      ${t.supervised && !t.offline ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
       <span class="chip attach icon"
         title="open this terminal in its own window"
@@ -509,6 +558,14 @@ async function togglePin(id, on) {
 
 // The star on a card, wherever cards are drawn.
 function pinStar(t) {
+  // NOTHING TO PRESS ON A CARD FROM A ROOM THAT IS NOT ANSWERING. Pinning is a
+  // change to that card, so it would be refused by the hub, correctly, and a
+  // control whose only outcome is a refusal should not be a control. Drawn
+  // still, so a card that was pinned still reads as pinned.
+  if (t.offline) {
+    return `<span class="pin ${t.pinned ? "on" : ""}"
+      title="${t.pinned ? "pinned" : ""}">${t.pinned ? "&#9733;" : "&#9734;"}</span>`;
+  }
   return `<span class="pin ${t.pinned ? "on" : ""}"
     title="${t.pinned ? "pinned. click to unpin" : "pin this to the top and to terminals"}"
     onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"

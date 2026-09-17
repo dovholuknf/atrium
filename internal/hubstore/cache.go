@@ -224,6 +224,38 @@ func (s *Store) Cards(roomID string) ([]Card, error) {
 	return out, err
 }
 
+// Holding lists every room that has ever connected and has cards remembered
+// for it, by name.
+//
+// ONE QUERY, BECAUSE IT IS ASKED PER REQUEST. The board draws from this on
+// every list it fetches, so it cannot be "read every room and then count each
+// one's cards". A room that has never connected is excluded here rather than by
+// the caller, since it cannot have cards and its rows would be nothing anyway.
+func (s *Store) Holding() ([]string, error) {
+	var out []string
+	err := s.guard(func() error {
+		rows, err := s.db.Query(
+			`SELECT name FROM room
+			  WHERE first_seen_at != ''
+			    AND EXISTS (SELECT 1 FROM room_card WHERE room_card.room_id = room.id)
+			  ORDER BY name_key`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		out = out[:0]
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				return err
+			}
+			out = append(out, name)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // CardCount is how many cards a room was last holding.
 //
 // For the rooms tab, which says what would be lost sight of by forcing a room

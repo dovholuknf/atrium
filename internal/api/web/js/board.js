@@ -748,17 +748,20 @@ function cardHTML(t) {
           ". anyone with that address types into it as you would. right click to stop.")}"
         oncontextmenu="stopSharingChip(event, '${t.id}')"
         >shared</span>` : ""}
-      ${t.status === "shelved" ? `<span class="chip attach"
+      ${t.status === "shelved" && !t.offline ? `<span class="chip attach"
         title="${cannotResume(t)
           ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
           : "start it again from where the conversation left off"}"
         onclick="event.stopPropagation();unshelveCard('${t.id}')"
         >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
-      ${t.status === "backlog" ? `<span class="chip attach"
+      ${t.status === "backlog" && !t.offline ? `<span class="chip attach"
         title="open the launch dialog with what the source already knew filled in.
                this card is the target, so starting it does not make a second one"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
-      ${t.supervised ? `<span class="chip attach"
+      ${t.offline ? `<span class="chip nocontact"
+        title="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
+        >&#128683;</span>` : ""}
+      ${t.supervised && !t.offline ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
       <span class="chip attach icon"
         title="open this terminal in its own window"
@@ -1312,7 +1315,15 @@ addEventListener("toggle", e => {
   const i = list.indexOf(key);
   // `el.open` is the state ARRIVED AT here, unlike the click handler this
   // replaced, so there is no off-by-one to reason about.
-  const shut = !el.open;
+  //
+  // ONE GROUP STORES THE OPPOSITE, and it has to be said here rather than
+  // where it is drawn. The list records a group that is NOT AS IT COMES: for
+  // every group on the board that means shut, and for the offline group, which
+  // comes shut, it means open. Without this line opening that group writes
+  // nothing down and the next repaint closes it again, which reads as the
+  // board refusing to let you look.
+  const inverted = key.startsWith("offline:");
+  const shut = inverted ? !!el.open : !el.open;
   // NOTHING TO WRITE IS THE COMMON CASE AND IT HAS TO RETURN HERE. A repaint
   // re-asserts the `open` attribute, setting an attribute fires `toggle`, and
   // a `refresh()` below on a toggle that changed nothing is a repaint loop.
@@ -1359,8 +1370,23 @@ function paintWorking(tasks) {
 
 async function renderBoard() {
   const { tasks } = await api("/v1/tasks");
-  const all = tasks || [];
-  lastTasks = all;
+  // SPLIT ONCE, HERE, AND NOT AT EVERY PLACE THAT COUNTS SOMETHING.
+  //
+  // Everything below this line works on cards from rooms that are answering,
+  // which is what makes every number on the board live only WITHOUT anybody
+  // remembering to filter: the column counts, the width each column earns, the
+  // working indicator, and anything reading `lastTasks`.
+  //
+  // A cached card last seen as running or blocked is not three things to do. It
+  // is work on a machine you cannot reach, and a number that includes it is
+  // wrong in the way that costs most, because it is a number you will look at.
+  //
+  // The offline ones are drawn from `offline`, in their own group, which
+  // carries its own count.
+  const everything = tasks || [];
+  const all = everything.filter(t => !t.offline);
+  const offline = everything.filter(t => t.offline);
+  lastTasks = everything;
   paintWorking(all);
   const g = grouper();
 
@@ -1372,7 +1398,11 @@ async function renderBoard() {
     // true here. Nothing files into the inbox, and nobody who has not wired up
     // a source has anything to learn from an empty one.
     if (!col.hideWhenEmpty) return true;
-    return all.some(t => col.statuses.includes(t.status));
+    // Work on a machine that is not answering still earns the column its
+    // header. The inbox vanishing while it holds a shut laptop's cards would
+    // be the board hiding the thing it was asked to remember.
+    return all.some(t => col.statuses.includes(t.status)) ||
+      offline.some(t => col.statuses.includes(t.status));
   }).map(col => {
     const mine = columnOrder(all.filter(t => col.statuses.includes(t.status)));
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
@@ -1426,12 +1456,17 @@ async function renderBoard() {
     // An empty column holding several statuses drops its group headings too.
     // Keyed on `bare` rather than on `vacant`, because a column can be narrow
     // for two other reasons and both of those still have cards to show.
-    const body = (bare && col.statuses.length > 1)
+    // What this column holds from rooms that are not answering, drawn under
+    // everything live in one group of its own. Worked out here because the
+    // split happened at the top: nothing below this line has to know.
+    const lost = offline.filter(t => col.statuses.includes(t.status));
+    const body = ((bare && !lost.length && col.statuses.length > 1)
       ? `<div class="empty">empty</div>`
       : col.statuses.length === 1
         ? cardsHTML(mine, g, col.id)
         : col.statuses.map(s =>
-            groupHTML(s, all.filter(t => t.status === s), g)).join("");
+            groupHTML(s, all.filter(t => t.status === s), g)).join("")) +
+      (lost.length ? offlineGroupHTML(lost, g, col.id) : "");
 
     // Width follows how much is in it.
     //
@@ -1575,6 +1610,47 @@ const PRUNABLE = ["done", "dead"];
 // and it outlived that: `morphKey` matches a group across a repaint by it, and
 // a group with no key is destroyed and rebuilt every paint, which takes the
 // scroll position and any selection inside it along.
+// offlineGroupHTML is the one group holding every unreachable room's cards.
+//
+// LAST IN ITS COLUMN AND SHUT UNLESS SOMEBODY OPENED IT. What is running is
+// what the board is for and is never pushed down the page by what is not, and
+// these cards cannot be opened or changed until that machine is back: open,
+// they are a screen of things that do not respond to being clicked. Shut, they
+// are one line saying the work still exists, which is the fact worth carrying.
+//
+// ONE GROUP, NOT ONE PER ROOM. It is the same kind of thing, which is work you
+// cannot touch right now, and four headings for four dead laptops is four times
+// the furniture for one fact.
+//
+// Shut is the opposite default to every other group here, which is why this
+// cannot just pass a key to `groupHTML`. The fold list records what was CHANGED
+// from its default, so a key absent from it means "as it comes", and as it
+// comes for this one is closed.
+function offlineGroupHTML(cards, g, keyPrefix) {
+  const key = "offline:" + keyPrefix;
+  const open = isFolded(key) ? " open" : "";
+  // The rooms these came from, said once at the top rather than on every card.
+  const rooms = [...new Set(cards.map(t => t.room).filter(Boolean))].sort();
+  return `<details class="cardgroup offline" data-fold="${esc(key)}"${open}>
+    <summary>
+      <span class="gname">not answering</span>
+      <span class="gn">${cards.length}</span>
+      <span class="chip">${esc(rooms.join(", "))}</span>
+    </summary>
+    <div class="hintline">What ${rooms.length === 1 ? "that machine" : "those machines"}
+      last said ${cards.length === 1 ? "was" : "were"} here. Nothing on
+      ${rooms.length === 1 ? "it" : "them"} can be opened or changed until
+      ${rooms.length === 1 ? "it is" : "they are"} back.</div>
+    ${cards.map(cardHTML).join("")}
+  </details>`;
+}
+
+// A GROUP THAT DEFAULTS TO SHUT INVERTS THE FOLD LIST, and that is why the
+// offline group reads `isFolded` as "open". The list is a record of what was
+// toggled away from its default, not a list of closed things, so one entry
+// means the same for both kinds of group: somebody changed their mind about
+// this one.
+
 function groupHTML(status, cards, g) {
   const shut = isFolded("group:" + status) ? "" : " open";
   return `<details class="cardgroup" data-status="${esc(status)}"${shut}

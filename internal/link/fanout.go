@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -149,7 +150,16 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 		return false
 	}
 	rooms := p.hub.Rooms()
-	if len(rooms) == 0 {
+	// WHAT THE ROOMS THAT ARE NOT ANSWERING LAST SAID, worked out first,
+	// because it decides whether there is an answer at all.
+	//
+	// With no room attached this used to fall through to "no room is attached",
+	// which is the right thing to say about a hub that has never had one and
+	// the wrong thing to say to somebody whose two laptops are shut. They still
+	// have work on them, the hub remembers what it was, and a board that says
+	// "nothing to show" is a board that appears to have lost it.
+	old := p.remembered(spec, rooms)
+	if len(rooms) == 0 && len(old) == 0 {
 		return false
 	}
 
@@ -206,6 +216,10 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 		}
 	}
 
+	// AND THE ROOMS THAT ARE NOT ANSWERING, for the one list where their work
+	// still exists.
+	all = append(all, old...)
+
 	body := map[string]any{m.field: all}
 	if len(quiet) > 0 {
 		// SAID, NOT SWALLOWED. A short board with no explanation is a board
@@ -218,6 +232,119 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(body)
 	return true
+}
+
+// remembered is what the rooms that are NOT answering last said they held.
+//
+// ── why only the cards ──────────────────────────────────
+//
+// Cards are work. A machine somebody shut is still holding it, and a board that
+// simply dropped those rows would say the work does not exist. Everything else
+// in `merged` is configuration: an offline room's runners and fixtures describe
+// how that machine is set up, which is worth nothing while it cannot be reached
+// and is not work anybody is looking for.
+//
+// ── and only for a room that has connected before ───────
+//
+// A room that never has cannot have cards, so there is nothing to draw. It
+// exists in the rooms tab, which is the inventory, and that is the only place
+// it belongs.
+//
+// Every row is marked `offline`, which is what the board reads to put them in
+// their own collapsed group and to refuse to open any of them. Nothing here is
+// counted anywhere: every badge on the board is live only, because a number you
+// cannot act on is a number that makes you look.
+func (p *Proxy) remembered(spec string, live []Attached) []any {
+	if spec != "/v1/tasks" {
+		return nil
+	}
+	stock := p.inventory()
+	if stock == nil {
+		return nil
+	}
+	// ONE QUESTION FOR THE WHOLE LIST. This runs on every board request, so it
+	// asks which rooms have anything remembered rather than reading every room
+	// and then counting each one's cards.
+	names, err := stock.Holding()
+	if err != nil {
+		log.Printf("[hub] could not read what the offline rooms were holding: %v", err)
+		return nil
+	}
+	here := map[string]bool{}
+	for _, a := range live {
+		here[keyOf(a.Name)] = true
+	}
+
+	var out []any
+	for _, name := range names {
+		// A ROOM THAT IS HERE ANSWERS FOR ITSELF. The cache is written while a
+		// room is connected and read only when it is not, so a live room's
+		// remembered cards are never drawn beside its real ones.
+		if here[keyOf(name)] {
+			continue
+		}
+		cards, err := stock.Remembered(name)
+		if err != nil {
+			log.Printf("[hub] could not read %q's last known cards: %v", name, err)
+			continue
+		}
+		for _, c := range cards {
+			var obj map[string]any
+			if err := json.Unmarshal(c.Payload, &obj); err != nil || obj == nil {
+				continue
+			}
+			obj["room"] = name
+			// THE SAME TAGGING A LIVE CARD GETS, so the board builds the same
+			// urls from it. Those urls will be refused, by name, which is
+			// better than a card whose buttons quietly do nothing.
+			obj["id"] = tagFor(name, c.ID)
+			// WHAT A ROOM WOULD HAVE COMPUTED ON THE WAY OUT.
+			//
+			// The cache holds the stored row, which is the rule: never what the
+			// room declines to persist. `display_title` is not one of those. It
+			// is not live state, it is the observed-versus-overrides rule
+			// applied to two fields that ARE stored, and a room derives it fresh
+			// on every request for exactly that reason.
+			//
+			// So it is derived here too, rather than cached. Without it an
+			// offline card draws with no title at all, which is the one thing
+			// somebody needs to recognise the work they are looking at.
+			derive(obj)
+			// WHAT THE BOARD DRAWS DIFFERENTLY. One flag rather than a shape of
+			// its own, because it is the same card: it is the room that is
+			// missing, not the work.
+			obj["offline"] = true
+			out = append(out, obj)
+		}
+	}
+	return out
+}
+
+// derive fills the fields a room computes on the way out, for a card that came
+// from the cache instead.
+//
+// ONLY THE ONES THAT ARE A FUNCTION OF STORED FIELDS. An override wins over the
+// observed value, which is the rule in `docs/architecture-v2.md` and the whole
+// of what these two are. Nothing here reaches for anything the room declined to
+// write down: there is no activity, no telemetry and no idle time, because
+// those are true only while a room is running and this room is not.
+func derive(obj map[string]any) {
+	over, _ := obj["overrides"].(map[string]any)
+	pick := func(field, observed string) string {
+		if over != nil {
+			if v, ok := over[field].(string); ok && v != "" {
+				return v
+			}
+		}
+		s, _ := obj[observed].(string)
+		return s
+	}
+	if _, ok := obj["display_title"]; !ok {
+		obj["display_title"] = pick("title", "title")
+	}
+	if _, ok := obj["display_repo"]; !ok {
+		obj["display_repo"] = pick("repo", "repo")
+	}
 }
 
 // history is every machine's finished work, in one list, newest first.

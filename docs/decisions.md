@@ -438,6 +438,18 @@ right about.
 **The source of truth is always the online room, and only the online room can change it.** The hub caches the
 last known state and nothing more, until that room is back.
 
+### The outcome
+
+**Built 2026-09-17.** The no-entry mark carries exactly the sentence above, the attach, resume, start and pin
+controls are not drawn, those rows are not in the terminals list, and clicking the card says what is wrong
+rather than trying and failing.
+
+The hub refuses every request for that room by name: "the room athens is not answering, so nothing on it can be
+opened or changed". That mattered more than it looks, because the honest-sounding alternative, "no room is
+attached", is false when three others are.
+
+Nothing is queued, which was the decision and is also the easiest thing to add by accident.
+
 ------------
 
 ## 13. What happens to the cache when a room comes back?
@@ -589,11 +601,16 @@ job is to say so.
 
 ### The outcome
 
-**The counter is built, 2026-09-17.** It reads live over ever-connected, so a room that is offline is counted as
+**Built 2026-09-17.** The counter reads live over ever-connected, so a room that is offline is counted as
 missing and a room that has never connected is not counted at all: nothing is missing because of it.
 
-**The board and the stack are not done.** Offline rooms' cards, the divider, the collapsed group and the
-live-only badges are item 6 and are still to come.
+The board and the stack draw one group at the bottom, shut, holding every unreachable room's cards, with a
+divider above it. A room that has never connected appears in neither.
+
+**Live-only is structural rather than a list of places to remember.** Both views split the payload once, where
+it arrives, so every count below that line is live by construction: the column heads, the width each column
+earns, the working indicator, the stack's pills and the terminals badge. Filtering at each count would have
+been correct until somebody added the next one.
 
 ------------
 

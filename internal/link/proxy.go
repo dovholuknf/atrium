@@ -191,10 +191,36 @@ func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
 	}
 	// Exactly one room needs no choosing. The operator was explicit: do not
 	// ask when there is nothing to ask about.
-	if only := p.hub.Only(); only != "" {
+	//
+	// UNLESS THE HUB REMEMBERS ANOTHER ONE'S WORK. One room attached is not the
+	// same as one room existing: a laptop that is shut still has cards on it,
+	// the hub knows what they were, and scoping straight to the single live
+	// room would drop them from the board entirely. That is the case decision
+	// 16 is about, and it is the common one, because rooms are machines and
+	// machines get shut.
+	if only := p.hub.Only(); only != "" && !p.rememberingOthers(only) {
 		return only, false
 	}
 	return "", false
+}
+
+// rememberingOthers reports whether the hub is holding cards for a room other
+// than this one.
+func (p *Proxy) rememberingOthers(besides string) bool {
+	stock := p.inventory()
+	if stock == nil {
+		return false
+	}
+	names, err := stock.Holding()
+	if err != nil {
+		return false
+	}
+	for _, n := range names {
+		if !equalFold(n, besides) {
+			return true
+		}
+	}
+	return false
 }
 
 // cardIDIn pulls the id out of `/v1/tasks/<id>/...`, which is the only shape
@@ -518,6 +544,31 @@ func (p *Proxy) oops(w http.ResponseWriter, r *http.Request, err error) {
 		msg = "no room is attached to this hub. the hub serves the board and holds nothing, " +
 			"so until a room connects there is nothing to show. run `atrium2 join` on the " +
 			"machine your agents are on."
+		// A REQUEST FOR A ROOM THE HUB KNOWS ABOUT SAYS SO BY NAME.
+		//
+		// This is what every operation on a card from an offline room lands on,
+		// and "no room is attached" is wrong there in a way that matters: there
+		// are rooms attached, just not that one. The board shows this sentence,
+		// so it has to be about the thing that was clicked.
+		//
+		// NO QUEUEING BEHIND IT. Not "we will apply this when the machine
+		// returns": a queue of intentions against a machine nobody has heard
+		// from is a second source of truth, and reconciling it is the part that
+		// goes wrong. An offline room is a room you cannot act on.
+		// OFF THE CONTEXT, NOT OFF THE PATH. By the time this runs the request
+		// is the OUTBOUND one: its `room~id` has already been rewritten to the
+		// room's own id, so reading the path here finds no room at all. The
+		// rewrite puts the name in the context precisely because it is the last
+		// place both halves are in scope.
+		room, _ := r.Context().Value(roomKey{}).(string)
+		if room == "" {
+			room, _ = p.roomFor(r)
+		}
+		if room != "" && !p.hub.Has(room) {
+			msg = "the room " + room + " is not answering, so nothing on it can be " +
+				"opened or changed. what is shown of it is what it last said. it will " +
+				"work again when that machine is back."
+		}
 	}
 	// A dropped terminal or event stream is noise at this level: the client
 	// reconnects by design, and logging every one buries the failures worth
@@ -598,6 +649,19 @@ type Inventory interface {
 	Known() ([]Known, error)
 	// MarkRoom puts a room on its way out, or takes the mark back off.
 	MarkRoom(name string, marked bool) error
+	// Remembered is what a room last said it was holding.
+	//
+	// ONLY EVER CALLED FOR A ROOM THAT IS NOT ANSWERING. A connected room is
+	// asked, every time, and its answer is the answer. This is what the board
+	// draws instead of nothing for a machine somebody shut.
+	Remembered(name string) ([]CardState, error)
+	// Holding names every room that has connected before and has cards
+	// remembered for it, whether or not it is here now.
+	//
+	// ASKED ON EVERY LIST THE BOARD DRAWS, so it has to be one cheap question.
+	// It decides whether there is anything to merge at all, which is why it
+	// cannot be worked out by reading every room and counting its cards.
+	Holding() ([]string, error)
 }
 
 // SetInventory wires the durable room list up. Optional.

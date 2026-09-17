@@ -5,6 +5,31 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A machine that is not answering still shows its work, and nothing on it can be touched.**
+
+  A shut laptop used to drop off the board entirely, which reads as the work having gone. Its cards are drawn
+  now, from what that room last said, in one group at the bottom of every column and of the stack, shut unless
+  somebody opens it. What is running is what the board is for and is never pushed down the page by what is not,
+  and cards nobody can act on are one line saying the work still exists rather than a screen of things that do
+  not respond to being clicked.
+
+  One group for all of them, not one per room: it is the same kind of thing, and four headings for four dead
+  laptops is four times the furniture for one fact.
+
+  **Nothing opens.** A no-entry mark where the attach button would be, saying `room <name> is offline. cannot
+  restore terminal`. Clicking the card says the same in a sentence. The attach, resume and start chips are not
+  drawn, the terminals list does not hold those rows, and the hub refuses every request for that room by name:
+  "the room athens is not answering, so nothing on it can be opened or changed."
+
+  **Nothing is queued.** Not "we will apply this when the machine returns". A queue of intentions against a
+  machine nobody has heard from is a second source of truth, and reconciling it is the part that goes wrong.
+
+  **A room that has never connected still appears nowhere but the rooms tab.** It cannot have cards, so there is
+  nothing to draw, and it is inventory rather than work.
+
+  One room attached no longer means the hub skips merging. It used to, which was right when one room attached
+  was the same as one room existing, and it would now drop every shut machine's work off the board.
+
 - **A room tells its hub what it is holding, so a hub whose room is offline shows what was there.**
 
   Rooms push, the hub writes it down. Not polled: the room is the only thing that knows something changed, and

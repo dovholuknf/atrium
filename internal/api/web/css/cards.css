@@ -122,6 +122,20 @@
   .cardgroup > summary .gn { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
   .cardgroup > summary .chip.sweep { margin-left: auto; margin-right: 0; }
 
+  /* Work on a machine that is not answering. Always last in its column and shut unless somebody opened it: it
+     cannot be acted on, so open it is a screen of things that do not respond to being clicked. Dimmed rather
+     than coloured, because the point is that it is not live, and a separator above it so it reads as the other
+     side of a line rather than as more of the same list. */
+  .cardgroup.offline {
+    margin-top: var(--vs-3); padding-top: var(--vs-2);
+    border-top: 1px dashed var(--stroke-dim); opacity: .78;
+  }
+  .cardgroup.offline > summary::before { color: var(--dimmest); }
+  .cardgroup.offline > summary .chip { margin-left: auto; margin-right: 0; }
+  .cardgroup.offline > .hintline { padding: 0 3px var(--vs-2); }
+  /* Nothing in here is clickable, so nothing in here pretends to be. */
+  .cardgroup.offline .card { cursor: default; }
+
   /* A project group. Colored from a hash of its name, so a project keeps the same color with nothing to
      configure, and two groups in one column tell apart at a glance. */
   /* A wash of the group's own hue at low alpha, with an outline in the same hue, so the block itself is what
