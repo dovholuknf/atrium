@@ -379,6 +379,9 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 		Upgrades: &link.Upgrades{
 			Accept:  acceptUpgrades,
 			Version: version,
+			// WHAT THIS ROOM IS RUNNING, so it cannot be talked into
+			// installing itself. See `Upgrades.SHA256`.
+			SHA256:  selfSHA(version),
 			Dir:     selfDir(),
 			Install: installUpgrade,
 		},

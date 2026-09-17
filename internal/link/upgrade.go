@@ -219,6 +219,17 @@ func (h *Hub) serveUpgrade(conn net.Conn, hi hello) {
 type Upgrades struct {
 	Accept  bool
 	Version string
+	// SHA256 is what the room is running RIGHT NOW.
+	//
+	// THE CHECK THAT STOPS A ROOM UPGRADING TO ITSELF. Versions are a poor
+	// comparison during development, where every build says `dev`, so `dev` is
+	// deliberately always offered. On a machine where the hub and the room are
+	// the same binary -- which is exactly how anybody first tries this -- that
+	// meant fetching it, installing it over itself, and stopping. The room
+	// went down and nothing had changed.
+	//
+	// Bytes are the honest question: same hash, same program, nothing to do.
+	SHA256 string
 	// Dir is where the download lands, which should be the directory the
 	// binary itself lives in. The last step is a rename, and a rename across
 	// volumes is a copy that can fail with the old binary already moved aside.
@@ -285,6 +296,12 @@ func (r *Room) consider(ctx context.Context, o *Offer) {
 	}
 	if o.SHA256 == "" || o.Size <= 0 || o.Size > upgradeLimit {
 		log.Printf("[link] the hub offered something that does not describe a binary. ignoring it")
+		return
+	}
+	// ALREADY RUNNING THESE BYTES. Checked before the version, because it is
+	// the question the version was standing in for, and it is the one that is
+	// right during development where every build is called `dev`.
+	if r.Upgrades.SHA256 != "" && o.SHA256 == r.Upgrades.SHA256 {
 		return
 	}
 	if o.Version == r.Upgrades.Version && o.Version != "dev" {

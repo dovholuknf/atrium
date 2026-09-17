@@ -93,6 +93,21 @@ func installUpgrade(path string, o link.Offer) error {
 // whole design refuses.
 var acceptUpgrades bool
 
+// selfSHA is what this binary hashes to, so a room can recognise an offer of
+// the program it is already running.
+//
+// Empty when it cannot be worked out, which turns the check off rather than
+// blocking every upgrade: the hash the ROOM checks after downloading is what
+// makes this safe, and this one only saves a pointless round trip.
+func selfSHA(version string) string {
+	b, err := link.Offered(version)
+	if err != nil {
+		log.Printf("[link] cannot hash this binary, so an offer of it looks new: %v", err)
+		return ""
+	}
+	return b.SHA256
+}
+
 // selfDir is where the running binary lives, which is where a download has to
 // land for the swap to be a rename rather than a copy.
 func selfDir() string {

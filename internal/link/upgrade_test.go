@@ -123,6 +123,41 @@ func TestARoomTakesTheBuildItWasOffered(t *testing.T) {
 	}
 }
 
+// A ROOM DOES NOT UPGRADE TO ITSELF.
+//
+// Every development build is called `dev`, so version is a useless comparison
+// there and `dev` is always offered on purpose. On the machine where somebody
+// first tries this, the hub and the room are THE SAME BINARY: without a check
+// on the bytes, the room fetched it, installed it over itself, and stopped.
+// The room went down and nothing had changed.
+func TestARoomDoesNotInstallTheBinaryItIsAlreadyRunning(t *testing.T) {
+	sum, size := selfSum(t)
+	var asked bool
+	var mu sync.Mutex
+	up := &Upgrades{
+		Accept: true, Version: "dev", SHA256: sum, Dir: t.TempDir(),
+		Install: func(string, Offer) error {
+			mu.Lock()
+			asked = true
+			mu.Unlock()
+			return nil
+		},
+	}
+	hub, _, done := offering(t, up, selfBuild(t, Offer{
+		Version: "dev", SHA256: sum, Size: size,
+		OS: runtime.GOOS, Arch: runtime.GOARCH,
+	}))
+	defer done()
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
+
+	time.Sleep(2 * time.Second)
+	mu.Lock()
+	defer mu.Unlock()
+	if asked {
+		t.Fatal("a room installed the binary it was already running, and would have stopped")
+	}
+}
+
 // A HUB CANNOT MAKE THIS HAPPEN. The offer arrives, the room has not opted in,
 // and nothing is fetched. This is the check the whole design exists for: a hub
 // that can write a binary a room will execute owns that room.
