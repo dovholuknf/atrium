@@ -90,15 +90,33 @@ carries its room, so attach, files, messages and the rest route correctly with n
 JavaScript. Two rooms can mint the same card id, so without it a click in the aggregate view reaches whichever
 room answered first.
 
+### Built
+
+1. **Routing.** `roomFor(request)` reads the header, then the query parameter, then the room carried in a
+   `room~id` path, then falls back to the only attached room. `internal/link/proxy.go`.
+2. **Fan-out and merge** for the list endpoints, in `internal/link/fanout.go`. A table rather than a switch, so
+   adding one is a row. Reads only: a write with no room to land in is refused with the rooms named. A room
+   that does not answer is reported in `rooms_quiet` rather than emptying the board. `/v1/health` is merged
+   separately and pessimistically, because the board decides atrium is up at all from it.
+3. **The event stream**, in `internal/link/events.go`. The hub holds ONE upstream stream per room while
+   anybody is watching and tears them down when nobody is. Three addresses, because an `EventSource` cannot
+   set a header and so can only say what it wants in its URL:
+
+   | address | what it carries |
+   | --- | --- |
+   | `/v1/events/hub` | every room, merged, ids tagged, each event carrying its `room` |
+   | `/v1/events/room/<name>` | one room, untouched, exactly what that room sent |
+   | `/v1/events` | whichever of the two the request turns out to mean |
+
+   Tagged exactly when the lists are tagged, checked per event rather than per connection, so a room attaching
+   under an open stream cannot leave the two describing different cards.
+
+4. **The board**, in `internal/api/web/js/rooms.js`. The counter in the header is the selector. Scoping is one
+   header added by wrapping `fetch`, and a query parameter added by wrapping `WebSocket`. A card wears its
+   room as a tag in the merged view. The launch dialog asks which machine only when that is a question.
+
 ### Still to build
 
-1. **Routing.** `roomFor(request)` reading the header then the query parameter, then scoped-proxy or aggregate.
-2. **Fan-out and merge** for the list endpoints: `/v1/tasks`, `/v1/permissions`, `/v1/waiting`, tagging each
-   row with its room and rewriting its id.
-3. **The event stream.** `/v1/events` has to be fanned out and merged too, or the aggregate board is static.
-   This is the biggest single piece.
-4. **The board.** The room chip in the header, as a selector, sending `X-Atrium-Room`. The room tag on a card.
-   The launch dialog's room field when there is more than one.
 5. **Moving skin, auth and overlays to the hub.**
 
 6. **An MCP panel on the runners page.** Which MCP servers a launched session gets, why, and a way to change
@@ -120,5 +138,19 @@ room answered first.
 
 ### Running it
 
-Ports 8000 (board), 8001 (link), 8010 (room), 8011 (room agent). Binary
+Ports 8000 (board), 8001 (link), 8010 and 8011 (first room), 8020 and 8021 (second room). Binary
 `D:\worktrees\github\dovholuknf\atrium\hub-room\build.claude\atrium2.exe`.
+
+```
+atrium2 hub --addr 127.0.0.1:8000 --link 127.0.0.1:8001 --dir <certs> --board <repo>\internal\api\web
+atrium2 join <token> --name sparta --dir <d1> --db <d1>\atrium.db --http 127.0.0.1:8010 --agent 127.0.0.1:8011
+atrium2 hub token --dir <certs> --link 127.0.0.1:8001
+atrium2 join <token> --name athens --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agent 127.0.0.1:8021
+```
+
+### One thing that is not a guarantee
+
+**Order across rooms.** A merged list is every room's answer concatenated, and a merged stream is whichever
+room spoke first. Within one room both keep that room's order. Across rooms there is no clock to sort by and
+inventing one would be a lie about when things happened on four machines. The board sorts what it draws, which
+is where the question belongs.
