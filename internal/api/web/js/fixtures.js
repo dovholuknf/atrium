@@ -659,13 +659,19 @@ function linesToList(v) {
   return (v || "").split("\n").map(s => s.trim()).filter(Boolean);
 }
 
-async function editHarness(id, room) {
-  if (!await chooseWriteRoom(rowOf(allHarnesses, id, room), "runner")) return;
-  const h = rowOf(allHarnesses, id, room) || {
+async function editHarness(id, room, seed) {
+  // `seed` is a row to fill the form FROM while still adding a new one, which
+  // is what duplicate is. Everything below keys off `id` for whether this is an
+  // edit, so a seeded form with no id is a new runner that starts out looking
+  // like an existing one.
+  const src = seed || rowOf(allHarnesses, id, room);
+  if (!await chooseWriteRoom(src, "runner")) return;
+  const h = src || {
     id: "", label: "", cmd: "", args: [], resume_args: [], prompt_args: [], model_args: [], cwd: "", env: {},
     launch_mode: "window", rules_source: "", package: "", notes: "", enabled: false
   };
-  document.getElementById("h-heading").textContent = id ? "edit " + h.label : "add a runner";
+  document.getElementById("h-heading").textContent =
+    id ? "edit " + h.label : seed ? "duplicate " + (seed.from || "") : "add a runner";
   document.getElementById("h-id").value = h.id;
   document.getElementById("h-id").disabled = !!id;
   document.getElementById("h-label").value = h.label || "";
@@ -686,7 +692,8 @@ async function editHarness(id, room) {
   document.querySelectorAll("#h-mode button").forEach(b =>
     b.classList.toggle("on", b.dataset.v === (h.launch_mode || "window")));
   document.getElementById("h-delete").style.display = id ? "" : "none";
-  document.getElementById("harness").dataset.editing = h.id || "";
+  // What DELETE would act on, which is nothing for a form that is adding.
+  document.getElementById("harness").dataset.editing = id || "";
   document.getElementById("harness").dataset.enabled = h.enabled ? "1" : "0";
   document.getElementById("harness").showModal();
 }
@@ -749,6 +756,43 @@ async function deleteHarness() {
   catch (e) { tellUser("atrium", e.message); return; }
   document.getElementById("harness").close();
   refresh();
+}
+
+// A copy of a runner, to change one thing about.
+//
+// THE REASON THIS EXISTS is that a runner is a command line with eight fields
+// around it, and the common case is wanting the same one with a different
+// model, a different flag or a different working directory. Retyping all eight
+// to change one is how somebody ends up editing the original instead and
+// losing the setup that worked.
+//
+// It comes up SWITCHED OFF and with a suggested id, because a duplicate that
+// arrived enabled would start appearing in the launch dialog before anybody had
+// changed the thing they made it to change.
+function copyHarness(id, room) {
+  const src = rowOf(allHarnesses, id, room);
+  if (!src) return;
+  editHarness("", room, Object.assign({}, src, {
+    id: nextCopyID(src.id, room),
+    label: src.label ? src.label + " copy" : "",
+    enabled: false,
+    // What it was a copy OF, for the heading. Not a field on a harness.
+    from: src.label || src.id
+  }));
+}
+
+// nextCopyID suggests an id that is free ON THAT MACHINE. A room's runners are
+// its own, so `claude-copy` being taken on sparta says nothing about athens.
+function nextCopyID(id, room) {
+  const taken = new Set((allHarnesses || [])
+    .filter(h => (h.room || "") === (room || ""))
+    .map(h => h.id));
+  const base = id + "-copy";
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) {
+    if (!taken.has(base + n)) return base + n;
+  }
+  return base;
 }
 
 async function toggleHarness(id, room) {
@@ -891,6 +935,35 @@ function setLaunchModel(h) {
 
   const list = document.getElementById("l-model-seen");
   if (list) list.innerHTML = modelsSeen.map(m => `<option value="${esc(m)}">`).join("");
+
+  // The operator's own picker, as buttons. One click instead of typing an id
+  // from memory, which is the whole difference between comparing two models
+  // and meaning to. `default` is the empty box, said out loud, because
+  // "whatever the runner does on its own" is a choice worth being able to
+  // return to without knowing that clearing the field is how.
+  const pick = document.getElementById("l-model-pick");
+  if (!pick) return;
+  pick.hidden = !modelPicker.length;
+  if (!modelPicker.length) return;
+  pick.innerHTML = [{ ID: "", Label: "default" }].concat(modelPicker).map(m =>
+    `<button type="button" data-model="${esc(m.ID || m.model || "")}"
+       >${esc(m.Label || m.label || m.ID || m.model)}</button>`).join("");
+  pick.querySelectorAll("button").forEach(b => {
+    b.onclick = () => { box.value = b.dataset.model; paintModelPick(); };
+  });
+  paintModelPick();
+}
+
+// Which button is the box currently showing. Painted rather than tracked, so
+// typing an id by hand lights the matching button and typing something else
+// lights none, which is the truth either way.
+function paintModelPick() {
+  const box = document.getElementById("l-model");
+  const pick = document.getElementById("l-model-pick");
+  if (!box || !pick) return;
+  const now = box.value.trim();
+  pick.querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.model === now));
 }
 
 // setThrowaway disables directory selection because atrium creates the path.
@@ -904,6 +977,10 @@ function setThrowaway(on) {
 document.getElementById("l-throwaway-on").addEventListener("change", e => {
   setThrowaway(e.target.checked);
 });
+
+// Typing an id by hand lights the matching button, and typing something else
+// lights none.
+document.getElementById("l-model").addEventListener("input", paintModelPick);
 
 // loadHarnesses fills the runner list once, and answers with it.
 //
@@ -923,6 +1000,9 @@ async function loadHarnesses() {
     // What has been typed into the model box before, which rides along with
     // the runners because both are read the moment the dialog opens.
     modelsSeen = got.models || [];
+    // The operator's own picker, when they have one. See
+    // `internal/claudeconf/models.go`.
+    modelPicker = got.model_picker || [];
   } catch (e) {}
   return allHarnesses;
 }

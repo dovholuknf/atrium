@@ -684,6 +684,17 @@ async function restoreWhereYouWere() {
     card = localStorage.getItem("atrium.term") || "";
   } catch (e) { return; }
   rlog("boot. remembered view", view || "(none)", "card", card || "(none)");
+  // A CARD THAT BELONGS TO ANOTHER MACHINE. An id from the merged view carries
+  // its room, so a value written before this browser was scoped to one room can
+  // be recognised as somebody else's and dropped rather than waited for.
+  // `pickRoom` clears this too; this catches what was already in there.
+  const scope = typeof roomNow === "function" ? roomNow() : "";
+  const carried = card.indexOf("~") > 0 ? card.slice(0, card.indexOf("~")) : "";
+  if (scope && carried && carried !== scope) {
+    rlog("dropping", card, "which is on", carried, "and you are looking at", scope);
+    try { localStorage.removeItem("atrium.term"); } catch (e) {}
+    card = "";
+  }
   if (!VIEWS.includes(view) || view === "board") return;
   switchView(view);
   if (view !== "terms" || !card) return;

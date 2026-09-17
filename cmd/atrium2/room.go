@@ -83,7 +83,17 @@ func joinCmd() *cobra.Command {
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
 	c.Flags().StringVar(&identity, "identity", "",
 		"a ziti identity file, when the join string is for a ziti service")
+	acceptUpgradeFlag(c)
 	return c
+}
+
+// acceptUpgradeFlag is the one decision that lets a hub's build reach a room.
+//
+// The wording is deliberate. It is not "auto update": the room fetches, hashes
+// and checks before anything is swapped, and a hub can never make it happen.
+func acceptUpgradeFlag(c *cobra.Command) {
+	c.Flags().BoolVar(&acceptUpgrades, "accept-upgrades", false,
+		"take a newer atrium2 from the hub when it has one, verify it, and restart")
 }
 
 func roomCmd() *cobra.Command {
@@ -104,6 +114,7 @@ func roomCmd() *cobra.Command {
 	c.Flags().StringVar(&db, "db", "", "the room's database")
 	c.Flags().StringVar(&human, "http", "127.0.0.1:7810", "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
+	acceptUpgradeFlag(c)
 	return c
 }
 
@@ -284,6 +295,19 @@ func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) error {
 	return nil
 }
 
+// askToStop winds this room down the way ctrl-c does.
+//
+// A package variable because the thing that needs it is the upgrade install,
+// which runs deep inside the link and has no business holding the room's
+// context. Nil before a room is running, which is when nothing can ask.
+var stopRoomNow func()
+
+func askToStop() {
+	if stopRoomNow != nil {
+		stopRoomNow()
+	}
+}
+
 // runRoom starts the daemon and attaches it to the hub.
 func runRoom(keys link.Keys, db, human, agent string) error {
 	saved, err := keys.Joined()
@@ -330,6 +354,9 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// So an installed upgrade can ask for the same wind-down ctrl-c gets,
+	// rather than inventing a second way to stop. See `askToStop`.
+	stopRoomNow = stop
 
 	// THE LINK IS BEST EFFORT AND THE DAEMON IS NOT.
 	//
@@ -345,6 +372,16 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 		Handler: d.BoardHandler(),
 		Version: version,
 		Host:    hostname(),
+		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
+		// operator's decision and is off unless they made it. A hub can always
+		// SAY what it has; nothing happens here unless this is on. See
+		// `internal/link/upgrade.go`.
+		Upgrades: &link.Upgrades{
+			Accept:  acceptUpgrades,
+			Version: version,
+			Dir:     selfDir(),
+			Install: installUpgrade,
+		},
 	}
 	go func() {
 		if err := room.Run(ctx); err != nil {

@@ -39,6 +39,23 @@ type Hub struct {
 
 	mu    sync.Mutex
 	rooms map[string]*attached
+	// offer is what this hub is running, described so a room can decide
+	// whether it wants it. Nil means this hub offers nothing, which is the
+	// default and what every hub does until `Offers` is called. See
+	// `upgrade.go`.
+	offer *Offer
+}
+
+// Offers tells rooms what this hub is running.
+//
+// SAYING, NOT DOING. A hub can describe its binary and serve it to a room that
+// asks. It can never install one: the room decides whether it wants it,
+// fetches it itself, and checks what arrived. See `upgrade.go` for why it is
+// this way round.
+func (h *Hub) Offers(o *Offer) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.offer = o
 }
 
 // attached is one room's live link.
@@ -162,6 +179,12 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		h.control(ctx, name, hi, conn, br)
 	case "data":
 		h.data(name, hi, conn, br)
+	case upgradeKind:
+		// A ROOM ASKING FOR THE BINARY IT WAS OFFERED. It dialled this, which
+		// is the whole design: the hub never reaches into a room. See
+		// `upgrade.go`.
+		log.Printf("[hub] room %q is taking this build", name)
+		h.serveUpgrade(conn)
 	}
 }
 
@@ -217,6 +240,19 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 
 	go h.watch(ctx, a)
+
+	// WHAT THIS HUB IS RUNNING, said once, to a room that asked to be told.
+	//
+	// Said and then forgotten: the hub does not follow it up, does not retry,
+	// and never finds out what the room decided. A room that wants it dials
+	// for it. See `upgrade.go`.
+	h.mu.Lock()
+	offer := h.offer
+	h.mu.Unlock()
+	if worthOffering(offer, hi) {
+		log.Printf("[hub] telling %q about %s, which it may take or ignore", name, offer.Version)
+		_ = writeJSON(conn, note{Offer: offer})
+	}
 
 	for {
 		var n note
