@@ -186,6 +186,9 @@ func hubCmd() *cobra.Command {
 				return err
 			}
 			proxy := link.NewProxy(h, assets, id, nil)
+			// THE DURABLE LIST, which is a different question from what is
+			// attached and gets a different endpoint for exactly that reason.
+			proxy.SetInventory(inventory{store: store, hub: h})
 
 			ctx, stop := signal.NotifyContext(context.Background(),
 				os.Interrupt, syscall.SIGTERM)

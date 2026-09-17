@@ -1,0 +1,115 @@
+package main
+
+import (
+	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link"
+)
+
+// Every room this hub knows about, whether or not it is answering.
+//
+// ── the one place the two halves meet ───────────────────
+//
+// The record is durable and is the hub's own truth: which rooms exist, what
+// they are called, how they connect, which are on their way out. The connection
+// list is a set of sockets in this process and is true only right now.
+//
+// They are joined HERE and nowhere else, so nothing downstream has to remember
+// which half it is looking at. `internal/link` holds the sockets and knows
+// nothing about a database. `internal/hubstore` holds the record and knows
+// nothing about a socket. This file is the seam, and it is the whole reason
+// both of those stayed ignorant of each other.
+//
+// ── and the direction of the join ───────────────────────
+//
+// THE RECORD IS THE LIST. Every room that exists appears, in name order, and a
+// room's liveness is a field on it. Not the other way round: starting from what
+// is attached and looking up records would silently drop a room nobody has
+// dialled in yet, which is the one the durable list exists for.
+//
+// A room that is attached with no record cannot happen, because the hub refuses
+// it at attach and lets it go on the next beat if its record goes. If it did
+// happen it would be a bug worth seeing rather than a row to draw, so nothing
+// here invents one.
+type inventory struct {
+	store *hubstore.Store
+	hub   *link.Hub
+}
+
+func (i inventory) Known() ([]link.Known, error) {
+	rooms, err := i.store.Rooms()
+	if err != nil {
+		return nil, err
+	}
+	// Indexed by the same folded name the hub routes on, so a room typed with
+	// different capitals in two places is still one room.
+	live := map[string]link.Attached{}
+	for _, a := range i.hub.Rooms() {
+		live[fold(a.Name)] = a
+	}
+
+	out := make([]link.Known, 0, len(rooms))
+	for _, r := range rooms {
+		k := link.Known{
+			Name: r.Name, SelfName: r.SelfName, Transport: r.Transport,
+			State: r.State, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen,
+			Version: r.Version,
+		}
+		if a, ok := live[fold(r.Name)]; ok {
+			k.Attached = true
+			since := a.Since
+			k.Since = &since
+			// PREFERRED OVER WHAT IS WRITTEN DOWN, because a live connection is
+			// telling us right now and the record is what it said last time.
+			// This is the only direction that rule runs in: the observed fields
+			// take the fresher answer, and the hub's own name never does.
+			if a.Host != "" {
+				k.SelfName, k.Host = a.Host, a.Host
+			}
+			if a.Version != "" {
+				k.Version = a.Version
+			}
+		}
+		// A CACHED COUNT IS ONLY WORTH SHOWING FOR A ROOM THAT IS NOT HERE.
+		// An attached room answers for itself, every time, and a remembered
+		// number beside a live one is the third state decision 15 exists to
+		// rule out.
+		if !k.Attached {
+			if n, err := i.store.CardCount(r.ID); err == nil {
+				k.Cards = n
+			}
+			if ok, _, err := i.store.Outstanding(r.ID); err == nil {
+				k.Waiting = ok
+			}
+		}
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// MarkRoom puts a room on its way out, or takes the mark back off.
+//
+// THE ONLY CHANGE THE BOARD CAN MAKE TO A ROOM, and that is deliberate.
+// Marking destroys nothing, starts no new cards, leaves everything running
+// alone, and is one click to undo. Adding a room, replacing its join string and
+// forgetting one are all things somebody does at a terminal on the hub, because
+// atrium has no login and a board reachable over an overlay must not be a way
+// to enrol a machine that runs agents. See `Inventory` in internal/link.
+func (i inventory) MarkRoom(name string, marked bool) error {
+	r, err := i.store.ByName(name)
+	if err != nil {
+		return knownRooms(i.store, name, err)
+	}
+	return i.store.Mark(r.ID, marked)
+}
+
+// fold matches how a room name is compared everywhere else: ASCII only, so a
+// name folds the same on every machine regardless of locale.
+func fold(s string) string {
+	out := []byte(s)
+	for i, c := range out {
+		if c >= 'A' && c <= 'Z' {
+			out[i] = c + 32
+		}
+	}
+	return string(out)
+}

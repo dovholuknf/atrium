@@ -53,6 +53,8 @@ type Proxy struct {
 	clients map[string]*http.Client
 	// own is this hub running agents on its own machine, when it can.
 	own OwnRoom
+	// stock is every room this hub knows about, attached or not.
+	stock Inventory
 
 	// feeds is the one upstream event stream per room, and the boards watching
 	// them. See events.go.
@@ -533,6 +535,145 @@ func isStream(r *http.Request) bool {
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
+// ── the inventory ───────────────────────────────────────
+
+// Known is one room as the rooms tab sees it: what the hub has written down
+// about it, and whether it is answering right now.
+//
+// THE TWO HALVES COME FROM DIFFERENT PLACES AND MUST NOT BE CONFUSED. The
+// record is durable and is the hub's own truth. `Attached` is a socket in this
+// process. A room can be one without the other in both directions: added this
+// morning and never dialled in, or dialled in and holding cards while somebody
+// marks it for deletion.
+type Known struct {
+	Name string `json:"name"`
+	// SelfName is what the machine calls itself. Observed, shown beside the
+	// name, never instead of it.
+	SelfName string `json:"self_name,omitempty"`
+	// Transport earns a badge and never a column. See docs/hub-room-requirements.
+	Transport string `json:"transport"`
+	State     string `json:"state"`
+	// Attached is the live half, from this hub's own connection list rather
+	// than from anything written down.
+	Attached bool `json:"attached"`
+	// Since is when the current connection was made, and is nothing when there
+	// is no current connection.
+	Since *time.Time `json:"since,omitempty"`
+	// FirstSeen being absent is what "never connected" means, and it is the one
+	// state that draws nowhere but this tab.
+	FirstSeen *time.Time `json:"first_seen,omitempty"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	Host      string     `json:"host,omitempty"`
+	Version   string     `json:"version,omitempty"`
+	// Cards is how many this room was last holding, from the cache. Only worth
+	// showing when the room is not attached, and worth saying is a memory.
+	Cards int `json:"cards"`
+	// Waiting is a join string minted and not yet used.
+	Waiting bool `json:"waiting"`
+}
+
+// Inventory is a hub that knows which rooms exist, not only which are here.
+//
+// AN INTERFACE FOR THE SAME REASON `OwnRoom` IS ONE. Knowing which rooms exist
+// means a database, and this package holds none and must not learn to. Whoever
+// builds the hub implements it, and a hub without one answers the inventory
+// with what is attached, which is what a hub with no store can honestly say.
+// ── WHAT THE BOARD MAY DO TO A ROOM, AND WHAT IT MAY NOT ─
+//
+// It may read the list, and it may mark a room for deletion or take that mark
+// back off. Marking destroys nothing and is one click to undo, which is the
+// whole reason decision 9 made it the reversible step.
+//
+// IT MAY NOT MINT A JOIN STRING, and that is not an oversight. Atrium has no
+// login: it is loopback, and reaching it from elsewhere is an overlay's job.
+// A board that could mint one would mean anybody who can open that page can
+// enrol a machine that runs agents, and a board served over an overlay is
+// exactly the case that matters. So adding a room, replacing its join string
+// and forgetting it are things somebody does at a terminal ON the hub, where
+// being there is the credential.
+//
+// That line is where it already was: the join dialog has always said what to
+// run rather than minting anything.
+type Inventory interface {
+	Known() ([]Known, error)
+	// MarkRoom puts a room on its way out, or takes the mark back off.
+	MarkRoom(name string, marked bool) error
+}
+
+// SetInventory wires the durable room list up. Optional.
+func (p *Proxy) SetInventory(s Inventory) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stock = s
+}
+
+func (p *Proxy) inventory() Inventory {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stock
+}
+
+// serveInventory answers the rooms tab.
+//
+// UNSORTED HERE. Live before offline before never connected is the board's
+// grouping, and it is drawn there rather than baked in, because the same list
+// is also the answer to "what exists" and that question has no groups in it.
+func (p *Proxy) serveInventory(w http.ResponseWriter, _ *http.Request) {
+	stock := p.inventory()
+	if stock == nil {
+		// A hub with nothing written down says so rather than pretending its
+		// connection list is an inventory. The board draws the difference.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"durable": false, "rooms": p.hub.Rooms(),
+		})
+		return
+	}
+	rooms, err := stock.Known()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"durable": true, "rooms": rooms})
+}
+
+// changeInventory marks a room for deletion, or takes the mark back off.
+//
+// THE REFUSAL IS THE IMPLEMENTATION'S, and this only carries it back. Its whole
+// job is to turn an error into a sentence the board can show.
+func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
+	stock := p.inventory()
+	if stock == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		fmt.Fprintf(w, `{"error":%q}`, "this hub keeps no record of its rooms, "+
+			"so there is nothing to mark")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
+		return
+	}
+	var body struct {
+		Name   string `json:"name"`
+		Marked bool   `json:"marked"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":%q}`, "could not read that: "+err.Error())
+		return
+	}
+	if err := stock.MarkRoom(body.Name, body.Marked); err != nil {
+		// A ROOM THAT IS NOT THERE IS AN ANSWER, not a failure, and it is the
+		// most likely thing to go wrong here. 409 rather than 500, so the board
+		// shows the sentence instead of an apology.
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 // OwnRoom is a hub that can also run agents on its own machine.
 //
 // AN INTERFACE RATHER THAN THE THING ITSELF, because starting a room means a
@@ -568,7 +709,18 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch strings.TrimPrefix(r.URL.Path, "/_hub/") {
 	case "rooms":
+		// ATTACHED ONLY, and every other pane on the board depends on that.
+		// The room picker, the grouping, the counter and the question about
+		// where a write lands all mean "which rooms can answer right now", and
+		// a list that included a laptop somebody shut last week would put it in
+		// the picker, in the groups, and in the count of things wanting
+		// attention. The inventory is a different question and has its own
+		// endpoint.
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.hub.Rooms()})
+	case "inventory":
+		p.serveInventory(w, r)
+	case "inventory/mark":
+		p.changeInventory(w, r)
 	case "room":
 		p.serveOwnRoom(w, r)
 	case "health":

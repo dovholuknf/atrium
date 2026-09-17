@@ -91,6 +91,11 @@
   /* Padded like a row, because it is one. `.panel` draws the box and nothing else, so without this the name
      and the line under it sat hard against the border. */
   .roomrow { margin-bottom: var(--vs-3); padding: var(--row-y) var(--row-x); }
+  /* What the hub knows about one room, behind its cog. A table because it is one: a label and a value per
+     line, and the labels want to line up or the eye has to find each one again. */
+  .kv { border-collapse: collapse; margin-bottom: var(--vs-3); }
+  .kv td { padding: 2px var(--sp-3) 2px 0; vertical-align: top; }
+  .kv td:first-child { white-space: nowrap; }
   .roomcards { display: flex; flex-direction: column; gap: 2px; }
   .roomcard {
     display: flex; align-items: center; gap: var(--sp-3);

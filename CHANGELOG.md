@@ -5,6 +5,36 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The rooms tab shows every room, not only the ones that answered.**
+
+  The tab listed what was attached, which meant a machine somebody shut disappeared from the one screen whose
+  job is to say what exists. A room added and not yet joined had nowhere to appear at all.
+
+  It now draws the hub's own record, in three groups and in this order:
+
+  - **here now**, because what is running is what the board is for and is never pushed down the page by what
+    is not
+  - **not answering**, which says what was last heard and that it cannot be acted on
+  - **never connected**, which cannot have cards and so appears here and nowhere else on the board
+
+  Every row carries a transport badge, a cog, and what the machine calls itself beside what the hub calls it.
+  The badge is a badge and never a column: transport is worth seeing at a glance and is not a concept in this
+  UI.
+
+  **The header counter now reports the other half.** `1/2 rooms` is the one place a missing room is counted,
+  because every other number on the board is live only on purpose. Three agents waiting for permission on a
+  laptop that is shut is not three things to do. A room that has never connected is not counted either: nothing
+  is missing because of it.
+
+  The cog holds what the hub knows about that room and one action, marking it for deletion, which destroys
+  nothing and is one click to undo. **The board still cannot mint a join string**, and that line has not moved:
+  atrium has no login, the board may be served over an overlay, and a page that could mint one would let
+  anybody who opens it enrol a machine that runs agents. Adding a room, replacing its join string and removing
+  one are done at a terminal on the hub, where being there is the credential.
+
+  `/_hub/rooms` still answers what is attached, because the picker, the grouping and every counter mean that
+  one. The durable list is `/_hub/inventory`, and the two are separate because they are different questions.
+
 - **The hub knows which rooms exist, and it names them.**
 
   A hub held nothing at all, which made its restart free and left it unable to answer the one question only it
