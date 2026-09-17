@@ -116,8 +116,19 @@ func DefaultTimings() Timings {
 		// Ten seconds is a long time to wait for a local socket and a short
 		// time to wait for one over an overlay on a bad network.
 		DialWait:   10 * time.Second,
-		Backoff:    time.Second,
-		BackoffMax: 30 * time.Second,
+		Backoff: time.Second,
+		// FIVE SECONDS, NOT THIRTY, and the reason is the whole point of the
+		// split. A hub is the disposable half: it is restarted to change a
+		// stylesheet, and it is back within a second. A ceiling of thirty
+		// meant a room that had been retrying for a minute would sit out most
+		// of a minute AFTER the hub returned, and what somebody watching sees
+		// is a board that takes half a minute to come back from a restart that
+		// took one second. That reads as the link being broken.
+		//
+		// What a ceiling protects against is a room hammering a hub that is
+		// down for hours. At five seconds that is 720 connect attempts an
+		// hour, each one a TCP handshake that fails immediately. Nothing.
+		BackoffMax: 5 * time.Second,
 	}
 }
 

@@ -2004,6 +2004,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="openBrowse()">browse</button>
       </div>
     </div>
+    <!-- WITH THE DIRECTORY, because it is an answer to the directory question
+         rather than an option about something else: ticking it says "I am not
+         going to pick one". Under `more` it was three fields below the box it
+         empties, so the way to avoid choosing a directory was hidden behind a
+         fold you opened to look for something else. -->
+    <div class="field" id="l-throwaway-field">
+      <label class="check">
+        <input type="checkbox" id="l-throwaway-on">
+        <span>throw it away when the session ends</span>
+      </label>
+      <span class="hintline">Atrium makes a temporary directory and starts here. When the
+        session ends the directory, the card and the conversation are all deleted. If it turns
+        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
+    </div>
     <!-- Only shown when there is a conversation to pick up. Checked by
          default: if you had one, continuing it is almost always the intent.
          NOT folded, unlike everything below it. It appears only when it
@@ -2050,17 +2064,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
         below, and nothing starts until you press launch.</span>
     </div>
-    <!-- Offer a temporary directory below the directory picker, with cleanup
-         behavior explained before launch. -->
-    <div class="field" id="l-throwaway-field">
-      <label class="check">
-        <input type="checkbox" id="l-throwaway-on">
-        <span>throw it away when the session ends</span>
-      </label>
-      <span class="hintline">Atrium makes a temporary directory and starts here. When the
-        session ends the directory, the card and the conversation are all deleted. If it turns
-        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
-    </div>
     <!-- Which model, for THIS launch and nothing else.
          Empty every time this opens, and nothing is written to the runner's
          row. Empty IS the runner's own default, which is why nothing guards
@@ -2105,10 +2108,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         argument. A runner with no way to take one will say so.</span>
     </div>
     </details>
-    <!-- `launch`, which is the verb. It said `start it`, a sentence where every
-         other button here is a word, and `atrium launch` is what the CLI calls
-         the same act. One verb for both surfaces. -->
-    <div class="toolbar"><button class="go big" onclick="doLaunch()">launch</button></div>
+  </div>
+  <!-- `launch`, which is the verb. It said `start it`, a sentence where every
+       other button here is a word, and `atrium launch` is what the CLI calls
+       the same act. One verb for both surfaces.
+
+       PINNED TO THE BOTTOM OF THE DIALOG rather than sitting at the end of the
+       form. Opening `more` makes this form taller than the window, and the
+       button that starts the thing was then below ten optional fields nobody
+       filled in: the way to launch was to scroll past everything you had
+       already decided not to answer. -->
+  <div class="dlg-foot">
+    <button onclick="document.getElementById('launch').close()">close</button>
+    <span class="grow"></span>
+    <button class="go big" onclick="doLaunch()">launch</button>
   </div>
 </dialog>
 

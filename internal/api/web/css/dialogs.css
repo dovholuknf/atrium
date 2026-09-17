@@ -297,6 +297,15 @@
   /* Tall enough that a form with a dozen fields rarely needs scrolling. The
      head and foot are fixed, so this is the only part that moves. */
   .dlg-body { padding: 20px 22px; max-height: 78vh; overflow-y: auto; }
+  /* The action, pinned below the scrolling part.
+     A form with an optional half is taller than the window the moment that half is opened, and the button that
+     starts the thing was then under ten fields nobody filled in: the way to launch was to scroll past
+     everything you had already decided not to answer. Outside `.dlg-body`, so it does not scroll with it. */
+  .dlg-foot {
+    display: flex; align-items: center; gap: var(--sp-4);
+    padding: 14px 22px; border-top: 1px solid var(--stroke-dim);
+    background: var(--shell-0);
+  }
   .field { margin-bottom: 20px; }
   label.eyebrow {
     display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em;
