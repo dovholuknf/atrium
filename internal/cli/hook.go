@@ -95,24 +95,42 @@ type hookInput struct {
 // nothing is wanted is a badge you learn to ignore, which costs the ones that
 // do matter.
 //
-// `permission_prompt` is excluded even though it plainly wants a human,
-// because atrium's own gate is what put that prompt on screen: reporting it
-// back would be the card telling itself something it already knows.
+// `permission_prompt` IS included, and it used to be excluded. The reasoning
+// for excluding it was that atrium's own gate is what put that prompt on
+// screen, so reporting it back would be the card telling itself something it
+// already knows. That is true of a prompt atrium raised and false of every
+// other one, and the difference matters more than the badge does.
+//
+// A dialog atrium did NOT raise is a dialog atrium will type into. `runner.Say`
+// writes the text and then writes Enter, and an Enter landing on a dialog
+// answers it with whatever option was highlighted. While atrium's own gate is
+// holding a request the runner is blocked inside a hook and draws nothing, so
+// there is nothing to hit. Everything else is exposed: a session with the gate
+// off, a trust prompt, a plan approval, anything a future release adds.
+//
+// So the kind is sent and the DAEMON decides. It knows whether it has a pending
+// request for that card, which is the one fact that tells its own prompt apart
+// from somebody else's, and it is not a fact this process has.
 //
 // An unrecognized type does NOT count. This is a filter whose whole purpose is
 // to be quiet, and a new notification kind arriving in a future release should
 // stay silent until somebody decides it is worth a badge, rather than turning
 // into noise on upgrade.
 func wantsAHuman(in hookInput) bool {
+	switch notificationKind(in) {
+	case "idle_prompt", "agent_needs_input", "elicitation_dialog", "permission_prompt":
+		return true
+	}
+	return false
+}
+
+// notificationKind reads the type off whichever of the two fields carries it.
+func notificationKind(in hookInput) string {
 	kind := strings.ToLower(strings.TrimSpace(in.NotificationType))
 	if kind == "" {
 		kind = strings.ToLower(strings.TrimSpace(in.Type))
 	}
-	switch kind {
-	case "idle_prompt", "agent_needs_input", "elicitation_dialog":
-		return true
-	}
-	return false
+	return kind
 }
 
 func newHook() *cobra.Command {
@@ -383,6 +401,10 @@ func reportActivity(hubURL, event, name string) {
 		// daemon reads these only for subagent-start and subagent-end.
 		"agent_id":   in.AgentID,
 		"agent_type": in.AgentType,
+		// Which kind of notification this was. Empty on every other event.
+		// The daemon needs it to tell a dialog it raised from one the runner
+		// put up on its own. See wantsAHuman.
+		"notification": notificationKind(in),
 	})
 	if err != nil {
 		return

@@ -251,6 +251,31 @@ async function termMenu(e, id) {
   // would open it a beat late every time.
   await loadHarnesses();
   showMenu(e, [
+    // FIRST, because on a card whose runner has gone it is the only entry that
+    // does anything, and it was not here at all.
+    //
+    // `attach` was the thing people reached for instead, and on a stopped card
+    // it attaches to nothing: the pane says `nothing attached` and the socket
+    // sits in its five minute reconnect saying "waiting for it to come back",
+    // for a runner that is not coming. So attach is now offered only while
+    // there is one, which is the rule the board's card menu already follows.
+    //
+    // Same two entries as the board, and the same reasoning: placement comes
+    // off `lastPlace` rather than being asked, and the conversation is the
+    // card's own unless you ask to choose.
+    t.worktree && canResume(t) && !cannotResume(t) ? {
+      label: "resume",
+      help: "Starts a runner in this card's directory and picks the " +
+        "conversation back up where it stopped. It opens where this card was " +
+        "last open.",
+      sub: [
+        {
+          label: "the last conversation",
+          act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "")
+        },
+        { label: "choose…", act: () => resumeCard(id, t, lastPlace(id)) }
+      ]
+    } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     // Beside rename because they are the same kind of act: both write an
     // override, both survive the runner reconnecting and reporting for itself.
@@ -262,7 +287,10 @@ async function termMenu(e, id) {
       ? { label: "which repo…", note: t.display_repo || "guessing",
           act: () => setTaskRepo(id, t.display_repo) }
       : null,
-    { label: "attach", act: () => attachTask(id) },
+    // Only while there IS one. Attaching to a card whose runner has exited
+    // draws an empty pane and then waits five minutes for something that has
+    // already gone. `resume` above is what that click meant.
+    t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
     // THE SAME ENTRY THE BOARD'S CARD MENU HAS, because it is the same
     // question asked from the other surface. Starting a second agent beside
     // this one is most wanted while you are looking at the first one, which is
@@ -537,7 +565,7 @@ function termRunnerMark(t) {
   const mark = runnerMark(t.runner);
   const a = t.activity;
   const working = a && a.what && a.what !== "idle" &&
-    !isWaiting(t) && !over(t) && t.status !== "shelved";
+    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t);
   if (!working) return mark;
   // Inserted into the class list the shared builder produced, rather than the
   // builder growing a parameter. `runnerMark` is the board's and is called

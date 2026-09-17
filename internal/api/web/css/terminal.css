@@ -23,8 +23,11 @@
      orgs deep, and the person who knows which is on screen is the one looking at it.
      Kept in localStorage rather than on the daemon, because it is a fact about this screen and a width synced
      from a 32in monitor is wrong on a laptop. */
+  /* No `gap`. It spaced every child of the strip equally, which is the wrong unit: the distance between a
+     heading and its own first row is not the distance between two unrelated repos. `.tnest` carries a
+     `padding-bottom` instead, so the space falls where a group ends. */
   .term-list {
-    flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column; gap: var(--sp-3);
+    flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column;
     min-height: 0; overflow-y: auto; overflow-x: hidden;
     /* Room for the lift on hover and for a focus ring, or the top card's border is clipped by the scroll
        container. */
@@ -90,7 +93,7 @@
      Tightened to fit 104px: the padding comes in, the letter-spacing comes off, the indent goes, and the name
      is cut rather than wrapped, since a heading reading `dovholuknf` over `atrium` is worse than one that is
      visibly abbreviated. */
-  .tl-mini .tgroup { margin: 5px 0 2px; padding: 2px 3px 2px 1px; letter-spacing: 0; gap: 3px; }
+  .tl-mini .tgroup { padding: 2px 3px 2px 1px; letter-spacing: 0; gap: 1px; }
   /* The name goes and the caret and the count stay. At 104px a heading spends its whole width on `openziti`
      and leaves nothing for the rows, while the indent and the guide already carry the shape of the list. The
      title attribute still names it on hover, and the count is what a folded group needs to say. */
@@ -167,7 +170,14 @@
      joined to the terminal beside it, and lifting it slides that join two pixels out of true: the edge, the
      bridge and the pane stop lining up and it reads as broken rather than as hovered. The border already says
      which one you are on. */
-  .term-list .card { margin-bottom: 0; }
+  /* The row spacing lives HERE now, not on the list.
+     It was a flex `gap` on `.term-list`, which is the wrong unit: a gap is paid between every pair of
+     children, so a heading was pushed 9px off its own first row by the same rule that separated two unrelated
+     repos. On the card it is paid after a ROW, which is the thing that repeats.
+     The distance between a group and whatever follows it is unchanged: it was 9px of gap plus the heading's
+     5px top margin, and it is now 9px here plus `.tnest`'s 5px `padding-bottom`. What changed is that a
+     heading now sits directly on top of the rows it names. */
+  .term-list .card { margin-bottom: var(--sp-3); }
   .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
 
   /* A tab, in its own terminal's colours. `--tabc` and `--tabbg` come off the session's theme, set inline

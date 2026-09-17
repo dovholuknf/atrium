@@ -529,20 +529,25 @@ function paintFindCount(r, msg) {
   el.textContent = (r.resultIndex >= 0 ? (r.resultIndex + 1) + " of " : "") + r.resultCount;
 }
 
-// Ctrl-F when the terminal does not have focus.
+// Ctrl-SHIFT-F when the terminal does not have focus.
 //
 // xterm's key handler only sees keystrokes aimed at the terminal, and the
 // common case is exactly the other one: you have just clicked a card in the
 // switcher, or scrolled with the mouse, and the focus is anywhere but the
 // grid. Without this, find worked only if you had typed into the terminal
 // first, which is indistinguishable from not working.
+//
+// SHIFT, so ctrl-f stays the browser's. The board is a page as well as a
+// terminal, and taking the browser's own find away from a document full of
+// card names and paths costs more than it buys. Ctrl-shift-f is what an editor
+// binds to "find in everything", which is the closer meaning anyway.
 addEventListener("keydown", e => {
-  if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyF") return;
+  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.code !== "KeyF") return;
   const terms = document.getElementById("terms");
   if (!term || !terms || terms.hidden) return;
   // Somebody typing in a real text box wants their browser's find, or wants
-  // nothing. The one exception is the find box itself, where ctrl-f means
-  // "select what is in here and start over".
+  // nothing. The one exception is the find box itself, where the shortcut
+  // means "select what is in here and start over".
   const el = document.activeElement;
   const tag = el ? el.tagName : "";
   if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && el.id !== "t-find-q") return;

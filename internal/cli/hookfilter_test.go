@@ -10,15 +10,25 @@ import "testing"
 // that costs the ones that matter.
 
 func TestOnlyNotificationsThatWantAHumanAreReported(t *testing.T) {
-	for _, kind := range []string{"idle_prompt", "agent_needs_input", "elicitation_dialog"} {
+	for _, kind := range []string{
+		"idle_prompt", "agent_needs_input", "elicitation_dialog",
+		// REPORTED, AND IT USED TO BE FILTERED. The reason for filtering was
+		// that atrium's own gate put the prompt on screen, so reporting it
+		// back told the card something it knew. True of a prompt atrium
+		// raised, false of every other one, and the daemon is the only thing
+		// that can tell them apart because only it knows whether a request of
+		// its own is pending.
+		//
+		// It matters because a dialog atrium did not raise is a dialog atrium
+		// will type into: `runner.Say` ends with an Enter and an Enter answers
+		// a prompt. See `dialogRaised` in the daemon.
+		"permission_prompt",
+	} {
 		if !wantsAHuman(hookInput{NotificationType: kind}) {
 			t.Fatalf("%s does want a human and was filtered out", kind)
 		}
 	}
 	for _, kind := range []string{
-		// atrium's own gate is what put this on screen. Reporting it back is
-		// the card telling itself something it already knows.
-		"permission_prompt",
 		"agent_completed", "tool_use", "background_task", "auto_compact",
 		// An unrecognized kind stays silent, so a new notification type in a
 		// future release does not turn into noise on upgrade.

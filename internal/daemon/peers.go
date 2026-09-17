@@ -395,6 +395,18 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if run == nil {
 		return false, ""
 	}
+	// A FOURTH STATE, and it refuses like the part written line does.
+	//
+	// A dialog the runner put up itself is on that screen, and both of the
+	// typing branches below end in an Enter: `Say` writes one, and even the
+	// watching branch leaves text on a line a person may then submit. An Enter
+	// landing on a dialog answers it with whatever option was highlighted.
+	//
+	// Refusing here sends it back to the queue, which is what the peer bus
+	// does by default anyway, so nothing is lost but the immediacy.
+	if d.act.dialogOpen(target.ID) {
+		return false, ""
+	}
 	switch run.howBusy() {
 	case peerMidLine:
 		return false, ""

@@ -11,6 +11,25 @@ before it was rewritten on 2026-09-06.
 
 Each entry says what it is, why it is worth doing, and what it depends on. Nothing else.
 
+## Two shapes, one list
+
+There are entries in two forms and this file is the index of both. They are not competing lists and neither is
+the stale copy of the other.
+
+**Numbered themes, below.** Standing work, ranked. An entry is a direction rather than a ticket, it has no
+date, and it survives being half done. These are edited in place as the picture changes.
+
+**Dated items, in `docs/backlog/`.** One file each, named `backlog-YYYY-MM-DD-NNN`, raised from a specific
+complaint and opening with the prompt that raised it, verbatim. These are append-only: an item is written once
+and its status line is the only thing that moves. The verbatim prompt is the point, because the wording of the
+complaint is usually more precise than any summary of it.
+
+A theme becomes a dated item when somebody hits it and says so. A dated item does not graduate into a theme.
+
+**The two numberings are separate and neither may be renumbered.** Theme `7` and `backlog-2026-09-15-007` are
+different things. The numbers are identifiers, not positions: sessions are handed work by number, so
+renumbering silently reassigns somebody else's item. See the hazard note at the bottom of this file.
+
 ---
 
 ## 1. Rooms, past the first stage
@@ -191,6 +210,54 @@ Kept together because none is worth its own entry, and the list is short on purp
 
 ---
 
+## Dated items
+
+One file each in `docs/backlog/`, newest last. Every one opens with the prompt that raised it. This is the
+index and the files are the entries: read the file before starting one, because the verbatim complaint usually
+says something the title cannot.
+
+Status lives on each item's own page, because it is the thing that moves and an index that also tracks state
+is two places to remember. A list rather than a table, because a table row cannot wrap at 120 and these
+titles are the complaint rather than a label.
+
+- **[001](backlog/backlog-2026-09-13-001.md)** Named SCM providers, with roots, worktree support and
+  auto-discovery.
+- **[002](backlog/backlog-2026-09-13-002.md)** Resume remembers where it was, and the conversation list
+  lives in the menu.
+- **[003](backlog/backlog-2026-09-14-003.md)** Paste a link, press enter, get a card. Its own flow, on
+  ctrl-shift-n.
+- **[004](backlog/backlog-2026-09-14-004.md)** The new agent dialog asks ten questions, and one of them is
+  required.
+- **[005](backlog/backlog-2026-09-14-005.md)** "Directories already on the board" is six buttons that read
+  as a suggestion.
+- **[006](backlog/backlog-2026-09-14-006.md)** Resizing a pane shows the same output twice, once at each
+  width.
+- **[007](backlog/backlog-2026-09-15-007.md)** Open questions from the child-runner spike. Decisions, not
+  work.
+- **[008](backlog/backlog-2026-09-15-008.md)** The resume refusal is written in metaphor and nobody knows
+  what it means.
+- **[009](backlog/backlog-2026-09-15-009.md)** "what did it do?" answers a different question from the one it
+  asks.
+- **[010](backlog/backlog-2026-09-16-010.md)** Keep an idle session's prompt cache warm.
+- **[011](backlog/backlog-2026-09-16-011.md)** What a turn actually cost, and what a subagent cost.
+- **[012](backlog/backlog-2026-09-16-012.md)** Reach a machine that is not on an overlay.
+- **[013](backlog/backlog-2026-09-16-013.md)** A runner in a container.
+- **[014](backlog/backlog-2026-09-16-014.md)** Never type into a terminal that has a dialog on it.
+- **[015](backlog/backlog-2026-09-16-015.md)** Build a terminal pane per card, kept alive, capped by a
+  setting. Largely replaces 006, and needs 016 first.
+- **[016](backlog/backlog-2026-09-16-016.md)** A hidden viewer must not decide the terminal's size.
+  Prerequisite for 015.
+
+**001 is the big one** and the only one with a plan: `backlog/backlog-2026-09-13-001-PLAN.md`, 839 lines over
+thirteen sections, and it deletes the rb3.1 attempt it replaces.
+
+Two of the rest are not the day of work the others are. **006** recommends re-replaying scrollback at the new
+width and opens with two questions that have to be answered before anything is changed, chiefly whether xterm
+is producing the ragged overflow rather than the replay. **007** is decisions, and says so: nothing should be
+built against the spike until they are answered.
+
+---
+
 ## Deep backlog
 
 Wanted, and not until everything above is done. An entry here is parked on purpose rather than forgotten.
@@ -219,3 +286,21 @@ Unchanged, except where an entry above says otherwise.
 - **Authentication on loopback.** The published board can now require a sign-in. The local one cannot and must
   not: every hook, the CLI and the MCP server talk to it, and none of them was ever going to carry a
   credential.
+
+---
+
+## Editing this file
+
+**Neither numbering may be renumbered.** Sessions are handed work by number and a preview port is derived from
+it, so moving a number puts two sessions on one port and neither finds out until something fails to bind.
+
+That has a consequence worth knowing before it bites: theme `1` and `backlog-2026-09-13-001` both read as
+"one". Anything deriving a port from a bare number has to be told WHICH list. Say `theme 1` or `item 001`,
+never `1`.
+
+**Many sessions share this file and none of them sees the others.** Work happens in a worktree per session off
+one commit, so this is the document everybody has a reason to touch and nobody sees the conflict until merge.
+Adding a dated item is cheap, because it is a new file plus one row in the table. Rewriting a theme is not.
+
+**Finished work leaves, it is not struck through.** `CHANGELOG.md` is what landed and `docs/status.md` is where
+each thing stands.

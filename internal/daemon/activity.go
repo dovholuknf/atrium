@@ -111,6 +111,18 @@ type Activity struct {
 	// May be shorter than Subagents. A runner that reports no id still moves
 	// the count, and the count is the thing that must not lie.
 	Running []Subagent `json:"running,omitempty"`
+	// Dialog says the runner has put a prompt on its own screen that atrium
+	// did not raise, so nothing may type into that terminal.
+	//
+	// `runner.Say` writes the text and then writes Enter. An Enter landing on
+	// a dialog answers it with whatever option was highlighted, and nothing
+	// reports that it happened: the operator sees a message they sent, and
+	// separately a tool call approved by nobody.
+	//
+	// IN MEMORY AND NEVER WRITTEN DOWN, like everything else here. It is true
+	// of a process rather than of a card, and it would be a lie the moment the
+	// daemon restarted. See docs/activity-design.md.
+	Dialog bool `json:"dialog,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -208,6 +220,61 @@ func (a *activityTracker) set(taskID, what, tool string) {
 		cur.Since = a.now()
 	}
 	cur.What, cur.Tool = what, tool
+	// ANYTHING HAPPENING MEANS THE DIALOG HAS GONE.
+	//
+	// There is no hook for a prompt being dismissed, so the flag is cleared by
+	// the next thing the session does: a tool call, a turn ending, a prompt
+	// submitted. Same shape as the compaction badge, which has the same
+	// problem and clears the same way.
+	//
+	// `dialogRaised` sets the flag AFTER calling this, so the ordering there
+	// is load bearing and says so.
+	cur.Dialog = false
+}
+
+// hasPendingPermission reports whether atrium is itself holding a request for
+// this card.
+//
+// The one fact that tells atrium's own prompt apart from the runner's. A store
+// failure answers TRUE, which suppresses the flag: the cost of a false positive
+// is a message queued that could have been typed, and the cost of a false
+// negative is typing into a dialog. Those are not the same size.
+func (d *Daemon) hasPendingPermission(taskID string) bool {
+	pending, err := d.st.PendingForTask(taskID)
+	if err != nil {
+		return true
+	}
+	return len(pending) > 0
+}
+
+// dialogRaised records that the runner has a prompt on its own screen.
+//
+// Called only for a notification atrium did not raise. The caller establishes
+// that, because it is the only thing that knows whether a request of its own is
+// pending on this card.
+func (a *activityTracker) dialogRaised(taskID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	if cur == nil {
+		cur = &Activity{Since: a.now()}
+		a.by[taskID] = cur
+	}
+	cur.Dialog = true
+}
+
+// dialogOpen reports whether anything may type into this card's terminal.
+//
+// Stale is impossible in the direction that matters. The flag is cleared by the
+// next activity of any kind, and a session that is drawing a dialog is by
+// definition doing nothing else, so a true answer here is either current or
+// belongs to a session that has said nothing since. The expensive mistake is
+// the other direction, and this does not make it.
+func (a *activityTracker) dialogOpen(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	return cur != nil && cur.Dialog
 }
 
 // addSubagents moves the tally, never below zero.
@@ -314,6 +381,12 @@ type ActivityEvent struct {
 	// does not report them, which costs the name and not the count.
 	AgentID   string `json:"agent_id,omitempty"`
 	AgentType string `json:"agent_type,omitempty"`
+	// Notification is which kind of Notification hook fired, on a `waiting`.
+	// Empty on everything else and empty from a runner that does not send it.
+	//
+	// The one value acted on is `permission_prompt`, which says a dialog is on
+	// that terminal's screen. See dialogRaised.
+	Notification string `json:"notification,omitempty"`
 }
 
 // handleActivity records what a session is doing.
@@ -409,6 +482,22 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityIdle, "")
 		if in.Event == "waiting" {
 			d.turnEndedBecause(taskID, store.WaitingAsked)
+			// A PROMPT ON THE RUNNER'S OWN SCREEN, which is not the same as
+			// one atrium raised.
+			//
+			// While atrium's gate holds a request the runner is blocked inside
+			// a hook and draws nothing, so a `permission_prompt` arriving with
+			// a request of ours pending is our own echo and says nothing new.
+			// Arriving WITHOUT one, it means the runner put a dialog up by
+			// itself: a session with the gate off, a trust prompt, a plan
+			// approval. That terminal must not be typed into, because `Say`
+			// ends with an Enter and an Enter answers a dialog.
+			//
+			// After `set`, which clears the flag. Reversing these two lines
+			// raises the dialog and then immediately forgets it.
+			if in.Notification == "permission_prompt" && !d.hasPendingPermission(taskID) {
+				d.act.dialogRaised(taskID)
+			}
 		} else {
 			d.turnEnded(taskID)
 		}

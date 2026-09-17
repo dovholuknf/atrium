@@ -131,6 +131,74 @@ function cardTieBreak(a, b) {
     (a.id || "").localeCompare(b.id || "");
 }
 
+// Tell extensions to leave the board's text boxes alone.
+//
+// A password manager or an email alias extension decides what to offer from
+// the shape of an input, and a bare text box with no autocomplete hint is the
+// shape they guess at. One of them drew a "create a random email that forwards
+// to your inbox" card over the terminal's find bar, and the board has fifty
+// five text inputs it could do that to.
+//
+// NONE OF THESE IS A STANDARD. They are the flags the common extensions
+// actually read, and an extension is free to ignore all of them, in which case
+// it is the place to turn it off. This is the most a page can do.
+//
+// Stamped in one pass rather than written on fifty five tags, and again on
+// focus so a box built by a dialog after load is covered without a mutation
+// observer watching the whole document.
+const NO_AUTOFILL = {
+  autocomplete: "off",
+  "data-1p-ignore": "",
+  "data-lpignore": "true",
+  "data-bwignore": "",
+  "data-form-type": "other"
+};
+
+function leaveThisAlone(el) {
+  if (!el || el.dataset.noFill) return;
+  // A password box is the one place an extension is welcome, and the board has
+  // none. Guarded anyway so this cannot become the reason one stops working.
+  if (el.type === "password") return;
+  el.dataset.noFill = "1";
+  for (const [k, v] of Object.entries(NO_AUTOFILL)) {
+    if (!el.hasAttribute(k)) el.setAttribute(k, v);
+  }
+}
+
+function stampInputs(root) {
+  (root || document).querySelectorAll("input, textarea").forEach(leaveThisAlone);
+}
+
+addEventListener("DOMContentLoaded", () => stampInputs());
+addEventListener("focusin", e => leaveThisAlone(e.target));
+
+// Is this card's activity describing a process that is no longer there.
+//
+// Activity is held in memory and outlives the status change that filed the
+// card, so a card can sit in `done` carrying a `thinking` from an hour ago. The
+// board and the terminal strip both suppressed the live marks for anything
+// `done` OR `dead` because of that, and it was too blunt: a session filed done
+// and then kept working showed no spinner at all while its terminal scrolled.
+//
+// `dead` IS the one status that means the process is known to have gone, and
+// `done` is not. That distinction is already made where `terminate` is offered,
+// for the same reason and in the same words: a card is filed when its work is
+// finished and its runner may still be sitting at a prompt.
+//
+// So the test is the runner rather than the column. Atrium owning a live pty is
+// what makes the activity current, because the hooks feeding it belong to that
+// process. A card that is over with nothing supervised is the stale case this
+// was always guarding against.
+//
+// Both surfaces read this one function, so they cannot drift into two answers
+// about one card.
+function staleActivity(t) {
+  if (!t) return true;
+  if (t.status === "dead") return true;
+  if (t.supervised) return false;
+  return over(t);
+}
+
 const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
 const reviewDlg = document.getElementById("review");
@@ -184,9 +252,26 @@ const api = async (path, opts) => {
     // upload says what the link is and what it is for, and the board printed
     // "that did not go up: Forbidden".
     let msg = "";
+    let body = null;
     try { msg = await res.text(); } catch (e) {}
-    try { msg = JSON.parse(msg).error || msg; } catch (e) {}
-    throw new Error(String(msg).trim() || res.statusText);
+    try {
+      body = JSON.parse(msg);
+      msg = body.error || msg;
+    } catch (e) {}
+    const err = new Error(String(msg).trim() || res.statusText);
+    // THE REST OF THE BODY, FOR A REFUSAL THAT HAS SOMEWHERE TO GO.
+    //
+    // Most failures are a sentence and the sentence is the whole answer. A few
+    // carry the fields needed to DO something about them: a refused resume
+    // names the card already holding the conversation, so the dialog can offer
+    // to attach to it rather than describing that in prose. Throwing only the
+    // message threw those away.
+    //
+    // On the error rather than a second return value, so every existing caller
+    // is untouched and the ones that care opt in.
+    err.status = res.status;
+    if (body && typeof body === "object") err.body = body;
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 };

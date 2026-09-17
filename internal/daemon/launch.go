@@ -302,13 +302,73 @@ func (d *Daemon) resumeIsFree(resume string) error {
 		if t.ResumeID != resume || d.sup.get(t.ID) == nil {
 			continue
 		}
-		return fmt.Errorf(
-			"%s is already running this conversation. two runners on one session id "+
-				"braid its transcript into a thread neither of them wrote. attach to "+
-				"that one, or start a fresh session here instead",
-			t.DisplayTitle())
+		return &ResumeBusy{
+			HolderID:    t.ID,
+			HolderTitle: t.DisplayTitle(),
+			Worktree:    t.Worktree,
+			Resume:      resume,
+		}
 	}
 	return nil
+}
+
+// ResumeBusy is the refusal above, as something a client can act on.
+//
+// It used to be a `fmt.Errorf` whose text named both ways out and offered
+// neither: "braid its transcript into a thread neither of them wrote. attach to
+// that one, or start a fresh session here instead", under a single `ok` button.
+// Three figures of speech in nine words, and the only actionable sentence in
+// the dialog was the tail of the hardest one. The operator then had to work out
+// which remedy he wanted and go and perform it somewhere else.
+//
+// Both remedies are things the daemon already knows how to do, and it knows
+// WHICH card is holding the conversation because it just found it. So it says
+// so in fields rather than in prose, and the board draws two buttons.
+//
+// The message stays readable on its own, because a CLI caller and an old board
+// both only get `Error()`.
+type ResumeBusy struct {
+	// HolderID is the card already running this conversation. The board
+	// attaches to it directly rather than asking the operator to find it.
+	HolderID string `json:"holder_id"`
+	// HolderTitle is what that card is called. A display title, so two cards
+	// can plausibly wear it, which is why the directory is here too.
+	HolderTitle string `json:"holder_title"`
+	// Worktree tells them apart when the title does not.
+	Worktree string `json:"worktree"`
+	// Resume is the conversation id. The operator cannot see it anywhere else
+	// and it is the thing they would search for.
+	Resume string `json:"resume"`
+}
+
+// Error says what happened and what it means, and leaves what to press to the
+// buttons. No metaphor: a modal that appears when somebody is blocked is a
+// different audience from a comment explaining why the guard exists.
+func (e *ResumeBusy) Error() string {
+	where := e.HolderTitle
+	if e.Worktree != "" {
+		where = fmt.Sprintf("%s (%s)", e.HolderTitle, e.Worktree)
+	}
+	return fmt.Sprintf(
+		"%s already has this conversation open. two sessions writing to one "+
+			"conversation interleave their turns, and the saved history ends up "+
+			"matching neither.", where)
+}
+
+// ResumeConflict is what the API sends when it recognises this refusal.
+//
+// A method rather than a type the API imports, because `internal/daemon`
+// already imports `internal/api` and the reverse would be a cycle. The API
+// tests for the METHOD, so the daemon can grow a second actionable refusal
+// without the API learning its name.
+func (e *ResumeBusy) ResumeConflict() map[string]any {
+	return map[string]any{
+		"kind":         "resume-busy",
+		"holder_id":    e.HolderID,
+		"holder_title": e.HolderTitle,
+		"worktree":     e.Worktree,
+		"resume":       e.Resume,
+	}
 }
 
 // What to do about a card that is already in this directory.

@@ -807,6 +807,11 @@ async function attachTask(id) {
     // where you are not going anywhere.
     return;
   }
+  // Recorded from what happened, not from what was asked. The popped-out path
+  // above returns before this, and `popOutTask` records its own side, so each
+  // destination is written where it is actually reached. See `rememberPlace`:
+  // resume reads this instead of asking where to open.
+  rememberPlace(id, "here");
   try { openTerm(await api(`/v1/tasks/${id}`)); }
   catch (e) { toast("could not attach", e.message); }
 }
@@ -1247,6 +1252,19 @@ function connect() {
   es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
   ["task", "task-removed", "permission", "halted"]
     .forEach(k => es.addEventListener(k, refreshSoon));
+  // A card that has gone takes its remembered placement with it. See
+  // `rememberPlace`.
+  //
+  // Only the single-card removal carries an id. The sweep broadcasts this with
+  // no payload, so placements for swept cards linger: each is one short string
+  // under a key nothing will ask for again, which is worth less than a second
+  // mechanism to chase them.
+  es.addEventListener("task-removed", e => {
+    try {
+      const d = JSON.parse(e.data) || {};
+      if (d.id) forgetPlace(d.id);
+    } catch (err) {}
+  });
   // settings.json changed under us, which is `atrium hook install` run in a
   // terminal. Without this the count only moves on the next poll, and only
   // while the runners tab happens to be open.

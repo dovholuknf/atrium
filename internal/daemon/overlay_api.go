@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/openziti/zrok/v2/environment/env_core"
@@ -69,12 +70,20 @@ func (d *Daemon) overlayViews() any {
 	}
 	id := zitiEnrolment(zitiCfg.Identity)
 
+	// WHICH ONE OF THESE IS OPEN TO ANYONE. A public zrok share is the only
+	// exposure atrium offers that hands the board to whoever has the link, so
+	// it is the only one where a missing login is a hole rather than a choice.
+	// Read off the mode the share would start in, which is what the fields
+	// below the panel are set to.
+	auth := d.authConfig()
+	zrokOpen := strings.TrimSpace(zrokCfg.Mode) == "public"
+
 	return []OverlayView{
 		{
 			OverlayState: d.nat(OverlayZrok).state(lookPath(overlayCommand(OverlayZrok))),
 			Label:        "zrok",
 			Blurb: "Publishes the board at a zrok address. A private share needs zrok on the " +
-				"other end; a public one is a link anyone can open, and this board has no login.",
+				"other end. A public one is a link anyone can open. " + whoMayOpenIt(auth, !zrokOpen),
 			Install: "https://zrok.io",
 			SignUp:  "https://api.zrok.io",
 			Config:  zrokCfg,
@@ -89,7 +98,13 @@ func (d *Daemon) overlayViews() any {
 			Label:        "OpenZiti",
 			Blurb: "Hosts whatever services this identity is allowed to bind, on your own network. " +
 				"Which services, and where each points, are configured there rather than here. " +
-				"Who may reach it is a policy on that network, so nothing is exposed to the internet.",
+				"Who may reach it is a policy on that network, so nothing is exposed to the internet. " +
+				// ALWAYS GATED. A ziti service is reachable by whoever that
+				// network says, which is a stronger answer than a password and
+				// is the reason this panel never needed the sentence. It says
+				// it anyway so both panels answer the same question, and so
+				// somebody who sets a login is told it applies here too.
+				whoMayOpenIt(auth, true),
 			Install: "https://openziti.io",
 			SignUp:  "https://openziti.io/docs/learn/quickstarts/network/",
 			Config:  zitiCfg,
@@ -373,4 +388,41 @@ func (d *Daemon) closeOverlays() {
 	// left behind is an address that answers nothing and has to be cleared out
 	// by hand later.
 	d.stopAllGuestShares()
+}
+
+// whoMayOpenIt is the last sentence of an overlay's blurb, and it has to be
+// read off the configuration rather than written down.
+//
+// It said "this board has no login" as a constant. That is true of atrium on
+// loopback and stops being true the moment somebody sets one, so the panel sat
+// there telling an operator no login existed while the published board asked
+// them for a password. It is the same pane now, so the sentence points at the
+// fields a few inches below it either way.
+//
+// `gated` is whether the way out already decides who gets in. Only a PUBLIC
+// zrok share does not: a link anyone can open is the one case where atrium's
+// own login is the whole of the answer. A private share needs zrok on the
+// other end and a ziti service needs a policy on that network, so for both of
+// those a login is something somebody may want rather than something missing.
+// The sentence says which of the two it is, because "this board has no login"
+// reads as a warning and is only one of those things.
+func whoMayOpenIt(c AuthConfig, gated bool) string {
+	if !c.Enabled {
+		if gated {
+			return "Getting to it is already the permission, so it needs no login of its own. " +
+				"One can be set under who may open it, below."
+		}
+		return "This board has no login. Set one under who may open it, below."
+	}
+	if c.Basic && c.HasPassword() {
+		if c.User != "" {
+			return "Whoever opens it is asked for a name and a password, and the name is " +
+				strconv.Quote(c.User) + "."
+		}
+		return "Whoever opens it is asked for a name and a password."
+	}
+	if strings.TrimSpace(c.Issuer) != "" {
+		return "Whoever opens it is sent to " + c.Issuer + " to sign in first."
+	}
+	return "A login is turned on below, but nothing is configured for it to check."
 }

@@ -85,11 +85,22 @@ const shellKind = "shell"
 // How long an attach waits for the viewer to say how big it is before
 // replaying anything.
 //
-// Long enough for the first frame of a socket that has just opened, which the
-// board sends from `onopen` with no round trip in between, and short enough
-// that a client which never sends one is not left looking at an empty
-// terminal.
-const sizeWait = 500 * time.Millisecond
+// A CEILING, NOT A PAUSE. The wait ends the moment the size frame lands, and
+// the board sends that from `onopen` with no round trip in between, so the
+// common case does not wait at all. This only bounds a client that never sends
+// one.
+//
+// It was 500ms, chosen as "long enough for a first frame" without asking how
+// long that is. On loopback it is under a millisecond and over an overlay it is
+// a round trip, so half a second bought nothing and paid for itself every time
+// a frame was dropped or a client did not send one. It was visible: switching
+// between terminals had a pause somebody could photograph.
+//
+// 60ms is comfortably more than a loopback frame and more than a round trip on
+// any link a person would use this over. A client slower than that gets the
+// backlog at whatever width the terminal is already at, which is the same
+// answer it got before, sooner.
+const sizeWait = 60 * time.Millisecond
 
 func (d *Daemon) handleAttach(w http.ResponseWriter, r *http.Request) {
 	d.attach(w, r, r.PathValue("id"), r.URL.Query().Get("kind") == shellKind)

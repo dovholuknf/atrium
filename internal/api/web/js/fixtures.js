@@ -796,7 +796,7 @@ function clearResolved(url) {
   const note = document.getElementById("l-link-note");
   if (note) {
     note.textContent = "Optional. A recogniser turns it into the fields below, " +
-      "and nothing starts until you press start.";
+      "and nothing starts until you press launch.";
     note.classList.remove("warn");
   }
 }
@@ -849,8 +849,12 @@ async function recogniseLink() {
   if (got.problem) bits.push(got.problem);
   note.textContent = bits.join(". ");
   // A missing worktree, a hole in a template or a broken fetch all read the
-  // same way here: something to go and do before pressing start.
+  // same way here: something to go and do before pressing launch.
   note.classList.toggle("warn", !!(got.problem || got.fetch_error));
+  // The recogniser just filled fields that live behind the fold, and the fold
+  // is where the operator is standing. Without this the title and the prompt it
+  // wrote would be out of sight at the moment they most want reading.
+  syncMore();
 }
 
 // setLaunchModel clears the field when the dialog opens or the runner changes.
@@ -874,10 +878,8 @@ function setLaunchModel(h) {
 // Preserve the typed value so unticking the box restores it.
 function setThrowaway(on) {
   const cwd = document.getElementById("l-cwd");
-  const recent = document.getElementById("l-recent");
   if (!cwd) return;
   cwd.disabled = on;
-  if (recent) recent.hidden = on;
 }
 
 document.getElementById("l-throwaway-on").addEventListener("change", e => {
@@ -1012,38 +1014,50 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // remember to turn back, which is what this is not.
   setLaunchModel(h);
 
-  renderRecentDirs();
+  syncMore();
   document.getElementById("launch").showModal();
   document.getElementById("l-cwd").focus();
 }
 
-// Directories that already have cards, most recently active first, so a launch
-// into somewhere used before is one click and browsing is left for new ones.
-async function renderRecentDirs() {
-  let tasks = [];
-  try { tasks = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
-  tasks.sort((a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0));
-
-  const seen = new Set();
-  const dirs = [];
-  for (const t of tasks) {
-    const d = t.worktree;
-    if (!d || seen.has(d)) continue;
-    seen.add(d);
-    dirs.push(d);
-    if (dirs.length >= 6) break;
-  }
-  const host = document.getElementById("l-recent");
-  // The whole path, not the leaf. Three worktrees of the same repo all end in
-  // the same word, so a row of leaf names is a row of identical buttons.
-  host.innerHTML = dirs.map(d =>
-    `<button class="quickdir" data-path="${esc(d)}" title="${esc(d)}">${esc(d)}</button>`).join("");
-  // Same as the browser: HTML escaping does nothing about an apostrophe inside
-  // a JavaScript string literal.
-  host.querySelectorAll(".quickdir").forEach(b => b.onclick = () => {
-    document.getElementById("l-cwd").value = b.dataset.path;
-  });
+// Open the optional half when something is already in it.
+//
+// The fold exists so the form opens showing what has to be answered. An intake
+// item arrives carrying a title, a prompt and tags, and a recogniser fills the
+// same fields from a link, so a form that opened shut over them would hide what
+// is about to be launched. That is worse than the noise the fold removes.
+//
+// Called on every open and after a recognise. NOT remembered between opens: a
+// form that remembers being open is a form that is open, and the complaint
+// comes back.
+function syncMore() {
+  const more = document.getElementById("l-more");
+  if (!more) return;
+  const filled = ["l-url", "l-model", "l-title", "l-tags", "l-why", "l-prompt"]
+    .some(id => {
+      const el = document.getElementById(id);
+      return el && String(el.value || "").trim() !== "";
+    });
+  // The throwaway tick is a decision too, and an unticked box reads as empty
+  // while a ticked one is the only control here that deletes a directory.
+  const away = document.getElementById("l-throwaway-on");
+  more.open = filled || !!(away && away.checked);
 }
+
+// `renderRecentDirs` stood here and drew six buttons under the directory field,
+// one per directory that currently has a card, most recently active first.
+//
+// IT READ AS A RECOMMENDATION AND IT WAS A REPORT. A directory was on that list
+// because something was already running in it, which is a weak argument for
+// starting a second agent there and is the exact case that produces two cards
+// on one directory. This board has two such duplicates, made 67 minutes apart.
+//
+// Its best case moved to the card's own context menu. `new agent here` knows
+// the directory exactly and cannot pick the wrong one, which is the whole
+// difference between a list you match by eye and a card you right click.
+//
+// If something belongs here later it is directories recently LAUNCHED INTO and
+// no longer running, which is a different query against the same data and is a
+// genuine "again, where I was" rather than a list of occupied rooms.
 
 async function doLaunch() {
   if (!launchTarget) return;

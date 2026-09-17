@@ -176,6 +176,19 @@
      pushed to the far end, so the label and its caret stay together. */
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
+  /* The launch dialog's optional half. The marker is suppressed above for every summary on the board, so this
+     draws its own caret and turns it, the way the card groups do. Styled as a quiet row rather than a button:
+     it is a thing to walk past, and the fields it hides are ones most launches never answer. */
+  #l-more > summary {
+    display: flex; align-items: center; gap: var(--sp-2); cursor: pointer;
+    font: var(--fs-xs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--label); padding: var(--sp-2) 0; user-select: none;
+  }
+  #l-more > summary:hover { color: var(--head); }
+  #l-more > summary::before {
+    content: "\25B8"; display: inline-block; transition: transform .12s; color: var(--dimmest);
+  }
+  #l-more[open] > summary::before { transform: rotate(90deg); }
   details > summary.col-head {
     justify-content: flex-start; gap: var(--sp-3); cursor: pointer;
     padding: 4px 3px; border-radius: var(--r-sm); user-select: none;

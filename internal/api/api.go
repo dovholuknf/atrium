@@ -1415,6 +1415,17 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := s.Launch(body)
 	if err != nil {
+		// A refused resume is the one launch failure with somewhere to go. It
+		// carries the card already holding the conversation, so the board can
+		// offer to attach to it or to start without resuming, rather than
+		// describing both in prose under an `ok` button. 409 because the
+		// request was well formed and something else has the thing.
+		if busy, ok := err.(interface{ ResumeConflict() map[string]any }); ok {
+			body := busy.ResumeConflict()
+			body["error"] = err.Error()
+			writeJSON(w, http.StatusConflict, body)
+			return
+		}
 		// A bad harness, a missing directory or a mode that is not built are
 		// all the caller's problem, not a server fault.
 		writeErr(w, http.StatusBadRequest, err)

@@ -68,7 +68,14 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 	// same two routes the message endpoint takes, and the same reason they are
 	// named: typed means it has already landed, queued means it has not and
 	// will not until the session makes its next tool call or ends its turn.
+	//
+	// And queued rather than typed while a dialog is on that screen, for the
+	// reason `handleMessage` gives: `Say` ends with an Enter, and an Enter
+	// answers a dialog.
 	run := d.sup.get(taskID)
+	if run != nil && d.act.dialogOpen(taskID) {
+		run = nil
+	}
 	if run != nil {
 		if err := run.Say(action.Prompt); err != nil {
 			return nil, err

@@ -58,8 +58,14 @@
        rather than beside it. The layout still fills the window, so the pane
        gets whatever the list leaves. */
     .term-layout { flex-direction: column; }
+    /* The gap comes BACK here, and only here. In the column layout it is off,
+       because spacing every child equally paid the same distance between a
+       heading and its own first row as between two unrelated repos, and
+       `.tnest` carries that space instead. Laid out as a row there are no
+       nests to carry it: the cards are siblings in a strip and without this
+       they butt together. */
     .term-list {
-      flex: 0 0 auto; flex-direction: row; max-height: none;
+      flex: 0 0 auto; flex-direction: row; max-height: none; gap: var(--sp-3);
       overflow-x: auto; overflow-y: hidden; padding-bottom: 4px;
     }
     /* The width, the handle and the slide-over all answer the list being a

@@ -99,10 +99,13 @@ async function unshelveCard(id) {
 // The launch form rather than a silent relaunch, because resuming asks the same
 // questions launching does: which runner, in which directory. It arrives
 // pre-filled from the card and with the resume box already ticked.
-function resumeCard(id, t, where) {
+// `pick` is the conversation to resume, when the caller already knows it.
+// Anything else, including empty, means ask. `the last conversation` passes the
+// card's own resume id and never sees the modal; `choose...` passes nothing.
+function resumeCard(id, t, where, pick) {
   const why = cannotResume(t);
   if (why) { toast("cannot resume", why); return; }
-  return resumeNow(id, t, where);
+  return resumeNow(id, t, where, pick);
 }
 
 // Resuming, without asking anything.
@@ -233,31 +236,70 @@ async function promoteCard(id, t) {
   refresh();
 }
 
-async function resumeNow(id, t, where) {
+async function resumeNow(id, t, where, pick) {
   // Which conversation, when the directory has more than one. Returns the
   // card's own resume id without asking when there is nothing to choose
   // between, and null when the choice was cancelled.
-  const resume = await pickSession(id, t);
+  //
+  // Skipped entirely when the caller already knows, which is the common case:
+  // `the last conversation` is the card's own recorded id and there is nothing
+  // to choose. The modal is what `choose...` is for.
+  const resume = pick ? pick : await pickSession(id, t);
   if (resume === null) return;
+
+  const start = (withResume) => api("/v1/launch", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      harness: t.runner || "claude",
+      cwd: t.worktree || "",
+      resume: withResume,
+      task_id: id,
+      // Onto the same card, so the title and everything else on it stay put.
+      // Sending them again would let a stale copy of the row overwrite what
+      // the card says now.
+      title: "", why: "", prompt: ""
+    })
+  });
 
   let task;
   try {
-    task = await api("/v1/launch", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        harness: t.runner || "claude",
-        cwd: t.worktree || "",
-        resume: resume,
-        task_id: id,
-        // Onto the same card, so the title and everything else on it stay put.
-        // Sending them again would let a stale copy of the row overwrite what
-        // the card says now.
-        title: "", why: "", prompt: ""
-      })
-    });
+    task = await start(resume);
   } catch (e) {
-    tellUser("could not resume it", e.message);
-    return;
+    // A REFUSED RESUME IS A FORK, NOT A DEAD END.
+    //
+    // This said "could not resume it" over a sentence that named both ways out
+    // and offered neither, under a single `ok`. The daemon knows which card is
+    // holding the conversation, because it looked it up to refuse, so both
+    // remedies are a button rather than an instruction to go and do something
+    // elsewhere. `ok` was the wrong word for it too: it meant "I accept that
+    // nothing happened".
+    const busy = e.body && e.body.kind === "resume-busy" ? e.body : null;
+    if (!busy) {
+      tellUser("could not start it", e.message);
+      return;
+    }
+    // The conversation id is the thing the operator would search for and the
+    // one thing the old dialog never showed.
+    const pick = await askUser({
+      title: "already open somewhere else",
+      body: e.message + "\n\nconversation " + (busy.resume || "unknown"),
+      buttons: [
+        { label: "cancel", value: null },
+        { label: "attach to " + (busy.holder_title || "it"), value: "attach" },
+        { label: "start fresh here", value: "fresh", style: "go" }
+      ]
+    });
+    if (pick === "attach") { attachTask(busy.holder_id); return; }
+    if (pick !== "fresh") return;
+    // The guard allows this explicitly: two runners in one directory with
+    // separate transcripts is a real thing to want. So it was already the
+    // permitted alternative the prose was describing.
+    try {
+      task = await start("");
+    } catch (e2) {
+      tellUser("could not start it", e2.message);
+      return;
+    }
   }
   if (!task || !task.supervised) { refresh(); return; }
   if (where === "window") { popOutTask(task.id); return; }
@@ -498,12 +540,32 @@ async function cardMenu(e, id) {
     // is a menu explaining why it is there, which is a question it raised.
     // In practice this is a card whose session is over and whose directory is
     // still on disk, which is the case worth having.
+    // WHERE IS NOT ASKED, AND WHICH IS ONLY ASKED WHEN YOU WANT IT.
+    //
+    // This used to be `resume the conversation here` over the same `in
+    // terminals` / `in its own window` pair that attach uses, and then a modal
+    // asking which conversation whenever the directory held more than one. Two
+    // questions, neither of which the operator opened the menu to answer.
+    //
+    // Placement comes off `lastPlace`, which records where the card was last
+    // actually opened. Popping out and putting back are one click each, and
+    // that is the right moment to decide it: the card is in front of you.
+    //
+    // `the last conversation` is the common case and costs nothing now.
+    // `choose...` is the same modal as before, unchanged, for when the common
+    // case is wrong.
     t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume the conversation here",
-      help: "Starts a runner in this card's directory, picking the recorded " +
-        "conversation back up where it stopped. Nothing to fill in: the " +
-        "runner, the directory and the conversation all come off the card.",
-      sub: openIn(where => resumeCard(id, t, where))
+      label: "resume",
+      help: "Starts a runner in this card's directory and picks the " +
+        "conversation back up where it stopped. It opens where this card was " +
+        "last open, so there is nothing to answer.",
+      sub: [
+        {
+          label: "the last conversation",
+          act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "")
+        },
+        { label: "choose…", act: () => resumeCard(id, t, lastPlace(id)) }
+      ]
     } : null,
     // Offer transcript actions when the card has a directory, without fetching
     // the list just to build the menu. Put promotion first for throwaways so
