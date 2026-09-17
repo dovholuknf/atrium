@@ -229,6 +229,7 @@
   }
   .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
   .term-list .card .title .rmark { flex: none; }
+  /* `flex-shrink: 1` against the note's 999: the name yields only once the note has nothing left to give. */
   .term-list .card .title .tname {
     flex: 1 1 auto; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -243,8 +244,16 @@
      the same reason, and it carries the same hover so either half answers.
 
      Hidden in `mini`, where `.tname` is hidden too and the entry is a mark and a short name. */
+  /* THE NAME NEVER GIVES WAY TO THE NOTE, which is what `flex-shrink: 999` buys.
+     Both boxes were shrinkable at the same rate, so a long note took space from the name in proportion to
+     their widths: `desktop-edge-win:beta-release-2.12.0.0` arrived clipped at BOTH ends to make room for
+     `fips-support-...`, which was itself clipped. Two truncated strings, neither readable, to fit an
+     annotation beside the thing it annotates.
+     Shrinking the note a thousand times faster means it collapses to nothing before the name loses a
+     character. The note is the part you can afford to lose: the name is what you are looking for, and the
+     hover carries both whatever was drawn. */
   .term-list .card .title .tnote {
-    flex: 0 1 auto; min-width: 0;
+    flex: 0 999 auto; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--dimmest); font-size: var(--fs-sm);
   }

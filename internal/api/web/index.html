@@ -2077,6 +2077,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          out of date within months. -->
     <div class="field" id="l-model-field">
       <label class="eyebrow" for="l-model">model</label>
+      <!-- BUTTONS WHEN THE OPERATOR HAS A PICKER, and the box either way.
+           Comparing two models means launching the same work on each, which is
+           two launches where the only difference is a string typed from memory:
+           `claude-opus-4-7`, not `Opus 4.7`. A task that fiddly quietly stops
+           happening.
+           The names are not atrium's. They are read out of the operator's own
+           `modelPicker` in Claude Code's settings, so they are whatever they
+           decided and they change when they change it. Nothing here is a
+           catalog, which is the rule `discover.go` sets out at length. -->
+      <div class="toolbar" id="l-model-pick" hidden></div>
       <input type="text" id="l-model" list="l-model-seen" spellcheck="false"
         placeholder="empty runs the runner's own default">
       <datalist id="l-model-seen"></datalist>

@@ -39,6 +39,16 @@ type hello struct {
 	// What this room is, for the board to show. Observed, never trusted.
 	Version string `json:"version,omitempty"`
 	Host    string `json:"host,omitempty"`
+	// WHAT IT WOULD RUN, which is the difference between an upgrade offer that
+	// is useful and one that is a broken binary. A Windows hub has nothing a
+	// Linux room can execute, and finding that out after the swap is the worst
+	// possible moment.
+	OS   string `json:"os,omitempty"`
+	Arch string `json:"arch,omitempty"`
+	// Upgrades says this room is willing to be OFFERED a new binary. It never
+	// means the hub may install one: the room still decides, fetches and
+	// verifies. See `upgrade.go`.
+	Upgrades bool `json:"upgrades,omitempty"`
 }
 
 // welcome is the hub's answer to a hello.
@@ -68,6 +78,24 @@ type note struct {
 	// Bye is a side closing deliberately, so the other end logs a shutdown
 	// rather than a failure.
 	Bye string `json:"bye,omitempty"`
+	// Offer is a hub saying what it is running, in case the room wants it.
+	// Saying, not doing. See `upgrade.go`.
+	Offer *Offer `json:"offer,omitempty"`
+}
+
+// Offer is a binary a hub has, described well enough for a room to decide
+// about it without fetching anything.
+//
+// THE HASH IS THE POINT. A room fetches over the link it already trusts, and
+// then checks that what arrived is what was offered, so a truncated transfer
+// or a hub that changed underneath is caught before anything is swapped rather
+// than after it fails to start.
+type Offer struct {
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
 }
 
 // handshakeWait bounds the hello exchange. A connection that opens and then
@@ -171,9 +199,10 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol":
+	case "control", "data", "enrol", upgradeKind:
 	default:
-		_ = writeJSON(conn, welcome{OK: false, Error: "a connection is control, data or enrol"})
+		_ = writeJSON(conn, welcome{OK: false,
+			Error: "a connection is control, data, enrol or upgrade"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})

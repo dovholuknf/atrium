@@ -5,6 +5,9 @@ let allHarnesses = [];
 // anything typed into it. Arrives alongside the runners, since the launch
 // dialog reads both at once.
 let modelsSeen = [];
+// The operator's own model picker, read from Claude Code's settings by the
+// daemon. Empty on a machine that has not configured one, which is most.
+let modelPicker = [];
 let launchTarget = null;
 
 // Which pane of the runners page was last open, remembered the same way the
@@ -555,6 +558,8 @@ async function renderRunners() {
         onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
           h.enabled ? "disable" : "enable"}</button>
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
+      <button title="a copy of this runner, to change one thing about"
+        onclick="copyHarness('${esc(h.id)}','${esc(h.room || "")}')">duplicate</button>
     </div>`);
 
   renderDiscovered();

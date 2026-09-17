@@ -63,6 +63,17 @@ func hubCmd() *cobra.Command {
 			defer ln.Close()
 
 			h := link.NewHub(link.Timings{})
+			// WHAT THIS HUB IS RUNNING, so a room that asked to be told can be
+			// told. Hashed once here rather than per attach: it is fifty
+			// megabytes and it cannot change while this process is running.
+			//
+			// A failure is logged and ignored. Not being able to describe your
+			// own binary is not a reason to refuse to serve a board.
+			if o, err := link.Offered(version); err != nil {
+				log.Printf("[hub] cannot describe this binary, so rooms will not be offered it: %v", err)
+			} else {
+				h.Offers(o)
+			}
 			h.Enrol = side.enrol
 			// A ROOM IN THIS PROCESS IS NOT ASKED FOR PAPERS. Every other room
 			// proves who it is with a certificate this hub signed, because its

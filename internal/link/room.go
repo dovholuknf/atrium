@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -35,6 +36,11 @@ type Room struct {
 	Host    string
 	// T is the timing set. Zero fields take defaults.
 	T Timings
+	// Upgrades is whether this room will consider a build its hub offers, and
+	// what to do with one it has fetched and checked. Nil means no, which is
+	// the default: a hub may say what it is running and nothing happens. See
+	// `upgrade.go`.
+	Upgrades *Upgrades
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -47,6 +53,9 @@ type Room struct {
 	up      bool
 	since   time.Time
 	lastErr string
+	// taking makes sure one offer is acted on once, however many times the hub
+	// repeats it across reconnects.
+	taking taker
 }
 
 // Run keeps a room attached to its hub until the context is cancelled.
@@ -156,6 +165,12 @@ func (r *Room) attach(ctx context.Context) error {
 	br := bufio.NewReader(conn)
 	w, err := sayHello(conn, br, hello{
 		Kind: "control", Room: r.Name, Version: r.Version, Host: r.Host,
+		// What this room would run, and whether it is willing to be told about
+		// a newer one. Neither gives the hub any power: a hub cannot install
+		// anything, and this only saves it from offering a Linux room a
+		// Windows binary. See `upgrade.go`.
+		OS: runtime.GOOS, Arch: runtime.GOARCH,
+		Upgrades: r.Upgrades != nil && r.Upgrades.Accept,
 	})
 	if err != nil {
 		return err
@@ -193,6 +208,10 @@ func (r *Room) attach(ctx context.Context) error {
 		switch {
 		case n.Bye != "":
 			return errors.New("the hub said: " + n.Bye)
+		case n.Offer != nil:
+			// A hub saying what it is running. Considered, which usually means
+			// ignored. See `consider` in upgrade.go.
+			r.consider(ctx, n.Offer)
 		case n.Need > 0:
 			// ASKED FOR, NOT GUESSED AT. The hub knows how many connections it
 			// is holding and how many it wants spare. A room dialling on its

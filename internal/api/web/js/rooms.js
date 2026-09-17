@@ -60,6 +60,15 @@ function pickRoom(name) {
   try {
     if (name) localStorage.setItem(ROOM_KEY, name);
     else localStorage.removeItem(ROOM_KEY);
+    // AND THE TERMINAL YOU WERE READING IS FORGOTTEN, because it was on the
+    // machine you just stopped looking at.
+    //
+    // The board remembers one card so a restart puts you back on it. That slot
+    // has no idea which room it belongs to, so switching rooms left it holding
+    // another machine's card: the terminals list came up empty, correctly,
+    // while the board announced it was waiting for a session to come back that
+    // is not on this machine and was never coming.
+    localStorage.removeItem("atrium.term");
   } catch (e) {}
   location.reload();
 }
