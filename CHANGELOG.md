@@ -5,6 +5,33 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One alert per event, in one form, wherever you are looking.**
+
+  A chime with no notification behind it, every time a session was popped out into its own window. The beep is
+  unconditional and the form of the alert was not, so the half that got decided wrongly was the half you were
+  meant to see.
+
+  Each document decided alone, out of what it could see. The board asked `inForeground`, visible and focused. A
+  popped-out window asked `onScreen`, visible, chosen because the stricter test had it announcing out loud a
+  thing being watched on a second monitor. Neither window can see the other, and on Windows a window buried
+  behind others is still visible. So a board sitting behind a popped-out window believed itself unattended and
+  rang the operating system while toasting where nobody was looking, and the window actually being read drew a
+  toast underneath four other windows and suppressed the notification that would have said so.
+
+  **The question is about the set of windows, and no single document can answer it.** So they tell each other.
+  Each window announces focus on every transition and on a beat while it holds it, and a claim nobody has
+  repeated is not believed, for the same reason a solo claim is a heartbeat: a window that dies while focused
+  would otherwise suppress every desktop notification for as long as the board stayed open.
+
+  The rule is now one rule, applied once:
+
+  - a window has focus, and that window toasts. Nothing else happens anywhere.
+  - no window has focus, and Windows says it once. No window toasts.
+
+  Never both. Every caller hands the whole alert to `notify` and nothing else, because the choice between a
+  toast and a notification is one decision and it cannot be made twice. Callers used to make it themselves and
+  then call `toast` as well, which is how the same event reached you in two forms.
+
 - **The login moved into the panel that publishes the board, and the panel stopped claiming there is none.**
 
   The zrok panel ended its description with "this board has no login". That is a constant. It was written when
@@ -894,26 +921,4 @@ section heading is just "what landed in this iteration."
   - **Going back must not record the arrival**, or forward points at where you just came from and the two
     buttons walk in a circle.
   - **Attaching pushes once, not twice.** `openTerm` switches view before the card is set, so the naive
-    version left `terms with nothing attached` between the view you came from and the session you asked for,
-    and back needed pressing twice to leave a place you were never in.
-  - **The opening view needs an entry of its own**, recorded after the restore has decided where the page
-    actually landed. Without it the first push replaces rather than pushes, and the first press of back steps
-    straight over where you started.
-
-  `check-terminal.js` rule 14 holds all three, because the failure is not that back stops working, it is that
-  back appears to work and goes to the wrong place.
-
-- **The terminal switcher groups by host, then org, then project.** (`B2-02`)
-
-  Eleven entries repeated `github/` eleven times and `dovholuknf/` three or four, so the list was widest where
-  it said least. It was already failing: rows rendered as `...nziti/ziti-openwrt:firmware-upgrade-recovery-docs`
-  because the strip is a few hundred pixels wide and the FRONT of the path was being cut to keep the leaf. A
-  hierarchy fixes that by construction, since the shared prefix moves into a heading and stops being drawn once
-  per row.
-
-  Grouping never reached this strip. The settings expression the operator writes applies inside a board column,
-  and the strip is not a column, so this is hierarchy taken there rather than an extension of that.
-
-  **Two collapses, and the second is what makes it usable.** A chain of only children is one heading, so
-  `openziti-test-kitchen/docpreview` is not two levels. And a level holding a SINGLE row is not a level at all:
-  it draws as `atrium:main` on the row. Without the second, the real boa
+    version left `terms with nothing attached` between the view you came from a

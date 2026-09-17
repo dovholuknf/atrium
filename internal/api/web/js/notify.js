@@ -45,6 +45,75 @@ let soloID = "", soloTask = null;
 // terminal straight back on the next poll.
 let soloYielded = false;
 
+// ── which atrium window says it, and in what form ────────
+//
+// ONE ALERT PER EVENT, ACROSS EVERY ATRIUM WINDOW. That is a rule about the
+// SET of windows, not about any one of them:
+//
+//   - a window has focus  -> THAT window toasts, and nothing else happens
+//   - no window has focus -> ONE desktop notification, and no toast anywhere
+//
+// Never both, and never twice.
+//
+// What was here before could not express it, because each document decided
+// alone out of what it could see. The board asked `inForeground`, a popped-out
+// window asked `onScreen`, and neither can see the other. So a board sitting
+// behind a popped-out window believed itself unattended: it toasted where
+// nobody was looking AND rang Windows, while the window being read said
+// nothing. The symptom is a chime with no notification behind it.
+//
+// `document.hasFocus()` is the whole test, and it is only answerable about the
+// document asking. So the windows tell each other.
+const thisWindowSays = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+// A FOCUS CLAIM IS A HEARTBEAT, NOT A MEMORY, for the same reason a solo claim
+// is one. A window that dies while focused would otherwise suppress every
+// desktop notification for as long as any other window stayed open, and
+// nothing would ever correct it.
+const focusClaimFor = 12000;
+const focusBeat = 4000;
+let focusedElsewhere = { win: "", at: 0 };
+let hadFocus = false;
+
+// This window's own answer is a fact. Every other window's is a report, and
+// reports go stale.
+function focusIsHere() { return document.hasFocus(); }
+function focusIsElsewhere() {
+  if (focusIsHere() || !focusedElsewhere.win) return "";
+  if (Date.now() - focusedElsewhere.at > focusClaimFor) return "";
+  return focusedElsewhere.win;
+}
+
+// Said on every transition AND on a beat while focused. The transition is what
+// makes it prompt and the beat is what makes it survive a window that never
+// got to say goodbye.
+function sayWhetherFocused() {
+  if (!soloBus) return;
+  const now = focusIsHere();
+  if (now) soloBus.postMessage({ type: "win-focus", win: thisWindowSays });
+  else if (hadFocus) soloBus.postMessage({ type: "win-blur", win: thisWindowSays });
+  hadFocus = now;
+}
+window.addEventListener("focus", sayWhetherFocused);
+window.addEventListener("blur", sayWhetherFocused);
+document.addEventListener("visibilitychange", sayWhetherFocused);
+// `pagehide` rather than `unload`, which a browser is free to skip for a tab
+// it discards. Either way the beat above is the backstop.
+window.addEventListener("pagehide", () => {
+  if (soloBus && hadFocus) soloBus.postMessage({ type: "win-blur", win: thisWindowSays });
+});
+setInterval(() => { if (focusIsHere()) sayWhetherFocused(); }, focusBeat);
+sayWhetherFocused();
+
+// Whether a desktop notification can actually appear.
+//
+// Asked separately from sending one because `showNotification` hands back
+// `null` on the service worker path whether or not anything was shown, so its
+// return value cannot decide whether to fall back to a toast.
+function desktopAllowed() {
+  return "Notification" in window && Notification.permission === "granted";
+}
+
 if (soloBus) {
   soloBus.onmessage = e => {
     const m = e.data || {};
@@ -69,6 +138,29 @@ if (soloBus) {
     // and the board is the window most likely to still be listening.
     if (m.type === "going-down") {
       if (!restartComing()) restartAt = Date.now();
+      return;
+    }
+    // WHO IS IN FRONT. Above the solo branch because every window needs this
+    // one equally: the board has to know a popped-out window is being read,
+    // and that window has to know the board is.
+    if (m.type === "win-focus" && m.win) {
+      focusedElsewhere = { win: m.win, at: Date.now() };
+      return;
+    }
+    if (m.type === "win-blur" && m.win) {
+      // Only the window that made the claim can withdraw it. Otherwise a
+      // window blurring as another takes focus would erase the new claim with
+      // the old one's goodbye.
+      if (focusedElsewhere.win === m.win) focusedElsewhere = { win: "", at: 0 };
+      return;
+    }
+    // SOMETHING FOR THE WINDOW IN FRONT TO SAY, raised somewhere else.
+    //
+    // The window that NOTICES an alert is rarely the window you are looking
+    // at. It hands the toast to the one that is, addressed by name, and says
+    // nothing itself.
+    if (m.type === "win-toast" && m.win === thisWindowSays) {
+      toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null);
       return;
     }
     // A solo window alerts for its own card and nothing else, so it has no use
@@ -298,18 +390,57 @@ const alerting = (() => {
   // own card, so the board must not. `artFor` is the card the picture belongs
   // to, which is the same thing everywhere except in that window, where they
   // are deliberately different.
-  function notify(title, body, goTo, permId, subject, taskFor, mark, artFor) {
-    if (prefs.muted || prefs.desktop === false) return;
-    // Looking at the board or not. That is the whole rule: if you can see it,
-    // the toast has already told you and a second copy from the operating
-    // system is noise.
-    if (inForeground()) return;
-    // A card whose terminal is popped out is alerted by that window, which
-    // knows whether YOU are looking at it. The board cannot: it is behind the
-    // popped-out window and by its own test is in the background, so without
-    // this the same event rings twice, once from each document.
+  // ONE ALERT, PUT WHERE YOU ARE. See the header above `thisWindowSays`.
+  //
+  // Every caller hands the whole alert to this and nothing else, because the
+  // choice between a toast and a desktop notification is one decision and it
+  // cannot be made twice. Callers used to make it themselves and then call
+  // `toast` as well, which is how the same event reached you in two forms.
+  //
+  // `opts.quiet` suppresses ONLY the toast in this window, and only when this
+  // window has focus. It is for an alert whose subject is already on screen
+  // with its own buttons: a floating copy of the first 120 characters is a
+  // panel drawn over the answer. It has no bearing on the other two cases,
+  // where by definition you are not looking at anything here.
+  function notify(title, body, goTo, permId, subject, taskFor, mark, artFor, opts) {
+    opts = opts || {};
+    // A card whose terminal is popped out is spoken for by that window, which
+    // is the only document that can be looked at instead of this one. Decides
+    // WHO RAISES the alert. Where it lands is the rest of this function.
     if (taskFor && poppedOut(taskFor)) return;
-    showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor);
+
+    const key = permId || subject || null;
+
+    // 1. YOU ARE LOOKING AT THIS WINDOW. The toast is the whole message, and a
+    // second copy from the operating system is noise.
+    if (focusIsHere()) {
+      if (!opts.quiet) toast(title, body, goTo, key, taskFor || null);
+      return;
+    }
+
+    // 2. YOU ARE LOOKING AT ANOTHER ATRIUM WINDOW. It toasts, this one says
+    // nothing at all. Addressed by name rather than broadcast, or every window
+    // open would draw the same toast.
+    const elsewhere = focusIsElsewhere();
+    if (elsewhere && soloBus) {
+      soloBus.postMessage({
+        type: "win-toast", win: elsewhere, title, body: body || "",
+        goTo: goTo || "", key: key || "", taskFor: taskFor || ""
+      });
+      return;
+    }
+
+    // 3. NOBODY IS LOOKING. Windows says it, and no window toasts.
+    if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
+      showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor);
+      return;
+    }
+
+    // Nothing can reach you: notifications are off, denied, or muted. The
+    // toast is then a RECORD rather than a message, and it is worth one,
+    // because the alternative is an event that happened and left no trace in
+    // the log you would go looking through afterwards.
+    toast(title, body, goTo, key, taskFor || null);
   }
 
   btn.onclick = () => {
@@ -379,20 +510,17 @@ const alerting = (() => {
       play("permission", soundForAlert(p));
       const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
       const who = p.agent || "an agent";
-      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id,
-        p.task_id || p.id, iconForAlert(p));
-      // The same rule `notify` applies one level up, applied one level down.
-      // Up there it is "if you can see the board, the toast has already told
-      // you". Here it is: if the request's own row is on screen, with its
-      // command and its four buttons, a floating copy of the first 120
-      // characters is not news. It is a panel drawn over the answer.
+      // `quiet` when the request's own row is on screen, with its command and
+      // its four buttons. A floating copy of the first 120 characters is not
+      // news there, it is a panel drawn over the answer.
       //
       // On screen, not merely on the perms tab. A queue of six on a phone is
-      // taller than the phone, and the one that has been frozen twelve
-      // minutes may be well below the fold, where the toast is the only thing
-      // that would take you to it. Clicking it still does.
-      if (showing === "on-screen") return;
-      toast(`${who} has waited ${mins}m`, body, "perms", p.id);
+      // taller than the phone, and the one frozen twelve minutes may be well
+      // below the fold, where the toast is the only thing that would take you
+      // to it. It only silences the toast in THIS window: a nag that reaches
+      // Windows, or another window, is not about what is on screen here.
+      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id,
+        p.task_id || p.id, iconForAlert(p), "", { quiet: showing === "on-screen" });
     });
     // Forget anything answered, so a later request with a fresh id starts over.
     const live = new Set(perms.map(p => p.id));
@@ -514,14 +642,15 @@ const alerting = (() => {
     // One at a time gets its own notification. A summary of several replaces
     // whatever summary was there, which is what you want from a count.
     const subject = fresh.length === 1 ? fresh[0].id : "";
+    // ONE CALL, and it decides the form. The toast that used to follow this
+    // line is now case 1 inside it: a board in front of you toasts and rings
+    // nothing, a board behind something hands the toast to whichever atrium
+    // window you are actually reading, and a board nobody is looking at rings
+    // Windows instead. Two calls could not express that, and what they did
+    // instead was both at once.
     notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject,
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "");
-    // A desktop notification is suppressed while the board is in front, so the
-    // toast covers exactly that case. Clicking it goes where the work is.
-    toast(title, body, kind === "permission" ? "perms" : "stack",
-      fresh.length === 1 ? fresh[0].id : null,
-      fresh.length === 1 ? fresh[0].task_id || fresh[0].id : null);
   }
 })();
 

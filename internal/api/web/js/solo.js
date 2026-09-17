@@ -640,32 +640,30 @@ function soloAlert(kind, now, item) {
     : readyBecause(soloTask || {});
 
   alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
-  // VISIBLE IS ENOUGH HERE, and `inForeground` is the wrong test for this
-  // window.
+  // THIS WINDOW NO LONGER DECIDES THE FORM ON ITS OWN, and that is the fix.
   //
-  // `inForeground` is visible AND focused, which is right for the board: it is
-  // a tab among many and being visible does not mean you are reading it.
+  // It used to ask `onScreen`, visible without focused, chosen because
+  // `inForeground` had this window announcing out loud a thing the operator
+  // was watching happen on a second monitor. It traded that for the opposite
+  // failure: on Windows a window buried behind others is still `visible`, so
+  // this one drew a toast nobody could see and suppressed the notification,
+  // while the board stayed quiet because the claim says this card is ours. A
+  // chime and nothing else.
   //
-  // A popped-out terminal is not that. It exists to be looked at and holds one
-  // session, so a second monitor with it open on it is exactly the case the
-  // operator complained about: the window was telling them, out loud, about a
-  // thing they were watching happen. Focus is about which window takes the
-  // keyboard, and that is a different question from whether you can see it.
-  if (onScreen()) {
-    // In front of you, so the toast is the whole message. No `goTo`: there is
-    // nowhere in this window to go, and clicking through to a board is the
-    // thing this window refuses to become.
-    toast(title, body, null, item && item.id, soloID);
-  } else {
-    // Behind something. The mark on the title bar is already up, and the
-    // desktop notification is what makes you look at the switcher at all. The
-    // board is holding its own copy back because of the claim.
-    // taskFor is this window's own card, which is what the picture belongs to.
-    // Not passed as the suppression key: this window IS the one that should
-    // speak, and handing it its own claim would silence it.
-    alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "", soloID, "",
-      iconForAlert(soloTask), soloID);
-  }
+  // Neither test can be right, because both ask about one document and the
+  // question is about all of them. `alerting.notify` asks that question. If
+  // you are reading this window it toasts here, if you are reading the board
+  // it hands the toast over, and if you are reading neither Windows says it.
+  //
+  // No `goTo`: there is nowhere in this window to go, and clicking through to
+  // a board is the thing this window refuses to become.
+  //
+  // `taskFor` stays empty deliberately. It is the suppression key, meaning
+  // "another window speaks for this card", and this window IS that window.
+  // Handing it its own claim would silence it. `artFor` carries the card the
+  // picture belongs to, which is the same id by a different road.
+  alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "",
+    item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID);
 }
 
 // Back to the view you were on, and to the terminal you were reading.
