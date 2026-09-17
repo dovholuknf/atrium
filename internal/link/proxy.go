@@ -14,6 +14,7 @@ import (
 	"net/http/httputil"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,6 +45,16 @@ type Proxy struct {
 	boardID string
 	room    func() string
 	proxy   *httputil.ReverseProxy
+
+	// clients are per-room, for the aggregate fan-out and the event streams.
+	// The scoped proxy path does not use them: it goes through `proxy` and its
+	// single transport.
+	mu      sync.Mutex
+	clients map[string]*http.Client
+
+	// feeds is the one upstream event stream per room, and the boards watching
+	// them. See events.go.
+	feeds *feeds
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -52,6 +63,7 @@ type Proxy struct {
 // which is right for a test and wrong for a running hub.
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room}
+	p.feeds = newFeeds(p)
 
 	p.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -60,6 +72,10 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			// exists only because net/http insists a request has one.
 			r.Out.URL.Scheme = "http"
 			r.Out.URL.Host = "room.atrium.internal"
+			// THE TAG COMES OFF BEFORE THE ROOM SEES IT. A room minted the
+			// bare id and knows nothing about `room~id`, so sending the tagged
+			// form would be a 404 on every card clicked from an aggregate list.
+			r.Out.URL.Path = untag(r.Out.URL.Path)
 			// The browser's Host is forwarded, so anything building a link
 			// builds one pointing at the hub, which is the address a browser
 			// can reach. Nothing in the room reads it today, which is what
@@ -102,8 +118,13 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 }
 
 func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
-	name := ""
-	if p.room != nil {
+	// THE ROOM COMES OFF THE REQUEST, not off this connection.
+	//
+	// `http.Transport` calls this with no request in hand, so the room has to
+	// arrive through the context. `Rewrite` puts it there, because that is the
+	// last place both the request and the outbound connection are in scope.
+	name, _ := ctx.Value(roomKey{}).(string)
+	if name == "" && p.room != nil {
 		name = p.room()
 	}
 	if name == "" {
@@ -113,6 +134,64 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 		return nil, ErrNoRoom
 	}
 	return p.hub.Dial(ctx, name)
+}
+
+// roomKey carries the chosen room from the rewrite into the dial.
+type roomKey struct{}
+
+// roomFor answers which room a request is for, and whether it named one.
+//
+// A HEADER ON JSON AND A QUERY PARAMETER ON THE WEBSOCKET, because a websocket
+// cannot set a header. Both are read here so nothing else has to know there are
+// two spellings.
+//
+// An id of the form `room~card` names a room too, and that is what makes an
+// aggregate board clickable: the board got the id from a merged list and hands
+// it straight back in the next url without knowing what it means.
+func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
+	if v := strings.TrimSpace(r.Header.Get(RoomHeader)); v != "" {
+		return v, true
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get(RoomParam)); v != "" {
+		return v, true
+	}
+	if room, _ := splitTag(cardIDIn(r.URL.Path)); room != "" {
+		return room, true
+	}
+	// Exactly one room needs no choosing. The operator was explicit: do not
+	// ask when there is nothing to ask about.
+	if only := p.hub.Only(); only != "" {
+		return only, false
+	}
+	return "", false
+}
+
+// cardIDIn pulls the id out of `/v1/tasks/<id>/...`, which is the only shape
+// that carries one.
+func cardIDIn(path string) string {
+	const pre = "/v1/tasks/"
+	if !strings.HasPrefix(path, pre) {
+		return ""
+	}
+	rest := strings.TrimPrefix(path, pre)
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	return rest
+}
+
+// untag rewrites `/v1/tasks/room~id/...` back to `/v1/tasks/id/...` on the way
+// to a room, so the room sees the id it minted and needs to know nothing.
+func untag(path string) string {
+	id := cardIDIn(path)
+	if id == "" {
+		return path
+	}
+	room, bare := splitTag(id)
+	if room == "" {
+		return path
+	}
+	return strings.Replace(path, "/v1/tasks/"+id, "/v1/tasks/"+bare, 1)
 }
 
 // ServeHTTP is the rule.
@@ -139,10 +218,35 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			`run atrium stop on the machine the room is on."}`)
 		return
 	}
+	// THE EVENT STREAM IS NEVER PROXIED. It is fanned in once per room and
+	// dealt back out, so a browser holds one stream rather than one per room
+	// per tab, and so a stream can say which room it wants in its URL, which
+	// is the only place an EventSource can say anything.
+	if p.eventsFor(w, r) {
+		return
+	}
 	if name, ok := p.asset(r.URL.Path); ok {
 		p.serveAsset(w, r, name)
 		return
 	}
+
+	room, named := p.roomFor(r)
+	if room == "" {
+		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
+		if p.aggregate(w, r, r.URL.Path) {
+			return
+		}
+		// A write, or a read nothing knows how to merge. Asked rather than
+		// guessed at. `/v1/health` is the exception below, because the board
+		// polls it to decide atrium is up at all.
+		if rooms := p.hub.Rooms(); len(rooms) > 1 && r.URL.Path != "/v1/health" {
+			needsARoom(w, rooms)
+			return
+		}
+	}
+	// Carried on the context, which is the only thing that reaches the dial.
+	r = r.WithContext(context.WithValue(r.Context(), roomKey{}, room))
+	_ = named
 	p.proxy.ServeHTTP(w, r)
 }
 
