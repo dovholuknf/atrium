@@ -528,7 +528,7 @@ function turnEndReach() {
   const h = (hookReport && hookReport.hooks || []).find(x => x.event === "turn-end");
   if (h && h.installed && !h.stale) return ", or when its turn ends.";
   return ". a session sitting idle makes no tool calls, so it will wait there until " +
-    "something happens. wire the Stop hook in the runners tab to reach an idle session.";
+    "something happens. wire the Stop hook under rooms > runners to reach an idle session.";
 }
 
 // What has been said and has not arrived. Only ever queued messages: one typed
@@ -1386,7 +1386,7 @@ function connect() {
         : bad.slice(0, 3).map(f => f.label).join(", ") + ` and ${bad.length - 3} more`);
     alerting.play("permission");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
-    toast(title, body + ". the runners tab says why", "runners");
+    toast(title, body + ". the rooms tab says why", "runners");
   });
   // Atrium is asking a registry whether a newer runner is published, and a
   // launch is waiting on the answer.

@@ -30,6 +30,12 @@ func hubCmd() *cobra.Command {
 		service   string
 		files     string
 		open      bool
+
+		// The hub being a room too. Off unless asked for: see `--room`.
+		asRoom    bool
+		roomName  string
+		roomDB    string
+		roomAgent string
 	)
 	c := &cobra.Command{
 		Use:   "hub",
@@ -58,7 +64,13 @@ func hubCmd() *cobra.Command {
 
 			h := link.NewHub(link.Timings{})
 			h.Enrol = side.enrol
-			h.Authenticated = side.auth
+			// A ROOM IN THIS PROCESS IS NOT ASKED FOR PAPERS. Every other room
+			// proves who it is with a certificate this hub signed, because its
+			// connection crossed a network. That one did not leave the
+			// process. See `link.IsInProc`.
+			h.Authenticated = func(c net.Conn) bool {
+				return link.IsInProc(c) || side.auth(c)
+			}
 
 			// The board this hub serves. From disk when told to, so the loop is
 			// edit, save, reload, with no rebuild at all.
@@ -77,6 +89,17 @@ func hubCmd() *cobra.Command {
 					log.Printf("[hub] the room listener stopped: %v", err)
 				}
 			}()
+
+			// THE HUB AS A ROOM AS WELL, when asked. Started here rather than
+			// before the listener because it attaches over that same hub, and
+			// stopped by the same context as everything else.
+			if asRoom {
+				stopRoom, err := hubAsRoom(ctx, h, roomName, roomDB, roomAgent)
+				if err != nil {
+					return err
+				}
+				defer stopRoom()
+			}
 
 			srv := &http.Server{
 				Addr:    board,
@@ -114,6 +137,16 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&files, "board", "",
 		"serve the board from this directory instead of the built-in copy")
 	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
+	// OFF BY DEFAULT, and that is the design rather than caution. A hub that
+	// holds a database is a hub whose restart is no longer free, which is the
+	// one property this whole split exists to buy.
+	c.Flags().BoolVar(&asRoom, "room", false,
+		"also run agents on this machine, as a room attached to this hub")
+	c.Flags().StringVar(&roomName, "room-name", "",
+		"what to call this machine's own room, with --room (default: this machine's name)")
+	c.Flags().StringVar(&roomDB, "room-db", "", "its database, with --room")
+	c.Flags().StringVar(&roomAgent, "room-agent", "127.0.0.1:7802",
+		"where its agents report, with --room")
 	c.AddCommand(tokenCmd())
 	return c
 }

@@ -105,6 +105,88 @@ func roomCmd() *cobra.Command {
 	return c
 }
 
+// hubAsRoom runs a room inside the hub's own process.
+//
+// ── what this is for ─────────────────────────────────────
+//
+// The machine the hub is on is usually a machine you also work on, and telling
+// somebody to start a second process in a second terminal to use the computer
+// in front of them is a silly answer to a question they should not have had to
+// ask.
+//
+// ── what it costs, which is why it is off by default ─────
+//
+// A hub that holds a database is a hub whose restart is no longer free. That
+// is the one property the split exists to buy, and this gives it up for the
+// hub's own machine. Rooms attached from elsewhere are untouched either way:
+// they carry their own database and their own terminals, and a hub restart is
+// still just a reconnect to them.
+//
+// ── how it attaches ──────────────────────────────────────
+//
+// Over `link.InProc`, which is a transport like any other: a listener and a
+// dialer, joined by a pipe. The room enrols, heartbeats and pools connections
+// exactly as a machine across the world does, and appears in `Rooms()` beside
+// them. Nothing above this knows the difference, which is what stops the two
+// paths drifting apart.
+func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) (func(), error) {
+	if strings.TrimSpace(name) == "" {
+		name = defaultRoomName()
+	}
+	if strings.TrimSpace(db) == "" {
+		db = defaultRoomDB()
+	}
+	// The same two lines a separate room runs, and for the same reason: a room
+	// must not publish itself as the machine's atrium and hijack the hooks of
+	// one already running. See `runRoom`.
+	if os.Getenv("ATRIUM_LOCATION") == "" {
+		if err := os.Setenv("ATRIUM_LOCATION", roomLocation()); err != nil {
+			return nil, err
+		}
+	}
+	if os.Getenv("ATRIUM_SHARED_LOCATION") == "" {
+		if err := os.Setenv("ATRIUM_SHARED_LOCATION", "-"); err != nil {
+			return nil, err
+		}
+	}
+
+	d, err := daemon.New(daemon.Options{
+		// NO BOARD OF ITS OWN. A separate room serves one on loopback for when
+		// the hub is down, which cannot happen to this one: they are the same
+		// process, so if the hub is down so is this.
+		HumanAddr: "-",
+		AgentAddr: agent,
+		DBPath:    db,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	pipe := &link.InProc{}
+	go func() {
+		if err := h.Serve(ctx, pipe.Listen()); err != nil && ctx.Err() == nil {
+			log.Printf("[hub] its own room stopped listening: %v", err)
+		}
+	}()
+	room := &link.Room{
+		Name: name, Dial: pipe.Dialer(), Handler: d.BoardHandler(),
+		Version: version, Host: hostname(),
+	}
+	go func() {
+		if err := room.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("[hub] its own room gave up: %v", err)
+		}
+	}()
+	go func() {
+		if err := d.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("[hub] its own room's daemon stopped: %v", err)
+		}
+	}()
+
+	log.Printf("[hub] also a room, called %q, agents on %s, state in %s", name, agent, db)
+	return func() { _ = pipe.Close() }, nil
+}
+
 // runRoom starts the daemon and attaches it to the hub.
 func runRoom(keys link.Keys, db, human, agent string) error {
 	saved, err := keys.Joined()

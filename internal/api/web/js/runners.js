@@ -30,6 +30,15 @@ const RUNNERS_PANE = "atrium.runnersPane";
 // The split happens in `renderRunners`, which `switchView` calls, so the pane
 // is asked for after that rather than before: there are no panes to show yet
 // on the first visit.
+// A link that takes you where the fix is, from inside a dialog.
+//
+// The dialog is closed first. A modal over the page it just sent you to is a
+// page you cannot touch, and the only sign of what happened is an ok button.
+function paneLink(pane, label) {
+  return `<a href="#" onclick="document.getElementById('ask').close();` +
+    `goRunners('${pane}');return false">${label}</a>`;
+}
+
 function goRunners(pane) {
   switchView("runners");
   const host = document.getElementById("runners");
@@ -542,9 +551,11 @@ async function renderRunners() {
         : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
       ${hooksChip(h)}
+      ${roomChipFor(h)}
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
-        onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
-      <button onclick="editHarness('${esc(h.id)}')">edit</button>
+        onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
+          h.enabled ? "disable" : "enable"}</button>
+      <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
     </div>`).join("") + `</div>`;
 
   renderDiscovered();
@@ -654,15 +665,17 @@ async function renderActions() {
         >and exit</span>` : ""}
       ${a.tag ? `<span class="chip tag" style="--ghue:${groupHue(a.tag)}">${esc(a.tag)}</span>` : ""}
       ${a.runner ? `<span class="by">${esc(a.runner)}</span>` : ""}
-      <button data-edit="${esc(a.id)}">edit</button>
+      ${roomChipFor(a)}
+      <button data-edit="${esc(a.id)}" data-room="${esc(a.room || "")}">edit</button>
     </div>`).join("") + `</div>`);
   host.querySelectorAll("button[data-edit]").forEach(b => {
-    b.onclick = () => editAction(b.dataset.edit);
+    b.onclick = () => editAction(b.dataset.edit, b.dataset.room);
   });
 }
 
-function editAction(id) {
-  const a = allActions.find(x => x.id === id) || {
+async function editAction(id, room) {
+  if (!await chooseWriteRoom(rowOf(allActions, id, room), "action")) return;
+  const a = rowOf(allActions, id, room) || {
     id: "", label: "", prompt: "", after: "keep", tag: "", runner: "",
     enabled: true, sort: allActions.length * 10
   };
@@ -756,7 +769,8 @@ async function renderSources() {
         esc([s.cmd].concat(s.args || []).join(" "))}</code>
       <span class="by" title="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
       ${sourceStateChip(s)}
-      <button onclick="editSource('${esc(s.id)}')">edit</button>
+      ${roomChipFor(s)}
+      <button onclick="editSource('${esc(s.id)}','${esc(s.room || "")}')">edit</button>
     </div>`).join("") + `</div>`);
 }
 
@@ -787,8 +801,9 @@ function everyLabel(secs) {
   return "every " + secs + "s";
 }
 
-function editSource(id) {
-  const s = allSources.find(x => x.id === id) || {
+async function editSource(id, room) {
+  if (!await chooseWriteRoom(rowOf(allSources, id, room), "source")) return;
+  const s = rowOf(allSources, id, room) || {
     id: "", label: "", cmd: "", args: [], cwd: "",
     // Off by default. A source is a command somebody just wrote, and the first
     // thing to do with one is run it by hand and read what it printed.
@@ -941,7 +956,8 @@ async function renderRecognisers() {
       ${r.last_error ? `<span class="chip warn" title="${
         esc("the fetch failed " + r.failures + " time(s) in a row: " + r.last_error)
       }">fetch failing</span>` : ""}
-      <button class="editrec" data-id="${esc(r.id)}">edit</button>
+      ${roomChipFor(r)}
+      <button class="editrec" data-id="${esc(r.id)}" data-room="${esc(r.room || "")}">edit</button>
     </div>`).join("") + `</div>`);
 
   // THE ID COMES BACK THROUGH THE DOM, not through an inline handler. An id is
@@ -949,11 +965,12 @@ async function renderRecognisers() {
   // apostrophe inside a JavaScript string literal: a row called `it's mine`
   // would close the argument and the button would throw instead of opening.
   host.querySelectorAll(".editrec").forEach(b =>
-    b.onclick = () => editRecogniser(b.dataset.id));
+    b.onclick = () => editRecogniser(b.dataset.id, b.dataset.room));
 }
 
-function editRecogniser(id) {
-  const r = allRecognisers.find(x => x.id === id) || {
+async function editRecogniser(id, room) {
+  if (!await chooseWriteRoom(rowOf(allRecognisers, id, room), "recogniser")) return;
+  const r = rowOf(allRecognisers, id, room) || {
     id: "", label: "", pattern: "", enabled: false,
     // Below whatever is already there, so a new row cannot silently swallow
     // urls a more specific one was answering.
