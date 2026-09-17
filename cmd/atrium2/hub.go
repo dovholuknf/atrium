@@ -1,0 +1,240 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/spf13/cobra"
+)
+
+// The hub: serve the board, hold nothing, hand everything else to a room.
+
+func hubCmd() *cobra.Command {
+	var (
+		board string
+		port  string
+		dir   string
+		files string
+		open  bool
+	)
+	c := &cobra.Command{
+		Use:   "hub",
+		Short: "Serve the board. Holds nothing and can be restarted at will",
+		Long: "Serves the board on a port your browser opens, and listens on a second port\n" +
+			"for rooms to dial in to.\n\n" +
+			"THE HUB HOLDS NOTHING. No database, no cards, no scrollback. Everything the\n" +
+			"board shows comes from a room, live. That is what makes it safe to restart\n" +
+			"while somebody's agent is mid-sentence.\n\n" +
+			"On first run it makes itself a certificate authority and prints a join string.\n" +
+			"Paste that into `atrium2 join` on the machine your agents are on.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			keys := link.Keys{Dir: orDefault(dir, hubDir())}
+			if err := keys.EnsureCA(link.Hosts(advertised(port))); err != nil {
+				return fmt.Errorf("could not set this hub up: %w", err)
+			}
+
+			d := link.Direct{Addr: port, Keys: keys}
+			ln, err := d.Listen()
+			if err != nil {
+				return err
+			}
+			defer ln.Close()
+
+			h := link.NewHub(link.Timings{})
+			h.Enrol = d.ServeEnrolment
+			h.Authenticated = link.DirectAuthenticated
+
+			// The board this hub serves. From disk when told to, so the loop is
+			// edit, save, reload, with no rebuild at all.
+			assets, id, err := boardFrom(files)
+			if err != nil {
+				return err
+			}
+			proxy := link.NewProxy(h, assets, id, nil)
+
+			ctx, stop := signal.NotifyContext(context.Background(),
+				os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			go func() {
+				if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {
+					log.Printf("[hub] the room listener stopped: %v", err)
+				}
+			}()
+
+			srv := &http.Server{
+				Addr:    board,
+				Handler: proxy,
+				// NO WRITE TIMEOUT. The event stream and the terminal are both
+				// meant to stay open for hours, and a write deadline would cut
+				// them with nothing to show for it.
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+			boardLn, err := net.Listen("tcp", board)
+			if err != nil {
+				return fmt.Errorf("board listener: %w", err)
+			}
+
+			greet(keys, port, board, id)
+
+			go func() {
+				<-ctx.Done()
+				log.Printf("[hub] stopping. rooms will reconnect when it comes back")
+				_ = srv.Close()
+			}()
+			if err := srv.Serve(boardLn); err != nil && ctx.Err() == nil {
+				return err
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&board, "addr", ":7800", "where the browser reaches the board")
+	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
+	c.Flags().StringVar(&files, "board", "",
+		"serve the board from this directory instead of the built-in copy")
+	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
+	c.AddCommand(tokenCmd())
+	return c
+}
+
+// tokenCmd mints another join string, for the second room or a lost one.
+func tokenCmd() *cobra.Command {
+	var dir, port string
+	c := &cobra.Command{
+		Use:   "token",
+		Short: "Print a fresh join string",
+		Long: "Join strings are good once and for an hour. This prints another without\n" +
+			"disturbing a running hub, which is what you want for a second room or\n" +
+			"for one you pasted into the wrong window.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			keys := link.Keys{Dir: orDefault(dir, hubDir())}
+			if _, err := keys.Fingerprint(); err != nil {
+				return fmt.Errorf("this machine is not a hub yet. run `atrium2 hub` first")
+			}
+			tok, err := keys.MintToken(advertised(port))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), tok)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
+	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	return c
+}
+
+// greet is the first thing anybody sees, and it is the whole setup experience.
+//
+// WRITTEN AS THE NEXT THING TO DO, not as a status dump. Somebody running this
+// for the first time has one question, "now what", and the answer is one line
+// they can select with a double click.
+func greet(keys link.Keys, linkAddr, boardAddr, id string) {
+	tok, err := keys.MintToken(advertised(linkAddr))
+	if err != nil {
+		log.Printf("[hub] could not mint a join string: %v", err)
+		return
+	}
+	fmt.Println()
+	fmt.Println("  the board is at   http://localhost" + portOf(boardAddr))
+	fmt.Println("  rooms dial in on  " + advertised(linkAddr))
+	fmt.Println("  board build       " + id)
+	fmt.Println()
+	fmt.Println("  Nothing is on it yet, because a hub holds nothing. On the machine your")
+	fmt.Println("  agents run on, paste this:")
+	fmt.Println()
+	fmt.Println("      atrium2 join " + tok)
+	fmt.Println()
+	fmt.Println("  It is good once and for an hour. `atrium2 hub token` prints another.")
+	fmt.Println()
+}
+
+// boardFrom picks the board this hub serves and hashes it.
+//
+// The hash matters more than it looks: the board compares it against what
+// `/v1/health` reports and reloads itself when they differ. The hub answers
+// that field on the room's behalf, because the hub is the thing serving the
+// files. See `rewriteHealth` in internal/link.
+func boardFrom(dir string) (fs.FS, string, error) {
+	if strings.TrimSpace(dir) == "" {
+		return api.EmbeddedBoard(), api.BuildID, nil
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := os.Stat(filepath.Join(abs, "index.html")); err != nil {
+		return nil, "", fmt.Errorf("%s does not look like a board: no index.html", abs)
+	}
+	fsys := os.DirFS(abs)
+	log.Printf("[hub] serving the board from %s", abs)
+	return fsys, api.BoardID(fsys), nil
+}
+
+// hubDir is where a hub keeps its certificates.
+//
+// ITS OWN DIRECTORY, not the one `atrium` uses, so running both on one machine
+// cannot have either overwrite the other's state. That is the same rule the
+// address file follows and for the same reason.
+func hubDir() string {
+	if d, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(d, "atrium2", "hub")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".atrium2", "hub")
+}
+
+func roomDir() string {
+	if d, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(d, "atrium2", "room")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".atrium2", "room")
+}
+
+func orDefault(v, def string) string {
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	return v
+}
+
+// advertised turns a bind address into one a room can dial.
+//
+// `:7801` binds everything and dials nothing, so a join string carrying it
+// would be useless on the machine that pasted it. Loopback is the answer that
+// is right for tonight's case, two accounts on one box, and the flag is there
+// for when it is not.
+func advertised(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func portOf(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return ":" + port
+}

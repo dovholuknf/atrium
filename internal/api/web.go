@@ -43,6 +43,20 @@ var web embed.FS
 // for the changes it exists for.
 var BuildID = buildID(embeddedBoard())
 
+// EmbeddedBoard is the board compiled into this binary.
+//
+// Exported so a HUB can serve these files itself. The hub is the half being
+// restarted while somebody edits CSS, so it holds the board, and the room holds
+// the database. See `internal/link`.
+func EmbeddedBoard() fs.FS { return embeddedBoard() }
+
+// BoardID hashes any board tree the same way `BuildID` hashes the embedded one.
+//
+// Exported for the same reason: a hub serving files from disk has to be able to
+// tell the page which board it is looking at, or the reload-on-new-build check
+// above compares two different trees and every tab reloads forever.
+func BoardID(fsys fs.FS) string { return buildID(fsys) }
+
 // embeddedBoard is the board compiled into this binary.
 func embeddedBoard() fs.FS {
 	sub, err := fs.Sub(web, "web")

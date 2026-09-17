@@ -736,6 +736,20 @@ func (d *Daemon) publishTask(id string) {
 }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
+// BoardHandler is the human-facing surface: the JSON API, the event stream, the
+// terminal websocket and the board's own files.
+//
+// EXPORTED SO A ROOM CAN SERVE IT SOMEWHERE ELSE. `internal/link` runs this
+// same handler on connections the room dialled out to a hub, which is how the
+// board can be restarted without touching a single running agent. It is the
+// same handler the loopback listener uses, not a copy and not a subset: a room
+// whose hub is down is still a working atrium on its own address, and that is
+// the escape hatch the whole split depends on.
+//
+// NOT the agent listener. That one is a different mux on a different port and
+// `docs/overlays.md` says never to publish it. See `Run` below.
+func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
+
 func (d *Daemon) Run(ctx context.Context) error {
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)
@@ -763,7 +777,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
-	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
+	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.BoardHandler()}
 
 	d.mu.Lock()
 	d.agentServer = agentSrv

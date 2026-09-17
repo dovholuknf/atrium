@@ -71,6 +71,24 @@ type Location struct {
 // when the session ends, which cleans up after a daemon that was killed. State
 // is the fallback for a system that does not set it.
 func LocationPath() (string, error) {
+	// `ATRIUM_LOCATION` NAMES THE FILE OUTRIGHT, and it exists so a second
+	// atrium on one machine cannot steal the first one's hooks.
+	//
+	// The address file is how every hook, every CLI call and every MCP tool
+	// finds the daemon. Two daemons under one account both writing this path
+	// means the second one silently takes every hook on the machine, and the
+	// symptom is not an error: it is activity arriving at a board nobody is
+	// looking at. `docs/preview-design.md` says what that costs.
+	//
+	// A room started by `atrium2` sets this before it opens anything, so the
+	// ordinary atrium keeps its own file and its own hooks. A daemon spawns its
+	// runners with its own environment, so the hooks those agents fire inherit
+	// the variable and report to the room that started them, which is the
+	// behaviour that makes two atriums on one machine coherent rather than
+	// merely non-colliding.
+	if p := strings.TrimSpace(os.Getenv("ATRIUM_LOCATION")); p != "" {
+		return p, nil
+	}
 	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
 			return filepath.Join(d, "atrium", "daemon.json"), nil
@@ -112,6 +130,14 @@ func LocationPath() (string, error) {
 // something other than a worktree root.
 func SharedLocationPath() string {
 	if p := strings.TrimSpace(os.Getenv("ATRIUM_SHARED_LOCATION")); p != "" {
+		// `-` MEANS NONE, and it is here so a second atrium can refuse to
+		// publish itself as the machine's. Unsetting the variable would not do
+		// it: the fallback below writes into `%WORKTREE_ROOT%`, which on a
+		// machine that has one is exactly where the first atrium already wrote,
+		// and the second would quietly take the address over.
+		if p == "-" {
+			return ""
+		}
 		return p
 	}
 	root := strings.TrimSpace(os.Getenv("WORKTREE_ROOT"))
