@@ -830,9 +830,37 @@ async function waitLoop(card) {
     if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); termWait(""); return; }
     if (poppedOut(card)) { rlog("stopped: it is in its own window"); termWait(""); return; }
 
-    let task = null, err = "";
+    let task = null, err = "", gone = false;
     try { task = await api("/v1/tasks/" + encodeURIComponent(card)); }
-    catch (e) { err = e.message; }
+    catch (e) {
+      err = e.message;
+      // A CARD THAT IS NOT THERE IS NOT A CARD THAT IS COMING BACK.
+      //
+      // 404 is the room answering, not the room being unreachable, and the
+      // difference matters: unreachable is what this loop exists to wait out,
+      // while not-there is final. A throwaway is deleted the moment its
+      // session ends, so waiting ninety seconds for one left the board saying
+      // "waiting for the session to come back" over an empty terminal list,
+      // which is the board contradicting itself.
+      //
+      // 409 counts too, and only a hub says it: "that card names no room, and
+      // there are several". A bare id remembered from a board that was scoped
+      // to one room cannot be addressed once it is looking at all of them, so
+      // waiting is waiting for something that will never resolve itself.
+      //
+      // 503 is NOT in this list. That is the hub saying no room is attached,
+      // which is the reconnect this loop exists to sit through.
+      gone = e.status === 404 || e.status === 409;
+    }
+    if (gone) {
+      rlog("stopped: the card is gone");
+      termWait("");
+      // And forgotten, or the next reload waits for it all over again.
+      try {
+        if (localStorage.getItem("atrium.term") === card) localStorage.removeItem("atrium.term");
+      } catch (e) {}
+      return;
+    }
     tries++;
     rlog("try", tries, err ? "no answer: " + err
       : "supervised=" + !!(task && task.supervised) +
