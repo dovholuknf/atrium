@@ -1242,6 +1242,9 @@ function connect() {
   es.onopen = () => {
     conn.classList.add("live");
     label.textContent = "live";
+    // On a hub the room counter carries this, so that two indicators cannot
+    // disagree about whether the board is connected. See `paintRooms`.
+    if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
     // Assume the daemon is coming up until it says otherwise.
     //
@@ -1253,7 +1256,11 @@ function connect() {
     // seconds later.
     alerting.settling(true);
   };
-  es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
+  es.onerror = () => {
+    conn.classList.remove("live");
+    label.textContent = "reconnecting";
+    if (typeof paintRooms === "function") paintRooms();
+  };
   ["task", "task-removed", "permission", "halted"]
     .forEach(k => es.addEventListener(k, refreshSoon));
   // A card that has gone takes its remembered placement with it. See

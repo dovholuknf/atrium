@@ -122,7 +122,6 @@
     <div class="rooms" id="rooms" hidden onclick="openRooms()">
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
-    <div class="rooms-menu" id="rooms-menu" hidden></div>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
   </div>
   <div class="rule"></div>
@@ -2165,6 +2164,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- Right click a card. Every entry here used to cost opening the detail
      dialog, reading it, and closing it again. -->
 <div id="cardmenu"></div>
+
+<!-- The room picker, OUT HERE RATHER THAN IN THE HEADER IT HANGS FROM.
+     The header has a backdrop filter, which makes it a stacking context, so a
+     menu inside it is trapped at the header's own depth no matter what z-index
+     it is given and the page draws over it. `#cardmenu` above solved this the
+     same way: a body-level element, fixed, positioned from the thing that
+     opened it. -->
+<div class="rooms-menu" id="rooms-menu" hidden></div>
 
 <!-- Browsing the DAEMON's filesystem, not the browser's. The board is meant to
      be opened from a phone and over an overlay network, and the browser's own

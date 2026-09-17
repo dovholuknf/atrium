@@ -75,9 +75,21 @@ function pickRoom(name) {
 // working.
 function paintRooms() {
   const el = document.getElementById("rooms");
+  const conn = document.getElementById("conn");
   if (!el) return;
-  if (!hubIsHub) { el.hidden = true; return; }
+  if (!hubIsHub) {
+    el.hidden = true;
+    if (conn) conn.hidden = false;
+    return;
+  }
   el.hidden = false;
+
+  // ONE INDICATOR, NOT TWO. A red `reconnecting` beside a green `2/2 rooms` is
+  // a board contradicting itself: the rooms are attached to the hub, the
+  // stream to the browser is not, and nobody reading a header is holding those
+  // two facts apart. So the chip carries both and the other one goes away.
+  const streamUp = !conn || conn.classList.contains("live");
+  if (conn) conn.hidden = true;
 
   const room = roomNow();
   const live = hubRooms.length;
@@ -85,7 +97,11 @@ function paintRooms() {
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
   const label = document.getElementById("rooms-t");
-  if (room) {
+  if (!streamUp) {
+    label.textContent = "reconnecting";
+    el.title = "this board lost its connection to the hub. the rooms are unaffected: " +
+      "their agents keep running and the board catches up when it reconnects.";
+  } else if (room) {
     label.textContent = room;
     el.title = here
       ? `scoped to ${room}. this is that machine's atrium.`
@@ -95,8 +111,9 @@ function paintRooms() {
     el.title = "you are on an atrium hub, looking at every room at once. " +
       "click to focus on one.";
   }
-  el.classList.toggle("cold", here === 0);
-  el.classList.toggle("scoped", !!room);
+  el.classList.toggle("down", !streamUp);
+  el.classList.toggle("cold", streamUp && here === 0);
+  el.classList.toggle("scoped", streamUp && !!room);
 }
 
 // openRooms is the menu the chip opens.
@@ -129,6 +146,13 @@ function openRooms() {
   }
   menu.innerHTML = rows.join("");
   menu.hidden = false;
+  // Placed from the chip rather than anchored to it, because the menu lives at
+  // the end of the body and not inside the header. Clamped to the left so a
+  // long room name cannot push it off the edge of a narrow window.
+  const at = document.getElementById("rooms").getBoundingClientRect();
+  menu.style.top = (at.bottom + 8) + "px";
+  menu.style.left = Math.max(8, Math.min(at.right - menu.offsetWidth,
+    window.innerWidth - menu.offsetWidth - 8)) + "px";
 }
 
 // roomChip is a card's room, in the aggregate view.
@@ -165,18 +189,19 @@ async function hubAttachedRows() {
       <a href="#" onclick="openRoomJoin();return false;">Add a room</a>.
     </div></div>`;
   }
+  // NO BUTTON TO FOCUS A ROOM. The counter in the header is the selector, and
+  // a second control doing the same thing in a different place is a second
+  // thing to find, to keep in step and to be surprised by. This list says what
+  // is there; the header says which one you are in.
   return hubRooms.map(r => {
     const here = room === r.name;
     return `<div class="panel roomrow">
       <div class="col-head" style="margin:0 0 8px">
         <span>${esc(r.name)}</span>
         <span class="chip live idle">attached ${esc(shortTime(r.since))}</span>
-        ${here ? `<span class="chip">you are looking at this one</span>` : ""}
+        ${here ? `<span class="chip">the board is scoped to this one</span>` : ""}
         <span class="grow"></span>
         <span class="by">${esc(r.host || "")}${r.version ? " &middot; " + esc(r.version) : ""}</span>
-        <button class="${here ? "no" : "go"}" data-room="${esc(r.name)}"
-          onclick="pickRoom(this.dataset.room === roomNow() ? '' : this.dataset.room)"
-          >${here ? "show all rooms" : "focus on this room"}</button>
       </div>
       <div class="hintline">Its agents, its terminals and its database are on that machine and
         reachable through this board. Restarting this hub does not touch them.</div>

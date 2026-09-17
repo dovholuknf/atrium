@@ -81,8 +81,14 @@
   /* Nothing attached. The hub is up and has nothing to show, which is a normal state every time a room
      restarts and must not look like the board being broken. */
   .rooms.cold .dot { background: var(--warn); box-shadow: none; }
+  /* The board lost the hub. This chip is the only connection indicator on a hub, so it has to be able to say
+     so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
+  .rooms.down { color: var(--danger-text); border-color: var(--danger); }
+  .rooms.down .dot { background: var(--danger); box-shadow: none; }
+  /* Fixed and body-level, positioned by script from the chip. See the note on the element itself: the header
+     is a stacking context, so a menu inside it cannot be lifted above the page. */
   .rooms-menu {
-    position: absolute; top: 100%; right: var(--sp-5); z-index: 30; min-width: 16rem;
+    position: fixed; z-index: 90; min-width: 16rem;
     display: flex; flex-direction: column; padding: var(--sp-2);
     border: 1px solid var(--stroke); border-radius: var(--r-md);
     background: var(--bg1); box-shadow: 0 18px 40px rgba(0,0,0,.45);
