@@ -42,10 +42,19 @@ housekeeping.
 
 ### The outcome
 
-**The cog is there, 2026-09-17**, on every room in the list, holding what the hub knows about that room and the
-one change the board is allowed to make to it. **The settings themselves have not moved yet**: the editor
-command, the picker roots, the worktree command, the shell and the rest are still under `settings -> this
-machine`, and moving them is the next piece of work. The cog says so rather than pretending.
+**Built 2026-09-17.** Every room in the list has a cog, and behind it is that room's own pane: what the hub
+knows about it, the nine settings that used to be `settings -> this machine`, and `run agents here too` on the
+hub's own room. `this machine` is gone as a heading, and nothing asks which machine you meant any more, because
+the room is in the title of the pane you opened.
+
+Three things fell out of building it:
+
+- **The hub's own room is on the list whether or not it is running.** The switch that turns it on lives behind
+  its cog, so the row had to exist before the switch was ever thrown.
+- **A board with no hub draws one row, `this machine`, with the same cog.** The daemon is the hub with its own
+  room, and without that row the settings would have been in the page and unreachable.
+- **An offline room's pane shows what the hub knows and no fields at all.** The only authoritative answer about
+  a room comes from that room, and an empty box that saves nowhere is worse than no box.
 
 ------------
 
@@ -66,6 +75,12 @@ for: all the runners, all the fixtures, all the sources, grouped by the room the
 **The room-specific ones also appear behind that room's cog**, and being in both places is fine. The same fact
 reached from two directions is not a contradiction: from the column you are asking "what runners exist
 anywhere", and from the cog you are asking "what is this room set up to do".
+
+### The outcome
+
+**Half built, 2026-09-17.** The column stayed, which was the decision. The room-specific panes do not appear
+behind the cog yet: what is there is the room's own settings and nothing else. Putting a room's runners and
+fixtures there too is worth doing and is not what any of the first four items were for.
 
 ------------
 

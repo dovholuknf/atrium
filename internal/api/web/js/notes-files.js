@@ -829,6 +829,24 @@ async function loadHousekeeping() {
   try { s = await api("/v1/settings"); } catch (e) { return; }
   setTimerValue("s-sweep", s.sweep_dead_after, "60");
   setTimerValue("s-prune", s.prune_after, "off");
+  // Everything per-room is filled by the room's own pane, from that room, and
+  // NOT from here. This endpoint answers for whichever room the board is
+  // scoped to, which on a hub looking at all of them is no particular one.
+  // Filling a shell command or a picker root from that would put one machine's
+  // answer in a box that saves to another.
+  pastePrefs = s;
+  fillSkins(s);
+}
+
+// fillMachineFields writes one room's settings into the pane behind its cog.
+//
+// SEPARATE FROM THE BOARD'S OWN SETTINGS because the two are different kinds of
+// thing that happened to share a dialog. The skin, the notifications and the
+// housekeeping timers are one answer for one board. The editor command, the
+// picker roots, the worktree command and the shell are facts about a machine,
+// and a board serving four of them has four answers.
+function fillMachineFields(s) {
+  if (!s) return;
   const ed = document.getElementById("s-editor");
   if (ed) ed.value = s.editor_command || "";
   pastePrefs = s;
@@ -891,8 +909,26 @@ async function loadHousekeeping() {
       ? "Right now: " + list.join(", ")
       : "Right now: nothing resolves, so the picker has nowhere to open.";
   }
+  // NOT CACHED AS THE BOARD'S ANSWER. `pastePrefs` is what a paste and a new
+  // terminal read without asking, and they are about the card in front of you,
+  // which is not necessarily on the room whose settings somebody just opened.
+  // Looking at sparta's shell command must not decide where athens' next
+  // screenshot lands. It is only taken when the board is scoped to that room,
+  // where the two are the same question.
+  if (typeof roomNow === "function" && roomNow() &&
+      (typeof roomCfgFor === "undefined" || roomNow() === roomCfgFor)) {
+    pastePrefs = s;
+  }
+}
 
-  fillSkins(s);
+// afterMachineSave refreshes whichever pane the field that saved is in.
+//
+// The savers below were written when there was one machine and one dialog.
+// They now run from a room's own pane, and re-reading the hub's answer would
+// paint one machine's settings into boxes that just saved to another.
+function afterMachineSave() {
+  if (typeof roomCfgOpen !== "undefined" && roomCfgOpen) return loadRoomCfg();
+  return loadHousekeeping();
 }
 
 // The name of the skin that has no rule of its own, because it IS `:root`.
@@ -1230,7 +1266,7 @@ async function saveBrowseRoots() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   toast("saved", "the picker opens in " +
     ((pastePrefs.browse_roots_now || []).length || 0) + " place(s)");
 }
@@ -1247,7 +1283,7 @@ async function saveSharedLocation() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   // Says the part that is easy to miss. The file is written when the daemon
   // starts, so saving this changes nothing until it does, and somebody who
   // saves it and immediately looks for the file finds nothing there.
@@ -1269,7 +1305,7 @@ async function saveShellCommand() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   // Says the part that is easy to miss. A shell already open keeps being what
   // it was, because it is a running process rather than a setting.
   toast("saved", el.value.trim()
@@ -1298,7 +1334,7 @@ async function saveScrollback() {
   // somebody scrolling up in a session started an hour ago and finding the
   // old limit still in force.
   applyScrollback();
-  loadHousekeeping();
+  afterMachineSave();
   toast("scrollback saved",
     `${pastePrefs.scrollback_lines_now} lines here, now. ` +
     `${pastePrefs.scrollback_mb_now}MB in the daemon, for sessions started from here on.`);
@@ -1433,7 +1469,7 @@ async function saveWorktreeCommand() {
   const el = document.getElementById("s-worktreecmd");
   if (!el) return;
   await saveHousekeeping("worktree_command", el.value.trim());
-  loadHousekeeping();
+  afterMachineSave();
   toast("saved", el.value.trim().toLowerCase() === "off"
     ? "the projects list will only offer worktrees that already exist"
     : (el.value.trim() || "back to the default"));
@@ -1451,7 +1487,7 @@ async function saveProjectDepth() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   toast("saved", "the next scan goes " + (el.value.trim() || "2") + " level(s) down");
 }
 

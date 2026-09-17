@@ -199,44 +199,6 @@ function roomChip(t) {
 
 // ── the rooms pane ──────────────────────────────────────────────────────────
 
-// ownRoomPanel is the switch for running agents on the hub's own machine.
-//
-// OFF BY DEFAULT. A hub holding a database is a hub whose restart is no longer
-// free, and that freedom is the reason the two halves are separate at all.
-async function ownRoomPanel() {
-  let own;
-  try { own = await plainFetch("/_hub/room").then(r => r.json()); } catch (e) { return ""; }
-  if (!own || !own.available) return "";
-  return `<div class="panel roomrow">
-    <div class="col-head" style="margin:0 0 8px">
-      <span>this machine</span>
-      ${own.on ? `<span class="chip live idle">running as ${esc(own.name)}</span>`
-        : `<span class="chip">not running agents</span>`}
-      <span class="grow"></span>
-      <button class="${own.on ? "no" : "go"}" onclick="setOwnRoom(${own.on ? "false" : "true"})"
-        >${own.on ? "stop running agents here" : "run agents here too"}</button>
-    </div>
-    <div class="hintline">Restarting the hub also stops any agents running on it.
-      Agents on the other rooms keep going.</div>
-  </div>`;
-}
-
-// setOwnRoom throws that switch and redraws.
-//
-// NO CONFIRMATION. It is one click to undo, the button says what it does, and
-// that agents on a machine stop when that machine's atrium stops is not news to
-// anybody. A dialog here would be ceremony around a toggle.
-async function setOwnRoom(on) {
-  try {
-    await plainFetch("/_hub/room", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ on: !!on })
-    });
-  } catch (e) { tellUser("atrium", "could not change that: " + e.message); }
-  hubRead = 0;
-  await loadHubRooms();
-  renderRooms();
-}
 
 // hubAttachedRows is the attached rooms, as rows for the rooms pane.
 //
@@ -245,12 +207,19 @@ async function setOwnRoom(on) {
 // hub with two rooms show an empty room list. See `renderRooms` in runners.js.
 async function hubAttachedRows() {
   await loadHubRooms();
-  if (!hubIsHub) return "";
-  const own = await ownRoomPanel();
-  const rooms = hubInventory;
+  // A PLAIN DAEMON IS A ROOM TOO, and drawing it as one is not decoration.
+  //
+  // A room's settings live behind the cog on its row. On a board with no hub
+  // there are no rows, so without this the editor command, the picker roots,
+  // the shell and the rest would have nowhere to be opened from: they would be
+  // in the page and unreachable. The daemon IS the hub with its own room, which
+  // is decision 3, and this is what that looks like on a machine running one
+  // atrium by itself.
+  if (!hubIsHub) return thisMachineRow();
+  const rooms = await withOwnRoom(hubInventory);
 
   if (!rooms.length) {
-    return own + `<div class="panel"><div class="empty">
+    return `<div class="panel"><div class="empty">
       This atrium is a hub. It serves the board and holds no work, so until a room
       is added there is nothing to show and no agents to run.
       <a href="#" onclick="openRoomJoin();return false;">Add a room</a>.
@@ -270,10 +239,58 @@ async function hubAttachedRows() {
        <span class="grow"></span><span class="by">${esc(hint)}</span></div>` +
     list.map(roomRow).join("");
 
-  return own +
-    group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
+  return group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
     group("not answering", "what they last said is remembered, and cannot be acted on", off) +
     group("never connected", "added here, and has not dialled in yet", never);
+}
+
+// withOwnRoom makes sure the hub's own machine has a row, even when it is not
+// running agents.
+//
+// THE SWITCH LIVES BEHIND THAT ROW'S COG, so the row has to exist before the
+// switch is ever thrown. A hub's own room is written down when it is turned on,
+// which means that without this the one control that turns it on would only
+// appear once it already was.
+//
+// Drawn as never-connected, which is what it is: the hub knows the machine is
+// there and has nothing running on it.
+async function withOwnRoom(rooms) {
+  let own;
+  try { own = await plainFetch("/_hub/room").then(x => x.json()); } catch (e) { return rooms; }
+  if (!own || !own.available) return rooms;
+  const name = String(own.name || "");
+  if (!name || rooms.some(r => String(r.name).toLowerCase() === name.toLowerCase())) {
+    return rooms;
+  }
+  // PUT BACK INTO THE LIST EVERYTHING ELSE READS, not only into what is drawn.
+  // The cog looks its room up by name in `hubInventory`, so a row that exists
+  // only in the markup is a cog that opens on nothing.
+  hubInventory = rooms.concat([{
+    name: name, transport: "local", state: "active",
+    attached: false, cards: 0, waiting: false,
+  }]);
+  return hubInventory;
+}
+
+// thisMachineRow is the one row a board with no hub draws.
+//
+// No name, because there is nothing to tell it apart from: one atrium, one
+// machine, and a name would be a label for a set of one. No transport badge and
+// no state chip either, for the same reason. What it carries is the cog, which
+// is the whole point of drawing it.
+function thisMachineRow() {
+  return `<div class="panel roomrow">
+    <div class="col-head" style="margin:0 0 8px">
+      <span>this machine</span>
+      <span class="grow"></span>
+      <button class="ghost roomcog" data-room="" title="settings for this machine"
+        >&#9881;</button>
+    </div>
+    <div class="hintline">The editor command, where pasted files land, what the picker may
+      open, the worktree command, the shell and the scrollback are all behind that cog.
+      They are facts about this machine, and a board serving several would ask them of
+      each one separately.</div>
+  </div>`;
 }
 
 // roomRow is one room, however it is doing.
@@ -325,6 +342,10 @@ function transportBadge(t) {
 // roomState is the one chip that says how the room is doing.
 function roomState(r) {
   if (r.attached) return `<span class="chip live idle">attached ${esc(shortTime(r.since))}</span>`;
+  // THE HUB'S OWN ROOM IS OFF, NOT MISSING. Nothing has failed to connect: this
+  // is the machine the board is served from, and running agents on it is a
+  // switch somebody has not thrown.
+  if (r.transport === "local") return `<span class="chip">not running agents</span>`;
   if (!r.first_seen) {
     return r.waiting ? `<span class="chip">waiting to join</span>`
       : `<span class="chip">no join string outstanding</span>`;
@@ -338,6 +359,11 @@ function roomLine(r) {
   if (r.attached) {
     return `Its agents, its terminals and its database are on that machine and reachable
       through this board. Restarting this hub does not touch them.`;
+  }
+  if (r.transport === "local") {
+    return `This is the machine the hub itself is on. Its cog turns agents on here, which
+      is off by default: a hub that holds a database is a hub whose restart is no longer
+      free, and that freedom is the whole reason the hub and the rooms are separate.`;
   }
   if (!r.first_seen) {
     return r.waiting
@@ -410,49 +436,221 @@ document.addEventListener("click", e => {
 // files land, the picker roots, the worktree command, the shell and the
 // scrollback are still in `settings -> this machine`, and moving them here is
 // the next piece of work.
-async function openRoomCog(name) {
-  const r = hubInventory.find(x => String(x.name) === String(name));
-  if (!r) { tellUser("rooms", "that room is not on this hub any more"); return; }
-  const marked = r.state === "marked-for-deletion";
-  const when = t => t ? new Date(t).toLocaleString() : "never";
+// roomCfgFor is the room whose settings are open, empty for none.
+//
+// IT IS ALSO HOW THE FIELDS KNOW WHERE TO WRITE. The savers were written
+// against one machine and call `/v1/settings` with no idea a hub exists. They
+// land in the right place because this sets `writeRoom`, which the fetch
+// wrapper puts on every write. Clearing it on close is not tidiness: a stale
+// one would send the next save somewhere nobody was looking.
+//
+// The empty string is a real value here and means "no hub", where every request
+// already goes to the only atrium there is.
+let roomCfgFor = "";
+let roomCfgOpen = false;
 
+async function openRoomCog(name) {
+  const dlg = document.getElementById("roomcfg");
+  if (!dlg) return;
+  const r = hubInventory.find(x => String(x.name) === String(name));
+  if (name && !r) { tellUser("rooms", "that room is not on this hub any more"); return; }
+
+  roomCfgFor = name || "";
+  roomCfgOpen = true;
+  writeRoom = roomCfgFor;
+
+  document.getElementById("rc-heading").textContent = name ? "room " + name : "this machine";
+  paintRoomFacts(r);
+
+  // THE HUB'S OWN ROOM IS THE ONLY ONE WITH A SWITCH, because it is the only
+  // one this process can start or stop. Every other room is a machine
+  // somewhere else that was started by somebody there.
+  const own = document.getElementById("rc-own-field");
+  let ownState = null;
+  if (own) {
+    try { ownState = await plainFetch("/_hub/room").then(x => x.json()); } catch (e) { }
+    const mine = ownState && ownState.available &&
+      (!name || String(ownState.name || "") === String(name));
+    own.hidden = !mine;
+    if (mine) {
+      const b = document.getElementById("rc-own");
+      b.textContent = ownState.on ? "stop running agents here" : "run agents here too";
+      b.className = ownState.on ? "no" : "go";
+    }
+  }
+
+  // AN OFFLINE ROOM ANSWERS NOTHING. The only authoritative answer about a room
+  // comes from that room, so there is no version of this pane that reads from
+  // the cache: the cache holds what the board drew, not what a machine is set
+  // up to do. The fields are hidden rather than shown empty, because an empty
+  // box that saves nowhere is worse than no box.
+  const live = !name || (r && r.attached);
+  showRoomFields(live, r && r.transport === "local" ? "own" : "offline");
+  if (live) await loadRoomCfg();
+
+  // The fields in here save themselves on change, and the wiring is done once
+  // per element. Called here rather than at startup because this dialog can be
+  // opened before the settings one ever is.
+  if (typeof wireSelfSaving === "function") wireSelfSaving();
+  if (!dlg.open) dlg.showModal();
+}
+
+// paintRoomFacts is what the hub knows without asking the room.
+function paintRoomFacts(r) {
+  const table = document.getElementById("rc-facts");
+  const state = document.getElementById("rc-state");
+  const field = document.getElementById("rc-facts-field");
+  if (!table || !field) return;
+  if (!r) {
+    // A board with no hub. There is one atrium and it is this one, so there is
+    // nothing to say about which machine this is.
+    field.hidden = true;
+    return;
+  }
+  field.hidden = false;
+  const when = t => t ? new Date(t).toLocaleString() : "never";
   const facts = [
-    ["called", esc(r.name) + " <span class=\"by\">by this hub, and this is the " +
-      "name that routes</span>"],
+    ["called", esc(r.name) +
+      ` <span class="by">by this hub, and this is the name that routes</span>`],
     ["calls itself", esc(r.self_name || "nothing has connected yet")],
     ["reaches the hub", esc(r.transport || "")],
     ["running", esc(r.version || "not known yet")],
     ["first connected", esc(when(r.first_seen))],
     ["last heard from", esc(when(r.last_seen))],
   ];
+  setHTML(table, facts
+    .map(f => `<tr><td class="by">${f[0]}</td><td>${f[1]}</td></tr>`).join(""));
 
-  const body = `<table class="kv">` + facts
-    .map(f => `<tr><td class="by">${f[0]}</td><td>${f[1]}</td></tr>`).join("") +
-    `</table>
-    <p>${marked
-      ? `This room is marked for deletion. It starts no new cards, everything already
-         running carries on as normal, and taking the mark back off puts it straight
-         back into ordinary service.`
-      : `Marking a room for deletion stops new cards being started on it and changes
-         nothing else. Nothing is destroyed and it is one click to undo.`}</p>
-    <p class="by">Its own settings, the editor command and the rest, are still under
-      settings. Moving them here is the next piece of work.</p>
-    <p class="by">Adding a room, replacing its join string and removing one are done at a
-      terminal on the hub, under "atrium2 hub room". The board does not mint credentials:
-      atrium has no login, and this page may be reachable from elsewhere.</p>`;
+  const marked = r.state === "marked-for-deletion";
+  state.innerHTML = (marked
+    ? `<b>Marked for deletion.</b> It starts no new cards, everything already running
+       carries on, and taking the mark off puts it back into ordinary service. `
+    : ``) +
+    `Adding a room, replacing its join string and removing one are done at a terminal on
+     the hub, under "atrium2 hub room". The board does not mint credentials: atrium has
+     no login, and this page may be reachable from elsewhere.`;
 
-  const pick = await askUser({
-    title: "room " + r.name,
-    body: body,
-    buttons: [
-      { label: "close", value: null },
-      {
-        label: marked ? "take the mark off" : "mark for deletion",
-        value: "mark", style: marked ? "go" : "no"
-      },
-    ],
+  const mark = document.getElementById("rc-mark");
+  if (mark) {
+    // NOT FOR THE HUB'S OWN ROOM. Marking is "start no new cards here, I am
+    // going to remove this", and removing the machine the board is served from
+    // is not a thing this button could do. The switch above is what turns that
+    // room off, and it is the honest control for it.
+    mark.hidden = r.transport === "local";
+    mark.textContent = marked ? "take the mark off" : "mark for deletion";
+    mark.className = marked ? "go" : "no";
+  }
+}
+
+// showRoomFields hides the settings themselves for a room that cannot answer.
+//
+// `why` is which kind of not-answering this is, because the two read completely
+// differently to whoever opened the pane. A room that is offline is a machine
+// somebody has to go and look at. The hub's own room being off is a switch two
+// inches above, and calling that "not answering" would be alarming about a
+// thing the reader just chose.
+function showRoomFields(on, why) {
+  const body = document.querySelector("#roomcfg .dlg-body");
+  if (!body) return;
+  const keep = ["rc-facts-field", "rc-own-field", "rc-offline-field"];
+  Array.from(body.children).forEach(el => {
+    if (keep.indexOf(el.id) >= 0) return;
+    el.hidden = !on;
   });
-  if (pick === "mark") await markRoom(r.name, !marked);
+  const off = document.getElementById("rc-offline-field");
+  if (!off) return;
+  off.hidden = on;
+  if (on) return;
+  off.innerHTML = why === "own"
+    ? `<span class="hintline">Nothing runs here yet, so there is nothing to set up.
+       Turn agents on above and this machine's own settings appear.</span>`
+    : `<span class="hintline"><b>This room is not answering.</b> The only authoritative
+       answer about a room comes from that room, so nothing here can be read or changed
+       until it is back. What is shown above is what it last said.</span>`;
+}
+
+// loadRoomCfg fills the fields from the room they belong to.
+//
+// An explicit header rather than the wrapper's, because the wrapper only scopes
+// READS when the whole board is scoped. This pane is the case where one room is
+// being asked about while the board is looking at all of them.
+async function loadRoomCfg() {
+  let s;
+  try {
+    const h = roomCfgFor ? { "X-Atrium-Room": roomCfgFor } : {};
+    s = await plainFetch("/v1/settings", { headers: h }).then(x => x.json());
+  } catch (e) {
+    toast("could not read that room's settings", e.message);
+    return;
+  }
+  fillMachineFields(s);
+}
+
+// closeRoomCfg puts the write scope back.
+function closeRoomCfg() {
+  const dlg = document.getElementById("roomcfg");
+  if (dlg && dlg.open) dlg.close();
+  else forgetRoomCfg();
+}
+
+// forgetRoomCfg is the part that must happen however this dialog went away.
+//
+// ESCAPE CLOSES A MODAL DIALOG AND CALLS NOTHING. Hanging the scope reset off
+// the close button alone meant one press of escape left `writeRoom` pointing at
+// the room whose pane had been open, and the next setting saved from anywhere
+// on the board would go there instead. Silent, and only visible later as one
+// machine having the other's editor command. Found by review.
+function forgetRoomCfg() {
+  roomCfgOpen = false;
+  roomCfgFor = "";
+  writeRoom = "";
+  // And the settings dialog's own remembered answer, which was a choice made
+  // when per-machine settings lived there. Leaving it set would have the same
+  // effect one dialog over.
+  if (typeof settingsRoom !== "undefined") settingsRoom = "";
+  renderRooms();
+}
+
+// Every way out of the dialog, including the ones nothing on this page calls:
+// escape, the backdrop, and a form inside it.
+//
+// Wired now when the markup is already here, and on load when it is not, since
+// which of those is true depends on where in the page this script is included
+// and that is not a thing this file should have an opinion about.
+(function wireRoomCfgClose() {
+  const dlg = document.getElementById("roomcfg");
+  if (dlg) { dlg.addEventListener("close", forgetRoomCfg); return; }
+  document.addEventListener("DOMContentLoaded", () => {
+    const late = document.getElementById("roomcfg");
+    if (late) late.addEventListener("close", forgetRoomCfg);
+  });
+})();
+
+// toggleOwnRoom throws the hub's own-room switch from inside the cog.
+//
+// NO CONFIRMATION. It is one click to undo, the button says what it does, and
+// that agents on a machine stop when that machine's atrium stops is not news.
+async function toggleOwnRoom() {
+  const b = document.getElementById("rc-own");
+  const on = b && b.className === "no";
+  try {
+    await plainFetch("/_hub/room", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !on })
+    });
+  } catch (e) { tellUser("atrium", "could not change that: " + e.message); return; }
+  hubRead = 0;
+  await loadHubRooms();
+  renderRooms();
+  await openRoomCog(roomCfgFor);
+}
+
+// markFromCog is the mark button inside the room's own pane.
+async function markFromCog() {
+  const r = hubInventory.find(x => String(x.name) === String(roomCfgFor));
+  if (!r) return;
+  await markRoom(r.name, r.state !== "marked-for-deletion");
+  await openRoomCog(roomCfgFor);
 }
 
 // markRoom is the one change the board can make to a room.

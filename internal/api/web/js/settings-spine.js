@@ -1069,8 +1069,21 @@ function repaintLists() {
   const view = document.querySelector(".tab.on").dataset.view;
   const render = {
     board: renderBoard, stack: renderStack, perms: renderPerms,
-    runners: renderRunners, terms: renderTerms
+    runners: renderRunners, terms: renderTerms,
+    // HISTORY IS A VIEW LIKE THE REST and was missing from this table, so any
+    // event arriving while it was open threw "render is not a function" and
+    // took the repaint with it: the list stopped updating and the only sign was
+    // in the console. A tab added without a line here fails exactly this way,
+    // which is why the fallback below exists as well.
+    history: () => renderHistory(false)
   }[view];
+  // A VIEW NOBODY WIRED UP MUST NOT STOP THE REPAINT. Every other list on the
+  // page is behind this call, and one unknown tab name would silently freeze
+  // all of them.
+  if (typeof render !== "function") {
+    console.error("no renderer for the " + view + " view");
+    return;
+  }
   render().catch(e => console.error(e));
 }
 
