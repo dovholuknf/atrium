@@ -5,6 +5,28 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room's settings are behind that room's cog, not in a list called "this machine".**
+
+  `settings -> this machine` had grown into nine unrelated things: the editor command, where pasted files land,
+  what is typed in front of a pasted path, which directories the picker may open, the worktree command, how
+  deep to look for repositories, the shared address file, the shell command and the scrollback. The name meant
+  nothing. On a board serving four machines it meant less than nothing, and the pane asked which machine you
+  meant the first time you touched any box in it.
+
+  A ROOM IS THE UNIT, NOT A MACHINE. One machine can hold more than one room and a hub can be a room itself, so
+  each of those is a fact about one room. They now open from the cog on that room's row, already scoped: the
+  room is in the title of the dialog, and nothing asks again.
+
+  **`run agents here too` moved there too**, onto the hub's own room, which now appears in the list whether or
+  not it is running. That was the one control that could not live behind a cog until the row it belongs to
+  existed before the switch was thrown.
+
+  **A board with no hub draws one row, `this machine`, with the same cog.** The daemon is the hub with its own
+  room, and without that row the settings would have been in the page and unreachable.
+
+  **An offline room's pane shows what the hub knows and no fields.** The only authoritative answer about a room
+  comes from that room. An empty box that saves nowhere is worse than no box.
+
 - **The rooms tab shows every room, not only the ones that answered.**
 
   The tab listed what was attached, which meant a machine somebody shut disappeared from the one screen whose

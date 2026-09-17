@@ -123,26 +123,34 @@ function toggleGrouping() {
 // `data-saves` names the function on the element. Wiring it from the markup
 // keeps the list of what-saves-what next to the fields rather than in a table
 // here that has to be kept in step with them.
-// settingsRoom is which machine this pane is editing, asked once per opening.
+// settingsRoom is which machine a pane is editing, asked once per opening.
 //
-// Asked ONCE rather than per field: nine boxes each asking which machine is
-// worse than the question. Cleared when the dialog opens, so it is a decision
-// about this visit rather than one made yesterday and still in force.
+// MOSTLY UNUSED NOW, and kept for the one case left. The per-machine settings
+// moved behind each room's own cog, where the room is not a question: you
+// opened that room's pane, so it is that room, and `openRoomCog` sets the write
+// scope before a field is ever touched. This remains for a self-saving field
+// that is still in the settings dialog and belongs to a machine.
 let settingsRoom = "";
 
 function wireSelfSaving() {
-  document.querySelectorAll("#settings [data-saves]").forEach(el => {
+  // BOTH DIALOGS. The machine settings live behind a room's cog and the board's
+  // own live in settings, and both hold fields that save themselves. Wiring
+  // only the first is how those nine boxes silently stopped saving when they
+  // moved: nothing threw, nothing logged, and every edit was simply dropped.
+  document.querySelectorAll("#settings [data-saves], #roomcfg [data-saves]").forEach(el => {
     if (el.dataset.wired) return;
     el.dataset.wired = "1";
     el.addEventListener("change", async () => {
       const fn = window[el.dataset.saves];
       if (typeof fn !== "function") return;
-      // WHICH MACHINE, when the board is looking at all of them. Every setting
-      // on this pane belongs to one machine, and a hub with two rooms refuses
-      // a write that names none. Asked once and remembered for the rest of the
-      // pane, because being asked again for every box you touch is worse than
-      // the question. See `chooseWriteRoom` in js/rooms.js.
-      if (typeof hubIsHub !== "undefined" && hubIsHub &&
+      // WHICH MACHINE, when the board is looking at all of them. A hub with two
+      // rooms refuses a write that names none.
+      //
+      // Skipped entirely for a field in a room's own pane: the room is already
+      // decided and already set, and asking there would be asking somebody to
+      // name the room whose name is in the title of the dialog they are in.
+      const inRoomPane = !!el.closest("#roomcfg");
+      if (!inRoomPane && typeof hubIsHub !== "undefined" && hubIsHub &&
           typeof roomNow === "function" && !roomNow()) {
         if (!settingsRoom) {
           if (!await chooseWriteRoom(null, "setting")) return;

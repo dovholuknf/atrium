@@ -1270,7 +1270,53 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         seems large. Never touches shelved cards or the inbox.</span>
     </div>
 
-    <h3 class="s-section">this machine</h3>
+
+
+
+  </div>
+</dialog>
+<!-- One room's settings, opened by the cog on its row.
+     A ROOM IS THE UNIT, NOT A MACHINE. One machine can hold more than one room
+     and a hub can be a room itself, so every one of these is a fact about the
+     room named in the title and about nothing else. They used to sit in the
+     settings dialog under "this machine", where the name meant nothing on a
+     board serving four of them and the list had grown by accretion: each
+     setting added where there was space rather than where it belonged.
+     No guard: every field here writes as it changes, the same as settings. -->
+<dialog id="roomcfg">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="rc-heading">room</h2></div>
+    <button onclick="closeRoomCfg()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field" id="rc-facts-field">
+      <table class="kv" id="rc-facts"></table>
+      <div class="picker"><button id="rc-mark" onclick="markFromCog()" hidden></button></div>
+      <span class="hintline" id="rc-state"></span>
+    </div>
+
+    <!-- The hub's own room, which is a switch rather than a setting and so
+         comes first: it is the one control here that decides whether the room
+         exists at all. Hidden for every other room, where it is somebody
+         else's machine and there is nothing to start. -->
+    <div class="field" id="rc-own-field" hidden>
+      <label class="eyebrow">agents on this machine</label>
+      <div class="picker">
+        <button id="rc-own" onclick="toggleOwnRoom()"></button>
+      </div>
+      <span class="hintline">Off by default, and turning it on is a decision rather than
+        something that happens because a hub noticed it could. A hub holding a database is a
+        hub whose restart is no longer free, and that freedom is the whole reason the hub and
+        the rooms are separate. Restarting the hub stops the agents running on it. Agents on
+        every other room keep going.</span>
+    </div>
+
+    <div class="field" id="rc-offline-field" hidden>
+      <span class="hintline"><b>This room is not answering.</b> The only authoritative
+        answer about a room comes from that room, so nothing here can be read or changed
+        until it is back. What is shown above is what it last said.</span>
+    </div>
+
     <!-- The one setting that starts a process nobody named. Off until it is
          filled in: guessing an editor means atrium picks a program to run on
          your machine, and a wrong guess is a process you did not want. -->
@@ -1429,10 +1475,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
       <span class="hintline" id="s-sbcost" hidden></span>
     </div>
-
-
   </div>
 </dialog>
+
 
 <!-- data-guard: this holds edits that are only kept when you press save, so
      something navigating away has to ask first. The settings and detail
