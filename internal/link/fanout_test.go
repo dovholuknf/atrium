@@ -245,6 +245,70 @@ func TestHealthIsAnsweredAcrossRooms(t *testing.T) {
 	}
 }
 
+// THE TAG HAS TO SURVIVE THE ROUND TRIP, or it survives exactly one hop.
+//
+// A merged list hands the board `alpha~card1`. The board asks for that card,
+// the hub strips the tag on the way in because the room minted the bare id, and
+// the room answers with its own `id`. Without putting the tag back, the board
+// now holds a bare id and every url it builds from it names no room.
+func TestASingleCardComesBackTagged(t *testing.T) {
+	one := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"card1","title":"a card","task_id":"card1"}`)
+	})
+	front, _, done := two(t, one, one)
+	defer done()
+
+	res, err := http.Get(front.URL + "/v1/tasks/alpha~card1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var got map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got["id"] != "alpha~card1" {
+		t.Errorf("the card came back as %q, so the next url the board builds names no room", got["id"])
+	}
+	if got["task_id"] != "alpha~card1" {
+		t.Errorf("task_id came back as %q", got["task_id"])
+	}
+	if got["room"] != "alpha" {
+		t.Errorf("the card lost its room: %v", got)
+	}
+}
+
+// The board cannot draw without these, so one room answers rather than the hub
+// refusing and leaving panes empty.
+func TestTheBoardCanStillReadItsSettings(t *testing.T) {
+	front, _, done := two(t, cards("alpha", "card1"), cards("beta", "card2"))
+	defer done()
+
+	for _, path := range []string{"/v1/settings", "/v1/themes", "/v1/rooms"} {
+		res, err := http.Get(front.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("%s answered %d, so the board draws that pane empty", path, res.StatusCode)
+		}
+	}
+
+	// A WRITE STILL ASKS. Reading one machine's answer to draw a page is not
+	// the same as saving a setting onto a machine you did not choose.
+	res, err := http.Post(front.URL+"/v1/settings", "application/json",
+		strings.NewReader(`{"editor_command":"code"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("a write answered %d, expected 409", res.StatusCode)
+	}
+}
+
 // THE CONNECTION POOL IS KEYED BY HOST, and every room used to share one, so a
 // request for beta could reuse a connection already dialled to alpha. Sequential
 // because that is what fills the pool: the first request leaves an idle

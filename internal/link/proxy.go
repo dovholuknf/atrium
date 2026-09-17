@@ -122,7 +122,7 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		// happen, and any buffering turns a live board into one that updates in
 		// clumps.
 		FlushInterval:  -1,
-		ModifyResponse: p.rewriteHealth,
+		ModifyResponse: p.rewrite,
 		ErrorHandler:   p.oops,
 	}
 	return p
@@ -149,6 +149,12 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 
 // roomKey carries the chosen room from the rewrite into the dial.
 type roomKey struct{}
+
+// taggedKey carries the room when it came from a `room~id` IN THE PATH, which
+// is the only case where the answer has to be tagged on the way back out. A
+// board that named its room in a header asked that room directly and wants the
+// room's own ids. See `retagCard`.
+type taggedKey struct{}
 
 // hostFor is the synthetic host a room's requests are addressed to.
 //
@@ -263,15 +269,39 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.aggregate(w, r, r.URL.Path) {
 			return
 		}
+		// A READ THE BOARD CANNOT DRAW WITHOUT goes to the first room rather
+		// than being refused.
+		//
+		// These are machine-shaped and merging them would be a lie: four
+		// machines have four editors and four sets of terminal themes. But the
+		// board asks for them to DRAW ITSELF, not to tell you about a machine,
+		// and refusing left it collecting 409s and rendering panes empty.
+		//
+		// One room's answer, which is a choice the operator can override by
+		// scoping to the room they mean. Writing one is still refused, because
+		// that is the question `needsARoom` exists to ask.
+		if r.Method == http.MethodGet && borrowed[r.URL.Path] {
+			if first := p.firstRoom(); first != "" {
+				room = first
+			}
+		}
 		// A write, or a read nothing knows how to merge. Asked rather than
 		// guessed at.
-		if rooms := p.hub.Rooms(); len(rooms) > 1 {
-			needsARoom(w, rooms)
-			return
+		if room == "" {
+			if rooms := p.hub.Rooms(); len(rooms) > 1 {
+				needsARoom(w, rooms)
+				return
+			}
 		}
 	}
 	// Carried on the context, which is the only thing that reaches the dial.
-	r = r.WithContext(context.WithValue(r.Context(), roomKey{}, room))
+	ctx := context.WithValue(r.Context(), roomKey{}, room)
+	// And separately, whether the room was named BY A TAG IN THE PATH, which
+	// decides whether the answer needs one putting back. See `retagCard`.
+	if tagged, _ := splitTag(cardIDIn(r.URL.Path)); tagged != "" {
+		ctx = context.WithValue(ctx, taggedKey{}, tagged)
+	}
+	r = r.WithContext(ctx)
 	_ = named
 	p.proxy.ServeHTTP(w, r)
 }
@@ -358,6 +388,78 @@ func readAll(f fs.File) []byte {
 //
 // So the hub answers for the board, because the hub IS the board. Everything
 // else in the health payload is the room's and passes through untouched.
+// rewrite is everything the hub changes on the way back out.
+func (p *Proxy) rewrite(res *http.Response) error {
+	if err := p.rewriteHealth(res); err != nil {
+		return err
+	}
+	return p.retagCard(res)
+}
+
+// retagCard puts the room back on a single card's id.
+//
+// THE OTHER HALF OF `untag`, AND WITHOUT IT THE TAG SURVIVES EXACTLY ONE HOP.
+//
+// A merged list hands the board `athens~01a0`. The board clicks it and asks for
+// `/v1/tasks/athens~01a0`, which the hub strips to `/v1/tasks/01a0` because the
+// room minted that id and knows nothing about rooms. The room then answers with
+// its own payload, in which `id` is `01a0`.
+//
+// So the board, which had a tagged id, now holds a bare one, and every url it
+// builds from THAT is unaddressable: the terminal websocket went to
+// `/v1/tasks/01a0/attach`, which names no room, and with two rooms attached the
+// hub can only refuse it. The symptom is a terminal that never attaches and a
+// board quietly collecting 409s.
+//
+// Only in aggregate mode, and only for a request that arrived carrying a tag.
+// A scoped board asked a room directly and wants the room's own answer.
+func (p *Proxy) retagCard(res *http.Response) error {
+	if res.Request == nil || res.StatusCode != http.StatusOK {
+		return nil
+	}
+	// FROM THE CONTEXT, NOT THE PATH. `res.Request` is the OUTBOUND request,
+	// and `Rewrite` already took the tag off it, so reading the path here finds
+	// the bare id every time and this quietly does nothing.
+	room, _ := res.Request.Context().Value(taggedKey{}).(string)
+	if room == "" {
+		return nil
+	}
+	if !strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
+		// A download, a terminal, an icon. Nothing with an id in it, and
+		// reading it into memory to find out would be the one place this
+		// design promises not to.
+		return nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
+	res.Body.Close()
+	if err != nil {
+		return err
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		// Not an object we understand. Passed through rather than failed.
+		res.Body = io.NopCloser(bytes.NewReader(raw))
+		return nil
+	}
+	// The same fields the list and the event stream tag, for the same reason:
+	// all three have to describe the same card.
+	obj["room"] = room
+	for _, field := range []string{"id", "task_id"} {
+		if id, ok := obj[field].(string); ok && id != "" {
+			obj[field] = tagFor(room, id)
+		}
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		res.Body = io.NopCloser(bytes.NewReader(raw))
+		return nil
+	}
+	res.Body = io.NopCloser(bytes.NewReader(out))
+	res.ContentLength = int64(len(out))
+	res.Header.Set("Content-Length", fmt.Sprint(len(out)))
+	return nil
+}
+
 func (p *Proxy) rewriteHealth(res *http.Response) error {
 	if p.boardID == "" || res.Request == nil || res.Request.URL.Path != "/v1/health" {
 		return nil
