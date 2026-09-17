@@ -150,6 +150,26 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE ROOM SAYING IT IS DONE, which is the step decision 9 puts between
+		// marking a room and removing it.
+		//
+		// The hub holds nothing and cannot see whether a directory was cleaned
+		// up, a throwaway deleted or a session really ended, and it must not
+		// decide those from the outside. The room is the only thing that knows.
+		//
+		// What it means in practice is the room announcing, while connected,
+		// that it is holding no cards. That IS the confirmation: it is the room
+		// speaking about its own state, which is the only kind of answer the
+		// design accepts about a room.
+		//
+		// Set when that happens and cleared the moment the room says it has
+		// work again, so it cannot go stale into a removal.
+		name: "0002_room_confirms_it_is_clear",
+		stmts: []string{
+			`ALTER TABLE room ADD COLUMN cleared_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

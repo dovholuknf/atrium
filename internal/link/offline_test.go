@@ -172,6 +172,86 @@ func TestARoomThatNeverConnectedIsNotOnTheBoard(t *testing.T) {
 	}
 }
 
+// A ROOM MARKED FOR DELETION STARTS NOTHING NEW, and that is the whole of what
+// marking does.
+//
+// Everything already running carries on, the room stays on every list, and
+// nothing is destroyed. The one thing that changes is that work stops arriving,
+// which is what makes marking safe to press and useful at all.
+func TestAMarkedRoomStartsNoNewWork(t *testing.T) {
+	seen := time.Now()
+	stock := &remembering{
+		rooms: []Known{{
+			Name: "testroom", Attached: true, State: "marked-for-deletion",
+			FirstSeen: &seen, LastSeen: &seen,
+		}},
+		cards: map[string][]CardState{},
+	}
+
+	var reached bool
+	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			reached = true
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer done()
+	front.Config.Handler.(*Proxy).SetInventory(stock)
+
+	// EVERY WAY WORK ARRIVES, not only the one a person clicks. A source
+	// posting into the inbox and a dispatch queued by a script both put new
+	// work on a machine, and a room being decommissioned through one of those
+	// is the case nobody is watching for.
+	for _, path := range []string{"/v1/launch", "/v1/tasks", "/v1/intake", "/v1/dispatch"} {
+		reached = false
+		res, err := http.Post(front.URL+path, "application/json", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusConflict {
+			t.Fatalf("%s on a room marked for deletion answered %d", path, res.StatusCode)
+		}
+		if reached {
+			t.Fatalf("%s reached the room anyway", path)
+		}
+		if !strings.Contains(string(raw), "marked for deletion") {
+			t.Fatalf("%s was refused without saying why: %s", path, raw)
+		}
+	}
+
+	// AND EVERYTHING ELSE ABOUT THAT ROOM STILL WORKS. Marking is not read-only
+	// mode: a card already there can be renamed, answered, shelved and
+	// finished, because the work in flight is meant to be worked out normally.
+	res2, err := http.Get(front.URL + "/v1/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Body.Close()
+	if res2.StatusCode != http.StatusOK {
+		t.Fatalf("reading a marked room's board answered %d", res2.StatusCode)
+	}
+
+	// A CHANGE TO WORK ALREADY THERE IS NOT ARRIVING WORK. This is the half
+	// that makes marking safe to press: press it and the machine finishes what
+	// it has.
+	reached = false
+	req, err := http.NewRequest(http.MethodPatch, front.URL+"/v1/tasks/abc",
+		strings.NewReader(`{"title":"still allowed"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res3, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res3.Body.Close()
+	if res3.StatusCode == http.StatusConflict {
+		t.Fatal("marking a room stopped a change to a card already on it")
+	}
+}
+
 // EVERY OPERATION ON AN OFFLINE ROOM'S CARD IS REFUSED, BY NAME.
 //
 // "No room is attached" is wrong here in the way that matters: there are rooms

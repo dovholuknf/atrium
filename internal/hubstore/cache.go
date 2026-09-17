@@ -153,7 +153,50 @@ func (s *Store) Announce(roomID string, cards []Card) (Changes, error) {
 	if ch.Gone > 0 {
 		s.Log(r, "announced", ch.String())
 	}
+
+	// AND THE ROOM SAYING IT IS DONE, which is what an empty announcement from a
+	// connected room is.
+	//
+	// The hub cannot see whether a directory was cleaned up, a throwaway
+	// deleted or a session really ended, and must not decide those from the
+	// outside. The room is the only thing that knows, so it says so, in the one
+	// way a room speaks about itself: it announces what it holds, and what it
+	// holds is nothing.
+	//
+	// Cleared the moment it has work again, so a confirmation cannot go stale
+	// into a removal: a room that emptied at lunchtime and picked up three
+	// cards since is not a room anybody has finished with.
+	if err := s.confirm(r, len(cards) == 0); err != nil {
+		return ch, err
+	}
 	return ch, nil
+}
+
+// confirm records, or withdraws, a room's word that it is holding nothing.
+func (s *Store) confirm(r *Room, clear bool) error {
+	had := r.ClearedAt != nil
+	if clear == had {
+		return nil
+	}
+	at := ""
+	if clear {
+		at = ts(now())
+	}
+	if err := s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE room SET cleared_at = ? WHERE id = ?`, at, r.ID)
+		return err
+	}); err != nil {
+		return err
+	}
+	// WRITTEN DOWN BOTH WAYS. "It said it was clear" is the fact a removal
+	// rests on, and "it said it was not any more" is the one that explains why
+	// a removal somebody expected to work was refused.
+	if clear {
+		s.Log(r, "clear", "this room says it is holding nothing")
+	} else {
+		s.Log(r, "not-clear", "this room has work on it again")
+	}
+	return nil
 }
 
 // String is the audit line, written the way somebody would ask the question.

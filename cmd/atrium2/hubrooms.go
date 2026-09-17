@@ -405,6 +405,20 @@ func roomRemoveCmd() *cobra.Command {
 						"that machine first: they are work, on a computer this hub does not "+
 						"own, and forgetting them here does not stop them", r.Name, cards)
 				}
+				// AND THE ROOM ITSELF HAS TO HAVE SAID SO.
+				//
+				// An empty cache is not the room confirming anything: a room
+				// that has never connected has one, and so does a room whose
+				// last announcement was lost. The confirmation is the room
+				// saying, while attached, that it is holding nothing. The hub
+				// cannot see whether a directory was cleaned up, so it does not
+				// guess.
+				if r.ClearedAt == nil {
+					return fmt.Errorf("%s has never told this hub it is finished. start it, "+
+						"let it say it is holding nothing, then stop it and remove it. "+
+						"`--force` skips that and is for a machine that is never coming "+
+						"back", r.Name)
+				}
 			}
 			why := "removed from the hub"
 			if force {

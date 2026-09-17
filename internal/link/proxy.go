@@ -275,6 +275,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			`run atrium stop on the machine the room is on."}`)
 		return
 	}
+	// A ROOM ON ITS WAY OUT STARTS NOTHING NEW.
+	//
+	// That is the whole difference between marking a room for deletion and
+	// deleting one. Everything already running carries on and is worked out
+	// normally, the room stays on every list, and nothing is destroyed: the one
+	// thing that changes is that no more work lands there.
+	//
+	// Checked here rather than on the room, because it is the HUB's decision.
+	// The room has no idea it has been marked, and telling it would be a second
+	// copy of a fact somebody can change while that room is offline.
+	if p.startsNothing(w, r) {
+		return
+	}
 	// THE EVENT STREAM IS NEVER PROXIED. It is fanned in once per room and
 	// dealt back out, so a browser holds one stream rather than one per room
 	// per tab, and so a stream can say which room it wants in its URL, which
@@ -614,6 +627,10 @@ type Known struct {
 	// state that draws nowhere but this tab.
 	FirstSeen *time.Time `json:"first_seen,omitempty"`
 	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	// ClearedAt is when this room last said, while connected, that it holds
+	// nothing. It is what a removal rests on, and the board draws it as the
+	// difference between a room waiting to be tidied and one that is ready.
+	ClearedAt *time.Time `json:"cleared_at,omitempty"`
 	Host      string     `json:"host,omitempty"`
 	Version   string     `json:"version,omitempty"`
 	// Cards is how many this room was last holding, from the cache. Only worth
@@ -675,6 +692,57 @@ func (p *Proxy) inventory() Inventory {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.stock
+}
+
+// startsNothing refuses a request that would put new work on a room that is
+// marked for deletion.
+//
+// A SHORT LIST OF PATHS, NOT EVERY WRITE. Marking is not read-only mode: a card
+// already on that machine can still be renamed, tagged, answered, shelved and
+// finished, because the whole point is that work in flight is worked out
+// normally. What stops is arriving.
+//
+// Missing one of these is not a hole anybody can walk through, it is a card
+// started on a machine somebody is decommissioning, which they will see on the
+// board and can shelve. So this is a list that can grow without being a
+// liability, which is why it is a list rather than a rule about methods.
+func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch r.URL.Path {
+	case "/v1/launch", "/v1/tasks", "/v1/intake", "/v1/dispatch":
+	default:
+		return false
+	}
+	stock := p.inventory()
+	if stock == nil {
+		return false
+	}
+	// WHICHEVER ROOM THIS WOULD LAND ON, however it was chosen. Not only a room
+	// named explicitly: a hub with one room attached routes there without
+	// anybody saying so, and that is exactly the case where somebody is about
+	// to start work on the machine they are decommissioning.
+	room, _ := p.roomFor(r)
+	if room == "" {
+		return false
+	}
+	known, err := stock.Known()
+	if err != nil {
+		return false
+	}
+	for _, k := range known {
+		if !equalFold(k.Name, room) || k.State != "marked-for-deletion" {
+			continue
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, "the room "+k.Name+" is marked for deletion, so it "+
+			"starts no new work. what is already running on it carries on as normal. "+
+			"take the mark off if you want to use it again")
+		return true
+	}
+	return false
 }
 
 // serveInventory answers the rooms tab.
