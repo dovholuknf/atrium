@@ -61,14 +61,13 @@ func TestAnExistingClaudeRowAlreadyDeclaresBracketedPaste(t *testing.T) {
 			"has wrapped past the enable still pastes raw")
 	}
 
-	// Leave shells out of the backfill because they toggle paste mode around
-	// prompts and can use stream detection.
-	sh, err := s.Harness("shell")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sh.BracketedPaste {
-		t.Fatal("the shell row was backfilled, and a shell's paste mode is not a fact " +
-			"about the program")
+	// THE SHELL ROW IT USED TO CHECK IS GONE, and the backfill it was guarding
+	// against still must not invent one. A shell is a property of the machine
+	// now, not a runner: see `0053_shell_is_not_a_runner`. A migration that
+	// created a row while backfilling a column would be the harder bug, so it
+	// is checked here rather than assumed.
+	if _, err := s.Harness("shell"); err == nil {
+		t.Fatal("something re-created a shell runner. a shell is the machine's, " +
+			"held in shell_command and found by shellpick")
 	}
 }

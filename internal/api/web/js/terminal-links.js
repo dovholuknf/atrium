@@ -639,19 +639,26 @@ let termKindFor = "";
 function paintTermKind() {
   const wrap = document.getElementById("t-kind");
   if (!wrap) return;
-  // AND NOT ON A CARD WHOSE RUNNER IS ITSELF A SHELL.
+  // AND NOT WHEN THERE IS NO SHELL TO OFFER.
   //
-  // `agent | shell` on a shell card offers to switch between a shell and a
-  // shell, and calls the first one an agent. There is one terminal on that
-  // card and a second would be the same program in the same directory.
+  // Two cases, both of which drew a button that could only fail.
   //
-  // The deeper oddity is that a shell is a runner at all: the machine already
-  // owns one, in the `shell_command` setting that `shellFor` reads every time,
-  // and the runner row is a copy of it frozen at first run. This hides the
-  // symptom rather than settling that.
+  // A CARD WHOSE RUNNER IS ITSELF A SHELL. `agent | shell` there offers to
+  // switch between a shell and a shell, and calls the first one an agent.
+  // Atrium no longer ships a shell runner, but a database from before that
+  // has one and cards that ran under it are still on the board.
+  //
+  // A MACHINE WITH NO SHELL. `shell_command_now` always names something,
+  // because the search behind it ends at `cmd.exe` or `/bin/sh` whether or not
+  // either is installed. `shell_command_ok` is whether that name actually
+  // resolves, which is the question this control is really asking.
   const shellCard = !!(termTask && isShellRunner({ id: termTask.runner || "",
     cmd: termTask.runner || "" }));
-  wrap.hidden = !(termTask && termTask.supervised) || shellCard;
+  // Absent rather than false while settings are still loading: the daemon has
+  // a shell far more often than not, and hiding the control on every attach
+  // until a poll lands would be a worse wrong answer.
+  const canShell = !pastePrefs || pastePrefs.shell_command_ok !== false;
+  wrap.hidden = !(termTask && termTask.supervised) || shellCard || !canShell;
   const agent = document.getElementById("t-kind-agent");
   const shell = document.getElementById("t-kind-shell");
   if (agent) agent.classList.toggle("on", termKind !== "shell");
