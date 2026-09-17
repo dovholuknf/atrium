@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -60,6 +61,16 @@ var merged = map[string]struct {
 // still draws. The alternative is a board that goes blank because one of four
 // machines is busy, which is worse than a board that is briefly short.
 func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) bool {
+	// READS ONLY, AND THE METHOD IS THE WHOLE CHECK.
+	//
+	// `/v1/tasks` is a merged list and it is also where a card is created.
+	// Without this, `POST /v1/tasks` with two rooms attached would fan out as
+	// four GETs and answer 200 with a task list, so the card would silently
+	// never be made and the board would have no way to tell. A write with no
+	// room to land in falls through to `needsARoom`, which asks.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
 	m, ok := merged[spec]
 	if !ok {
 		return false
@@ -136,6 +147,96 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 	return true
 }
 
+// health is the board asking whether atrium is up, in aggregate.
+//
+// IT CANNOT BE PROXIED AND IT CANNOT BE REFUSED. The board polls it to decide
+// whether to draw at all, so answering "pick a room" would leave a hub with
+// four rooms looking exactly like a hub with none. And it cannot be forwarded
+// to one room either, because the answer is about all of them.
+//
+// So it is merged, and the merge is pessimistic on purpose: one halted room
+// means the board says halted. A halt is a machine that has stopped recording
+// what its agents do, and a board that hides that behind three healthy rooms
+// is a board that lies at the one moment it matters.
+func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
+	rooms := p.hub.Rooms()
+	out := map[string]any{
+		// THE HUB'S OWN BOARD HASH, for the same reason `rewriteHealth` swaps
+		// it on the scoped path: the browser is running the hub's copy of the
+		// board, so a room's hash here would reload every tab forever.
+		"ok": true, "build": p.boardID, "rooms": len(rooms),
+	}
+	type answer struct {
+		room string
+		body map[string]any
+	}
+	got := make([]answer, len(rooms))
+	var wg sync.WaitGroup
+	for i, room := range rooms {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			got[i].room = name
+			got[i].body = p.askRoomBody(r, name)
+		}(i, room.Name)
+	}
+	wg.Wait()
+
+	var quiet, halted []string
+	settling := false
+	for _, a := range got {
+		if a.body == nil {
+			quiet = append(quiet, a.room)
+			continue
+		}
+		if yes, _ := a.body["halted"].(bool); yes {
+			halted = append(halted, a.room)
+			if out["cause"] == nil {
+				out["cause"] = fmt.Sprintf("%s: %v", a.room, a.body["cause"])
+			}
+		}
+		if yes, _ := a.body["settling"].(bool); yes {
+			settling = true
+		}
+	}
+	sort.Strings(quiet)
+	sort.Strings(halted)
+	out["halted"] = len(halted) > 0
+	out["halted_rooms"] = halted
+	out["settling"] = settling
+	if len(quiet) > 0 {
+		out["rooms_quiet"] = quiet
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// askRoomBody is one GET against one room, decoded whole. Nil for a room that
+// did not answer, which every caller treats as quiet rather than as an error.
+func (p *Proxy) askRoomBody(r *http.Request, room string) map[string]any {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"http://"+hostFor(room)+r.URL.RequestURI(), nil)
+	if err != nil {
+		return nil
+	}
+	res, err := p.roomClient(room).Do(req)
+	if err != nil {
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil
+	}
+	var body map[string]any
+	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&body); err != nil {
+		return nil
+	}
+	return body
+}
+
 // askRoom runs one request against one room and pulls out the array.
 func (p *Proxy) askRoom(r *http.Request, room, field string) ([]any, error) {
 	// A FAN-OUT WAITS FOR THE SLOWEST ROOM, so the bound lives here, on the
@@ -144,7 +245,7 @@ func (p *Proxy) askRoom(r *http.Request, room, field string) ([]any, error) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://room.atrium.internal"+r.URL.RequestURI(), nil)
+		"http://"+hostFor(room)+r.URL.RequestURI(), nil)
 	if err != nil {
 		return nil, err
 	}

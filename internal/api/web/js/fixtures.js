@@ -1014,9 +1014,33 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // remember to turn back, which is what this is not.
   setLaunchModel(h);
 
+  fillLaunchRoom(ontoTask);
+
   syncMore();
   document.getElementById("launch").showModal();
   document.getElementById("l-cwd").focus();
+}
+
+// Which machine this card starts on, asked only when it is a question.
+//
+// NOT ASKED WHEN THERE IS ONE ANSWER, and the operator was explicit about
+// that: one room, or a board already scoped to a room, or no hub at all, and
+// the field never appears. A card already on the board is not asked either,
+// because it is already somewhere and its tagged id says where.
+function fillLaunchRoom(ontoTask) {
+  const field = document.getElementById("l-room-field");
+  if (!field) return;
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms);
+  const scoped = typeof roomNow === "function" ? roomNow() : "";
+  if (!hubIsHub || scoped || ontoTask || rooms.length < 2) {
+    field.hidden = true;
+    return;
+  }
+  const sel = document.getElementById("l-room");
+  sel.innerHTML = rooms.map(r =>
+    `<option value="${esc(r.name)}">${esc(r.name)}${r.host ? " — " + esc(r.host) : ""}</option>`
+  ).join("");
+  field.hidden = false;
 }
 
 // Open the optional half when something is already in it.
@@ -1104,10 +1128,20 @@ async function doLaunch() {
       source_url: launchResolved.url || ""
     });
   }
+  // WHICH MACHINE IT STARTS ON. Only ever set when the field was shown, which
+  // is when there was a choice to make. Sent as the room header on this one
+  // request rather than by scoping the board: you can start a card somewhere
+  // while looking at everywhere. See `js/rooms.js`.
+  const headers = { "Content-Type": "application/json" };
+  const roomField = document.getElementById("l-room-field");
+  if (roomField && !roomField.hidden) {
+    const want = document.getElementById("l-room").value;
+    if (want) headers["X-Atrium-Room"] = want;
+  }
   let task;
   try {
     task = await api("/v1/launch", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      method: "POST", headers, body: JSON.stringify(body)
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
   document.getElementById("launch").close();

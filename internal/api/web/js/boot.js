@@ -59,17 +59,25 @@ guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
 // own line has run. See the temporal dead zone note at the top of this file.
 const POLL_MS = 10000;
 
-if (termOnly()) {
-  // The same stream and the same interval as the board. `refresh` sends a
-  // popped-out window down `soloRefresh`, so this costs one card's worth of
-  // polling rather than a second board's.
-  bootTerminalOnly().then(() => {
-    connect();
-    setInterval(refresh, POLL_MS);
-  });
-} else {
-  bootBoard();
-}
+// WHICH ROOM, BEFORE ANYTHING IS ASKED FOR.
+//
+// On a plain daemon this answers in one 404 and turns itself off. On a hub it
+// decides which of three event streams to open and whether every request this
+// page makes carries a room, so it cannot run after the first of them. See
+// `js/rooms.js`.
+startRooms().then(() => {
+  if (termOnly()) {
+    // The same stream and the same interval as the board. `refresh` sends a
+    // popped-out window down `soloRefresh`, so this costs one card's worth of
+    // polling rather than a second board's.
+    bootTerminalOnly().then(() => {
+      connect();
+      setInterval(refresh, POLL_MS);
+    });
+  } else {
+    bootBoard();
+  }
+});
 
 // The board, once it is known to be a board.
 //

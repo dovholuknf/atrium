@@ -190,6 +190,116 @@ func TestAWriteWithNoRoomIsRefusedWithTheRooms(t *testing.T) {
 	}
 }
 
+// THE BOARD DECIDES ATRIUM IS UP FROM THIS, so a hub with four rooms must not
+// answer it the way a hub with none does.
+func TestHealthIsAnsweredAcrossRooms(t *testing.T) {
+	well := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"build":"room-hash","halted":false}`)
+	})
+	sick := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"build":"room-hash","halted":true,"cause":"disk full"}`)
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 2 * time.Second, Warm: 2})
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() { _ = hub.Serve(ctx, ln) }()
+	for name, h := range map[string]http.Handler{"alpha": well, "beta": sick} {
+		r := &Room{Name: name, Dial: plain{addr: ln.Addr().String()}, Handler: h,
+			T: Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond}}
+		go func(r *Room) { _ = r.Run(ctx) }(r)
+	}
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("alpha") && hub.Has("beta") })
+
+	front := httptest.NewServer(NewProxy(hub, nil, "hub-hash", nil))
+	defer front.Close()
+
+	res, err := http.Get(front.URL + "/v1/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("the board was told atrium is down: %d", res.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	// THE HUB'S BOARD HASH, or every tab reload-loops.
+	if body["build"] != "hub-hash" {
+		t.Errorf("health reported build %v", body["build"])
+	}
+	// ONE HALTED ROOM HALTS THE BOARD. Hiding it behind a healthy room is a
+	// lie at the one moment it matters.
+	if body["halted"] != true {
+		t.Errorf("a halted room was hidden: %v", body)
+	}
+	if !strings.Contains(fmt.Sprint(body["cause"]), "disk full") {
+		t.Errorf("the cause was lost: %v", body["cause"])
+	}
+}
+
+// THE CONNECTION POOL IS KEYED BY HOST, and every room used to share one, so a
+// request for beta could reuse a connection already dialled to alpha. Sequential
+// because that is what fills the pool: the first request leaves an idle
+// connection behind for the second to find.
+func TestScopedRequestsNeverReuseAnotherRoomsConnection(t *testing.T) {
+	front, _, done := two(t, cards("alpha", "card1"), cards("beta", "card2"))
+	defer done()
+
+	ask := func(room string) string {
+		req, _ := http.NewRequest(http.MethodGet, front.URL+"/v1/whoami", nil)
+		req.Header.Set(RoomHeader, room)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var got struct {
+			By string `json:"served_by"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		return got.By
+	}
+	// Alternating, several times, so a pooled connection has every chance to
+	// be handed to the wrong room.
+	for i := 0; i < 6; i++ {
+		if by := ask("alpha"); by != "alpha" {
+			t.Fatalf("round %d: a request for alpha landed in %q", i, by)
+		}
+		if by := ask("beta"); by != "beta" {
+			t.Fatalf("round %d: a request for beta landed in %q", i, by)
+		}
+	}
+}
+
+// A WRITE IS NOT A LIST, even when it is the same path. `/v1/tasks` is where a
+// card is made as well as where they are listed, and fanning a POST out as
+// reads would answer 200 with a task list while the card was never created.
+func TestAWriteToAMergedPathIsNotFannedOut(t *testing.T) {
+	front, _, done := two(t, cards("alpha", "card1"), cards("beta", "card2"))
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/tasks", "application/json",
+		strings.NewReader(`{"title":"a new card"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		raw, _ := io.ReadAll(res.Body)
+		t.Fatalf("a POST to a merged path answered %d: %s", res.StatusCode, raw)
+	}
+}
+
 // With one room, nothing is asked and nothing is tagged. The operator was
 // explicit about this.
 func TestOneRoomIsNeverAskedAbout(t *testing.T) {

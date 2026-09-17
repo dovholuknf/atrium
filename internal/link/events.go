@@ -80,6 +80,11 @@ type feeds struct {
 	subs  map[*sub]struct{}
 	pumps map[string]context.CancelFunc
 	stop  context.CancelFunc
+
+	// wake shortcuts the reconciler's tick when a client arrives, so a board
+	// scoped to a room nobody was watching does not wait out a second of
+	// silence before its stream starts.
+	wake chan struct{}
 }
 
 // sub is one connected board.
@@ -95,7 +100,10 @@ type sub struct {
 func (s *sub) shut() { s.once.Do(func() { close(s.ch) }) }
 
 func newFeeds(p *Proxy) *feeds {
-	return &feeds{p: p, subs: map[*sub]struct{}{}, pumps: map[string]context.CancelFunc{}}
+	return &feeds{
+		p: p, subs: map[*sub]struct{}{}, pumps: map[string]context.CancelFunc{},
+		wake: make(chan struct{}, 1),
+	}
 }
 
 // add registers a client and makes sure the upstream streams are running.
@@ -120,6 +128,11 @@ func (f *feeds) add(room string) *sub {
 	f.mu.Unlock()
 	if started != nil {
 		go f.reconcile(started)
+	} else {
+		select {
+		case f.wake <- struct{}{}:
+		default:
+		}
 	}
 	return s
 }
@@ -150,13 +163,21 @@ func (f *feeds) reconcile(ctx context.Context) {
 	last := ""
 	for {
 		rooms := f.p.hub.Rooms()
-		want := map[string]bool{}
 		names := make([]string, 0, len(rooms))
 		for _, r := range rooms {
-			want[r.Name] = true
 			names = append(names, r.Name)
 		}
 		sort.Strings(names)
+
+		// ONLY THE ROOMS SOMEBODY IS WATCHING. A board scoped to one room
+		// wants one stream, and pumping the other three so their events can be
+		// filtered out on arrival is the cost this whole file exists to avoid.
+		want := map[string]bool{}
+		for _, name := range names {
+			if f.wanted(name) {
+				want[name] = true
+			}
+		}
 
 		f.mu.Lock()
 		for name := range f.pumps {
@@ -188,9 +209,23 @@ func (f *feeds) reconcile(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-f.wake:
 		case <-t.C:
 		}
 	}
+}
+
+// wanted reports whether anybody is listening for a room. One subscriber
+// asking for everything wants all of them.
+func (f *feeds) wanted(room string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for s := range f.subs {
+		if s.room == "" || s.room == room {
+			return true
+		}
+	}
+	return false
 }
 
 // count is how many upstream streams are running. For tests, which is the only
@@ -239,7 +274,7 @@ func (f *feeds) pump(ctx context.Context, room string) {
 // read is one connection's worth of stream, returning when it breaks.
 func (f *feeds) read(ctx context.Context, room string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://room.atrium.internal/v1/events", nil)
+		"http://"+hostFor(room)+"/v1/events", nil)
 	if err != nil {
 		return
 	}
@@ -336,7 +371,11 @@ func (f *feeds) emit(e Event) {
 
 // ── what a client sees ───────────────────────────────────
 
-// serveEvents writes one merged stream to one board.
+// serveEvents writes one stream to one board.
+//
+// `room` empty means every room. `tag` asks for the merged view's identities,
+// and it is a request rather than a decision: the answer is checked again for
+// every event, because a room attaching changes it.
 func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string, tag bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -370,7 +409,13 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 				return
 			}
 			data := e.Data
-			if tag {
+			// DECIDED PER EVENT, NOT PER CONNECTION, because membership
+			// changes under an open stream. A board that connected when one
+			// room was attached would otherwise keep receiving bare ids after
+			// a second room joined, while `/v1/tasks` had started answering
+			// tagged ones, and every card it heard about would be a card it
+			// had never listed.
+			if tag && p.hub.Only() == "" {
 				data = tagEvent(e)
 			}
 			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data); err != nil {
@@ -421,8 +466,9 @@ func (p *Proxy) eventsFor(w http.ResponseWriter, r *http.Request) bool {
 		// TAGGED EXACTLY WHEN THE LISTS ARE TAGGED, which is the one rule that
 		// keeps the stream and `/v1/tasks` describing the same cards. One room
 		// attached means the lists come through the pipe untagged, so the
-		// stream must be untagged too.
-		p.serveEvents(w, r, "", p.hub.Only() == "")
+		// stream must be untagged too. Asked again for every event, since
+		// which it is can change while the stream is open.
+		p.serveEvents(w, r, "", true)
 		return true
 	case strings.HasPrefix(r.URL.Path, "/v1/events/room/"):
 		room := strings.TrimPrefix(r.URL.Path, "/v1/events/room/")

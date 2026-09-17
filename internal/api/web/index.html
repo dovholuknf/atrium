@@ -110,6 +110,16 @@
       title="what the board has told you">&#128276;<span class="count"></span></button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
+    <!-- WHICH ROOM, and it is a selector as much as a counter.
+         Hidden outright on a plain daemon, which is every atrium that is not a
+         hub: `js/rooms.js` probes for one and turns this off when there is
+         none. Left alone it reads `2/2 rooms` and the board shows all of them
+         at once. Click a room and the whole board becomes that machine's
+         atrium. -->
+    <div class="rooms" id="rooms" hidden onclick="openRooms()">
+      <span class="dot"></span><span id="rooms-t">rooms</span>
+    </div>
+    <div class="rooms-menu" id="rooms-menu" hidden></div>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
   </div>
   <div class="rule"></div>
@@ -1951,6 +1961,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('launch').close()">close</button>
   </div>
   <div class="dlg-body">
+    <!-- WHICH MACHINE THIS RUNS ON. Hidden when there is nothing to ask: no
+         hub, or one room, or a board already scoped to a room. A card starts
+         on a machine and it stays there, so this is asked once, here, and
+         never again. -->
+    <div class="field" id="l-room-field" hidden>
+      <label class="eyebrow" for="l-room">room</label>
+      <select id="l-room"></select>
+    </div>
     <div class="field" id="l-pick-field">
       <label class="eyebrow" for="l-harness">runner</label>
       <div class="picker">
@@ -2382,6 +2400,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 </dialog>
 
 <script src="/js/core.js"></script>
+<script src="/js/rooms.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/card-menu.js"></script>
 <script src="/js/sharing.js"></script>

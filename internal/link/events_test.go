@@ -2,8 +2,10 @@ package link
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -284,6 +286,67 @@ func TestNobodyWatchingMeansNothingStreaming(t *testing.T) {
 	// the reconciler tears every pump down with it.
 	shut()
 	waitFor(t, 5*time.Second, func() bool { return p.feeds.count() == 0 })
+}
+
+// MEMBERSHIP CHANGES UNDER AN OPEN STREAM, and the stream has to change with
+// it. A board that connected when one room was attached would otherwise keep
+// hearing bare ids after a second room joined, while the lists had already
+// started answering tagged ones.
+func TestTaggingFollowsMembershipOnAnOpenStream(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 2 * time.Second, Warm: 2})
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() { _ = hub.Serve(ctx, ln) }()
+
+	first := make(chan string, 8)
+	one := &Room{Name: "alpha", Dial: plain{addr: ln.Addr().String()}, Handler: streamer(first),
+		T: Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond}}
+	go func() { _ = one.Run(ctx) }()
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("alpha") })
+
+	front := httptest.NewServer(NewProxy(hub, nil, "", nil))
+	defer front.Close()
+
+	ch, shut := listen(t, front.URL+"/v1/events/hub")
+	defer shut()
+
+	// One room: untagged, matching what the lists answer.
+	go func() {
+		for i := 0; i < 30; i++ {
+			first <- sse("task", `{"id":"card1"}`)
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	if id := fields(t, waitEvent(t, ch, "task").Data)["id"]; id != "card1" {
+		t.Fatalf("one room tagged its events: %v", id)
+	}
+
+	// A second room attaches. The lists start tagging, so this stream must too.
+	second := make(chan string, 8)
+	two := &Room{Name: "beta", Dial: plain{addr: ln.Addr().String()}, Handler: streamer(second),
+		T: Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond}}
+	go func() { _ = two.Run(ctx) }()
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("beta") })
+
+	deadline := time.After(8 * time.Second)
+	for {
+		select {
+		case e := <-ch:
+			if e.Kind != "task" {
+				continue
+			}
+			if fields(t, e.Data)["id"] == "alpha~card1" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("the stream never started tagging after a second room attached")
+		}
+	}
 }
 
 // A room's own tagging table has to agree with the list one, because the board
