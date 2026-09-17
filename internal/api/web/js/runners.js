@@ -134,24 +134,38 @@ function termLinkTo(board, card) {
   return String(board).split("#")[0] + "#term=" + encodeURIComponent(card.id);
 }
 
+// ONE LIST, TWO WAYS OF BEING A ROOM.
+//
+// A room is a machine running agents, and there are two ways one reaches this
+// board. It can ATTACH: dial the hub and stay connected, so its board, its
+// terminals and its database are all reachable through here and the hub can be
+// restarted without touching it. Or it can CHECK IN: POST a summary of itself
+// on a timer, which is the older way and the only one available to a machine
+// that is not talking to a hub.
+//
+// They were two panes with the same name, which is how somebody looking at
+// `2/2 rooms` in the header found an empty list under `rooms` and concluded the
+// feature did not work. They are one list now, because to the person reading it
+// they are one question: what machines are there.
 async function renderRooms() {
   const el = document.getElementById("room-list");
   if (!el) return;
+  const attached = typeof hubAttachedRows === "function" ? await hubAttachedRows() : "";
   const rooms = await loadRooms();
   if (!roomsRead.answered) {
     // A daemon too old to have the endpoint. Not an error worth drawing:
     // nothing has ever been in this list on that machine.
-    setHTML(el, "");
+    setHTML(el, attached);
     return;
   }
   if (!rooms.length) {
-    setHTML(el, `<div class="panel"><div class="empty">
-      No other machines are reporting in. <a href="#" onclick="openRoomJoin();return false;">Add
+    setHTML(el, attached + (attached ? "" : `<div class="panel"><div class="empty">
+      No machines are here. <a href="#" onclick="openRoomJoin();return false;">Add
       a room</a> to see what to run on one.
-    </div></div>`);
+    </div></div>`));
     return;
   }
-  setHTML(el, rooms.map(r => {
+  setHTML(el, attached + rooms.map(r => {
     // STALE IS SAID, not hidden. A room that has stopped checking in is the
     // thing worth noticing, and dropping it from the list would make a machine
     // that died look like one that was never there.
@@ -381,6 +395,21 @@ async function forgetRoom(name) {
 let roomJoinInfo = null;
 
 async function openRoomJoin() {
+  // A HUB ENROLS ROOMS WITH A TOKEN, and the token is minted on the hub's own
+  // machine rather than from this page. Anybody who can open the board could
+  // otherwise enrol a machine that runs agents, and a board reachable over an
+  // overlay is exactly the case that matters. So this says what to run and
+  // where, and mints nothing.
+  if (typeof hubIsHub !== "undefined" && hubIsHub) {
+    tellUser("add a room", "On the machine running the hub:\n\n" +
+      "    atrium2 hub token\n\n" +
+      "Then on the machine your agents are on, paste what it printed:\n\n" +
+      "    atrium2 join atr1_...\n\n" +
+      "The token is good once and for an hour. The room dials the hub, so nothing " +
+      "needs opening on either side, and the hub can be restarted without touching " +
+      "the sessions running there.");
+    return;
+  }
   const dlg = document.getElementById("roomjoin");
   try {
     roomJoinInfo = await api("/v1/rooms/join");

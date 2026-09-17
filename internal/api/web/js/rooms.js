@@ -147,6 +147,43 @@ function roomChip(t) {
     >${name}</span>`;
 }
 
+// ── the rooms pane ──────────────────────────────────────────────────────────
+
+// hubAttachedRows is the attached rooms, as rows for the rooms pane.
+//
+// Drawn beside the machines that check in rather than in a pane of their own.
+// They are two ways of being the same thing and splitting them is what made a
+// hub with two rooms show an empty room list. See `renderRooms` in runners.js.
+async function hubAttachedRows() {
+  await loadHubRooms();
+  if (!hubIsHub) return "";
+  const room = roomNow();
+  if (!hubRooms.length) {
+    return `<div class="panel"><div class="empty">
+      This atrium is a hub. It serves this board and holds nothing, so until a room
+      attaches there is nothing to show and no agents to run.
+      <a href="#" onclick="openRoomJoin();return false;">Add a room</a>.
+    </div></div>`;
+  }
+  return hubRooms.map(r => {
+    const here = room === r.name;
+    return `<div class="panel roomrow">
+      <div class="col-head" style="margin:0 0 8px">
+        <span>${esc(r.name)}</span>
+        <span class="chip live idle">attached ${esc(shortTime(r.since))}</span>
+        ${here ? `<span class="chip">you are looking at this one</span>` : ""}
+        <span class="grow"></span>
+        <span class="by">${esc(r.host || "")}${r.version ? " &middot; " + esc(r.version) : ""}</span>
+        <button class="${here ? "no" : "go"}" data-room="${esc(r.name)}"
+          onclick="pickRoom(this.dataset.room === roomNow() ? '' : this.dataset.room)"
+          >${here ? "show all rooms" : "focus on this room"}</button>
+      </div>
+      <div class="hintline">Its agents, its terminals and its database are on that machine and
+        reachable through this board. Restarting this hub does not touch them.</div>
+    </div>`;
+  }).join("");
+}
+
 // ── scoping every request this page makes ───────────────────────────────────
 
 const plainFetch = window.fetch.bind(window);
@@ -198,7 +235,13 @@ function eventsURL() {
 
 // loadHubRooms asks what is attached. Answers false when this is a plain daemon,
 // which is how everything above turns itself off.
+let hubRead = 0;
 async function loadHubRooms() {
+  // Throttled, because the rooms pane, the header chip and the poll all ask
+  // within the same frame after a refresh and would otherwise put three
+  // identical requests on the wire and disagree about the answer.
+  if (Date.now() - hubRead < 2000) return hubIsHub;
+  hubRead = Date.now();
   let got;
   try {
     got = await plainFetch("/_hub/rooms");
