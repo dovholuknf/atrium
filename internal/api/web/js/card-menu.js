@@ -467,6 +467,27 @@ async function cardMenu(e, id) {
   if (selectionTouches(e.target.closest(".card, .stackrow"))) return;
   e.preventDefault();
   e.stopPropagation();
+
+  // A CARD ON A MACHINE THAT IS NOT ANSWERING OPENS NO MENU.
+  //
+  // Every entry on it would be refused by the hub, correctly and with a good
+  // sentence, but a menu of eleven things that all fail is worse than being
+  // told once. There is no read-only version of it either: the menu's first
+  // act is to fetch the card, and what would answer is the cache, which is
+  // what the board is already showing.
+  //
+  // No queueing behind it and no "we will do this when it comes back". A queue
+  // of intentions against a machine nobody has heard from is a second source of
+  // truth, and reconciling it is the part that goes wrong.
+  const known = (typeof lastTasks !== "undefined" ? lastTasks : []).find(x => x.id === id);
+  if (known && known.offline) {
+    tellUser("that machine is not answering",
+      `<p>The room <b>${esc(known.room || "")}</b> is offline, so nothing on this card can
+        be opened or changed.</p>
+      <p class="by">What is shown of it is what that machine last said. It all works again
+        when the room is back, and nothing is queued up in the meantime.</p>`);
+    return;
+  }
   // The card, and whether this machine has a terminal command. Together rather
   // than one after the other: the menu is drawn on a click and the settings
   // read is not worth a second beat of waiting.

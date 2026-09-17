@@ -956,7 +956,13 @@ async function renderTermList() {
   // the work that pinning it was supposed to save. A cold row still does
   // something, it just is not attaching: it holds its place, and clicking it
   // starts the session again in the same directory, onto the same card.
-  const tasks = all.filter(t => t.supervised || t.pinned);
+  // A CARD FROM A ROOM THAT IS NOT ANSWERING IS NOT A TERMINAL ROW.
+  //
+  // It cannot be attached to, and a pinned one would otherwise sit here as a
+  // cold row whose whole purpose is to start the session again on a machine
+  // that is not there. `supervised` never survives the cache, so the live rows
+  // were already safe; this is about the pinned ones.
+  const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned));
   // The badge counts what is actually attachable, since it is a count of live
   // terminals rather than of rows.
   badge("c-term", tasks.filter(t => t.supervised).length);

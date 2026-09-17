@@ -102,6 +102,31 @@ func (i inventory) MarkRoom(name string, marked bool) error {
 	return i.store.Mark(r.ID, marked)
 }
 
+// Remembered is what a room last said it was holding.
+//
+// THE ONLY PLACE THE CACHE IS READ, and the caller is responsible for only
+// asking about a room that is not answering. That rule cannot be enforced here:
+// this package cannot see a socket either, and the check that matters is made
+// where the live list is, which is where the question is asked.
+func (i inventory) Remembered(name string) ([]link.CardState, error) {
+	r, err := i.store.ByName(name)
+	if err != nil {
+		return nil, err
+	}
+	cards, err := i.store.Cards(r.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]link.CardState, 0, len(cards))
+	for _, c := range cards {
+		out = append(out, link.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
+	}
+	return out, nil
+}
+
+// Holding names the rooms with cards remembered for them.
+func (i inventory) Holding() ([]string, error) { return i.store.Holding() }
+
 // fold matches how a room name is compared everywhere else: ASCII only, so a
 // name folds the same on every machine regardless of locale.
 func fold(s string) string {

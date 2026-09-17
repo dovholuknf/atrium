@@ -395,6 +395,17 @@
     color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head));
   }
   .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
+  /* Work on a machine that is not answering. Last in the list, shut unless somebody opened it, and dimmed:
+     the point is that it is not live. No hue of its own, because it is not a project and colouring it like one
+     would say it is a group of the same kind as the ones above it. */
+  .stackgroup.offline {
+    margin-top: var(--vs-3); padding-top: var(--vs-2);
+    border-top: 1px dashed var(--stroke-dim); opacity: .78;
+  }
+  .stackgroup.offline > summary .gname { color: var(--dim); font-family: var(--sans); }
+  .stackgroup.offline > summary .chip { margin-left: auto; margin-right: 0; }
+  .stackgroup.offline > .hintline { padding: 0 0 var(--vs-2); }
+  .stackgroup.offline .stackrow { cursor: default; }
   /* The same block treatment the board's groups get, from the same two variables. With only the bar down the
      left, the two views coloured one grouping differently and the stack read as a flat list with coloured
      headings in it. */

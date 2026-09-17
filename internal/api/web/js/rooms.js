@@ -191,6 +191,11 @@ function openRooms() {
 // chip saying so on all of them is noise.
 function roomChip(t) {
   if (!hubIsHub || roomNow() || !t || !t.room) return "";
+  // NOT ON A CARD IN THE OFFLINE GROUP. That group says which rooms it holds,
+  // once, in its heading, so a chip on every card repeats it. And this chip's
+  // job is to focus the board on that room, which for a machine that is not
+  // answering is an invitation to a board that can show nothing.
+  if (t.offline) return "";
   const name = esc(t.room);
   return `<span class="chip room" title="on ${name}. click to focus on it."
     onclick="event.stopPropagation();pickRoom('${name.replace(/'/g, "&#39;")}')"
