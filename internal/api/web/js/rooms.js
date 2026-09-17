@@ -178,12 +178,61 @@ function roomChip(t) {
 // Drawn beside the machines that check in rather than in a pane of their own.
 // They are two ways of being the same thing and splitting them is what made a
 // hub with two rooms show an empty room list. See `renderRooms` in runners.js.
+// ownRoomPanel is the switch for running agents on the hub's own machine.
+//
+// OFF IS THE DEFAULT AND SAYING SO IS HALF THE CONTROL. A hub holding a
+// database is a hub whose restart is no longer free, and that freedom is the
+// reason the two halves are separate at all. So the switch says what it costs
+// rather than being a checkbox called "room".
+async function ownRoomPanel() {
+  let own;
+  try { own = await plainFetch("/_hub/room").then(r => r.json()); } catch (e) { return ""; }
+  if (!own || !own.available) return "";
+  return `<div class="panel roomrow">
+    <div class="col-head" style="margin:0 0 8px">
+      <span>this machine</span>
+      ${own.on ? `<span class="chip live idle">running as ${esc(own.name)}</span>`
+        : `<span class="chip">not running agents</span>`}
+      <span class="grow"></span>
+      <button class="${own.on ? "no" : "go"}" onclick="setOwnRoom(${own.on ? "false" : "true"})"
+        >${own.on ? "stop running agents here" : "run agents here too"}</button>
+    </div>
+    <div class="hintline">${own.on
+      ? `This hub holds a database, so restarting it now interrupts what is running here. ` +
+        `The rooms attached from elsewhere are unaffected either way.`
+      : `A hub serves the board and holds nothing, which is what makes it safe to restart ` +
+        `at any moment. Turn this on to run agents on this machine as well, and that stops ` +
+        `being true of this machine.`}</div>
+  </div>`;
+}
+
+// setOwnRoom throws that switch and redraws.
+async function setOwnRoom(on) {
+  if (on && !await askUser({
+    title: "run agents on this machine?",
+    body: "This hub will hold a database and pseudo terminals of its own, so restarting it " +
+      "will interrupt whatever is running here. Rooms attached from other machines are " +
+      "unaffected either way.",
+    buttons: [{ label: "cancel", value: null }, { label: "run agents here", value: true, style: "go" }]
+  })) return;
+  try {
+    await plainFetch("/_hub/room", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !!on })
+    });
+  } catch (e) { tellUser("atrium", "could not change that: " + e.message); }
+  hubRead = 0;
+  await loadHubRooms();
+  renderRooms();
+}
+
 async function hubAttachedRows() {
   await loadHubRooms();
   if (!hubIsHub) return "";
+  const own = await ownRoomPanel();
   const room = roomNow();
   if (!hubRooms.length) {
-    return `<div class="panel"><div class="empty">
+    return own + `<div class="panel"><div class="empty">
       This atrium is a hub. It serves this board and holds nothing, so until a room
       attaches there is nothing to show and no agents to run.
       <a href="#" onclick="openRoomJoin();return false;">Add a room</a>.
@@ -193,7 +242,7 @@ async function hubAttachedRows() {
   // a second control doing the same thing in a different place is a second
   // thing to find, to keep in step and to be surprised by. This list says what
   // is there; the header says which one you are in.
-  return hubRooms.map(r => {
+  return own + hubRooms.map(r => {
     const here = room === r.name;
     return `<div class="panel roomrow">
       <div class="col-head" style="margin:0 0 8px">
@@ -223,11 +272,36 @@ async function hubAttachedRows() {
 // writeRoom is the room the open editor is for, empty for none.
 let writeRoom = "";
 
-// roomChipFor is the room a configuration row belongs to, as a chip.
-// Nothing in scoped mode, where every row is from the same room.
-function roomChipFor(row) {
-  if (!hubIsHub || roomNow() || !row || !row.room) return "";
-  return `<span class="chip room">${esc(row.room)}</span>`;
+// roomGroups draws a list of configuration rows, grouped by the machine they
+// are on.
+//
+// A HEADING AND A PANEL PER ROOM, not a pill on every row. Twelve runners from
+// three machines in one box is a list you have to read sideways to use: the
+// thing that tells you which machine you are looking at is a small chip near
+// the right edge, repeated twelve times, and the boundary between one machine
+// and the next is not drawn at all. Grouped, the boundary IS the drawing, the
+// name is said once, and the rows go back to being about the runner.
+//
+// One plain panel when there is nothing to group by: no hub, or a board scoped
+// to one room, or rows that carry no room at all.
+function roomGroups(rows, row) {
+  rows = rows || [];
+  const panel = list => `<div class="panel">` + list.map(row).join("") + `</div>`;
+  if (!hubIsHub || roomNow() || !rows.some(r => r && r.room)) return panel(rows);
+
+  // The header's order, so every pane on the page lists machines the same way
+  // round. Anything from a room that has since detached goes last rather than
+  // disappearing: it is still on that machine.
+  const known = hubRooms.map(r => r.name);
+  const extra = rows.map(r => (r && r.room) || "")
+    .filter(n => n && known.indexOf(n) < 0);
+  const names = known.concat([...new Set(extra)]);
+
+  return names.map(name => {
+    const mine = rows.filter(r => r && (r.room || "") === name);
+    if (!mine.length) return "";
+    return `<div class="col-head roomgroup"><span>${esc(name)}</span></div>` + panel(mine);
+  }).join("");
 }
 
 // rowOf finds a configuration row by id AND room.

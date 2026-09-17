@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -129,7 +131,98 @@ func roomCmd() *cobra.Command {
 // exactly as a machine across the world does, and appears in `Rooms()` beside
 // them. Nothing above this knows the difference, which is what stops the two
 // paths drifting apart.
-func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) (func(), error) {
+// ── the switch ───────────────────────────────────────────
+
+// ownRoom is the hub's own room, and whether it is running.
+//
+// A TYPE RATHER THAN A FLAG, because this is turned on and off from the board
+// while the hub keeps running. Stopping it cancels its context, which stops
+// the daemon and drops its link, and the hub goes back to holding nothing.
+type ownRoom struct {
+	parent context.Context
+	hub    *link.Hub
+	dir    string
+
+	name, db, agent string
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+func (o *ownRoom) Name() string { return o.name }
+
+func (o *ownRoom) On() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.cancel != nil
+}
+
+// Set starts or stops the room, and writes down which, so a hub restart comes
+// back the way it was left rather than the way it was first started.
+func (o *ownRoom) Set(on bool) error {
+	o.mu.Lock()
+	already := o.cancel != nil
+	o.mu.Unlock()
+	if on == already {
+		return o.remember(on)
+	}
+	if !on {
+		o.mu.Lock()
+		stop := o.cancel
+		o.cancel = nil
+		o.mu.Unlock()
+		if stop != nil {
+			stop()
+		}
+		log.Printf("[hub] stopped being a room. its agents keep running, unsupervised, " +
+			"until something ends them")
+		return o.remember(false)
+	}
+	ctx, cancel := context.WithCancel(o.parent)
+	if err := hubAsRoom(ctx, o.hub, o.name, o.db, o.agent); err != nil {
+		cancel()
+		return err
+	}
+	o.mu.Lock()
+	o.cancel = cancel
+	o.mu.Unlock()
+	return o.remember(true)
+}
+
+// remember writes the answer beside the hub's certificates.
+//
+// NOT IN A DATABASE, because the thing being remembered is whether to open one.
+func (o *ownRoom) remember(on bool) error {
+	if strings.TrimSpace(o.dir) == "" {
+		return nil
+	}
+	if err := os.MkdirAll(o.dir, 0o700); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(map[string]bool{"on": on})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(o.dir, "room.json"), raw, 0o600)
+}
+
+// wasOn reads what was written last time. False for a hub that has never been
+// one, which is the default and the point.
+func wasOn(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "room.json"))
+	if err != nil {
+		return false
+	}
+	var body struct {
+		On bool `json:"on"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return false
+	}
+	return body.On
+}
+
+func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) error {
 	if strings.TrimSpace(name) == "" {
 		name = defaultRoomName()
 	}
@@ -141,12 +234,12 @@ func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) (func()
 	// one already running. See `runRoom`.
 	if os.Getenv("ATRIUM_LOCATION") == "" {
 		if err := os.Setenv("ATRIUM_LOCATION", roomLocation()); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if os.Getenv("ATRIUM_SHARED_LOCATION") == "" {
 		if err := os.Setenv("ATRIUM_SHARED_LOCATION", "-"); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -159,10 +252,14 @@ func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) (func()
 		DBPath:    db,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	pipe := &link.InProc{}
+	go func() {
+		<-ctx.Done()
+		_ = pipe.Close()
+	}()
 	go func() {
 		if err := h.Serve(ctx, pipe.Listen()); err != nil && ctx.Err() == nil {
 			log.Printf("[hub] its own room stopped listening: %v", err)
@@ -184,7 +281,7 @@ func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) (func()
 	}()
 
 	log.Printf("[hub] also a room, called %q, agents on %s, state in %s", name, agent, db)
-	return func() { _ = pipe.Close() }, nil
+	return nil
 }
 
 // runRoom starts the daemon and attaches it to the hub.

@@ -245,6 +245,16 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 	for {
 		select {
 		case <-ctx.Done():
+			// THE ROOM GOES WITH IT, rather than being left in the list.
+			//
+			// For a hub being shut down this changes nothing: the process is
+			// going. It matters for a listener that stops while the hub keeps
+			// running, which is what a hub that is also a room does every time
+			// somebody turns that off. Returning quietly left a room listed,
+			// heartbeat frozen, forever: nothing was watching it any more, so
+			// nothing would ever notice it had gone.
+			a.close("its listener stopped")
+			h.forget(a.name, a)
 			return
 		case <-a.done:
 			return
