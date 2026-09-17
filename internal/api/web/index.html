@@ -69,8 +69,11 @@
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            title="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
-      <!-- Put runner configuration and the permissions audit after the daily work views. -->
-      <div class="tab" data-view="runners">runners</div>
+      <!-- Put machine configuration and the permissions audit after the daily work views.
+           Called `rooms` because a room is the machine, and everything under this tab is a
+           fact about one: its runners, its fixtures, its sources, its recognisers, its
+           actions. The view keeps its old internal name so nothing else has to change. -->
+      <div class="tab" data-view="runners">rooms</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
            title="requests waiting to be answered"></span></div>
     </nav>
@@ -519,6 +522,34 @@ The useful cut is which ones left an account of themselves. A session that finis
        accordion, because an accordion is right when the common case is closed,
        and nobody opens this page except to do one of these five things. -->
   <div id="runners" hidden>
+    <!-- ROOMS FIRST, BECAUSE EVERYTHING ELSE ON THIS PAGE BELONGS TO ONE.
+         A runner, a fixture, a source, a recogniser and an action are all
+         facts about a MACHINE: what it can start, what comes up with it, what
+         it polls, what it recognises. A room IS that machine. So the room is
+         the thing you pick and the rest of this page is what you then see.
+
+         With one room, or none, nothing here asks anything: the list says
+         what is attached and the panes below are simply that machine's. -->
+    <div class="col-head r-section" data-pane="rooms" style="margin:0 0 10px">
+      <span>rooms</span>
+      <span class="help" tabindex="0" data-tip="A room is a machine running agents. Everything else on this page belongs to one: its runners, its fixtures, its sources, its recognisers, its actions.
+
+A room attached to a hub dials out and stays connected, so the hub can be restarted without touching the sessions running there, and a room behind a firewall needs nothing opened. The hub holds the board. The room holds the database, the terminals and the agents.
+
+The older way is still listed here: a machine that POSTs a summary of itself on a timer. It cannot be typed into from this board, because a pseudo terminal cannot leave the machine that made it, so its rows link to that machine's own board instead.
+
+Pick a room and this whole board becomes that machine's atrium. Pick none and you see all of them at once.">?</span>
+    </div>
+    <p class="pane-lead">The machines running agents. Pick one and the whole board scopes to it,
+      which is the same thing the counter in the header does.</p>
+    <!-- "add a room" opens instructions, not a form. Worth being clear about,
+         since every other add button on this page creates something. -->
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="openRoomJoin()">add a room</button>
+      <button class="go" onclick="openDispatch('')">queue work for a machine</button>
+    </div>
+    <div id="room-list"></div>
+
     <div class="col-head r-section" data-pane="start" style="margin:0 0 10px">
       <span>start something</span>
       <span class="help" tabindex="0" data-tip="Runners are rows in a table, not code. A runner is a command, a working directory, an environment, and a way to resume.
@@ -623,27 +654,6 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <button class="go" onclick="editAction(null)">add an action</button>
     </div>
     <div id="action-list"></div>
-
-    <div class="col-head r-section" data-pane="rooms" style="margin:0 0 10px">
-      <span>rooms</span>
-      <span class="help" tabindex="0" data-tip="Other machines running their own atrium, reporting what is on them.
-
-Each room keeps its own daemon, its own database and its own terminals. This hub holds nothing durable about them: what you see here is a summary, replaced every time that room checks in, that goes stale and then disappears when it stops.
-
-TERMINALS DO NOT TRAVEL. A pseudo terminal cannot leave the machine that made it, so attaching to a runner on a room means opening that room's own board. That is the link on each row.
-
-A room is started with 'atrium room' on that machine.">?</span>
-    </div>
-    <p class="pane-lead">Other machines running their own atrium and reporting into this one. This
-      board holds nothing about them that survives a restart, and their terminals stay where
-      they are.</p>
-    <!-- "add a room" opens instructions, not a form. Worth being clear about,
-         since every other add button on this page creates something. -->
-    <div class="toolbar" style="margin-bottom:12px">
-      <button class="go" onclick="openRoomJoin()">add a room</button>
-      <button class="go" onclick="openDispatch('')">send work to a machine</button>
-    </div>
-    <div id="room-list"></div>
 
     <!-- The queue, drawn UNDER the rooms rather than beside them, because it is
          a different kind of fact. A room row is what that machine says about
