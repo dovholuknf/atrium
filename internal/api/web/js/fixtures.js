@@ -27,6 +27,7 @@ async function renderFixtures() {
       <span class="by">${esc(f.harness)}</span>
       ${f.resume ? `<span class="by">resumes</span>` : `<span class="by">fresh</span>`}
       ${f.theme ? `<span class="chip">${esc(f.theme)}</span>` : ""}
+      ${roomChipFor(f)}
       <button onclick="moveFixture('${esc(f.id)}', -1)" ${i === 0 ? "disabled" : ""}
         title="start this one earlier">&#9650;</button>
       <button onclick="moveFixture('${esc(f.id)}', 1)"
@@ -34,7 +35,7 @@ async function renderFixtures() {
         title="start this one later">&#9660;</button>
       <button onclick="startFixtureNow('${esc(f.id)}')"
         title="start it now, without restarting atrium">start</button>
-      <button onclick="editFixture('${esc(f.id)}')">edit</button>
+      <button onclick="editFixture('${esc(f.id)}','${esc(f.room || "")}')">edit</button>
     </div>` +
     // Why the last start failed, under the row rather than in a tooltip. This
     // is the page the notification sends you to, so the reason has to be the
@@ -79,8 +80,12 @@ async function moveFixture(id, delta) {
 }
 
 // Opens the form. A null id is a new one.
-function editFixture(id) {
-  const f = allFixtures.find(x => x.id === id) || {
+async function editFixture(id, room) {
+  // WHICH MACHINE THIS IS FOR, settled before anything is typed. An existing
+  // row knows; a new one with several rooms attached asks once. See
+  // `chooseWriteRoom` in js/rooms.js.
+  if (!await chooseWriteRoom(rowOf(allFixtures, id, room), "fixture")) return;
+  const f = rowOf(allFixtures, id, room) || {
     id: "", label: "", harness: "", cwd: "", theme: "",
     // A new fixture resumes and starts, because that is what somebody adding
     // one means. Anyone who wants otherwise is one click away from it.
@@ -112,7 +117,8 @@ function editFixture(id) {
   document.getElementById("f-delete").hidden = !f.id;
 
   if (!enabled.length) {
-    tellUser("atrium", "no runner is enabled yet. turn one on above first.");
+    tellUser("atrium", "no runner is enabled yet. turn one on under " +
+      paneLink("runners", "rooms &rsaquo; runners") + " first.");
     return;
   }
   dlg.showModal();
@@ -642,8 +648,9 @@ function linesToList(v) {
   return (v || "").split("\n").map(s => s.trim()).filter(Boolean);
 }
 
-function editHarness(id) {
-  const h = allHarnesses.find(x => x.id === id) || {
+async function editHarness(id, room) {
+  if (!await chooseWriteRoom(rowOf(allHarnesses, id, room), "runner")) return;
+  const h = rowOf(allHarnesses, id, room) || {
     id: "", label: "", cmd: "", args: [], resume_args: [], prompt_args: [], model_args: [], cwd: "", env: {},
     launch_mode: "window", rules_source: "", package: "", notes: "", enabled: false
   };
@@ -733,9 +740,10 @@ async function deleteHarness() {
   refresh();
 }
 
-async function toggleHarness(id) {
-  const h = allHarnesses.find(x => x.id === id);
+async function toggleHarness(id, room) {
+  const h = rowOf(allHarnesses, id, room);
   if (!h) return;
+  if (!await chooseWriteRoom(h, "runner")) return;
   try {
     await api(`/v1/harnesses/${encodeURIComponent(id)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -947,7 +955,8 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   await loadHarnesses();
   const enabled = allHarnesses.filter(h => h.enabled);
   if (!enabled.length) {
-    tellUser("atrium", "no runner is enabled yet. turn one on in the runners tab.");
+    tellUser("atrium", "no runner is enabled yet. turn one on under " +
+      paneLink("runners", "rooms &rsaquo; runners") + " first.");
     goRunners("runners");
     return;
   }

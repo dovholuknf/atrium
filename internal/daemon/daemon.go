@@ -787,17 +787,34 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent listener: %w", err)
 	}
-	humanLn, err := net.Listen("tcp", d.opts.HumanAddr)
-	if err != nil {
-		agentLn.Close()
-		return fmt.Errorf("human listener: %w", err)
+	// NO BOARD OF ITS OWN, when asked for with `-`.
+	//
+	// A room attached to a hub is reached through that hub, and its loopback
+	// board is a second address showing the same thing. For a room running
+	// INSIDE a hub there is not even a fallback argument for it: they are one
+	// process, so a hub that is down takes the loopback board with it.
+	//
+	// `-` rather than empty, because empty is a valid address meaning every
+	// interface on a random port, which is the opposite of what somebody
+	// leaving this blank would want.
+	var humanLn net.Listener
+	if strings.TrimSpace(d.opts.HumanAddr) != "-" {
+		humanLn, err = net.Listen("tcp", d.opts.HumanAddr)
+		if err != nil {
+			agentLn.Close()
+			return fmt.Errorf("human listener: %w", err)
+		}
 	}
 
 	// `addressOf`, not concatenation. An address that already names a host,
 	// which is what `atrium preview` passes, came out as
 	// `http://localhost127.0.0.1:53895`.
 	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
-	log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+	if strings.TrimSpace(d.opts.HumanAddr) == "-" {
+		log.Printf("[atrium] board   -> none of its own. reached through the hub")
+	} else {
+		log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+	}
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
 	// WHAT A SHELL WILL OPEN AS, said once at startup rather than discovered
 	// by opening one. The search looks at PATH, so the answer is a property of
@@ -905,13 +922,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 		errCh <- fmt.Errorf("agent listener: %w", err)
 	}()
-	go func() {
-		err := humanSrv.Serve(humanLn)
-		if errors.Is(err, http.ErrServerClosed) {
-			return
-		}
-		errCh <- fmt.Errorf("human listener: %w", err)
-	}()
+	if humanLn != nil {
+		go func() {
+			err := humanSrv.Serve(humanLn)
+			if errors.Is(err, http.ErrServerClosed) {
+				return
+			}
+			errCh <- fmt.Errorf("human listener: %w", err)
+		}()
+	}
 
 	select {
 	case <-ctx.Done():

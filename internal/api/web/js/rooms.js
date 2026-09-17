@@ -209,11 +209,79 @@ async function hubAttachedRows() {
   }).join("");
 }
 
+// ── which room a change lands in ────────────────────────────────────────────
+//
+// Reading is merged: the hub asks every room for its runners, its fixtures,
+// its sources, its recognisers and its actions, and hands back one list with
+// the room on each row. Writing cannot be. "Add this runner" across four
+// machines is a question, not a guess, and the hub refuses it outright.
+//
+// So a change carries the room it is for. Editing an existing row uses that
+// row's room, which is never ambiguous. Adding something new, with more than
+// one room and none chosen, asks once.
+
+// writeRoom is the room the open editor is for, empty for none.
+let writeRoom = "";
+
+// roomChipFor is the room a configuration row belongs to, as a chip.
+// Nothing in scoped mode, where every row is from the same room.
+function roomChipFor(row) {
+  if (!hubIsHub || roomNow() || !row || !row.room) return "";
+  return `<span class="chip room">${esc(row.room)}</span>`;
+}
+
+// rowOf finds a configuration row by id AND room.
+//
+// THE ROOM IS PART OF THE KEY once lists are merged. Two machines can both
+// have a runner called `claude`, an action called `review` or a fixture called
+// `notes`, and looking one up by id alone returns whichever room answered
+// first. Editing sparta's runner and saving it to athens is the kind of wrong
+// nobody notices until the wrong machine starts behaving oddly.
+function rowOf(list, id, room) {
+  return (list || []).find(x => x.id === id && (!room || (x.room || "") === room));
+}
+
+// chooseWriteRoom settles which room an editor is about to change.
+//
+// Answers false when the question was asked and dismissed, which the caller
+// treats as "do not open the dialog": an editor with no room to save into
+// would fail on the save, after the typing.
+async function chooseWriteRoom(row, what) {
+  writeRoom = "";
+  // Not a hub, or already scoped to one room: the request goes where every
+  // other request on this page goes and nothing extra is needed.
+  if (!hubIsHub || roomNow()) return true;
+  if (row && row.room) { writeRoom = row.room; return true; }
+  if (hubRooms.length === 1) { writeRoom = hubRooms[0].name; return true; }
+  if (!hubRooms.length) {
+    tellUser("no room", "No room is attached, so there is nowhere to put this. " +
+      "A hub serves the board and holds nothing.");
+    return false;
+  }
+  const pick = await askUser({
+    title: "which machine?",
+    body: `A ${esc(what)} belongs to one machine. You are looking at all of them, ` +
+      `so say which one this is for.`,
+    buttons: hubRooms.map(r => ({ label: r.name, value: r.name, style: "go" }))
+      .concat([{ label: "cancel", value: null }])
+  });
+  if (!pick) return false;
+  writeRoom = pick;
+  return true;
+}
+
 // ── scoping every request this page makes ───────────────────────────────────
 
 const plainFetch = window.fetch.bind(window);
 window.fetch = function (input, init) {
-  const room = roomNow();
+  // The room being looked at, or, for a CHANGE made while looking at all of
+  // them, the room the open editor is for. See `chooseWriteRoom`.
+  //
+  // Writes only, and that is what makes a stale `writeRoom` harmless: an
+  // editor sets it and nothing clears it, so if it reached reads too, closing
+  // a dialog would silently leave the whole board scoped to one machine.
+  const how = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
+  const room = roomNow() || (how === "GET" || how === "HEAD" ? "" : writeRoom);
   if (!room) return plainFetch(input, init);
   // A Request object carries its own headers, so it is rebuilt rather than
   // having an init merged onto it, which fetch ignores for most fields.

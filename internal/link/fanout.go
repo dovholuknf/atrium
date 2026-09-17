@@ -52,6 +52,25 @@ var merged = map[string]struct {
 	"/v1/permissions": {field: "permissions", idField: "id", taskField: "task_id"},
 	"/v1/offered":     {field: "items", idField: "id"},
 	"/v1/shares":      {field: "shares", taskField: "task_id"},
+
+	// THE MACHINE-SHAPED CONFIGURATION, which is everything the rooms tab
+	// shows. A runner, a fixture, a source, a recogniser, an action and a rule
+	// are all facts about one machine, so four rooms have four sets and the
+	// hub shows all of them with the room on each row.
+	//
+	// THEIR IDS ARE NOT TAGGED, unlike a card's. A card id is tagged because
+	// every per-card URL the board builds carries it through `/v1/tasks/<id>`,
+	// which the hub knows how to untag. These ids appear in their own paths,
+	// which it does not, so a tag here would be a 404 on the way back. Two
+	// rooms can both have a runner called `claude` and that is not a
+	// collision: they are two runners, told apart by the room on the row, and
+	// a write says which room in a header.
+	"/v1/harnesses":   {field: "harnesses"},
+	"/v1/fixtures":    {field: "fixtures"},
+	"/v1/sources":     {field: "sources"},
+	"/v1/recognisers": {field: "recognisers"},
+	"/v1/actions":     {field: "actions"},
+	"/v1/rules":       {field: "rules"},
 }
 
 // aggregate answers a list endpoint from every attached room.
