@@ -257,27 +257,35 @@ func hubCmd() *cobra.Command {
 				if bt != "zrok" {
 					return fmt.Errorf("no board transport called %q. one of: zrok", bt)
 				}
+				// NON-FATAL, ON PURPOSE. The board share is additive: the local
+				// board on loopback is the hub's real job and must come up even
+				// when the overlay API is slow or down. A share creation that
+				// times out at zrok logs the reason and the hub serves loopback
+				// anyway, rather than a transient outage taking the board with
+				// it.
 				bs, shareLn, err := openBoardShare(boardShareMode)
 				if err != nil {
-					return fmt.Errorf("could not put the board on a zrok share: %w", err)
-				}
-				defer bs.release()
-				if bs.Mode == "public" {
-					log.Printf("[hub] the board is on a PUBLIC zrok share with no login " +
-						"in front of it. whoever opens the link can read every command " +
-						"and answer permission requests")
-				}
-				log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
-				shareSrv := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
-				go func() {
-					<-ctx.Done()
-					_ = shareSrv.Close()
-				}()
-				go func() {
-					if err := shareSrv.Serve(shareLn); err != nil && ctx.Err() == nil {
-						log.Printf("[hub] the board's zrok share stopped: %v", err)
+					log.Printf("[hub] could not put the board on a zrok share, "+
+						"serving loopback only: %v", err)
+				} else {
+					defer bs.release()
+					if bs.Mode == "public" {
+						log.Printf("[hub] the board is on a PUBLIC zrok share with no login " +
+							"in front of it. whoever opens the link can read every command " +
+							"and answer permission requests")
 					}
-				}()
+					log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
+					shareSrv := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
+					go func() {
+						<-ctx.Done()
+						_ = shareSrv.Close()
+					}()
+					go func() {
+						if err := shareSrv.Serve(shareLn); err != nil && ctx.Err() == nil {
+							log.Printf("[hub] the board's zrok share stopped: %v", err)
+						}
+					}()
+				}
 			}
 
 			greet(store, side, board, id)
