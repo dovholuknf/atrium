@@ -21,6 +21,18 @@ integration. Cherry-pick individual commits or merge the branch to `dovholuknf/m
   braid one transcript from two). Fixed with a keyed mutex per card and resume id, duplicate-ask dedup, wind-down
   waiting for the kill, explicit store close, and a concurrency test. This is why the branch is safe to merge.
 
+- **restart wheel item** — a restart in the terminal cog menu that exits and resumes the session on the same card.
+- **`--isolated` room flag** — a second/throwaway room on a machine keeps off the shared hooks file (the hazard the
+  verify run hit and remediated).
+- **event sink phase 2** — the db event window can be bounded (opt-in, default unbounded), so with db-shrink the
+  operational database plateaus instead of growing forever.
+
+## Verification
+
+A throwaway atrium2 (isolated ports/dirs/db) confirmed via headless Playwright: the board loads clean, the fixtures
+on/off toggle persists, and a launched session comes up in its theme. The phase-2 restart code passed an
+adversarial security review, which found and got fixed a critical concurrency race. See VERIFY-REPORT.md.
+
 ## Deploy plan (when you are back)
 
 - Hub-side (control MCP, zrok share, board assets for fixtures/theme): deploys on a HUB restart alone, room stays
