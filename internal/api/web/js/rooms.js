@@ -187,6 +187,11 @@ function openRooms() {
 // tags and it can be filtered on later. Clicking it does the more useful thing
 // than filtering, which is to focus the whole board on that room.
 //
+// USED BY EVERY LIST THAT MERGES ROOMS, which is the board, the stack and the
+// history. The history called a name that had never existed, so its rows threw
+// on every render and the tab drew nothing at all on a hub: a missing function
+// is a silent, total failure of one view.
+//
 // Never drawn when scoped, because then every card is from the same room and a
 // chip saying so on all of them is noise.
 function roomChip(t) {
