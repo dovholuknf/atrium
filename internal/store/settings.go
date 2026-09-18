@@ -66,6 +66,20 @@ const (
 // every attach, so changing it takes effect on the next attach.
 const SettingReplayMode = "replay_mode"
 
+// SettingEventSink names the hot sink and any cold sinks a card's history goes
+// to, as a comma-separated list. The FIRST name is the hot sink that serves
+// Recent; the rest are write-only cold sinks fanned out best-effort.
+//
+// Unset, or `db` alone, is the default: the event table is the hot sink and
+// there are no cold sinks, which is byte-for-byte how every install behaved
+// before this existed. `db,file` keeps the db hot and also appends every event
+// to rolling JSONL files. Per the observed-versus-overrides rule this is an
+// override a human types; nothing infers it.
+//
+// A name this build does not know is logged and skipped rather than fatal. A
+// misconfigured cold trail must never keep the daemon from starting.
+const SettingEventSink = "event_sink"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {
