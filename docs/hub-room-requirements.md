@@ -141,12 +141,19 @@ room answered first.
 Ports 8000 (board), 8001 (link), 8010 and 8011 (first room), 8020 and 8021 (second room). Binary
 `D:\worktrees\github\dovholuknf\atrium\hub-room\build.claude\atrium2.exe`.
 
+The hub names its rooms, so a room is added on the hub and the name is minted into the join string. There is no
+`--name` on the room: it is called what the certificate says, which is what the token asked for.
+
 ```
 atrium2 hub --addr 127.0.0.1:8000 --link 127.0.0.1:8001 --dir <certs> --board <repo>\internal\api\web
-atrium2 join <token> --name sparta --dir <d1> --db <d1>\atrium.db --http 127.0.0.1:8010 --agent 127.0.0.1:8011
-atrium2 hub token --dir <certs> --link 127.0.0.1:8001
-atrium2 join <token> --name athens --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agent 127.0.0.1:8021
+atrium2 hub room add sparta --dir <certs> --link 127.0.0.1:8001
+atrium2 join <token> --dir <d1> --db <d1>\atrium.db --http 127.0.0.1:8010 --agent 127.0.0.1:8011
+atrium2 hub room add athens --dir <certs> --link 127.0.0.1:8001
+atrium2 join <token> --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agent 127.0.0.1:8021
 ```
+
+`atrium2 hub room ls` says what exists and which of them are here. `atrium2 hub room log` says what has happened
+to any of them, including ones that have since been removed.
 
 ### One thing that is not a guarantee
 
