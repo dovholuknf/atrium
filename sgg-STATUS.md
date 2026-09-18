@@ -65,17 +65,59 @@ rather than do unilaterally. What is safe to pre-position now, committed as idem
 The token's hub dial address must be one sgg can reach (the overlay), NOT 127.0.0.1, so the token is minted AFTER the
 transport is chosen.
 
+## Results
+
+### Goal A code: DONE and committed
+
+- `hub --board-transport zrok --board-share private|public` serves the same board handler on a zrok proxy share.
+  Loopback is untouched. See `cmd/atrium2/hubshare.go` and the wiring in `cmd/atrium2/hub.go`.
+- A share failure is NON-FATAL: the hub logs it and serves loopback anyway. Proved on a throwaway hub instance
+  (spare ports 7900/7901, own temp dir), which came up on loopback while the share create failed. The live hub was
+  never touched and stayed healthy throughout (`rooms:1, claude-sg4`).
+- Tests green: `go test ./cmd/atrium2/... ./internal/link/...`.
+
+### Goal A activation: BLOCKED by the zrok account (external)
+
+Creating ANY zrok share on this account fails right now with `[POST /share][500] shareInternalServerError`. This is
+NOT atrium: the plain `zrok2 share private ... --backend-mode proxy` CLI returns the same 500. TCP to
+api-v2.zrok.io:443 is fine and `zrok2 status` works, so the account is enabled and the controller is reachable, but
+share allocation fails. The account holds dozens of reserved names left by other work (docusaurus/docpreview), which
+is a plausible capacity cause, but the documented limit answers are 401 and 409, not 500, so this may be the hosted
+instance. I did NOT delete any reserved names: they belong to other sessions, not this one.
+
+To finish Goal A, once shares can be created again:
+
+    pwsh -File scripts\sgg\restart-hub-with-board-share.ps1 -ShareMode private
+
+That is a detached, hub-only restart (room stays up) that deploys the new binary and brings the share up. If share
+create still fails it degrades to loopback, so running it is never worse than the plain hub.
+
+### Goal B: BLOCKED on an overlay client for sgg (credential action)
+
+sgg is a bare Windows box with no zrok environment and no ziti identity. A room dials the hub, and every dial path
+needs setup that is clint's to do. Full runbook and both transport paths in `scripts/sgg/bringup-sgg.md`. Binary
+staging is safe and ready (`scripts/sgg/stage-sgg.ps1`), not yet run (holding remote execution pending the transport
+choice).
+
 ## Open questions for clint / orchestrator
 
-1. Goal A board share: private (recommended, safe, needs zrok on clint's end) or public (browser-openable, no login)?
-2. Goal B sgg overlay: enable zrok on sgg with clint's account token, or enroll a ziti identity? Either is a
-   credential action clint has to bless. Which does he want?
+1. zrok account: share create returns 500 account-wide. Free reserved-name capacity (delete stale docusaurus/
+   docpreview reservations) or look at the hosted instance? This blocks both goals over zrok.
+2. Goal A board share, once zrok works: private (recommended, safe, needs zrok on clint's end) or public
+   (browser-openable, NO login in front of a board that reads files and answers prompts)?
+3. Goal B sgg overlay: enroll a ziti identity for sgg (recommended, needs a hub-side `atrium-hub` service + policies),
+   or enable zrok on sgg with clint's account token? Either is a credential action clint has to bless.
+4. Hub restart: the orchestrator owns hub build/restart by convention (memory), and the messaging MCP is down, so I
+   have NOT restarted the live hub. Should the orchestrator run `restart-hub-with-board-share.ps1`, or is it fine for
+   this session to do it once question 2 is answered?
 
 ## State
 
-- [x] Discovery
-- [x] Build atrium2 into build.claude
-- [ ] Goal A code change
-- [ ] Goal A private share up and verified
-- [ ] Goal B staging scripts
-- [ ] Goal B room attached (blocked: sgg overlay client)
+- [x] Discovery (overlay + sgg)
+- [x] Build atrium2 into build.claude (windows/amd64, no cross-compile)
+- [x] Goal A code change (board over zrok, non-fatal), committed
+- [x] Goal A code verified on a throwaway hub (share path exercised, degrades cleanly)
+- [ ] Goal A share up on the live hub (blocked: zrok account 500 + restart/private-public decision)
+- [x] Goal B staging + bring-up scripts, committed
+- [ ] Goal B binary staged to sgg (holding: remote execution pending transport choice)
+- [ ] Goal B room attached / rooms:2 (blocked: sgg overlay client)
