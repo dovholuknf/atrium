@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"path/filepath"
 	"strings"
 )
 
@@ -60,17 +61,24 @@ func (s *Store) configureSinks(dbPath string) {
 		log.Printf("event sink: hot sink %q is not supported (only db serves reads); using db", names[0])
 	}
 
+	logsDir := filepath.Join(filepath.Dir(dbPath), "events")
 	for _, name := range names[1:] {
 		switch name {
 		case "db":
 			// The db is the hot sink; naming it again as a cold sink would write
 			// every event to the table twice. Ignore rather than double-write.
 			log.Printf("event sink: %q is the hot sink and cannot also be a cold sink; ignoring", name)
+		case "file":
+			fs, err := newFileSink(logsDir)
+			if err != nil {
+				log.Printf("event sink: file sink disabled: %v", err)
+				continue
+			}
+			s.cold = append(s.cold, fs)
 		default:
 			log.Printf("event sink: unknown sink %q; ignoring", name)
 		}
 	}
-	_ = dbPath
 }
 
 // splitSinkNames turns the comma-separated setting into a trimmed, lower-cased
