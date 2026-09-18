@@ -235,6 +235,12 @@ func hubCmd() *cobra.Command {
 			// most recent fifty answers only the first.
 			go store.BackUp(ctx, backupsIn(keys.Dir, db))
 
+			// HANDING FREED PAGES BACK TO DISK, a bounded batch at a time while
+			// the hub stays live. The room cache is rewritten wholesale on every
+			// announce, so its file grows and never shrinks on its own. A no-op
+			// on an older store not in incremental mode. See internal/hubstore.
+			go store.VacuumLoop(ctx)
+
 			srv := &http.Server{
 				Addr:    board,
 				Handler: proxy,
