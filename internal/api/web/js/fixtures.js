@@ -24,7 +24,11 @@ async function renderFixtures() {
   // number them 1 to 12 and grey out the wrong arrows.
   setHTML(host, roomGroups(allFixtures, (f, i, mine) => `
     <div class="row line${f.last_error ? " broke" : ""}">
-      <span class="chip ${f.enabled ? "accent" : ""}">${f.enabled ? "on" : "off"}</span>
+      <span class="chip toggle ${f.enabled ? "accent" : ""}" role="button" tabindex="0"
+        title="${f.enabled ? "on. click to stop it starting with atrium" : "off. click to start it with atrium"}"
+        onclick="toggleFixture('${esc(f.id)}','${esc(f.room || "")}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"
+        >${f.enabled ? "on" : "off"}</span>
       <span class="ord">${i + 1}</span>
       <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
       <code class="grow ell" title="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
@@ -52,6 +56,29 @@ async function renderFixtures() {
       <code class="grow ell" title="${esc(f.last_error)}">${esc(f.last_error)}</code>
       ${f.last_run_at ? `<span class="by">${esc(firstSeen(f.last_run_at))}</span>` : ""}
     </div>` : "")));
+}
+
+// Flip whether a fixture starts with the daemon, from its own pill.
+//
+// Off keeps the definition and only stops the auto-start, so the row stays put
+// and can be turned back on. Mirrors toggleHarness: the whole row is PUT back
+// with enabled flipped, and SaveFixture leaves the daemon-owned columns
+// (task_id, last_error, last_run_at) alone on conflict.
+//
+// Turning one on does NOT start it now: that is the `start` button's job, and
+// pairing the two would mean the pill both saved a setting and spawned a
+// terminal, which is two decisions on one click.
+async function toggleFixture(id, room) {
+  const f = rowOf(allFixtures, id, room);
+  if (!f) return;
+  if (!await chooseWriteRoom(f, "fixture")) return;
+  try {
+    await api(`/v1/fixtures/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, f, { enabled: !f.enabled }))
+    });
+  } catch (e) { tellUser("atrium", e.message); return; }
+  renderFixtures();
 }
 
 // Reordering by swapping sort values with the neighbor.
