@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -45,6 +46,8 @@ var ErrRecentUnsupported = errors.New("event sink does not serve Recent")
 // skipped, because a cold trail is a durability convenience and must never be
 // the reason the daemon refuses to start.
 func (s *Store) configureSinks(dbPath string) {
+	s.configureHotWindow()
+
 	raw, err := s.Setting(SettingEventSink)
 	if err != nil {
 		log.Printf("event sink: reading %s: %v; using db only", SettingEventSink, err)
@@ -81,6 +84,35 @@ func (s *Store) configureSinks(dbPath string) {
 	}
 }
 
+// configureHotWindow reads the byte bound and sets it on the db hot sink. An
+// unset, empty, non-numeric, or non-positive value leaves the sink unbounded,
+// which is the default: the db keeps every event and nothing rolls off. Only a
+// positive value opts a card's history into the rolling window.
+//
+// The hot sink is always the db sink in this phase, set in Open before this
+// runs, so the type assertion holds. A bad value is logged and ignored rather
+// than fatal, the same posture the rest of sink configuration takes.
+func (s *Store) configureHotWindow() {
+	raw, err := s.Setting(SettingEventWindowBytes)
+	if err != nil {
+		log.Printf("event sink: reading %s: %v; hot window left unbounded", SettingEventWindowBytes, err)
+		return
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return // default: unbounded
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		log.Printf("event sink: %s = %q is not a positive number of bytes; hot window left unbounded",
+			SettingEventWindowBytes, raw)
+		return
+	}
+	if db, ok := s.hot.(*dbSink); ok {
+		db.windowBytes = n
+	}
+}
+
 // splitSinkNames turns the comma-separated setting into a trimmed, lower-cased
 // list, dropping blanks. An empty result means "use the default".
 func splitSinkNames(raw string) []string {
@@ -103,6 +135,13 @@ func splitSinkNames(raw string) []string {
 // contention retries and a hard failure halts, the same as before.
 type dbSink struct {
 	db *sql.DB
+
+	// windowBytes is the per-card hot-window bound in bytes of payload. Zero
+	// means unbounded, which is the default and phase-1 behaviour: nothing rolls
+	// off. A positive value rolls the oldest events off a card after each append
+	// so the table holds only a recent window. Set once at Open by configureSinks
+	// before any Append, so the writer never races the caller for it.
+	windowBytes int64
 }
 
 func newDBSink(db *sql.DB) *dbSink { return &dbSink{db: db} }
@@ -110,9 +149,46 @@ func newDBSink(db *sql.DB) *dbSink { return &dbSink{db: db} }
 // Append writes one row to the event table. The id, timestamp and payload are
 // already resolved on the Event, so two sinks fed the same event agree on all
 // three.
+//
+// When a window is set, the oldest events for this card roll off after the
+// insert, so the db holds only the recent window. This is what actually shrinks
+// the operational database over time; incremental auto_vacuum hands the freed
+// pages back to disk.
 func (d *dbSink) Append(taskID string, e *Event) error {
-	_, err := d.db.Exec(`INSERT INTO event (id, task_id, at, kind, payload) VALUES (?,?,?,?,?)`,
-		e.ID, taskID, ts(e.At), e.Kind, string(e.Payload))
+	if _, err := d.db.Exec(`INSERT INTO event (id, task_id, at, kind, payload) VALUES (?,?,?,?,?)`,
+		e.ID, taskID, ts(e.At), e.Kind, string(e.Payload)); err != nil {
+		return err
+	}
+	if d.windowBytes > 0 {
+		return d.rollOff(taskID, d.windowBytes)
+	}
+	return nil
+}
+
+// rollOff deletes the oldest events for a card until the retained payload bytes
+// fit the window. It always keeps the NEWEST event, even one larger than the
+// whole window, so a card never loses the thing that just happened; only older
+// events roll off.
+//
+// A running total over the newest-first order picks the cut: an event is dropped
+// once every event at least as new as it already fills the window. Payload bytes
+// are counted as a blob so multi-byte JSON is measured in bytes, not runes,
+// matching the byte the setting names.
+func (d *dbSink) rollOff(taskID string, windowBytes int64) error {
+	_, err := d.db.Exec(
+		`DELETE FROM event
+		 WHERE task_id = ?1
+		   AND id IN (
+		     SELECT id FROM (
+		       SELECT id, SUM(LENGTH(CAST(payload AS BLOB))) OVER (
+		                    ORDER BY at DESC, id DESC
+		                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+		                  ) AS running
+		       FROM event WHERE task_id = ?1
+		     ) WHERE running > ?2
+		   )
+		   AND id <> (SELECT id FROM event WHERE task_id = ?1 ORDER BY at DESC, id DESC LIMIT 1)`,
+		taskID, windowBytes)
 	return err
 }
 
