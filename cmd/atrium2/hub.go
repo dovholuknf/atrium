@@ -37,12 +37,6 @@ func hubCmd() *cobra.Command {
 		// only offer what it is running, which is no use to a room on another
 		// kind of machine. See `builds.go`.
 		buildDir string
-
-		// The hub being a room too. Off unless asked for: see `--room`.
-		asRoom    bool
-		roomName  string
-		roomDB    string
-		roomAgent string
 	)
 	c := &cobra.Command{
 		Use:   "hub",
@@ -143,13 +137,8 @@ func hubCmd() *cobra.Command {
 				log.Printf("[hub] builds on offer, for rooms that asked: %s", what)
 			}
 			h.Enrol = side.enrol
-			// A ROOM IN THIS PROCESS IS NOT ASKED FOR PAPERS. Every other room
-			// proves who it is with a certificate this hub signed, because its
-			// connection crossed a network. That one did not leave the
-			// process. See `link.IsInProc`.
-			h.Authenticated = func(c net.Conn) bool {
-				return link.IsInProc(c) || side.auth(c)
-			}
+			// Every room proves who it is with a certificate this hub signed.
+			h.Authenticated = side.auth
 			// A ROOM THIS HUB HAS NO RECORD OF DOES NOT ATTACH, even holding a
 			// certificate this hub signed, because a certificate is not a
 			// record: a room that was forced out still has its papers. The
@@ -229,25 +218,6 @@ func hubCmd() *cobra.Command {
 			// most recent fifty answers only the first.
 			go store.BackUp(ctx, backupsIn(keys.Dir, db))
 
-			// THE HUB AS A ROOM AS WELL, which is a switch rather than only a
-			// flag: it is turned on and off from the board while the hub keeps
-			// running, and what it was left as is what it comes back as.
-			//
-			// The flag still exists, and it only ever turns it ON. A hub
-			// started without it that was left on last time stays on, because
-			// the absence of a flag is not somebody asking for anything.
-			own := &ownRoom{
-				parent: ctx, hub: h, dir: keys.Dir, store: store,
-				name: orDefault(roomName, defaultRoomName()),
-				db:   orDefault(roomDB, defaultRoomDB()), agent: roomAgent,
-			}
-			proxy.SetOwnRoom(own)
-			if asRoom || wasOn(keys.Dir) {
-				if err := own.Set(true); err != nil {
-					return err
-				}
-			}
-
 			srv := &http.Server{
 				Addr:    board,
 				Handler: proxy,
@@ -288,16 +258,6 @@ func hubCmd() *cobra.Command {
 	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
 	c.Flags().StringVar(&buildDir, "builds", "",
 		"a directory of atrium2_<os>_<arch> binaries to offer rooms that asked for upgrades")
-	// OFF BY DEFAULT, and that is the design rather than caution. A hub that
-	// holds a database is a hub whose restart is no longer free, which is the
-	// one property this whole split exists to buy.
-	c.Flags().BoolVar(&asRoom, "room", false,
-		"also run agents on this machine, as a room attached to this hub")
-	c.Flags().StringVar(&roomName, "room-name", "",
-		"what to call this machine's own room, with --room (default: this machine's name)")
-	c.Flags().StringVar(&roomDB, "room-db", "", "its database, with --room")
-	c.Flags().StringVar(&roomAgent, "room-agent", "127.0.0.1:7802",
-		"where its agents report, with --room")
 	c.AddCommand(hubRoomsCmd(), hubBackupsCmd(), hubRestoreCmd())
 	return c
 }
