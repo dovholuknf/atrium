@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The db event window can be bounded, so the primary database stops growing (opt-in).**
+
+  The db event sink can keep only a recent per-card window instead of every event forever. Off by default: with no
+  window set, the db is unbounded exactly as before. When the window is set, the oldest events roll off (already
+  durable in a cold sink if one is configured), and a card's event feed reports `rolled_off` so the board can show
+  that history rolled off rather than pretend it is complete. Together with db-shrink handing freed pages back to
+  disk, the operational database now plateaus instead of climbing.
+
 - **A restart item in the terminal cog menu.**
 
   The terminal settings menu now has a restart that exits the session and resumes it on the same card, so an
