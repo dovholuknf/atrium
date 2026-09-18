@@ -82,6 +82,13 @@ func hubCmd() *cobra.Command {
 				log.Printf("[hub] made a new store at %s. no rooms are on it yet",
 					orDefault(db, filepath.Join(keys.Dir, "hub.db")))
 			}
+			// A hub from before this build may hold a row for its own machine as
+			// a room. That feature is gone, so the row is defunct: drop it.
+			if n, err := store.DropDefunctLocalRooms(); err != nil {
+				return fmt.Errorf("tidying old rooms: %w", err)
+			} else if n > 0 {
+				log.Printf("[hub] dropped %d room(s) from when the hub could be its own room", n)
+			}
 
 			// SPENDING A SECRET IS WHAT SAYS WHICH ROOM THIS IS, and the store
 			// is the only thing that can answer it. Handed to the transport

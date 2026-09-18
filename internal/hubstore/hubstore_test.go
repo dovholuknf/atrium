@@ -10,6 +10,46 @@ import (
 	"time"
 )
 
+// A HUB FROM THE OLD DESIGN CLEANS ITSELF. The "hub can be its own room" feature
+// left a `local` room row fed by an in-process room that no longer exists.
+// Nothing dials in for it, so it has to be dropped, and the real rooms left
+// alone.
+func TestDefunctLocalRoomsAreDroppedAndRealOnesKept(t *testing.T) {
+	s := open(t)
+	added(t, s, "sparta")
+	// A leftover from before, inserted the way that build wrote it. `Add` will
+	// not make one any more, which is the point.
+	if err := s.guard(func() error {
+		_, err := s.db.Exec(
+			`INSERT INTO room (id, name, name_key, transport, state, created_at, first_seen_at)
+			 VALUES (?, ?, ?, 'local', 'active', ?, ?)`,
+			newID(), "sg4", "sg4", ts(now()), ts(now()))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	gone, err := s.DropDefunctLocalRooms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gone != 1 {
+		t.Fatalf("dropped %d local rooms, wanted 1", gone)
+	}
+	rooms, err := s.Rooms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rooms) != 1 || rooms[0].Name != "sparta" {
+		t.Fatalf("the real room did not survive the migration: %+v", rooms)
+	}
+	// And running it again does nothing, because it is a migration and not a
+	// thing that keeps finding work.
+	if gone, _ := s.DropDefunctLocalRooms(); gone != 0 {
+		t.Fatalf("a second sweep dropped %d rooms", gone)
+	}
+}
+
 // What the hub's store has to be right about.
 //
 // The tests are named for the ways this gets broken rather than for the
