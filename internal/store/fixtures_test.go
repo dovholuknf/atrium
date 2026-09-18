@@ -69,6 +69,49 @@ func TestFixturesComeBackInOrder(t *testing.T) {
 	}
 }
 
+// Turning a fixture off keeps the definition and only flips the flag, the way
+// the board's pill toggle does: re-save the row with Enabled changed and it
+// survives, while the daemon-owned card link is left alone.
+func TestFixtureEnabledToggles(t *testing.T) {
+	s := open(t)
+	f, err := s.SaveFixture(&Fixture{Label: "morning", Harness: "claude", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.NoteFixtureTask(f.ID, "task-9"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Off, the way the toggle sends it: the whole row back with the flag flipped.
+	f.Enabled = false
+	if _, err := s.SaveFixture(f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetFixture(f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Fatalf("the fixture stayed on after being turned off: %+v", got)
+	}
+	if got.TaskID != "task-9" {
+		t.Fatalf("toggling off forgot the card it starts onto: %q", got.TaskID)
+	}
+
+	// And back on again.
+	f.Enabled = true
+	if _, err := s.SaveFixture(f); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetFixture(f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled {
+		t.Fatalf("the fixture did not come back on: %+v", got)
+	}
+}
+
 // The card a fixture started is recorded by the daemon reporting what
 // happened, and an edit in the board must not clear it: losing it means the
 // next start opens a second card beside the first.
