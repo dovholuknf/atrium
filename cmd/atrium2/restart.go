@@ -109,6 +109,12 @@ func spawnRoomRestart(human, agent, db string) error {
 // port, and the only honest test of that is trying to. Starting while the old
 // one still holds it produces a second room that cannot bind and exits, which
 // looks exactly like the restart having done nothing.
+//
+// BINDING THE PORT IS TAKEN AS PROOF THE OLD ROOM'S DATABASE IS GONE TOO. That
+// coupling is real because the old room closes its store on the way down, in the
+// daemon's shutdown before Run returns, and only then does the process exit and
+// free this port. See internal/daemon/daemon.go shutdown, which closes the store
+// explicitly so this is a guarantee rather than a side effect of process exit.
 func waitForRoomRestart(after time.Duration, human string) {
 	time.Sleep(after)
 	deadline := time.Now().Add(roomStopGrace)
