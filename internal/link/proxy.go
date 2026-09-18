@@ -57,6 +57,11 @@ type Proxy struct {
 	// feeds is the one upstream event stream per room, and the boards watching
 	// them. See events.go.
 	feeds *feeds
+
+	// control is the hub-side control MCP server, mounted at /_hub/mcp. Nil
+	// until SetControl wires it, and a hub without one answers that path 404.
+	// See control_mcp.go.
+	control http.Handler
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -251,6 +256,13 @@ func untag(path string) string {
 
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
+	// its own content type and streams: serveHubAPI marks everything JSON, which
+	// is wrong for this. Loopback only, and refused otherwise. See serveControl.
+	if strings.HasPrefix(r.URL.Path, "/_hub/mcp") {
+		p.serveControl(w, r)
+		return
+	}
 	// The hub's own, under a reserved prefix so it can never collide with a
 	// board route the room grows later.
 	if strings.HasPrefix(r.URL.Path, "/_hub/") {
@@ -802,6 +814,41 @@ func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+// SetControl mounts the hub-side control MCP server at /_hub/mcp.
+//
+// `boardAddr` is this hub's own board listen address, e.g. `:7778`. The control
+// tools reach the hub's API over loopback derived from it, so they inherit the
+// proxy's scoping and offline-room behaviour rather than reimplementing it.
+// Optional: a hub that never calls this answers /_hub/mcp with 404.
+func (p *Proxy) SetControl(boardAddr string) {
+	p.control = newControlHandler(loopbackBase(boardAddr))
+}
+
+// serveControl answers the hub-side control MCP server.
+//
+// LOOPBACK ONLY, for the same reason `/v1/shutdown` is refused through a hub.
+// These tools restart daemons and drive other sessions, and the room is not the
+// place to guard them: over a link the room sees a connection that terminates in
+// its own process, so a loopback check there would pass for anybody who could
+// reach the hub. The gate belongs here, on the browser-facing listener, and it
+// is the CALLER's own address that has to be loopback. The overlay is not an
+// auth layer: once something else can reach the hub, loopback on the far side
+// stops meaning "this machine".
+func (p *Proxy) serveControl(w http.ResponseWriter, r *http.Request) {
+	if p.control == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !loopbackRemote(r.RemoteAddr) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":"the control server is reachable only from the machine the `+
+			`hub runs on. it is not exposed over an overlay."}`)
+		return
+	}
+	p.control.ServeHTTP(w, r)
 }
 
 // serveHubAPI answers the few things only the hub knows.

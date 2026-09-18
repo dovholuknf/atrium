@@ -203,6 +203,10 @@ func hubCmd() *cobra.Command {
 			// THE DURABLE LIST, which is a different question from what is
 			// attached and gets a different endpoint for exactly that reason.
 			proxy.SetInventory(inventory{store: store, hub: h})
+			// THE CONTROL MCP SERVER, mounted at /_hub/mcp so sessions open a
+			// connection instead of each spawning an atrium-control child. It
+			// reaches this hub's own board over loopback derived from `board`.
+			proxy.SetControl(board)
 
 			ctx, stop := signal.NotifyContext(context.Background(),
 				os.Interrupt, syscall.SIGTERM)
