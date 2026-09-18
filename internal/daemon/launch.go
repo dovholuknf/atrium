@@ -34,6 +34,18 @@ type LaunchRequest struct {
 	// harness's PromptArgs say to. This is how a card raised from an issue
 	// starts with the issue in front of it rather than at an empty cursor.
 	Prompt string `json:"prompt,omitempty"`
+	// Brief is context to hand the new session, written to BRIEF.md in its
+	// directory before it starts and read first.
+	//
+	// A FILE, NOT A LONGER PROMPT, and that is the whole difference. A prompt is
+	// said once, is the first thing to fall out of a compaction, and cannot be
+	// consulted afterwards. A file in the working directory can be re-read at any
+	// point, survives compaction, and is there when a human takes the card over.
+	// See writeBriefFile. Written on the room's own machine, which is why this
+	// runs here rather than wherever the caller was: the hub has no directory to
+	// write to. Ignored on a resume, which continues a conversation and takes no
+	// first prompt.
+	Brief string `json:"brief,omitempty"`
 	// Model names the model this session runs on, handed over as the harness's
 	// ModelArgs say to.
 	//
@@ -644,6 +656,16 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if wanted == "" && task != nil && req.Resume == "" {
 		wanted = task.Prompt
 	}
+	// The briefing lands in the directory and the runner is told to read it
+	// first. On a fresh start only: a resume continues a conversation and takes
+	// no first prompt, and rewriting the file under a session that already read
+	// it would be a second source of truth it believes. See writeBriefFile.
+	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
+		if _, err := writeBriefFile(cwd, brief); err != nil {
+			return nil, err
+		}
+		wanted = briefPrompt(wanted)
+	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an unshelve of a card that was started
 	// on a model has to come back on that model, or the session changes
@@ -947,6 +969,49 @@ func inheritedTaint(key string) bool {
 		return true
 	}
 	return false
+}
+
+// briefFileName is what a briefing is called in the new session's directory.
+//
+// One fixed name so a second launch into the same directory replaces the
+// briefing rather than littering it with dated copies nobody reads. A stale
+// brief is worse than a missing one: the session believes it. Not CLAUDE.md,
+// deliberately: that file loads into every session in the directory forever,
+// including ones nobody meant to brief.
+const briefFileName = "BRIEF.md"
+
+// writeBriefFile puts the briefing where the new session will find it, and
+// returns the path written.
+//
+// Overwrites. See briefFileName. The directory is expected to exist already:
+// Launch has stat'd cwd by the time this runs, so a missing one is a launch
+// failure that happened earlier and not here.
+func writeBriefFile(cwd, brief string) (string, error) {
+	path := filepath.Join(cwd, briefFileName)
+	body := brief
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		return "", fmt.Errorf("could not write the briefing to %s: %w", path, err)
+	}
+	return filepath.ToSlash(path), nil
+}
+
+// briefPrompt puts the instruction to read the briefing ahead of the task.
+//
+// AHEAD, because the order is what makes it work: a session that reads the task
+// first starts answering it, and the briefing arrives as correction. The task
+// still has to be in the prompt rather than only in the file, or the session
+// reads a briefing and sits there waiting to be told what to do with it.
+func briefPrompt(prompt string) string {
+	read := "Read " + briefFileName + " in this directory first. It is your briefing, written " +
+		"for you by another agent, and it holds everything you are expected to know. " +
+		"Re-read it whenever you lose the thread rather than guessing."
+	if strings.TrimSpace(prompt) == "" {
+		return read + " Then do what it asks."
+	}
+	return read + "\n\nThen: " + prompt
 }
 
 // childEnv builds the environment for a launched runner: everything inherited

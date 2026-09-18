@@ -135,12 +135,35 @@ func TestStatusCountsWaiting(t *testing.T) {
 	}
 }
 
-func TestLaunchRefusesBriefUntilPhase2(t *testing.T) {
-	c := &controlMCP{board: "http://127.0.0.1:0"}
-	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "r"),
-		launchInput{Cwd: "/somewhere", Brief: "read this"})
-	if err == nil {
-		t.Fatalf("a brief from the hub should be refused in phase 1")
+func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
+	var gotBrief, gotRoom string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRoom = r.Header.Get(RoomHeader)
+		var body struct {
+			Brief string `json:"brief"`
+			Cwd   string `json:"cwd"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotBrief = body.Brief
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "card1", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir", Brief: "read this"})
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if gotBrief != "read this" {
+		t.Errorf("the room got brief %q, want it forwarded", gotBrief)
+	}
+	if gotRoom != "beta" {
+		t.Errorf("the room header was %q, want beta", gotRoom)
+	}
+	if out.Brief != "/work/dir/BRIEF.md" {
+		t.Errorf("out.Brief = %q, want the room path named back", out.Brief)
 	}
 }
 

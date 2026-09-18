@@ -139,10 +139,11 @@ func (c *controlMCP) server() *mcp.Server {
 			"Its permission requests go to the HUMAN, on their board, so an agent started here " +
 			"and left alone stops at the first gated command. Say who asked for it and why, " +
 			"because whoever finds the card later will want to know.\n\n" +
-			"BRIEF FILES ARE NOT WIRED YET. The briefing was a file written in the new session's " +
-			"directory, which lives on the room's machine, not the hub's. Writing it needs the " +
-			"room-side change phase 2 installs. Until then a `brief` is refused: put what it " +
-			"needs in `prompt`.\n\n" +
+			"Use `brief` for context it needs before the task. It is written to BRIEF.md in the " +
+			"new session's directory ON THE ROOM and read first, so it survives compaction and is " +
+			"still there when a human takes the card over. Put in it what you would tell a " +
+			"colleague joining: what the job is, what has been tried, what the constraints are, " +
+			"and what NOT to do.\n\n" +
 			"Returns the card id. Use it with `atrium_task` and `atrium_say`.",
 	}, c.launchHandler)
 
@@ -553,9 +554,9 @@ type launchInput struct {
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why    string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`
-	// Brief is refused for now. See the tool description and launchHandler: the
-	// file lives on the room's machine and writing it needs a phase-2 room change.
-	Brief  string   `json:"brief,omitempty" jsonschema:"NOT YET WIRED from the hub. put context in prompt instead"`
+	// Brief is written to BRIEF.md in the new session's directory on the room and
+	// read first, so it survives compaction and can be re-read.
+	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
 }
@@ -566,7 +567,11 @@ type launchOutput struct {
 	Title  string `json:"title,omitempty"`
 	Status string `json:"status"`
 	Watch  string `json:"watch,omitempty"`
-	Note   string `json:"note,omitempty"`
+	// Brief is where the briefing was written on the room, when there was one.
+	// Returned so the caller can add to it later: a peer that turns out to need
+	// one more fact should be given it in the file it already reads.
+	Brief string `json:"brief,omitempty"`
+	Note  string `json:"note,omitempty"`
 }
 
 func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest, in launchInput) (
@@ -576,33 +581,31 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	if strings.TrimSpace(in.Cwd) == "" {
 		return nil, out, fmt.Errorf("say where to run it. atrium does not create the directory")
 	}
-	// THE BRIEF FILE LIVES ON THE ROOM, NOT THE HUB. In the stdio model the
-	// control server ran on the room's machine and wrote BRIEF.md into the new
-	// session's directory directly. From the hub there is no such directory to
-	// write to: it is on another machine, reachable only over the link. Writing
-	// it there is a room-side change, which is phase 2. Refused rather than
-	// silently dropped, because a session told to read a briefing that is not
-	// there reports that it read nothing, which looks like an empty brief.
-	if strings.TrimSpace(in.Brief) != "" {
-		return nil, out, fmt.Errorf("brief files are not wired from the hub yet: the file lives " +
-			"on the room's machine and writing it needs the phase-2 room change. put what the new " +
-			"session needs in prompt instead")
-	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
 		harness = "claude"
 	}
 	room := roomOf(req)
 
+	// The briefing is written ON THE ROOM: /v1/launch carries the text and the
+	// room's own daemon writes BRIEF.md into the new session's directory before
+	// it starts. The hub has no such directory to write to, which is why this is
+	// a field on the request rather than a file this side writes.
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt), "tags": in.Tags,
+		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt),
+		"brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
+	if strings.TrimSpace(in.Brief) != "" {
+		// The room wrote it; name it back in the same slash form the rest of
+		// atrium carries, so the caller can add to the file it already reads.
+		out.Brief = strings.TrimRight(strings.ReplaceAll(in.Cwd, "\\", "/"), "/") + "/" + "BRIEF.md"
+	}
 	// Where the human looks. Worth returning rather than leaving them to assemble
 	// it, because the fragment form is not guessable.
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
