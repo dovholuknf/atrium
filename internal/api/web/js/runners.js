@@ -535,15 +535,6 @@ async function renderRunners() {
   // Before the list is drawn: the claude row carries the count.
   await loadHooks();
 
-  const on = allHarnesses.filter(h => h.enabled);
-  document.getElementById("launchers").innerHTML = on.length
-    ? `<div class="toolbar">` + on.map(h =>
-        `<button class="go big" onclick="openLaunch('${esc(h.id)}')">start a ${esc(h.label)}</button>`
-      ).join("") + `</div>`
-    : `<div class="panel"><div class="empty">
-        nothing is enabled. turn a runner on below, or add one.
-      </div></div>`;
-
   // Whether the command exists is the difference between a runner that works
   // and one that fails on first use looking like atrium is broken. The daemon
   // resolves it the same way launching does, so what this shows is what will
