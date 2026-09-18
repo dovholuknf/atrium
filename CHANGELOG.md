@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Board terminal bar and path chip tidied, shipped by hub-only restart.**
+
+  Two board-CSS fixes, each built from a `claude/*` worktree and deployed by rebuilding `atrium2`, swapping the
+  binary, and restarting the hub process alone while the room kept running. The terminal bar's folder and cog
+  icons now match the worded buttons: a global `button.icon` rule in `dialogs.css` loaded after `terminal.css`
+  and drew them as a 23px transparent glyph, so `.term-bar button.icon` now pins the size and restores the chip
+  box and hover. The path chip's copy button was floating in full chip side-padding, so `#t-chips .chip.path`
+  drops the gap to 3px and tightens the padding, pulling the glyph next to the path.
+
 - **The hub snapshots its own store, and a restore is one command.**
 
   The store halts on a corrupt database and refuses to start on one. That is the right posture and it is only
