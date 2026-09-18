@@ -51,6 +51,35 @@ function restartComing() {
   return restartAt > 0 && Date.now() - restartAt < restartWindow;
 }
 
+// ONE SESSION asked to restart from the cog, as opposed to the whole daemon
+// going down. The runner exits and the same conversation lands again on the
+// same card a few seconds later, so the close that follows is expected: the
+// pane waits for the card rather than tearing down the way a plain exit does.
+//
+// Scoped to a card and stamped with a time, the same as `restartAt` and for the
+// same reasons: an expectation left lying around would answer for an exit
+// somebody types an hour from now, and a restart that never comes back must not
+// wait forever. The window is generous because a cold harness can be slow to
+// come up, but it still expires. `onopen` clears it the moment the card is back.
+let sessionRestartCard = "", sessionRestartAt = 0;
+const sessionRestartWindow = 90 * 1000;
+
+function armSessionRestart(card) {
+  sessionRestartCard = card || "";
+  sessionRestartAt = Date.now();
+}
+
+function clearSessionRestart(card) {
+  if (card && sessionRestartCard !== card) return;
+  sessionRestartCard = "";
+  sessionRestartAt = 0;
+}
+
+function sessionRestartComing(card) {
+  return !!card && sessionRestartCard === card && sessionRestartAt > 0 &&
+    Date.now() - sessionRestartAt < sessionRestartWindow;
+}
+
 // WHY THE LAST ATTACH ENDED, read off the websocket close frame.
 //
 // `whyClosed` in the daemon sends one of `restarting`, `shell closed` and
@@ -305,6 +334,17 @@ async function termSettings(e) {
         "was killed. Not shown in the terminal because a terminal can only " +
         "add to the bottom.",
       act: () => openOlderScrollback(t.id) },
+    // Only for a session atrium owns a terminal for. A window-mode session owns
+    // itself and one joined by hand belongs to whoever started it, so there is
+    // no terminal here to exit and relaunch. The daemon refuses either way, but
+    // an item that can only toast a refusal is one the operator should not see.
+    t.supervised ? {
+      label: "restart this session", note: "resumes the same conversation",
+      help: "Exits this session and immediately resumes the same conversation " +
+        "on the same card, for applying changed defaults or clearing a " +
+        "`restart to update` nag. The terminal drops for a few seconds while " +
+        "it comes back. Nothing is lost: it picks up where it left off.",
+      act: () => restartTerm() } : null,
     { sep: true },
     // Only meaningful from the window whose size is being remembered. From the
     // board there is no popped-out window to measure.
