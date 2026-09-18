@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A throwaway or second room on one machine can keep off the machine's hooks: `--isolated`.**
+
+  A room writes its address to a FIXED shared file so hooks, the CLI and the control MCP find it without knowing its
+  dir. That is right for the one-room-per-machine case and wrong for two: a second room started with only port, dir
+  and database overrides still writes that same file, overwrites it, and every hook aimed at the first room starts
+  arriving at the second. `atrium2 room` and `atrium2 join` now take `--isolated`, which keeps this room's address in
+  a private file beside its `--dir` and never publishes the shared one, so the first room's hooks are left alone. The
+  takeover warning now also names the flag. Two rooms on two different machines never needed this: each machine has
+  its own file.
+
 - **The restart and launch path is concurrency-safe.**
 
   Two restarts or launches racing on one card could both pass the "is a runner live" check before either spawned,

@@ -245,7 +245,8 @@ func (d *Daemon) writeLocation() {
 	if raw, err := os.ReadFile(path); err == nil {
 		if prev, taking := takingOver(raw, os.Getpid(), processAlive); taking {
 			log.Printf("[atrium] WARNING: pid %d is already listening on %s and every hook "+
-				"was aimed at it. they will now arrive here instead.", prev.PID, prev.Agent)
+				"was aimed at it. they will now arrive here instead. start a second or "+
+				"throwaway room with --isolated to keep them apart.", prev.PID, prev.Agent)
 		}
 	}
 
