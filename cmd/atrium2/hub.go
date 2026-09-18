@@ -33,6 +33,12 @@ func hubCmd() *cobra.Command {
 		files     string
 		open      bool
 
+		// Reaching the board from off this machine. Empty binds loopback only,
+		// which is the default and the safe one. "zrok" also serves the same
+		// board over a zrok share. See hubshare.go.
+		boardTransport string
+		boardShareMode string
+
 		// Binaries to offer rooms, one per platform. Empty means this hub can
 		// only offer what it is running, which is no use to a room on another
 		// kind of machine. See `builds.go`.
@@ -242,6 +248,46 @@ func hubCmd() *cobra.Command {
 				return fmt.Errorf("board listener: %w", err)
 			}
 
+			// REACHING THE BOARD FROM ELSEWHERE, when asked. Loopback above
+			// stays exactly as it was: this adds a second listener on a zrok
+			// share and serves the SAME handler on it, so nothing is proxied
+			// and the local board is untouched. The share is released when the
+			// daemon stops.
+			if bt := strings.TrimSpace(boardTransport); bt != "" && bt != "none" {
+				if bt != "zrok" {
+					return fmt.Errorf("no board transport called %q. one of: zrok", bt)
+				}
+				// NON-FATAL, ON PURPOSE. The board share is additive: the local
+				// board on loopback is the hub's real job and must come up even
+				// when the overlay API is slow or down. A share creation that
+				// times out at zrok logs the reason and the hub serves loopback
+				// anyway, rather than a transient outage taking the board with
+				// it.
+				bs, shareLn, err := openBoardShare(boardShareMode)
+				if err != nil {
+					log.Printf("[hub] could not put the board on a zrok share, "+
+						"serving loopback only: %v", err)
+				} else {
+					defer bs.release()
+					if bs.Mode == "public" {
+						log.Printf("[hub] the board is on a PUBLIC zrok share with no login " +
+							"in front of it. whoever opens the link can read every command " +
+							"and answer permission requests")
+					}
+					log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
+					shareSrv := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
+					go func() {
+						<-ctx.Done()
+						_ = shareSrv.Close()
+					}()
+					go func() {
+						if err := shareSrv.Serve(shareLn); err != nil && ctx.Err() == nil {
+							log.Printf("[hub] the board's zrok share stopped: %v", err)
+						}
+					}()
+				}
+			}
+
 			greet(store, side, board, id)
 
 			go func() {
@@ -269,6 +315,10 @@ func hubCmd() *cobra.Command {
 	c.Flags().BoolVar(&open, "open", false, "print the address and nothing else")
 	c.Flags().StringVar(&buildDir, "builds", "",
 		"a directory of atrium2_<os>_<arch> binaries to offer rooms that asked for upgrades")
+	c.Flags().StringVar(&boardTransport, "board-transport", "",
+		"also serve the board off this machine over an overlay: none (default) or zrok")
+	c.Flags().StringVar(&boardShareMode, "board-share", "private",
+		"with --board-transport zrok: private (needs zrok on the other end) or public (a URL, no login)")
 	c.AddCommand(hubRoomsCmd(), hubBackupsCmd(), hubRestoreCmd())
 	return c
 }
