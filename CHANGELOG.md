@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A terminal theme through the launch tool, and a pluggable event sink (phase 1).**
+
+  `atrium_launch` now takes a `theme`, so a session started through the hub control MCP comes up in the palette the
+  operator meant rather than the board default. And event storage sits behind an `EventSink` interface: the SQLite
+  `event` table is the `db` implementation, a rolling-JSONL `file` cold sink can run alongside it, and an
+  `event_sink` setting names which sinks are active, defaulting to `db` so nothing changes unless opted in. This is
+  the seam that lets the high-volume audit trail leave the primary database later, without a schema break.
+
 - **Control MCP phase 2, fixtures on/off from the board, and the board over a zrok share.**
 
   Phase 2 finishes the hub-side control MCP. `restart_atrium` now forwards an instruction down the link and the
