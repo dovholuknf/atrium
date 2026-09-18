@@ -571,26 +571,22 @@ The older way is still listed here: a machine that POSTs a summary of itself on 
 
 Pick a room and this whole board becomes that machine's atrium. Pick none and you see all of them at once.">?</span>
     </div>
-    <p class="pane-lead">The machines running agents. Pick one and the whole board scopes to it,
-      which is the same thing the counter in the header does.</p>
+    <p class="pane-lead">The machines that run your agents. Click the room counter up top to
+      show just one, or all of them at once.</p>
     <!-- "add a room" opens instructions, not a form. Worth being clear about,
          since every other add button on this page creates something. -->
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="openRoomJoin()">add a room</button>
       <button class="go" onclick="openDispatch('')">queue work for a machine</button>
     </div>
+    <!-- The hub can run agents on its own machine too. A checkbox, not a room
+         row: it is a switch, and off by default so the hub stays cheap to
+         restart. Hidden on a plain daemon, which is already its own room. -->
+    <label class="check" id="ownroom-toggle" hidden style="margin-bottom:14px">
+      <input type="checkbox" id="ownroom-on" onchange="setOwnRoom(this.checked)">
+      also run agents on this hub <span class="by" id="ownroom-note"></span>
+    </label>
     <div id="room-list"></div>
-
-    <div class="col-head r-section" data-pane="start" style="margin:0 0 10px">
-      <span>start something</span>
-      <span class="help" tabindex="0" data-tip="Runners are rows in a table, not code. A runner is a command, a working directory, an environment, and a way to resume.
-
-Add your own with 'add a runner'. Nothing about claude, codex or ollama is special-cased.
-
-window mode opens a real terminal. pty mode has atrium own the process and stream it to the browser, and is not built yet.">?</span>
-    </div>
-    <p class="pane-lead">Every runner that is switched on, ready to start in a directory you pick.</p>
-    <div id="launchers"></div>
 
     <div class="col-head r-section" data-pane="runners" style="margin:0 0 10px"><span>runners</span></div>
     <p class="pane-lead">What atrium knows how to start. A command, a working directory, an environment
@@ -1293,22 +1289,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <table class="kv" id="rc-facts"></table>
       <div class="picker"><button id="rc-mark" onclick="markFromCog()" hidden></button></div>
       <span class="hintline" id="rc-state"></span>
-    </div>
-
-    <!-- The hub's own room, which is a switch rather than a setting and so
-         comes first: it is the one control here that decides whether the room
-         exists at all. Hidden for every other room, where it is somebody
-         else's machine and there is nothing to start. -->
-    <div class="field" id="rc-own-field" hidden>
-      <label class="eyebrow">agents on this machine</label>
-      <div class="picker">
-        <button id="rc-own" onclick="toggleOwnRoom()"></button>
-      </div>
-      <span class="hintline">Off by default, and turning it on is a decision rather than
-        something that happens because a hub noticed it could. A hub holding a database is a
-        hub whose restart is no longer free, and that freedom is the whole reason the hub and
-        the rooms are separate. Restarting the hub stops the agents running on it. Agents on
-        every other room keep going.</span>
     </div>
 
     <div class="field" id="rc-offline-field" hidden>

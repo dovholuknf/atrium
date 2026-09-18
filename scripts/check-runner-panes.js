@@ -76,7 +76,7 @@ for (const n of topLevel) {
 // Every list the render code fills has to end up inside a pane. One left
 // outside would be drawn into an element the split moved away from, so it
 // would silently never appear.
-const filled = ["launchers", "harness-list", "discovered", "fixture-list", "source-list",
+const filled = ["harness-list", "discovered", "fixture-list", "source-list",
   "recogniser-list", "action-list", "room-list", "dispatch-list"];
 const missing = filled.filter(id => !inner.includes(`id="${id}"`));
 if (missing.length) {
