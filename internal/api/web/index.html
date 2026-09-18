@@ -571,6 +571,31 @@ Three failures in a row switches one off, with the reason still on the row. scri
     </div>
     <div id="source-list"></div>
 
+    <!-- Where a repository lives on this machine, declared once.
+         Directly above the recognisers because those two are the pair that
+         turn an identity into a directory. A recogniser captures host, org and
+         repo out of a url and then has to template an absolute path by hand.
+         A provider is the thing that knows how to turn those three into one,
+         which is why they will grow toward each other. -->
+    <div class="col-head r-section" data-pane="providers" style="margin:0 0 10px">
+      <span>providers</span>
+      <span class="help" tabindex="0" data-tip="Where your repositories live, told to atrium rather than guessed at.
+
+You name a provider yourself and refer to it by that name. A git provider has a root folder, and under it the layout is org/repo. Defining one adopts every checkout already under that root.
+
+Atrium learns nothing about GitHub or anything else. A provider is a root and a layout. It makes no network call, holds no credential and never clones: a repository that is not there is a sentence, not a download.
+
+Worktree support is a toggle with a folder of its own. It cannot be turned off while that folder holds anything, because turning it off would leave those checkouts on disk with nothing describing them.
+
+Repository rows are durable and whether each is on disk is worked out fresh every time. So unplugging a drive greys the list out rather than erasing it.">?</span>
+    </div>
+    <p class="pane-lead">Name a provider, give it a root, and atrium adopts every checkout already
+      under it. After that a repository is an org and a repo rather than a path you type.</p>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="editProvider(null)">add a provider</button>
+    </div>
+    <div id="provider-list"></div>
+
     <!-- What a url means. Here beside the sources because they are the two
          halves of the same idea: a source is work pushed at you on a timer,
          and a recogniser is work you are holding a link to right now. -->
@@ -1139,35 +1164,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-browseroots-now"></b></span>
     </div>
 
-    <!-- Configure the external command that creates worktrees and controls their layout. -->
-    <div class="field">
-      <label class="eyebrow" for="s-worktreecmd">make a worktree with</label>
-      <div class="picker">
-        <input id="s-worktreecmd" spellcheck="false"
-          placeholder="empty means gwt new {branch} -y">
-        <button onclick="saveWorktreeCommand()">save</button>
-      </div>
-      <span class="hintline">Run in the repository, on <b>the machine atrium is on</b>, through a
-        shell, because the tool that does this is often a shell function rather than a program.
-        <code>{branch}</code> is the branch and <code>{repo}</code> is the repository's directory.
-        The branch may hold letters, digits and <code>. _ - /</code> and nothing else, which is what
-        keeps a name off the command line as anything but a name. Answer any prompt in the command
-        itself: there is no keyboard attached to it. Type <code>off</code> to have no make button at
-        all. <b id="s-worktreecmd-now"></b></span>
-    </div>
-
-    <div class="field">
-      <label class="eyebrow" for="s-projdepth">and looks for repositories</label>
-      <div class="picker">
-        <input id="s-projdepth" spellcheck="false" inputmode="numeric"
-          placeholder="empty means 2 levels under each of those places">
-        <button onclick="saveProjectDepth()">save</button>
-      </div>
-      <span class="hintline">Levels under each place above. Two matches
-        <code>&lt;root&gt;/&lt;org&gt;/&lt;repo&gt;</code>, which is the usual arrangement. A
-        directory holding a <code>.git</code> is a repository and is not descended into, so going
-        deeper only costs somebody whose checkouts are further down. <b id="s-projdepth-now"></b></span>
-    </div>
+    <!-- The worktree command and the scan depth used to sit here.
+         Both were knobs on a mechanism that INFERRED where repositories live,
+         so one tuned how deep to guess and the other was a shell command atrium
+         could not see inside. Both are gone: a provider is told the layout and
+         makes worktrees with `git worktree add` directly. See runners,
+         providers. -->
 
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
@@ -1685,6 +1687,153 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<dialog id="provider" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="pv-heading">provider</h2></div>
+    <button onclick="document.getElementById('provider').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="pv-name">name</label>
+      <input type="text" id="pv-name" spellcheck="false" placeholder="github">
+      <span class="hintline" id="pv-name-said">Whatever you want to call it. This is the name
+        everything else refers to it by, so it cannot be changed once saved: a rename would
+        silently orphan anything holding the old one.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pv-kind">type</label>
+      <div class="picker"><select id="pv-kind"><option value="git">git</option></select></div>
+      <span class="hintline">Only git so far. It is a field rather than an assumption, so another
+        kind is a new option here rather than a new feature.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pv-root">root folder</label>
+      <div class="picker">
+        <input type="text" id="pv-root" spellcheck="false" placeholder="d:/git/github">
+        <button onclick="browseInto('pv-root')">browse</button>
+      </div>
+      <span class="hintline">The directory your orgs live under, so a repository is
+        <code>root/org/repo</code>. One sitting straight under the root with no org above it works
+        too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium
+        never creates it: a typo would become a directory and then look like an empty provider.</span>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="pv-worktrees" onchange="paintProviderForm()">
+        worktree support</label>
+      <span class="hintline">Gives this provider a folder to put worktrees in, and a make button
+        on every repository. <b>It cannot be turned off while that folder holds anything</b>, since
+        that would leave checkouts on disk with nothing describing them.</span>
+    </div>
+    <div class="field" id="pv-wt-field" hidden>
+      <label class="eyebrow" for="pv-worktree-root">worktree folder</label>
+      <div class="picker">
+        <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
+        <button onclick="browseInto('pv-worktree-root')">browse</button>
+        <button onclick="checkWorktreeRoot()">check</button>
+      </div>
+      <span class="hintline">Worktrees land at <code>folder/org/repo/branch</code>. The check
+        button asks whether it is empty enough to turn the toggle off, without saving anything.</span>
+      <pre class="hintline" id="pv-blockers" hidden style="white-space:pre-wrap"></pre>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pv-host">host</label>
+      <input type="text" id="pv-host" spellcheck="false" placeholder="github.com">
+      <span class="hintline">Optional, and it is how an org and a repo turn back into a url.
+        Empty means this provider is local only, which is a real arrangement.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pv-exclude">never adopt</label>
+      <textarea id="pv-exclude" rows="3" spellcheck="false"
+        placeholder="archive&#10;.trash&#10;mirrors/*"></textarea>
+      <span class="hintline">One glob per line, matched against the path under the root. Keeps a
+        read-only mirror from burning the limit and filling the picker. This is
+        &ldquo;never adopt these&rdquo;, where <b>hide</b> on a row is &ldquo;I adopted this and
+        do not want it&rdquo;.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pv-max">how many to adopt at most</label>
+      <input type="number" id="pv-max" step="50" placeholder="400">
+      <span class="hintline">Empty is 400 and the ceiling is 2000. Per provider, because one root
+        holding five repositories beside one holding four hundred is the ordinary case.</span>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="pv-enabled"> use this provider</label>
+      <span class="hintline">Off keeps every row and contributes nothing to the picker. It is what
+        to do about a drive that is not plugged in, rather than deleting the provider and throwing
+        away everything you typed.</span>
+    </div>
+    <div class="field" id="pv-scan-field" hidden>
+      <label class="eyebrow">last look</label>
+      <div class="hintline" id="pv-scan"></div>
+    </div>
+  </div>
+  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+    <button class="go" onclick="saveProvider()">save</button>
+    <button id="pv-discover" onclick="discoverNow()">look again</button>
+    <button class="no" id="pv-delete" onclick="deleteProvider()">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('provider').close()">cancel</button>
+  </div>
+</dialog>
+
+<!-- Picking a repository for the launch form, out of rows rather than a scan.
+     An org and a repo that name no row are allowed: typing them is how a
+     repository is added, and atrium does not clone, so a directory somebody is
+     about to make is a legitimate thing to point a card at. -->
+<dialog id="pickrepo" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2>pick a repository</h2></div>
+    <button onclick="document.getElementById('pickrepo').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="pk-provider">provider</label>
+      <div class="picker"><select id="pk-provider" onchange="loadPickRepos()"></select></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="pk-filter">filter</label>
+      <input type="text" id="pk-filter" spellcheck="false" placeholder="type to narrow"
+        oninput="paintPickList()">
+    </div>
+    <div id="pk-list" class="pvrepos"></div>
+    <div class="field">
+      <label class="eyebrow">or name one that is not listed</label>
+      <div class="picker">
+        <input type="text" id="pk-org" spellcheck="false" placeholder="org" list="pk-orgs">
+        <input type="text" id="pk-repo" spellcheck="false" placeholder="repo">
+        <button onclick="addPickRepo()">add</button>
+      </div>
+      <datalist id="pk-orgs"></datalist>
+      <span class="hintline">Adds the row and works out the path. If the directory is not there
+        yet you can still point a card at it: atrium does not clone.</span>
+    </div>
+  </div>
+</dialog>
+
+<!-- Choosing between the checkout and its worktrees, once a repository is
+     picked. Its own step because a repository with six worktrees is six answers
+     to one question, and the make button lives here where the branch is. -->
+<dialog id="pickwhere" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2 id="pw-heading">where</h2></div>
+    <button onclick="document.getElementById('pickwhere').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div id="pw-list" class="pvrepos"></div>
+    <div class="field" id="pw-make-field" hidden>
+      <label class="eyebrow">make a worktree</label>
+      <div class="picker">
+        <input type="text" id="pw-branch" spellcheck="false" placeholder="branch name">
+        <button class="go" onclick="makeWorktree()">make</button>
+      </div>
+      <span class="hintline">Runs <code>git worktree add</code> and nothing else. A branch that
+        does not exist yet is created off the repository's own HEAD. It makes a directory and
+        <b>does not start a session</b>: press launch when you are ready.</span>
+      <div class="hintline" id="pw-said"></div>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="fixture" data-guard>
   <div class="dlg-head">
     <div class="grow"><h2 id="f-heading">fixture</h2></div>
@@ -1960,10 +2109,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
-      <!-- `projects` first, because it is the control that answers this field.
-           It knows which repositories exist and it can create the worktree that
-           does not exist yet, which is the case you are usually in. `browse` is
-           the escape hatch for a directory that is not a repository.
+      <!-- `repo` first, because it is the control that answers this field. It
+           reads the rows a provider declared, so it knows which repositories
+           exist and which worktrees each already has, and it can make the one
+           that does not exist yet. `browse` is the escape hatch for a directory
+           that is not a repository at all.
+
+           It replaces a button called `projects`, which SCANNED for anything
+           holding a `.git` two levels down and shelled out to a command
+           template to make a worktree. That inferred a layout from whatever
+           directories happened to exist and ran a command atrium could not see
+           inside. A provider is told the layout once. See
+           docs/backlog/backlog-2026-09-13-001.md.
 
            The six buttons that stood under this are gone. They listed the
            directories that already HAVE cards, which reads as a recommendation
@@ -1973,7 +2130,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
            wrong directory. See docs/backlog/backlog-2026-09-14-005.md. -->
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
-        <button class="go" onclick="openProjects('l-cwd')">projects</button>
+        <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
         <button onclick="openBrowse()">browse</button>
       </div>
     </div>
@@ -2164,26 +2321,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span><span class="ic">&#9656;</span> a plain folder</span>
       <span>press a row to choose it, <b>open</b> to look inside it</span>
     </div>
-  </div>
-</dialog>
-
-<!-- List repositories and worktrees. Creation runs the configured command,
-     then reads the resulting path from git. See internal/api/projects.go. -->
-<dialog id="projects">
-  <div class="dlg-head">
-    <div class="grow">
-      <h2>pick a project</h2>
-      <div class="crumb" id="p-where"></div>
-    </div>
-    <button onclick="document.getElementById('projects').close()">close</button>
-  </div>
-  <div class="dlg-body">
-    <div class="toolbar">
-      <input id="p-filter" spellcheck="false" placeholder="filter by org, repo or branch"
-        oninput="drawProjects()">
-      <button onclick="loadProjects()">rescan</button>
-    </div>
-    <div class="dirlist projlist" id="p-list"></div>
   </div>
 </dialog>
 
@@ -2405,7 +2542,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
-<script src="/js/projects.js"></script>
+<script src="/js/providers.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

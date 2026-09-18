@@ -1,0 +1,11 @@
+{
+  "name": "atrium-walkthroughs",
+  "private": true,
+  "description": "Playwright only, for the recorded walkthroughs under scripts/walkthrough. Atrium itself is Go and has no npm dependencies.",
+  "scripts": {
+    "walkthrough": "playwright test --config scripts/walkthrough/playwright.config.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

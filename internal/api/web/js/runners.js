@@ -521,6 +521,7 @@ async function renderRunners() {
   renderDiscovered();
   renderFixtures();
   renderSources();
+  renderProviders();
   renderRecognisers();
   renderActions();
   // Only paints when the dialog is open. Nothing to draw otherwise.

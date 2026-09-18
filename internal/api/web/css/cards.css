@@ -521,22 +521,24 @@
   .dirlist .drow.repo .ic { color: var(--teal); }
   .dirlist .dir.repo .nm,
   .dirlist .drow.repo .nm { color: var(--head); font-weight: 600; }
-  /* Nest worktrees under the expanded repository. Reuse picker row styling. */
-  .projlist .proj.open { background: var(--hairline); border-radius: var(--r-sm); }
-  .projlist .proj-count { margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs); }
-  .projlist .proj-body {
-    display: flex; flex-direction: column; gap: var(--vs-1);
-    padding: 0 10px var(--vs-2) 22px;
+  /* Repository rows, under a provider and in the picker.
+     `.cardgroup.project` is a DIFFERENT thing: that is grouping cards by project on the board, and a careless
+     grep for `proj` in here hits about twenty lines of it. */
+  .pvrepos { display: flex; flex-direction: column; gap: var(--vs-1); margin: var(--vs-2) 0; }
+  .pvrepos input { width: 100%; }
+  .pvrepo {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 6px 10px; border-radius: var(--r-sm); background: rgba(var(--sink-rgb),.35);
   }
-  .projlist .proj-path {
-    margin-left: auto; font: var(--fs-xs) var(--mono); color: var(--dimmest);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+  .pvrepo .nm { font-weight: 600; color: var(--head); white-space: nowrap; }
+  .pvrepo code {
+    font: var(--fs-xs) var(--mono); color: var(--dimmest);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
   }
-  .projlist .proj-new { display: flex; gap: var(--sp-3); margin-top: var(--vs-2); }
-  .projlist .proj-new input { flex: 1; min-width: 0; }
-  .projlist .proj-cmd {
-    font: var(--fs-xs)/1.5 var(--sans); color: var(--dim); margin-top: var(--vs-1);
-  }
+  /* A row whose directory is not there. Dimmed rather than removed: the row is what somebody declared and the
+     directory is what happens to be plugged in, so it keeps every button it had. */
+  .pvrepo.gone .nm { color: var(--dim); font-weight: 500; }
+  .pvrepo.hid { opacity: .6; }
   /* Explain the folder and checkout icons beside the list. */
   .dirlegend {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4);

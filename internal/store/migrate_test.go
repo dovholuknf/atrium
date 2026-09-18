@@ -80,7 +80,8 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 // check that would have caught the missing perm_rule before it halted.
 func TestAllTablesExistAfterMigrate(t *testing.T) {
 	s := open(t)
-	for _, table := range []string{"task", "event", "permission", "perm_rule", "launch_spec", "schema_migration"} {
+	for _, table := range []string{"task", "event", "permission", "perm_rule", "launch_spec",
+		"provider", "provider_repo", "schema_migration"} {
 		var name string
 		err := s.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
