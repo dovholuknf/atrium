@@ -90,6 +90,30 @@ type note struct {
 	// Offer is a hub saying what it is running, in case the room wants it.
 	// Saying, not doing. See `upgrade.go`.
 	Offer *Offer `json:"offer,omitempty"`
+	// Restart is a hub asking a room to restart ITSELF. The hub spawns nothing on
+	// the room's machine: it forwards the instruction and the room parks its
+	// other agents, spawns a detached restarter and winds down. See RestartAsk
+	// and the room's OnRestart.
+	Restart *RestartAsk `json:"restart,omitempty"`
+}
+
+// RestartAsk is a hub asking a room to turn itself off and on again.
+//
+// FORWARDED, NOT PERFORMED. The hub never reaches into a room, so this is the
+// whole of the hub's part: it names why, whether to interrupt busy agents, and
+// how long to wait for them. The room decides what to do with it, exactly as it
+// decides about an Offer. See Room.OnRestart.
+type RestartAsk struct {
+	// Why is recorded and told to the parked agents, so a board that came back
+	// has an account of who asked and what for.
+	Why string `json:"why,omitempty"`
+	// Force skips waiting for other agents to reach a stopping point. Off by
+	// default: a restart closes every terminal the room owns, and closing one
+	// kills the process in it.
+	Force bool `json:"force,omitempty"`
+	// WaitSeconds bounds how long to wait for busy agents. Zero takes the room's
+	// default.
+	WaitSeconds int `json:"wait_seconds,omitempty"`
 }
 
 // Offer is a binary a hub has, described well enough for a room to decide

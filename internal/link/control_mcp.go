@@ -55,12 +55,15 @@ const AgentHeader = "X-Atrium-Agent"
 const controlTimeout = 8 * time.Second
 
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
-// board, and a client to do it with.
+// board, a client to do it with, and the hub to forward a restart over.
 type controlMCP struct {
 	// board is the loopback base for this hub's own API, e.g.
 	// http://127.0.0.1:7778. See loopbackBase.
 	board  string
 	client *http.Client
+	// hub forwards a restart_atrium down the link to a room. Nil in a test that
+	// only exercises the read tools.
+	hub *Hub
 }
 
 // newControlHandler builds the hub-side control MCP server as an http.Handler,
@@ -69,8 +72,8 @@ type controlMCP struct {
 // ONE SERVER FOR EVERY REQUEST, and that is correct rather than a shortcut: the
 // tools read who is calling from the per-request header, never from the server,
 // so there is nothing per session to build. `getServer` returns the same one.
-func newControlHandler(board string) http.Handler {
-	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}}
+func newControlHandler(board string, hub *Hub) http.Handler {
+	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub}
 	srv := c.server()
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
@@ -139,10 +142,11 @@ func (c *controlMCP) server() *mcp.Server {
 			"Its permission requests go to the HUMAN, on their board, so an agent started here " +
 			"and left alone stops at the first gated command. Say who asked for it and why, " +
 			"because whoever finds the card later will want to know.\n\n" +
-			"BRIEF FILES ARE NOT WIRED YET. The briefing was a file written in the new session's " +
-			"directory, which lives on the room's machine, not the hub's. Writing it needs the " +
-			"room-side change phase 2 installs. Until then a `brief` is refused: put what it " +
-			"needs in `prompt`.\n\n" +
+			"Use `brief` for context it needs before the task. It is written to BRIEF.md in the " +
+			"new session's directory ON THE ROOM and read first, so it survives compaction and is " +
+			"still there when a human takes the card over. Put in it what you would tell a " +
+			"colleague joining: what the job is, what has been tried, what the constraints are, " +
+			"and what NOT to do.\n\n" +
 			"Returns the card id. Use it with `atrium_task` and `atrium_say`.",
 	}, c.launchHandler)
 
@@ -158,12 +162,16 @@ func (c *controlMCP) server() *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "restart_atrium",
-		Description: "Wind a room's daemon down and bring it straight back.\n\n" +
-			"NOT YET WIRED ON THIS ROOM. From the hub a restart is an instruction forwarded to " +
-			"the room over the link, and the room-side handler that receives it, parks the other " +
-			"agents and spawns the detached restarter is installed by phase 2. Until then this " +
-			"returns a note rather than doing anything. To restart now, run it on the machine " +
-			"the room is on.",
+		Description: "Wind a room's daemon down and bring it straight back on the same database.\n\n" +
+			"FORWARDED TO THE ROOM. The hub spawns nothing on the room's machine: it sends the " +
+			"instruction over the link and the room parks its other agents, spawns a detached " +
+			"restarter that outlives it, and winds down. Scoped to your room via X-Atrium-Room.\n\n" +
+			"SCHEDULED, not immediate. It returns at once and the restart happens a moment later, " +
+			"because it takes down every terminal the room owns, this session included if it is " +
+			"one of them. Say what you are doing before you call this, and expect to be resumed " +
+			"rather than answered.\n\n" +
+			"OTHER AGENTS ARE PARKED FIRST. Any supervised session that is working is told what is " +
+			"coming and given time to stop. Pass `force` to restart even if some are still busy.",
 	}, c.restartHandler)
 
 	return s
@@ -553,9 +561,9 @@ type launchInput struct {
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why    string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`
-	// Brief is refused for now. See the tool description and launchHandler: the
-	// file lives on the room's machine and writing it needs a phase-2 room change.
-	Brief  string   `json:"brief,omitempty" jsonschema:"NOT YET WIRED from the hub. put context in prompt instead"`
+	// Brief is written to BRIEF.md in the new session's directory on the room and
+	// read first, so it survives compaction and can be re-read.
+	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
 }
@@ -566,7 +574,11 @@ type launchOutput struct {
 	Title  string `json:"title,omitempty"`
 	Status string `json:"status"`
 	Watch  string `json:"watch,omitempty"`
-	Note   string `json:"note,omitempty"`
+	// Brief is where the briefing was written on the room, when there was one.
+	// Returned so the caller can add to it later: a peer that turns out to need
+	// one more fact should be given it in the file it already reads.
+	Brief string `json:"brief,omitempty"`
+	Note  string `json:"note,omitempty"`
 }
 
 func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest, in launchInput) (
@@ -576,33 +588,31 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	if strings.TrimSpace(in.Cwd) == "" {
 		return nil, out, fmt.Errorf("say where to run it. atrium does not create the directory")
 	}
-	// THE BRIEF FILE LIVES ON THE ROOM, NOT THE HUB. In the stdio model the
-	// control server ran on the room's machine and wrote BRIEF.md into the new
-	// session's directory directly. From the hub there is no such directory to
-	// write to: it is on another machine, reachable only over the link. Writing
-	// it there is a room-side change, which is phase 2. Refused rather than
-	// silently dropped, because a session told to read a briefing that is not
-	// there reports that it read nothing, which looks like an empty brief.
-	if strings.TrimSpace(in.Brief) != "" {
-		return nil, out, fmt.Errorf("brief files are not wired from the hub yet: the file lives " +
-			"on the room's machine and writing it needs the phase-2 room change. put what the new " +
-			"session needs in prompt instead")
-	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
 		harness = "claude"
 	}
 	room := roomOf(req)
 
+	// The briefing is written ON THE ROOM: /v1/launch carries the text and the
+	// room's own daemon writes BRIEF.md into the new session's directory before
+	// it starts. The hub has no such directory to write to, which is why this is
+	// a field on the request rather than a file this side writes.
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt), "tags": in.Tags,
+		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt),
+		"brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
+	if strings.TrimSpace(in.Brief) != "" {
+		// The room wrote it; name it back in the same slash form the rest of
+		// atrium carries, so the caller can add to the file it already reads.
+		out.Brief = strings.TrimRight(strings.ReplaceAll(in.Cwd, "\\", "/"), "/") + "/" + "BRIEF.md"
+	}
 	// Where the human looks. Worth returning rather than leaving them to assemble
 	// it, because the fragment form is not guessable.
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
@@ -653,23 +663,39 @@ type restartInput struct {
 
 type restartOutput struct {
 	Scheduled bool   `json:"scheduled"`
+	Room      string `json:"room,omitempty"`
 	Note      string `json:"note"`
 }
 
-// restartHandler is a phase-1 stub. Restarting a room from the hub means sending
-// an instruction down the link for the room to act on: park its other agents,
-// spawn the detached restarter that outlives it, wind down. That receiver is a
-// room-side change, which is phase 2. Until then this says so rather than
-// failing obscurely, so a caller learns the state instead of a stack trace.
-func (c *controlMCP) restartHandler(_ context.Context, _ *mcp.CallToolRequest, _ restartInput) (
+// restartHandler forwards a restart instruction to the caller's room.
+//
+// It names a room or it does nothing: a restart with no room is a restart of
+// "whichever", and that is exactly the mistake this must not make. The hub only
+// forwards; the room parks, spawns the detached restarter and winds down, so the
+// answer here is "instructed", not "done". See Hub.AskRestart and the room's
+// OnRestart.
+func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest, in restartInput) (
 	*mcp.CallToolResult, restartOutput, error) {
 
-	return nil, restartOutput{
-		Scheduled: false,
-		Note: "not yet wired on this room. restarting a room from the hub needs the room-side " +
-			"handler that phase 2 installs. until then, run the restart on the machine the room " +
-			"is on.",
-	}, nil
+	room := roomOf(req)
+	out := restartOutput{Room: room}
+	if room == "" {
+		return nil, out, fmt.Errorf("no room named. a restart has to name the room to restart, " +
+			"which comes from X-Atrium-Room. call from a session that has one")
+	}
+	if c.hub == nil {
+		return nil, out, fmt.Errorf("this hub cannot forward a restart")
+	}
+	if err := c.hub.AskRestart(room, RestartAsk{
+		Why: strings.TrimSpace(in.Why), Force: in.Force, WaitSeconds: in.WaitSeconds,
+	}); err != nil {
+		return nil, out, fmt.Errorf("could not ask %s to restart: %w", room, err)
+	}
+	out.Scheduled = true
+	out.Note = "asked " + room + " to restart. it parks its other agents, then winds down and " +
+		"comes back on the same database. if this session is on that room it goes down too: say " +
+		"nothing further this turn and expect to be resumed."
+	return nil, out, nil
 }
 
 // ── mounting ──────────────────────────────────────────────────────────────────────

@@ -823,7 +823,7 @@ func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
 // proxy's scoping and offline-room behaviour rather than reimplementing it.
 // Optional: a hub that never calls this answers /_hub/mcp with 404.
 func (p *Proxy) SetControl(boardAddr string) {
-	p.control = newControlHandler(loopbackBase(boardAddr))
+	p.control = newControlHandler(loopbackBase(boardAddr), p.hub)
 }
 
 // serveControl answers the hub-side control MCP server.
