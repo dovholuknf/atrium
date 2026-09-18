@@ -5,6 +5,28 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The hub snapshots its own store, and a restore is one command.**
+
+  The store halts on a corrupt database and refuses to start on one. That is the right posture and it is only
+  tolerable if there is something to go back to. Without this, "it halts" meant "it is gone".
+
+  A running hub writes a snapshot every ten minutes, using SQLite's own `VACUUM INTO` rather than copying the
+  file: everything committed since the last checkpoint lives in the write-ahead log beside it, so an operating
+  system copy of `hub.db` alone is a database missing exactly what happened most recently.
+
+  **Kept in tiers, not by count.** Everything from the last hour, one an hour for a day, one a day for a week,
+  one a week for a month: about thirty files covering a month, and the oldest as easy to find as the newest.
+  Fifty of something written every ten minutes is eight hours of history, all of it from today, and the two
+  questions people ask are "put it back to twenty minutes ago" and "what did this look like last week".
+
+  `atrium2 hub backups` lists them. `atrium2 hub restore <path>` puts one back, with the hub stopped, and
+  **moves what was there aside rather than deleting it**, printing where it went. Restoring is done under
+  pressure from a list of timestamps and the wrong one is one keypress away, so undoing a restore is another
+  restore. The snapshot is opened and checked before anything moves, because restoring a damaged file over a
+  working one turns a bad afternoon into a lost hub.
+
+  Neither is a pane on the board. A restore is what somebody reaches for when the board will not come up.
+
 - **Deleting a room is four steps, and the room takes one of them.**
 
   Marking a room for deletion now does the thing it promised: **that room starts no new work.** Launching,

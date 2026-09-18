@@ -115,8 +115,21 @@ func (f *hubStoreFlags) bind(c *cobra.Command) {
 func (f *hubStoreFlags) keys() link.Keys { return link.Keys{Dir: orDefault(f.dir, hubDir())} }
 
 func (f *hubStoreFlags) open() (*hubstore.Store, error) {
-	k := f.keys()
-	return hubstore.Open(orDefault(f.db, filepath.Join(k.Dir, "hub.db")))
+	return hubstore.Open(f.path())
+}
+
+func (f *hubStoreFlags) path() string {
+	return orDefault(f.db, filepath.Join(f.keys().Dir, "hub.db"))
+}
+
+// backupsIn is where a store's snapshots live: beside it, in their own
+// directory, so a backup is never mistaken for the database and a directory
+// somebody points a sync tool at is one thing rather than a pattern.
+func backupsIn(dir, db string) string {
+	if strings.TrimSpace(db) != "" {
+		return filepath.Join(filepath.Dir(db), "backups")
+	}
+	return filepath.Join(dir, "backups")
 }
 
 // roomAddCmd is the command decision 8 is about.

@@ -45,7 +45,13 @@ import (
 
 // backupStamp is the filename's time, chosen so an ordinary alphabetical sort
 // is a sort by age and so the name survives a filesystem that dislikes colons.
-const backupStamp = "2006-01-02T15-04-05"
+//
+// IN UTC, AND SHOWN IN LOCAL TIME. A name in wall-clock time repeats itself for
+// an hour when the clocks go back, and a snapshot whose name is already there
+// is one that does not get taken: an hour of history lost, once a year, in the
+// season nobody is looking. The listing converts on the way out, so what
+// anybody reads is still their own clock.
+const backupStamp = "2006-01-02T15-04-05Z"
 
 const backupPrefix = "hub-"
 const backupSuffix = ".db"
@@ -75,7 +81,7 @@ func (s *Store) Snapshot(dir string) (Backup, error) {
 		return b, err
 	}
 	at := now()
-	path := filepath.Join(dir, backupPrefix+at.Local().Format(backupStamp)+backupSuffix)
+	path := filepath.Join(dir, backupPrefix+at.UTC().Format(backupStamp)+backupSuffix)
 	// A name that is already there means one was taken this second. Nothing is
 	// lost by leaving it: it is the same database.
 	if _, err := os.Stat(path); err == nil {
@@ -119,7 +125,7 @@ func Backups(dir string) ([]Backup, error) {
 			continue
 		}
 		stamp := strings.TrimSuffix(strings.TrimPrefix(name, backupPrefix), backupSuffix)
-		at, err := time.ParseInLocation(backupStamp, stamp, time.Local)
+		at, err := time.Parse(backupStamp, stamp)
 		if err != nil {
 			// A FILE THIS DID NOT WRITE IS LEFT ALONE. Somebody's own copy
 			// sitting in this directory is not something to parse, and it is
@@ -278,17 +284,41 @@ func Restore(dbPath, from string) (aside string, err error) {
 	probe.Close()
 
 	if _, err := os.Stat(dbPath); err == nil {
-		aside = dbPath + ".replaced-" + now().Local().Format(backupStamp)
+		// FOLDED INTO ONE FILE BEFORE IT IS MOVED, and this is the whole of what
+		// was wrong here.
+		//
+		// The store runs in write-ahead mode, so pages committed since the last
+		// checkpoint live in `hub.db-wal` and not in `hub.db`. Renaming the one
+		// file and calling it "what was there" produced an aside copy missing
+		// exactly the recent work somebody would be undoing a restore to get
+		// back. Checkpointing first puts everything in the main file, so what is
+		// kept is the whole database.
+		//
+		// It also fails early and for the right reason: a hub still running
+		// holds this open, so this is where "stop it first" is discovered,
+		// before anything has been moved.
+		if err := checkpoint(dbPath); err != nil {
+			return "", fmt.Errorf("could not settle the current store, which usually means "+
+				"a hub is running on it. stop it first: %w", err)
+		}
+		aside = dbPath + ".replaced-" + now().UTC().Format(backupStamp)
 		if err := os.Rename(dbPath, aside); err != nil {
 			return "", fmt.Errorf("could not move the current store aside, which usually means "+
 				"a hub is running on it. stop it first: %w", err)
 		}
 	}
-	// THE WRITE-AHEAD LOG GOES WITH IT. Leaving a `-wal` from the old database
-	// beside a restored one is how a restore silently does nothing: SQLite
-	// replays it on open and the pages nobody asked for come back.
+	// AND THE LEFTOVERS GO, OR NOTHING IS RESTORED.
+	//
+	// A `-wal` from the old database sitting beside a restored one is how a
+	// restore silently does nothing: SQLite replays it on open and the pages
+	// nobody asked for come back. The checkpoint above should have emptied it,
+	// so failing to remove it means something still has the database open, and
+	// carrying on from there would write a file that is quietly wrong.
 	for _, tail := range []string{"-wal", "-shm"} {
-		_ = os.Remove(dbPath + tail)
+		if err := os.Remove(dbPath + tail); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return aside, fmt.Errorf("could not clear %s, so the restore was stopped rather "+
+				"than left half done. what was there is at %s: %w", dbPath+tail, aside, err)
+		}
 	}
 
 	raw, err := os.ReadFile(from)
@@ -299,4 +329,19 @@ func Restore(dbPath, from string) (aside string, err error) {
 		return aside, err
 	}
 	return aside, nil
+}
+
+// checkpoint folds a database's write-ahead log back into the file itself.
+//
+// TRUNCATE rather than PASSIVE, because the point is to leave nothing behind:
+// passive gives up when a reader is mid-page and reports success, which is the
+// one outcome that would be worse than an error here.
+func checkpoint(path string) error {
+	s, err := Open(path)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	_, err = s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
 }

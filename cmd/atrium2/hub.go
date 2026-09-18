@@ -218,6 +218,17 @@ func hubCmd() *cobra.Command {
 				}
 			}()
 
+			// SNAPSHOTS OF ITS OWN STORE, because a halt on a corrupt database
+			// is only tolerable if there is something to go back to. Without
+			// this, "it halts" means "it is gone".
+			//
+			// Tiered rather than counted: everything from the last hour, one an
+			// hour for a day, one a day for a week, one a week for a month. The
+			// two questions people ask are "put it back to twenty minutes ago"
+			// and "what did this look like last week", and a flat list of the
+			// most recent fifty answers only the first.
+			go store.BackUp(ctx, backupsIn(keys.Dir, db))
+
 			// THE HUB AS A ROOM AS WELL, which is a switch rather than only a
 			// flag: it is turned on and off from the board while the hub keeps
 			// running, and what it was left as is what it comes back as.
@@ -287,7 +298,7 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&roomDB, "room-db", "", "its database, with --room")
 	c.Flags().StringVar(&roomAgent, "room-agent", "127.0.0.1:7802",
 		"where its agents report, with --room")
-	c.AddCommand(hubRoomsCmd())
+	c.AddCommand(hubRoomsCmd(), hubBackupsCmd(), hubRestoreCmd())
 	return c
 }
 

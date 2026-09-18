@@ -414,8 +414,13 @@ the cache tables and the audit log. Postgres-portable in the way the room's sche
 than degrading, and it refuses to start on a database it cannot read, which is asked at open rather than found
 at the first query.
 
-**The backups are not built.** Tiered snapshots and an easy restore are item 8 and are still to come, and the
-halt is only as tolerable as they make it.
+**The backups are built too, 2026-09-17.** A running hub snapshots itself every ten minutes with SQLite's own
+`VACUUM INTO`, which is the part worth writing down: copying `hub.db` while the hub runs would miss everything
+in the write-ahead log beside it, which is exactly what happened most recently.
+
+Kept in tiers rather than by count: everything from the last hour, one an hour for a day, one a day for a week,
+one a week for a month. `atrium2 hub backups` lists them and `atrium2 hub restore` puts one back, moving what
+was there aside rather than deleting it, so undoing a restore is another restore.
 
 ------------
 
@@ -664,21 +669,31 @@ it here would be inventing answers nobody agreed to.
 
 ### Order of work
 
-Everything hangs off the first two.
+Everything hangs off the first two. **All eight are built, 2026-09-17.** Each item's own decision carries what
+it turned out to mean.
 
 1. **The hub's store.** SQLite, Postgres-portable, migrations. Rooms, names, secrets, deletion state, the
-   cache tables, the audit log. Halts on a corrupt database (16).
+   cache tables, the audit log. Halts on a corrupt database (16). Built.
 2. **`add a room`.** The hub mints the name into the token, the room takes the name it is given, `--name` on
-   the room goes away (7, 8).
+   the room goes away (7, 8). Built over direct mTLS. Not proven over an overlay: see 18.
 3. **The rooms tab.** The durable list, live before offline before never-connected, a cog on every row, a
-   transport badge (1, 8, 10).
-4. **Room settings behind that cog.** `this machine` moves there, along with `run agents here too` (1).
+   transport badge (1, 8, 10). Built.
+4. **Room settings behind that cog.** `this machine` moves there, along with `run agents here too` (1). Built.
 5. **The cache.** The room pushes, the hub coalesces, written while connected and read only when not
-   (14, 15).
+   (14, 15). Built.
 6. **Offline behaviour.** No-entry cards, every operation refused, the collapsed group on the board, live-only
-   counters (12, 16).
-7. **Deletion.** Marked for deletion, the room's confirmation, force-remove behind a warning (9).
-8. **Backups of the hub's store**, tiered and restorable (16).
+   counters (12, 16). Built.
+7. **Deletion.** Marked for deletion, the room's confirmation, force-remove behind a warning (9). Built.
+8. **Backups of the hub's store**, tiered and restorable (16). Built.
+
+### What is left, and it is not on this list
+
+- **The overlay round.** How somebody actually gets a zrok share or an OpenZiti identity set up, and what binds
+  a room to one. Decision 18 is the first question of it.
+- **Decision 2's other half.** A room's runners and fixtures behind its own cog, as well as in the column that
+  shows every room's at once.
+- **`atrium2` is still a separate binary.** Decision 3 says the daemon IS the hub, and that stays true on paper
+  until the two are one program. It is deliberate: the atrium in daily use is never the one being rebuilt.
 
 ------------
 
