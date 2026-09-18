@@ -84,7 +84,7 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println("  starting the room. `atrium2 room` is all it takes from now on.")
 			fmt.Println()
-			return runRoom(keys, db, human, agent)
+			return runRoom(keys, db, human, agent, 0)
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -117,16 +117,25 @@ func roomCmd() *cobra.Command {
 			"working atrium at its own address and your agents never noticed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRoom(link.Keys{Dir: orDefault(dir, roomDir())}, db, human, agent)
+			return runRoom(link.Keys{Dir: orDefault(dir, roomDir())}, db, human, agent, restartAfter)
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
 	c.Flags().StringVar(&human, "http", "127.0.0.1:7810", "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
+	// Hidden: how a hub-triggered restart re-invokes this room detached. It waits
+	// for the old process to release its ports, then starts as usual. Running it
+	// by hand just adds a pointless pause. See restart.go.
+	c.Flags().DurationVar(&restartAfter, "restart-after", 0, "internal: wait this long for the old room to exit first")
+	_ = c.Flags().MarkHidden("restart-after")
 	acceptUpgradeFlag(c)
 	return c
 }
+
+// restartAfter is set only by the detached restarter a hub-triggered restart
+// spawns, so a fresh room waits for the old one's ports to free before binding.
+var restartAfter time.Duration
 
 
 // askToStop winds this room down the way ctrl-c does.
@@ -143,7 +152,15 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string) error {
+func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration) error {
+	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
+	// the ports. Wait for it to let go before anything tries to bind, or the new
+	// room fails to listen and exits, which looks like the restart doing nothing.
+	if restartAfter > 0 {
+		log.Printf("[atrium] restarting: waiting for the previous room to release %s", human)
+		waitForRoomRestart(restartAfter, human)
+	}
+
 	saved, err := keys.Joined()
 	if err != nil {
 		return err
@@ -223,6 +240,10 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 			Dir:     selfDir(),
 			Install: installUpgrade,
 		},
+		// WHAT THIS ROOM DOES WHEN ITS HUB ASKS IT TO RESTART. Park the other
+		// agents, spawn a detached restarter that outlives this process, and wind
+		// down. The hub only forwards the ask. See restart.go.
+		OnRestart: onHubRestart("http://"+human, human, agent, db, stop),
 	}
 	go func() {
 		if err := room.Run(ctx); err != nil {

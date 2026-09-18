@@ -167,17 +167,25 @@ func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
 	}
 }
 
-func TestRestartIsNotYetWired(t *testing.T) {
-	c := &controlMCP{}
-	_, out, err := c.restartHandler(context.Background(), ctlReq("a", "r"), restartInput{})
-	if err != nil {
-		t.Fatalf("the stub should not error: %v", err)
+func TestRestartRefusesWithNoRoom(t *testing.T) {
+	c := &controlMCP{hub: NewHub(Timings{})}
+	_, _, err := c.restartHandler(context.Background(), ctlReq("a", ""), restartInput{})
+	if err == nil {
+		t.Fatal("a restart with no room named should be refused")
 	}
-	if out.Scheduled {
-		t.Errorf("phase 1 schedules nothing")
+}
+
+func TestRestartForwardsToTheHub(t *testing.T) {
+	// No room attached to this hub, so the forward fails at AskRestart, which is
+	// enough to prove the handler routes a named room to the hub rather than
+	// answering a stub. A live round trip is covered in restart_test.go.
+	c := &controlMCP{hub: NewHub(Timings{})}
+	_, out, err := c.restartHandler(context.Background(), ctlReq("a", "beta"), restartInput{})
+	if err == nil {
+		t.Fatal("restarting an unattached room should surface the hub's error")
 	}
-	if out.Note == "" {
-		t.Errorf("the stub should say why it did nothing")
+	if out.Room != "beta" {
+		t.Errorf("the output should name the room it tried: %q", out.Room)
 	}
 }
 

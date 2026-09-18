@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -481,6 +482,32 @@ func (h *Hub) Dial(ctx context.Context, room string) (net.Conn, error) {
 		// is wrong.
 		return nil, errors.New("the room is attached but did not answer in time")
 	}
+}
+
+// AskRestart forwards a restart instruction to an attached room.
+//
+// THE HUB SPAWNS NOTHING. It writes one line on the room's control connection
+// and is done: the room parks its own agents, spawns its own detached restarter
+// and winds itself down. A room that is not attached cannot be asked, which is
+// the honest answer rather than a queued intention against a machine nobody has
+// heard from.
+func (h *Hub) AskRestart(room string, ask RestartAsk) error {
+	h.mu.Lock()
+	a := h.rooms[keyOf(room)]
+	h.mu.Unlock()
+	if a == nil {
+		return ErrNoRoom
+	}
+	a.mu.Lock()
+	closed := a.closed
+	a.mu.Unlock()
+	if closed {
+		return ErrNoRoom
+	}
+	if err := writeJSON(a.control, note{Restart: &ask}); err != nil {
+		return fmt.Errorf("could not reach the room over the link: %w", err)
+	}
+	return nil
 }
 
 // request asks a room for more data connections.
