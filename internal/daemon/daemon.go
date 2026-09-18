@@ -132,6 +132,12 @@ type Daemon struct {
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
+	// launching serializes the check-then-spawn region of a launch, keyed by the
+	// card and the resume id. Without it two restarts or launches onto one card
+	// both pass the "is a runner live" guard before either registers, and both
+	// resume the same conversation. See keyedmutex.go and launch.go.
+	launching *keyedMutex
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -172,6 +178,7 @@ func New(opts Options) (*Daemon, error) {
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
+		launching: newKeyedMutex(),
 	}
 	// Card icons live beside the database, which is the one directory atrium
 	// already owns and already backs up with the rest of its state.
