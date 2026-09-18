@@ -5,6 +5,12 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A restart item in the terminal cog menu.**
+
+  The terminal settings menu now has a restart that exits the session and resumes it on the same card, so an
+  operator can pick up new defaults or clear an update nag without losing the conversation. It calls the phase-2
+  `POST /v1/tasks/{id}/restart` behind a confirm, since the session drops for a few seconds before it reattaches.
+
 - **A throwaway or second room on one machine can keep off the machine's hooks: `--isolated`.**
 
   A room writes its address to a FIXED shared file so hooks, the CLI and the control MCP find it without knowing its
