@@ -566,6 +566,10 @@ type launchInput struct {
 	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	// Theme names the terminal palette the new session comes up in. Empty leaves
+	// it to the board, which colours a themeless card from its repo, so an
+	// agent-driven launch looks the same as a board-dialog one without this.
+	Theme string `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
 }
 
 type launchOutput struct {
@@ -602,6 +606,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt),
 		"brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
+		"theme": strings.TrimSpace(in.Theme),
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
