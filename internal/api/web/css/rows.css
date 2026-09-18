@@ -37,6 +37,11 @@
   .row.compact .who b code { font-family: var(--mono); color: var(--head); }
   .row.compact .who span { font-size: var(--fs-base); color: var(--dimmest); }
   .row.compact .chip { font-size: var(--fs-sm); padding: 2px 9px; }
+  /* The hooks control sits in a fixed slot so the enable / edit / duplicate buttons line up down the
+     runners list whether a row shows a "hooks" button or a plain "n/a". Its contents fill the slot. */
+  .hookcell { display: inline-flex; justify-content: flex-end; min-width: 8.5em; }
+  .hookcell > * { margin: 0; }
+  .hookcell .by { color: var(--dimmest); }
   .row.compact button { padding: 4px 12px; font-size: var(--fs-base); }
   .row.compact .cmd { font-size: var(--fs-base); padding: 6px 10px; margin-top: 5px; }
 

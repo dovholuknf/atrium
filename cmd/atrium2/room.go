@@ -2,19 +2,16 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
@@ -131,196 +128,6 @@ func roomCmd() *cobra.Command {
 	return c
 }
 
-// hubAsRoom runs a room inside the hub's own process.
-//
-// ── what this is for ─────────────────────────────────────
-//
-// The machine the hub is on is usually a machine you also work on, and telling
-// somebody to start a second process in a second terminal to use the computer
-// in front of them is a silly answer to a question they should not have had to
-// ask.
-//
-// ── what it costs, which is why it is off by default ─────
-//
-// A hub that holds a database is a hub whose restart is no longer free. That
-// is the one property the split exists to buy, and this gives it up for the
-// hub's own machine. Rooms attached from elsewhere are untouched either way:
-// they carry their own database and their own terminals, and a hub restart is
-// still just a reconnect to them.
-//
-// ── how it attaches ──────────────────────────────────────
-//
-// Over `link.InProc`, which is a transport like any other: a listener and a
-// dialer, joined by a pipe. The room enrols, heartbeats and pools connections
-// exactly as a machine across the world does, and appears in `Rooms()` beside
-// them. Nothing above this knows the difference, which is what stops the two
-// paths drifting apart.
-// ── the switch ───────────────────────────────────────────
-
-// ownRoom is the hub's own room, and whether it is running.
-//
-// A TYPE RATHER THAN A FLAG, because this is turned on and off from the board
-// while the hub keeps running. Stopping it cancels its context, which stops
-// the daemon and drops its link, and the hub goes back to holding nothing.
-type ownRoom struct {
-	parent context.Context
-	hub    *link.Hub
-	dir    string
-	// store is where this room gets written down, the same as any other. It
-	// crosses no network and enrols nothing, and it is still a room: the list
-	// describes everything that can run agents, and the machine you are sitting
-	// at is not an exception.
-	store *hubstore.Store
-
-	name, db, agent string
-
-	mu     sync.Mutex
-	cancel context.CancelFunc
-}
-
-func (o *ownRoom) Name() string { return o.name }
-
-func (o *ownRoom) On() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.cancel != nil
-}
-
-// Set starts or stops the room, and writes down which, so a hub restart comes
-// back the way it was left rather than the way it was first started.
-func (o *ownRoom) Set(on bool) error {
-	o.mu.Lock()
-	already := o.cancel != nil
-	o.mu.Unlock()
-	if on == already {
-		return o.remember(on)
-	}
-	if !on {
-		o.mu.Lock()
-		stop := o.cancel
-		o.cancel = nil
-		o.mu.Unlock()
-		if stop != nil {
-			stop()
-		}
-		log.Printf("[hub] stopped being a room. its agents keep running, unsupervised, " +
-			"until something ends them")
-		return o.remember(false)
-	}
-	// ON THE LIST BEFORE IT IS RUNNING, the same order every other room follows:
-	// the row comes first and the connection comes later. Refusing here means
-	// the hub's room never starts unlisted, which is the state nothing else in
-	// the design knows how to describe.
-	if o.store != nil {
-		if _, err := o.store.EnsureLocal(o.name); err != nil {
-			return err
-		}
-	}
-	ctx, cancel := context.WithCancel(o.parent)
-	if err := hubAsRoom(ctx, o.hub, o.name, o.db, o.agent); err != nil {
-		cancel()
-		return err
-	}
-	o.mu.Lock()
-	o.cancel = cancel
-	o.mu.Unlock()
-	return o.remember(true)
-}
-
-// remember writes the answer beside the hub's certificates.
-//
-// NOT IN A DATABASE, because the thing being remembered is whether to open one.
-func (o *ownRoom) remember(on bool) error {
-	if strings.TrimSpace(o.dir) == "" {
-		return nil
-	}
-	if err := os.MkdirAll(o.dir, 0o700); err != nil {
-		return err
-	}
-	raw, err := json.Marshal(map[string]bool{"on": on})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(o.dir, "room.json"), raw, 0o600)
-}
-
-// wasOn reads what was written last time. False for a hub that has never been
-// one, which is the default and the point.
-func wasOn(dir string) bool {
-	raw, err := os.ReadFile(filepath.Join(dir, "room.json"))
-	if err != nil {
-		return false
-	}
-	var body struct {
-		On bool `json:"on"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return false
-	}
-	return body.On
-}
-
-func hubAsRoom(ctx context.Context, h *link.Hub, name, db, agent string) error {
-	if strings.TrimSpace(name) == "" {
-		name = defaultRoomName()
-	}
-	if strings.TrimSpace(db) == "" {
-		db = defaultRoomDB()
-	}
-	// The same two lines a separate room runs, and for the same reason: a room
-	// must not publish itself as the machine's atrium and hijack the hooks of
-	// one already running. See `runRoom`.
-	if os.Getenv("ATRIUM_LOCATION") == "" {
-		if err := os.Setenv("ATRIUM_LOCATION", roomLocation()); err != nil {
-			return err
-		}
-	}
-	if os.Getenv("ATRIUM_SHARED_LOCATION") == "" {
-		if err := os.Setenv("ATRIUM_SHARED_LOCATION", "-"); err != nil {
-			return err
-		}
-	}
-
-	d, err := daemon.New(daemon.Options{
-		// NO BOARD OF ITS OWN. A separate room serves one on loopback for when
-		// the hub is down, which cannot happen to this one: they are the same
-		// process, so if the hub is down so is this.
-		HumanAddr: "-",
-		AgentAddr: agent,
-		DBPath:    db,
-	})
-	if err != nil {
-		return err
-	}
-
-	pipe := &link.InProc{}
-	go func() {
-		<-ctx.Done()
-		_ = pipe.Close()
-	}()
-	go func() {
-		if err := h.Serve(ctx, pipe.Listen()); err != nil && ctx.Err() == nil {
-			log.Printf("[hub] its own room stopped listening: %v", err)
-		}
-	}()
-	room := &link.Room{
-		Name: name, Dial: pipe.Dialer(), Handler: d.BoardHandler(),
-		Version: version, Host: hostname(),
-	}
-	go func() {
-		if err := room.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("[hub] its own room gave up: %v", err)
-		}
-	}()
-	go func() {
-		if err := d.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("[hub] its own room's daemon stopped: %v", err)
-		}
-	}()
-
-	log.Printf("[hub] also a room, called %q, agents on %s, state in %s", name, agent, db)
-	return nil
-}
 
 // askToStop winds this room down the way ctrl-c does.
 //

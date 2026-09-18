@@ -211,28 +211,6 @@ async function startFixtureNow(id, room) {
   refresh();
 }
 
-// Runners this machine has that atrium is not set up to use. Offered rather
-// than added: what to run is a decision, and a row that appeared on its own is
-// a row you did not agree to.
-async function renderDiscovered() {
-  const host = document.getElementById("discovered");
-  if (!host) return;
-  let found = [];
-  try { found = (await api("/v1/harnesses/discover")).candidates || []; } catch (e) { return; }
-  if (!found.length) { host.innerHTML = ""; return; }
-
-  host.innerHTML = `<div class="panel">
-    <div class="empty" style="text-align:left">
-      found on this machine and not set up yet
-    </div>` + found.map(c => `
-    <div class="row line">
-      <span class="tool">${esc(c.label)}</span>
-      <code class="grow ell" title="${esc(c.found)}">${esc(c.found)}</code>
-      <button class="go" onclick='addDiscovered(${JSON.stringify(c).replace(/'/g, "&#39;")})'
-        >set it up</button>
-    </div>`).join("") + `</div>`;
-}
-
 // Which runner's hooks file a row belongs to, or "" when atrium has none for
 // it. Matched on the command rather than the row id, since the id is whatever
 // you typed when you made the row.
@@ -270,8 +248,7 @@ const HOOK_NAG = "hooks-nag";
 // again.
 function hooksChip(h) {
   const target = hookTargetFor(h);
-  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}"
-    >reports nothing</span>`;
+  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}">n/a</span>`;
   const rep = target === "codex" ? codexHooks : hookReport;
   // A row atrium could wire and has not looked at yet. The button still opens
   // the dialog, which is where the answer is; a count nobody fetched would be
@@ -639,22 +616,6 @@ async function copyText(btn, text) {
 // Opens the runner form pre-filled from what was found. The command and the
 // path are known; anything that was not is left empty with the reason shown,
 // since a guessed flag produces a runner that fails on first use.
-function addDiscovered(c) {
-  editHarness("");
-  document.getElementById("h-id").value = c.id;
-  document.getElementById("h-id").disabled = false;
-  document.getElementById("h-label").value = c.label;
-  document.getElementById("h-cmd").value = c.cmd;
-  document.getElementById("h-args").value = (c.args || []).join("\n");
-  document.getElementById("h-resume").value = (c.resume_args || []).join("\n");
-  document.getElementById("h-prompt").value = (c.prompt_args || []).join("\n");
-  document.getElementById("h-model").value = (c.model_args || []).join("\n");
-  document.getElementById("h-exit").value = (c.exit_keys || []).join("\n");
-  document.getElementById("h-prepare").value = "";
-  document.getElementById("h-notes").value = c.confirm || "";
-  if (c.confirm) toast("needs confirming", c.confirm);
-}
-
 function linesToList(v) {
   return (v || "").split("\n").map(s => s.trim()).filter(Boolean);
 }

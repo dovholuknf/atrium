@@ -547,9 +547,9 @@ async function renderRunners() {
         esc([h.cmd].concat(h.args || []).join(" "))}</code>
       ${h.found
         ? `<span class="by found" title="${esc(h.found)}">on PATH</span>`
-        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
+        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
-      ${hooksChip(h)}
+      <span class="hookcell">${hooksChip(h)}</span>
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
         onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
           h.enabled ? "disable" : "enable"}</button>
@@ -558,7 +558,6 @@ async function renderRunners() {
         onclick="copyHarness('${esc(h.id)}','${esc(h.room || "")}')">duplicate</button>
     </div>`);
 
-  renderDiscovered();
   renderFixtures();
   renderSources();
   renderRecognisers();

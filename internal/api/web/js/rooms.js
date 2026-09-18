@@ -231,17 +231,10 @@ async function hubAttachedRows() {
   // is decision 3, and this is what that looks like on a machine running one
   // atrium by itself.
   if (!hubIsHub) return thisMachineRow();
-  const rooms = hubInventory;
-  const own = await ownHubPanel();
-
-  // THE HUB'S OWN MACHINE IS NOT IN THE LIST. It is a special thing, drawn on
-  // its own above the rooms, so it never sorts in between athens and sparta as
-  // though it were another machine that dialled in. It is the one this board is
-  // served from.
-  const rest = rooms.filter(r => r.transport !== "local");
+  const rest = hubInventory;
 
   if (!rest.length) {
-    return own + `<div class="panel"><div class="empty">
+    return `<div class="panel"><div class="empty">
       No rooms yet. A hub serves the board; the agents run on rooms, which are machines
       that dial in. <a href="#" onclick="openRoomJoin();return false;">Add one</a> to get started.
     </div></div>`;
@@ -262,59 +255,9 @@ async function hubAttachedRows() {
       ? `<div class="roomgroup"><span>${esc(title)}</span></div>` : "") +
     `<div class="panel roomlist">` + list.map(roomRow).join("") + `</div>`;
 
-  return own +
-    group("here now", live) +
+  return group("here now", live) +
     group("offline", off) +
     group("added, not yet connected", never);
-}
-
-// ownHubState is the last answer from /_hub/room, kept so the toggle knows the
-// room's name without asking again.
-let ownHubState = null;
-
-// ownHubPanel is the hub's own machine, drawn as its own thing.
-//
-// NOT A ROOM IN THE LIST. It is special: the machine this board is served from,
-// which can also run agents. Sorting it in among the rooms that dialled in read
-// as though it were one of them. So it sits above them, set apart, with its own
-// switch.
-async function ownHubPanel() {
-  try { ownHubState = await plainFetch("/_hub/room").then(x => x.json()); }
-  catch (e) { ownHubState = null; }
-  if (!ownHubState || !ownHubState.available) return "";
-  const on = !!ownHubState.on;
-  const name = esc(ownHubState.name || "this machine");
-  const cog = on
-    ? `<button class="ghost roomcog" data-room="${name}" title="settings for this machine"
-        >&#9881;</button>`
-    : "";
-  const button = on
-    ? `<button class="no" onclick="stopOwnRoom()">stop</button>`
-    : `<button class="go" onclick="setOwnRoom(true)">run agents here</button>`;
-  return `<div class="ownhub${on ? " on" : ""}">
-    <div class="roomrow-top">
-      <b class="roomname">this hub</b>
-      ${on ? `<span class="chip live idle">running as ${name}</span>`
-           : `<span class="by">the machine the board runs on</span>`}
-      <span class="grow"></span>
-      ${cog}
-      ${button}
-    </div>
-    ${on ? `<div class="hintline">Also running agents. Restart the hub and they stop.</div>` : ""}
-  </div>`;
-}
-
-// stopOwnRoom turns it off, and ASKS FIRST because it kills agents.
-//
-// Turning on is safe and immediate. Turning off ends whatever is running on
-// this machine, so it is the one direction that gets a question. Skippable,
-// because somebody who does it often knows what it does.
-async function stopOwnRoom() {
-  const ok = await confirmUser("stop running agents on the hub?",
-    "Anything running on this machine stops. The rooms are not touched.",
-    "stop", "stop-own-room");
-  if (!ok) return;
-  await setOwnRoom(false);
 }
 
 // thisMachineRow is the one row a board with no hub draws.
@@ -630,22 +573,6 @@ function forgetRoomCfg() {
   });
 })();
 
-// setOwnRoom turns the hub's own machine into a room, or stops it.
-//
-// The checkbox at the top of the rooms tab. No confirmation: one click to undo,
-// and that agents stop when their machine's atrium stops is not news.
-async function setOwnRoom(on) {
-  try {
-    await plainFetch("/_hub/room", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ on: !!on })
-    });
-  } catch (e) { tellUser("atrium", "could not change that: " + e.message); return; }
-  hubRead = 0;
-  await loadHubRooms();
-  renderRooms();
-}
-
 // markFromCog is the mark button inside the room's own pane.
 async function markFromCog() {
   const r = hubInventory.find(x => String(x.name) === String(roomCfgFor));
@@ -713,7 +640,13 @@ function roomGroups(rows, row) {
   return names.map(name => {
     const mine = rows.filter(r => r && (r.room || "") === name);
     if (!mine.length) return "";
-    return `<div class="col-head roomgroup"><span>${esc(name)}</span></div>` + panel(mine);
+    // The room's name heads its group, and its cog opens that room's settings,
+    // the same one the rooms tab opens. It is that machine's set-up, reached
+    // from the list of what runs on it.
+    return `<div class="col-head roomgroup"><span>${esc(name)}</span>
+      <span class="grow"></span>
+      <button class="ghost roomcog" data-room="${esc(name)}"
+        title="settings for ${esc(name)}">&#9881;</button></div>` + panel(mine);
   }).join("");
 }
 

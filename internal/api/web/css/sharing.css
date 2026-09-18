@@ -104,17 +104,7 @@
     color: var(--head);
   }
   .roomrow .hintline { margin-top: 6px; }
-  .roomrow .roomcog, .ownhub .roomcog { flex: none; }
-  /* The hub's own machine. Set apart from the rooms that dialled in, because it is not one of
-     them: it is where the board runs. A left edge in the accent colour so it reads as its own
-     thing above the list rather than as the first room in it. */
-  .ownhub {
-    margin-bottom: var(--vs-4); padding: var(--row-y) var(--row-x);
-    border: 1px solid var(--stroke-dim); border-left: 3px solid var(--teal);
-    border-radius: var(--radius); background: var(--panel);
-  }
-  .ownhub.on { border-left-color: var(--ok, var(--teal)); }
-  .ownhub .hintline { margin-top: 6px; }
+  .roomrow .roomcog { flex: none; }
   /* What the hub knows about one room, behind its cog. A table because it is one: a label and a value per
      line, and the labels want to line up or the eye has to find each one again. */
   .kv { border-collapse: collapse; margin-bottom: var(--vs-3); }
