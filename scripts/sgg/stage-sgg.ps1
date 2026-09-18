@@ -16,19 +16,27 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Use Windows OpenSSH explicitly. On this box `scp` on PATH is the msys64 build,
+# which shells out to `/usr/bin/ssh` and cannot talk to a Windows remote. ssh and
+# scp have to be the same family, so both are pinned to System32\OpenSSH.
+$sshExe = "$env:WINDIR\System32\OpenSSH\ssh.exe"
+$scpExe = "$env:WINDIR\System32\OpenSSH\scp.exe"
+if (-not (Test-Path $sshExe)) { $sshExe = 'ssh' }
+if (-not (Test-Path $scpExe)) { $scpExe = 'scp' }
+
 if (-not (Test-Path $LocalBinary)) {
   Write-Host "no binary at $LocalBinary. build it first: go build -o build.claude\atrium2.exe ./cmd/atrium2"
   exit 1
 }
 
 Write-Host "ensuring $RemoteDir on $SshHost"
-& ssh -o BatchMode=yes -o ConnectTimeout=10 $SshHost "pwsh -NoProfile -Command `"New-Item -ItemType Directory -Force '$RemoteDir' | Out-Null`""
+& $sshExe -o BatchMode=yes -o ConnectTimeout=10 $SshHost "pwsh -NoProfile -Command `"New-Item -ItemType Directory -Force '$RemoteDir' | Out-Null`""
 if ($LASTEXITCODE -ne 0) { Write-Host "could not reach $SshHost over ssh"; exit 1 }
 
 Write-Host "copying $LocalBinary -> ${SshHost}:$RemoteBinary"
-& scp -o BatchMode=yes -o ConnectTimeout=10 $LocalBinary "${SshHost}:$RemoteBinary"
+& $scpExe -o BatchMode=yes -o ConnectTimeout=10 $LocalBinary "${SshHost}:$RemoteBinary"
 if ($LASTEXITCODE -ne 0) { Write-Host "scp failed"; exit 1 }
 
 Write-Host "verifying on $SshHost"
-& ssh -o BatchMode=yes -o ConnectTimeout=10 $SshHost "pwsh -NoProfile -Command `"& '$RemoteBinary' version`""
+& $sshExe -o BatchMode=yes -o ConnectTimeout=10 $SshHost "pwsh -NoProfile -Command `"& '$RemoteBinary' version`""
 Write-Host "staged."

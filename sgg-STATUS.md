@@ -92,12 +92,26 @@ To finish Goal A, once shares can be created again:
 That is a detached, hub-only restart (room stays up) that deploys the new binary and brings the share up. If share
 create still fails it degrades to loopback, so running it is never worse than the plain hub.
 
-### Goal B: BLOCKED on an overlay client for sgg (credential action)
+### Goal B: prep DONE, rooms:2 BLOCKED on an overlay link for sgg (credential action)
 
-sgg is a bare Windows box with no zrok environment and no ziti identity. A room dials the hub, and every dial path
-needs setup that is clint's to do. Full runbook and both transport paths in `scripts/sgg/bringup-sgg.md`. Binary
-staging is safe and ready (`scripts/sgg/stage-sgg.ps1`), not yet run (holding remote execution pending the transport
-choice).
+Done on the orchestrator's go-ahead:
+
+- Binary staged to sgg: `scripts/sgg/stage-sgg.ps1` copied `atrium2.exe` to `sgg:C:\Users\localai\.atrium2\bin` and
+  ran `version` there. (Fixed the script to pin Windows OpenSSH: PATH `scp` here is the msys64 build, which cannot
+  talk to a Windows remote.)
+- Room row minted: `atrium2 hub room add sgg --dir ...\hub` (with db-lock retry). The room shows on the board as
+  `sgg`, `never connected`.
+
+Why rooms:2 is not reached: `/_hub/health` counts ATTACHED rooms, so sgg has to actually dial the hub link to count.
+The minted token is transport `direct` and encodes a LOOPBACK link address, which sgg cannot reach, so it will not
+attach. A room dials the hub, and every reachable-link path needs setup that is clint's to do:
+
+- zrok: `zrok enable` on sgg (credential) AND the hub link over zrok, which is also blocked by the account 500.
+- ziti: an enrolled identity on sgg (credential) AND a hub-side `atrium-hub` service with bind/dial policies (admin).
+
+Both are scripted as a runbook in `scripts/sgg/bringup-sgg.md`. Once the overlay exists, the sgg row must be
+re-minted over that transport (`hub room rm sgg` then `hub room add sgg --transport <t>`), because a room's transport
+is fixed when the row is added and the current row is `direct`.
 
 ## Open questions for clint / orchestrator
 
@@ -119,5 +133,6 @@ choice).
 - [x] Goal A code verified on a throwaway hub (share path exercised, degrades cleanly)
 - [ ] Goal A share up on the live hub (blocked: zrok account 500 + restart/private-public decision)
 - [x] Goal B staging + bring-up scripts, committed
-- [ ] Goal B binary staged to sgg (holding: remote execution pending transport choice)
-- [ ] Goal B room attached / rooms:2 (blocked: sgg overlay client)
+- [x] Goal B binary staged to sgg (ssh/scp, verified `version`)
+- [x] Goal B room row `sgg` minted on the hub (shows `never connected`)
+- [ ] Goal B room attached / rooms:2 (blocked: no overlay link sgg can dial; direct token is loopback)
