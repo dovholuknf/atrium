@@ -28,6 +28,9 @@ type fileSink struct {
 	ch   chan *Event
 	done chan struct{}
 	wg   sync.WaitGroup
+	// closeOnce keeps Close idempotent: the writer goroutine and its channel are
+	// torn down exactly once even if Store.Close reaches here twice.
+	closeOnce sync.Once
 
 	// dropped counts events lost to backpressure or a write error. Read from
 	// any goroutine, so atomic.
@@ -102,11 +105,13 @@ func (fs *fileSink) Recent(taskID string, limit int) ([]*Event, error) {
 // Close stops the writer after draining what is already queued, flushes the
 // current file, and reports any losses.
 func (fs *fileSink) Close() error {
-	close(fs.done)
-	fs.wg.Wait()
-	if d := fs.dropped.Load(); d > 0 {
-		log.Printf("event file sink: dropped %d event(s) under backpressure (dir %s)", d, fs.dir)
-	}
+	fs.closeOnce.Do(func() {
+		close(fs.done)
+		fs.wg.Wait()
+		if d := fs.dropped.Load(); d > 0 {
+			log.Printf("event file sink: dropped %d event(s) under backpressure (dir %s)", d, fs.dir)
+		}
+	})
 	return nil
 }
 

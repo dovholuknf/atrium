@@ -1132,6 +1132,30 @@ func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 	return out, err
 }
 
+// HistoryRolledOff reports whether older events for a card have rolled off the
+// db hot window, so the board can say "history rolled off" rather than pretend
+// the retained window is the whole story.
+//
+// The signal is exact and needs no extra bookkeeping: every card is born with a
+// `created` event, which is its oldest, so the roll-off deletes it first. A card
+// that has events but no `created` event has therefore lost older history to the
+// window. The bound only applies when an operator sets it, so under the default
+// this is always false.
+func (s *Store) HistoryRolledOff(taskID string) (bool, error) {
+	var rolled bool
+	err := s.guard(func() error {
+		var total, created int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*), COUNT(*) FILTER (WHERE kind = ?) FROM event WHERE task_id = ?`,
+			EventCreated, taskID).Scan(&total, &created); err != nil {
+			return err
+		}
+		rolled = total > 0 && created == 0
+		return nil
+	})
+	return rolled, err
+}
+
 var _ = time.Time{}
 
 // Archive takes cards off the board without forgetting them.
