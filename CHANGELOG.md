@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The restart and launch path is concurrency-safe.**
+
+  Two restarts or launches racing on one card could both pass the "is a runner live" check before either spawned,
+  and both resume the same conversation id, braiding one transcript out of two. Launch and restart now serialize per
+  card id and per resume id through a keyed mutex held across the whole check-then-spawn window, a duplicate
+  `restart_atrium` ask is dropped while one is in flight, wind-down waits for the kill to take before it returns,
+  and the store is closed explicitly on the shutdown path. Covered by a concurrency test that spawns racing
+  restarts and asserts one runner survives.
+
 - **Databases give freed space back to disk.**
 
   New room and hub databases open in SQLite incremental auto-vacuum mode, and a timer reclaims freed pages while the
