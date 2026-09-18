@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -489,6 +491,13 @@ type Store struct {
 	// runners. It must not call back into the store.
 	OnHalt func(cause error)
 
+	// hot serves Recent and takes every event synchronously, on the halt path.
+	// cold are write-only durability sinks fed best-effort. See eventsink.go.
+	// Both are wired once at Open from the event_sink setting; the default is
+	// the db table alone and no cold sinks, which is byte-for-byte today.
+	hot  EventSink
+	cold []EventSink
+
 	fresh bool
 }
 
@@ -529,6 +538,10 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	s := &Store{db: db, fresh: fresh}
+	// The default hot sink is the event table, so a store is usable before the
+	// setting is read. configureSinks below may add cold sinks; it never
+	// replaces this with anything that fails Recent.
+	s.hot = newDBSink(db)
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -541,11 +554,25 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("seed card actions: %w", err)
 	}
+	// Read the event_sink setting and attach any cold sinks. A bad or unknown
+	// setting is logged and skipped rather than fatal: a misconfigured cold
+	// trail must never keep the daemon from starting.
+	s.configureSinks(path)
 	return s, nil
 }
 
-// Close releases the database.
-func (s *Store) Close() error { return s.db.Close() }
+// Close releases the database, after flushing and closing any cold sinks so a
+// buffered file sink writes what it is holding before the process exits.
+func (s *Store) Close() error {
+	for _, c := range s.cold {
+		if cl, ok := c.(io.Closer); ok {
+			if err := cl.Close(); err != nil {
+				log.Printf("event sink: close: %v", err)
+			}
+		}
+	}
+	return s.db.Close()
+}
 
 // Halted reports whether the store has halted, and why.
 func (s *Store) Halted() (bool, error) {

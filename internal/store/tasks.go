@@ -1085,6 +1085,12 @@ func (s *Store) AppendEvent(taskID, kind string, payload any) error {
 }
 
 // appendEvent is the unguarded form, for use inside an existing guard.
+//
+// The event's id, timestamp and payload are resolved once here so every sink
+// records the same row. The hot sink is written synchronously and its error is
+// returned, which is what keeps the db path on the guard's retry-and-halt
+// posture. Cold sinks are then fed the same event best-effort: their Append
+// never fails a caller, so a slow or broken cold trail cannot fail a hook.
 func (s *Store) appendEvent(taskID, kind string, payload any) error {
 	blob := []byte("{}")
 	if payload != nil {
@@ -1094,58 +1100,33 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 		}
 		blob = b
 	}
-	_, err := s.db.Exec(`INSERT INTO event (id, task_id, at, kind, payload) VALUES (?,?,?,?,?)`,
-		newID(), taskID, ts(now()), kind, string(blob))
-	return err
+	e := &Event{ID: newID(), TaskID: taskID, At: now(), Kind: kind, Payload: json.RawMessage(blob)}
+	if err := s.hot.Append(taskID, e); err != nil {
+		return err
+	}
+	for _, c := range s.cold {
+		// Best effort by contract. A cold sink swallows its own failures and
+		// counts a loss rather than returning one, so this ignores the error.
+		_ = c.Append(taskID, e)
+	}
+	return nil
 }
 
 // Events returns the NEWEST `limit` events, oldest first within that window.
 //
-// The two halves pull opposite ways and both belong here: selecting `at ASC`
-// with a LIMIT takes the oldest N, which on a busy card is the day it was
-// created rather than what just happened. So the limit applies to the newest
-// end and the window is reversed before it is returned, which keeps the wire
-// oldest-first for the timeline.
-//
-// `id` breaks ties in the same direction as `at` in both clauses. These
-// timestamps have millisecond resolution and a hook can write two events inside
-// one.
+// Served by the hot sink, which is the db table by default. The windowing and
+// ordering rules live in the sink; see dbSink.Recent in eventsink.go.
 func (s *Store) Events(taskID string, limit int) ([]*Event, error) {
 	if limit <= 0 {
 		limit = 200
 	}
 	var out []*Event
 	err := s.guard(func() error {
-		out = nil
-		rows, err := s.db.Query(
-			`SELECT id, task_id, at, kind, payload FROM event
-			 WHERE task_id = ? ORDER BY at DESC, id DESC LIMIT ?`, taskID, limit)
+		got, err := s.hot.Recent(taskID, limit)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var (
-				e       Event
-				at, pay string
-			)
-			if err := rows.Scan(&e.ID, &e.TaskID, &at, &e.Kind, &pay); err != nil {
-				return err
-			}
-			if e.At, err = parseTS(at); err != nil {
-				return err
-			}
-			e.Payload = json.RawMessage(pay)
-			out = append(out, &e)
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		// Newest-first came back, oldest-first goes out. In place, since the
-		// slice is bounded by `limit` and is nobody else's yet.
-		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-			out[i], out[j] = out[j], out[i]
-		}
+		out = got
 		return nil
 	})
 	return out, err
