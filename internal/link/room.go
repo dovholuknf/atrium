@@ -61,6 +61,41 @@ type Room struct {
 	// taking makes sure one offer is acted on once, however many times the hub
 	// repeats it across reconnects.
 	taking taker
+	// restarting makes sure one restart is acted on at a time, so two
+	// restart_atrium asks in quick succession do not both spawn a detached
+	// restarter racing to bind the same address. See restarter and the Restart
+	// case in attach.
+	restarting restarter
+}
+
+// restarter is the idempotent guard on OnRestart, the same shape as `taker` and
+// for the same reason: the ask can arrive more than once, and acting on every
+// copy spawns racing restarters.
+//
+// It is a one-at-a-time flag rather than a once, because a restart can be asked
+// for, declined (agents still busy and no force), and then asked for again, and
+// the second ask must not be swallowed by the first having been considered.
+// `finish` clears it when the handler returns, which on the path that actually
+// restarts is moot because the process is already going down.
+type restarter struct {
+	mu   sync.Mutex
+	busy bool
+}
+
+func (r *restarter) start() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.busy {
+		return false
+	}
+	r.busy = true
+	return true
+}
+
+func (r *restarter) finish() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.busy = false
 }
 
 // Run keeps a room attached to its hub until the context is cancelled.
@@ -239,11 +274,23 @@ func (r *Room) attach(ctx context.Context) error {
 			// blocking the reader would stop the heartbeat and make the room look
 			// dead while it does exactly what it was told. Ignored entirely when
 			// no restarter is wired: a hub cannot make a room restart.
-			if r.OnRestart != nil {
-				go r.OnRestart(*n.Restart)
-			} else {
+			if r.OnRestart == nil {
 				log.Printf("[link] the hub asked this room to restart, but no restarter is wired")
+				break
 			}
+			// One at a time. The hub can repeat the ask across reconnects, and two
+			// in quick succession would otherwise both spawn a detached restarter
+			// racing to bind the same address. The loser spins its stop grace and
+			// then fails to bind, an orphaned process and confusing logs. See
+			// restarter.
+			if !r.restarting.start() {
+				log.Printf("[link] a restart is already in progress, ignoring the duplicate ask")
+				break
+			}
+			go func(ask RestartAsk) {
+				defer r.restarting.finish()
+				r.OnRestart(ask)
+			}(*n.Restart)
 		}
 	}
 }
