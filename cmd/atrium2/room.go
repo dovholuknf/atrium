@@ -31,6 +31,7 @@ func joinCmd() *cobra.Command {
 		human    string
 		agent    string
 		identity string
+		isolated bool
 	)
 	c := &cobra.Command{
 		Use:   "join <join string>",
@@ -84,7 +85,7 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println("  starting the room. `atrium2 room` is all it takes from now on.")
 			fmt.Println()
-			return runRoom(keys, db, human, agent, 0)
+			return runRoom(keys, db, human, agent, 0, isolated)
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -93,6 +94,7 @@ func joinCmd() *cobra.Command {
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
 	c.Flags().StringVar(&identity, "identity", "",
 		"a ziti identity file, when the join string is for a ziti service")
+	isolatedFlag(c, &isolated)
 	acceptUpgradeFlag(c)
 	return c
 }
@@ -106,8 +108,25 @@ func acceptUpgradeFlag(c *cobra.Command) {
 		"take a newer atrium2 from the hub when it has one, verify it, and restart")
 }
 
+// isolatedFlag is how a SECOND room on a machine keeps its hands off the first
+// one's hooks.
+//
+// The default is right for the normal case, which is one room per machine: it
+// publishes itself at the fixed shared path every hook, CLI call and control MCP
+// looks in without being told where the room's dir is. A second room started the
+// same way overwrites that pointer, and from then on the first room's hooks
+// arrive at the throwaway. `--isolated` says this is that second room: keep the
+// address in a private file beside `--dir` and never touch the shared one. See
+// `roomLocationEnv` and internal/daemon.LocationPath.
+func isolatedFlag(c *cobra.Command, isolated *bool) {
+	c.Flags().BoolVar(isolated, "isolated", false,
+		"keep this room's address in a private file beside --dir, for a throwaway or "+
+			"second room that must not take over the machine's hooks")
+}
+
 func roomCmd() *cobra.Command {
 	var dir, db, human, agent string
+	var isolated bool
 	c := &cobra.Command{
 		Use:   "room",
 		Short: "Run the agents here, attached to the hub this machine already joined",
@@ -117,13 +136,14 @@ func roomCmd() *cobra.Command {
 			"working atrium at its own address and your agents never noticed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRoom(link.Keys{Dir: orDefault(dir, roomDir())}, db, human, agent, restartAfter)
+			return runRoom(link.Keys{Dir: orDefault(dir, roomDir())}, db, human, agent, restartAfter, isolated)
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
 	c.Flags().StringVar(&human, "http", "127.0.0.1:7810", "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
+	isolatedFlag(c, &isolated)
 	// Hidden: how a hub-triggered restart re-invokes this room detached. It waits
 	// for the old process to release its ports, then starts as usual. Running it
 	// by hand just adds a pointless pause. See restart.go.
@@ -152,7 +172,7 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration) error {
+func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool) error {
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.
@@ -176,12 +196,13 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		db = defaultRoomDB()
 	}
 
-	// BEFORE ANYTHING OPENS. This is the line that stops a room hijacking the
+	// BEFORE ANYTHING OPENS. These are the lines that stop a room hijacking the
 	// hooks of an atrium already running as the same user, which on this
 	// machine is the difference between a demo and a broken afternoon. See
-	// `LocationPath` in internal/daemon.
+	// `LocationPath` in internal/daemon and `roomLocationEnv` below.
+	location, shared := roomLocationEnv(isolated, keys.Dir)
 	if os.Getenv("ATRIUM_LOCATION") == "" {
-		if err := os.Setenv("ATRIUM_LOCATION", roomLocation()); err != nil {
+		if err := os.Setenv("ATRIUM_LOCATION", location); err != nil {
 			return err
 		}
 	}
@@ -189,7 +210,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// running as another account. A room must not publish itself as the
 	// machine's atrium.
 	if os.Getenv("ATRIUM_SHARED_LOCATION") == "" {
-		if err := os.Setenv("ATRIUM_SHARED_LOCATION", "-"); err != nil {
+		if err := os.Setenv("ATRIUM_SHARED_LOCATION", shared); err != nil {
 			return err
 		}
 	}
@@ -284,6 +305,29 @@ func hostname() string {
 // old one until there is something worth migrating. Pointing at the same file
 // would also mean two daemons with one sqlite database, which is the one thing
 // the store is not built for.
+// roomLocationEnv decides the two values that keep a room's hooks pointed at
+// itself: where it writes its own address, and whether it also publishes a
+// shared copy.
+//
+// A room never writes the shared copy, isolated or not: the shared file is the
+// machine's answer to "where is atrium", and a room is not the machine's atrium.
+// So the shared value is always `-`, which internal/daemon.SharedLocationPath
+// reads as "write none".
+//
+// The address file is where the difference lives. The normal room uses the
+// FIXED shared path so hooks, the CLI and the control MCP find it without being
+// told its dir. That is right for one room per machine and wrong for two: a
+// second room started the same way overwrites the pointer and steals the first
+// room's hooks. `--isolated` says this is that second, throwaway room, so its
+// address goes in a PRIVATE file beside its own `--dir` and the first room's
+// pointer is left alone.
+func roomLocationEnv(isolated bool, dir string) (location, shared string) {
+	if isolated {
+		return filepath.Join(dir, "daemon.json"), "-"
+	}
+	return roomLocation(), "-"
+}
+
 // roomLocation is the room's own address file, beside its database rather than
 // in the place the machine's atrium already owns.
 func roomLocation() string {

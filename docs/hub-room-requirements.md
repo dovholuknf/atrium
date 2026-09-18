@@ -155,6 +155,24 @@ atrium2 join <token> --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agen
 `atrium2 hub room ls` says what exists and which of them are here. `atrium2 hub room log` says what has happened
 to any of them, including ones that have since been removed.
 
+### A second room on ONE machine needs `--isolated`
+
+Different ports, dirs and databases are not enough to run two rooms on one machine. A room also writes down where
+its agents listen, in a FIXED shared file every hook, the CLI and the control MCP read to find it. Two rooms
+started the same way both write that one file, so the second overwrites it and every hook aimed at the first room
+starts arriving at the second. The symptom is not an error: it is activity landing on a board nobody is looking
+at. See `internal/daemon/whereami.go`.
+
+Pass `--isolated` to the second room. It keeps that address in a private file beside its own `--dir` and never
+touches the shared one, so the first room's hooks are left alone:
+
+```
+atrium2 join <token> --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agent 127.0.0.1:8021 --isolated
+```
+
+Two rooms on two DIFFERENT machines do not need it: each machine has its own shared file. The flag is only for a
+throwaway or second room sharing a machine with the one you care about.
+
 ### One thing that is not a guarantee
 
 **Order across rooms.** A merged list is every room's answer concatenated, and a merged stream is whichever
