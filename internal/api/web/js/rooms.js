@@ -118,7 +118,12 @@ function paintRooms() {
   // A room that has NEVER connected is not counted either. It cannot have
   // cards, so nothing is missing because of it: it is inventory, and the rooms
   // tab is where inventory lives.
-  const everConnected = hubInventory.filter(r => r.attached || r.first_seen).length;
+  //
+  // NEITHER IS THE HUB'S OWN MACHINE. Off is a switch somebody threw, not a
+  // room that went missing, so it must not sit in the denominator making the
+  // counter read as though something needs looking at.
+  const everConnected = hubInventory.filter(r =>
+    r.transport !== "local" && (r.attached || r.first_seen)).length;
   const known = Math.max(live, everConnected, room ? 1 : 0);
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
@@ -226,11 +231,17 @@ async function hubAttachedRows() {
   // is decision 3, and this is what that looks like on a machine running one
   // atrium by itself.
   if (!hubIsHub) return thisMachineRow();
-  await paintOwnRoomToggle();
   const rooms = hubInventory;
+  const own = await ownHubPanel();
 
-  if (!rooms.length) {
-    return `<div class="panel"><div class="empty">
+  // THE HUB'S OWN MACHINE IS NOT IN THE LIST. It is a special thing, drawn on
+  // its own above the rooms, so it never sorts in between athens and sparta as
+  // though it were another machine that dialled in. It is the one this board is
+  // served from.
+  const rest = rooms.filter(r => r.transport !== "local");
+
+  if (!rest.length) {
+    return own + `<div class="panel"><div class="empty">
       No rooms yet. A hub serves the board; the agents run on rooms, which are machines
       that dial in. <a href="#" onclick="openRoomJoin();return false;">Add one</a> to get started.
     </div></div>`;
@@ -238,11 +249,6 @@ async function hubAttachedRows() {
 
   // Live first, then rooms that have gone quiet, then ones that were added but
   // have never dialled in. What is running is what the board is for.
-  //
-  // The hub's own machine is not a room here: it is the checkbox above. When it
-  // is on it dials in like any other and lands in "here now"; when it is off it
-  // is not drawn as a room at all.
-  const rest = rooms.filter(r => r.transport !== "local" || r.attached);
   const live = rest.filter(r => r.attached);
   const off = rest.filter(r => !r.attached && r.first_seen);
   const never = rest.filter(r => !r.attached && !r.first_seen);
@@ -252,34 +258,63 @@ async function hubAttachedRows() {
        <span class="grow"></span><span class="by">${esc(hint)}</span></div>` +
     list.map(roomRow).join("");
 
-  return group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
+  return own +
+    group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
     group("offline", "these were here before. what they last held is remembered, " +
       "but you can't touch it until they're back", off) +
     group("added, waiting to connect", "run the join string on that machine", never);
 }
 
-// paintOwnRoomToggle draws the checkbox that turns the hub's own machine into a
-// room.
+// ownHubState is the last answer from /_hub/room, kept so the toggle knows the
+// room's name without asking again.
+let ownHubState = null;
+
+// ownHubPanel is the hub's own machine, drawn as its own thing.
 //
-// A CHECKBOX, NOT A ROOM ROW. The machine the hub runs on is not a room that
-// dialled in, so drawing it as one, with an empty "first seen" and "version",
-// was noise. It is a switch: on, and it dials in like any other room and shows
-// up in "here now" with its own cog; off, and it is just this one line.
-async function paintOwnRoomToggle() {
-  const wrap = document.getElementById("ownroom-toggle");
-  const box = document.getElementById("ownroom-on");
-  const note = document.getElementById("ownroom-note");
-  if (!wrap || !box) return;
-  let own;
-  try { own = await plainFetch("/_hub/room").then(x => x.json()); } catch (e) { }
-  if (!own || !own.available) { wrap.hidden = true; return; }
-  wrap.hidden = false;
-  box.checked = !!own.on;
-  if (note) {
-    note.textContent = own.on
-      ? "— running as " + (own.name || "this machine")
-      : "— off, so the hub stays quick to restart";
-  }
+// NOT A ROOM IN THE LIST. It is special: the machine this board is served from,
+// which can also run agents. Sorting it in among the rooms that dialled in read
+// as though it were one of them. So it sits above them, set apart, with its own
+// switch.
+async function ownHubPanel() {
+  try { ownHubState = await plainFetch("/_hub/room").then(x => x.json()); }
+  catch (e) { ownHubState = null; }
+  if (!ownHubState || !ownHubState.available) return "";
+  const on = !!ownHubState.on;
+  const name = esc(ownHubState.name || "this machine");
+  const cog = on
+    ? `<button class="ghost roomcog" data-room="${name}" title="settings for this machine"
+        >&#9881;</button>`
+    : "";
+  const button = on
+    ? `<button class="no" onclick="stopOwnRoom()">stop</button>`
+    : `<button class="go" onclick="setOwnRoom(true)">run agents here</button>`;
+  return `<div class="ownhub${on ? " on" : ""}">
+    <div class="col-head" style="margin:0 0 6px">
+      <span>this hub</span>
+      ${on ? `<span class="chip live idle">running as ${name}</span>` : ""}
+      <span class="grow"></span>
+      ${cog}
+      ${button}
+    </div>
+    <div class="hintline">${on
+      ? `This machine is running agents as well as serving the board. Restart the hub and
+         they stop, so keep anything that matters on a room.`
+      : `The hub can run agents on this machine too. Off keeps the hub quick to restart,
+         which is the whole point of keeping it separate from the rooms.`}</div>
+  </div>`;
+}
+
+// stopOwnRoom turns it off, and ASKS FIRST because it kills agents.
+//
+// Turning on is safe and immediate. Turning off ends whatever is running on
+// this machine, so it is the one direction that gets a question. Skippable,
+// because somebody who does it often knows what it does.
+async function stopOwnRoom() {
+  const ok = await confirmUser("stop running agents on the hub?",
+    "Anything running on this machine stops. The rooms are not touched.",
+    "stop", "stop-own-room");
+  if (!ok) return;
+  await setOwnRoom(false);
 }
 
 // thisMachineRow is the one row a board with no hub draws.

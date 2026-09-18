@@ -579,13 +579,6 @@ Pick a room and this whole board becomes that machine's atrium. Pick none and yo
       <button class="go" onclick="openRoomJoin()">add a room</button>
       <button class="go" onclick="openDispatch('')">queue work for a machine</button>
     </div>
-    <!-- The hub can run agents on its own machine too. A checkbox, not a room
-         row: it is a switch, and off by default so the hub stays cheap to
-         restart. Hidden on a plain daemon, which is already its own room. -->
-    <label class="check" id="ownroom-toggle" hidden style="margin-bottom:14px">
-      <input type="checkbox" id="ownroom-on" onchange="setOwnRoom(this.checked)">
-      also run agents on this hub <span class="by" id="ownroom-note"></span>
-    </label>
     <div id="room-list"></div>
 
     <div class="col-head r-section" data-pane="runners" style="margin:0 0 10px"><span>runners</span></div>

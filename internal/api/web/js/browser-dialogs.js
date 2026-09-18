@@ -321,7 +321,8 @@ const SKIP_LABELS = {
   "exit-terminal": "ask a runner to exit",
   "kill-runner": "terminate a runner",
   "move-while-pending": "move a card an agent is waiting on",
-  "hooks-nag": "tell me when claude hooks are not wired"
+  "hooks-nag": "tell me when claude hooks are not wired",
+  "stop-own-room": "stop running agents on the hub"
 };
 
 // The turned-off list, and the button that empties it.
