@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Control MCP phase 2, fixtures on/off from the board, and the board over a zrok share.**
+
+  Phase 2 finishes the hub-side control MCP. `restart_atrium` now forwards an instruction down the link and the
+  room restarts itself: it parks its other agents, spawns a detached restarter that outlives it, winds down, and
+  comes back via `atrium2 room`. One session can be restarted onto its own card with `--resume`, so a runner picks
+  up new defaults or clears an update nag without losing its conversation. Launch writes `BRIEF.md` on the room
+  again, so a hub-driven launch can hand a new session a briefing file. The room exports `ATRIUM_ROOM` to the
+  sessions it starts, so the per-session `X-Atrium-Room` header the http MCP registration carries actually
+  resolves. Separately, a fixture can be toggled on or off from its board pill without being deleted, and the hub
+  can optionally serve its board over a zrok share for remote access, with a failed share isolated so it never
+  takes the local board down.
+
 - **Control MCP moved off per-session stdio children onto one HTTP server on the hub (phase 1).**
 
   Every claude session spawned its own `atrium-control.exe` stdio child, one process per session at about 24MB,
