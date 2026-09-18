@@ -536,7 +536,21 @@ func (d *Daemon) startedOnto(taskID string) {
 	log.Printf("[atrium] %s was %s and now has a runner on it", t.DisplayTitle(), t.Status)
 }
 
+// Launch starts a runner, holding the card's and the resume's launch lock across
+// the whole call so its check-then-spawn region is atomic against another
+// caller. See keyedmutex.go: without this two launches onto one card, or two
+// resumes of one conversation, both pass the liveness guard before either
+// registers and both spawn.
+//
+// RestartRunner holds the same lock itself and calls launchLocked, so a restart
+// and a launch onto the same card serialize rather than braid.
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
+	unlock := d.launching.lock(launchKeys(req.TaskID, req.Resume)...)
+	defer unlock()
+	return d.launchLocked(req)
+}
+
+func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
 		return nil, fmt.Errorf("unknown harness %q", req.Harness)
