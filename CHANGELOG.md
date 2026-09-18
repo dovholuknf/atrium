@@ -5,6 +5,43 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Atrium is told where your repositories live, instead of walking the disk guessing.**
+
+  A provider is a name you choose, a root folder, and the layout under it. Defining one adopts every checkout
+  already there, so `D:/git/github` becomes forty repositories without any of them being added by hand. After
+  that, picking one is an org and a repo rather than a path you type.
+
+  It replaces a `projects` button that scanned for anything holding a `.git` two levels down and shelled out to
+  a command template to make a worktree. That inferred a layout from whatever directories happened to exist, had
+  no idea what an org was, and ran a command atrium could not see inside. The scan, the `worktree_command`
+  setting and the `project_scan_depth` setting are gone.
+
+  **The row is durable and whether it is on disk is worked out fresh.** That split is the whole design. Storing
+  presence means one run against an unplugged drive marks everything absent and a tidy-up deletes it. Deriving
+  the rows means the list is empty and the org and repo you typed are gone. Neither happens: the list is every
+  repository you ever adopted, greyed where the directory is missing, and plugging the drive back in restores
+  the picture with no action. Discovery only ever adds, so nothing you do to a disk can erase what you declared.
+
+  **Worktree support is a toggle with a folder, and it cannot be turned off while that folder holds anything.**
+  Turning it off would leave checkouts on disk with nothing describing them. The refusal names every entry
+  rather than saying "not empty", because otherwise you hunt, and a `check` button asks the same question
+  without saving. It counts directory entries rather than asking `git worktree list`, which sounds weaker and is
+  stronger: git cannot see a worktree whose repository was deleted, and that is exactly the one that must not be
+  silently abandoned.
+
+  **Making one runs `git worktree add` as an argv, with no shell.** The template it replaces had four defects
+  and every one of them was the shell: its default also started a session, so make then start started two; it
+  had to be quoted correctly under three grammars, which is why a branch name had to pass a regular expression
+  first; the resulting path had to be read back out of the output; and a repository name needed quoting. A
+  branch that does not exist yet is created off the repository's own HEAD.
+
+  Nothing about any forge is in the binary. A provider is a root and a layout: no URL parsing, no cloning, no
+  network call, no credential. And no card was touched, migrated or rewritten, including by deleting a
+  provider: a card's directory is a string you typed, and it outlives anything that describes it.
+
+  `docs/providers-design.md`, `docs/test-plan-z-providers.md`, and a recorded walkthrough at
+  `scripts/walkthrough/providers.spec.js`.
+
 - **One alert per event, in one form, wherever you are looking.**
 
   A chime with no notification behind it, every time a session was popped out into its own window. The beep is
@@ -895,30 +932,4 @@ section heading is just "what landed in this iteration."
     The shape of the list says host, then org, then repo, every time. Somebody reading it should not have to
     work out which rule applied to which row, and height is the wrong thing to spend that on.
   - **A heading directly under a heading sits tight to it.** Every level carried its own top margin, so
-    `github` followed by `openziti` paid for both and left a band of empty strip between two lines that belong
-    together.
-  - **The switcher has its own surface.** `body::before` lays a 60 pixel grid over the whole page at a third
-    opacity, which is a texture behind the board and reads as a defect behind a list: it draws bands across the
-    strip that line up with nothing in it, and the first question anybody asks is what the bands mean. It was
-    invisible while the list was wall to wall cards, and group headings leave gaps.
-
-- **Back and forward work on the board.**
-
-  The board is one page that swaps views and attaches terminals, and it kept none of that, so the browser's
-  back button either did nothing or left atrium entirely. Both moves are recorded now: switching view, and
-  switching session.
-
-  **The address bar is not touched**, and that is the part worth keeping. `#term=<id>` already means something
-  here, it is how a popped-out window resolves its card on load, so a view in the hash would make every reload
-  of a solo window a negotiation between two meanings of one string. That is why the view went to
-  `localStorage` in the first place. `pushState` carries a state object against the same URL, so the entries
-  exist and the address does not move. The two restores stay separate and each is right for its job:
-  `localStorage` answers "where was I yesterday" across a reload and a daemon restart, history answers "where
-  was I a moment ago" inside this visit.
-
-  Three things that are only obvious once they are wrong:
-
-  - **Going back must not record the arrival**, or forward points at where you just came from and the two
-    buttons walk in a circle.
-  - **Attaching pushes once, not twice.** `openTerm` switches view before the card is set, so the naive
-    version left `terms with nothing attached` between the view you came from a
+    `github` f

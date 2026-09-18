@@ -32,7 +32,11 @@ coverage.txt
 .DS_Store
 Thumbs.db
 
-walkthrough
+# ANCHORED, or it matches every directory of that name at any depth. Unanchored
+# it also swallowed `scripts/walkthrough`, which holds recorded walkthroughs
+# that ARE meant to be checked in, and a file nobody can see in `git status` is
+# a file nobody knows is not committed.
+/walkthrough
 docs/backlog
 
 # Notes comparing atrium to another tool. Local only, on purpose: they name a
@@ -41,3 +45,10 @@ docs/backlog
 # repository. What comes OUT of one is a backlog item that stands on its own and
 # names nobody.
 *-comparison*.md
+# Playwright, which is not a dependency of atrium and is installed only when
+# somebody wants to watch a recorded walkthrough. The specs under
+# scripts/walkthrough ARE checked in. What it downloads and what it produces
+# are not: a browser is 200MB and a video is an artefact of one run.
+node_modules
+package-lock.json
+test-results

@@ -1284,6 +1284,66 @@ var migrations = []struct {
 			   WHERE package = '' AND cmd LIKE '%codex%'`,
 		},
 	},
+	{
+		// WHERE A REPOSITORY LIVES ON THIS MACHINE, declared rather than
+		// rediscovered. See `docs/providers-design.md`.
+		//
+		// The operator names a provider and everything refers to it by that
+		// string, so the NAME is the primary key rather than a ULID with a name
+		// beside it. Same rule `docs/scm-design.md` states for import identity
+		// across machines: identity is by name, not by id. The cost is that
+		// renaming is a delete plus an add, which the dialog says on the field.
+		//
+		// `kind` carries no CHECK. Adding a second provider type would then be
+		// a table rebuild, because SQLite cannot alter a constraint in place,
+		// and the requirement is explicit that the type is a field and not an
+		// assumption. Validation lives in Go, where a new value is one line in
+		// a slice.
+		//
+		// `name_key`, `org_key` and `repo_key` are lowercase COLUMNS rather
+		// than COLLATE NOCASE. The schema is written to stay Postgres portable
+		// and NOCASE is SQLite's own spelling. They are also what stops
+		// `Dovholuknf/Atrium` and `dovholuknf/atrium` becoming two rows for one
+		// directory on a Windows filesystem.
+		//
+		// There is no `path` column and no `org` table. A path is derived from
+		// root plus org plus repo, and orgs are SELECT DISTINCT: an org is a
+		// directory that happens to hold repos, and storing one would mean
+		// deciding what an empty org folder is.
+		name: "0053_provider",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS provider (
+				name          TEXT PRIMARY KEY,
+				name_key      TEXT NOT NULL,
+				kind          TEXT NOT NULL DEFAULT 'git',
+				root          TEXT NOT NULL DEFAULT '',
+				worktrees     INTEGER NOT NULL DEFAULT 0,
+				worktree_root TEXT NOT NULL DEFAULT '',
+				host          TEXT NOT NULL DEFAULT '',
+				enabled       INTEGER NOT NULL DEFAULT 1,
+				exclude       TEXT NOT NULL DEFAULT '',
+				max_repos     INTEGER NOT NULL DEFAULT 0,
+				last_error    TEXT NOT NULL DEFAULT '',
+				last_scan_at  TEXT NOT NULL DEFAULT '',
+				last_scan     TEXT NOT NULL DEFAULT '',
+				created_at    TEXT NOT NULL,
+				updated_at    TEXT NOT NULL
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_name_key ON provider (name_key)`,
+			`CREATE TABLE IF NOT EXISTS provider_repo (
+				provider   TEXT NOT NULL REFERENCES provider(name) ON DELETE CASCADE,
+				org        TEXT NOT NULL DEFAULT '',
+				repo       TEXT NOT NULL,
+				org_key    TEXT NOT NULL DEFAULT '',
+				repo_key   TEXT NOT NULL,
+				hidden     INTEGER NOT NULL DEFAULT 0,
+				adopted_at TEXT NOT NULL,
+				notes      TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (provider, org_key, repo_key)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_provider_repo_provider ON provider_repo (provider)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
