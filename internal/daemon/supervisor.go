@@ -1568,6 +1568,18 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		log.Printf("[atrium] runner for %s is still up, killing it", r.taskID)
 		if r.cmd.Process != nil {
 			_ = r.cmd.Process.Kill()
+			// Wait for the kill to actually take before returning, so a caller
+			// that does not poll for the slot to clear can trust that the runner
+			// is gone. StopRunner's RestartRunner caller polls waitRunnerGone and
+			// was covered, but Shelve and exitRunner do not, and returning here
+			// while r.done had not fired left the supervisor entry live under a
+			// call that reported success. Bounded, because shutdown is bounded.
+			select {
+			case <-r.done:
+				log.Printf("[atrium] runner for %s stopped after being killed", r.taskID)
+			case <-time.After(2 * time.Second):
+				log.Printf("[atrium] runner for %s did not exit even after a kill", r.taskID)
+			}
 		}
 	}
 }

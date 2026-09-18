@@ -132,6 +132,16 @@ type Daemon struct {
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
+	// launching serializes the check-then-spawn region of a launch, keyed by the
+	// card and the resume id. Without it two restarts or launches onto one card
+	// both pass the "is a runner live" guard before either registers, and both
+	// resume the same conversation. See keyedmutex.go and launch.go.
+	launching *keyedMutex
+
+	// closeOnce guards releasing the store, so the shutdown path and a caller's
+	// deferred Close cannot both close the database. See closeDB.
+	closeOnce sync.Once
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -172,6 +182,7 @@ func New(opts Options) (*Daemon, error) {
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
+		launching: newKeyedMutex(),
 	}
 	// Card icons live beside the database, which is the one directory atrium
 	// already owns and already backs up with the rest of its state.
@@ -397,7 +408,19 @@ func (d *Daemon) Hub() *hub.Hub { return d.hb }
 func (d *Daemon) Store() *store.Store { return d.st }
 
 // Close releases the database.
-func (d *Daemon) Close() error { return d.st.Close() }
+func (d *Daemon) Close() error { return d.closeDB() }
+
+// closeDB releases the store at most once.
+//
+// The shutdown path closes it explicitly so the detached room restarter's
+// invariant is real rather than incidental (see shutdown and
+// cmd/atrium2/restart.go), and a caller that keeps a `defer d.Close()` must not
+// then close it a second time. The once makes both callers safe.
+func (d *Daemon) closeDB() error {
+	var err error
+	d.closeOnce.Do(func() { err = d.st.Close() })
+	return err
+}
 
 // reportRunners says which configured runners this machine actually has.
 //
@@ -1059,6 +1082,17 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 			log.Printf("[atrium] stopped in %s", time.Since(start).Round(time.Millisecond))
 			return
 		}
+	}
+
+	// Release the database before Run returns, so the invariant the detached room
+	// restarter relies on is explicit rather than incidental. It treats a free
+	// --http port as proof the old room and its sqlite handle are gone, and that
+	// was true only because the process exits right after Run returns and the OS
+	// releases the handle. Closing it here makes it a thing the code does rather
+	// than a thing the OS happens to do. See cmd/atrium2/restart.go's
+	// waitForRoomRestart. Idempotent, so a caller's deferred Close is still safe.
+	if err := d.closeDB(); err != nil {
+		log.Printf("[atrium] closing the database: %v", err)
 	}
 
 	log.Printf("[atrium] state is on disk at %s", d.opts.DBPath)
