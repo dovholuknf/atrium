@@ -42,6 +42,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,11 @@ type Store struct {
 	OnHalt func(cause error)
 
 	fresh bool
+
+	// incrementalVacuum is whether this database is in incremental auto_vacuum
+	// mode, read back once at Open. Only such a database keeps free pages the
+	// hub can hand back to disk, so VacuumLoop is a no-op otherwise.
+	incrementalVacuum bool
 }
 
 // Fresh reports whether Open made the database rather than found one.
@@ -121,6 +127,18 @@ func Open(path string) (*Store, error) {
 	// keeps readers off the writer's back and busy_timeout absorbs most
 	// contention before it reaches the retry loop below.
 	db.SetMaxOpenConns(1)
+	// auto_vacuum only takes on a database with no tables yet, so it is set on a
+	// FRESH file before migrations create the schema, and before WAL is turned
+	// on. The hub's own store is small, but the room_card cache is rewritten
+	// wholesale on every announce, which churns pages, and incremental mode is
+	// what lets that freed space go back to disk while the hub stays up. An
+	// existing file is left as it was: switching needs a full VACUUM.
+	if fresh {
+		if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL"); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("PRAGMA auto_vacuum = INCREMENTAL: %w", err)
+		}
+	}
 	for _, pragma := range []string{
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA busy_timeout = 5000",
@@ -141,7 +159,18 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, fresh: fresh}
+	// Read back the mode in force. A fresh file is now incremental; an existing
+	// one is whatever it was made as, and one not in incremental mode is left
+	// alone and said quietly so a file that never shrinks is not a mystery.
+	incremental, err := autoVacuumIncremental(db)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("read auto_vacuum: %w", err)
+	}
+	if !fresh && !incremental {
+		log.Printf("[hub] %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
+	}
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
