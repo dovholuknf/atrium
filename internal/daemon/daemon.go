@@ -856,6 +856,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// Handing the space a prune or an event roll-off freed back to disk, a
+	// bounded batch at a time while the room stays live. A no-op on an older
+	// database not in incremental auto_vacuum mode. See vacuum.go.
+	go d.vacuumLoop(ctx, VacuumEvery)
 	// The commands that find work. Its own loop rather than the reap ticker,
 	// because a source runs on the interval its own row names and the reaper
 	// asks one question at one rate. Nothing here can halt anything: intake is
