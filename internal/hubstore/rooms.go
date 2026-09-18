@@ -140,6 +140,50 @@ func (s *Store) Add(name, transport string) (*Room, error) {
 	return r, nil
 }
 
+// DropDefunctLocalRooms removes rows left by the old "the hub can be its own
+// room" feature.
+//
+// A ONE-TIME MIGRATION, run at startup. Those rows carried transport `local`
+// and were fed by an in-process room that no longer exists, so nothing will
+// ever dial in for them: left alone they draw on the board as a room that is
+// permanently offline. Deleting them takes the cache and secret with them by
+// cascade, which is correct, because there is no machine on the other end.
+//
+// Named in the audit so a hub that quietly loses a row can say why. Answers how
+// many went.
+func (s *Store) DropDefunctLocalRooms() (int, error) {
+	var gone int
+	err := s.guard(func() error {
+		rows, err := s.db.Query(`SELECT id, name FROM room WHERE transport = 'local'`)
+		if err != nil {
+			return err
+		}
+		var found [][2]string
+		for rows.Next() {
+			var id, name string
+			if err := rows.Scan(&id, &name); err != nil {
+				rows.Close()
+				return err
+			}
+			found = append(found, [2]string{id, name})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, r := range found {
+			if _, err := s.db.Exec(`DELETE FROM room WHERE id = ?`, r[0]); err != nil {
+				return err
+			}
+			s.Log(&Room{ID: r[0], Name: r[1]}, "removed",
+				"the hub can no longer be its own room, so this row was dropped")
+			gone++
+		}
+		return nil
+	})
+	return gone, err
+}
+
 // checkName refuses names that would not survive being a room.
 //
 // The name travels in a certificate's common name, in a URL path segment, and
