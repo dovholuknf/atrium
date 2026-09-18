@@ -253,16 +253,19 @@ async function hubAttachedRows() {
   const off = rest.filter(r => !r.attached && r.first_seen);
   const never = rest.filter(r => !r.attached && !r.first_seen);
 
-  const group = (title, hint, list) => !list.length ? "" :
-    `<div class="col-head roomgroup"><span>${esc(title)}</span>
-       <span class="grow"></span><span class="by">${esc(hint)}</span></div>` +
-    list.map(roomRow).join("");
+  // HEADERS ONLY WHEN THERE IS MORE THAN ONE KIND. When every room is just
+  // connected, "here now" over the top of them is a label for the obvious. It
+  // earns its place only when it is telling live apart from offline.
+  const kinds = [live, off, never].filter(g => g.length).length;
+  const group = (title, list) => !list.length ? "" :
+    (kinds > 1
+      ? `<div class="roomgroup"><span>${esc(title)}</span></div>` : "") +
+    `<div class="panel roomlist">` + list.map(roomRow).join("") + `</div>`;
 
   return own +
-    group("here now", live.length === 1 ? "1 room" : live.length + " rooms", live) +
-    group("offline", "these were here before. what they last held is remembered, " +
-      "but you can't touch it until they're back", off) +
-    group("added, waiting to connect", "run the join string on that machine", never);
+    group("here now", live) +
+    group("offline", off) +
+    group("added, not yet connected", never);
 }
 
 // ownHubState is the last answer from /_hub/room, kept so the toggle knows the
@@ -289,18 +292,15 @@ async function ownHubPanel() {
     ? `<button class="no" onclick="stopOwnRoom()">stop</button>`
     : `<button class="go" onclick="setOwnRoom(true)">run agents here</button>`;
   return `<div class="ownhub${on ? " on" : ""}">
-    <div class="col-head" style="margin:0 0 6px">
-      <span>this hub</span>
-      ${on ? `<span class="chip live idle">running as ${name}</span>` : ""}
+    <div class="roomrow-top">
+      <b class="roomname">this hub</b>
+      ${on ? `<span class="chip live idle">running as ${name}</span>`
+           : `<span class="by">the machine the board runs on</span>`}
       <span class="grow"></span>
       ${cog}
       ${button}
     </div>
-    <div class="hintline">${on
-      ? `This machine is running agents as well as serving the board. Restart the hub and
-         they stop, so keep anything that matters on a room.`
-      : `The hub can run agents on this machine too. Off keeps the hub quick to restart,
-         which is the whole point of keeping it separate from the rooms.`}</div>
+    ${on ? `<div class="hintline">Also running agents. Restart the hub and they stop.</div>` : ""}
   </div>`;
 }
 
@@ -324,18 +324,15 @@ async function stopOwnRoom() {
 // no state chip either, for the same reason. What it carries is the cog, which
 // is the whole point of drawing it.
 function thisMachineRow() {
-  return `<div class="panel roomrow">
-    <div class="col-head" style="margin:0 0 8px">
-      <span>this machine</span>
+  return `<div class="panel roomlist"><div class="roomrow has-hint">
+    <div class="roomrow-top">
+      <b class="roomname">this machine</b>
       <span class="grow"></span>
       <button class="ghost roomcog" data-room="" title="settings for this machine"
         >&#9881;</button>
     </div>
-    <div class="hintline">The editor command, where pasted files land, what the picker may
-      open, the worktree command, the shell and the scrollback are all behind that cog.
-      They are facts about this machine, and a board serving several would ask them of
-      each one separately.</div>
-  </div>`;
+    <div class="hintline">Editor, paste, shell and scrollback settings are behind the cog.</div>
+  </div></div>`;
 }
 
 // roomRow is one room, however it is doing.
@@ -346,25 +343,20 @@ function thisMachineRow() {
 // The header says which one you are in.
 function roomRow(r) {
   const here = roomNow() === r.name;
-  // WHAT THE MACHINE CALLS ITSELF, BESIDE WHAT IT IS CALLED, never instead of.
-  // The hub's name is the name and routes. The machine's own is observed, and
-  // what a machine reports never overwrites what a human typed.
-  const self = r.self_name && r.self_name.toLowerCase() !== String(r.name).toLowerCase()
-    ? `<span class="by">calls itself ${esc(r.self_name)}</span>` : "";
-  return `<div class="panel roomrow">
-    <div class="col-head" style="margin:0 0 8px">
-      <span>${esc(r.name)}</span>
+  const line = roomLine(r);
+  return `<div class="roomrow${line ? " has-hint" : ""}">
+    <div class="roomrow-top">
+      <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.transport)}
       ${roomState(r)}
       ${r.marked || r.state === "marked-for-deletion"
         ? `<span class="chip no">marked for deletion</span>` : ""}
-      ${here ? `<span class="chip">the board is scoped to this one</span>` : ""}
+      ${here ? `<span class="chip">showing this one</span>` : ""}
       <span class="grow"></span>
-      ${self}
       <button class="ghost roomcog" data-room="${esc(r.name)}"
         title="settings for this room">&#9881;</button>
     </div>
-    <div class="hintline">${roomLine(r)}</div>
+    ${line ? `<div class="hintline">${line}</div>` : ""}
   </div>`;
 }
 
@@ -401,25 +393,17 @@ function roomState(r) {
 // roomLine is the sentence under a room, and it is different for each state
 // because the useful thing to say about each one is different.
 function roomLine(r) {
-  if (r.attached && r.transport === "local") {
-    return `The machine this hub runs on, also running agents. Untick the box above to stop.`;
-  }
-  if (r.attached) {
-    return `Runs on that machine. You reach it through this board. Restart the hub and
-      it keeps running.`;
-  }
+  // A LIVE ROOM NEEDS NO LINE. It is attached, it works, and repeating that
+  // under every row was the noise. Only say something when there is something
+  // to do about it.
+  if (r.attached) return "";
   if (!r.first_seen) {
     return r.waiting
-      ? `Waiting for that machine to connect. Run <code>atrium2 join</code> there with the
-         string you were given.`
-      : `Never connected. Run <code>atrium2 hub room token ${esc(r.name)}</code> for a fresh
-         join string.`;
+      ? `Waiting to connect — run the join string on that machine.`
+      : `Never connected. <code>atrium2 hub room token ${esc(r.name)}</code> for a new one.`;
   }
-  // Offline: say so plainly, so nobody finds out by clicking.
-  const cards = r.cards
-    ? `Held ${r.cards} card${r.cards === 1 ? "" : "s"} when it was last here. `
-    : "";
-  return cards + `Offline. You can't open or change anything until it's back.`;
+  const cards = r.cards ? `${r.cards} card${r.cards === 1 ? "" : "s"} last seen. ` : "";
+  return cards + `Offline until it's back.`;
 }
 
 // loadInventory asks what rooms EXIST, which is a different question from what
