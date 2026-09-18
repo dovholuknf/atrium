@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Control MCP moved off per-session stdio children onto one HTTP server on the hub (phase 1).**
+
+  Every claude session spawned its own `atrium-control.exe` stdio child, one process per session at about 24MB,
+  a dozen live at once. A single HTTP MCP server now runs on the hub at `/_hub/mcp`, so a session opens a
+  connection from inside its own claude process instead of spawning anything. It lives on the hub for the same
+  reason `internal/cli/control.go` exists: the thing that restarts a daemon has to outlive it, and the hub
+  already outlives rooms. Identity arrives per request in headers rather than per process in env: each session
+  sends `X-Atrium-Agent` and `X-Atrium-Room`, which Claude Code expands per session at connect, and the server
+  runs stateless. Loopback only, guarded on the caller's own RemoteAddr, because the overlay is not an auth
+  layer. Phase 1 ships `atrium_status` and the peer tools (peers, say, task, exit, and launch without its brief
+  file); `restart_atrium` and launch's brief return "not yet wired" until phase 2 adds the room-side handler.
+  Turning it on is a manual flip of the `atrium-control` entry in `.atrium/mcp.json` from the stdio child to the
+  http URL.
+
 - **Board terminal bar and path chip tidied, shipped by hub-only restart.**
 
   Two board-CSS fixes, each built from a `claude/*` worktree and deployed by rebuilding `atrium2`, swapping the
