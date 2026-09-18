@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Databases give freed space back to disk.**
+
+  New room and hub databases open in SQLite incremental auto-vacuum mode, and a timer reclaims freed pages while the
+  daemon runs, so a store that pruned cards or rolled off history shrinks on its own instead of sitting at its
+  high-water mark. Existing databases are left as they are, because the mode cannot be switched without a full
+  rebuild, and the reclaim is a no-op when there is nothing to free. This is the complement to the event sink: the
+  sink keeps the database small going forward, this hands the space already freed back to the disk.
+
 - **A terminal theme through the launch tool, and a pluggable event sink (phase 1).**
 
   `atrium_launch` now takes a `theme`, so a session started through the hub control MCP comes up in the palette the
