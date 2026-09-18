@@ -33,6 +33,12 @@ type Options struct {
 	HumanAddr string        // human-facing listener, e.g. ":7778"
 	DBPath    string        // sqlite file
 	LongPoll  time.Duration // agent long-poll ceiling
+	// Room is the hub-facing name this daemon is known by, when it is a room
+	// attached to a hub. It is exported to every launched session as
+	// ATRIUM_ROOM, so the session's HTTP control MCP registration can send
+	// X-Atrium-Room and the hub can scope its control calls to this room. Empty
+	// for a daemon with no hub, where there is no room to name.
+	Room string
 	// ShutdownToken guards POST /v1/shutdown. Empty means loopback only.
 	// Setting one says the endpoint is meant to be reachable remotely.
 	ShutdownToken string
@@ -204,6 +210,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
+	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
 	d.ap.SaveOverlay = d.saveOverlay
