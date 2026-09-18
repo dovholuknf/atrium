@@ -32,6 +32,27 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Hold the card's launch lock across the whole stop-then-start, and around the
+	// ownership check itself. Between stopping the old process and registering the
+	// new one there is a window in which this card owns no runner, and a second
+	// restart or a Launch onto this card would pass its liveness guard and spawn a
+	// second process resuming the same conversation. That is the braided
+	// transcript. The resume id is locked too, so a launch resuming the same
+	// conversation onto a different card cannot slip through either. Launch takes
+	// the same lock, so the two paths serialize. See keyedmutex.go and launch.go's
+	// resumeIsFree and ontoRefusal.
+	//
+	// Keyed on the card's current resume id. It is the conversation id the runner
+	// records and it is stable across a restart, so it matches the id the launch
+	// below actually resumes even though that is re-read after the exit.
+	//
+	// The `sup.get` check is INSIDE the lock: a concurrent restart that already
+	// holds it may be mid stop-then-start, when this card momentarily owns no
+	// runner, and checking before the lock would read that gap as "nothing to
+	// restart" and refuse a card that is about to have a runner again.
+	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	defer unlock()
+
 	// Only a session atrium owns can be restarted from here. A window-mode
 	// launch owns itself and a session that joined by hand belongs to whoever
 	// started it, so there is no terminal here to exit and nothing to relaunch.
@@ -77,7 +98,9 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 		Resume:  d.reopenResume(fresh),
 		Model:   fresh.Model,
 	}
-	started, err := d.Launch(req)
+	// launchLocked, not Launch: this call already holds the launch lock for this
+	// card and resume, and Launch would try to take it again.
+	started, err := d.launchLocked(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not start %s again: %w", fresh.DisplayTitle(), err)
 	}
