@@ -167,6 +167,30 @@ func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
 	}
 }
 
+func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
+	var gotTheme string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Theme string `json:"theme"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotTheme = body.Theme
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "card1", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir", Theme: "tangent"})
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if gotTheme != "tangent" {
+		t.Errorf("the room got theme %q, want it forwarded", gotTheme)
+	}
+}
+
 func TestRestartRefusesWithNoRoom(t *testing.T) {
 	c := &controlMCP{hub: NewHub(Timings{})}
 	_, _, err := c.restartHandler(context.Background(), ctlReq("a", ""), restartInput{})
