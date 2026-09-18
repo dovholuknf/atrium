@@ -109,4 +109,29 @@ enforces, which is where retention belongs.
 - Whether output events belong in the event log at all, or are a separate stream from the start. They are the
   bulk and the least like an audit event.
 
+### Reclaiming space the bound leaves behind
+
+The hot window stops the database growing, but it does not shrink a file that already grew. SQLite frees pages
+inside the file when rows are deleted or rolled off and reuses them for new writes, so the file stays at its high
+water mark. A 40 MB file that pruned down to a few MB of live data keeps sitting at 40 MB. Only `VACUUM` rebuilds
+the file and returns the space to disk.
+
+The catch is that `VACUUM` needs exclusive access. A room holds its database open to run the agents' terminals,
+so vacuuming in place means taking the room down, which kills those terminals. That is the wrong price for
+reclaiming disk. Options to design for, in rough order of preference:
+
+- **`auto_vacuum=INCREMENTAL` from the start**, with `PRAGMA incremental_vacuum` run on a timer against free
+  pages. This trims the file gradually while the room stays up, at the cost of some write overhead and a decision
+  made at database creation (it cannot be turned on for an existing file without one full rebuild). New rooms
+  could adopt it now.
+- **A `VACUUM INTO` copy plus swap on a clean handoff**: the room writes a compacted copy while live, then swaps
+  it in during a controlled restart when the terminals are already parked (a scheduled maintenance window, or the
+  reload-design binary swap that already restarts on a build id). Reuses machinery that exists rather than a new
+  stop-the-world path.
+- **Accept the high water mark** once the hot window bounds growth. If the file plateaus at a bounded size, never
+  reclaiming is a fine answer and the simplest one. This is the default until the plateau proves too large.
+
+The event sink makes this smaller either way: move the bulk (`output` and old audit rows) out to files or
+offsite, and the primary database plateaus low enough that shrinking it stops mattering.
+
 ------------
