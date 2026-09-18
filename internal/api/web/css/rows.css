@@ -142,8 +142,9 @@
      the text baseline, which puts a square icon low against lowercase letters and made it look like it was
      falling out of the chip. */
   #t-chips .chip.path {
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 3px;
     cursor: text; user-select: text;
+    padding: 1px 6px 1px 4px;
   }
   /* `all: unset` rather than a list of overrides. A button carries a padding, a border, a background, a font
      and a line-height of its own, and undoing four of the five left the fifth to make the chip taller than
