@@ -731,7 +731,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 			h.ID, firstLine(h.Prepare))
 	}
 
-	env := childEnvFrom(base, h.Env, map[string]string{
+	atrium := map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
 		// Which harness this is, for the hooks it will run.
@@ -743,7 +743,16 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// started, so it says so, and the hook prefers this over the runner
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
-	})
+	}
+	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
+	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
+	// Only set when this daemon is a room: a plain daemon with no hub has no
+	// room to name, and an empty value would leave every session's control
+	// calls to the aggregate view, which is the honest answer there.
+	if room := strings.TrimSpace(d.opts.Room); room != "" {
+		atrium["ATRIUM_ROOM"] = room
+	}
+	env := childEnvFrom(base, h.Env, atrium)
 	via := ""
 
 	if h.LaunchMode == store.LaunchPTY {
@@ -930,8 +939,11 @@ func inheritedTaint(key string) bool {
 		return true
 	case strings.HasPrefix(upper, "CLAUDECODE"):
 		return true
-	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" || upper == "ATRIUM_RUNNER":
-		// Replaced below with this launch's own values.
+	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" ||
+		upper == "ATRIUM_RUNNER" || upper == "ATRIUM_ROOM":
+		// Replaced below with this launch's own values. ATRIUM_ROOM is here too
+		// so a daemon started from inside a session cannot leak that session's
+		// room to the ones it launches: a child gets THIS daemon's room or none.
 		return true
 	}
 	return false

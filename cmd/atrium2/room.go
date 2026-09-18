@@ -181,6 +181,10 @@ func runRoom(keys link.Keys, db, human, agent string) error {
 		HumanAddr: human,
 		AgentAddr: agent,
 		DBPath:    db,
+		// THE HUB-DECIDED NAME, the same one the link attaches under below, so
+		// every session this room launches carries ATRIUM_ROOM and its HTTP
+		// control MCP registration can name this room to the hub.
+		Room: saved.Room,
 	})
 	if err != nil {
 		return err
