@@ -1037,7 +1037,15 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+	// rolled_off tells the board that older events left the db hot window, so it
+	// can say history rolled off rather than present the window as the whole
+	// history. False under the default, where nothing rolls off.
+	rolledOff, err := s.st.HistoryRolledOff(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff})
 }
 
 // reviewTask answers "what did this session actually do".
