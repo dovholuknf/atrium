@@ -41,6 +41,11 @@ type Room struct {
 	// the default: a hub may say what it is running and nothing happens. See
 	// `upgrade.go`.
 	Upgrades *Upgrades
+	// OnRestart is what the room does when its hub asks it to restart itself.
+	// Nil ignores the ask, which is the default and is right for a room with no
+	// restarter wired: a hub cannot make a room restart, it can only ask. See
+	// RestartAsk and cmd/atrium2's wiring.
+	OnRestart func(RestartAsk)
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -228,6 +233,17 @@ func (r *Room) attach(ctx context.Context) error {
 			// own schedule would either starve the pool under load or hold
 			// sockets open that nothing will ever use.
 			r.open(ctx, n.Need, w.Session)
+		case n.Restart != nil:
+			// A hub asking this room to restart itself. Handled off this loop, in
+			// its own goroutine, because the handler parks agents and waits, and
+			// blocking the reader would stop the heartbeat and make the room look
+			// dead while it does exactly what it was told. Ignored entirely when
+			// no restarter is wired: a hub cannot make a room restart.
+			if r.OnRestart != nil {
+				go r.OnRestart(*n.Restart)
+			} else {
+				log.Printf("[link] the hub asked this room to restart, but no restarter is wired")
+			}
 		}
 	}
 }

@@ -55,12 +55,15 @@ const AgentHeader = "X-Atrium-Agent"
 const controlTimeout = 8 * time.Second
 
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
-// board, and a client to do it with.
+// board, a client to do it with, and the hub to forward a restart over.
 type controlMCP struct {
 	// board is the loopback base for this hub's own API, e.g.
 	// http://127.0.0.1:7778. See loopbackBase.
 	board  string
 	client *http.Client
+	// hub forwards a restart_atrium down the link to a room. Nil in a test that
+	// only exercises the read tools.
+	hub *Hub
 }
 
 // newControlHandler builds the hub-side control MCP server as an http.Handler,
@@ -69,8 +72,8 @@ type controlMCP struct {
 // ONE SERVER FOR EVERY REQUEST, and that is correct rather than a shortcut: the
 // tools read who is calling from the per-request header, never from the server,
 // so there is nothing per session to build. `getServer` returns the same one.
-func newControlHandler(board string) http.Handler {
-	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}}
+func newControlHandler(board string, hub *Hub) http.Handler {
+	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub}
 	srv := c.server()
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
@@ -159,12 +162,16 @@ func (c *controlMCP) server() *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "restart_atrium",
-		Description: "Wind a room's daemon down and bring it straight back.\n\n" +
-			"NOT YET WIRED ON THIS ROOM. From the hub a restart is an instruction forwarded to " +
-			"the room over the link, and the room-side handler that receives it, parks the other " +
-			"agents and spawns the detached restarter is installed by phase 2. Until then this " +
-			"returns a note rather than doing anything. To restart now, run it on the machine " +
-			"the room is on.",
+		Description: "Wind a room's daemon down and bring it straight back on the same database.\n\n" +
+			"FORWARDED TO THE ROOM. The hub spawns nothing on the room's machine: it sends the " +
+			"instruction over the link and the room parks its other agents, spawns a detached " +
+			"restarter that outlives it, and winds down. Scoped to your room via X-Atrium-Room.\n\n" +
+			"SCHEDULED, not immediate. It returns at once and the restart happens a moment later, " +
+			"because it takes down every terminal the room owns, this session included if it is " +
+			"one of them. Say what you are doing before you call this, and expect to be resumed " +
+			"rather than answered.\n\n" +
+			"OTHER AGENTS ARE PARKED FIRST. Any supervised session that is working is told what is " +
+			"coming and given time to stop. Pass `force` to restart even if some are still busy.",
 	}, c.restartHandler)
 
 	return s
@@ -656,23 +663,39 @@ type restartInput struct {
 
 type restartOutput struct {
 	Scheduled bool   `json:"scheduled"`
+	Room      string `json:"room,omitempty"`
 	Note      string `json:"note"`
 }
 
-// restartHandler is a phase-1 stub. Restarting a room from the hub means sending
-// an instruction down the link for the room to act on: park its other agents,
-// spawn the detached restarter that outlives it, wind down. That receiver is a
-// room-side change, which is phase 2. Until then this says so rather than
-// failing obscurely, so a caller learns the state instead of a stack trace.
-func (c *controlMCP) restartHandler(_ context.Context, _ *mcp.CallToolRequest, _ restartInput) (
+// restartHandler forwards a restart instruction to the caller's room.
+//
+// It names a room or it does nothing: a restart with no room is a restart of
+// "whichever", and that is exactly the mistake this must not make. The hub only
+// forwards; the room parks, spawns the detached restarter and winds down, so the
+// answer here is "instructed", not "done". See Hub.AskRestart and the room's
+// OnRestart.
+func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest, in restartInput) (
 	*mcp.CallToolResult, restartOutput, error) {
 
-	return nil, restartOutput{
-		Scheduled: false,
-		Note: "not yet wired on this room. restarting a room from the hub needs the room-side " +
-			"handler that phase 2 installs. until then, run the restart on the machine the room " +
-			"is on.",
-	}, nil
+	room := roomOf(req)
+	out := restartOutput{Room: room}
+	if room == "" {
+		return nil, out, fmt.Errorf("no room named. a restart has to name the room to restart, " +
+			"which comes from X-Atrium-Room. call from a session that has one")
+	}
+	if c.hub == nil {
+		return nil, out, fmt.Errorf("this hub cannot forward a restart")
+	}
+	if err := c.hub.AskRestart(room, RestartAsk{
+		Why: strings.TrimSpace(in.Why), Force: in.Force, WaitSeconds: in.WaitSeconds,
+	}); err != nil {
+		return nil, out, fmt.Errorf("could not ask %s to restart: %w", room, err)
+	}
+	out.Scheduled = true
+	out.Note = "asked " + room + " to restart. it parks its other agents, then winds down and " +
+		"comes back on the same database. if this session is on that room it goes down too: say " +
+		"nothing further this turn and expect to be resumed."
+	return nil, out, nil
 }
 
 // ── mounting ──────────────────────────────────────────────────────────────────────
