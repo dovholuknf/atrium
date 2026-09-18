@@ -346,10 +346,16 @@
   .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
   /* A glyph does not want the padding a word does. The rule above is tuned for `ctrl-c` and `exit` and is
      roughly twice as wide as it should be around a single character, so the folder and the cog sat in buttons
-     with more air than content. Squared off here: equal padding on four sides, sized from the glyph. */
+     with more air than content. Squared off here: tighter side padding, sized from the glyph.
+     The global `button.icon` (dialogs.css) loads after this file and wins the ties, so without the lines below
+     the folder and the cog took its 23px glyph and its transparent box and stood taller and boxless beside the
+     worded buttons. Font size, line height and the chip box are pinned here so they match `ctrl-c` and `exit`. */
   .term-bar button.icon {
-    padding: 6px 8px; min-width: 0; line-height: 1.15;
+    padding: 5px 9px; min-width: 0; line-height: 1;
+    font-size: var(--fs-lg); color: var(--body);
+    background: var(--chip); border-color: var(--stroke-dim);
   }
+  .term-bar button.icon:hover { color: var(--head); border-color: var(--blue); background: var(--btn-hover); }
   /* No height of its own. The bar and the help line take what they need and this takes the rest, so nothing
      has to guess how tall they are. */
   /* The horizontal gap has to be a margin rather than padding. Do not put padding back.
