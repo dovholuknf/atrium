@@ -734,6 +734,9 @@ function connectTerm(taskID) {
     // its own: leaving it armed would make a session ended half an hour from
     // now look like the tail of this restart.
     restartAt = 0;
+    // Back after a single-session restart too, for the same reason. The card is
+    // up, so the expectation has done its job and a later exit is an exit.
+    clearSessionRestart(taskID);
     termWait("");
     if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
@@ -804,6 +807,22 @@ function connectTerm(taskID) {
     // and either one arriving is enough, so this fills in the announcement
     // when the event was the one that got lost.
     if (why === "restarting" && !restartComing()) restartAt = Date.now();
+
+    // THIS ONE SESSION was asked to restart from the cog. The daemon exits the
+    // runner and lands the same conversation on the same card a few seconds
+    // later, so `runner exited` here is expected and is not the end of
+    // anything. Ahead of that branch, which would otherwise mark the pane dead
+    // and detach. Scoped to this card and short-lived, so a plain exit after
+    // the window is still an exit. See `armSessionRestart`.
+    if (sessionRestartComing(taskID)) {
+      attachSaidGone = false;
+      if (!attachSince) attachSince = Date.now();
+      if (Date.now() - attachSince < attachRetryFor) {
+        termWait("restarting " + waitName(termTask) + ". reconnecting…");
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+        return;
+      }
+    }
 
     // A SHELL CLOSING IS NOT A SESSION GOING AWAY, and every branch below this
     // one assumes it is.
