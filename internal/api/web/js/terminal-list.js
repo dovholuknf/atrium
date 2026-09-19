@@ -592,12 +592,18 @@ function termRow(t, deep) {
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
-  // Both empty for most rows. See termExtraName and termNoteDuplicates.
-  const extra = termExtraName(t);
   const tail = termSuffix.get(t.id) || "";
-  const shown = (deep ? leaf : full) + tail;
-  // The hover keeps the whole address whatever the row had room to draw.
-  const hover = full + tail + (extra ? ": " + extra : "");
+  // THE NAME LEADS, THE ADDRESS FOLLOWS. Every session in one checkout derives
+  // the same address, so a row led by the address buried the one thing that tells
+  // them apart: the name somebody gave it. So `display_title` is the primary label
+  // and the address is a dim second line under it. A card with no name of its own
+  // has only the address to show, and then that is the single line it draws.
+  const path = (deep ? leaf : full) || "";
+  const named = String((t && t.display_title) || "").trim();
+  const primary = (named || path) + tail;
+  const secondary = named ? path : "";
+  // The hover keeps the whole address and the name whatever the row had room to draw.
+  const hover = named ? named + " · " + full + tail : full + tail;
   return `
     <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
@@ -619,20 +625,16 @@ function termRow(t, deep) {
             title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
-            class="tname" title="${esc(hover)}">${esc(shown)}</span>${
-              // WHAT THIS SESSION IS FOR, after where it lives.
-              //
-              // A SIBLING OF `.tname`, NOT A CHILD OF IT. `.tname` is
-              // `direction: rtl` so that a name too long for the strip keeps
-              // its tail, and an inline box added inside an rtl one is laid
-              // out at the LEFT, which would put the note in front of the
-              // address it is annotating.
-              extra
-                ? `<span class="tnote" title="${esc(hover)}">${esc(extra)}</span>`
+            class="tstack"><span
+            class="tname${secondary ? "" : " aspath"}" title="${esc(hover)}"
+            >${esc(primary)}</span>${
+              // Where it lives, under the name and dimmed. Only when the name is
+              // its own: an unnamed card already shows the address as its name,
+              // so a second copy of it under itself says nothing.
+              secondary
+                ? `<span class="tpath" title="${esc(hover)}">${esc(secondary)}</span>`
                 : ""
-            }<span
-            class="tshort" title="${esc(hover)}"
-            >${esc(shortLabel(t))}</span>
+            }</span>
         </div>
         ${poppedOut(t.id)
           // Says where it is rather than letting you click and wonder why
