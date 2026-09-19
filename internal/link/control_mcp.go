@@ -8,7 +8,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -64,6 +67,25 @@ type controlMCP struct {
 	// hub forwards a restart_atrium down the link to a room. Nil in a test that
 	// only exercises the read tools.
 	hub *Hub
+
+	// mu guards reservations. The control server is one instance shared by every
+	// request (see newControlHandler), so the launch cap's book-keeping lives here
+	// and is serialised across concurrent launches.
+	mu sync.Mutex
+	// reservations are launches counted against the cap that have no running card
+	// yet: taken the instant a launch is admitted and self-expiring after
+	// reservationTTL, by which point the new session shows up as a live card and
+	// the reservation is no longer needed. See reserveSlot.
+	reservations []reservation
+	// resSeq numbers reservations so each has a distinct id.
+	resSeq int
+}
+
+// reservation is one in-flight launch holding a slot against the cap until its
+// card appears in the live count or it expires.
+type reservation struct {
+	id string
+	at time.Time
 }
 
 // newControlHandler builds the hub-side control MCP server as an http.Handler,
@@ -566,6 +588,93 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 // ── launch ──────────────────────────────────────────────────────────────────────
 
+// DefaultLaunchCap is how many concurrent live sessions atrium_launch allows
+// before it refuses. It is the HARD backstop under the advisory soft nudge in the
+// dotfiles redirect hook, so no amount of over-eager agents can flood the box.
+// LaunchCapEnv overrides it for a machine that can take more or fewer.
+const DefaultLaunchCap = 10
+
+// LaunchCapEnv overrides DefaultLaunchCap when set to a non-negative integer.
+const LaunchCapEnv = "ATRIUM_LAUNCH_CAP"
+
+// reservationTTL is how long an admitted-but-not-yet-running launch holds a slot
+// against the cap. Long enough for the new card to surface in the live count,
+// after which the reservation lapses and the live card takes over the slot, so
+// nothing has to wire an explicit release into session lifecycle. A launch that
+// dies before its card appears simply frees its slot when the TTL passes.
+const reservationTTL = 60 * time.Second
+
+// launchCap resolves the cap: the env override when it parses as a non-negative
+// integer, otherwise the default. A junk or negative value is ignored rather
+// than obeyed, so a fat-fingered override cannot silently disable the backstop.
+func launchCap() int {
+	if v := strings.TrimSpace(os.Getenv(LaunchCapEnv)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return DefaultLaunchCap
+}
+
+// runningForCap counts the sessions that count against the launch cap: live
+// supervised runners, aggregated across every room the hub can see because the
+// machine load they put on the box is shared. A done/dead/shelved card has no
+// running runner and a backlog card has not started one, so none of them count,
+// and the launch being attempted is not present yet so it is never counted.
+func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
+	var body struct {
+		Tasks []ctlCard `json:"tasks"`
+	}
+	// Empty room is the aggregate view over every attached room, which is what a
+	// shared-machine cap wants rather than one room's slice.
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", "", nil, &body); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range body.Tasks {
+		if !t.Superv {
+			continue
+		}
+		switch t.Status {
+		case "done", "dead", "shelved", "backlog":
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+// reserveSlot atomically admits or refuses one launch against the cap. `live` is
+// the live supervised count just read from the board; the total charged against
+// the cap is that plus the outstanding (non-expired) reservations, so two
+// launches that both read the same live count cannot both slip through: the
+// first records a reservation the second then sees. On admission it records a
+// reservation and returns true; at or over the cap it records nothing and
+// returns false.
+//
+// The count is done here under the lock rather than at the call site so the
+// check and the record are one indivisible step. Expired reservations are swept
+// on the way in, which is the only place they need collecting.
+func (c *controlMCP) reserveSlot(live, limit int) (id string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	kept := c.reservations[:0]
+	for _, r := range c.reservations {
+		if now.Sub(r.at) < reservationTTL {
+			kept = append(kept, r)
+		}
+	}
+	c.reservations = kept
+	if live+len(c.reservations) >= limit {
+		return "", false
+	}
+	c.resSeq++
+	id = strconv.Itoa(c.resSeq) + "@" + now.Format(time.RFC3339Nano)
+	c.reservations = append(c.reservations, reservation{id: id, at: now})
+	return id, true
+}
+
 type launchInput struct {
 	Cwd    string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
@@ -607,6 +716,24 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		harness = "claude"
 	}
 	room := roomOf(req)
+
+	// THE HARD CAP. Count the live sessions already running plus the launches
+	// already admitted but not yet showing as cards, and refuse before forwarding
+	// once the machine is at or over the cap. reserveSlot does the check and the
+	// reservation as one locked step, so two near-simultaneous launches that both
+	// see the same live count cannot both overshoot it.
+	//
+	// Fail sane: a count lookup that errored is an infrastructure hiccup (a quiet
+	// room, the board mid-restart), not a reason to brick launching, so allow the
+	// launch rather than wrongly refuse. The soft nudge in the redirect hook is
+	// the first line of defence and a stuck count must not become a launch outage.
+	limit := launchCap()
+	if n, err := c.runningForCap(ctx); err == nil {
+		if _, ok := c.reserveSlot(n, limit); !ok {
+			return nil, out, fmt.Errorf("at the launch cap of %d running sessions. wait for one to "+
+				"finish, or exit one, before launching another", limit)
+		}
+	}
 
 	// The briefing is written ON THE ROOM: /v1/launch carries the text and the
 	// room's own daemon writes BRIEF.md into the new session's directory before
