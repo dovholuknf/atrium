@@ -464,6 +464,125 @@ func TestAWriteToAMergedPathIsNotFannedOut(t *testing.T) {
 	}
 }
 
+// owns answers as a room that holds exactly the given card ids. It 200s for a
+// card it owns - the card itself and any per-card sub-path - and 404s for one it
+// does not, so the hub's bare-id resolver has something to probe.
+func owns(room string, ids ...string) http.Handler {
+	has := map[string]bool{}
+	for _, id := range ids {
+		has[id] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/tasks" {
+			rows := make([]string, 0, len(ids))
+			for _, id := range ids {
+				rows = append(rows, fmt.Sprintf(`{"id":%q,"title":%q}`, id, room+"-card"))
+			}
+			fmt.Fprintf(w, `{"tasks":[%s]}`, strings.Join(rows, ","))
+			return
+		}
+		id := cardIDIn(r.URL.Path)
+		if id == "" || !has[id] {
+			http.Error(w, `{"error":"no such card"}`, http.StatusNotFound)
+			return
+		}
+		fmt.Fprintf(w, `{"served_by":%q,"path":%q,"id":%q}`, room, r.URL.Path, id)
+	})
+}
+
+// A BARE CARD ID UNDER TWO ROOMS RESOLVES TO ITS OWNER, rather than asking.
+//
+// The paste-into-a-terminal case: a terminal that attached while one room was
+// live holds a bare id, so its upload posts /v1/tasks/<bare>/files with no tag
+// and no header. With two rooms that used to be the needsARoom 409. A card id is
+// unique, so the hub finds which room holds it and routes there.
+func TestABareCardIdRoutesToItsOwningRoom(t *testing.T) {
+	front, _, done := two(t, owns("alpha", "acard"), owns("beta", "bcard"))
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/tasks/bcard/files", "application/json",
+		strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusConflict {
+		t.Fatalf("a bare card id was refused with needsARoom instead of resolved")
+	}
+	var got struct {
+		By   string `json:"served_by"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.By != "beta" {
+		t.Fatalf("the write landed in %q, not beta", got.By)
+	}
+	// THE ROOM SEES THE BARE PATH. It minted the id and knows nothing of rooms.
+	if got.Path != "/v1/tasks/bcard/files" {
+		t.Fatalf("the room saw %q, want the bare per-card path", got.Path)
+	}
+}
+
+// Every per-card verb, not just files: a bare-id message lands on the card's
+// machine too, because the fix is in the routing rather than in one endpoint.
+func TestABareCardMessageRoutesToItsOwningRoom(t *testing.T) {
+	front, _, done := two(t, owns("alpha", "acard"), owns("beta", "bcard"))
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/tasks/acard/message", "application/json",
+		strings.NewReader(`{"text":"hi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var got struct {
+		By string `json:"served_by"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.By != "alpha" {
+		t.Fatalf("the message landed in %q, not alpha", got.By)
+	}
+}
+
+// A bare id no attached room holds is a card that is gone: a 404, not a 500 and
+// not a room prompt.
+func TestABareCardIdForNoRoomIs404(t *testing.T) {
+	front, _, done := two(t, owns("alpha", "acard"), owns("beta", "bcard"))
+	defer done()
+
+	res, err := http.Get(front.URL + "/v1/tasks/ghost/files/list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("a bare id no room holds answered %d, want 404", res.StatusCode)
+	}
+}
+
+// THE FIX DOES NOT WEAKEN needsARoom. A machine-shaped write with no card in its
+// path still has no room to land in, so it is still asked, not guessed at.
+func TestAMachineWriteWithNoCardStillNeedsARoom(t *testing.T) {
+	front, _, done := two(t, owns("alpha", "acard"), owns("beta", "bcard"))
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/harnesses", "application/json",
+		strings.NewReader(`{"id":"claude"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("a machine-shaped write answered %d, want the 409 that asks which room",
+			res.StatusCode)
+	}
+}
+
 // With one room, nothing is asked and nothing is tagged. The operator was
 // explicit about this.
 func TestOneRoomIsNeverAskedAbout(t *testing.T) {
