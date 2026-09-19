@@ -191,6 +191,79 @@ func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
 	}
 }
 
+// sayBoard stands in for the hub's own board: it lists one peer so resolvePeer
+// finds it, and records the message body so a test can prove the caller is
+// attached to the delivered message.
+type sayBoard struct {
+	gotFrom string
+	sawMsg  bool
+}
+
+func (b *sayBoard) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+				{"id": "1", "wire_name": "bob", "status": "working"},
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks/1/message":
+			b.sawMsg = true
+			var body struct {
+				From string `json:"from"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			b.gotFrom = body.From
+			_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued"})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+func TestSayAttachesTheCallerFromTheHeader(t *testing.T) {
+	board := &sayBoard{}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, out, err := c.sayHandler(context.Background(), ctlReq("alice", "beta"),
+		sayInput{To: "bob", Text: "have you got the lock"})
+	if err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	if !board.sawMsg {
+		t.Fatal("the message was never posted to the board")
+	}
+	if board.gotFrom != "alice" {
+		t.Errorf("the board got from %q, want the caller read off %s", board.gotFrom, AgentHeader)
+	}
+	if out.Delivered != "queued" {
+		t.Errorf("delivered = %q, want it carried through", out.Delivered)
+	}
+}
+
+func TestSayWithNoCallerStillDelivers(t *testing.T) {
+	board := &sayBoard{}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	// No agent header, as a human or non-atrium caller sends. It must deliver
+	// with an empty sender rather than fail over the missing header.
+	_, _, err := c.sayHandler(context.Background(), ctlReq("", "beta"),
+		sayInput{To: "bob", Text: "your turn"})
+	if err != nil {
+		t.Fatalf("say with no caller: %v", err)
+	}
+	if !board.sawMsg {
+		t.Fatal("the message was never posted to the board")
+	}
+	if board.gotFrom != "" {
+		t.Errorf("the board got from %q, want empty when no header was sent", board.gotFrom)
+	}
+}
+
 func TestRestartRefusesWithNoRoom(t *testing.T) {
 	c := &controlMCP{hub: NewHub(Timings{})}
 	_, _, err := c.restartHandler(context.Background(), ctlReq("a", ""), restartInput{})
