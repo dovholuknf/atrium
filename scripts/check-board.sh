@@ -189,6 +189,17 @@ if ! node "$here/scripts/test-notify-reseed.js"; then
   fail=1
 fi
 
+# The refresh-storm guard, RUN against a simulated flap storm. A room that
+# attaches and detaches every few seconds used to make the board answer every
+# flip with a fresh fan-out of fetches, until the tab emptied its socket pool
+# and everything failed with ERR_INSUFFICIENT_RESOURCES. This asserts a burst
+# collapses into one refresh, a pass in flight queues at most one more, a
+# superseding pass aborts the last, and a failing tab backs off.
+if ! node "$here/scripts/test-refresh-storm.js"; then
+  echo "a flapping room would storm the board with fetches. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.

@@ -238,8 +238,54 @@ function signInAgain() {
     encodeURIComponent(location.pathname + location.search));
 }
 
+// A CAP ON HOW MANY BOARD FETCHES ARE IN FLIGHT AT ONCE.
+//
+// Every request the board makes goes through here, and a flapping room used to
+// answer each flap with a whole fresh fan-out of seven-plus fetches, none of
+// them bounded. A room that attaches and detaches every few seconds stacked
+// those passes until the tab had emptied Chrome's per-tab socket pool, and from
+// then on every fetch failed with ERR_INSUFFICIENT_RESOURCES, which fed still
+// more retries. Past the cap a call waits its turn rather than opening one more
+// socket, so a storm can never exhaust the pool no matter the event rate.
+const API_MAX_INFLIGHT = 6;
+let apiInflight = 0;
+const apiQueue = [];
+function apiSlot() {
+  if (apiInflight < API_MAX_INFLIGHT) { apiInflight++; return Promise.resolve(); }
+  return new Promise(res => apiQueue.push(res));
+}
+function apiRelease() {
+  apiInflight--;
+  const next = apiQueue.shift();
+  if (next) { apiInflight++; next(); }
+}
+
+// How many fetches in a row have failed at the socket, so the refresh loop can
+// back off rather than re-firing the same storm into a tab that cannot reach the
+// hub. A fetch that resolves at all, even a 500, clears it: the wire is up.
+let apiFailStreak = 0;
+
 const api = async (path, opts) => {
-  const res = await fetch(path, opts);
+  await apiSlot();
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch (err) {
+    // A network or resource error, not an HTTP status. This is where a socket
+    // pool run dry shows up, and where an aborted superseded fetch lands too.
+    if (!(err && err.name === "AbortError")) apiFailStreak++;
+    apiRelease();
+    throw err;
+  }
+  apiFailStreak = 0;
+  try {
+    return await apiFinish(res);
+  } finally {
+    apiRelease();
+  }
+};
+
+const apiFinish = async (res) => {
   if (res.status === 401) signInAgain();
   if (!res.ok && res.status !== 204) {
     // THE BODY, WHATEVER SHAPE IT IS IN.

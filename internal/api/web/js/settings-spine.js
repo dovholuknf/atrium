@@ -1084,7 +1084,9 @@ function repaintLists() {
     console.error("no renderer for the " + view + " view");
     return;
   }
-  render().catch(e => console.error(e));
+  // Returned so a refresh pass can await the paint's own fetches. The single-
+  // flight guard counts a pass done only when everything it started has settled.
+  return render().catch(e => console.error(e));
 }
 
 // One refresh for a burst of events.
@@ -1100,16 +1102,66 @@ function repaintLists() {
 // worth drawing is the one at the end of the clump. A quarter second is below
 // what anybody notices on a board and far above the gap between two events
 // from the same tool call.
-let refreshPending = 0;
+// A trailing debounce, so a clump of events draws once at the end of the clump.
+// The window is reset on every event, which is what collapses ten flaps in three
+// seconds into one refresh instead of ten. A room that never stops flapping would
+// reset the window forever and the board would never repaint, so the wait is
+// capped: past REFRESH_MAXWAIT since the first held event, the pass runs anyway
+// and a fresh window begins.
+const REFRESH_DEBOUNCE = 300;
+const REFRESH_MAXWAIT = 1500;
+let refreshTimer = 0;
+let refreshFirst = 0;
 function refreshSoon() {
-  if (refreshPending) return;
-  refreshPending = setTimeout(() => {
-    refreshPending = 0;
-    refresh();
-  }, 250);
+  const now = Date.now();
+  if (!refreshFirst) refreshFirst = now;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const wait = Math.min(REFRESH_DEBOUNCE,
+    Math.max(0, refreshFirst + REFRESH_MAXWAIT - now));
+  refreshTimer = setTimeout(() => {
+    refreshTimer = 0;
+    refreshFirst = 0;
+    runRefresh();
+  }, wait);
 }
 
-async function refresh() {
+// SINGLE-FLIGHT. One full pass runs at a time. A trigger that lands while a pass
+// is in flight marks the board dirty and runs EXACTLY ONE more pass when the
+// current one settles, rather than starting a second overlapping fan-out. This
+// is what bounds the storm: whatever the event rate, at most one pass worth of
+// fetches (and the cap in `api()` bounds those in turn) is ever on the wire.
+//
+// SUPERSEDE. Each pass runs under an AbortController. Starting the next pass
+// aborts the last one's controller, so any fetch still holding a socket from a
+// pass that has been overtaken is dropped rather than left to occupy the pool.
+//
+// BACK OFF. When the wire is down, `api()` counts the failures. A dirty pass
+// then waits before it runs, growing the wait with the failure streak, so a tab
+// that cannot reach the hub does not turn a flap into hundreds of queued fetches.
+let refreshInFlight = false;
+let refreshDirty = false;
+let refreshController = null;
+function runRefresh() {
+  if (refreshInFlight) { refreshDirty = true; return; }
+  refreshInFlight = true;
+  refreshDirty = false;
+  if (refreshController) refreshController.abort();
+  refreshController = typeof AbortController !== "undefined"
+    ? new AbortController() : null;
+  Promise.resolve(refresh(refreshController && refreshController.signal))
+    .catch(() => {})
+    .finally(() => {
+      refreshInFlight = false;
+      if (refreshDirty) {
+        refreshDirty = false;
+        const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
+        const backoff = streak > 0 ? Math.min(5000, 500 * streak) : 0;
+        setTimeout(runRefresh, backoff);
+      }
+    });
+}
+
+async function refresh(signal) {
   // A popped-out window polls for ONE card. Falling through here meant it ran
   // the board's whole alerting pass, so a window opened onto one session put
   // up desktop notifications for every other one, from a document with no
@@ -1122,6 +1174,11 @@ async function refresh() {
   // away from the thing that actually decides.
   if (globalAuto && globalAutoLeft > 0) loadGlobalAuto();
 
+  // A pass is done only when everything it started has settled. The jobs are
+  // collected and awaited at the end so the single-flight guard cannot call a
+  // pass finished while its fetches are still holding sockets.
+  const jobs = [];
+
   if (isEditing()) {
     // Hold the repaint, but keep the counters, sounds and toasts live: those
     // are what tell you something arrived.
@@ -1132,12 +1189,12 @@ async function refresh() {
     heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
-    repaintLists();
+    jobs.push(Promise.resolve(repaintLists()));
   }
 
   // What is lent out, so a card can say so and the menu knows without asking.
   // Cheap: an in-memory map on the daemon, usually empty.
-  loadShares();
+  jobs.push(loadShares());
 
   // Waiting and permissions are polled whichever view is open, because the
   // badges, the title, and the alert all have to work while you are looking at
@@ -1151,9 +1208,9 @@ async function refresh() {
   // Merged into `perms` rather than alerted on separately, so the badge, the
   // window title and the widening nag all count one queue and none of them can
   // learn about rooms later.
-  Promise.all([
-    api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
-    api("/v1/permissions").then(r => r.permissions || []).catch(() => null),
+  jobs.push(Promise.all([
+    api("/v1/waiting", { signal }).then(r => r.tasks || []).catch(() => null),
+    api("/v1/permissions", { signal }).then(r => r.permissions || []).catch(() => null),
     remoteRequests().catch(() => [])
   ]).then(([waiting, local, remote]) => {
     // A failed local fetch stays null, so the badge and the title keep saying
@@ -1222,9 +1279,9 @@ async function refresh() {
     // reported a blocked agent twice.
     retitle(waiting && waiting.filter(t => t.status !== "needs-permission").length,
       perms && perms.length);
-  });
+  }));
 
-  api("/v1/health").then(h => {
+  jobs.push(api("/v1/health", { signal }).then(h => {
     checkBuild(h.build);
     // Before anything else reads it. A daemon that is still putting sessions
     // back says so here, and the arrival alert re-seeds rather than announcing
@@ -1236,7 +1293,13 @@ async function refresh() {
       document.getElementById("halt-t").innerHTML =
         `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
     }
-  }).catch(() => {});
+  }).catch(() => {}));
+
+  // Wait for the whole fan-out. The catches above keep a single failed fetch
+  // from rejecting the pass, so this settles once every socket this pass opened
+  // has been returned, which is the moment the single-flight guard may run the
+  // next one.
+  await Promise.allSettled(jobs);
 }
 
 function connect() {
