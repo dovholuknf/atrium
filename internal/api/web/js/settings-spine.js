@@ -1381,6 +1381,14 @@ function connect() {
     // here and the next health poll either confirms it or clears it a few
     // seconds later.
     alerting.settling(true);
+    // AND PULL THE CARDS NOW, not at the next poll. The stream reopening is the
+    // first sign the daemon is back, and without this the board sat on whatever
+    // it held when the hub went, for up to a poll interval, while the badge
+    // already said live. A restart is exactly when the held state is most
+    // likely stale, so this is where the wait was most visible. `refreshSoon`
+    // is debounced and single-flight, so an event that also fires coalesces
+    // with it rather than firing a second fetch.
+    refreshSoon();
   };
   es.onerror = () => {
     conn.classList.remove("live");
