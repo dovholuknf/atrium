@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -566,6 +568,56 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 // ── launch ──────────────────────────────────────────────────────────────────────
 
+// DefaultLaunchCap is how many concurrent live sessions atrium_launch allows
+// before it refuses. It matches the soft nudge in the dotfiles redirect hook and
+// the standing "never more than five at a time" rule, and is the HARD backstop
+// under that advisory nudge so no amount of over-eager agents can flood the box.
+// LaunchCapEnv overrides it for a machine that can take more or fewer.
+const DefaultLaunchCap = 5
+
+// LaunchCapEnv overrides DefaultLaunchCap when set to a non-negative integer.
+const LaunchCapEnv = "ATRIUM_LAUNCH_CAP"
+
+// launchCap resolves the cap: the env override when it parses as a non-negative
+// integer, otherwise the default. A junk or negative value is ignored rather
+// than obeyed, so a fat-fingered override cannot silently disable the backstop.
+func launchCap() int {
+	if v := strings.TrimSpace(os.Getenv(LaunchCapEnv)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return DefaultLaunchCap
+}
+
+// runningForCap counts the sessions that count against the launch cap: live
+// supervised runners, aggregated across every room the hub can see because the
+// machine load they put on the box is shared. A done/dead/shelved card has no
+// running runner and a backlog card has not started one, so none of them count,
+// and the launch being attempted is not present yet so it is never counted.
+func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
+	var body struct {
+		Tasks []ctlCard `json:"tasks"`
+	}
+	// Empty room is the aggregate view over every attached room, which is what a
+	// shared-machine cap wants rather than one room's slice.
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", "", nil, &body); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range body.Tasks {
+		if !t.Superv {
+			continue
+		}
+		switch t.Status {
+		case "done", "dead", "shelved", "backlog":
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
 type launchInput struct {
 	Cwd    string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
@@ -607,6 +659,18 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		harness = "claude"
 	}
 	room := roomOf(req)
+
+	// THE HARD CAP. Count the live sessions already running and refuse before
+	// forwarding the launch once the machine is at or over the cap. Fail sane: a
+	// count lookup that errored is an infrastructure hiccup (a quiet room, the
+	// board mid-restart), not a reason to brick launching, so allow the launch
+	// rather than wrongly refuse. The soft nudge in the redirect hook is the
+	// first line of defence and a stuck count must not become a launch outage.
+	limit := launchCap()
+	if n, err := c.runningForCap(ctx); err == nil && n >= limit {
+		return nil, out, fmt.Errorf("at the launch cap of %d running sessions. wait for one to "+
+			"finish, or exit one, before launching another", limit)
+	}
 
 	// The briefing is written ON THE ROOM: /v1/launch carries the text and the
 	// room's own daemon writes BRIEF.md into the new session's directory before
