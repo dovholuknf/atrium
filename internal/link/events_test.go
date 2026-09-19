@@ -380,6 +380,48 @@ func TestARoomWhoseListenerStopsIsForgotten(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return !hub.Has("inhouse") })
 }
 
+// A ROOM'S `going-down` STAYS OFF THE MERGED BOARD. One room shutting down is
+// news only to a board scoped to that room. On the merged view it reads as the
+// hub restarting and paints a banner that never clears, so the fan-out must
+// keep it off the merged subscribers while still delivering it to the scoped
+// one. Any other event kind still reaches both.
+func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
+	// Registered directly rather than through `add`, which would start the
+	// reconciler and reach for an upstream this test does not stand up.
+	f := newFeeds(nil)
+	merged := &sub{room: "", ch: make(chan Event, 4)}
+	scoped := &sub{room: "sg4", ch: make(chan Event, 4)}
+	f.subs[merged] = struct{}{}
+	f.subs[scoped] = struct{}{}
+
+	f.emit(Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
+	f.emit(Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
+
+	// The scoped board hears both, in order.
+	if e := <-scoped.ch; e.Kind != "going-down" {
+		t.Fatalf("the scoped board's first event was %q, not going-down", e.Kind)
+	}
+	if e := <-scoped.ch; e.Kind != "task" {
+		t.Fatalf("the scoped board's second event was %q, not task", e.Kind)
+	}
+
+	// The merged board hears only the task. The going-down was dropped, so the
+	// task is the first and only thing waiting.
+	select {
+	case e := <-merged.ch:
+		if e.Kind != "task" {
+			t.Fatalf("the merged board received a %q event, it should only see the task", e.Kind)
+		}
+	default:
+		t.Fatal("the merged board received nothing, it should have seen the task")
+	}
+	select {
+	case e := <-merged.ch:
+		t.Fatalf("the merged board received an extra %q event", e.Kind)
+	default:
+	}
+}
+
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {

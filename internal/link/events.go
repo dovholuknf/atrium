@@ -355,6 +355,17 @@ func (f *feeds) emit(e Event) {
 		if s.room != "" && s.room != e.Room {
 			continue
 		}
+		// A ROOM'S `going-down` IS THAT ROOM'S NEWS, NOT THE BOARD'S. One room
+		// shutting down says nothing about the hub, but the merged board's
+		// handler reads any `going-down` as the hub restarting and paints a
+		// banner into every terminal that never clears, because nothing
+		// reconnects to clear it. The merged view already learns the room left
+		// from the `rooms` event, which marks its cards offline, so drop a
+		// room-originated `going-down` on the merged fan-out and keep it only
+		// for a board scoped to that exact room.
+		if e.Kind == "going-down" && e.Room != "" && s.room == "" {
+			continue
+		}
 		select {
 		case s.ch <- e:
 		default:
