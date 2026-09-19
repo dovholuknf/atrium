@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board and the room link are separate, independently-bound surfaces.**
+
+  The hub serves two things: the board you open, and the socket rooms dial in to. They are now cleanly split. The
+  board (`--addr`) is loopback-only and refuses a non-loopback bind, because it has no login. The room link
+  (`--link`) may bind wide (`0.0.0.0` or a chosen interface) and carries the transport menu (direct/mTLS, zrok,
+  OpenZiti) - safe on a wide bind because the direct transport is mTLS with a pinned CA and hub-signed room certs,
+  which the board lacks. `--link-advertise` sets the address minted into join tokens and is required when the link
+  binds wide, so a token never carries an unreachable loopback address. This lets a LAN room dial the hub over
+  mTLS directly, with no overlay.
+
 - **The db event window can be bounded, so the primary database stops growing (opt-in).**
 
   The db event sink can keep only a recent per-card window instead of every event forever. Off by default: with no
