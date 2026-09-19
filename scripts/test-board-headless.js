@@ -56,6 +56,18 @@ const HIST = {
   created_at: "2026-09-18T09:00:00Z", why: "did a thing", recap: "",
   worktree: "/tmp/old", archived_at: ""
 };
+// A pinned terminal whose runner was terminated: not supervised, still pinned,
+// so the strip draws it cold. This is the row that used to linger with no way to
+// remove it, since terminate is gone once the process is. `pinned` is mutable so
+// a PATCH can unpin it and the next /v1/tasks answer drops it, which is what
+// proves dismiss does not just hide it for one render.
+const PIN = {
+  id: "pin1", status: "dead", display_title: "terminated card", runner: "claude",
+  rank: 1, worktree: "/tmp/pinned", why: "", idle_seconds: 0, wait_seconds: 0,
+  created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
+  tags: [], supervised: false, offline: false, pinned: true, pid: 0, auto_approve: false
+};
+function resetPin() { PIN.pinned = true; }
 
 let tasksMode = "first";   // first | hang | second
 // How the mocked hub answers a card-scoped poll (GET /v1/tasks/<id>), which is
@@ -111,6 +123,19 @@ const server = http.createServer((req, res) => {
   // exact path "/v1/tasks" with no trailing id.
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
+    // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
+    // state is what the next /v1/tasks answer reads to drop the row for good.
+    if (req.method === "PATCH") {
+      let raw = "";
+      req.on("data", c => { raw += c; });
+      req.on("end", () => {
+        let body = {};
+        try { body = JSON.parse(raw || "{}"); } catch (e) {}
+        if (id === "pin1" && typeof body.pinned === "boolean") PIN.pinned = body.pinned;
+        sendJSON(res, id === "pin1" ? PIN : T1);
+      });
+      return;
+    }
     if (soloMode === "noroom") {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
@@ -123,11 +148,14 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: "no such card" }));
       return;
     }
-    sendJSON(res, id === "s1" ? SOLO : (id === "t2" ? T2 : T1));
+    sendJSON(res, id === "s1" ? SOLO : id === "pin1" ? PIN : (id === "t2" ? T2 : T1));
     return;
   }
   if (url === "/v1/tasks") {
     if (tasksMode === "hang") { hungResponses.push(res); return; }  // never answer
+    // The pinned-cold strip: the terminated card while its pin holds it, and an
+    // empty list once dismiss has unpinned it.
+    if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     sendJSON(res, { tasks: [tasksMode === "second" ? T2 : T1] });
     return;
   }
@@ -254,6 +282,75 @@ async function main() {
     await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
     const histRows = await page.locator("#history-list .row.line").count();
     if (histRows < 1) fail("the history view painted no rows from /v1/history.");
+
+    // ── a terminated terminal can be dismissed from its right-click menu ─────
+    // A pinned card whose runner was terminated stays in the terminal strip,
+    // drawn cold. Its menu used to offer no way to remove it, since terminate is
+    // gone once the process is. The dismiss entry unpins the card, which is the
+    // only thing holding a cold row in the strip, so the row leaves and does not
+    // come back on the next render. `renderTermList` is driven directly: the
+    // strip lives in the DOM on every view, and this is about what it draws, not
+    // about the tab that reveals it.
+    tasksMode = "pinned";
+    resetPin();
+    await page.evaluate(() => renderTermList());
+    // Attached, not visible: the terminals view is hidden while the test sits on
+    // another tab, and this is about what the strip draws, not whether it shows.
+    await page.waitForSelector('#term-list .card.tab[data-id="pin1"].cold',
+      { state: "attached", timeout: 15000 });
+
+    // Right-click it. The menu must carry a dismiss entry: a dead terminal's
+    // right-click is never allowed to be a dead end.
+    await page.evaluate(() => {
+      const el = document.querySelector('#term-list .card.tab[data-id="pin1"]');
+      el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+    });
+    const hasDismiss = () => page.evaluate(() => {
+      const m = document.getElementById("cardmenu");
+      if (!m || !m.classList.contains("on")) return false;
+      return [...m.querySelectorAll(":scope > button")]
+        .some(b => /^dismiss\b/.test(b.textContent.trim()));
+    });
+    try {
+      await page.waitForFunction(() => {
+        const m = document.getElementById("cardmenu");
+        return m && m.classList.contains("on") &&
+          [...m.querySelectorAll(":scope > button")].some(b => /^dismiss\b/.test(b.textContent.trim()));
+      }, { timeout: 15000 });
+    } catch (e) {
+      fail("a terminated pinned terminal's right-click menu offered no dismiss " +
+        "action, so the operator has no way to remove it.");
+    }
+
+    // Press dismiss and let the unpin PATCH land, then render the poll the
+    // operator would see next: the row is gone.
+    if (await hasDismiss()) {
+      const patched = page.waitForResponse(r =>
+        r.url().endsWith("/v1/tasks/pin1") && r.request().method() === "PATCH",
+        { timeout: 15000 });
+      await page.evaluate(() => {
+        const b = [...document.getElementById("cardmenu").querySelectorAll(":scope > button")]
+          .find(x => /^dismiss\b/.test(x.textContent.trim()));
+        b.click();
+      });
+      await patched;
+      await page.evaluate(() => renderTermList());
+      const gone = await page.evaluate(() =>
+        !document.querySelector('#term-list .card.tab[data-id="pin1"]'));
+      if (!gone) {
+        fail("dismiss did not remove the terminated terminal from the strip.");
+      }
+      // A further render, the next poll, keeps it gone: the pin that held it is
+      // cleared, not the row hidden once.
+      await page.evaluate(() => renderTermList());
+      const back = await page.evaluate(() =>
+        !!document.querySelector('#term-list .card.tab[data-id="pin1"]'));
+      if (back) {
+        fail("a dismissed terminal came back on the next render: unpinning must " +
+          "drop it from the strip for good, not hide it once.");
+      }
+    }
+    tasksMode = "first";
 
     // ── a hung fetch does not blank the board, and a later refresh repaints ─
     // Back on the stack, make /v1/tasks hang, then drive one refresh through the
@@ -637,7 +734,9 @@ async function main() {
   }
 
   if (bad) process.exit(1);
-  console.log("the board paints its lists, a hung fetch does not blank it, the " +
+  console.log("a terminated pinned terminal can be dismissed from its right-click " +
+    "menu and stays gone on the next render, " +
+    "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
     "open room picker live-updates a newly-attached room from disconnected to " +
