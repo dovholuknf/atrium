@@ -191,6 +191,138 @@ func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
 	}
 }
 
+// capBoard stands in for the hub's own board when exercising the launch cap. It
+// serves a fixed task list on GET /v1/tasks and records whether a launch was
+// forwarded to POST /v1/launch, so a test can prove a refusal never reached the
+// room and an allowed launch did.
+type capBoard struct {
+	tasks    []map[string]any
+	launched bool
+}
+
+func (b *capBoard) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": b.tasks})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/launch":
+			b.launched = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "new", "wire_name": "kid"})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+func TestLaunchRefusesAtTheCap(t *testing.T) {
+	// Five live supervised runners, plus cards that must NOT count: a done card, a
+	// backlog card, and an unsupervised one. So the live total is exactly the cap.
+	tasks := []map[string]any{
+		{"id": "6", "status": "done", "supervised": true},
+		{"id": "7", "status": "backlog", "supervised": true},
+		{"id": "8", "status": "working", "supervised": false},
+	}
+	for i := 0; i < DefaultLaunchCap; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err == nil {
+		t.Fatal("at the cap, launch should be refused")
+	}
+	if board.launched {
+		t.Fatal("a refused launch must not be forwarded to the room")
+	}
+}
+
+func TestLaunchProceedsUnderTheCap(t *testing.T) {
+	// One under the cap: only running/supervised sessions count, so the done and
+	// backlog cards below leave room for one more.
+	tasks := []map[string]any{
+		{"id": "x", "status": "done", "supervised": true},
+		{"id": "y", "status": "backlog", "supervised": true},
+	}
+	for i := 0; i < DefaultLaunchCap-1; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "needs-input", "supervised": true,
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err != nil {
+		t.Fatalf("under the cap, launch should proceed: %v", err)
+	}
+	if !board.launched {
+		t.Fatal("an allowed launch should be forwarded to the room")
+	}
+	if out.Card != "new" {
+		t.Errorf("out.Card = %q, want the room's card id", out.Card)
+	}
+}
+
+func TestLaunchCapEnvOverride(t *testing.T) {
+	t.Setenv(LaunchCapEnv, "1")
+	// One live supervised session, cap overridden to one, so the next is refused.
+	board := &capBoard{tasks: []map[string]any{
+		{"id": "a", "status": "working", "supervised": true},
+	}}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err == nil {
+		t.Fatal("with the cap overridden to 1 and one session live, launch should refuse")
+	}
+	if board.launched {
+		t.Fatal("a refused launch must not be forwarded to the room")
+	}
+}
+
+func TestLaunchAllowsWhenCountLookupFails(t *testing.T) {
+	// The task list errors (500). Fail sane: allow the launch rather than brick it
+	// on an infrastructure hiccup.
+	var launched bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/tasks" {
+			http.Error(w, `{"error":"board is down"}`, http.StatusInternalServerError)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/launch" {
+			launched = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "new", "wire_name": "kid"})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err != nil {
+		t.Fatalf("a failed count lookup should not block the launch: %v", err)
+	}
+	if !launched {
+		t.Fatal("the launch should have been forwarded when the count could not be read")
+	}
+}
+
 // sayBoard stands in for the hub's own board: it lists one peer so resolvePeer
 // finds it, and records the message body so a test can prove the caller is
 // attached to the delivered message.
