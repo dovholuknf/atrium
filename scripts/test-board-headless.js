@@ -46,6 +46,11 @@ const T1 = {
   tags: [], supervised: false, offline: false, pinned: false, auto_approve: false
 };
 const T2 = Object.assign({}, T1, { id: "t2", display_title: "second card" });
+// The card a popped-out (solo) window is opened onto. Supervised, so it reads
+// like a real live session rather than a dead one.
+const SOLO = Object.assign({}, T1, {
+  id: "s1", display_title: "solo card", supervised: true
+});
 const HIST = {
   id: "h1", display_title: "old run", runner: "claude", status: "done",
   created_at: "2026-09-18T09:00:00Z", why: "did a thing", recap: "",
@@ -53,6 +58,11 @@ const HIST = {
 };
 
 let tasksMode = "first";   // first | hang | second
+// How the mocked hub answers a card-scoped poll (GET /v1/tasks/<id>), which is
+// what a popped-out window opens on. `noroom` is the transient hub-restart state
+// (503, "no room is attached"), `gone` is a genuine missing card (404), and `ok`
+// returns the card.
+let soloMode = "ok";       // ok | noroom | gone
 const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
 
@@ -70,6 +80,27 @@ const server = http.createServer((req, res) => {
   if (url === "/" || url === "/index.html") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(HTML);
+    return;
+  }
+  // A card-scoped poll, the one a popped-out window opens on. The hub answers a
+  // no-room restart with 503 and a genuine missing card with 404, and the solo
+  // window has to tell those apart. Placed before the list route, which is the
+  // exact path "/v1/tasks" with no trailing id.
+  if (url.startsWith("/v1/tasks/")) {
+    const id = url.slice("/v1/tasks/".length);
+    if (soloMode === "noroom") {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
+        "serves the board and holds nothing, so until a room connects there is " +
+        "nothing to show. run `atrium2 join` on the machine your agents are on." }));
+      return;
+    }
+    if (soloMode === "gone") {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "no such card" }));
+      return;
+    }
+    sendJSON(res, id === "s1" ? SOLO : (id === "t2" ? T2 : T1));
     return;
   }
   if (url === "/v1/tasks") {
@@ -191,6 +222,87 @@ async function main() {
     if (consoleErrors.length) {
       fail("the page threw uncaught errors: " + consoleErrors.join(" | "));
     }
+
+    // ── a popped-out window rides out a hub restart, then recovers ──────────
+    // A hub-only deploy leaves the hub with no room for about a second, and it
+    // answers a card poll with a 503 "no room is attached" in that window. The
+    // solo window must treat that as a reconnect, not a dead card: no blocking
+    // "nothing to attach to" modal, a non-blocking reconnecting line instead,
+    // and it must paint the card on its own once the room is back.
+    soloMode = "noroom";
+    const solo = await browser.newPage();
+    const soloErrors = [];
+    solo.on("pageerror", e => soloErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      solo.on("console", m => console.error("[solo] " + m.type() + ": " + m.text()));
+    }
+    try {
+      await solo.goto(base + "#term=s1", { waitUntil: "domcontentloaded" });
+
+      // The reconnecting line comes up, non-blocking.
+      await solo.waitForFunction(() => {
+        const b = document.getElementById("t-wait");
+        return b && !b.hidden && /reconnect/i.test(
+          (document.getElementById("t-wait-say") || {}).textContent || "");
+      }, { timeout: 15000 });
+
+      // And the dead-end modal is NOT up while the hub is a moment from
+      // answering. That modal is the bug: a transient restart used to pop it.
+      const stuckEarly = await solo.evaluate(() => {
+        const d = document.getElementById("ask");
+        return !!(d && d.open &&
+          (document.getElementById("ask-title") || {}).textContent === "nothing to attach to");
+      });
+      if (stuckEarly) {
+        fail("the solo window popped the dead-end 'nothing to attach to' modal " +
+          "during a hub restart. A no-room 503 must be a reconnect, not a dead card.");
+      }
+
+      // The room reattaches. The window must paint the card with no click: its
+      // title carries the card's name once soloFetchCard returns.
+      soloMode = "ok";
+      await solo.waitForFunction(() =>
+        /solo card/.test(document.title), { timeout: 20000 });
+
+      // The reconnecting line comes down, and the dead-end modal never appeared.
+      const afterRecover = await solo.evaluate(() => {
+        const wait = document.getElementById("t-wait");
+        const d = document.getElementById("ask");
+        return {
+          waiting: !!(wait && !wait.hidden),
+          deadEnd: !!(d && d.open &&
+            (document.getElementById("ask-title") || {}).textContent === "nothing to attach to")
+        };
+      });
+      if (afterRecover.waiting) {
+        fail("the solo window kept its reconnecting line up after the room " +
+          "returned. Recovery must clear it and paint the card.");
+      }
+      if (afterRecover.deadEnd) {
+        fail("the solo window showed the dead-end modal even after recovering.");
+      }
+    } finally {
+      await solo.close();
+    }
+
+    // ── a genuinely missing card still dead-ends ────────────────────────────
+    // The fix must not swallow a real 404. A bad link, the card the hub says
+    // does not exist, still gets the "nothing to attach to" modal.
+    soloMode = "gone";
+    const bad404 = await browser.newPage();
+    try {
+      await bad404.goto(base + "#term=s1", { waitUntil: "domcontentloaded" });
+      await bad404.waitForFunction(() => {
+        const d = document.getElementById("ask");
+        return !!(d && d.open &&
+          (document.getElementById("ask-title") || {}).textContent === "nothing to attach to");
+      }, { timeout: 15000 });
+    } catch (e) {
+      fail("a genuine 404 did not show the dead-end 'nothing to attach to' modal: " +
+        (e && e.message ? e.message : e));
+    } finally {
+      await bad404.close();
+    }
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -215,7 +327,8 @@ async function main() {
   }
 
   if (bad) process.exit(1);
-  console.log("the board paints its lists, and a hung fetch does not blank it.");
+  console.log("the board paints its lists, a hung fetch does not blank it, and a " +
+    "popped-out window rides out a hub restart and recovers.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
