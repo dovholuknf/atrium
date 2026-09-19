@@ -26,6 +26,17 @@ integration. Cherry-pick individual commits or merge the branch to `dovholuknf/m
   verify run hit and remediated).
 - **event sink phase 2** — the db event window can be bounded (opt-in, default unbounded), so with db-shrink the
   operational database plateaus instead of growing forever.
+- **split board vs room-link listeners** — `--addr` (the board a human uses) is loopback-guarded, while `--link`
+  (what rooms dial) can bind wide (0.0.0.0) with a `--link-advertise` address and the same zrok/ziti/mtls
+  transport options. This is what lets the board stay local while a second machine joins as a room.
+- **message truncation fix** — a long multi-line message typed into a supervised terminal arrives intact as one
+  bracketed-paste block instead of losing everything but the tail. Room-side, so it deploys on the next room
+  restart.
+- **css nits** — terminal icon set, path chip, fixtures toggle pill width, runners nav clip, rooms tab titles,
+  disconnected rooms in the picker.
+- **room-drop notification flood fix** — when one room disconnects while another stays, the board no longer
+  announces every card as a fresh arrival. notify diffs on a tag-stripped stable id and re-seeds when the
+  attached-room set changes. Board JS only, deployed hub-only on build `ccff08200936ba15` (2026-09-19).
 
 ## Verification
 
