@@ -838,6 +838,10 @@ let waitingFor = "";
 
 async function waitAndAttach(card) {
   if (waitingFor === card) { rlog("already waiting for", card); return; }
+  // An attach for this card is already in flight (openTerm has it, the socket is
+  // connecting or retrying). Starting a wait-and-attach on top of it is the
+  // second attach loop the re-entry guard exists to refuse. See `attachInFlight`.
+  if (attachIsInFlight(card)) { rlog("attach already in flight for", card); return; }
   waitingFor = card;
   rlog("waiting for", card, "to come back");
   try { await waitLoop(card); } finally { if (waitingFor === card) waitingFor = ""; }

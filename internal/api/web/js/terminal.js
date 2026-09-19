@@ -391,6 +391,16 @@ function openTerm(task) {
     tellUser("atrium", "the terminal library did not load");
     return;
   }
+  // ALREADY ATTACHING THIS EXACT CARD. A render or a watchdog that fires again
+  // while the pane is still up and its socket still connecting must not build a
+  // second terminal onto the same card: that is the re-entry that spun the
+  // board. A switch to a DIFFERENT card falls through, and so does a reattach
+  // after the pane was torn down, where nothing is showing this card any more.
+  // See `attachInFlight`.
+  if (attachIsInFlight(task.id) && termTask && termTask.id === task.id) {
+    rlog("attach already in flight for", task.id, "- not re-entering openTerm");
+    return;
+  }
   // Switching sessions means tearing the old one down first, or two sockets
   // write into one screen.
   if (termSock || term) closeTerm(true);
@@ -419,6 +429,11 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  // Committed to this card now, and the socket has not opened yet. Held so a
+  // render or the watchdog cannot tear this pane down or start a second attach
+  // for it before the connection settles. Cleared when the socket opens and on
+  // teardown. See `attachInFlight`.
+  markAttachInFlight(task.id);
   // Written down so a reload comes back here. Only in the board: a solo
   // window is addressed by its hash and has no business voting on where the
   // board lands.
