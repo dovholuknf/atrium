@@ -998,7 +998,15 @@ async function renderTermList() {
   // ATTACHABLE, not merely present. A pinned row outlives its runner now, so
   // testing that the id is still in the list would leave the pane holding a
   // dead terminal for as long as the row stayed pinned, which is forever.
-  if (termTask && !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
+  //
+  // NOT WHILE AN ATTACH IS IN FLIGHT FOR IT. The cached list drops `supervised`
+  // before the single-card poll does, so a card being attached right now reads
+  // as stale here for a beat. Tearing it down on that lag is what let a failed
+  // attach spin the board: teardown -> reattach -> openTerm -> refresh -> back
+  // here. The socket's own retry (or the ended state) settles the card. A render
+  // must not. See `attachInFlight`.
+  if (termTask && !attachIsInFlight(termTask.id) &&
+      !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
 
   termOrder(tasks);
   // Before anything is drawn, and over the rows that will BE drawn: a card
@@ -1249,6 +1257,19 @@ function wireTermDrag(host) {
 // itself two seconds before the daemon comes back.
 const attachRetryFor = 5 * 60 * 1000;
 const attachRetryEvery = 700;
+// The retry delay GROWS and is capped, rather than hammering at a flat rate. A
+// card whose attach keeps closing before it opens is either mid-restart or gone
+// for good, and neither wants a fixed 700ms forever: the first recovers in a
+// beat or two, the second should back off toward the cap so a dead card costs a
+// handful of attempts a minute, not one every 700ms. Reset when the socket
+// opens so the next outage starts from the short delay again.
+const attachRetryMax = 8000;
+let attachTries = 0;
+function attachRetryDelay() {
+  const d = Math.min(attachRetryMax, attachRetryEvery * Math.pow(2, attachTries));
+  attachTries++;
+  return d;
+}
 // How long a refused attach stays silent before it says it is waiting.
 //
 // `/v1/launch` returns before the supervisor has registered the runner, and
@@ -1258,6 +1279,65 @@ let attachSince = 0;
 // Said once per outage rather than once per attempt. At 700ms a five minute
 // wait is four hundred lines of the same sentence.
 let attachSaidGone = false;
+
+// THE CARD AN ATTACH IS IN FLIGHT FOR, and the guard that stops a render from
+// spinning the whole board.
+//
+// The failure this closes seized the screen. An attach whose socket closes
+// before it opens, together with a task LIST that lags the live card (the
+// cached list drops `supervised` while the single-card poll still has it, see
+// `renderTermList`), used to loop: the render found the pane stale, tore it
+// down, the watchdog re-attached, and re-attaching ran openTerm -> switchView
+// -> refresh -> renderTermList, which tore it down again. Hundreds of times a
+// second, a new WebGL context each pass, until the tab ran out of them.
+//
+// So the card openTerm has committed to is recorded from the moment it commits
+// until the socket opens or the attempt is abandoned. While it is in flight a
+// render must not tear the pane down and the watchdog must not start a second
+// attach for it: either one re-enters the loop above. Set in `openTerm`,
+// cleared when the socket opens and on any teardown.
+let attachInFlight = "";
+function markAttachInFlight(card) { attachInFlight = card || ""; }
+function clearAttachInFlight(card) { if (!card || attachInFlight === card) attachInFlight = ""; }
+function attachIsInFlight(card) { return !!card && attachInFlight === card; }
+
+// A REATTACH AFTER A TEARDOWN IS SCHEDULED AND BACKS OFF, never run straight
+// out of the render that noticed the pane was stale.
+//
+// This is the other half of not spinning. `clearTermPane` used to call
+// `waitAndAttach` inline, which polls the card and calls `openTerm` the instant
+// it answers, and `openTerm` repaints the board, and the repaint tears the pane
+// down again. Routed through here instead, at most one reattach is ever pending,
+// it will not fire while an attach for the card is already in flight, and each
+// time it has to fire again for the same card without the attach settling it
+// waits longer, capped. A card whose runner is genuinely gone settles onto one
+// ended state rather than a retry storm.
+let reattachTimer = 0, reattachCard = "", reattachTries = 0;
+const reattachMin = 500;
+const reattachMax = 8000;
+function scheduleReattach(card) {
+  if (!card) return;
+  // openTerm is already on it, or a reattach for it is already queued. Either
+  // way, do not stack a second one.
+  if (attachIsInFlight(card)) return;
+  if (reattachTimer && reattachCard === card) return;
+  if (reattachTimer) clearTimeout(reattachTimer);
+  reattachCard = card;
+  const wait = Math.min(reattachMax, reattachMin * Math.pow(2, reattachTries));
+  reattachTries++;
+  reattachTimer = setTimeout(() => {
+    reattachTimer = 0;
+    reattachCard = "";
+    waitAndAttach(card);
+  }, wait);
+}
+// Cleared when an attach settles, so the next genuine outage starts from the
+// short delay again rather than from wherever a previous flap left the backoff.
+function resetReattach() {
+  reattachTries = 0;
+  reattachCard = "";
+  if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = 0; }
+}
 
 // Draw the terminal on the GPU rather than in the DOM.
 //

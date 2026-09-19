@@ -14,7 +14,15 @@
 // node itself: this is a check, not a build step.
 
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { wholeBoard } = require("./board-source.js");
+
+// The board's xterm bundle, served off disk so a real Terminal is built. The
+// page loads these as `<script src="/vendor/...">`, which board-source leaves
+// external, and the attach-loop repro needs `openTerm` to build a real terminal
+// and open a socket rather than bail on a missing library.
+const WEB_ROOT = path.join(__dirname, "..", "internal", "api", "web");
 
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
@@ -51,6 +59,13 @@ const T2 = Object.assign({}, T1, { id: "t2", display_title: "second card" });
 const SOLO = Object.assign({}, T1, {
   id: "s1", display_title: "solo card", supervised: true
 });
+// The card the attach-loop repro drives. Supervised on the single-card poll a
+// watchdog reads, so it always looks like it is "back" and worth attaching. Its
+// attach socket is mocked in the browser to close before it opens, which is the
+// exact failure that seized the screen.
+const LOOP = Object.assign({}, T1, {
+  id: "loop1", display_title: "loop card", supervised: true
+});
 const HIST = {
   id: "h1", display_title: "old run", runner: "claude", status: "done",
   created_at: "2026-09-18T09:00:00Z", why: "did a thing", recap: "",
@@ -69,7 +84,10 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
-let tasksMode = "first";   // first | hang | second
+let tasksMode = "first";   // first | hang | second | pinned | loop
+// Whether the cached list agrees the loop card is attachable. Off during the
+// loop repro (the list lags the live card), on once it has recovered.
+let loopListSupervised = false;
 // How the mocked hub answers a card-scoped poll (GET /v1/tasks/<id>), which is
 // what a popped-out window opens on. `noroom` is the transient hub-restart state
 // (503, "no room is attached"), `gone` is a genuine missing card (404), and `ok`
@@ -117,6 +135,18 @@ const server = http.createServer((req, res) => {
     res.end(HTML);
     return;
   }
+  // The xterm bundle off disk, so a real terminal is built. Confined to
+  // /vendor/ under the web root.
+  if (url.startsWith("/vendor/") && !url.includes("..")) {
+    const file = path.join(WEB_ROOT, url);
+    fs.readFile(file, (err, body) => {
+      if (err) { res.writeHead(404); res.end(""); return; }
+      const type = url.endsWith(".css") ? "text/css" : "application/javascript";
+      res.writeHead(200, { "Content-Type": type });
+      res.end(body);
+    });
+    return;
+  }
   // A card-scoped poll, the one a popped-out window opens on. The hub answers a
   // no-room restart with 503 and a genuine missing card with 404, and the solo
   // window has to tell those apart. Placed before the list route, which is the
@@ -148,6 +178,7 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: "no such card" }));
       return;
     }
+    if (id === "loop1") { sendJSON(res, LOOP); return; }
     sendJSON(res, id === "s1" ? SOLO : id === "pin1" ? PIN : (id === "t2" ? T2 : T1));
     return;
   }
@@ -156,6 +187,18 @@ const server = http.createServer((req, res) => {
     // The pinned-cold strip: the terminated card while its pin holds it, and an
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
+    // The attach-loop repro. The cached LIST lags the live card: it carries the
+    // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
+    // it down) while the single-card poll above still says supervised (so the
+    // watchdog attaches again). `loopListSupervised` flips to the recovered
+    // state, where the list agrees the card is attachable and nothing tears it
+    // down. Pinned so the row is present either way, the way a real lagging
+    // list keeps the row while dropping the live flag.
+    if (tasksMode === "loop") {
+      sendJSON(res, { tasks: [Object.assign({}, LOOP,
+        { supervised: loopListSupervised, pinned: true })] });
+      return;
+    }
     sendJSON(res, { tasks: [tasksMode === "second" ? T2 : T1] });
     return;
   }
@@ -402,6 +445,111 @@ async function main() {
     if (consoleErrors.length) {
       fail("the page threw uncaught errors: " + consoleErrors.join(" | "));
     }
+
+    // ── a failed attach does not spin the board (the screen-seize loop) ──────
+    // THE BUG THIS ACCEPTANCE TEST EXISTS FOR. A supervised card whose attach
+    // socket closes before it opens, while the cached task list lags and reads
+    // the card as not-attachable, drove openTerm -> switchView -> refresh ->
+    // renderTermList -> clearTermPane -> waitAndAttach -> openTerm forever:
+    // hundreds of passes a second, a new terminal (and WebGL context) each one,
+    // flickering the screen until the tab ran out of contexts. This proves the
+    // attempts are BOUNDED, the board does not lock up, and once the attach
+    // succeeds it attaches once and stops.
+    await page.click('.tab[data-view="terms"]');
+
+    // The attach socket, mocked to CLOSE BEFORE IT OPENS. Only the attach uses
+    // `new WebSocket`, so this replaces exactly that and counts each attempt.
+    // `__attachSucceeds` flips it to a socket that opens and stays, which is the
+    // recovery half. `__openTermCount` counts the re-entry that built a new
+    // terminal each pass, which is what exhausted the WebGL contexts.
+    await page.evaluate(() => {
+      window.__attachAttempts = 0;
+      window.__openTermCount = 0;
+      window.__attachSucceeds = false;
+      window.__realWS = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (/\/attach(\?|$)/.test(url)) {
+          window.__attachAttempts++;
+          const sock = {
+            url, readyState: 0, binaryType: "arraybuffer",
+            onopen: null, onclose: null, onmessage: null, onerror: null,
+            send() {}, close() { this.readyState = 3; }
+          };
+          if (window.__attachSucceeds) {
+            setTimeout(() => { sock.readyState = 1; if (sock.onopen) sock.onopen({}); }, 0);
+          } else {
+            setTimeout(() => { sock.readyState = 3; if (sock.onclose) sock.onclose({ reason: "" }); }, 0);
+          }
+          return sock;
+        }
+        return new window.__realWS(url, protocols);
+      };
+      // Reassigning the global property is what a bare `openTerm(...)` call
+      // resolves to on this page, so every re-entry is counted.
+      const realOpen = window.openTerm;
+      window.openTerm = function (task) { window.__openTermCount++; return realOpen(task); };
+    });
+
+    // Drive the exact chain: the cached list lags (loop card not attachable) and
+    // the single-card poll says supervised, so the watchdog keeps attaching.
+    tasksMode = "loop";
+    loopListSupervised = false;
+    await page.evaluate(async () => {
+      const t = await api("/v1/tasks/loop1");
+      openTerm(t);
+    });
+
+    // A second of real time. On the broken code the counters run into the
+    // hundreds here; the fix bounds them.
+    await page.waitForTimeout(1200);
+    const opens = await page.evaluate(() => window.__openTermCount);
+    const attempts = await page.evaluate(() => window.__attachAttempts);
+    if (opens > 8) {
+      fail("a failed attach re-entered openTerm " + opens + " times in a second: the " +
+        "render/watchdog loop is spinning the board. It must be bounded.");
+    }
+    if (attempts > 12) {
+      fail("a failed attach opened " + attempts + " sockets in a second: the retry is not " +
+        "backing off. It must be a debounced, capped timer.");
+    }
+
+    // Not wedged: a refresh still completes and the page still answers.
+    const alive = await page.evaluate(() => {
+      try { runRefresh(); return true; } catch (e) { return false; }
+    });
+    if (!alive) fail("the board was wedged after the attach loop: runRefresh threw.");
+
+    // Recover: the attach starts succeeding and the list catches up. It must
+    // attach ONCE more and then stop, not keep churning.
+    loopListSupervised = true;
+    await page.evaluate(() => {
+      window.__attachSucceeds = true;
+      window.__openTermCount = 0;
+      window.__attachAttempts = 0;
+    });
+    // Wait past the capped backoff for a pending retry to fire and open.
+    await page.waitForFunction(() => window.__attachAttempts > 0, { timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const opensAfter = await page.evaluate(() => window.__openTermCount);
+    const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
+    if (opensAfter > 2) {
+      fail("after the attach recovered it re-opened the terminal " + opensAfter + " times: a " +
+        "successful attach must attach once and stop.");
+    }
+    if (attemptsAfter > 3) {
+      fail("after the attach recovered it kept opening sockets (" + attemptsAfter + "): it must " +
+        "settle once it is connected.");
+    }
+
+    // Put the socket, the loop card and the view back for the sections below.
+    await page.evaluate(() => {
+      try { closeTerm(); } catch (e) {}
+      window.WebSocket = window.__realWS;
+    });
+    tasksMode = "first";
+    loopListSupervised = false;
+    await page.click('.tab[data-view="stack"]');
+    await page.waitForSelector('#stack-list .stackrow', { timeout: 15000 });
 
     // ── a live popped-out window is re-heard on the board's roll call ───────
     // The board asks `solo-who` on every poll now, not just at boot. A window

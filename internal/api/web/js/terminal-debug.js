@@ -327,6 +327,9 @@ function closeTerm(switching) {
 // Tears the pane down without refreshing, so it can be called from inside one.
 function clearTermPane(switching) {
   const was = termTask ? termTask.id : "";
+  // The pane is going, so no attach is in flight for what it was showing. A new
+  // one is marked afresh by whatever attaches next.
+  clearAttachInFlight(was);
   if (termSock) { termSock.close(); termSock = null; }
   // Before the terminal goes, so the disposable is not left holding a
   // reference to a disposed one.
@@ -384,7 +387,13 @@ function clearTermPane(switching) {
     // empty pane for ninety seconds and then gave up. Where it goes instead is
     // `attachLastInstead`.
     if (endedOnPurpose(was)) { attachLastInstead(was); return; }
-    waitAndAttach(was);
+    // SCHEDULED, NOT INLINE. Calling `waitAndAttach` straight from here is what
+    // let a lagging render spin the board: it polls the card, attaches the
+    // instant it answers, and attaching repaints, and the repaint lands back in
+    // this teardown. Routed through the backoff scheduler, at most one reattach
+    // is pending and it slows down if it keeps having to fire. See
+    // `scheduleReattach`.
+    scheduleReattach(was);
   }
 }
 
