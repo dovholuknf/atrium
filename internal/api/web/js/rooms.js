@@ -106,12 +106,14 @@ function paintRooms() {
   }
   el.hidden = false;
 
-  // ONE INDICATOR, NOT TWO. A red `reconnecting` beside a green `2/2 rooms` is
-  // a board contradicting itself: the rooms are attached to the hub, the
-  // stream to the browser is not, and nobody reading a header is holding those
-  // two facts apart. So the chip carries both and the other one goes away.
+  // TWO CONCERNS, TWO INDICATORS. The room chip counts rooms. Whether THIS board
+  // still has its stream to the hub is a different fact, and folding it into the
+  // count was misleading: a chip reading `reconnecting` said the rooms were in
+  // trouble when the rooms were fine and it was the browser's own link that had
+  // dropped. So the count always counts, and `#conn` says `reconnecting` on its
+  // own, shown only while the stream is down and hidden while it is up.
   const streamUp = !conn || conn.classList.contains("live");
-  if (conn) conn.hidden = true;
+  if (conn) conn.hidden = streamUp;
 
   const room = roomNow();
   const live = hubRooms.length;
@@ -134,11 +136,7 @@ function paintRooms() {
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
   const label = document.getElementById("rooms-t");
-  if (!streamUp) {
-    label.textContent = "reconnecting";
-    el.title = "this board lost its connection to the hub. the rooms are unaffected: " +
-      "their agents keep running and the board catches up when it reconnects.";
-  } else if (room) {
+  if (room) {
     label.textContent = room;
     el.title = here
       ? `scoped to ${room}. this is that machine's atrium.`
@@ -148,9 +146,12 @@ function paintRooms() {
     el.title = "you are on an atrium hub, looking at every room at once. " +
       "click to focus on one.";
   }
-  el.classList.toggle("down", !streamUp);
-  el.classList.toggle("cold", streamUp && here === 0);
-  el.classList.toggle("scoped", streamUp && !!room);
+  // `down` belonged to the folded-in stream state and coloured the whole chip as
+  // though a room were in trouble. The stream now speaks through `#conn`, so the
+  // room chip is never `down`: it reports rooms and nothing else.
+  el.classList.remove("down");
+  el.classList.toggle("cold", here === 0);
+  el.classList.toggle("scoped", !!room);
 }
 
 // openRooms is the menu the chip opens.
