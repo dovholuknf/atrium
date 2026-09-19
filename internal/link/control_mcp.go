@@ -140,7 +140,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"and then look, or wait to be told.\n\n" +
 			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
 			"agent talking to another. The receiving session is told who you are " +
-				"automatically, so do not announce yourself.\n\n" +
+			"automatically, so do not announce yourself.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
 			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.",
 	}, c.sayHandler)
@@ -273,13 +273,13 @@ func roomOf(req *mcp.CallToolRequest) string {
 // ctlCard is the part of a task these tools report. The board's own shape is
 // much larger and most of it is for drawing.
 type ctlCard struct {
-	ID       string `json:"id"`
-	Title    string `json:"display_title"`
-	Wire     string `json:"wire_name"`
-	Status   string `json:"status"`
-	Worktree string `json:"worktree"`
-	Runner   string `json:"runner"`
-	Why      string `json:"why"`
+	ID       string   `json:"id"`
+	Title    string   `json:"display_title"`
+	Wire     string   `json:"wire_name"`
+	Status   string   `json:"status"`
+	Worktree string   `json:"worktree"`
+	Runner   string   `json:"runner"`
+	Why      string   `json:"why"`
 	Idle     int      `json:"idle_seconds"`
 	Wait     int      `json:"wait_seconds"`
 	Superv   bool     `json:"supervised"`
