@@ -106,6 +106,44 @@ const harness = new Function("hooks", `
   };
 `)({ autoSettle: false });
 
+// The in-flight cap in `api()` is what bounds the fetches soloRefresh and the
+// hub-room poll make, since a popped-out window rides the same api() and the
+// same cappedFetch. Lift the cap machinery and prove no more than the cap ever
+// runs at once, however many callers pile in, and that the failure streak the
+// backoff reads climbs on a rejection and resets on success.
+const capSrc =
+  region("const API_MAX_INFLIGHT", "\nlet apiFailStreak") +
+  "\nlet apiFailStreak = 0;\n" +
+  region("async function cappedFetch", "\nconst esc");
+
+const cap = new Function(`
+  ${capSrc}
+  const waiters = [];
+  let live = 0, peak = 0;
+  // A fetch that hangs until the test lets it finish, so many can be in flight
+  // at once and the peak is observable.
+  function heldFetch() {
+    live++; if (live > peak) peak = live;
+    return new Promise((res, rej) => waiters.push({ res, rej }));
+  }
+  return {
+    launch(n) {
+      for (let i = 0; i < n; i++) {
+        cappedFetch(heldFetch, "/x", undefined, async r => r).catch(() => {});
+      }
+    },
+    finishOne(ok) {
+      const w = waiters.shift();
+      if (!w) return;
+      live--;
+      if (ok) w.res({}); else w.rej(new Error("boom"));
+    },
+    peak: () => peak,
+    max: API_MAX_INFLIGHT,
+    streak: () => (typeof apiFailStreak === "number" ? apiFailStreak : -1)
+  };
+`)();
+
 // Let the microtask queue drain so a settled refresh's `.finally` runs before
 // the next assertion.
 async function drain() {
@@ -201,6 +239,84 @@ async function main() {
   if (harness.starts() <= before) {
     fail("a room flapping faster than the debounce never repainted the board. " +
       "The max-wait cap is missing.");
+  }
+
+  // ── a hung pass does not wedge the board for good ─────────────────────────
+  // A fetch that never resolves or rejects would leave the in-flight flag set
+  // forever and the board frozen on its last paint. The watchdog must abort the
+  // hung pass past RUN_TIMEOUT and let the next one run.
+  harness.setAutoSettle(false);   // the next pass will hang
+  harness.setFail(0);
+  await drain();
+  const stuckAt = harness.starts();
+  const abortsAt = harness.abortCount();
+  harness.refreshSoon();
+  harness.advance(300);
+  await drain();                  // pass starts and then hangs (never settled)
+  if (harness.starts() !== stuckAt + 1) fail("the hung pass did not start.");
+  harness.refreshSoon();          // a trigger arrives while it hangs
+  harness.advance(400);
+  await drain();
+  if (harness.starts() !== stuckAt + 1) {
+    fail("a trigger ran a second pass while one was hung. Single-flight broke.");
+  }
+  harness.advance(30000);         // past RUN_TIMEOUT
+  await drain();
+  if (harness.abortCount() <= abortsAt) {
+    fail("the watchdog did not abort the hung pass's fetches.");
+  }
+  harness.advance(100);           // the requeue timer
+  await drain();
+  if (harness.starts() !== stuckAt + 2) {
+    fail("after a pass hung past RUN_TIMEOUT, the board never refreshed again. " +
+      "A hung fetch blanks the board for good.");
+  }
+  harness.settle();               // let the abandoned pass resolve; harmless
+  await drain();
+
+  // ── the cap bounds the solo-path and hub-room fetches ─────────────────────
+  // Twenty callers pile in at once, as a solo window under a flap would. No more
+  // than the cap may ever be on the wire.
+  cap.launch(20);
+  await drain();
+  if (cap.peak() !== cap.max) {
+    fail("the in-flight cap let " + cap.peak() + " fetches run at once, not " +
+      cap.max + ". soloRefresh and the hub-room poll would drain the pool.");
+  }
+  // Draining one lets exactly one queued caller through, never more.
+  cap.finishOne(true);
+  await drain();
+  if (cap.peak() !== cap.max) {
+    fail("finishing one fetch let the in-flight count climb past the cap.");
+  }
+  // A rejection climbs the streak the backoff reads; a success clears it.
+  cap.finishOne(false);
+  await drain();
+  if (cap.streak() < 1) {
+    fail("a failed fetch did not raise the failure streak, so the tab cannot " +
+      "back off.");
+  }
+  cap.finishOne(true);
+  await drain();
+  if (cap.streak() !== 0) {
+    fail("a successful fetch did not clear the failure streak.");
+  }
+
+  // ── the solo path rides the same guards (source invariants) ───────────────
+  // soloRefresh has no debounce or single-flight of its own. What makes it safe
+  // is that refresh() hands a popped-out window to it, so it runs INSIDE
+  // runRefresh. Lock that, and lock that the hub endpoints a flap polls go
+  // through the cap rather than a raw plainFetch.
+  if (!/if\s*\(termOnly\(\)\)\s*return soloRefresh\(\)/.test(page)) {
+    fail("refresh() no longer delegates to soloRefresh, so a popped-out window " +
+      "would not ride runRefresh's single-flight. The solo path is unguarded.");
+  }
+  if (/plainFetch\(\s*["']\/_hub\/(rooms|inventory)["']\s*\)/.test(page)) {
+    fail("a hub endpoint is fetched with a raw plainFetch, outside the cap. A " +
+      "flapping room polls these and would drain the pool through that door.");
+  }
+  if (!/cappedFetch\(\s*plainFetch,\s*["']\/_hub\/rooms["']/.test(page)) {
+    fail("/_hub/rooms is not routed through cappedFetch.");
   }
 
   if (bad) process.exit(1);

@@ -178,9 +178,9 @@ function pillCounts(segID, counts) {
   });
 }
 
-async function renderStack() {
+async function renderStack(signal) {
   let everything;
-  try { everything = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  try { everything = (await api("/v1/tasks", { signal })).tasks || []; } catch (e) { return; }
   // SPLIT ONCE, HERE. Everything the rest of this file counts, filters, sorts
   // and searches is work on a machine that is answering, so every number on
   // the page is live only without anybody remembering to filter for it. The

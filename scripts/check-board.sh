@@ -200,6 +200,18 @@ if ! node "$here/scripts/test-refresh-storm.js"; then
   fail=1
 fi
 
+# The same guards in a real browser: that the live-style board paints its task
+# and history lists from the daemon's answers, and that a fetch which hangs
+# forever does not leave the board frozen blank (the watchdog runs a later pass
+# that repaints). Serves the concatenated board off a throwaway localhost port
+# with mocked endpoints and drives headless Chromium. Skips itself, exit 0, when
+# Playwright or its browser is not installed, the same as the node guard above:
+# it is a check, not a build step.
+if ! node "$here/scripts/test-board-headless.js"; then
+  echo "the board blanks on a hung fetch, or does not paint its lists. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.
