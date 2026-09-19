@@ -454,6 +454,52 @@ async function takeSoloCard(id) {
   return true;
 }
 
+// Backoff for the popped-out window's first card poll, capped so a flapping hub
+// cannot spin it hot. The wait grows from soloReconnectMin, doubling up to
+// soloReconnectMax, and every retry goes through api(), so it is held under the
+// same in-flight cap and single-flight the board's refresh runs under.
+const soloReconnectMin = 500;
+const soloReconnectMax = 5000;
+
+// The popped-out window's first card poll, told apart the way `waitLoop` tells
+// it apart.
+//
+// The board survives a hub restart because its refresh path retries. This is
+// that posture for the solo window's open path, which had none: a hub with no
+// room yet is a RECONNECT this window waits out and recovers from on its own,
+// not a dead card. So a 503 (the hub saying no room is attached), any other
+// 5xx, or a transport error waits and retries behind a non-blocking
+// "reconnecting" line, and when the room reattaches the poll succeeds and the
+// caller paints the card without a click.
+//
+// The two codes it does NOT wait on are 404 and 409, the same two `waitLoop`
+// stops on: the room answering that the card is not there, or naming no room
+// when several are attached. Those are final, and only they let the caller show
+// the dead-end modal.
+async function soloFetchCard(id) {
+  let wait = soloReconnectMin, said = false;
+  while (true) {
+    try {
+      return await api("/v1/tasks/" + encodeURIComponent(id));
+    } catch (e) {
+      // A real missing card, not a hub that is a moment from answering. Final.
+      if (e.status === 404 || e.status === 409) throw e;
+      // 503 / 5xx / transport error: the reconnect this window exists to sit
+      // through. Say so once, non-blocking, then wait and try again. No bound:
+      // the window recovers whenever the room comes back, even across a long
+      // deploy, the same way the board's own refresh loop never gives up.
+      if (!said) {
+        said = true;
+        rlog("solo: card poll not answered, reconnecting:", e.message);
+        termWait((restartComing() ? "atrium is restarting. reconnecting to "
+                                  : "reconnecting to ") + waitName(soloTask) + "…");
+      }
+      await new Promise(r => setTimeout(r, wait));
+      wait = Math.min(wait * 2, soloReconnectMax);
+    }
+  }
+}
+
 async function bootTerminalOnly() {
   const want = decodeURIComponent(location.hash.slice("#term=".length));
   document.body.classList.add("solo");
@@ -505,12 +551,22 @@ async function bootTerminalOnly() {
 
   let task;
   try {
-    task = await api("/v1/tasks/" + encodeURIComponent(soloID));
+    task = await soloFetchCard(soloID);
   } catch (e) {
+    // ONLY A GENUINE MISSING CARD REACHES HERE. A hub-only deploy restarts the
+    // hub, and for about a second the hub has no room and answers this poll with
+    // the 503 "no room is attached" error, not a real 404. That used to pop this
+    // blocking modal and stop, so the window stayed dead-ended over a session
+    // that reattached seconds later. `soloFetchCard` now sits through the
+    // reconnect and only throws for the room saying the card is not there, which
+    // is the one case the dead-end message is still right about.
     document.title = "atrium: no such card";
+    termWait("");
     tellUser("nothing to attach to", e.message);
     return;
   }
+  // Reconnected, or answered first time. Any reconnecting line comes down.
+  termWait("");
   soloTask = task;
   // The title bar is the whole reason this window is worth having: it is what
   // alt-tab shows.
