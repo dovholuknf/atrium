@@ -71,6 +71,20 @@ let hubMode = false;
 let sggAttached = false;
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
+
+// The board skin follows the room-picker scope: the ALL view (no X-Atrium-Room
+// header) wears the HUB's own skin, and each room wears its own. `skinFor` is
+// the mocked hub-plus-rooms state, keyed by scope with "" for the ALL/hub view.
+// A skin-only save in the ALL view lands on the hub (skinFor[""]); one made
+// while scoped to a room lands on that room, and never on the hub. The list is
+// the same across scopes; only the selected one differs.
+const SKINS = ["harbour", "moss", "noir", "ember", "vapor"];
+let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
+function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
+function settingsBody(room) {
+  const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
+  return { global_auto: false, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
+}
 const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
 const hubStreams = [];       // hub event streams, used to push a `rooms` event
@@ -126,7 +140,36 @@ const server = http.createServer((req, res) => {
     sendJSON(res, { build: "test", settling: false, halted: false }); return;
   }
   if (url === "/v1/settings") {
-    sendJSON(res, { global_auto: false, global_auto_seconds: 0 }); return;
+    // The scope is the room header the board's fetch wrapper adds, or "" for the
+    // ALL view. The hub answers the ALL view with its own skin and a room-scoped
+    // request with that room's, which is the whole of the feature.
+    const room = req.headers["x-atrium-room"] || "";
+    if (req.method === "POST" || req.method === "PUT") {
+      let raw = "";
+      req.on("data", c => { raw += c; });
+      req.on("end", () => {
+        let body = {};
+        try { body = JSON.parse(raw || "{}"); } catch (e) {}
+        const keys = Object.keys(body);
+        // A skin-only save lands on the current scope: the hub for ALL, the room
+        // when scoped. Anything else in the ALL view still needs a room (409),
+        // which is the refusal the scoped skin does NOT get any more.
+        if (keys.length === 1 && keys[0] === "board_skin") {
+          skinFor[room] = body.board_skin;
+          sendJSON(res, settingsBody(room));
+          return;
+        }
+        if (!room) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "pick a room first" }));
+          return;
+        }
+        sendJSON(res, settingsBody(room));
+      });
+      return;
+    }
+    sendJSON(res, settingsBody(room));
+    return;
   }
   if (url === "/v1/themes") { sendJSON(res, { themes: [] }); return; }
   // The plain-daemon stream and the hub's own spelling of it. On a hub the board
@@ -424,6 +467,87 @@ async function main() {
       hubMode = false;
       sggAttached = false;
     }
+
+    // ── the board skin follows the room-picker scope ────────────────────────
+    // The ALL view wears the hub's skin; scoping to a room wears that room's;
+    // switching scope re-skins (a scope change is a reload, so bootSkin re-reads
+    // the right one); a skin saved from ALL lands on the hub, not the old 409;
+    // and a room attaching does not clobber the ALL skin. A fresh context keeps
+    // this test's per-scope localStorage out of the others'.
+    hubMode = true;
+    resetSkins();
+    const skinCtx = await browser.newContext();
+    const skin = await skinCtx.newPage();
+    const skinErrors = [];
+    skin.on("pageerror", e => skinErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      skin.on("console", m => console.error("[skin] " + m.type() + ": " + m.text()));
+    }
+    const dataSkin = () =>
+      skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
+    try {
+      // ALL scope: the hub's skin, not the alphabetically-first room's.
+      await skin.goto(base, { waitUntil: "domcontentloaded" });
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "noir", { timeout: 15000 });
+
+      // A skin saved from the ALL view lands on the hub (skinFor[""]), and the
+      // board keeps wearing it. A 409 would have made saveSkin revert the paint.
+      await skin.evaluate(() => saveSkin("vapor"));
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
+      if (skinFor[""] !== "vapor") {
+        fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
+          JSON.stringify(skinFor[""]) + ", wanted vapor.");
+      }
+
+      // Scope to a room: a reload re-skins to that room's own skin.
+      await Promise.all([
+        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+        skin.evaluate(() => pickRoom("alpha"))
+      ]);
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "moss", { timeout: 15000 });
+
+      // A skin saved while scoped to a room lands on that room, and leaves the
+      // hub's ALL skin alone.
+      await skin.evaluate(() => saveSkin("ember"));
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "ember", { timeout: 15000 });
+      if (skinFor.alpha !== "ember") {
+        fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
+          JSON.stringify(skinFor.alpha) + ", wanted ember.");
+      }
+      if (skinFor[""] !== "vapor") {
+        fail("saving alpha's skin clobbered the hub's ALL skin: skinFor[''] is " +
+          JSON.stringify(skinFor[""]) + ", wanted the untouched vapor.");
+      }
+
+      // Back to ALL: the hub skin is what it was, and a second room attaching
+      // does not change it. This is the borrow-race bug clint hit on a deploy.
+      await Promise.all([
+        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+        skin.evaluate(() => pickRoom(null))
+      ]);
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
+      sggAttached = true;
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      await skin.waitForTimeout(500);
+      if ((await dataSkin()) !== "vapor") {
+        fail("a room attaching clobbered the ALL skin: it became " +
+          JSON.stringify(await dataSkin()) + ", wanted the hub's vapor.");
+      }
+      if (skinErrors.length) {
+        fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
+      }
+    } finally {
+      await skin.close();
+      await skinCtx.close();
+      hubMode = false;
+      sggAttached = false;
+      resetSkins();
+    }
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -449,8 +573,11 @@ async function main() {
 
   if (bad) process.exit(1);
   console.log("the board paints its lists, a hung fetch does not blank it, a " +
-    "popped-out window rides out a hub restart and recovers, and the open room " +
-    "picker live-updates a newly-attached room from disconnected to live.");
+    "popped-out window rides out a hub restart and recovers, the open room " +
+    "picker live-updates a newly-attached room from disconnected to live, and " +
+    "the board skin follows the room-picker scope (ALL wears the hub's, each " +
+    "room its own, a save lands in the current scope, a room attaching leaves " +
+    "the ALL skin alone).");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

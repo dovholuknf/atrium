@@ -127,6 +127,11 @@ func (i inventory) Remembered(name string) ([]link.CardState, error) {
 // Holding names the rooms with cards remembered for them.
 func (i inventory) Holding() ([]string, error) { return i.store.Holding() }
 
+// HubSkin and SetHubSkin are the board skin the ALL view wears, which is the
+// hub's own rather than a room's. See `internal/link` and `internal/hubstore`.
+func (i inventory) HubSkin() (string, error)     { return i.store.HubSkin() }
+func (i inventory) SetHubSkin(name string) error { return i.store.SetHubSkin(name) }
+
 // fold matches how a room name is compared everywhere else: ASCII only, so a
 // name folds the same on every machine regardless of locale.
 func fold(s string) string {
