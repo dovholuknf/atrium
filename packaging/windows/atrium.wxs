@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Windows installer for atrium, built with WiX. scripts/package-windows.ps1
+  is what to run: it finds or fetches the WiX toolset, works out the numeric MSI
+  version from the tag, and passes the four -d variables this file reads.
+
+  WHAT THIS INSTALLS, and where the line is drawn. The MSI lays the binary down
+  in Program Files, puts that directory on the system PATH, and ships the service
+  scripts beside it. It does NOT register the logon task, and that is the same
+  decision the Linux and macOS packagers make from the other direction.
+
+  On Linux the postinstall enables a user unit for the one person who ran sudo,
+  and refuses when the installer is root with nobody logged in. On macOS the
+  postinstall loads a LaunchAgent for the person at the console, and refuses when
+  there is nobody there. An MSI runs elevated, as SYSTEM or as an administrator
+  who may not be the person who will use atrium, and a logon task belongs to one
+  interactive user's session. Registering it from here would be the Windows
+  version of "root enabled a daemon for an account that is not in a session".
+
+  So the task stays a per-user step, run by the user as themselves after the MSI
+  has put atrium on PATH:
+
+      atrium-service.ps1 install
+
+  which resolves atrium from PATH, which is exactly what the MSI just set up. One
+  place writes the task, scripts/atrium-autostart.ps1, for the reason recorded in
+  that file: two writers is how a machine ends up with two daemons on one
+  database. The MSI does not become a second writer.
+
+  It is a LOGON TASK and not a Windows service for the reason set out at length in
+  scripts/atrium-service.ps1: a service runs in session 0 with a stored password
+  and none of the user's environment, and atrium supervises pseudo terminals that
+  need that environment. The three platforms are one design and change together.
+
+  The four variables package-windows.ps1 passes with -d:
+    Version     the numeric MSI version, e.g. 0.4.1. No leading v, no -rc suffix.
+    BinDir      the directory holding the built atrium.exe.
+    ScriptsDir  the repo scripts/ directory, for the service scripts shipped.
+    DocDir      where README.md lives.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="atrium"
+      Manufacturer="dovholuknf"
+      Version="$(Version)"
+      Scope="perMachine"
+      Compressed="yes"
+      UpgradeCode="4b2f6d1e-9c3a-4f27-8b6d-2a1e7c5f9d34">
+
+    <!--
+      MajorUpgrade so installing a newer atrium removes the older one rather than
+      leaving two entries in Programs and Features. AllowSameVersionUpgrades lets
+      a reinstall of the same version repair in place, which is what somebody
+      running the MSI twice expects. The message is set because the default one
+      talks about a "newer version" even when downgrading, which reads as a bug.
+    -->
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of atrium is already installed. Remove it first to install this one." />
+
+    <!-- One embedded cab, so the MSI is a single file to hand around. -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="atrium">
+        <Directory Id="SCRIPTSFOLDER" Name="scripts" />
+      </Directory>
+    </StandardDirectory>
+
+    <!--
+      The binary, and the PATH entry that makes `atrium` resolve. Bitness always64
+      because atrium is a windows/amd64 build and belongs in the 64-bit Program
+      Files, not the WOW64 one.
+
+      The Environment element adds INSTALLFOLDER to the system PATH and removes it
+      on uninstall (Action=set, Part=last, Permanent=no). System=yes because the
+      install is perMachine; a user PATH entry from an elevated install lands on
+      the wrong account. This is the whole reason the service scripts can resolve
+      atrium from PATH and never hard-code a location.
+    -->
+    <ComponentGroup Id="Product">
+      <Component Directory="INSTALLFOLDER" Bitness="always64">
+        <File Id="atrium.exe" Source="$(BinDir)\atrium.exe" KeyPath="yes" />
+        <Environment
+            Id="AtriumPath"
+            Name="PATH"
+            Value="[INSTALLFOLDER]"
+            Action="set"
+            Part="last"
+            System="yes"
+            Permanent="no" />
+      </Component>
+
+      <!--
+        The service scripts travel with the MSI so the completion instruction
+        works on a machine that only has the installer and not the repository.
+        atrium-service.ps1 is the front door and atrium-autostart.ps1 is what it
+        calls, so both are needed.
+      -->
+      <Component Directory="SCRIPTSFOLDER" Bitness="always64">
+        <File Id="atrium_service.ps1" Source="$(ScriptsDir)\atrium-service.ps1" KeyPath="yes" />
+      </Component>
+      <Component Directory="SCRIPTSFOLDER" Bitness="always64">
+        <File Id="atrium_autostart.ps1" Source="$(ScriptsDir)\atrium-autostart.ps1" KeyPath="yes" />
+      </Component>
+
+      <Component Directory="INSTALLFOLDER" Bitness="always64">
+        <File Id="README.md" Source="$(DocDir)\README.md" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="atrium" Level="1">
+      <ComponentGroupRef Id="Product" />
+    </Feature>
+  </Package>
+</Wix>
