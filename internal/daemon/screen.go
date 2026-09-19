@@ -865,7 +865,6 @@ func replayMode(st *store.Store) string {
 
 // replayCols selects the last recorded width to match the newest output.
 // Using the attaching browser's width would misplace cursor updates.
-// widthNote in attach.go reports a mismatch to the operator.
 func replayCols(widths []int, wantCols int) int {
 	if n := len(widths); n > 0 && widths[n-1] > 0 {
 		return widths[n-1]

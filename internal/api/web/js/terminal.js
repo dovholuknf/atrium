@@ -6,6 +6,16 @@ let term = null, termFit = null, termSock = null, termTask = null;
 // The keystroke listener, held so a reconnect can replace it rather than stack
 // another one on top. See `connectTerm`.
 let termData = null;
+// Whether this `term` has already had a socket open and be replayed into it.
+//
+// The daemon replays the whole scrollback on EVERY attach, and a reconnect
+// reuses the same `term` rather than building a fresh one the way a session
+// switch does. So a hub restart used to append a second full copy of the
+// history under the first, with a second history/live boundary: the visible
+// mess after a restart. Cleared when `openTerm` builds a new terminal, set the
+// first time a socket opens, and read on the next open to reset before the
+// replay lands. See `connectTerm`.
+let termReplayed = false;
 
 // Runner capabilities arrive in the first attach message. Reset per socket
 // so reconnects cannot reuse another session's capabilities. See attachCaps.
@@ -474,6 +484,10 @@ function openTerm(task) {
   // somebody had just set: `openTerm` runs on every switch, not only on the
   // first one.
   termFontSize = readTermFont(task.id);
+  // A FRESH TERMINAL HAS SEEN NO REPLAY. Set before the socket opens so the
+  // first attach fills an empty screen and only a later reconnect resets. See
+  // `termReplayed`.
+  termReplayed = false;
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
