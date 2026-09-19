@@ -43,6 +43,12 @@ const ROOM_KEY = "atrium.room";
 let hubRooms = [];
 let hubIsHub = false;
 
+// The attached room set as last seen, joined into one string to compare by. Null
+// until the first read, so the first poll seeds it without counting as a change.
+// A change here churns every card's id (see `bareId` in notify.js), so it is
+// what tells the alerter to re-seed rather than announce the whole board.
+let attachedRoomKey = null;
+
 // roomNow is the chosen room, or empty for all of them.
 function roomNow() {
   try { return localStorage.getItem(ROOM_KEY) || ""; } catch (e) { return ""; }
@@ -849,6 +855,17 @@ async function loadHubRooms() {
   hubIsHub = true;
   hubRooms = (got.rooms || []).slice().sort((a, b) =>
     String(a.name).localeCompare(String(b.name)));
+  // A room attaching or detaching flips every card's id between `room~id` and
+  // bare when the count crosses 1<->2, which the alerter would otherwise read as
+  // the whole board arriving at once. Re-seed its baseline on that tick so it
+  // announces nothing. Done here, the moment the set is read, rather than after
+  // `loadInventory`, so the reseed lands before the refresh that follows.
+  const roomKey = hubRooms.map(r => r.name).join("\n");
+  if (attachedRoomKey !== null && roomKey !== attachedRoomKey &&
+      typeof alerting !== "undefined" && alerting.reseed) {
+    alerting.reseed();
+  }
+  attachedRoomKey = roomKey;
   // THE DURABLE LIST COMES WITH IT, because the header's counter needs both
   // halves: how many rooms are answering, and how many exist to answer. Asked
   // here rather than only when the rooms tab is open, or the counter would

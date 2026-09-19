@@ -293,6 +293,19 @@ if (soloBus) {
   };
 }
 
+// The bare card id, with any `room~` tag stripped. Mirrors the hub's splitTag
+// in internal/link/rooms.go: the aggregate view tags ids as `room~id` only
+// while MORE THAN ONE room is attached, so one card is `room~id` with two rooms
+// and bare with one. A room dropping (2 -> 1) flips every id at once, and a
+// diff on the raw id reads that as every card arriving. Diffing on the bare id
+// keeps a card's identity across the flip. Card ids are uuids and carry no `~`
+// of their own, so the first `~` is the tag join.
+function bareId(id) {
+  const s = String(id);
+  const i = s.indexOf("~");
+  return i > 0 ? s.slice(i + 1) : s;
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
@@ -307,6 +320,11 @@ const alerting = (() => {
   // Set from `/v1/health` while the daemon is bringing sessions back. See
   // internal/daemon/settling.go.
   let settlingNow = false;
+
+  // A one-shot marker: take the next check of this kind as the baseline and
+  // announce nothing. Written into `known[kind]` by `reseed` when the attached
+  // room set changes. See the header on `reseed`.
+  const RESEED = "\0reseed";
 
   const btn = document.getElementById("sound");
   const paint = () => {
@@ -469,10 +487,26 @@ const alerting = (() => {
   const nagged = {};
 
   return {
-    check, nag, play, preview, save, unlock, notify, settling,
+    check, nag, play, preview, save, unlock, notify, settling, reseed,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
+
+  // Re-seed the baseline on the next check of every kind, silently.
+  //
+  // A room attaching or detaching legitimately churns the whole card set, and
+  // when the count crosses 1<->2 it also flips every id between `room~id` and
+  // bare (see the hub's tagFor/splitTag and `bareId`). That is the same churn a
+  // restart causes, so notify should take the next set as its new baseline
+  // rather than diff on it. `settlingNow` does not cover this: the hub did not
+  // restart and the aggregate stream stayed open, so `es.onopen` never fired.
+  // Called from `loadHubRooms` when the attached room set changes.
+  //
+  // Only kinds already being tracked are marked. A kind not yet seen seeds
+  // silently on its own first pass anyway.
+  function reseed() {
+    Object.keys(known).forEach(kind => { known[kind] = RESEED; });
+  }
 
   // Whether the daemon is still putting back what it had before it restarted.
   //
@@ -531,7 +565,16 @@ const alerting = (() => {
   // The first pass only seeds, so opening the page does not fire for a queue
   // that was already there.
   function check(kind, items, describe) {
-    const ids = new Set(items.map(i => i.id));
+    // Diffed on the BARE id, so a card keeps its identity whether the aggregate
+    // view tags it `room~id` (two rooms) or leaves it bare (one). See `bareId`.
+    const ids = new Set(items.map(i => bareId(i.id)));
+    // A ROOM SET CHANGE IS NOT A PILE OF NEW AGENTS. `reseed` marked this kind
+    // when a room attached or detached, so take this set as the new baseline
+    // and say nothing, the same way settling and a fresh page load do.
+    if (known[kind] === RESEED) {
+      known[kind] = ids;
+      return;
+    }
     // A RESTART IS NOT A PILE OF NEW AGENTS. While the daemon says it is still
     // coming up, a card arriving or going quiet is a session being put back
     // rather than something that just happened, so this re-seeds instead of
@@ -572,7 +615,7 @@ const alerting = (() => {
       }
       return;
     }
-    const fresh = items.filter(i => !prev.has(i.id));
+    const fresh = items.filter(i => !prev.has(bareId(i.id)));
     known[kind] = ids;
     if (!fresh.length) return;
 
