@@ -302,6 +302,13 @@ func (f *feeds) read(ctx context.Context, room string) {
 			// none, which is what makes `: ping` free.
 			if data != nil {
 				f.emit(Event{Room: room, Kind: kind, Data: data})
+				// A ROOM ANNOUNCING IT IS WINDING DOWN is an operational line
+				// the hub already sees on the relay, so it is recorded here.
+				// Only this kind: the rest of the relay is per-card history with
+				// its own home, and the audit log is not a second copy of it.
+				if kind == "going-down" {
+					f.p.RecordAudit(room, "room-going-down", "the room says it is winding down")
+				}
 			}
 			kind, data = "message", nil
 		case line[0] == ':':

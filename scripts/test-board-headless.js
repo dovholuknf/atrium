@@ -206,6 +206,18 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
+  // The operational audit feed. Two lines, newest first, so the pane has
+  // something to draw once the audit tab is opened. See js/audit.js.
+  if (url === "/_hub/audit") {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    sendJSON(res, { events: [
+      { id: "a2", at: "2026-09-19T12:05:00Z", room: "sgg", kind: "room-attached",
+        detail: "sgg running v2" },
+      { id: "a1", at: "2026-09-19T12:00:00Z", kind: "hub-started",
+        detail: "the hub came up" }
+    ] });
+    return;
+  }
   // Everything else (sw.js, icons, favicon): a clean 404.
   res.writeHead(404); res.end("");
 });
@@ -526,6 +538,42 @@ async function main() {
       }
       if (hubErrors.length) {
         fail("the hub page threw uncaught errors: " + hubErrors.join(" | "));
+      }
+
+      // ── the audit pane is hub-only and paints from /_hub/audit ────────────
+      // The tab is hidden on a plain daemon and revealed once the hub probe
+      // answers. Switching to it fetches the feed and draws one row per event,
+      // newest first. See js/audit.js.
+      await hub.waitForFunction(() => {
+        const tab = document.querySelector('.tab[data-view="audit"]');
+        return tab && !tab.hidden;
+      }, { timeout: 15000 });
+      await hub.evaluate(() => switchView("audit"));
+      await hub.waitForFunction(() => {
+        const rows = document.querySelectorAll("#audit-list .aud-row");
+        return rows.length >= 2;
+      }, { timeout: 15000 });
+      const audit = await hub.evaluate(() => {
+        const rows = [...document.querySelectorAll("#audit-list .aud-row")];
+        const first = rows[0];
+        return {
+          count: rows.length,
+          firstKind: first && first.querySelector(".aud-kind")
+            ? first.querySelector(".aud-kind").textContent : "",
+          hubLine: rows.some(r => r.querySelector(".aud-room.aud-hub"))
+        };
+      });
+      // Newest first: the sgg attach (12:05) is above the hub-started (12:00).
+      if (audit.firstKind !== "room-attached") {
+        fail("the audit pane did not draw newest first: " + JSON.stringify(audit));
+      }
+      // A hub-level line (no room) is drawn as `hub`.
+      if (!audit.hubLine) {
+        fail("the audit pane did not mark the hub-level line: " + JSON.stringify(audit));
+      }
+      if (hubErrors.length) {
+        fail("the hub page threw uncaught errors after the audit pane: " +
+          hubErrors.join(" | "));
       }
     } finally {
       await hub.close();

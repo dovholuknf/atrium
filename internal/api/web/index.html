@@ -97,6 +97,10 @@
       <div class="tab" data-view="runners">rooms</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
            title="requests waiting to be answered"></span></div>
+      <!-- Hub only. `/_hub/audit` is a 404 on a plain daemon, so this reveals
+           itself once the hub probe finds a hub, the same as the room counter.
+           See js/audit.js and js/rooms.js. -->
+      <div class="tab" data-view="audit" hidden>audit</div>
     </nav>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
@@ -540,6 +544,31 @@ The useful cut is which ones left an account of themselves. A session that finis
       <button id="h-more" onclick="moreHistory()" hidden>show more</button>
     </div>
     <div id="history-list"></div>
+  </div>
+
+  <!-- The operational feed. What happened to atrium, as opposed to what one
+       card did: a room attaching or detaching, the hub starting, a launch
+       refused by the cap, the board put on a share. Read-only, newest first,
+       filterable by room and by kind. Hub only, drawn by js/audit.js. See
+       docs/audit-design.md. -->
+  <div id="audit" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>what has happened here</span>
+      <span class="help" tabindex="0" data-tip="Operational events across the hub and its rooms, newest first.
+
+A room attaching or detaching, the hub starting, a launch refused by the cap, the board put on a share. This is the cross-cutting feed those were scattered out of: some were a hub log line, some a delta on one card, some nowhere.
+
+Read-only. It says what happened, it does not change anything. Filter by room to follow one machine, or by kind to see every refused launch.">?</span>
+    </div>
+    <p class="pane-lead">Operational events across the hub and its rooms. What happened to atrium,
+      not what one card did.</p>
+    <div class="filters" style="margin-bottom:12px">
+      <span class="barlabel">room</span>
+      <select id="audit-room"></select>
+      <span class="barlabel">kind</span>
+      <select id="audit-kind"></select>
+    </div>
+    <div id="audit-list"></div>
   </div>
 
   <!-- FIVE THINGS, NOT ONE SCROLL.
@@ -2502,6 +2531,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <script src="/js/core.js"></script>
 <script src="/js/rooms.js"></script>
+<script src="/js/audit.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/card-menu.js"></script>
 <script src="/js/sharing.js"></script>

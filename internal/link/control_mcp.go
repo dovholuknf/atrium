@@ -67,6 +67,9 @@ type controlMCP struct {
 	// hub forwards a restart_atrium down the link to a room. Nil in a test that
 	// only exercises the read tools.
 	hub *Hub
+	// audit records an operational event, e.g. a launch refused by the cap. Nil
+	// on a hub that keeps no log, and best effort: it never blocks a launch.
+	audit func(room, kind, detail string)
 
 	// mu guards reservations. The control server is one instance shared by every
 	// request (see newControlHandler), so the launch cap's book-keeping lives here
@@ -94,8 +97,8 @@ type reservation struct {
 // ONE SERVER FOR EVERY REQUEST, and that is correct rather than a shortcut: the
 // tools read who is calling from the per-request header, never from the server,
 // so there is nothing per session to build. `getServer` returns the same one.
-func newControlHandler(board string, hub *Hub) http.Handler {
-	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub}
+func newControlHandler(board string, hub *Hub, audit func(room, kind, detail string)) http.Handler {
+	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub, audit: audit}
 	srv := c.server()
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
@@ -730,6 +733,10 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	limit := launchCap()
 	if n, err := c.runningForCap(ctx); err == nil {
 		if _, ok := c.reserveSlot(n, limit); !ok {
+			if c.audit != nil {
+				c.audit(room, "launch-refused", fmt.Sprintf(
+					"at the cap of %d running sessions", limit))
+			}
 			return nil, out, fmt.Errorf("at the launch cap of %d running sessions. wait for one to "+
 				"finish, or exit one, before launching another", limit)
 		}
