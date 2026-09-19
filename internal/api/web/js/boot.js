@@ -70,6 +70,15 @@ startRooms().then(() => {
     // The same stream and the same interval as the board. `refresh` sends a
     // popped-out window down `soloRefresh`, so this costs one card's worth of
     // polling rather than a second board's.
+    // The claim heartbeat starts HERE, before `bootTerminalOnly` resolves,
+    // because that is exactly where a reconnect blocks: `soloFetchCard` sits
+    // through a hub restart for as long as it takes, which can be longer than
+    // `soloClaimFor`, and the single claim `bootTerminalOnly` posts on its way in
+    // would lapse before the poll below ever starts. The beat is a no-op until
+    // `soloID` is set (an early step of `bootTerminalOnly`), then keeps the
+    // board's claim fresh no matter how long the card poll blocks. `soloBeatMs`
+    // is well under 15s. See `soloClaimBeat`.
+    setInterval(soloClaimBeat, soloBeatMs);
     bootTerminalOnly().then(() => {
       connect();
       // Through the single-flight guard, so a poll cannot start a second solo

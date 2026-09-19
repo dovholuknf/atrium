@@ -594,6 +594,27 @@ function paintSoloTitle() {
   document.title = (soloMark ? soloMark + " " : "") + windowTitle(soloTask);
 }
 
+// The claim heartbeat, on its own timer rather than the card poll.
+//
+// A claim is a heartbeat the board believes for `soloClaimFor` (15s), so this
+// window has to be heard inside that window or the board drops its card and
+// double-opens the terminal. It lived on `soloRefresh`, which is fine until that
+// poll can stall past 15s: a hub restart puts the card poll into a backoff and
+// holds `runRefresh`'s single-flight pass for the length of the reconnect, and
+// no claim goes out the whole time. A timer of its own beats regardless of how
+// long the poll is stuck, and `soloBeatMs` is well under `soloClaimFor` so a
+// live window is never lost between two beats.
+//
+// Not while yielded, for the reason `soloRefresh` gave: a window that handed its
+// card to another one must stop claiming it, or the window that took it is
+// refused on its own next roll call.
+const soloBeatMs = 5000;
+function soloClaimBeat() {
+  if (soloBus && soloID && !soloYielded) {
+    soloBus.postMessage({ type: "solo-claim", task: soloID });
+  }
+}
+
 // One card's worth of the board's polling pass.
 //
 // Deliberately not `alerting.check`, which keeps board-wide sets of what it
@@ -610,14 +631,15 @@ function paintSoloTitle() {
 let soloKnown = { perm: null, ready: null };
 async function soloRefresh() {
   if (!soloID) return;
-  // The heartbeat behind every board's `soloHeld`. On the poll rather than a
-  // timer of its own: it is the same question at the same rate, and a second
-  // timer is a second thing to get wrong.
-  //
-  // Not while yielded. This window handed the card to another one, and a
-  // heartbeat for a card it no longer shows would have the board refuse to
-  // attach to it and "raise" a window with nothing in it.
-  if (soloBus && !soloYielded) soloBus.postMessage({ type: "solo-claim", task: soloID });
+  // The claim heartbeat no longer rides this poll. It used to (one question, one
+  // rate, no second timer to get wrong), and that held until the poll could
+  // stall past `soloClaimFor`: a hub restart sends the card poll into
+  // `soloFetchCard`'s backoff and holds `runRefresh`'s single-flight pass for as
+  // long as the reconnect lasts, which is longer than the 15s a claim is
+  // believed for. The board then dropped a window still very much open and
+  // double-opened its terminal. So the claim moved to `soloClaimBeat` on its own
+  // sub-15s timer, which keeps beating no matter how long this poll is stuck.
+  // One source only, so a card is claimed once per beat and never twice.
 
   const [task, waiting, perms] = await Promise.all([
     api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
