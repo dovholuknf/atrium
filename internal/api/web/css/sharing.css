@@ -228,6 +228,9 @@
     flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;
     gap: 2px; position: sticky; top: 0;
   }
+  /* Pinned a few pixels down on the runners page, so when the list scrolls the
+     selected pill's top border does not clip against the scroll box's top. */
+  #runners .pane-nav { top: 4px; }
   .pane-nav button {
     text-align: left; background: transparent; border: 1px solid transparent;
     color: var(--dim); padding: 7px 10px; border-radius: var(--r-sm);
