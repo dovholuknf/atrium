@@ -1196,6 +1196,12 @@ async function saveSkin(name) {
   const sel = document.getElementById("s-skin");
   const want = name || (sel && sel.value);
   if (!want) return;
+  // A SKIN FOLLOWS THE ROOM PICKER AND NOTHING ELSE. In the ALL view it is the
+  // hub's, so the write must carry no room and reach the hub. `writeRoom` is set
+  // by a machine-setting editor and never cleared, so a stale one would send the
+  // skin to that room instead. Clear it when looking at all rooms so the fetch
+  // wrapper adds no header. A room-scoped view routes by `roomNow` regardless.
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
   // Painted before the round trip, because this is the one setting whose whole
   // point is what it looks like. Waiting for the daemon to answer means half a
   // second of the old colours while you are staring at the control you just
@@ -1230,13 +1236,29 @@ async function saveSkin(name) {
 // reconciling means the flash only happens the first time a new browser sees
 // the board, which is the one time it is honest.
 const SKIN_KEY = "atrium.skin";
+
+// PER SCOPE, because the skin now follows the room picker: ALL wears the hub's,
+// each room wears its own. One key would mean the reload after a scope change
+// flashes the skin of the scope you just left before the daemon's answer lands.
+// Keying the remembered skin by scope makes the flash show the right one. It is
+// still not the source of truth: the daemon holds the setting, and this only
+// kills the flash. A plain daemon has no rooms, so `roomNow` is empty and this
+// is `atrium.skin`, exactly as it was.
+function skinKey() {
+  try {
+    const room = typeof roomNow === "function" ? roomNow() : "";
+    return room ? SKIN_KEY + "." + room : SKIN_KEY;
+  } catch (e) { return SKIN_KEY; }
+}
+
 function rememberSkin(name) {
-  try { name ? localStorage.setItem(SKIN_KEY, name) : localStorage.removeItem(SKIN_KEY); } catch (e) {}
+  const key = skinKey();
+  try { name ? localStorage.setItem(key, name) : localStorage.removeItem(key); } catch (e) {}
 }
 
 async function bootSkin() {
   try {
-    const remembered = localStorage.getItem(SKIN_KEY);
+    const remembered = localStorage.getItem(skinKey());
     if (remembered) document.documentElement.setAttribute("data-skin", remembered);
   } catch (e) {}
   let s;
