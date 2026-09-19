@@ -429,8 +429,21 @@ function openTerm(task) {
   // The same address the popped-out window carries, so a session is one name
   // whichever way you are looking at it. The full path matters here too: the
   // switcher beside it lists sessions whose short titles collide.
-  document.getElementById("t-title").textContent = terminalLabel(task) || task.display_title;
-  document.getElementById("t-title").title = task.worktree || "";
+  //
+  // POPPED OUT, THE NAME LEADS. A window of its own has no card beside it and no
+  // list to match against, so a header reading the derived address said nothing
+  // about which session it was: the list now leads with the name, and a popped
+  // window that led with the address could not be tied back to it. In solo the
+  // header is the name and the address moves to the tooltip. The board's own
+  // bar keeps the address, since there the card and the list already name it.
+  const solo = document.body.classList.contains("solo");
+  const label = terminalLabel(task) || task.display_title;
+  const named = String(task.display_title || "").trim();
+  const titleEl = document.getElementById("t-title");
+  titleEl.textContent = solo && named ? named : label;
+  titleEl.title = solo && named && named !== label
+    ? label + " · " + (task.worktree || "")
+    : (task.worktree || "");
   // The runner as its mark, in front of the name, the way a card carries it.
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.
