@@ -266,6 +266,9 @@
   main > #perms,
   main > #runners,
   .board .col > .cards { padding-right: 12px; }
+  /* A few pixels above the runners page so the sticky nav's selected pill is not
+     flush with the scroll box's top edge, which clipped its top border. */
+  main > #runners { padding-top: 4px; }
   /* A hidden view must not claim its share of the column. */
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }
