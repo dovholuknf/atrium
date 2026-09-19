@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -57,6 +58,14 @@ type Proxy struct {
 	// feeds is the one upstream event stream per room, and the boards watching
 	// them. See events.go.
 	feeds *feeds
+
+	// cardRoom is a short-lived index of which attached room holds a bare card
+	// id. A card-scoped write with a bare id under more than one room resolves
+	// its owning room by asking each room, and a single upload posts several
+	// requests, so the answer is cached briefly to resolve once rather than fan
+	// out on every one. See roomHolding.
+	cardMu   sync.Mutex
+	cardRoom map[string]cardLoc
 
 	// control is the hub-side control MCP server, mounted at /_hub/mcp. Nil
 	// until SetControl wires it, and a hub without one answers that path 404.
@@ -258,6 +267,112 @@ func untag(path string) string {
 	return strings.Replace(path, "/v1/tasks/"+id, "/v1/tasks/"+bare, 1)
 }
 
+// cardLoc is one cached card->room answer, with when it was learned.
+type cardLoc struct {
+	room string
+	at   time.Time
+}
+
+// cardRoomTTL is how long a resolved card->room answer is trusted. Short: a card
+// does not move between rooms, so the only thing this can get wrong is a room
+// detaching, and cachedCardRoom rechecks the live attachment before it trusts a
+// cached answer anyway.
+const cardRoomTTL = 5 * time.Second
+
+// roomHolding finds which attached room holds a bare card id.
+//
+// A card id is globally unique, so at most one attached room owns it. This asks
+// each room for the card - a bounded GET `/v1/tasks/<id>` per room - and takes
+// the first that answers 200. It runs on a card-scoped write with a bare id
+// under more than one room, which is an upload or a message rather than the hot
+// poll, so a small fan-out is acceptable. The answer is cached briefly.
+//
+// A quiet room contributes nothing, exactly as the aggregate fan-out treats one:
+// it is skipped rather than failing the whole resolution.
+func (p *Proxy) roomHolding(r *http.Request, bare string, rooms []Attached) (string, bool) {
+	if room, ok := p.cachedCardRoom(bare); ok {
+		return room, true
+	}
+	type held struct {
+		room string
+		has  bool
+	}
+	out := make([]held, len(rooms))
+	var wg sync.WaitGroup
+	for i, room := range rooms {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			out[i] = held{room: name, has: p.roomHasCard(r, name, bare)}
+		}(i, room.Name)
+	}
+	wg.Wait()
+	// First by room order, so two resolutions of the same id cannot disagree.
+	for _, h := range out {
+		if h.has {
+			p.rememberCardRoom(bare, h.room)
+			return h.room, true
+		}
+	}
+	return "", false
+}
+
+// roomHasCard reports whether one room holds a card, by asking it for the card
+// and reading only the status. Bounded, and any error is a no rather than a
+// failure, so a quiet room is simply not the owner.
+func (p *Proxy) roomHasCard(r *http.Request, room, bare string) bool {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"http://"+hostFor(room)+"/v1/tasks/"+url.PathEscape(bare), nil)
+	if err != nil {
+		return false
+	}
+	res, err := p.roomClient(room).Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+	// Drained so the pooled connection can be reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
+	return res.StatusCode == http.StatusOK
+}
+
+// cachedCardRoom returns a recently resolved owner for a bare id, and only while
+// that room is still attached: a cached name for a room that has since gone is
+// worse than resolving again.
+func (p *Proxy) cachedCardRoom(bare string) (string, bool) {
+	p.cardMu.Lock()
+	defer p.cardMu.Unlock()
+	loc, ok := p.cardRoom[bare]
+	if !ok || time.Since(loc.at) > cardRoomTTL {
+		return "", false
+	}
+	if !p.hub.Has(loc.room) {
+		return "", false
+	}
+	return loc.room, true
+}
+
+// rememberCardRoom records which room a bare id resolved to.
+func (p *Proxy) rememberCardRoom(bare, room string) {
+	p.cardMu.Lock()
+	defer p.cardMu.Unlock()
+	if p.cardRoom == nil {
+		p.cardRoom = map[string]cardLoc{}
+	}
+	p.cardRoom[bare] = cardLoc{room: room, at: time.Now()}
+}
+
+// cardGone is the 404 for a card-scoped request whose bare id no attached room
+// holds. A card that resolves nowhere has been removed, which is a not-found
+// rather than a room prompt or a server error.
+func cardGone(w http.ResponseWriter, id string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(w, `{"error":%q}`, "no card "+id+" is held by any attached room")
+}
+
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
@@ -353,12 +468,32 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				room = first
 			}
 		}
-		// A write, or a read nothing knows how to merge. Asked rather than
-		// guessed at.
+		// A write, or a read nothing knows how to merge, with more than one room
+		// attached and no room named. Usually a question - EXCEPT for a
+		// card-scoped request carrying a bare id.
+		//
+		// A card id is globally unique, so exactly one attached room owns it. A
+		// terminal that attached while one room was live holds a bare id, and its
+		// upload, message, exit and every other per-card op post
+		// `/v1/tasks/<bare-id>/...` with no tag and no header. Refusing those with
+		// `needsARoom` was the paste-into-a-terminal 409: the hub can RESOLVE the
+		// owning room instead of asking. Only a request with NO card id (a
+		// genuinely machine-shaped write like `/v1/settings`) still falls through.
 		if room == "" {
 			if rooms := p.hub.Rooms(); len(rooms) > 1 {
-				needsARoom(w, rooms)
-				return
+				if bare := cardIDIn(r.URL.Path); bare != "" {
+					owner, ok := p.roomHolding(r, bare, rooms)
+					if !ok {
+						// No attached room holds it: the card is gone, which is a
+						// 404, not a 500 and not a room prompt.
+						cardGone(w, bare)
+						return
+					}
+					room = owner
+				} else {
+					needsARoom(w, rooms)
+					return
+				}
 			}
 		}
 	}
