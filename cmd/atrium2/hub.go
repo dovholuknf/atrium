@@ -29,6 +29,7 @@ func hubCmd() *cobra.Command {
 		dir       string
 		db        string
 		transport string
+		advertise string
 		service   string
 		files     string
 		open      bool
@@ -61,6 +62,13 @@ func hubCmd() *cobra.Command {
 			"Paste that into `atrium2 join` on the machine your agents are on.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// THE BOARD STAYS ON LOOPBACK, checked before anything else opens, so
+			// a wide --addr is refused rather than half-started. A wide room link
+			// is the operator's choice and is not touched here.
+			board, err := loopbackBoard(board)
+			if err != nil {
+				return err
+			}
 			keys := link.Keys{Dir: orDefault(dir, hubDir())}
 
 			// THE HUB'S OWN STORE, and opening it is the first thing that can
@@ -100,7 +108,7 @@ func hubCmd() *cobra.Command {
 			// is the only thing that can answer it. Handed to the transport
 			// rather than reached for, so `internal/link` never learns the hub
 			// has a database.
-			side, err := openHub(transport, keys, port, service,
+			side, err := openHub(transport, keys, port, advertise, service,
 				func(secret string) (string, error) {
 					r, err := store.Spend(secret)
 					if err != nil {
@@ -307,8 +315,10 @@ func hubCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&board, "addr", ":7800", "where the browser reaches the board")
-	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	c.Flags().StringVar(&board, "addr", ":7800", "where the browser reaches the board (loopback only, no login)")
+	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in (may bind wide, e.g. 0.0.0.0:7801)")
+	c.Flags().StringVar(&advertise, "link-advertise", "",
+		"the host:port a room dials this hub at, minted into join strings (required when --link binds wide)")
 	c.Flags().StringVar(&dir, "dir", "", "where this hub keeps its certificates")
 	c.Flags().StringVar(&db, "db", "",
 		"the hub's own store: which rooms exist and what they last said (default: under --dir)")
@@ -438,21 +448,86 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// advertised turns a bind address into one a room can dial.
+// advertiseFor decides what a join string carries for the room link.
 //
-// `:7801` binds everything and dials nothing, so a join string carrying it
-// would be useless on the machine that pasted it. Loopback is the answer that
-// is right for tonight's case, two accounts on one box, and the flag is there
-// for when it is not.
-func advertised(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
+// A wide bind is not dialable, so a token minted from it would carry an address
+// no room can reach. The rules:
+//
+//   - An explicit --link-advertise always wins, whatever the bind is.
+//   - A loopback bind (127.0.0.1, ::1) keeps 127.0.0.1, which is the default and
+//     the two-accounts-on-one-box case.
+//   - An explicit wide bind (0.0.0.0, ::) with no advertise is REFUSED rather
+//     than coerced to loopback. Coercing it mints a loopback token that looks
+//     right and fails for every remote room, which is the silent failure this
+//     exists to stop. The operator hands the reachable address on
+//     --link-advertise.
+//   - An empty host (":PORT") keeps today's loopback default: it is the shape
+//     the default flag ships with and the historical two-accounts case relies
+//     on it.
+func advertiseFor(bind, override string) (string, error) {
+	if o := strings.TrimSpace(override); o != "" {
+		return o, nil
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
+	host, port, err := net.SplitHostPort(bind)
+	if err != nil {
+		return "", fmt.Errorf("--link %q is not a host:port: %w", bind, err)
+	}
+	if host == "0.0.0.0" || host == "::" {
+		return "", fmt.Errorf(
+			"--link is bound wide to %s but --link-advertise is not set. rooms cannot "+
+				"dial %s, so the join string would be useless. pass --link-advertise "+
+				"<host:port> with the address a room reaches this hub at", bind, host)
+	}
+	if host == "" {
 		host = "127.0.0.1"
 	}
-	return net.JoinHostPort(host, port)
+	return net.JoinHostPort(host, port), nil
+}
+
+// loopbackBoard checks the board's bind address and pins it to loopback.
+//
+// THE BOARD HAS NO LOGIN. That is the invariant in the root CLAUDE.md and in
+// docs/overlays.md: loopback and no login stays true, and reaching the board
+// from elsewhere is an overlay's job, not a wide bind on a port with no auth.
+// This makes the invariant enforced rather than assumed.
+//
+// An empty host (`:7800`) binds every interface, so it is coerced to 127.0.0.1
+// rather than refused: the default must stay usable and must also stay safe. An
+// explicit non-loopback host is the operator asking for the one thing this
+// refuses, so it is refused with the reason and the alternative.
+func loopbackBoard(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("--addr %q is not a host:port for the board: %w", addr, err)
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if !isLoopbackHost(host) {
+		return "", fmt.Errorf(
+			"--addr %q would put the board on a non-loopback address, and the board "+
+				"has no login, so anything that can reach it can read every command and "+
+				"answer permission requests. keep --addr on loopback (127.0.0.1). to reach "+
+				"the board from elsewhere use an overlay (--board-transport zrok); to let a "+
+				"room dial in from elsewhere bind --link wide instead", addr)
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+// isLoopbackHost is true for an address that names only this machine.
+//
+// A loopback IP or the name localhost. A different hostname is refused rather
+// than resolved: a name that happens to point at loopback today can point
+// elsewhere tomorrow, and the board's safety must not depend on what a resolver
+// says at start.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 func portOf(addr string) string {

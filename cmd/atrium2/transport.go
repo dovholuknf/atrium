@@ -54,11 +54,19 @@ type hubSide struct {
 // `spend` answers a join secret with the room the hub minted it for. It comes
 // from the hub's store and is handed in here rather than reached for, because
 // `internal/link` must not learn that the hub has a database.
-func openHub(kind string, keys link.Keys, linkAddr, service string,
+func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 	spend func(string) (string, error)) (*hubSide, error) {
 	switch kind {
 	case "", "direct":
-		if err := keys.EnsureCA(link.Hosts(advertised(linkAddr))); err != nil {
+		// THE ADDRESS A ROOM DIALS, resolved once. A wide --link with no
+		// --link-advertise is refused here rather than minting a loopback token
+		// that fails for every remote room. This same address names the hub in
+		// its certificate, so a room dialling it can pin what the hub proves.
+		adv, err := advertiseFor(linkAddr, advertise)
+		if err != nil {
+			return nil, err
+		}
+		if err := keys.EnsureCA(link.Hosts(adv)); err != nil {
 			return nil, fmt.Errorf("could not set this hub up: %w", err)
 		}
 		d := link.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
@@ -67,10 +75,10 @@ func openHub(kind string, keys link.Keys, linkAddr, service string,
 			enrol:  d.ServeEnrolment,
 			auth:   link.DirectAuthenticated,
 			joinString: func(name, secret string) (string, error) {
-				return keys.MintToken(advertised(linkAddr), name, secret)
+				return keys.MintToken(adv, name, secret)
 			},
 			release: func() {},
-			says:    advertised(linkAddr),
+			says:    adv,
 		}, nil
 
 	case "ziti":

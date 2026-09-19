@@ -135,7 +135,7 @@ func backupsIn(dir, db string) string {
 // roomAddCmd is the command decision 8 is about.
 func roomAddCmd() *cobra.Command {
 	var f hubStoreFlags
-	var port, transport, service string
+	var port, advertise, transport, service string
 	c := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Add a room and print its join string",
@@ -156,7 +156,7 @@ func roomAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			line, err := joinStringFor(f.keys(), store, r, port, transport, service)
+			line, err := joinStringFor(f.keys(), store, r, port, advertise, transport, service)
 			if err != nil {
 				return err
 			}
@@ -176,6 +176,8 @@ func roomAddCmd() *cobra.Command {
 	}
 	f.bind(c)
 	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	c.Flags().StringVar(&advertise, "link-advertise", "",
+		"the host:port a room dials this hub at (required when --link binds wide)")
 	c.Flags().StringVar(&transport, "transport", "direct",
 		"how this room reaches the hub: direct, ziti or zrok")
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
@@ -189,7 +191,7 @@ func roomAddCmd() *cobra.Command {
 // means a string that leaked stops working the moment somebody notices.
 func roomTokenCmd() *cobra.Command {
 	var f hubStoreFlags
-	var port, service string
+	var port, advertise, service string
 	c := &cobra.Command{
 		Use:   "token <name>",
 		Short: "Mint a fresh join string for a room, retiring the old one",
@@ -205,7 +207,7 @@ func roomTokenCmd() *cobra.Command {
 			if err != nil {
 				return knownRooms(store, args[0], err)
 			}
-			line, err := joinStringFor(f.keys(), store, r, port, r.Transport, service)
+			line, err := joinStringFor(f.keys(), store, r, port, advertise, r.Transport, service)
 			if err != nil {
 				return err
 			}
@@ -215,6 +217,8 @@ func roomTokenCmd() *cobra.Command {
 	}
 	f.bind(c)
 	c.Flags().StringVar(&port, "link", ":7801", "where rooms dial in")
+	c.Flags().StringVar(&advertise, "link-advertise", "",
+		"the host:port a room dials this hub at (required when --link binds wide)")
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
 	return c
 }
@@ -232,7 +236,7 @@ func roomTokenCmd() *cobra.Command {
 // then tear it down. What that costs is worth avoiding for a `token` command
 // somebody might run twice by accident.
 func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
-	port, transport, service string) (string, error) {
+	port, advertise, transport, service string) (string, error) {
 	if strings.TrimSpace(transport) == "" {
 		transport = r.Transport
 	}
@@ -242,11 +246,18 @@ func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
 			return "", errors.New("this machine is not a hub yet. run `atrium2 hub` once " +
 				"first, so it can make itself a certificate authority")
 		}
+		// The address a remote room dials. A wide --link with no --link-advertise
+		// is refused here for the same reason it is at hub startup: a loopback
+		// token that looks right and fails for every remote room.
+		adv, err := advertiseFor(port, advertise)
+		if err != nil {
+			return "", err
+		}
 		secret, err := store.Mint(r.ID)
 		if err != nil {
 			return "", err
 		}
-		return keys.MintToken(advertised(port), r.Name, secret)
+		return keys.MintToken(adv, r.Name, secret)
 
 	case hubstore.TransportZiti:
 		// NO SECRET, because there is nothing for one to do: a policy decided
