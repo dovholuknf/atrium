@@ -277,9 +277,10 @@ type ctlCard struct {
 	Worktree string `json:"worktree"`
 	Runner   string `json:"runner"`
 	Why      string `json:"why"`
-	Idle     int    `json:"idle_seconds"`
-	Wait     int    `json:"wait_seconds"`
-	Superv   bool   `json:"supervised"`
+	Idle     int      `json:"idle_seconds"`
+	Wait     int      `json:"wait_seconds"`
+	Superv   bool     `json:"supervised"`
+	Tags     []string `json:"tags"`
 	Activity struct {
 		What string `json:"what"`
 	} `json:"activity"`
@@ -588,6 +589,29 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 // ── launch ──────────────────────────────────────────────────────────────────────
 
+// OriginTag marks a card that atrium_launch created, as opposed to a session a
+// human started at a terminal or through the board's launch dialog. The launch
+// cap counts only cards carrying it, so the operator's hand-started sessions
+// never consume the agent cap: the cap exists to stop agent proliferation, not
+// to count human work.
+//
+// HUB-SIDE, SO IT STAYS HUB-ONLY. launchHandler adds it to the tags it forwards
+// on /v1/launch, and the room persists it as an ordinary tag (see
+// store.SetTags), so nothing in internal/daemon has to learn the marker. A tag
+// rather than a new field because tags already flow end to end, and one already
+// lowercase and free of commas and spaces survives NormalizeTags unchanged.
+const OriginTag = "origin:agent"
+
+// hasOriginTag reports whether a card carries the agent-launch marker.
+func hasOriginTag(tags []string) bool {
+	for _, t := range tags {
+		if strings.EqualFold(strings.TrimSpace(t), OriginTag) {
+			return true
+		}
+	}
+	return false
+}
+
 // DefaultLaunchCap is how many concurrent live sessions atrium_launch allows
 // before it refuses. It is the HARD backstop under the advisory soft nudge in the
 // dotfiles redirect hook, so no amount of over-eager agents can flood the box.
@@ -617,10 +641,15 @@ func launchCap() int {
 }
 
 // runningForCap counts the sessions that count against the launch cap: live
-// supervised runners, aggregated across every room the hub can see because the
-// machine load they put on the box is shared. A done/dead/shelved card has no
-// running runner and a backlog card has not started one, so none of them count,
-// and the launch being attempted is not present yet so it is never counted.
+// supervised runners that atrium_launch itself started, aggregated across every
+// room the hub can see because the machine load they put on the box is shared.
+//
+// ONLY AGENT-LAUNCHED SESSIONS. A card carries OriginTag when atrium_launch made
+// it; a session a human started at a terminal or through the board's launch
+// dialog does not, so it never consumes the agent cap. A done/dead/shelved card
+// has no running runner and a backlog card has not started one, so none of them
+// count, and the launch being attempted is not present yet so it is never
+// counted.
 func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
@@ -637,6 +666,9 @@ func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 		}
 		switch t.Status {
 		case "done", "dead", "shelved", "backlog":
+			continue
+		}
+		if !hasOriginTag(t.Tags) {
 			continue
 		}
 		n++
@@ -739,10 +771,15 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// room's own daemon writes BRIEF.md into the new session's directory before
 	// it starts. The hub has no such directory to write to, which is why this is
 	// a field on the request rather than a file this side writes.
+	// The origin marker rides along as a tag, added here on the hub so the room
+	// stores it without knowing what it is (see OriginTag). It is what the launch
+	// cap counts, which is how an agent launch is told apart from a human's
+	// hand-started session.
+	tags := append(append([]string{}, in.Tags...), OriginTag)
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt),
-		"brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
+		"brief": strings.TrimSpace(in.Brief), "tags": tags,
 		"theme": strings.TrimSpace(in.Theme),
 	}
 	var t ctlCard

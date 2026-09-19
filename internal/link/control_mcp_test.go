@@ -227,6 +227,7 @@ func TestLaunchRefusesAtTheCap(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"tags": []string{OriginTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -254,6 +255,7 @@ func TestLaunchProceedsUnderTheCap(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "needs-input", "supervised": true,
+			"tags": []string{OriginTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -274,11 +276,75 @@ func TestLaunchProceedsUnderTheCap(t *testing.T) {
 	}
 }
 
+func TestLaunchCapCountsOnlyAgentSessions(t *testing.T) {
+	// More supervised human sessions than the cap, none of them agent-launched, so
+	// none carry OriginTag. The cap counts only agent launches, so a launch still
+	// proceeds: the operator's hand-started work never consumes the agent cap.
+	var tasks []map[string]any
+	for i := 0; i < DefaultLaunchCap+5; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err != nil {
+		t.Fatalf("unmarked human sessions must not consume the agent cap: %v", err)
+	}
+	if !board.launched {
+		t.Fatal("the launch should have been forwarded past the human sessions")
+	}
+}
+
+func TestLaunchStampsTheOriginTag(t *testing.T) {
+	var gotTags []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/tasks" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{}})
+			return
+		}
+		var body struct {
+			Tags []string `json:"tags"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotTags = body.Tags
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "new", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir", Tags: []string{"ticket-42"}})
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if !hasOriginTag(gotTags) {
+		t.Errorf("the room got tags %v, want the origin marker stamped on", gotTags)
+	}
+	// The caller's own tags survive alongside the marker.
+	var kept bool
+	for _, tag := range gotTags {
+		if tag == "ticket-42" {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Errorf("the caller's tags were lost: %v", gotTags)
+	}
+}
+
 func TestLaunchCapEnvOverride(t *testing.T) {
 	t.Setenv(LaunchCapEnv, "1")
 	// One live supervised session, cap overridden to one, so the next is refused.
 	board := &capBoard{tasks: []map[string]any{
-		{"id": "a", "status": "working", "supervised": true},
+		{"id": "a", "status": "working", "supervised": true, "tags": []string{OriginTag}},
 	}}
 	srv := httptest.NewServer(board.handler())
 	defer srv.Close()
@@ -302,6 +368,7 @@ func TestLaunchReservationStopsTwoLaunchesOvershooting(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"tags": []string{OriginTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -329,6 +396,7 @@ func TestLaunchReservationLapsesAfterTTL(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"tags": []string{OriginTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
