@@ -179,6 +179,16 @@ if ! node "$here/scripts/test-sort-order.js"; then
   fail=1
 fi
 
+# The reconnect-flood guard, RUN against re-tagged card sets. A single room
+# dropping flips every card id between `room~id` and bare when the count crosses
+# 1<->2, and the alert diff used to read that as the whole board arriving. This
+# asserts the bare-id diff and the room-set reseed keep it silent while a real
+# arrival still speaks.
+if ! node "$here/scripts/test-notify-reseed.js"; then
+  echo "a room dropping would flood the board with arrivals. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.
