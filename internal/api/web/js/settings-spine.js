@@ -1450,6 +1450,17 @@ function connect() {
   // trusting it: the chip draws a host and an uptime the event does not carry,
   // and one source of truth is worth one request.
   es.addEventListener("rooms", () => {
+    // RE-SEED THE ALERT BASELINE BEFORE THE REFRESH RUNS, not after. A room
+    // attaching or detaching churns the whole card set: the incoming room's
+    // idle cards enter the aggregate as new ids, and the count crossing 1<->2
+    // flips every id between `room~id` and bare. `loadHubRooms` also reseeds,
+    // but only after an awaited `/_hub/rooms` fetch and never at all when the
+    // 2s throttle drops the call, so `refreshSoon`'s `check` could win the race
+    // and announce the incoming room's two-hour-idle cards as freshly ready.
+    // This event only fires on a membership change, so the set is by definition
+    // not stable and reseeding is exactly right. Guarded like loadHubRooms, in
+    // case notify.js is absent.
+    if (typeof alerting !== "undefined" && alerting.reseed) alerting.reseed();
     loadHubRooms();
     // The cards belong to the rooms that are gone or newly here.
     refreshSoon();
