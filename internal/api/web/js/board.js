@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "audit"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -438,6 +438,10 @@ function switchView(name) {
   // a size. Cheap enough to sit on every scroll of the list, so it is cheap
   // enough to sit here.
   if (name === "terms") requestAnimationFrame(placeTabBridge);
+  // Fetched on the way in, like history: a feed you go looking for, not one
+  // worth polling while you are reading something else. It also refreshes on an
+  // `audit` delta and on stream reconnect. See js/audit.js.
+  if (name === "audit" && typeof loadAudit === "function") loadAudit();
   // Where you were, so a reload puts you back. A restart of the daemon
   // reloads every board it is serving, and landing on the board every time
   // meant two clicks to get back to the terminal you were reading.

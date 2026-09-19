@@ -1425,6 +1425,13 @@ function connect() {
   //
   // So the daemon announces it and every window arms itself. What arrives
   // after this is the restart. What arrives without it is the session ending.
+  // The operational feed got a new line. Only re-fetched while the audit pane
+  // is open, so a closed pane pays nothing. The pane also re-fetches on this
+  // stream reopening via `refreshSoon`'s siblings and on being switched to. See
+  // js/audit.js.
+  es.addEventListener("audit", () => {
+    if (typeof onAuditEvent === "function") onAuditEvent();
+  });
   es.addEventListener("going-down", e => {
     let why = "";
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
