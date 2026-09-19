@@ -290,7 +290,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// unsupervised card anyway, so this is a delivery atrium already knows how
 	// to make rather than a refusal.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		if err := run.Say(body.Text); err != nil {
+		// Bracketed paste when the runner supports it, so a long multi-line
+		// message arrives as one block rather than each newline submitting a
+		// partial line and leaving only the tail. See SayPasted and B2-47.
+		say := run.Say
+		if d.bracketedPasteFor(taskID, false) {
+			say = run.SayPasted
+		}
+		if err := say(body.Text); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -355,7 +362,13 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	// Queued rather than typed while a dialog is on that screen. Same reason
 	// as `handleMessage` above: `Say` ends with an Enter.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		if err := run.Say(note); err != nil {
+		// Bracketed paste when supported, so a multi-line note is not split at
+		// its newlines into separate submissions. Same reason as handleMessage.
+		say := run.Say
+		if d.bracketedPasteFor(taskID, false) {
+			say = run.SayPasted
+		}
+		if err := say(note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
