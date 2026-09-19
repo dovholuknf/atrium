@@ -114,7 +114,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"`queued`. Neither is instant and neither is a reply: if you want one, ask for it " +
 			"and then look, or wait to be told.\n\n" +
 			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
-			"agent talking to another. Say who you are: the receiving session is not told.\n\n" +
+			"agent talking to another. The receiving session is told who you are " +
+				"automatically, so do not announce yourself.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
 			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.",
 	}, c.sayHandler)
@@ -441,7 +442,7 @@ type sayInput struct {
 	// be holding is a puzzle rather than a rule.
 	To string `json:"to" jsonschema:"the handle or card id to say it to"`
 	// Text is what to say, as one agent to another.
-	Text string `json:"text" jsonschema:"what to say. say who you are: the other session is not told"`
+	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 }
 
 type sayOutput struct {
@@ -468,11 +469,20 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	out.To, out.Card = handle, id
 
+	// The caller's own handle, read off the per-request header the same way
+	// atrium_peers reads `me`, so the attribution the recipient sees and the
+	// handle it replies to both come from one source. Empty when a human or a
+	// non-atrium caller sent this: passed through as empty, which the room reads
+	// as the operator's own message channel rather than a peer, so no broken
+	// attribution is ever rendered. The room frames it, not the hub, so a peer
+	// message is not double-framed as coming from the operator.
+	from := agentOf(req)
+
 	var res struct {
 		Delivered string `json:"delivered"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
-		map[string]string{"text": in.Text}, &res); err != nil {
+		map[string]string{"text": in.Text, "from": from}, &res); err != nil {
 		return nil, out, err
 	}
 	out.Delivered = res.Delivered
