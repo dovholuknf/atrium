@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -182,44 +181,6 @@ func humanBytes(n int64) string {
 	}
 }
 
-// widthNote is the line drawn above replayed output that was composed for a
-// terminal other than this one, and the empty string when there is nothing to
-// say.
-//
-// SAID RATHER THAN WITHHELD. The scrollback really may sit in the wrong
-// columns, and the reader is the one who gets to decide whether that is worth
-// having. Everything below the note is theirs to judge, and everything the
-// runner draws after it is composed for this terminal.
-//
-// Three cases, because "it might look wrong" is not the same sentence as
-// "here is which part":
-//
-//	nothing to say   one width, and it is this one
-//	one width        the whole backlog was drawn elsewhere
-//	several          the session was resized while it ran
-func widthNote(widths []int, wantCols int) string {
-	if len(widths) == 0 {
-		return ""
-	}
-	if len(widths) == 1 {
-		if widths[0] == wantCols || widths[0] <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("\x1b[38;5;244m[atrium] the scrollback that follows was drawn "+
-			"for a terminal %d columns wide and this one is %d, so it may sit in the "+
-			"wrong places. anything the session draws from now on is drawn for this "+
-			"one.\x1b[0m\r\n", widths[0], wantCols)
-	}
-	seen := make([]string, 0, len(widths))
-	for _, w := range widths {
-		seen = append(seen, strconv.Itoa(w))
-	}
-	return fmt.Sprintf("\x1b[38;5;244m[atrium] this session was resized while it ran, so the "+
-		"scrollback that follows was drawn at %s columns and this terminal is %d. some of "+
-		"it may sit in the wrong places. anything the session draws from now on is drawn "+
-		"for this one.\x1b[0m\r\n", strings.Join(seen, ", "), wantCols)
-}
-
 func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, shell bool) {
 	var run *runner
 	if shell {
@@ -389,11 +350,6 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					"holds %s and this session has produced more than that, so older output "+
 					"has been overwritten. raise it in settings, scrollback ----\x1b[0m\r\n",
 				humanBytes(int64(api.ScrollbackBytes(d.st))))))
-		}
-		// Report width differences before replaying history. Cursor-based output
-		// was drawn for the recorded width, which may differ from this pane.
-		if note := widthNote(widths, wantCols); note != "" {
-			_ = c.Write(ctx, websocket.MessageBinary, []byte(note))
 		}
 		// REPLAYED THROUGH A SCREEN, not stripped of everything that moves.
 		//
