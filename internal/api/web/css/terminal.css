@@ -177,7 +177,13 @@
      The distance between a group and whatever follows it is unchanged: it was 9px of gap plus the heading's
      5px top margin, and it is now 9px here plus `.tnest`'s 5px `padding-bottom`. What changed is that a
      heading now sits directly on top of the rows it names. */
-  .term-list .card { margin-bottom: var(--sp-3); }
+  /* Tighter than a board card. This list is a switcher read top to bottom, not a
+     card you dwell on, so it wants the rows close: less air inside each and a
+     smaller gap between them than the board's own cards carry. */
+  .term-list .card {
+    margin-bottom: var(--sp-2);
+    padding-top: var(--row-y-xs); padding-bottom: var(--row-y-xs);
+  }
   .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
 
   /* A tab, in its own terminal's colours. `--tabc` and `--tabbg` come off the session's theme, set inline
@@ -197,7 +203,8 @@
     border-top-right-radius: 0; border-bottom-right-radius: 0;
   }
   /* The name has to stay readable on the terminal's background, which for a light theme is a light one. */
-  .term-list .card.on .title, .term-list .card.on .title .tshort { color: var(--tabc); }
+  .term-list .card.on .title, .term-list .card.on .title .tname { color: var(--tabc); }
+  .term-list .card.on .title .tpath { color: var(--tabc); opacity: .75; }
   /* Hovering says which one, in that session's colour rather than one blue for all of them. */
   .term-list .card.tab { --hover: var(--tabc, var(--blue)); }
 
@@ -229,36 +236,30 @@
   }
   .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
   .term-list .card .title .rmark { flex: none; }
-  /* `flex-shrink: 1` against the note's 999: the name yields only once the note has nothing left to give. */
+  /* The name and its address, stacked. The name is what you are looking for, so it
+     is on top and bold; the address is under it and dimmed. */
+  .term-list .card .title .tstack {
+    display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px;
+  }
+  /* THE NAME, primary. It gives way to nothing and truncates at the end, keeping
+     the front where the words that name it are. */
   .term-list .card .title .tname {
-    flex: 1 1 auto; min-width: 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--head); font-weight: 600;
+  }
+  /* An unnamed card has no name of its own, so its one line IS the address. Front
+     truncated, the way the address always was, to keep the leaf that tells it apart. */
+  .term-list .card .title .tname.aspath {
+    color: var(--body); font-weight: 500; direction: rtl; text-align: left;
+  }
+  /* Where it lives, under the name and dimmed. Front truncated so a strip too narrow
+     for the whole address keeps the repo and branch that tell two rows apart. */
+  .term-list .card .title .tpath {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     direction: rtl; text-align: left;
+    color: var(--dim); font-size: var(--fs-xs);
   }
-  /* What a session is for, beside where it lives. The address is derived from the directory and the branch,
-     so every session ever started in one checkout draws the same string. This is the card's own title when it
-     says something the address does not, which is what tells two of them apart. See `termExtraName`.
-
-     It gives way before the address does: `flex: 0 1 auto` against the address's `1 1 auto`, so a narrow
-     strip spends what room there is on which session this is and truncates the annotation first. Dimmed for
-     the same reason, and it carries the same hover so either half answers.
-
-     Hidden in `mini`, where `.tname` is hidden too and the entry is a mark and a short name. */
-  /* THE NAME NEVER GIVES WAY TO THE NOTE, which is what `flex-shrink: 999` buys.
-     Both boxes were shrinkable at the same rate, so a long note took space from the name in proportion to
-     their widths: `desktop-edge-win:beta-release-2.12.0.0` arrived clipped at BOTH ends to make room for
-     `fips-support-...`, which was itself clipped. Two truncated strings, neither readable, to fit an
-     annotation beside the thing it annotates.
-     Shrinking the note a thousand times faster means it collapses to nothing before the name loses a
-     character. The note is the part you can afford to lose: the name is what you are looking for, and the
-     hover carries both whatever was drawn. */
-  .term-list .card .title .tnote {
-    flex: 0 999 auto; min-width: 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: var(--dimmest); font-size: var(--fs-sm);
-  }
-  .term-list .card .title .tnote::before { content: "\00b7"; margin: 0 4px; }
-  .tl-mini .term-list .card .title .tnote { display: none; }
+  .tl-mini .term-list .card .title .tpath { display: none; }
   /* The pop-out mark is never squeezed. It says this session is showing in a window of its own, and it is
      the one thing on the entry that changes what a click does. Narrowing the list shrank it to nothing, so
      the click that would have raised that window landed on the card and did something else. The name gives
