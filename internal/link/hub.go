@@ -60,6 +60,14 @@ type Hub struct {
 	// See announce.go.
 	Cached func(name string, cards []CardState) error
 
+	// OnAttach is called ONCE when a room adopts, and OnDetach ONCE when the hub
+	// lets it go. They are the operational audit's attach and detach lines. Both
+	// nil on a hub that records nothing, and both are best effort: they must not
+	// block the link. `Attaching` is the wrong place for this, because it is
+	// asked again on every heartbeat and would record an attach a second.
+	OnAttach func(name, host, version string)
+	OnDetach func(name, why string)
+
 	mu    sync.Mutex
 	rooms map[string]*attached
 	// builds are the binaries this hub can hand out, one per platform. Empty
@@ -278,6 +286,14 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	h.rooms[keyOf(name)] = a
 	h.mu.Unlock()
 
+	// ONCE, HERE, not in `Attaching`, which is asked again every heartbeat. A
+	// reconnect comes through this path too and is worth a line: a hub restart
+	// makes every room reattach, and the burst is the record of the restart from
+	// the rooms' side.
+	if h.OnAttach != nil {
+		h.OnAttach(name, hi.Host, hi.Version)
+	}
+
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
 	if err := writeJSON(conn, welcome{
 		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
@@ -320,7 +336,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 
 	a.close("the room hung up")
-	h.forget(name, a)
+	h.forget(name, a, "the room hung up")
 }
 
 // watch evicts a room that has stopped beating.
@@ -339,7 +355,7 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 			// heartbeat frozen, forever: nothing was watching it any more, so
 			// nothing would ever notice it had gone.
 			a.close("its listener stopped")
-			h.forget(a.name, a)
+			h.forget(a.name, a, "its listener stopped")
 			return
 		case <-a.done:
 			return
@@ -360,7 +376,7 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 				if err := h.Attaching(a.name, a.host, a.version); err != nil {
 					log.Printf("[hub] letting %q go: %v", a.name, err)
 					a.close("this hub no longer has a record of this room")
-					h.forget(a.name, a)
+					h.forget(a.name, a, "this hub no longer has a record of this room")
 					return
 				}
 			}
@@ -370,7 +386,7 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 			if quiet > h.T.Silence {
 				log.Printf("[hub] room %q went quiet for %s", a.name, quiet.Round(time.Second))
 				a.close("no heartbeat")
-				h.forget(a.name, a)
+				h.forget(a.name, a, "no heartbeat")
 				return
 			}
 		}
@@ -405,11 +421,22 @@ func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader) {
 	}
 }
 
-func (h *Hub) forget(name string, a *attached) {
+// forget drops a room from the live map, and records the detach when it was
+// this connection that was dropped.
+//
+// `why` is the same reason handed to `a.close`, so the audit line reads as the
+// log line does. OnDetach fires only inside the `cur == a` branch, so a stale
+// connection losing a race to a reconnect does not record a spurious detach.
+func (h *Hub) forget(name string, a *attached, why string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	removed := false
 	if cur, ok := h.rooms[keyOf(name)]; ok && cur == a {
 		delete(h.rooms, keyOf(name))
+		removed = true
+	}
+	h.mu.Unlock()
+	if removed && h.OnDetach != nil {
+		h.OnDetach(name, why)
 	}
 }
 
