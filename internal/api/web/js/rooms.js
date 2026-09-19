@@ -154,11 +154,13 @@ function paintRooms() {
   el.classList.toggle("scoped", !!room);
 }
 
-// openRooms is the menu the chip opens.
-function openRooms() {
-  const menu = document.getElementById("rooms-menu");
-  if (!menu) return;
-  if (!menu.hidden) { menu.hidden = true; return; }
+// roomPickerRows builds the menu's rows from what is attached and known now.
+//
+// Factored out of `openRooms` so the same markup serves the open action and the
+// live re-render (see `refreshRoomsMenu`): the menu that is already open must
+// paint the exact rows it would paint if reopened, or a room that just attached
+// would read one way open and another way reopened.
+function roomPickerRows() {
   const room = roomNow();
   const rows = [
     `<button class="${room ? "" : "on"}" onclick="pickRoom('')">
@@ -202,7 +204,15 @@ function openRooms() {
     rows.push(`<div class="none">no room is attached. the hub serves this board
       and holds nothing, so until a room connects there is nothing to show.</div>`);
   }
-  menu.innerHTML = rows.join("");
+  return rows.join("");
+}
+
+// openRooms is the menu the chip opens.
+function openRooms() {
+  const menu = document.getElementById("rooms-menu");
+  if (!menu) return;
+  if (!menu.hidden) { menu.hidden = true; return; }
+  menu.innerHTML = roomPickerRows();
   menu.hidden = false;
   // Placed from the chip rather than anchored to it, because the menu lives at
   // the end of the body and not inside the header. Clamped to the left so a
@@ -211,6 +221,23 @@ function openRooms() {
   menu.style.top = (at.bottom + 8) + "px";
   menu.style.left = Math.max(8, Math.min(at.right - menu.offsetWidth,
     window.innerWidth - menu.offsetWidth - 8)) + "px";
+}
+
+// refreshRoomsMenu repaints the OPEN picker when the attached-room set changes.
+//
+// The chip's counter is reactive on the `rooms` event, but the dropdown painted
+// once on open and then held a snapshot: a room brought online while the menu
+// was open still read as "disconnected" until the user closed and reopened it.
+// Called from `loadHubRooms`, so it rides the existing `rooms` event and the
+// backstop poll rather than a timer of its own.
+//
+// Only the rows are rewritten. The menu stays open and keeps its placement: the
+// top and left set on open are left untouched so it does not jump or reposition
+// under the user while they are reading it.
+function refreshRoomsMenu() {
+  const menu = document.getElementById("rooms-menu");
+  if (!menu || menu.hidden) return;
+  menu.innerHTML = roomPickerRows();
 }
 
 // roomChip is a card's room, in the aggregate view.
@@ -883,6 +910,9 @@ async function loadHubRooms() {
   // opposite of what a counter is for.
   await loadInventory();
   paintRooms();
+  // The chip repainted above; the OPEN dropdown has to as well, or a room that
+  // just attached keeps reading "disconnected" in a menu the user left open.
+  refreshRoomsMenu();
   return true;
 }
 
