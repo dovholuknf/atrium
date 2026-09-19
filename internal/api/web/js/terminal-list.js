@@ -319,7 +319,24 @@ async function termMenu(e, id) {
     // `done` is not: a card is filed when its work is finished and its runner
     // may still be sitting at a prompt, which is exactly when you want this.
     (t.supervised || t.pid > 0) && t.status !== "dead"
-      ? { label: "terminate", danger: true, act: () => killById(id) } : null
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
+    // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is
+    // unpinning it. The strip draws a row when it is supervised or pinned, so a
+    // card whose runner is gone shows only while the pin holds it, and clearing
+    // the pin drops it from the list and keeps it gone on the next poll rather
+    // than hiding it once.
+    //
+    // This is the entry that makes a dead terminal's menu never a dead end.
+    // `terminate` above is gone once the process is (its guards drop it on a
+    // `dead` card, and there is nothing to signal), which left the card the
+    // operator just killed with a menu full of things that do not remove it.
+    // `resume` still stands beside this for the ordinary cold pinned fixture:
+    // dismiss is for the one you are done with, resume for the one you keep.
+    !t.supervised && t.pinned
+      ? { label: "dismiss",
+          help: "Takes this exited terminal out of the list by unpinning it. " +
+            "The card and its history stay on the board.",
+          act: () => togglePin(id, false) } : null
   ].filter(Boolean));
 }
 
