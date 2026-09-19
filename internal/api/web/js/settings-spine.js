@@ -1199,6 +1199,25 @@ async function refresh(signal) {
   // board to click through to.
   if (termOnly()) return soloRefresh();
 
+  // THE ROLL CALL, ON EVERY BOARD POLL, NOT JUST AT BOOT.
+  //
+  // `boot.js` asks `solo-who` once at load so a board starting after a window was
+  // already popped out learns of it. That was the ONLY time it ever asked, and
+  // that was the bug: a solo window re-claims on its own poll, but if that poll
+  // stalls past `soloClaimFor` (15s) - which a reconnect/backoff through a hub
+  // restart can cause - the board's claim expires and nothing ever refreshes it,
+  // so `poppedOut` reads false and the pane takes the terminal back into a second
+  // view. Asking again here makes it self-healing: any window still open answers
+  // and re-stamps its claim every cycle, so a live card stays claimed. A window
+  // that truly went away stops answering, so its claim still expires and its card
+  // is still freed - the 15s heartbeat semantics are unchanged, only re-heard in
+  // time. The board polls every `POLL_MS` (10s), comfortably under `soloClaimFor`,
+  // so a live window is never dropped between two roll calls. It is a
+  // BroadcastChannel round trip between documents in one browser, well under a
+  // frame (see the note in `boot.js`), so it rides the poll it already pays for
+  // and needs no timer of its own.
+  if (soloBus) soloBus.postMessage({ type: "solo-who" });
+
   // A deadline that is running is re-read from the daemon rather than counted
   // down here. It costs one small request while a switch is temporary and
   // nothing at all the rest of the time, and it means the label cannot drift

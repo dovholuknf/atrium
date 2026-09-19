@@ -251,6 +251,71 @@ async function main() {
       fail("the page threw uncaught errors: " + consoleErrors.join(" | "));
     }
 
+    // ── a live popped-out window is re-heard on the board's roll call ───────
+    // The board asks `solo-who` on every poll now, not just at boot. A window
+    // still open answers and re-stamps its claim, so a claim that lapsed while
+    // the window's own poll was stalled through a hub restart is refreshed by
+    // the board rather than left to expire. That is what keeps `poppedOut` true
+    // and stops the pane taking the terminal back into a second view. Driven on
+    // the board `page` with a stand-in solo window on the shared bus: pages here
+    // are separate browser contexts, so this channel reaches only this board.
+    await page.evaluate(() => {
+      window.__fakeSolo = new BroadcastChannel("atrium-solo");
+      window.__fakeSoloAnswers = true;
+      window.__fakeSolo.onmessage = e => {
+        const m = e.data || {};
+        if (m.type === "solo-who" && window.__fakeSoloAnswers) {
+          window.__fakeSolo.postMessage({ type: "solo-claim", task: "s1" });
+        }
+      };
+      // The claim it posts on the way in, the way a solo window claims first.
+      window.__fakeSolo.postMessage({ type: "solo-claim", task: "s1" });
+    });
+    // The board heard the claim: the card reads as popped out.
+    await page.waitForFunction(() => poppedOut("s1"), { timeout: 15000 });
+
+    // The window's OWN poll lapses past soloClaimFor without re-claiming, which
+    // a reconnect/backoff through a hub restart causes. Simulated by ageing the
+    // stored claim past the TTL, which is what the wall clock would do.
+    await page.evaluate(() => soloHeld.set("s1", Date.now() - 20000));
+
+    // The board's roll call, on its regular refresh. The still-open window
+    // answers and its claim is re-stamped, so the card stays popped out. Every
+    // attach path gates on `poppedOut`, so a card that stays popped out is a
+    // pane that does NOT double-open its terminal.
+    await page.evaluate(() => runRefresh());
+    let reheard = false;
+    try {
+      await page.waitForFunction(
+        () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000),
+        { timeout: 15000 });
+      reheard = true;
+    } catch (e) {}
+    if (!reheard) {
+      fail("the board's roll call did not re-hear a live popped-out window: its " +
+        "claim lapsed and poppedOut('s1') went false, so the pane would " +
+        "double-open the terminal.");
+    }
+
+    // ── a window that truly went away frees its card ────────────────────────
+    // The heartbeat MUST still expire. A genuinely-closed window stops answering
+    // the roll call, so its claim ages out and the card is freed rather than
+    // held forever. Silence the stand-in, age the claim, ring the roll call, and
+    // the card is no longer popped out.
+    await page.evaluate(() => { window.__fakeSoloAnswers = false; });
+    await page.evaluate(() => soloHeld.set("s1", Date.now() - 20000));
+    await page.evaluate(() => runRefresh());
+    let dropped = false;
+    try {
+      await page.waitForFunction(() => !poppedOut("s1"), { timeout: 15000 });
+      dropped = true;
+    } catch (e) {}
+    if (!dropped) {
+      fail("a popped-out window that stopped answering the roll call kept its " +
+        "card claimed. A closed window's claim must expire so its card is freed.");
+    }
+    await page.evaluate(() => { try { window.__fakeSolo.close(); } catch (e) {} });
+
     // ── a popped-out window rides out a hub restart, then recovers ──────────
     // A hub-only deploy leaves the hub with no room for about a second, and it
     // answers a card poll with a 503 "no room is attached" in that window. The
@@ -448,9 +513,11 @@ async function main() {
   }
 
   if (bad) process.exit(1);
-  console.log("the board paints its lists, a hung fetch does not blank it, a " +
-    "popped-out window rides out a hub restart and recovers, and the open room " +
-    "picker live-updates a newly-attached room from disconnected to live.");
+  console.log("the board paints its lists, a hung fetch does not blank it, the " +
+    "board's roll call re-hears a live popped-out window (and drops one that " +
+    "went away), a popped-out window rides out a hub restart and recovers, and " +
+    "the open room picker live-updates a newly-attached room from disconnected " +
+    "to live.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
