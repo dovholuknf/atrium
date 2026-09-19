@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -290,6 +291,62 @@ func TestLaunchCapEnvOverride(t *testing.T) {
 	}
 	if board.launched {
 		t.Fatal("a refused launch must not be forwarded to the room")
+	}
+}
+
+func TestLaunchReservationStopsTwoLaunchesOvershooting(t *testing.T) {
+	// The board reports one under the cap and never changes: the second launch sees
+	// the same live count the first did, exactly the race that a plain count loses.
+	// The reservation the first launch takes is what the second must see.
+	var tasks []map[string]any
+	for i := 0; i < DefaultLaunchCap-1; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, _, err1 := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err1 != nil {
+		t.Fatalf("first launch should fill the last slot: %v", err1)
+	}
+	_, _, err2 := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err2 == nil {
+		t.Fatal("second launch should be refused by the reservation the first took")
+	}
+}
+
+func TestLaunchReservationLapsesAfterTTL(t *testing.T) {
+	// At the cap only because of one reservation, and that reservation is stale.
+	// A launch must sweep it and proceed, so a launch that died before its card
+	// appeared cannot hold a slot forever.
+	var tasks []map[string]any
+	for i := 0; i < DefaultLaunchCap-1; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	c.reservations = []reservation{{id: "stale", at: time.Now().Add(-2 * reservationTTL)}}
+
+	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"})
+	if err != nil {
+		t.Fatalf("a lapsed reservation must not hold the slot: %v", err)
+	}
+	if !board.launched {
+		t.Fatal("the launch should have been forwarded once the stale reservation lapsed")
+	}
+	if len(c.reservations) != 1 || c.reservations[0].id == "stale" {
+		t.Fatalf("the stale reservation should be swept and the new one recorded: %+v", c.reservations)
 	}
 }
 
