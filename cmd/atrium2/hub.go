@@ -217,10 +217,27 @@ func hubCmd() *cobra.Command {
 			// THE DURABLE LIST, which is a different question from what is
 			// attached and gets a different endpoint for exactly that reason.
 			proxy.SetInventory(inventory{store: store, hub: h})
+			// THE OPERATIONAL AUDIT LOG, over the hub's own store. Wired before
+			// SetControl and the attach/detach callbacks below, all of which
+			// record through the proxy so the line is persisted AND nudges any
+			// watching board. See docs/audit-design.md.
+			proxy.SetAuditLog(auditLog{store: store})
 			// THE CONTROL MCP SERVER, mounted at /_hub/mcp so sessions open a
 			// connection instead of each spawning an atrium-control child. It
 			// reaches this hub's own board over loopback derived from `board`.
 			proxy.SetControl(board)
+			// ATTACH AND DETACH AS OPERATIONAL LINES, recorded once each. Set
+			// after the proxy exists because they record through it. Best effort:
+			// the store's Log is fail-open and never blocks the link.
+			h.OnAttach = func(name, host, ver string) {
+				proxy.RecordAudit(name, "room-attached", host+" running "+ver)
+			}
+			h.OnDetach = func(name, why string) {
+				proxy.RecordAudit(name, "room-detached", why)
+			}
+			// THE HUB STARTED, which is also how a restart reads. Recorded once
+			// here, so the board shows the gap and the next line as a restart.
+			proxy.RecordAudit("", "hub-started", "the hub came up on build "+id)
 
 			ctx, stop := signal.NotifyContext(context.Background(),
 				os.Interrupt, syscall.SIGTERM)
@@ -289,6 +306,8 @@ func hubCmd() *cobra.Command {
 							"and answer permission requests")
 					}
 					log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
+					proxy.RecordAudit("", "board-share-opened",
+						"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
 					shareSrv := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
 					go func() {
 						<-ctx.Done()

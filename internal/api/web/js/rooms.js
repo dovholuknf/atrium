@@ -910,6 +910,8 @@ async function loadHubRooms() {
   // opposite of what a counter is for.
   await loadInventory();
   paintRooms();
+  // The audit tab is hub-only too, and this is where "is this a hub" is decided.
+  if (typeof paintAuditTab === "function") paintAuditTab();
   // The chip repainted above; the OPEN dropdown has to as well, or a room that
   // just attached keeps reading "disconnected" in a menu the user left open.
   refreshRoomsMenu();

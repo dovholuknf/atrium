@@ -553,3 +553,31 @@
   }
   .toolbar { display: flex; gap: var(--sp-3); margin-top: 12px; flex-wrap: wrap; align-items: center; }
 
+  /* The audit pane. One row per operational event: when, which room, what kind,
+     and the detail. A reading grid rather than a table, so a long detail wraps
+     under the meta rather than stretching the row. Colours are the skin's own
+     text and muted tokens, so it reads on every skin without a check of its own. */
+  .aud-row {
+    display: grid;
+    grid-template-columns: max-content max-content max-content 1fr;
+    gap: var(--sp-3); align-items: baseline;
+    padding: var(--row-y-sm) var(--sp-2);
+    border-bottom: 1px solid var(--stroke-dim);
+    font-size: var(--fs-sm);
+  }
+  .aud-when { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .aud-room {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--head);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 1px 7px; white-space: nowrap;
+  }
+  .aud-room.aud-hub { color: var(--dim); }
+  .aud-kind {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--teal); white-space: nowrap;
+  }
+  .aud-detail { color: var(--body); overflow-wrap: anywhere; }
+  /* On a narrow screen the meta stacks above the detail rather than crushing it. */
+  @media (max-width: 640px) {
+    .aud-row { grid-template-columns: 1fr; gap: 2px; }
+  }
+
