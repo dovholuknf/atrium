@@ -323,6 +323,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.history(w, r)
 			return
 		}
+		// THE BOARD SKIN IS THE HUB'S IN THE ALL VIEW, not borrowed from a room.
+		// Read gives the hub's skin over the borrowed settings; a skin-only save
+		// lands on the hub rather than being refused for want of a room. Anything
+		// else about `/v1/settings` falls through to the borrow below unchanged.
+		if p.hubSettings(w, r) {
+			return
+		}
 		if p.aggregate(w, r, r.URL.Path) {
 			return
 		}
@@ -689,6 +696,14 @@ type Inventory interface {
 	// It decides whether there is anything to merge at all, which is why it
 	// cannot be worked out by reading every room and counting its cards.
 	Holding() ([]string, error)
+	// HubSkin is the skin the ALL view wears, which is the hub's own and not a
+	// room's. Empty means unset, read by the serving side as the default. See
+	// `hubSettings` in fanout.go and `docs/hub-room-requirements.md`.
+	HubSkin() (string, error)
+	// SetHubSkin records the skin the ALL view wears, which is how a skin saved
+	// while looking at all rooms lands somewhere instead of being refused for
+	// want of a room.
+	SetHubSkin(name string) error
 }
 
 // SetInventory wires the durable room list up. Optional.

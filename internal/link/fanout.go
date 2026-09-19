@@ -625,6 +625,176 @@ func (p *Proxy) roomClient(room string) *http.Client {
 	return c
 }
 
+// hubSettings answers `/v1/settings` in the ALL scope so the board skin is the
+// HUB's own, not one borrowed from whichever room sorts first.
+//
+// ── the seam, and why it is here ─────────────────────────
+//
+// `/v1/settings` is a borrowed read (see `borrowed`): the board asks for it to
+// draw itself, and the hub hands back one room's answer because refusing left
+// the board collecting 409s. That borrow is right for editor commands and
+// terminal themes, which the board only reads and which genuinely belong to a
+// machine. It is wrong for the skin, which is board-wide and the hub's to own:
+// a second room attaching would swap the ALL view to that room's skin, and a
+// skin saved from ALL had no room to land in and got the `needsARoom` 409.
+//
+// So the skin, and only the skin, is lifted off the borrow. A GET still borrows
+// the whole settings payload and then overwrites `board_skin` with the hub's. A
+// skin-only POST writes the hub's skin. Every other field, and every write that
+// names another setting, is left exactly as it was.
+//
+// Returns true when it answered, false to fall through to the borrow.
+func (p *Proxy) hubSettings(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/v1/settings" {
+		return false
+	}
+	stock := p.inventory()
+	if stock == nil {
+		return false // a hub with no durable store has no skin of its own
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		body, ok := p.hubSettingsBody(r, stock)
+		if !ok {
+			return false
+		}
+		writeJSONBody(w, http.StatusOK, body)
+		return true
+	case http.MethodPost, http.MethodPut:
+		return p.saveHubSkin(w, r, stock)
+	}
+	return false
+}
+
+// hubSettingsBody borrows one room's whole settings answer and swaps in the
+// hub's skin. False when there is no room to borrow from, which leaves the
+// caller to fall through: a hub with no room attached has no borrowed payload to
+// build on, and the skin alone is not a settings page.
+func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]any, bool) {
+	if p.firstRoom() == "" {
+		return nil, false
+	}
+	// askRoomBody builds its own GET, so a POST request handed here still borrows
+	// the settings correctly. Every field but the skin is left as the room wrote
+	// it.
+	body := p.askRoomBody(r, p.firstRoom())
+	if body == nil {
+		return nil, false
+	}
+	body["board_skin"] = p.hubSkinClamped(stock, body)
+	return body, true
+}
+
+// hubSkinClamped is the hub's stored skin, kept inside the list the board
+// actually ships. An unset or unknown value comes back as the default, which the
+// board reports as the FIRST entry of `board_skins`: that list is ordered
+// default-first, so a fresh hub, or one left on a name a later build dropped,
+// looks like a fresh board rather than like a setting that was ignored.
+func (p *Proxy) hubSkinClamped(stock Inventory, borrowed map[string]any) string {
+	skin, err := stock.HubSkin()
+	if err != nil {
+		skin = ""
+	}
+	skin = strings.TrimSpace(skin)
+	names := skinNames(borrowed)
+	if skin == "" || !contains(names, skin) {
+		if len(names) > 0 {
+			return names[0]
+		}
+	}
+	return skin
+}
+
+// saveHubSkin takes a skin-only save in the ALL scope onto the hub.
+//
+// ONLY THE SKIN, AND NOTHING ELSE. A body that also names a machine-shaped
+// setting still has no room to land in, so it is left for `needsARoom` to ask
+// which room. A save that is purely the skin is the one the hub owns.
+func (p *Proxy) saveHubSkin(w http.ResponseWriter, r *http.Request, stock Inventory) bool {
+	payload, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	if err != nil {
+		return false
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return false // not a shape we handle; let the borrow refuse it
+	}
+	if len(raw) != 1 {
+		return false
+	}
+	skinRaw, ok := raw["board_skin"]
+	if !ok {
+		return false
+	}
+	var name string
+	if err := json.Unmarshal(skinRaw, &name); err != nil {
+		writeErrBody(w, http.StatusBadRequest, "board_skin must be a string")
+		return true
+	}
+	name = strings.TrimSpace(name)
+	// Validated against the skins the board ships, the same refusal a room makes
+	// on the way in, so an unknown name is told at the boundary rather than saved
+	// and silently worn as the default. The list is borrowed from a room; with
+	// none attached there is nothing to check against, so the name is stored as
+	// sent and the read-side clamp is the safety net.
+	if name != "" {
+		if body := p.askRoomBody(r, p.firstRoom()); body != nil {
+			names := skinNames(body)
+			if len(names) > 0 && !contains(names, name) {
+				writeErrBody(w, http.StatusBadRequest,
+					fmt.Sprintf("no skin called %q. the ones there are: %s",
+						name, strings.Join(names, ", ")))
+				return true
+			}
+		}
+	}
+	if err := stock.SetHubSkin(name); err != nil {
+		writeErrBody(w, http.StatusInternalServerError, err.Error())
+		return true
+	}
+	// Answer with the settings the board would now read, so its cached prefs pick
+	// up the new skin and still carry the skin list. With no room to borrow from,
+	// the skin alone is the honest answer.
+	if body, ok := p.hubSettingsBody(r, stock); ok {
+		writeJSONBody(w, http.StatusOK, body)
+		return true
+	}
+	writeJSONBody(w, http.StatusOK, map[string]any{"board_skin": name})
+	return true
+}
+
+// skinNames pulls the list of shipped skins out of a borrowed settings payload.
+func skinNames(body map[string]any) []string {
+	raw, _ := body["board_skins"].([]any)
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func writeJSONBody(w http.ResponseWriter, code int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeErrBody(w http.ResponseWriter, code int, msg string) {
+	writeJSONBody(w, code, map[string]any{"error": msg})
+}
+
 // needsARoom is the refusal for a write with no room to land in.
 //
 // The alternative is spreading a machine-shaped setting across every machine,

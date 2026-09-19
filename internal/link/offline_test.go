@@ -20,6 +20,7 @@ type remembering struct {
 	rooms []Known
 	cards map[string][]CardState
 	asked map[string]int
+	skin  string
 }
 
 func (r *remembering) Known() ([]Known, error) { return r.rooms, nil }
@@ -41,6 +42,10 @@ func (r *remembering) Holding() ([]string, error) {
 	}
 	return out, nil
 }
+
+func (r *remembering) HubSkin() (string, error) { return r.skin, nil }
+
+func (r *remembering) SetHubSkin(name string) error { r.skin = name; return nil }
 
 func card(id, title, status string) CardState {
 	raw, _ := json.Marshal(map[string]any{"id": id, "title": title, "status": status})
