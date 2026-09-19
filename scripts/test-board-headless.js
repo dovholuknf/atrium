@@ -63,8 +63,17 @@ let tasksMode = "first";   // first | hang | second
 // (503, "no room is attached"), `gone` is a genuine missing card (404), and `ok`
 // returns the card.
 let soloMode = "ok";       // ok | noroom | gone
+// Whether the mock answers the `/_hub/*` probes as a hub. Off by default so the
+// board runs as a plain daemon for the tests above; the room-picker test turns
+// it on and loads a fresh page. `sggAttached` is the one room that flips from
+// disconnected to live under the open dropdown.
+let hubMode = false;
+let sggAttached = false;
+const ALPHA = { name: "alpha", host: "alpha-host" };
+const SGG = { name: "sgg", host: "sgg-host" };
 const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
+const hubStreams = [];       // hub event streams, used to push a `rooms` event
 
 const HTML = wholeBoard();
 
@@ -120,7 +129,10 @@ const server = http.createServer((req, res) => {
     sendJSON(res, { global_auto: false, global_auto_seconds: 0 }); return;
   }
   if (url === "/v1/themes") { sendJSON(res, { themes: [] }); return; }
-  if (url === "/v1/events") {
+  // The plain-daemon stream and the hub's own spelling of it. On a hub the board
+  // opens `/v1/events/hub`, and the room-picker test writes a `rooms` event onto
+  // that one to make a room attach while the dropdown is open.
+  if (url === "/v1/events" || url === "/v1/events/hub") {
     // An event stream that stays open and says nothing. The board polls for its
     // data, so an idle stream is enough to keep it out of the reconnect state.
     res.writeHead(200, {
@@ -129,12 +141,28 @@ const server = http.createServer((req, res) => {
     });
     res.write(": open\n\n");
     openStreams.push(res);
+    if (url === "/v1/events/hub") hubStreams.push(res);
     return;
   }
-  // A hub probe that says "not a hub", so the board runs as a plain daemon.
-  if (url === "/_hub/rooms" || url === "/_hub/health" || url === "/_hub/inventory") {
-    res.writeHead(404); res.end("not a hub"); return;
+  // The hub probes. Off by default (a plain daemon 404s them); the room-picker
+  // test turns `hubMode` on so the board runs as a hub with two rooms.
+  if (url === "/_hub/rooms") {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    sendJSON(res, { rooms: sggAttached ? [ALPHA, SGG] : [ALPHA] });
+    return;
   }
+  if (url === "/_hub/inventory") {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    const alpha = Object.assign({ transport: "direct", attached: true,
+      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T12:00:00Z" }, ALPHA);
+    // sgg has dialled in before, so it shows disconnected until it attaches: the
+    // picker only lists an ever-connected room, never one that is only inventory.
+    const sgg = Object.assign({ transport: "direct", attached: sggAttached,
+      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T11:00:00Z" }, SGG);
+    sendJSON(res, { rooms: [alpha, sgg] });
+    return;
+  }
+  if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
   // Everything else (sw.js, icons, favicon): a clean 404.
   res.writeHead(404); res.end("");
 });
@@ -303,6 +331,99 @@ async function main() {
     } finally {
       await bad404.close();
     }
+
+    // ── the OPEN room picker live-updates when a room attaches ──────────────
+    // With the dropdown left open, a room coming online must flip in place from
+    // disconnected to live on the `rooms` event, with no reopen. This is the
+    // whole of the picker-live fix: the chip's counter was reactive, the open
+    // menu was a snapshot from when it opened.
+    hubMode = true;
+    const hub = await browser.newPage();
+    const hubErrors = [];
+    hub.on("pageerror", e => hubErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      hub.on("console", m => console.error("[hub] " + m.type() + ": " + m.text()));
+    }
+    try {
+      await hub.goto(base, { waitUntil: "domcontentloaded" });
+
+      // The chip shows once the hub probe answers, then the menu is opened the
+      // way the chip's onclick does. Called rather than clicked so an overlay in
+      // the header layout cannot make the open flaky: this test is about what the
+      // OPEN menu does, not about the click that opens it.
+      await hub.waitForFunction(() => {
+        const el = document.getElementById("rooms");
+        return el && !el.hidden;
+      }, { timeout: 15000 });
+      await hub.evaluate(() => openRooms());
+      await hub.waitForFunction(() => {
+        const m = document.getElementById("rooms-menu");
+        return m && !m.hidden;
+      }, { timeout: 15000 });
+
+      // sgg starts disconnected in the open menu, and its placement is recorded
+      // so the live update can be proven not to move it. The row is found by its
+      // name in the `<strong>`, not the whole button text: the host runs on right
+      // after the name with no separator, so a word-boundary match on the text
+      // would miss the live row once sgg carries a host.
+      const before = await hub.evaluate(() => {
+        const btns = [...document.querySelectorAll("#rooms-menu button")];
+        const sgg = btns.find(b => {
+          const s = b.querySelector("strong");
+          return s && s.textContent === "sgg";
+        });
+        const menu = document.getElementById("rooms-menu");
+        return {
+          found: !!sgg,
+          disconnected: !!sgg && /disconnect/i.test(sgg.textContent),
+          live: !!(sgg && sgg.querySelector(".dot.live")),
+          top: menu.style.top, left: menu.style.left
+        };
+      });
+      if (!before.found || !before.disconnected || before.live) {
+        fail("the open picker did not list sgg as disconnected to begin with: " +
+          JSON.stringify(before));
+      }
+
+      // Attach sgg, clear the loadHubRooms throttle, then push the `rooms` event
+      // the hub sends on a membership change. Nothing reopens the menu.
+      sggAttached = true;
+      await hub.waitForTimeout(2100);
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+
+      // The open menu repaints in place: sgg is now live, not disconnected, and
+      // the menu never closed to do it.
+      await hub.waitForFunction(() => {
+        const menu = document.getElementById("rooms-menu");
+        if (!menu || menu.hidden) return false;
+        const sgg = [...menu.querySelectorAll("button")].find(b => {
+          const s = b.querySelector("strong");
+          return s && s.textContent === "sgg";
+        });
+        return !!(sgg && sgg.querySelector(".dot.live") &&
+          !/disconnect/i.test(sgg.textContent));
+      }, { timeout: 15000 });
+
+      // The menu held its placement: only the rows changed under the user.
+      const after = await hub.evaluate(() => {
+        const menu = document.getElementById("rooms-menu");
+        return { hidden: menu.hidden, top: menu.style.top, left: menu.style.left };
+      });
+      if (after.hidden) {
+        fail("the picker closed instead of updating in place on the rooms event.");
+      }
+      if (after.top !== before.top || after.left !== before.left) {
+        fail("the picker jumped on the live update (top/left changed): " +
+          JSON.stringify({ before, after }));
+      }
+      if (hubErrors.length) {
+        fail("the hub page threw uncaught errors: " + hubErrors.join(" | "));
+      }
+    } finally {
+      await hub.close();
+      hubMode = false;
+      sggAttached = false;
+    }
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -327,8 +448,9 @@ async function main() {
   }
 
   if (bad) process.exit(1);
-  console.log("the board paints its lists, a hung fetch does not blank it, and a " +
-    "popped-out window rides out a hub restart and recovers.");
+  console.log("the board paints its lists, a hung fetch does not blank it, a " +
+    "popped-out window rides out a hub restart and recovers, and the open room " +
+    "picker live-updates a newly-attached room from disconnected to live.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
