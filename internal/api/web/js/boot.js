@@ -72,7 +72,9 @@ startRooms().then(() => {
     // polling rather than a second board's.
     bootTerminalOnly().then(() => {
       connect();
-      setInterval(refresh, POLL_MS);
+      // Through the single-flight guard, so a poll cannot start a second solo
+      // fan-out over one already running while the wire is slow. See runRefresh.
+      setInterval(runRefresh, POLL_MS);
     });
   } else {
     bootBoard();
@@ -107,7 +109,7 @@ async function bootBoard() {
   // a frame. Half a second is many times that, and it is paid once at load.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
   setTimeout(() => {
-    refresh();
+    runRefresh();
     restoreWhereYouWere();
     // AND THE COVER COMES OFF, on the view you were reading rather than on the
     // one the markup starts with. Here rather than earlier because this line
@@ -130,7 +132,7 @@ async function bootBoard() {
       history.replaceState(navState(), "");
     }
   }, soloRollCall);
-  setInterval(refresh, POLL_MS);
+  setInterval(runRefresh, POLL_MS);
   // Every other way this page goes away: a manual reload, a close, a
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.

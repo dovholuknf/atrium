@@ -1065,7 +1065,7 @@ function applyHeld() {
   repaintLists();
 }
 
-function repaintLists() {
+function repaintLists(signal) {
   const view = document.querySelector(".tab.on").dataset.view;
   const render = {
     board: renderBoard, stack: renderStack, perms: renderPerms,
@@ -1084,9 +1084,11 @@ function repaintLists() {
     console.error("no renderer for the " + view + " view");
     return;
   }
-  // Returned so a refresh pass can await the paint's own fetches. The single-
-  // flight guard counts a pass done only when everything it started has settled.
-  return render().catch(e => console.error(e));
+  // Returned so a refresh pass can await the paint's own fetches, and passed the
+  // pass's abort signal so the watchdog can actually cancel a hung list fetch,
+  // not just stop waiting on it. The single-flight guard counts a pass done only
+  // when everything it started has settled.
+  return render(signal).catch(e => console.error(e));
 }
 
 // One refresh for a burst of events.
@@ -1138,6 +1140,21 @@ function refreshSoon() {
 // BACK OFF. When the wire is down, `api()` counts the failures. A dirty pass
 // then waits before it runs, growing the wait with the failure streak, so a tab
 // that cannot reach the hub does not turn a flap into hundreds of queued fetches.
+//
+// WATCHDOG. A pass counts done when its fan-out settles, which is the whole
+// point of the await inside `refresh`. But a fetch can hang and never resolve or
+// reject: a proxy that holds the socket open, a hub wedged mid-answer, a request
+// caught behind an exhausted pool with no timeout of its own. If that happened
+// the in-flight flag would never clear and the board would stop refreshing for
+// good, blank on whatever it last drew. So the pass also races a deadline: past
+// RUN_TIMEOUT it is treated as finished, its fetches aborted so they stop
+// holding sockets, and the loop is free to run the next pass. The hung fetch is
+// abandoned rather than waited on.
+// Thirty seconds, past any answer a healthy hub gives and well short of a person
+// giving up on a frozen board. Overridable only so a headless test can prove the
+// unwedge without waiting the full timeout; a plain board never sets it.
+const RUN_TIMEOUT =
+  (typeof window !== "undefined" && window.__atriumRunTimeout) || 30000;
 let refreshInFlight = false;
 let refreshDirty = false;
 let refreshController = null;
@@ -1148,17 +1165,31 @@ function runRefresh() {
   if (refreshController) refreshController.abort();
   refreshController = typeof AbortController !== "undefined"
     ? new AbortController() : null;
-  Promise.resolve(refresh(refreshController && refreshController.signal))
-    .catch(() => {})
-    .finally(() => {
-      refreshInFlight = false;
-      if (refreshDirty) {
-        refreshDirty = false;
-        const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
-        const backoff = streak > 0 ? Math.min(5000, 500 * streak) : 0;
-        setTimeout(runRefresh, backoff);
-      }
-    });
+  const ctrl = refreshController;
+  let watchdog = 0;
+  const guard = new Promise(done => {
+    watchdog = setTimeout(() => {
+      // Abort the stale pass so its sockets are released, and mark the board
+      // dirty so the pass that replaces it actually repaints rather than
+      // assuming the hung one will.
+      if (ctrl) ctrl.abort();
+      refreshDirty = true;
+      done();
+    }, RUN_TIMEOUT);
+  });
+  Promise.race([
+    Promise.resolve(refresh(ctrl && ctrl.signal)).catch(() => {}),
+    guard
+  ]).finally(() => {
+    clearTimeout(watchdog);
+    refreshInFlight = false;
+    if (refreshDirty) {
+      refreshDirty = false;
+      const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
+      const backoff = streak > 0 ? Math.min(5000, 500 * streak) : 0;
+      setTimeout(runRefresh, backoff);
+    }
+  });
 }
 
 async function refresh(signal) {
@@ -1189,7 +1220,7 @@ async function refresh(signal) {
     heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
-    jobs.push(Promise.resolve(repaintLists()));
+    jobs.push(Promise.resolve(repaintLists(signal)));
   }
 
   // What is lent out, so a card can say so and the menu knows without asking.
