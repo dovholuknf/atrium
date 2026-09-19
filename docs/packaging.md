@@ -22,7 +22,9 @@ decision is written, and most of it has now been run rather than only written.
 | deb and rpm, both arches | yes, `scripts/package-linux.sh`, built and unpacked | a Linux box to install on |
 | systemd unit, enabled on install | yes, `packaging/postinstall.sh`, read inside the package | a Linux box |
 | macOS LaunchAgent | yes, `packaging/atrium.plist` and `scripts/atrium-service.sh` | a Mac to run it on |
+| macOS .pkg, both arches | written, `scripts/package-macos.sh`, builds only on macOS | a Mac to build it, a Developer ID Installer cert to sign |
 | Windows logon task, with verbs | yes, `scripts/atrium-service.ps1`, each verb run twice | a desktop session |
+| Windows MSI | yes, `scripts/package-windows.ps1` with WiX, built and table-inspected | a code signing certificate to sign |
 | CI, and a release workflow | yes, `.github/workflows/`, all logic in `scripts/` | nothing until you push |
 | Publishing to GitHub Releases | yes, `scripts/publish-release.sh`, dry run verified | a tag, and one command |
 | Scoop manifest | written, `packaging/scoop-atrium.json` | a bucket repository, a release |
@@ -329,6 +331,110 @@ And the audience question: atrium is for people who already have a terminal open
 
 ---
 
+## The two native installers: a .pkg and an MSI
+
+The deb and the rpm above are packages a Linux package manager installs. macOS and
+Windows have their own native installer a person double-clicks, and both are now
+built from a script the same way everything else here is. Neither is a package
+manager, so neither gets `upgrade`. They are the file you hand somebody who wants
+to install atrium without a bucket or a tap.
+
+### macOS: a .pkg, built only on a Mac
+
+`scripts/package-macos.sh` builds `atrium_<version>_darwin_<arch>.pkg` for both
+architectures from the darwin binaries `release.sh` already produced.
+
+**It runs only on macOS, and that is a real limit rather than an oversight.**
+`pkgbuild` and `productbuild` are Apple's, ship with the developer tools, and have
+no cross-platform equivalent, so unlike nfpm this cannot build a macOS artefact
+from Windows. On any other platform it says so and exits, and `cut-release.sh`
+treats that as never fatal: a release is routinely cut from Linux or Windows and
+the .pkg is built and signed on a Mac afterwards, with the darwin archives
+carrying the binary either way.
+
+Three decisions are worth reading before changing it:
+
+- **The binary lands in `/usr/local/bin`, not `/usr/bin`.** `/usr` on macOS is on
+  the read-only system volume and owned by the OS, and writing there means
+  defeating System Integrity Protection. `/usr/local` is the documented home for
+  third-party command line tools.
+- **`productbuild` wraps the `pkgbuild` component only to enforce the
+  architecture.** A component package installs on its own, but it cannot refuse
+  the wrong arch, so an arm64 payload would install on an Intel Mac and produce a
+  binary that cannot run. The distribution's `hostArchitectures` is the whole
+  reason the second wrapper exists.
+- **The postinstall loads a LaunchAgent for the person at the console, not for
+  root.** This is the macOS spelling of the per-user-from-a-root-context problem
+  `packaging/postinstall.sh` solves on Linux. The installer runs as root, finds
+  the console user with `stat -f%Su /dev/console`, renders the same
+  `packaging/atrium.plist` template `scripts/atrium-service.sh` renders by hand,
+  and loads it in that user's GUI domain with `launchctl asuser`. A `root` or
+  `loginwindow` answer is not a person, so it prints the command and stops, the
+  same as the Linux postinstall does for an unattended install. `ATRIUM_NO_ENABLE=1`
+  lays the files down and loads nothing.
+
+Unsigned means Gatekeeper quarantines the download and the first run is a
+right-click-open. Signing needs a Developer ID Installer certificate, and
+notarization on top of that needs an Apple account. Set
+`ATRIUM_INSTALLER_IDENTITY` to sign; the script lists the notarization step when
+it does not.
+
+### Windows: an MSI, built with WiX
+
+`scripts/package-windows.ps1` builds `atrium_<version>_windows_amd64.msi` with the
+WiX toolset, from `packaging/windows/atrium.wxs`. WiX is a .NET tool the script
+fetches into `build.claude/bin` the way `package-linux.sh` fetches nfpm, pinned
+rather than latest so one source does not produce two differently-shaped
+installers. It builds anywhere .NET runs, and is written and tested on Windows
+because that is where the MSI is installed.
+
+**The MSI lays the binary down in Program Files, puts that directory on the system
+PATH, and ships the service scripts beside it. It does NOT register the logon
+task.** That is the same decision the deb postinstall and the .pkg postinstall
+make from the other direction. An MSI runs elevated, as SYSTEM or as an
+administrator who may not be the person who will use atrium, and a logon task
+belongs to one interactive user's session. Registering it from the MSI would be
+the Windows version of root enabling a daemon for an account that is not in a
+session. So the task stays the per-user step the user runs as themselves:
+
+```
+atrium-service.ps1 install
+```
+
+which resolves atrium from the PATH the MSI just set. One place writes the task,
+`scripts/atrium-autostart.ps1`, for the reason recorded there: two writers is how
+a machine ends up with two daemons on one database. The MSI ships both service
+scripts into `scripts\` beside the binary so that instruction works on a machine
+that only has the MSI and not the repository.
+
+Two details are each a failure avoided:
+
+- **The MSI version is the tag with its `v` off and any prerelease suffix
+  dropped.** Windows Installer stores `ProductVersion` as up to four integers and
+  compares them numerically, so it rejects a leading `v` and ignores anything
+  after a dash. `v0.5.0-rc1` becomes `0.5.0`. The tag keeps its `v` because that
+  is what the release URL contains.
+- **`checksums.txt` is rewritten with LF line endings and lowercase hashes.** A
+  trailing carriage return from a Windows newline becomes part of the filename and
+  every `sha256sum -c` fails with "FAILED open or read", so the file this writes on
+  Windows verifies the same as the one the bash packagers write elsewhere.
+
+Unsigned means SmartScreen shows a warning and Chocolatey will not take it.
+Signing needs a code signing certificate. Set `ATRIUM_SIGN_THUMBPRINT` to a
+certificate in the machine store to sign with `signtool`; the script says what is
+needed when it does not.
+
+### Both are wired into the release
+
+`cut-release.sh` builds the .pkg (when on a Mac) and the MSI (when pwsh is present)
+after the deb and the rpm, and neither is fatal off its platform. Every packager
+rewrites `checksums.txt` from every artefact type present, so they run in any order
+without dropping each other's output from the file every manifest points at.
+`publish-release.sh` carries the `.pkg` and the `.msi` as release assets alongside
+the archives and packages.
+
+---
+
 ## CI, which contains no logic
 
 `.github/workflows/ci.yml` checks out the code, installs Go and node, and calls `scripts/ci.sh`. That is the
@@ -408,6 +514,11 @@ not anybody decides.
   scriptlet text.
 - `scripts/publish-release.sh` verifies every asset against `checksums.txt` and then refuses to publish, which
   is what it does without `--publish`.
+- `scripts/package-windows.ps1` builds the MSI with WiX and its database tables were read back with the Windows
+  Installer API without installing it: `atrium.exe` under `ProgramFiles64Folder\atrium`, the `ProductVersion`
+  stamped from the tag, an `Environment` row that appends the install directory to the system PATH and removes it
+  on uninstall, and both service scripts staged into `scripts\`. `checksums.txt` was verified with `sha256sum -c`
+  after the MSI rewrote it, which is the check that catches the CRLF-in-filenames failure.
 - On Windows, `scripts/atrium-service.ps1` was run for real: `status` against no registration, `install` twice,
   `start`, `status`, `stop` twice, and `uninstall` twice. Each verb is idempotent, exactly one registration
   exists after two installs, and the second uninstall says there is nothing to remove and succeeds. Nothing was
@@ -432,6 +543,14 @@ parameter comes from the order it is declared in.
   them up tidily.
 - **The macOS LaunchAgent has never been loaded,** because there is no Mac here. `scripts/atrium-service.sh`
   parses and its logic is small, but `launchctl bootstrap`, `kickstart` and `bootout` have not been run.
+- **The macOS .pkg has never been built,** for the same reason: `pkgbuild` and `productbuild` are macOS-only and
+  there is no Mac here. `scripts/package-macos.sh` parses and refuses cleanly off macOS, but the pkgbuild and
+  productbuild invocations, the `hostArchitectures` arch gate, and the postinstall's `launchctl asuser` load into
+  the console user's GUI domain are all unproven until it runs on a Mac.
+- **The MSI was built and inspected but not installed.** Its tables are correct (above), but a live `msiexec /i`
+  was not run, so the PATH entry actually landing in the system environment and the uninstall removing it are
+  unproven on a real machine. A WiX-authored `Environment` element is well-trodden, and the structural check is
+  what was cheap to do here without mutating this machine's Program Files and global PATH.
 - **The Windows `start` verb could not be proved on this machine.** The interactive console session belongs to a
   different account than the one the tests ran as, and an Interactive-logon task cannot run for an account with
   no interactive session. The registration succeeds, `Start-ScheduledTask` returns, and the task stays `Ready`
@@ -460,10 +579,11 @@ bash scripts/cut-release.sh v0.1.0 --execute
 ```
 
 Step 1 is not a preview of step 2, it is the same run without the last stage. It compiles all five platforms,
-builds the deb and the rpm, runs the freshly built binary to check `atrium version` reports `v0.1.0` and not
-`dev`, rebuilds the commit in a clean export to prove nothing outside it reached the compiler, re-hashes every
-artefact against `checksums.txt`, and writes `build.claude/release/v0.1.0/scoop/atrium.json` with the version,
-the URL and the hash already filled in. Then it prints the `gh` command it did not run.
+builds the deb and the rpm, builds the MSI where pwsh is present and the .pkg where it is on a Mac, runs the
+freshly built binary to check `atrium version` reports `v0.1.0` and not `dev`, rebuilds the commit in a clean
+export to prove nothing outside it reached the compiler, re-hashes every artefact against `checksums.txt`, and
+writes `build.claude/release/v0.1.0/scoop/atrium.json` with the version, the URL and the hash already filled in.
+Then it prints the `gh` command it did not run.
 
 `bash scripts/cut-release.sh v0.1.0 --preflight` is the cheaper question: it runs only the refusals and stops
 before building anything. Useful before you have decided on a version.

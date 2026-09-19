@@ -1,0 +1,120 @@
+#!/bin/bash
+# Load the LaunchAgent for the person at the console, and explain it when there
+# is nobody there to load it for.
+#
+# THE SUBTLE PART, and the reason this file is mostly comment, is the same one
+# packaging/postinstall.sh carries on Linux: the installer runs as ROOT, and the
+# thing atrium needs is a per-USER LaunchAgent. A LaunchAgent loaded as root runs
+# in root's context with none of the user's PATH, shell, ssh agent, keychain or
+# Claude Code configuration, and every runner it spawned would inherit none of
+# them. Supervision is most of what atrium is for, so that is atrium with its
+# main feature removed and nothing to say so.
+#
+# So this finds the one human at the console and loads it for that human only.
+#
+# WHY IT ENABLES AT ALL, since "installing puts files down, starting a daemon is
+# a different sentence" is a good rule. It is wrong for atrium specifically:
+# atrium's whole job is to still be running when you come back to it, and an
+# install that leaves you to launch it by hand leaves you where you started. The
+# escape hatch is ATRIUM_NO_ENABLE=1, which lays the files down and loads nothing.
+#
+# The installer hands scripts four positional arguments: $1 is the package path,
+# $2 the install location, $3 the target volume, $4 the root. None of them names
+# the user, because a package installs for the machine. The user at the console
+# is found below rather than assumed.
+
+set -e
+
+LABEL=io.github.dovholuknf.atrium
+EXE=/usr/local/bin/atrium
+TEMPLATE=/usr/local/share/atrium/atrium.plist
+
+say() { echo "atrium: $*"; }
+
+if [ "${ATRIUM_NO_ENABLE:-}" = "1" ]; then
+    say "ATRIUM_NO_ENABLE=1, so nothing was loaded."
+    say "when you want it, as yourself and not with sudo:"
+    say "  scripts/atrium-service.sh install"
+    exit 0
+fi
+
+# WHO IS AT THE CONSOLE. `stat -f%Su /dev/console` is the account that owns the
+# graphical login session, which is the person a LaunchAgent has to belong to.
+#
+# `root` or `loginwindow` is not a person: it means an install run over ssh, from
+# a management tool, or before anybody has logged in. Loading a LaunchAgent for
+# root there would produce a daemon nobody asked for, in a context where it
+# cannot open a pseudo terminal anybody can reach. So this prints the command and
+# stops, which is exactly what the Linux postinstall does for an unattended run.
+user="$(stat -f%Su /dev/console 2>/dev/null || true)"
+if [ -z "$user" ] || [ "$user" = "root" ] || [ "$user" = "loginwindow" ]; then
+    say "installed /usr/local/bin/atrium."
+    say "nobody is logged in at the console, so no LaunchAgent was loaded: there"
+    say "is no session a runner could belong to yet."
+    say ""
+    say "as the person who will use it, in their own login session:"
+    say "  scripts/atrium-service.sh install"
+    exit 0
+fi
+
+uid="$(id -u "$user" 2>/dev/null || true)"
+home="$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+shell="$(dscl . -read "/Users/$user" UserShell 2>/dev/null | awk '{print $2}')"
+[ -n "$shell" ] || shell=/bin/zsh
+if [ -z "$uid" ] || [ -z "$home" ]; then
+    say "cannot resolve the account '$user', so no LaunchAgent was loaded."
+    exit 0
+fi
+
+db="$home/.atrium/atrium.db"
+logdir="$home/Library/Logs/atrium"
+agentdir="$home/Library/LaunchAgents"
+plist="$agentdir/$LABEL.plist"
+
+# THE DIRECTORIES ARE MADE AND CHOWNED, because everything below belongs to the
+# user and this script is root. A LaunchAgent that launchd cannot read, or a
+# database directory the daemon cannot write, fails at login where the only
+# record is a log nobody is watching.
+mkdir -p "$agentdir" "$logdir" "$home/.atrium"
+chown "$user" "$agentdir" "$logdir" "$home/.atrium" 2>/dev/null || true
+
+# THE TEMPLATE IS RENDERED, because a plist cannot expand anything. launchd reads
+# it as data, so every path has to be absolute and already right. This is the
+# same substitution scripts/atrium-service.sh does by hand, from the same
+# template, so the loaded file is identical however atrium arrived.
+sed -e "s#@SHELL@#$shell#g" \
+    -e "s#@EXE@#$EXE#g" \
+    -e "s#@DB@#$db#g" \
+    -e "s#@LOGDIR@#$logdir#g" \
+    -e "s#@HOME@#$home#g" \
+    "$TEMPLATE" > "$plist"
+chown "$user" "$plist" 2>/dev/null || true
+
+# LOADED IN THE USER'S GUI DOMAIN, not root's. `launchctl asuser <uid>` runs the
+# inner launchctl inside that user's session, so `gui/<uid>` is a domain it can
+# reach. A bare `launchctl bootstrap gui/<uid>` from root reaches the same domain
+# on current macOS, but asuser is the form that also works for `enable` and is
+# the one Apple documents for touching another user's agents.
+#
+# BOOTOUT FIRST, and it is allowed to fail. `bootstrap` on a label that is
+# already loaded fails with "service already loaded" and changes nothing, so a
+# reinstall over a running agent would silently keep the old plist. Booting it
+# out first is the supported way to reload, and on a first install there is
+# simply nothing to boot out.
+launchctl asuser "$uid" launchctl bootout "gui/$uid/$LABEL" 2>/dev/null || true
+if launchctl asuser "$uid" launchctl bootstrap "gui/$uid" "$plist" 2>/dev/null; then
+    launchctl asuser "$uid" launchctl enable "gui/$uid/$LABEL" 2>/dev/null || true
+    say "loaded and running for $user."
+    say "  the board:  http://localhost:7778"
+    say "  log:        $logdir/atrium.log"
+else
+    # The file is written and correct, so it will load at the next login even
+    # when it could not be bootstrapped now. Said out loud rather than reported
+    # as a success it did not earn, which is the same honesty the Linux fallback
+    # keeps.
+    say "wrote $plist but could not load it right now."
+    say "it will start at $user's next login, or now with:"
+    say "  scripts/atrium-service.sh start"
+fi
+
+exit 0
