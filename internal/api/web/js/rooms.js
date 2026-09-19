@@ -161,15 +161,16 @@ function openRooms() {
   const room = roomNow();
   const rows = [
     `<button class="${room ? "" : "on"}" onclick="pickRoom('')">
-       <strong>all rooms</strong>
-       <span>every room at once, which is what a hub is for</span></button>`
+       <span class="dot ghost"></span>
+       <strong>all rooms</strong></button>`
   ];
   for (const r of hubRooms) {
     const name = esc(r.name);
     rows.push(`<button class="${room === r.name ? "on" : ""}"
       onclick="pickRoom('${name.replace(/'/g, "&#39;")}')">
-        <strong>${name}</strong>
-        <span>${esc(r.host || "")}</span></button>`);
+        <span class="dot live"></span>
+        <strong>${name}</strong>${r.host
+          ? `<span class="meta">${esc(r.host)}</span>` : ""}</button>`);
   }
   // Rooms that dialled in before and are not attached now. Listed after the live
   // ones and dimmed, because the board handles an offline room by showing what it
@@ -183,14 +184,18 @@ function openRooms() {
     const name = esc(r.name);
     rows.push(`<button class="cold"
       onclick="pickRoom('${name.replace(/'/g, "&#39;")}')">
+        <span class="dot"></span>
         <strong>${name}</strong>
-        <span>disconnected${r.last_seen ? ", last seen " + esc(shortTime(r.last_seen)) : ""}</span></button>`);
+        <span class="meta">disconnected${r.last_seen
+          ? " &middot; " + esc(shortTime(r.last_seen)) : ""}</span></button>`);
   }
   // A room that was chosen and has since gone. Kept in the list so there is
   // something to click your way out of.
   if (room && !hubRooms.some(r => r.name === room)) {
-    rows.push(`<button class="on cold"><strong>${esc(room)}</strong>
-      <span>not attached right now</span></button>`);
+    rows.push(`<button class="on cold">
+      <span class="dot"></span>
+      <strong>${esc(room)}</strong>
+      <span class="meta">not attached</span></button>`);
   }
   if (!hubRooms.length) {
     rows.push(`<div class="none">no room is attached. the hub serves this board
