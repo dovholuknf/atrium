@@ -165,6 +165,21 @@ function openRooms() {
         <strong>${name}</strong>
         <span>${esc(r.host || "")}</span></button>`);
   }
+  // Rooms that dialled in before and are not attached now. Listed after the live
+  // ones and dimmed, because the board handles an offline room by showing what it
+  // last said, so switching to one is a real thing to do. A room that has never
+  // connected stays out: it has nothing to show and belongs on the rooms tab.
+  // The currently scoped room is drawn by the block below, so it is skipped here.
+  for (const r of hubInventory) {
+    if (r.attached || !r.first_seen || r.transport === "local") continue;
+    if (r.name === room) continue;
+    if (hubRooms.some(h => h.name === r.name)) continue;
+    const name = esc(r.name);
+    rows.push(`<button class="cold"
+      onclick="pickRoom('${name.replace(/'/g, "&#39;")}')">
+        <strong>${name}</strong>
+        <span>disconnected${r.last_seen ? ", last seen " + esc(shortTime(r.last_seen)) : ""}</span></button>`);
+  }
   // A room that was chosen and has since gone. Kept in the list so there is
   // something to click your way out of.
   if (room && !hubRooms.some(r => r.name === room)) {
