@@ -125,7 +125,10 @@ echo
 # how a manifest ends up reading the one without its artefact in it.
 (
   cd "$out"
-  sha256sum ./*.zip ./*.tar.gz ./*.deb ./*.rpm 2>/dev/null |
+  # Every artefact type, not only the two this script writes, so running it in
+  # any order alongside the macOS and Windows packagers never drops their .pkg
+  # or .msi from the file every manifest points at.
+  sha256sum ./*.zip ./*.tar.gz ./*.deb ./*.rpm ./*.pkg ./*.msi 2>/dev/null |
     sed 's#\./##' | sort -k2 | tee checksums.txt
 )
 

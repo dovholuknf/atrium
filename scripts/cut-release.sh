@@ -264,6 +264,19 @@ if ! bash scripts/package-linux.sh "$version"; then
   echo "  the linux packages did not build. under --execute this would stop here."
 fi
 
+step "the macOS .pkg"
+# pkgbuild and productbuild exist only on macOS, so this builds nothing on any
+# other machine and says so. It is NEVER fatal, even under --execute, because a
+# release is routinely cut from Linux or Windows and the .pkg is then built and
+# signed on a Mac afterwards: the darwin binaries and their archives are in the
+# release either way. What is lost by cutting elsewhere is only the .pkg wrapper,
+# which is stated rather than allowed to fail the release.
+if ! bash scripts/package-macos.sh "$version"; then
+  echo
+  echo "  no .pkg was built here (expected off macOS). the darwin archives are"
+  echo "  still in the release; build and sign the .pkg on a Mac."
+fi
+
 # ==============================================================================
 # 4. IDENTITY: does the binary agree with the release it is in
 # ==============================================================================

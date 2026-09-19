@@ -91,7 +91,9 @@ step "the packaging scripts parse"
 # parse without running: `sh -n` for the package scriptlets, and PowerShell's
 # own parser for the Windows side.
 for f in packaging/postinstall.sh packaging/preremove.sh \
+         packaging/macos/scripts/postinstall \
          scripts/atrium-service.sh scripts/package-linux.sh \
+         scripts/package-macos.sh \
          scripts/release.sh scripts/publish-release.sh \
          scripts/cut-release.sh scripts/check-release.sh; do
   if ! bash -n "$f"; then
