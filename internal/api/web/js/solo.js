@@ -36,7 +36,14 @@
 // layout are the host and the org and are exactly what is missing.
 function windowTitle(task) {
   const label = terminalLabel(task);
-  return label ? label + " - atrium" : "atrium terminal";
+  // THE NAME LEADS HERE TOO. A popped-out window showed only the derived address,
+  // so a session somebody named `doer1` was `github/.../atrium:main` in alt-tab and
+  // nowhere did it say `doer1`. Lead with the name and keep the address after it,
+  // unless the address already carries the name, which is the unnamed case.
+  const name = String((task && task.display_title) || "").trim();
+  const named = name && (!label || !label.toLowerCase().includes(name.toLowerCase()));
+  const lead = named ? (label ? name + " · " + label : name) : label;
+  return lead ? lead + " - atrium" : "atrium terminal";
 }
 
 // Where a session lives and what it is on, kept apart.

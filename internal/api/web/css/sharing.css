@@ -471,7 +471,7 @@
     font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
   }
   .tgroup:hover { background: var(--lift); color: var(--head); }
-  .tgroup .tcaret { font-size: 9px; opacity: .8; width: 9px; text-align: center; }
+  .tgroup .tcaret { font-size: 11px; opacity: 1; width: 11px; text-align: center; }
   .tgroup .tgname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* How much a fold is hiding. It inherits the heading's own font and colour rather than being styled: as a
      nine pixel pill in the chip colours it was the quietest thing on the row, and a count nobody can read is a
