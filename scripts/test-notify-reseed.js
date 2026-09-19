@@ -93,9 +93,35 @@ if (harness.announced.length !== 1 || harness.announced[0].ids.join() !== "03d3"
     JSON.stringify(harness.announced));
 }
 
+// ── the READY/WAITING path is diffed on the bare id too ─────────────────────
+// The false alert clint saw was "css-changes is ready" fired when a room
+// attached: the ready/waiting kind runs through the same `check`, so a card
+// present before and after the room-set change (its id flipping bare<->tagged)
+// must NOT re-announce as ready. Same guarantee as arrivals, asserted here for
+// the kind that actually rang.
+harness.announced.length = 0;
+harness.check("waiting", tagged, describe);        // seed: two rooms, tagged
+if (harness.announced.length) {
+  fail("the first waiting check announced instead of seeding: " +
+    JSON.stringify(harness.announced));
+}
+harness.check("waiting", bare, describe);          // same cards, now bare
+if (harness.announced.length) {
+  fail("a room dropping re-announced ready cards whose only change was the " +
+    "`room~` tag: " + JSON.stringify(harness.announced) + ". A ready card must " +
+    "keep its identity across the tag flip, or a room attaching says a " +
+    "two-hour-idle card just became ready.");
+}
+// A card that GENUINELY becomes ready while the room set is stable still rings.
+harness.check("waiting", bare.concat(card("06a6")), describe);
+if (harness.announced.length !== 1 || harness.announced[0].ids.join() !== "06a6") {
+  fail("a real newly-ready card stopped announcing after the bare-id change: " +
+    JSON.stringify(harness.announced));
+}
+
 // ── reseed silences the churn tick, then diffing resumes ────────────────────
 harness.announced.length = 0;
-harness.check("waiting", tagged, describe);        // seed
+harness.check("waiting", bare, describe);          // seed: one room, bare
 harness.reseed();                                  // room set changed
 // The re-tagged set arrives; nothing genuinely new, so nothing is said. This
 // covers the flip in the other direction (1 -> 2) and any set churn a bare-id
