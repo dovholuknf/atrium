@@ -1368,8 +1368,8 @@ function paintWorking(tasks) {
     : n + " sessions are mid-turn. click to go to the terminals";
 }
 
-async function renderBoard() {
-  const { tasks } = await api("/v1/tasks");
+async function renderBoard(signal) {
+  const { tasks } = await api("/v1/tasks", { signal });
   // SPLIT ONCE, HERE, AND NOT AT EVERY PLACE THAT COUNTS SOMETHING.
   //
   // Everything below this line works on cards from rooms that are answering,

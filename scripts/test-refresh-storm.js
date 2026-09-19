@@ -241,6 +241,39 @@ async function main() {
       "The max-wait cap is missing.");
   }
 
+  // ── a hung pass does not wedge the board for good ─────────────────────────
+  // A fetch that never resolves or rejects would leave the in-flight flag set
+  // forever and the board frozen on its last paint. The watchdog must abort the
+  // hung pass past RUN_TIMEOUT and let the next one run.
+  harness.setAutoSettle(false);   // the next pass will hang
+  harness.setFail(0);
+  await drain();
+  const stuckAt = harness.starts();
+  const abortsAt = harness.abortCount();
+  harness.refreshSoon();
+  harness.advance(300);
+  await drain();                  // pass starts and then hangs (never settled)
+  if (harness.starts() !== stuckAt + 1) fail("the hung pass did not start.");
+  harness.refreshSoon();          // a trigger arrives while it hangs
+  harness.advance(400);
+  await drain();
+  if (harness.starts() !== stuckAt + 1) {
+    fail("a trigger ran a second pass while one was hung. Single-flight broke.");
+  }
+  harness.advance(30000);         // past RUN_TIMEOUT
+  await drain();
+  if (harness.abortCount() <= abortsAt) {
+    fail("the watchdog did not abort the hung pass's fetches.");
+  }
+  harness.advance(100);           // the requeue timer
+  await drain();
+  if (harness.starts() !== stuckAt + 2) {
+    fail("after a pass hung past RUN_TIMEOUT, the board never refreshed again. " +
+      "A hung fetch blanks the board for good.");
+  }
+  harness.settle();               // let the abandoned pass resolve; harmless
+  await drain();
+
   // ── the cap bounds the solo-path and hub-room fetches ─────────────────────
   // Twenty callers pile in at once, as a solo window under a flap would. No more
   // than the cap may ever be on the wire.
