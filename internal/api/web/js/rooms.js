@@ -247,17 +247,17 @@ async function hubAttachedRows() {
   const never = rest.filter(r => !r.attached && !r.first_seen);
 
   // HEADERS ONLY WHEN THERE IS MORE THAN ONE KIND. When every room is just
-  // connected, "here now" over the top of them is a label for the obvious. It
-  // earns its place only when it is telling live apart from offline.
+  // connected, "connected rooms" over the top of them is a label for the
+  // obvious. It earns its place only when it is telling live apart from the rest.
   const kinds = [live, off, never].filter(g => g.length).length;
   const group = (title, list) => !list.length ? "" :
     (kinds > 1
       ? `<div class="roomgroup"><span>${esc(title)}</span></div>` : "") +
     `<div class="panel roomlist">` + list.map(roomRow).join("") + `</div>`;
 
-  return group("here now", live) +
-    group("offline", off) +
-    group("added, not yet connected", never);
+  return group("connected rooms", live) +
+    group("disconnected", off) +
+    group("added but never connected", never);
 }
 
 // thisMachineRow is the one row a board with no hub draws.
