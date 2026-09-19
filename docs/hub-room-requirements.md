@@ -155,6 +155,36 @@ atrium2 join <token> --dir <d2> --db <d2>\atrium.db --http 127.0.0.1:8020 --agen
 `atrium2 hub room ls` says what exists and which of them are here. `atrium2 hub room log` says what has happened
 to any of them, including ones that have since been removed.
 
+### The board and the room link are two surfaces with two rules
+
+The hub serves two things and they are not the same kind of port, so they are bound and guarded separately.
+
+- **The board (`--addr`) is loopback only, and it is enforced.** The board has no login: anything that can reach
+  it can read every command and answer permission requests. So `--addr` refuses a non-loopback host (`0.0.0.0`, a
+  LAN IP) at startup rather than binding it. An empty host such as `:7800` is pinned to `127.0.0.1`. To reach the
+  board from elsewhere, use an overlay (`--board-transport zrok`), which is an authenticated path, not a wide
+  bind. See `docs/overlays.md`.
+
+- **The room link (`--link`) may bind wide.** A room proves itself over the direct transport with mTLS: a
+  hub-signed certificate, the CA pinned from the join string. A wide bind is an authenticated port, not a raw
+  one, so `--link 0.0.0.0:7801` is allowed. The default stays loopback; binding wide is the operator's explicit
+  choice, and the transport menu (`--transport direct|ziti|zrok`) belongs to this surface, never to the board.
+
+- **`--link-advertise` says what a room dials.** A `0.0.0.0` bind is not dialable, so the join token has to carry
+  an address a room can actually reach. `--link-advertise <host:port>` sets what the minted token encodes and
+  what the greeting prints. Unset, it derives from the bind (loopback stays `127.0.0.1`). A wide bind with no
+  advertise is REFUSED rather than minting a loopback token that looks right and fails for every remote room. The
+  flag is on `hub`, `hub room add` and `hub room token`, so a token minted by any of them carries the same
+  reachable address.
+
+A LAN room dialling the hub over mTLS with no overlay:
+
+```
+atrium2 hub --addr 127.0.0.1:7778 --link 0.0.0.0:7779 --link-advertise <hub-lan-ip>:7779 --dir <certs>
+atrium2 hub room add sgg --dir <certs> --link 0.0.0.0:7779 --link-advertise <hub-lan-ip>:7779
+atrium2 join <token>   # on sgg, over mTLS, no overlay client
+```
+
 ### A second room on ONE machine needs `--isolated`
 
 Different ports, dirs and databases are not enough to run two rooms on one machine. A room also writes down where
