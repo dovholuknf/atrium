@@ -263,6 +263,12 @@ func (d *Daemon) turnResumed(taskID string) {
 func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
+		// From is the wire name of the session that sent this, when a session
+		// did. Empty when the operator sent it through their own channel (the
+		// board's message box). An empty From is delivered without attribution
+		// rather than as a broken "from ": this endpoint carries both, and a
+		// missing sender means the operator, never a failed send.
+		From string `json:"from"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -273,6 +279,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	taskID := r.PathValue("id")
+	from := strings.TrimSpace(body.From)
 
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
@@ -297,13 +304,24 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		if d.bracketedPasteFor(taskID, false) {
 			say = run.SayPasted
 		}
+		// A peer message is marked in the stream so it is unmistakably not the
+		// operator, the same banner handleTell uses. From the operator (from
+		// empty) nothing is prepended: it is the board's own message channel.
+		if from != "" {
+			if err := run.Write([]byte(peerBanner(from))); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+		}
 		if err := say(body.Text); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-			"text": body.Text, "via": "terminal",
-		}); err != nil {
+		ev := map[string]any{"text": body.Text, "via": "terminal"}
+		if from != "" {
+			ev["from_peer"] = from
+		}
+		if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -314,7 +332,20 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m, err := d.st.QueueMessage(taskID, body.Text)
+	// A peer message carries its sender so the delivery banner can attribute it
+	// to that session and not to the operator. QueueFromPeer is a separate call
+	// on purpose: a message that claims the operator's authority when a peer sent
+	// it is the one mistake the envelope exists to prevent. Empty from stays the
+	// operator's own channel.
+	var (
+		m   *store.Message
+		err error
+	)
+	if from != "" {
+		m, err = d.st.QueueFromPeer(taskID, body.Text, from)
+	} else {
+		m, err = d.st.QueueMessage(taskID, body.Text)
+	}
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
