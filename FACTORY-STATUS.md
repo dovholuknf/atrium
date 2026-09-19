@@ -4,6 +4,32 @@ Autonomous backlog run while clint was AFK. Orchestrator handle `atrium-87300`. 
 `claude/orchestrator`, authored as clint (no Claude attribution), build + vet + `go test ./...` green at each
 integration. Cherry-pick individual commits or merge the branch to `dovholuknf/main`.
 
+## Deployed live this session (hub-only, browser-verified where board JS)
+
+Live hub build `cf99ce3f17b38cf7`. All of the below is on `claude/orchestrator` and running on the hub now, the
+room was never restarted.
+
+- **room-drop flood fix** — one room dropping no longer announces every card as a fresh arrival.
+- **going-down scoped** — one room shutting down no longer makes the whole merged board say "atrium is restarting".
+- **room picker restyle + rows lead with the name** — a session named `doer1` reads as `doer1`, not as its repo
+  path. Popped-out header and alt-tab title lead with the name too.
+- **rooms chip keeps the count** — a hub-link blink shows on its own indicator instead of hiding the room count.
+- **survives a flapping room** — board `refresh()` is debounced, single-flight, aborts superseded fetches, and
+  `api()` caps concurrency with backoff, so a flapping room cannot exhaust the tab's sockets
+  (`ERR_INSUFFICIENT_RESOURCES`).
+- **hung fetch cannot wedge the board** — a fetch that never returns can no longer pin the concurrency cap and
+  leave `refresh()` stuck, which had blanked the whole board until a manual cancel. Proven with a headless browser
+  test (`scripts/test-board-headless.js`, wired into `check-board.sh`).
+
+## Parked for the next planned ROOM restart (room-side, NOT deployed)
+
+These need a room restart, which interrupts the orchestrator and clint's live sessions, so they wait for a planned
+window. Both are committed and revertible on `claude/orchestrator`.
+
+- **message truncation fix** — long multi-line messages arrive intact as one bracketed-paste block.
+- **atrium_say carries the caller** — the recipient sees who sent a message and the reply handle automatically, so
+  agents no longer self-announce. Daemon-framed (not a hub prefix, which would carry operator authority).
+
 ## Shipped and integrated (mergeable)
 
 - **control-mcp phase 1 + 2** — one HTTP MCP server on the hub replaces the per-session `atrium-control.exe`
