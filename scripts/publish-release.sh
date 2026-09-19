@@ -88,7 +88,7 @@ fi
 # missing it is a release where scoop cannot update itself, and that is not
 # visible until somebody tries.
 assets=""
-for f in "$out"/*.zip "$out"/*.tar.gz "$out"/*.deb "$out"/*.rpm; do
+for f in "$out"/*.zip "$out"/*.tar.gz "$out"/*.deb "$out"/*.rpm "$out"/*.pkg "$out"/*.msi; do
   [ -e "$f" ] && assets="$assets $f"
 done
 if [ -e "$out/checksums.txt" ]; then
