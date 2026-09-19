@@ -157,7 +157,6 @@ func roomCmd() *cobra.Command {
 // spawns, so a fresh room waits for the old one's ports to free before binding.
 var restartAfter time.Duration
 
-
 // askToStop winds this room down the way ctrl-c does.
 //
 // A package variable because the thing that needs it is the upgrade install,

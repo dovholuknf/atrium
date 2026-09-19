@@ -1035,4 +1035,3 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 }
-

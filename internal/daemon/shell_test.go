@@ -274,7 +274,6 @@ func TestThereIsAlwaysAShellToTry(t *testing.T) {
 	}
 }
 
-
 // SHELLS CAN BE SWITCHED OFF ON A MACHINE, and `off` is the word, the same one
 // the worktree command already takes for the same idea.
 //
