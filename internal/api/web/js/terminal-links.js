@@ -761,6 +761,12 @@ function connectTerm(taskID) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
     }
     attachSaidGone = false;
+    // The attach settled, so the pane is no longer in flight and nothing may
+    // spin it. The retry and reattach backoffs go back to their short delay so
+    // the next real outage recovers quickly. See `attachInFlight`.
+    clearAttachInFlight(taskID);
+    attachTries = 0;
+    resetReattach();
     sendResize();
     focusTerm();
     // THE BRIDGE, once there is a terminal for it to reach.
@@ -838,7 +844,7 @@ function connectTerm(taskID) {
       if (!attachSince) attachSince = Date.now();
       if (Date.now() - attachSince < attachRetryFor) {
         termWait("restarting " + waitName(termTask) + ". reconnecting…");
-        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
         return;
       }
     }
@@ -864,7 +870,7 @@ function connectTerm(taskID) {
       if (!attachSince) attachSince = Date.now();
       if (Date.now() - attachSince < attachRetryFor) {
         termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
         return;
       }
     }
@@ -957,7 +963,7 @@ function connectTerm(taskID) {
           ? "atrium is restarting. reconnecting to " + waitName(termTask) + "…"
           : "reconnecting to " + waitName(termTask) + "…");
       }
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -969,7 +975,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -995,7 +1001,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("waiting for " + waitName(termTask) + " to come back…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
