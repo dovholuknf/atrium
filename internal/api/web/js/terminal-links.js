@@ -738,7 +738,26 @@ function connectTerm(taskID) {
     // up, so the expectation has done its job and a later exit is an exit.
     clearSessionRestart(taskID);
     termWait("");
-    if (attachSaidGone && term) {
+    // RESET BEFORE THE REPLAY LANDS, on a reconnect only.
+    //
+    // The daemon replays the whole scrollback on every attach. A session switch
+    // builds a new terminal, so its replay fills an empty screen, but a
+    // reconnect keeps this one and the replay would append a second copy of
+    // everything under the old content, with a second history/live boundary.
+    // That was the mess after a hub restart. `termReplayed` is false on a fresh
+    // terminal's first open and true on every open after, so this is a reattach
+    // when it is already set. The replay that follows repaints the current
+    // screen once, and it carries the same scrollback the buffer holds, so
+    // nothing is lost.
+    const reattach = termReplayed;
+    termReplayed = true;
+    if (reattach && term) {
+      // No "reconnected" line here: the reset wipes it, and the replay's own
+      // "everything above is history … live from here" boundary already marks
+      // the seam. On the first open below there is nothing to reset, so the
+      // line still earns its place after a wait.
+      term.reset();
+    } else if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
     }
     attachSaidGone = false;
