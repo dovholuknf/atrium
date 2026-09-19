@@ -91,11 +91,14 @@
      is something to do about it, a line underneath. */
   .roomlist { padding: 0; }
   .roomgroup {
-    display: flex; align-items: center; margin: var(--vs-4) 0 var(--vs-2);
+    display: flex; align-items: center; margin: var(--vs-6) 0 var(--vs-2);
     font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
     color: var(--label);
   }
-  .roomgroup:first-child { margin-top: 0; }
+  /* The first title sits under the page's buttons rather than another list, so it
+     wants less room above than the ones that divide two lists, but not none: flush
+     against the buttons it read as their caption. */
+  .roomgroup:first-child { margin-top: var(--vs-4); }
   .roomrow { padding: var(--row-y) var(--row-x); border-bottom: 1px solid var(--stroke-dim); }
   .roomrow:last-child { border-bottom: none; }
   .roomrow-top { display: flex; align-items: center; gap: var(--sp-3); }
