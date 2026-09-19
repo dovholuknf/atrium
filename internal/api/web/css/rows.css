@@ -244,8 +244,16 @@
   .chip.no { background: var(--warn-bg); color: var(--warn); cursor: pointer;
              border: 1px solid var(--warn-stroke); }
   .chip.no:hover { background: var(--warn-stroke); color: var(--head); }
-  /* A fixture's on/off pill is the switch, so it reads as one and lights on hover. */
-  .chip.toggle { cursor: pointer; }
+  /* A fixture's on/off pill is the switch, so it reads as one and lights on hover.
+     One box for both states: `off` is a character wider than `on`, and a pill that
+     changed width shoved the number and the name right on every off row, so the
+     columns down the list stopped lining up. A fixed min-width sized to the wider
+     word, with the text centred, keeps the switch the same size whichever way it is
+     flipped. */
+  .chip.toggle {
+    cursor: pointer; display: inline-block;
+    min-width: 3.5ch; text-align: center; box-sizing: content-box;
+  }
   .chip.toggle:hover { border-color: var(--teal); color: var(--head); }
   .term-files .crumbs .crumb { color: var(--term-fg, var(--dim)); opacity: .75; }
   .term-files .crumbs .crumb.here { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
