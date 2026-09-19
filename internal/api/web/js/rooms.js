@@ -388,9 +388,10 @@ function roomLine(r) {
 let hubInventory = [];
 async function loadInventory() {
   try {
-    const got = await plainFetch("/_hub/inventory");
-    if (!got.ok) throw new Error("no inventory");
-    const out = await got.json();
+    const out = await cappedFetch(plainFetch, "/_hub/inventory", undefined, async res => {
+      if (!res.ok) throw new Error("no inventory");
+      return res.json();
+    });
     hubInventory = (out.rooms || []).slice().sort((a, b) =>
       String(a.name).localeCompare(String(b.name)));
   } catch (e) {
@@ -849,9 +850,12 @@ async function loadHubRooms() {
   hubRead = Date.now();
   let got;
   try {
-    got = await plainFetch("/_hub/rooms");
-    if (!got.ok) throw new Error("not a hub");
-    got = await got.json();
+    // Through the shared cap, not a raw plainFetch: a flapping room asks this on
+    // every flip, and a popped-out window has no other refresh to bound it.
+    got = await cappedFetch(plainFetch, "/_hub/rooms", undefined, async res => {
+      if (!res.ok) throw new Error("not a hub");
+      return res.json();
+    });
   } catch (e) {
     hubIsHub = false;
     paintRooms();

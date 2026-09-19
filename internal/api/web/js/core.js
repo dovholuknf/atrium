@@ -322,6 +322,29 @@ const apiFinish = async (res) => {
   return res.status === 204 ? null : res.json();
 };
 
+// One fetch through the same in-flight cap and failure accounting api() uses,
+// for the few callers that CANNOT go through api(). The hub endpoints are the
+// case: they are fetched with `plainFetch` on purpose, to skip the room header
+// api() would carry, and so they would otherwise open sockets outside the cap.
+// A flapping room polls `/_hub/rooms` and `/_hub/inventory`, so a popped-out
+// window that never touched the board's own refresh could still drain the pool
+// through this door. `read` runs while the slot is still held, so the socket is
+// counted until its body is drained, not just until the headers arrive.
+async function cappedFetch(fetchFn, path, opts, read) {
+  await apiSlot();
+  try {
+    const res = await fetchFn(path, opts);
+    const out = read ? await read(res) : res;
+    apiFailStreak = 0;
+    return out;
+  } catch (err) {
+    if (!(err && err.name === "AbortError")) apiFailStreak++;
+    throw err;
+  } finally {
+    apiRelease();
+  }
+}
+
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
