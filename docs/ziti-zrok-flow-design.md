@@ -76,6 +76,14 @@ What does NOT change, and is the part the old rule was protecting:
 The overlay itself, the controller, the edge routers, the zrok account, are all assumed to already exist. Atrium
 expects to be handed a JWT or an identity file, and no more.
 
+**The service and its policies must already exist too, and atrium checks rather than assumes.** Because atrium
+administers no network, an external admin must have created the named ziti service and authorised this identity to
+bind it (board exposure) or dial it (the room link) before either flow can work. Atrium does not create any of
+that. It uses the existing read-only "what can I host?" capability query and the start pre-flight to refuse, with a
+sentence naming the next step, a bind or dial of a service this identity is not authorised for, rather than failing
+opaquely at the first bind. The default service name is `atrium`, but the name is only a label: the authorisation
+is the admin's, checked here, never minted here.
+
 ## Board exposure: the "expose the board" panel
 
 The hub settings already has an "expose the board" section and the flow is poor. This replaces it. One panel, one
@@ -86,7 +94,22 @@ click.
 an OIDC provider and atrium verifies what the provider signed, exactly as `docs/overlays.md` describes under "A
 login, and only in front of the published board". One login configuration covers every exposure transport. The
 board itself never leaves loopback. Every remote path terminates on this machine and hands the request to the same
-loopback board, so the login guards all of them at once.
+loopback board, so when a login is configured it guards all of them at once.
+
+**Where the login is REQUIRED, and where it is only optional.** OIDC is mandatory for exactly one transport, zrok
+public, because a public URL is reachable by anyone and reachability cannot be the authorisation. For zrok private
+and openziti the overlay is the gate: only a party the overlay already admits can reach the board at all, so a
+login is optional there and its absence does not refuse the share. This is the one rule that resolves the two
+readings of the paragraph above. The single login, once configured, still guards every enabled transport, and an
+operator who wants a login in front of the private and ziti paths gets it from the same configuration. The
+difference is only in what is refused at save time.
+
+**The external origin and the OIDC callback.** An OIDC provider validates against exact redirect URIs, so every
+enabled exposure needs a known external origin before login can work off the machine. Atrium derives that origin
+from the transport: the reserved `atrium-` name gives the zrok public URL, and the bound service address gives the
+openziti origin. Atrium displays the exact redirect URI to register with the provider, and a zrok public share
+cannot be saved until its reserved URL, and therefore its callback URI, is known. This is why the reserved name is
+taken before the share starts rather than discovered from the first share.
 
 The three transports and what each asks for:
 
@@ -97,9 +120,11 @@ The three transports and what each asks for:
   enablement. A public share is a URL anyone can open, so **OIDC login is required before a public share can be
   started.** With no login configured the public toggle is refused at save time, not discovered at share time. This
   is the phone path: open the URL, sign in, drive the board.
-- **openziti.** Paste a JWT, or give a path to a JWT, and atrium enrolls it. Then one field, "what service should
-  atrium bind", defaulting to `atrium`. Atrium binds the hub board to that service. The phone runs the OpenZiti
-  tunneler for iOS or Android, already enrolled on the network (out of scope for atrium), and reaches the service.
+- **openziti.** Paste a JWT, give a path to a JWT, or give an already-enrolled identity `.json` file. A JWT is
+  enrolled in place; a `.json` is used directly, the same two inputs the room-link join takes. Then one field, "what
+  service should atrium bind", defaulting to `atrium`. Atrium binds the hub board to that service. The phone runs the
+  OpenZiti tunneler for iOS or Android, already enrolled on the network (out of scope for atrium), and reaches the
+  service.
 
 Rules that fall out and must be enforced:
 
