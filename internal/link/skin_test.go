@@ -174,6 +174,147 @@ func TestASkinSaveMixedWithAnotherSettingStillNeedsARoom(t *testing.T) {
 	}
 }
 
+// mutableRoom answers `/v1/settings` with a skin it will CHANGE on a save, so a
+// test can prove a scoped write reached this room and reads back off it. The
+// static settingsRoom above proves a read; this one proves a round trip. Every
+// other path says which room served it, exactly as settingsRoom does.
+type mutableRoom struct {
+	name string
+	skin string
+}
+
+func (m *mutableRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path != "/v1/settings" {
+		fmt.Fprintf(w, `{"served_by":%q}`, m.name)
+		return
+	}
+	if r.Method == http.MethodPost || r.Method == http.MethodPut {
+		var body struct {
+			BoardSkin *string `json:"board_skin"`
+		}
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+		if body.BoardSkin != nil {
+			m.skin = *body.BoardSkin
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"board_skin":     m.skin,
+		"board_skins":    []string{"harbour", "moss", "noir", "ember", "vapor", "sandstone"},
+		"editor_command": m.name + "-vi",
+	})
+}
+
+// skinIn reads the skin one scope wears: no room header is the ALL view, a name
+// is that room.
+func skinIn(t *testing.T, base, room string) string {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, base+"/v1/settings", nil)
+	if room != "" {
+		req.Header.Set("X-Atrium-Room", room)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("decode settings for %q: %v", room, err)
+	}
+	got, _ := body["board_skin"].(string)
+	return got
+}
+
+// saveSkinIn saves a skin in one scope: no room header lands on the hub, a name
+// lands on that room. Fails the test on anything but a 200.
+func saveSkinIn(t *testing.T, base, room, skin string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, base+"/v1/settings",
+		bytes.NewReader([]byte(fmt.Sprintf(`{"board_skin":%q}`, skin))))
+	req.Header.Set("Content-Type", "application/json")
+	if room != "" {
+		req.Header.Set("X-Atrium-Room", room)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(res.Body)
+		t.Fatalf("saving %q in scope %q answered %d, wanted 200: %s", skin, room, res.StatusCode, raw)
+	}
+	_, _ = io.Copy(io.Discard, res.Body)
+}
+
+// THREE SCOPES, THREE SKINS, HELD AT ONCE AND WITHOUT LEAKING. This is the
+// property clint asked for: the ALL view, and each of two rooms, wear their own
+// skin, a save in one reaches only that scope, and switching scope reads each
+// back independently. The ALL skin is the hub's (noir), alpha wears moss, beta
+// wears ember, and no save into one is ever seen by the others.
+func TestThreeScopesHoldThreeIndependentSkins(t *testing.T) {
+	alpha := &mutableRoom{name: "alpha", skin: "moss"}
+	beta := &mutableRoom{name: "beta", skin: "ember"}
+	front, _, done := two(t, alpha, beta)
+	defer done()
+	stock := &remembering{skin: "noir"}
+	front.Config.Handler.(*Proxy).SetInventory(stock)
+
+	// All three at once, and all three different: the hub's, and each room's own.
+	if got := skinIn(t, front.URL, ""); got != "noir" {
+		t.Fatalf("the ALL view wore %q, wanted the hub's noir", got)
+	}
+	if got := skinIn(t, front.URL, "alpha"); got != "moss" {
+		t.Fatalf("alpha wore %q, wanted its own moss", got)
+	}
+	if got := skinIn(t, front.URL, "beta"); got != "ember" {
+		t.Fatalf("beta wore %q, wanted its own ember", got)
+	}
+
+	// A save scoped to alpha reaches alpha, and no other scope moves.
+	saveSkinIn(t, front.URL, "alpha", "vapor")
+	if alpha.skin != "vapor" {
+		t.Fatalf("saving alpha's skin left it %q, wanted vapor", alpha.skin)
+	}
+	if stock.skin != "noir" {
+		t.Fatalf("saving alpha's skin changed the hub to %q, wanted the untouched noir", stock.skin)
+	}
+	if beta.skin != "ember" {
+		t.Fatalf("saving alpha's skin changed beta to %q, wanted the untouched ember", beta.skin)
+	}
+	if got := skinIn(t, front.URL, ""); got != "noir" {
+		t.Fatalf("after alpha's save the ALL view wore %q, wanted noir", got)
+	}
+	if got := skinIn(t, front.URL, "beta"); got != "ember" {
+		t.Fatalf("after alpha's save beta wore %q, wanted ember", got)
+	}
+	if got := skinIn(t, front.URL, "alpha"); got != "vapor" {
+		t.Fatalf("after alpha's save alpha wore %q, wanted vapor", got)
+	}
+
+	// A save in the ALL view reaches the hub, and no room moves.
+	saveSkinIn(t, front.URL, "", "sandstone")
+	if stock.skin != "sandstone" {
+		t.Fatalf("saving the ALL skin left the hub %q, wanted sandstone", stock.skin)
+	}
+	if alpha.skin != "vapor" {
+		t.Fatalf("saving the ALL skin changed alpha to %q, wanted the untouched vapor", alpha.skin)
+	}
+	if beta.skin != "ember" {
+		t.Fatalf("saving the ALL skin changed beta to %q, wanted the untouched ember", beta.skin)
+	}
+	if got := skinIn(t, front.URL, ""); got != "sandstone" {
+		t.Fatalf("after the ALL save the ALL view wore %q, wanted sandstone", got)
+	}
+	if got := skinIn(t, front.URL, "alpha"); got != "vapor" {
+		t.Fatalf("after the ALL save alpha wore %q, wanted vapor", got)
+	}
+	if got := skinIn(t, front.URL, "beta"); got != "ember" {
+		t.Fatalf("after the ALL save beta wore %q, wanted ember", got)
+	}
+}
+
 // A ROOM-SCOPED REQUEST IS UNTOUCHED. Scoping to a room is a byte pipe: its own
 // skin comes back and a save goes to it, with the hub not involved.
 func TestARoomScopedSkinRequestGoesToThatRoom(t *testing.T) {

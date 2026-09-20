@@ -90,7 +90,7 @@ const SGG = { name: "sgg", host: "sgg-host" };
 // A skin-only save in the ALL view lands on the hub (skinFor[""]); one made
 // while scoped to a room lands on that room, and never on the hub. The list is
 // the same across scopes; only the selected one differs.
-const SKINS = ["harbour", "moss", "noir", "ember", "vapor"];
+const SKINS = ["harbour", "moss", "noir", "ember", "vapor", "sandstone"];
 let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
@@ -679,12 +679,15 @@ async function main() {
     }
 
     // ── the board skin follows the room-picker scope ────────────────────────
-    // The ALL view wears the hub's skin; scoping to a room wears that room's;
-    // switching scope re-skins (a scope change is a reload, so bootSkin re-reads
-    // the right one); a skin saved from ALL lands on the hub, not the old 409;
-    // and a room attaching does not clobber the ALL skin. A fresh context keeps
-    // this test's per-scope localStorage out of the others'.
+    // THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
+    // and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
+    // three different skins back. Then: a save in one scope reaches only that
+    // scope and leaks into no other, switching scope re-applies each
+    // independently, and a room attaching does not clobber the ALL skin. A fresh
+    // context keeps this test's per-scope localStorage out of the others'.
+    // Both rooms live, so all three scopes are pickable.
     hubMode = true;
+    sggAttached = true;
     resetSkins();
     const skinCtx = await browser.newContext();
     const skin = await skinCtx.newPage();
@@ -695,14 +698,39 @@ async function main() {
     }
     const dataSkin = () =>
       skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
+    // scopeTo reloads the board into a scope (null for ALL) and waits for the
+    // skin that scope wears to land.
+    const scopeTo = async (room, want) => {
+      await Promise.all([
+        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+        skin.evaluate(r => pickRoom(r), room)
+      ]);
+      await skin.waitForFunction(w =>
+        document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 });
+    };
     try {
-      // ALL scope: the hub's skin, not the alphabetically-first room's.
+      // ALL scope: the hub's own skin, not the alphabetically-first room's.
       await skin.goto(base, { waitUntil: "domcontentloaded" });
       await skin.waitForFunction(() =>
         document.documentElement.getAttribute("data-skin") === "noir", { timeout: 15000 });
 
-      // A skin saved from the ALL view lands on the hub (skinFor[""]), and the
-      // board keeps wearing it. A 409 would have made saveSkin revert the paint.
+      // Scope to each room in turn: three scopes, three different skins, at once.
+      // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
+      await scopeTo("alpha", "moss");
+      await scopeTo("sgg", "ember");
+      const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
+      const distinct = new Set(Object.values(held));
+      if (distinct.size !== 3) {
+        fail("the three scopes did not hold three different skins at once: " +
+          JSON.stringify(held));
+      }
+      if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
+        fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
+      }
+
+      // A skin saved from the ALL view lands on the hub (skinFor[""]) and leaves
+      // both rooms alone. A 409 would have made saveSkin revert the paint.
+      await scopeTo(null, "noir");
       await skin.evaluate(() => saveSkin("vapor"));
       await skin.waitForFunction(() =>
         document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
@@ -710,37 +738,54 @@ async function main() {
         fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
           JSON.stringify(skinFor[""]) + ", wanted vapor.");
       }
+      if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
+        fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
+      }
 
-      // Scope to a room: a reload re-skins to that room's own skin.
-      await Promise.all([
-        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(() => pickRoom("alpha"))
-      ]);
+      // A skin saved while scoped to alpha lands on alpha alone, and leaves the
+      // hub's ALL skin and sgg's untouched.
+      await scopeTo("alpha", "moss");
+      await skin.evaluate(() => saveSkin("sandstone"));
       await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "moss", { timeout: 15000 });
-
-      // A skin saved while scoped to a room lands on that room, and leaves the
-      // hub's ALL skin alone.
-      await skin.evaluate(() => saveSkin("ember"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "ember", { timeout: 15000 });
-      if (skinFor.alpha !== "ember") {
+        document.documentElement.getAttribute("data-skin") === "sandstone", { timeout: 15000 });
+      if (skinFor.alpha !== "sandstone") {
         fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
-          JSON.stringify(skinFor.alpha) + ", wanted ember.");
+          JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
       }
-      if (skinFor[""] !== "vapor") {
-        fail("saving alpha's skin clobbered the hub's ALL skin: skinFor[''] is " +
-          JSON.stringify(skinFor[""]) + ", wanted the untouched vapor.");
+      if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
+        fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
       }
 
-      // Back to ALL: the hub skin is what it was, and a second room attaching
-      // does not change it. This is the borrow-race bug clint hit on a deploy.
+      // A skin saved while scoped to sgg lands on sgg alone.
+      await scopeTo("sgg", "ember");
+      await skin.evaluate(() => saveSkin("harbour"));
+      await skin.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
+      if (skinFor.sgg !== "harbour") {
+        fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
+          JSON.stringify(skinFor.sgg) + ", wanted harbour.");
+      }
+      if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
+        fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
+      }
+
+      // Switching scope re-applies each saved skin independently: ALL is vapor,
+      // alpha is sandstone, sgg is the default harbour (drawn by removing the
+      // attribute), and each is read fresh on its own reload.
+      await scopeTo(null, "vapor");
+      await scopeTo("alpha", "sandstone");
       await Promise.all([
         skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(() => pickRoom(null))
+        skin.evaluate(() => pickRoom("sgg"))
       ]);
       await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
+        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
+
+      // Back to ALL: the hub skin is what it was, and a room attaching does not
+      // change it. This is the borrow-race bug clint hit on a deploy.
+      await scopeTo(null, "vapor");
+      sggAttached = false;
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
       sggAttached = true;
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
       await skin.waitForTimeout(500);
