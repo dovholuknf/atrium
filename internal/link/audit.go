@@ -77,6 +77,97 @@ func (p *Proxy) RecordAudit(room, kind, detail string) {
 	p.feeds.emit(Event{Kind: "audit", Data: payload})
 }
 
+// auditFromRelay turns a relayed room event into an operational audit line, when
+// the event is one the audit log keeps.
+//
+// MOST RELAYED EVENTS ARE LEFT ALONE. The stream carries a room's per-card
+// history, which has its own home in the event table, and the audit log is not a
+// second copy of it. Only the handful of kinds that answer "what happened to
+// atrium" are recorded here.
+//
+// Best effort, like the rest of this path: a payload that does not parse, or a
+// cancel message that carries no permission, is skipped rather than written as a
+// noise line.
+func (p *Proxy) auditFromRelay(room, kind string, data []byte) {
+	switch kind {
+	case "going-down":
+		// A room announcing it is winding down, which the hub already sees on the
+		// relay. Only this kind of the raw relay is operational.
+		p.RecordAudit(room, "room-going-down", "the room says it is winding down")
+	case "permission":
+		p.auditPermission(room, data)
+	case "lifecycle":
+		p.auditLifecycle(room, data)
+	}
+}
+
+// relayPermission is the part of a room's permission event the audit log reads.
+// A subset of internal/store's Permission, so internal/link still learns nothing
+// about the room's storage: it reads a payload, not a table.
+type relayPermission struct {
+	ID        string  `json:"id"`
+	Tool      string  `json:"tool"`
+	Command   string  `json:"command"`
+	Decision  string  `json:"decision"`
+	DecidedAt *string `json:"decided_at"`
+	DecidedBy string  `json:"decided_by"`
+}
+
+// auditPermission derives a requested-or-decided line from a relayed permission.
+//
+// The room broadcasts the same permission twice in its life: once when it is
+// raised with no decision, and once when it is answered. A decided-at with a
+// decision is the second, everything else is the first. The cancel message
+// carries no id and is not a permission at all, so it is skipped.
+func (p *Proxy) auditPermission(room string, data []byte) {
+	var pm relayPermission
+	if err := json.Unmarshal(data, &pm); err != nil || pm.ID == "" {
+		return
+	}
+	if pm.DecidedAt != nil && pm.Decision != "" {
+		detail := pm.Decision
+		if pm.DecidedBy != "" {
+			detail += " by " + pm.DecidedBy
+		}
+		if tool := strings.TrimSpace(pm.Tool); tool != "" {
+			detail += " for " + tool
+		}
+		p.RecordAudit(room, "permission-decided", detail)
+		return
+	}
+	detail := strings.TrimSpace(pm.Tool)
+	if cmd := strings.TrimSpace(pm.Command); cmd != "" {
+		if detail != "" {
+			detail += ": "
+		}
+		detail += cmd
+	}
+	p.RecordAudit(room, "permission-requested", detail)
+}
+
+// lifecycleKinds is the set of operational kinds a room may record through the
+// lifecycle relay. A whitelist, so a room cannot mint an arbitrary audit kind
+// and the board's kind filter stays a known list.
+var lifecycleKinds = map[string]bool{
+	"session-start":  true,
+	"session-finish": true,
+	"session-exit":   true,
+}
+
+// auditLifecycle records a session lifecycle line a room composed. The room owns
+// the wording because it owns the facts, so the hub records what it is told once
+// the kind is one it recognises.
+func (p *Proxy) auditLifecycle(room string, data []byte) {
+	var lc struct {
+		Kind   string `json:"kind"`
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(data, &lc); err != nil || !lifecycleKinds[lc.Kind] {
+		return
+	}
+	p.RecordAudit(room, lc.Kind, lc.Detail)
+}
+
 // serveAudit answers GET /_hub/audit, newest first, filterable by room and kind.
 func (p *Proxy) serveAudit(w http.ResponseWriter, r *http.Request) {
 	a := p.auditLog()

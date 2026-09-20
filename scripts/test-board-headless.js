@@ -102,6 +102,24 @@ let sggAttached = false;
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
 
+// The operational audit feed the hub serves, newest first, across two rooms and
+// a hub-level line so the room and kind filters have something to sort. `auditLive`
+// arms one extra event that the live-delta test makes appear without a reload.
+const AUDIT_BASE = [
+  { id: "a4", at: "2026-09-19T12:06:00Z", room: "alpha", kind: "permission-requested",
+    detail: "Bash: ls" },
+  { id: "a3", at: "2026-09-19T12:05:00Z", room: "sgg", kind: "room-attached",
+    detail: "sgg running v2" },
+  { id: "a2", at: "2026-09-19T12:02:00Z", room: "sgg", kind: "session-start",
+    detail: "second card started on claude" },
+  { id: "a1", at: "2026-09-19T12:00:00Z", kind: "hub-started", detail: "the hub came up" }
+];
+let auditLive = false;
+const AUDIT_LIVE = { id: "a5", at: "2026-09-19T12:10:00Z", room: "sgg", kind: "session-exit",
+  detail: "second card exited with code 0 after 3s" };
+function auditFeed() { return auditLive ? [AUDIT_LIVE].concat(AUDIT_BASE) : AUDIT_BASE.slice(); }
+function resetAudit() { auditLive = false; }
+
 // The board skin follows the room-picker scope: the ALL view (no X-Atrium-Room
 // header) wears the HUB's own skin, and each room wears its own. `skinFor` is
 // the mocked hub-plus-rooms state, keyed by scope with "" for the ALL/hub view.
@@ -277,16 +295,18 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
-  // The operational audit feed. Two lines, newest first, so the pane has
-  // something to draw once the audit tab is opened. See js/audit.js.
+  // The operational audit feed, newest first and filterable by room and kind the
+  // same way the hub serves it, so the pane's filters can be driven against a
+  // real response. See js/audit.js.
   if (url === "/_hub/audit") {
     if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    sendJSON(res, { events: [
-      { id: "a2", at: "2026-09-19T12:05:00Z", room: "sgg", kind: "room-attached",
-        detail: "sgg running v2" },
-      { id: "a1", at: "2026-09-19T12:00:00Z", kind: "hub-started",
-        detail: "the hub came up" }
-    ] });
+    const q = new URL(req.url, "http://x").searchParams;
+    const room = (q.get("room") || "").toLowerCase();
+    const kind = q.get("kind") || "";
+    let events = auditFeed();
+    if (room) events = events.filter(e => (e.room || "").toLowerCase() === room);
+    if (kind) events = events.filter(e => e.kind === kind);
+    sendJSON(res, { events });
     return;
   }
   // Everything else (sw.js, icons, favicon): a clean 404.
@@ -808,8 +828,8 @@ async function main() {
           hubLine: rows.some(r => r.querySelector(".aud-room.aud-hub"))
         };
       });
-      // Newest first: the sgg attach (12:05) is above the hub-started (12:00).
-      if (audit.firstKind !== "room-attached") {
+      // Newest first: the 12:06 permission line is above the 12:00 hub-started.
+      if (audit.firstKind !== "permission-requested") {
         fail("the audit pane did not draw newest first: " + JSON.stringify(audit));
       }
       // A hub-level line (no room) is drawn as `hub`.
@@ -820,7 +840,85 @@ async function main() {
         fail("the hub page threw uncaught errors after the audit pane: " +
           hubErrors.join(" | "));
       }
+
+      // ── the audit pane filters by room ────────────────────────────────────
+      // Picking a room narrows the feed to that machine. The two sgg lines stay
+      // and the alpha and hub lines go, and the request carries the filter, so
+      // this is the hub filtering rather than the pane hiding rows.
+      await hub.evaluate(() => {
+        const sel = document.getElementById("audit-room");
+        // The option is normally seeded from the hub's room list; add it if the
+        // probe has not filled the dropdown yet, so this tests the filter and not
+        // the timing of when the list arrived.
+        if (![...sel.options].some(o => o.value === "sgg")) {
+          const o = document.createElement("option");
+          o.value = "sgg"; o.textContent = "sgg"; sel.appendChild(o);
+        }
+        sel.value = "sgg";
+        sel.dispatchEvent(new Event("change"));
+      });
+      await hub.waitForFunction(() => {
+        const rows = [...document.querySelectorAll("#audit-list .aud-row")];
+        return rows.length === 2 && rows.every(r => {
+          const rm = r.querySelector(".aud-room");
+          return rm && rm.textContent === "sgg";
+        });
+      }, { timeout: 15000 }).catch(() => fail(
+        "the audit pane did not filter to the sgg room."));
+
+      // ── the audit pane filters by kind ────────────────────────────────────
+      // Clear the room, then pick a kind: only the hub-started line remains. Done
+      // in two sequenced steps so the room-clear fetch settles before the kind
+      // fetch fires, rather than racing it.
+      await hub.evaluate(() => {
+        const sel = document.getElementById("audit-room");
+        sel.value = "";
+        sel.dispatchEvent(new Event("change"));
+      });
+      await hub.waitForFunction(() =>
+        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        { timeout: 15000 }).catch(() => fail(
+          "clearing the room filter did not restore the full audit feed."));
+      await hub.evaluate(() => {
+        const sel = document.getElementById("audit-kind");
+        sel.value = "hub-started";
+        sel.dispatchEvent(new Event("change"));
+      });
+      await hub.waitForFunction(() => {
+        const rows = [...document.querySelectorAll("#audit-list .aud-row")];
+        return rows.length === 1 &&
+          rows[0].querySelector(".aud-kind").textContent === "hub-started";
+      }, { timeout: 15000 }).catch(() => fail(
+        "the audit pane did not filter to the hub-started kind."));
+
+      // ── a new event arrives live, no reload ───────────────────────────────
+      // Clear the kind filter, then a fresh event lands on the hub and it emits
+      // an `audit` delta. The open pane re-fetches on that delta alone and the
+      // new session-exit line appears at the top, without the page reloading.
+      await hub.evaluate(() => {
+        const sel = document.getElementById("audit-kind");
+        sel.value = "";
+        sel.dispatchEvent(new Event("change"));
+      });
+      await hub.waitForFunction(() =>
+        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        { timeout: 15000 }).catch(() => fail(
+          "clearing the kind filter did not restore the full audit feed."));
+      auditLive = true;
+      hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
+      await hub.waitForFunction(() => {
+        const rows = [...document.querySelectorAll("#audit-list .aud-row")];
+        return rows.length === 5 &&
+          rows[0].querySelector(".aud-kind").textContent === "session-exit";
+      }, { timeout: 15000 }).catch(() => fail(
+        "the audit pane did not pick up a live event on the `audit` delta."));
+
+      if (hubErrors.length) {
+        fail("the hub page threw uncaught errors after the audit filters: " +
+          hubErrors.join(" | "));
+      }
     } finally {
+      resetAudit();
       await hub.close();
       hubMode = false;
       sggAttached = false;
@@ -981,7 +1079,9 @@ async function main() {
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
     "open room picker live-updates a newly-attached room from disconnected to " +
-    "live, and the board skin follows the room-picker scope (ALL wears the " +
+    "live, the audit pane paints newest-first, filters by room and by kind, and " +
+    "picks up a live event on the `audit` delta with no reload, and the board " +
+    "skin follows the room-picker scope (ALL wears the " +
     "hub's, each room its own, a save lands in the current scope, a room " +
     "attaching leaves the ALL skin alone).");
 }

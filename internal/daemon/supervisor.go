@@ -1337,6 +1337,16 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 
 	go d.awaitExit(r)
 
+	// The room announces the session starting, so the hub's audit log carries a
+	// line the hub could not derive on its own. Best effort and after the runner
+	// is really up, so a failed start never reads as one that began. See
+	// lifecycle.go.
+	runner := cmdName
+	if t, err := d.st.Get(taskID); err == nil && t.Runner != "" {
+		runner = t.Runner
+	}
+	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
+
 	pid := 0
 	if c.Process != nil {
 		pid = c.Process.Pid
@@ -1385,6 +1395,15 @@ func (d *Daemon) awaitExit(r *runner) {
 	if err := d.st.AppendEvent(r.taskID, store.EventExited, payload); err != nil {
 		log.Printf("[atrium] record exit for %s: %v", r.taskID, err)
 	}
+
+	// The room announces the exit with its reason, which the hub cannot see: it
+	// watches a card go dead, not why. See lifecycle.go.
+	exitLine := fmt.Sprintf("%s exited with code %d after %s",
+		d.taskTitle(r.taskID), code, lived.Round(time.Millisecond))
+	if lived < startupFailureWindow && tail != "" {
+		exitLine += ", " + firstLine(tail)
+	}
+	d.emitLifecycle("session-exit", exitLine)
 
 	// A resume that died on the way up gets one try as a fresh start.
 	//

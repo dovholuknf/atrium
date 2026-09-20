@@ -17,10 +17,14 @@ type fakeAudit struct {
 	gotRoom    string
 	gotKind    string
 	recordedTo []string
+	records    []recorded
 }
+
+type recorded struct{ room, kind, detail string }
 
 func (f *fakeAudit) Record(room, kind, detail string) {
 	f.recordedTo = append(f.recordedTo, room+"/"+kind)
+	f.records = append(f.records, recorded{room, kind, detail})
 }
 
 func (f *fakeAudit) Recent(limit int, room, kind string) ([]AuditEntry, error) {
@@ -76,6 +80,63 @@ func TestAuditEndpointEmptyWithoutAStore(t *testing.T) {
 	}
 	if len(body.Events) != 0 {
 		t.Fatalf("want no events, got %d", len(body.Events))
+	}
+}
+
+// auditFromRelay turns the handful of operational relay kinds into audit lines
+// and leaves the rest alone. This is what makes a room's permission and session
+// lifecycle events show up in the hub's feed without the hub knowing the room's
+// storage.
+func TestAuditFromRelay(t *testing.T) {
+	cases := []struct {
+		name       string
+		kind       string
+		data       string
+		wantKind   string
+		wantDetail string
+		wantSkip   bool
+	}{
+		{name: "going-down", kind: "going-down", data: `{}`,
+			wantKind: "room-going-down", wantDetail: "the room says it is winding down"},
+		{name: "permission requested", kind: "permission",
+			data:     `{"id":"p1","tool":"Bash","command":"ls -la"}`,
+			wantKind: "permission-requested", wantDetail: "Bash: ls -la"},
+		{name: "permission decided", kind: "permission",
+			data:     `{"id":"p1","tool":"Bash","decision":"approve","decided_by":"you","decided_at":"2026-09-19T12:00:00Z"}`,
+			wantKind: "permission-decided", wantDetail: "approve by you for Bash"},
+		{name: "permission cancel is skipped", kind: "permission",
+			data: `{"canceled":1,"task":"t1"}`, wantSkip: true},
+		{name: "session lifecycle", kind: "lifecycle",
+			data:     `{"kind":"session-exit","detail":"card exited with code 0 after 3s"}`,
+			wantKind: "session-exit", wantDetail: "card exited with code 0 after 3s"},
+		{name: "unknown lifecycle kind is skipped", kind: "lifecycle",
+			data: `{"kind":"whatever","detail":"nope"}`, wantSkip: true},
+		{name: "per-card kind is left alone", kind: "activity",
+			data: `{"task_id":"t1"}`, wantSkip: true},
+		{name: "bad payload is skipped not recorded", kind: "permission",
+			data: `not json`, wantSkip: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fa := &fakeAudit{}
+			p := NewProxy(NewHub(Timings{}), nil, "", nil)
+			p.SetAuditLog(fa)
+			p.auditFromRelay("alpha", c.kind, []byte(c.data))
+			if c.wantSkip {
+				if len(fa.records) != 0 {
+					t.Fatalf("wanted nothing recorded, got %v", fa.records)
+				}
+				return
+			}
+			if len(fa.records) != 1 {
+				t.Fatalf("wanted one line, got %v", fa.records)
+			}
+			got := fa.records[0]
+			if got.room != "alpha" || got.kind != c.wantKind || got.detail != c.wantDetail {
+				t.Fatalf("wanted alpha/%s/%q, got %s/%s/%q",
+					c.wantKind, c.wantDetail, got.room, got.kind, got.detail)
+			}
+		})
 	}
 }
 
