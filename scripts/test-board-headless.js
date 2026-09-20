@@ -193,6 +193,28 @@ async function main() {
           `(text or pseudo): ${blank.join(", ")}.`);
       }
 
+      // Tap targets. A thumb needs about forty pixels, and this is a touch width.
+      // Two pixels of slack for sub-pixel rounding.
+      if (vp.width <= 900) {
+        const small = await page.evaluate(() => {
+          const out = [];
+          const els = document.querySelectorAll(
+            "header .tab, header button, header .rooms, header .conn");
+          for (const el of els) {
+            if (el.hidden || el.offsetParent === null) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            if (r.height < 38) out.push((el.id || el.className || el.tagName) +
+              ":" + Math.round(r.height));
+          }
+          return out;
+        });
+        if (small.length) {
+          fail(`${shape} ${vp.name} ${vp.width}px: header tap targets under 38px: ` +
+            `${small.join(", ")}.`);
+        }
+      }
+
       // The room picker is a floating menu placed by script. Open it and check it
       // stays on screen, since a long room name is exactly what pushes it off.
       if (populated) {
