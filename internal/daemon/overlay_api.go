@@ -199,6 +199,17 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		// which is exactly what an older tab does, would otherwise write a row
 		// whose mode disagrees with its flags until something reads it back.
 		c.normalise()
+		// A PUBLIC SHARE NEEDS A LOGIN, AND IT IS REFUSED HERE RATHER THAN AT
+		// START. A public zrok share is a URL anyone can open, so with no login
+		// it is the whole internet with an extra step. The design says the public
+		// toggle is refused at configuration time, not discovered at share time,
+		// so the operator finds out while they are still in the panel that set it.
+		// See docs/ziti-zrok-flow-design.md, "zrok public without OIDC".
+		if c.Public {
+			if err := d.requireLoginForPublic(); err != nil {
+				return err
+			}
+		}
 		// EVERY SETTING IS REFUSED WHILE A SHARE IS UP.
 		//
 		// Half of this was already true and unsayable: the endpoint refuses to
@@ -294,6 +305,15 @@ func (d *Daemon) startOverlay(kind string) error {
 func (d *Daemon) readyToShare(k overlayKind) error {
 	switch k {
 	case OverlayZrok:
+		// DEFENCE IN DEPTH FOR THE PUBLIC SHARE. Save time is where the refusal
+		// belongs and where the operator sees it, but a configuration written
+		// before this rule existed, or edited by hand, must not start a public
+		// share with no login either. The gate is the same one.
+		if strings.TrimSpace(d.zrokConfig().Mode) == "public" {
+			if err := d.requireLoginForPublic(); err != nil {
+				return err
+			}
+		}
 		env := d.zrokEnvOf()
 		if !env.Enabled {
 			if env.Own {
@@ -332,6 +352,32 @@ func (d *Daemon) readyToShare(k overlayKind) error {
 		}
 	}
 	return nil
+}
+
+// requireLoginForPublic refuses a public zrok share unless a working board login
+// stands in front of it.
+//
+// This is the one asymmetry the design turns on. A public zrok share is a URL
+// anyone can open, so reachability cannot be the authorisation the way it is for
+// a private share (an account holds the token) or a ziti service (a policy on
+// the network). With no login the board is handed to whoever finds the link, so
+// the share is refused until a login is configured that actually gates it.
+//
+// A LOGIN, NOT SPECIFICALLY OIDC. The design names OIDC as the login, and it is
+// the better answer, but this repository already treats a name and password as a
+// legitimate published-board login (see AuthConfig.Basic, the operator's "basic
+// auth is fine for starters"). Refusing that here would break the simple case to
+// enforce a preference the design states but the auth model does not. So this
+// closes the actual hole, a public share with NO login, and whether to narrow it
+// to OIDC only is left as a decision rather than made here. See auth.ready.
+func (d *Daemon) requireLoginForPublic() error {
+	auth := d.authConfig()
+	if auth.Enabled && auth.ready() == nil {
+		return nil
+	}
+	return fmt.Errorf("a public zrok share hands the board to anyone with the link, so it " +
+		"needs a login first. set one under who may open it (an OIDC provider, or a name and " +
+		"password to start with), then turn the public share on")
 }
 
 func (d *Daemon) stopOverlay(kind string) error {
