@@ -23,8 +23,9 @@ decision is written, and most of it has now been run rather than only written.
 | systemd unit, enabled on install | yes, `packaging/postinstall.sh`, installed and enabled on WSL | nothing |
 | macOS LaunchAgent | yes, `packaging/atrium.plist` and `scripts/atrium-service.sh` | a desktop login to load it |
 | macOS .pkg, both arches | yes, `scripts/package-macos.sh`, built on Apple silicon | a desktop login to install, a Developer ID Installer cert to sign |
-| Windows logon task, with verbs | yes, `scripts/atrium-service.ps1`, each verb run twice | a desktop session |
-| Windows MSI | yes, `scripts/package-windows.ps1` with WiX, built and table-inspected | a code signing certificate to sign |
+| Windows logon task, with verbs | yes, `scripts/atrium-service.ps1`, installed on claudevm | a desktop session |
+| Windows MSI | yes, `scripts/package-windows.ps1` with WiX, installed on claudevm | a code signing certificate to sign |
+| No-sudo/no-admin install, each OS | yes, tarball/zip + service script, proven on all three | nothing |
 | CI, and a release workflow | yes, `.github/workflows/`, all logic in `scripts/` | nothing until you push |
 | Publishing to GitHub Releases | yes, `scripts/publish-release.sh`, dry run verified | a tag, and one command |
 | Scoop manifest | written, `packaging/scoop-atrium.json` | a bucket repository, a release |
@@ -537,11 +538,11 @@ The `.deb`, the `.rpm`, the macOS `.pkg` on real hardware, and the remaining ins
 
 **Not proved, and why:**
 
-- **The MSI was built and inspected but not installed.** Its tables are correct (above), but a live `msiexec /i`
-  was not run, so the PATH entry actually landing in the system environment and the uninstall removing it are
-  unproven on a real machine. A WiX-authored `Environment` element is well-trodden, and the structural check is
-  what was cheap to do here without mutating this machine's Program Files and global PATH. The install-on-a-real-
-  machine attempt and why it could not finish are in "Verified on real machines" below.
+- **The rpm has not been installed on an rpm-based distro,** because none is reachable. It is structurally
+  verified, and "Verified on real machines" below records how.
+- **The macOS `.pkg` has not been installed with `sudo`,** because `m1mini` is headless and asks for a password a
+  non-interactive ssh session cannot answer. The `.pkg` is built and its payload verified, and the no-sudo tarball
+  path on macOS is proven instead. Both are in "Verified on real machines" below.
 - **The Windows `start` verb could not be proved on this machine.** The interactive console session belongs to a
   different account than the one the tests ran as, and an Interactive-logon task cannot run for an account with
   no interactive session. The registration succeeds, `Start-ScheduledTask` returns, and the task stays `Ready`
@@ -557,9 +558,10 @@ The `.deb`, the `.rpm`, the macOS `.pkg` on real hardware, and the remaining ins
 
 ## Verified on real machines (2026-09-19)
 
-All four formats were built from `v0.4.1` and carried to the hardware they target. Two of the four were fully
-installed and removed. The other two built cleanly and were verified as far as the machine allowed, and what
-stopped a live install is stated rather than papered over. Nothing was signed, nothing was published, and nothing
+All four formats were built from `v0.4.1` and carried to the hardware they target. The deb and the MSI were fully
+installed and removed on real machines, autostart and all. The macOS `.pkg` builds on Apple silicon and its
+payload checks out, and the rpm is structurally verified since no rpm distro is reachable. A no-sudo install path
+was then proven on each of the three operating systems. Nothing was signed, nothing was published, and nothing
 was pushed.
 
 A defect the round found and fixed: `scripts/package-linux.sh` and `scripts/package-macos.sh` fed unmatched
@@ -615,13 +617,83 @@ the mini is headless with nobody logged into the GUI, and the postinstall correc
 for a non-person, so even a successful install could not prove the live `launchctl asuser` load. To finish this,
 clint runs `sudo installer -pkg atrium_v0.4.1_darwin_arm64.pkg -target /` while logged into the mini's desktop.
 
-### Windows MSI: built with WiX, target VM unreachable
+### Windows MSI: built and installed on the Hyper-V VM claudevm
 
-Built on the development host with WiX 5.0.2, `atrium_v0.4.1_windows_amd64.msi`. The install target, the Hyper-V
-VM `claudevm` (`claudevm.mshome.net`), was down for the entire session: every ssh attempt failed at banner
-exchange, the host did not answer ping, and Hyper-V management is denied to this account, so the VM could not be
-started from here. A live `msiexec /i` therefore was not run. To finish this, clint starts `claudevm` (or points
-the install at another Windows machine) and the MSI is copied over and installed there.
+Proven end to end on `claudevm` (Windows, reached over `ssh`), built with WiX 5.0.2.
+
+```
+Start-Process msiexec "/i atrium.msi /qn /norestart" -Wait     # exit 0
+& "C:\Program Files\atrium\atrium.exe" version                 # v0.4.1, platform windows/amd64
+[Environment]::GetEnvironmentVariable("PATH","Machine")        # contains C:\Program Files\atrium\
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\atrium\scripts\atrium-service.ps1" install
+Get-ScheduledTask atrium                                       # State Ready, the autostart task landed
+powershell -ExecutionPolicy Bypass -File "...\atrium-service.ps1" uninstall   # task removed
+Start-Process msiexec "/x atrium.msi /qn /norestart" -Wait     # exit 0, binary gone, PATH entry removed
+```
+
+The MSI installed into `C:\Program Files\atrium`, added that directory to the system PATH, and staged both service
+scripts beside the binary. `atrium version` reported `v0.4.1`. The logon task registered as documented and showed
+`Ready`. Uninstall removed the binary, the install folder and the PATH entry. This is the perMachine install and
+it needs an administrator, which the ssh session had.
+
+One snag worth stating: `atrium-service.ps1 install` is a `.ps1`, and a stock Windows blocks running scripts with
+its default execution policy. It was run with `powershell -ExecutionPolicy Bypass -File ...`. On a desktop where
+the user has set `RemoteSigned`, the documented `atrium-service.ps1 install` runs as written.
+
+### No-sudo and no-admin installs, proven per OS
+
+clint asked for an install path on each OS that needs no `sudo` and no administrator. There is one on all three,
+and each was proven on the real machine. The recipe is the same everywhere: unpack the archive, put the binary
+somewhere in your home, and run the service installer, which registers autostart AS YOU and touches no system
+location. `scripts/release.sh` now ships the service scripts inside every archive so this path is self-contained.
+
+**Linux, proven end to end on WSL Ubuntu 24.04, no root:**
+
+```
+tar -xzf atrium_v0.4.1_linux_amd64.tar.gz
+cp atrium_v0.4.1_linux_amd64/atrium ~/.local/bin/atrium
+cd atrium_v0.4.1_linux_amd64
+ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install   # systemctl --user, no sudo
+```
+
+`atrium version` reported `v0.4.1` from `~/.local/bin`. `atrium-service.sh install` wrote
+`~/.config/systemd/user/atrium.service` with `ExecStart` pointed at the home binary, enabled it and started it,
+and `systemctl --user status` showed `active (running)`. Uninstall removed the unit and stopped the service, all
+without root. This is the full no-sudo Linux path.
+
+**macOS, proven on m1mini over ssh, no sudo:**
+
+```
+tar -xzf atrium_v0.4.1_darwin_arm64.tar.gz
+cp atrium_v0.4.1_darwin_arm64/atrium ~/.local/bin/atrium
+cd atrium_v0.4.1_darwin_arm64
+ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install   # LaunchAgent, no sudo
+```
+
+`atrium version` reported `v0.4.1` from `~/.local/bin` with no sudo, and `atrium-service.sh install` wrote
+`~/Library/LaunchAgents/io.github.dovholuknf.atrium.plist`, also with no sudo. The one thing that cannot be done
+over headless ssh is the launchd LOAD: `launchctl bootstrap gui/$uid` needs an Aqua login session, and a headless
+mini has none, so it returns "125: Domain does not support specified action". That is a GUI-session limit, not a
+sudo one. The plist is in the folder launchd reads at login, so it loads by itself at the next desktop login. The
+script was changed to say this and exit cleanly rather than error, matching the Linux fallback. The other no-sudo
+route, `installer -pkg ... -target CurrentUserHomeDirectory`, was tried and DOES NOT WORK: the `.pkg` payload is
+anchored at `/usr/local` and is not relocatable, so `installer` fails with "The install failed". The tarball is
+the no-sudo macOS path.
+
+**Windows, proven on claudevm, no admin:**
+
+```
+Expand-Archive atrium_v0.4.1_windows_amd64.zip -DestinationPath $HOME\atrium-portable
+$exe = "$HOME\atrium-portable\atrium_v0.4.1_windows_amd64\atrium.exe"
+powershell -ExecutionPolicy Bypass -File "$HOME\atrium-portable\atrium_v0.4.1_windows_amd64\scripts\atrium-service.ps1" install -Exe $exe
+```
+
+`atrium version` ran from the unzipped folder with no install. `atrium-service.ps1 install` registered the logon
+task with `LogonType Interactive` and, the point of the test, `RunLevel Limited`, which is a standard-user task
+that needs no elevation. It runs the binary from the home folder against a database in the home folder, and
+nothing was written to Program Files or the system PATH. Uninstall removed the task and the folder. Scoop is the
+other no-admin route and is already written as `packaging/scoop-atrium.json`: it shims the binary onto the user
+PATH and needs no administrator either.
 
 ---
 
