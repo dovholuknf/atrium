@@ -128,8 +128,19 @@ echo
   # Every artefact type, not only the two this script writes, so running it in
   # any order alongside the macOS and Windows packagers never drops their .pkg
   # or .msi from the file every manifest points at.
-  sha256sum ./*.zip ./*.tar.gz ./*.deb ./*.rpm ./*.pkg ./*.msi 2>/dev/null |
-    sed 's#\./##' | sort -k2 | tee checksums.txt
+  #
+  # The files are COLLECTED rather than globbed straight into sha256sum, for the
+  # reason release.sh spells out: a glob that matches nothing is passed through
+  # literally, and under `pipefail` sha256sum then fails on the literal `./*.pkg`
+  # and takes the whole script down with it, even though every real artefact was
+  # already written. That is not hypothetical: running this before the .pkg and
+  # the .msi exist leaves both globs empty.
+  artefacts=""
+  for f in ./*.zip ./*.tar.gz ./*.deb ./*.rpm ./*.pkg ./*.msi; do
+    [ -e "$f" ] && artefacts="$artefacts $f"
+  done
+  # shellcheck disable=SC2086
+  sha256sum $artefacts | sed 's#\./##' | sort -k2 | tee checksums.txt
 )
 
 echo
