@@ -33,9 +33,11 @@ const VIEWPORTS = [
 // The tabs to walk. Read off the page at runtime would be better, but clicking
 // each .tab in turn covers it without hard-coding view ids here.
 
-// Stub the network before any board script runs. Empty everything, so each view
-// draws its empty state rather than waiting on a socket.
-function initStub() {
+// Stub the network before any board script runs. Two shapes: an empty board, and
+// a populated one carrying the widths that break a narrow layout: a long session
+// name, a deep worktree path, a long room name, and a permission with a command
+// too long for a phone. What is measured is the LAYOUT those produce, not data.
+function initStub(populated) {
   const okJson = (obj) =>
     new Response(JSON.stringify(obj), {
       status: 200,
@@ -53,13 +55,39 @@ function initStub() {
     send() {}
     close() {}
   };
+
+  const now = Math.floor(Date.now() / 1000);
+  const TASKS = populated ? [
+    { id: "t1", rank: 1, display_title: "doer1: board flap storm", runner: "claude",
+      status: "working", worktree: "D:/worktrees/claude/atrium/flap-storm",
+      branch: "claude/flap-storm", display_repo: "atrium", pid: 42216, supervised: true },
+    { id: "t2", rank: 2, runner: "codex", status: "needs-permission", wait_seconds: 180,
+      display_title: "a very long session name that must truncate rather than push the narrow column past the edge",
+      worktree: "D:/git/github/openziti/desktop-edge-win/fix-app-version",
+      branch: "promote-2.11.3.1-and-beta", display_repo: "desktop-edge-win", pid: 991, supervised: true },
+    { id: "t3", rank: 3, display_title: "idle one", runner: "claude", status: "idle",
+      worktree: "D:/git/github/dovholuknf/atrium", branch: "main", display_repo: "atrium",
+      pid: 1200, supervised: true, pinned: true },
+  ] : [];
+  const ROOMS = populated ? [
+    { name: "claude-sg4", attached: true, host: "sg4", transport: "link" },
+    { name: "a-really-long-room-name-that-should-not-overflow", attached: false,
+      first_seen: now - 9000, last_seen: now - 60, transport: "link" },
+  ] : [];
+  const PERMS = populated ? [
+    { id: "p1", task_id: "t2", tool: "Bash", cwd: "D:/git/github/openziti/desktop-edge-win",
+      command: "bash scripts/check-board.sh 2>&1 | grep -Ei 'storm|flap' && echo 'a command long enough to wrap several lines on a phone screen and then some more'" },
+  ] : [];
+
   const answer = (url) => {
     const u = String(url);
-    if (u.includes("/_hub/rooms")) return okJson({ rooms: [] });
-    if (u.includes("/_hub/inventory")) return okJson({ rooms: [] });
-    if (u.includes("/v1/tasks")) return okJson({ tasks: [] });
+    if (u.includes("/_hub/rooms")) return okJson({ rooms: ROOMS.filter((r) => r.attached) });
+    if (u.includes("/_hub/inventory")) return okJson({ rooms: ROOMS });
+    if (u.includes("/v1/tasks")) return okJson({ tasks: TASKS });
     if (u.includes("/v1/health")) return okJson({ build: "test" });
-    if (u.includes("/v1/permissions")) return okJson({ permissions: [] });
+    if (u.includes("/v1/permissions/history")) return okJson({ events: [] });
+    if (u.includes("/v1/permissions")) return okJson({ permissions: PERMS });
+    if (u.includes("/v1/waiting")) return okJson({ waiting: TASKS.filter((t) => t.status === "needs-permission") });
     if (u.includes("/v1/fixtures")) return okJson({ fixtures: [] });
     if (u.includes("/v1/rules")) return okJson({ rules: [] });
     if (u.includes("/v1/history")) return okJson({ events: [] });
@@ -132,38 +160,86 @@ async function main() {
   let bad = 0;
   const fail = (m) => { console.error("FAIL: " + m); bad++; };
 
-  for (const vp of VIEWPORTS) {
-    const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
-    await page.addInitScript(initStub);
-    await page.goto(url);
-    await page.waitForTimeout(400);
+  for (const populated of [false, true]) {
+    const shape = populated ? "populated" : "empty";
+    for (const vp of VIEWPORTS) {
+      const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+      await page.addInitScript(initStub, populated);
+      await page.goto(url);
+      await page.waitForTimeout(400);
 
-    // Each tab, in turn. The board renders one view at a time, so overflow is
-    // measured per view rather than once.
-    const tabs = await page.$$("header nav .tab");
-    const stops = [null, ...tabs.keys()];
-    for (const i of stops) {
-      if (i !== null) {
-        const t = (await page.$$("header nav .tab"))[i];
-        if (t) { await t.click(); await page.waitForTimeout(250); }
+      // Each tab, in turn. The board renders one view at a time, so overflow is
+      // measured per view rather than once.
+      const tabs = await page.$$("header nav .tab");
+      const stops = [null, ...tabs.keys()];
+      for (const i of stops) {
+        if (i !== null) {
+          const t = (await page.$$("header nav .tab"))[i];
+          if (t) { await t.click(); await page.waitForTimeout(250); }
+        }
+        const view = i === null ? "(initial)" :
+          ((await page.$$("header nav .tab"))[i] &&
+            (await (await page.$$("header nav .tab"))[i].textContent()).trim()) || String(i);
+        const o = await overflowOf(page);
+        if (o.scrollWidth > o.innerWidth + 1) {
+          fail(`${shape} ${vp.name} ${vp.width}px, view ${view}: document scrolls sideways ` +
+            `(${o.scrollWidth} > ${o.innerWidth}). content the viewport cannot reach.`);
+        }
       }
-      const view = i === null ? "(initial)" :
-        ((await page.$$("header nav .tab"))[i] &&
-          (await (await page.$$("header nav .tab"))[i].textContent()).trim()) || String(i);
-      const o = await overflowOf(page);
-      if (o.scrollWidth > o.innerWidth + 1) {
-        fail(`${vp.name} ${vp.width}px, view ${view}: document scrolls sideways ` +
-          `(${o.scrollWidth} > ${o.innerWidth}). content the viewport cannot reach.`);
+
+      const blank = await blankHeaderControls(page);
+      if (blank.length) {
+        fail(`${shape} ${vp.name} ${vp.width}px: header controls render with no label ` +
+          `(text or pseudo): ${blank.join(", ")}.`);
       }
-    }
 
-    const blank = await blankHeaderControls(page);
-    if (blank.length) {
-      fail(`${vp.name} ${vp.width}px: header controls render with no label ` +
-        `(text or pseudo): ${blank.join(", ")}.`);
-    }
+      // The room picker is a floating menu placed by script. Open it and check it
+      // stays on screen, since a long room name is exactly what pushes it off.
+      if (populated) {
+        const roomChip = await page.$("#rooms");
+        if (roomChip) {
+          await roomChip.click();
+          await page.waitForTimeout(150);
+          const menu = await page.evaluate(() => {
+            const m = document.getElementById("rooms-menu");
+            if (!m || m.hidden) return null;
+            const r = m.getBoundingClientRect();
+            return { left: r.left, right: r.right, iw: window.innerWidth };
+          });
+          if (menu && (menu.left < 0 || menu.right > menu.iw + 1)) {
+            fail(`${shape} ${vp.name} ${vp.width}px: the room picker menu runs off ` +
+              `screen (left ${Math.round(menu.left)}, right ${Math.round(menu.right)}, ` +
+              `width ${menu.iw}).`);
+          }
+          await page.keyboard.press("Escape").catch(() => {});
+        }
 
-    await page.close();
+        // The new-agent dialog, opened by script so the check reaches it even at
+        // widths where the button that opens it is hidden. A dialog is sized to
+        // the viewport, so what this catches is a field or a row inside it that
+        // is not.
+        const dlg = await page.evaluate(() => {
+          try { if (typeof openLaunch === "function") openLaunch(); } catch (e) {}
+          const d = document.querySelector("dialog[open]");
+          if (!d) return null;
+          const r = d.getBoundingClientRect();
+          return { left: r.left, right: r.right, iw: window.innerWidth, sw: d.scrollWidth, cw: d.clientWidth };
+        });
+        if (dlg) {
+          if (dlg.left < -1 || dlg.right > dlg.iw + 1) {
+            fail(`${shape} ${vp.name} ${vp.width}px: the new-agent dialog runs off screen ` +
+              `(left ${Math.round(dlg.left)}, right ${Math.round(dlg.right)}, width ${dlg.iw}).`);
+          }
+          if (dlg.sw > dlg.cw + 1) {
+            fail(`${shape} ${vp.name} ${vp.width}px: the new-agent dialog scrolls sideways ` +
+              `inside itself (${dlg.sw} > ${dlg.cw}). a field or row is wider than the dialog.`);
+          }
+          await page.keyboard.press("Escape").catch(() => {});
+        }
+      }
+
+      await page.close();
+    }
   }
 
   await browser.close();
