@@ -166,8 +166,16 @@ echo
 # package-linux.sh at length.
 (
   cd "$out"
-  sha256sum ./*.zip ./*.tar.gz ./*.deb ./*.rpm ./*.pkg ./*.msi 2>/dev/null |
-    sed 's#\./##' | sort -k2 | tee checksums.txt
+  # COLLECTED rather than globbed straight into sha256sum: a glob that matches
+  # nothing is passed through literally, and under `pipefail` sha256sum fails on
+  # the literal `./*.rpm` and takes the whole script down, even though every real
+  # artefact was already written. release.sh spells the trap out at length.
+  artefacts=""
+  for f in ./*.zip ./*.tar.gz ./*.deb ./*.rpm ./*.pkg ./*.msi; do
+    [ -e "$f" ] && artefacts="$artefacts $f"
+  done
+  # shellcheck disable=SC2086
+  sha256sum $artefacts | sed 's#\./##' | sort -k2 | tee checksums.txt
 )
 
 echo
