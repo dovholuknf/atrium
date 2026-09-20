@@ -32,6 +32,7 @@ func joinCmd() *cobra.Command {
 		agent    string
 		identity string
 		isolated bool
+		flags    joinFlags
 	)
 	c := &cobra.Command{
 		Use:   "join <join string>",
@@ -51,6 +52,25 @@ func joinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// THE FLAGS DECIDE THE TRANSPORT, layered on the token that names the
+			// room and pins the hub. With no flag the token decides, exactly as
+			// before. See joinflags.go and the design's "The room link".
+			flags.identity = identity
+			j, ident, jwt, err := flags.resolve(j)
+			if err != nil {
+				return err
+			}
+			if jwt != "" {
+				// Enrolling a JWT during join is the design's follow-up, not yet
+				// wired. The daemon already enrols a JWT for board exposure
+				// (internal/daemon.EnrollZiti); join will reuse it. Until then,
+				// say the exact next step rather than failing at the first dial.
+				return fmt.Errorf(
+					"--openziti was given a JWT, and enrolling it during join is not wired yet. " +
+						"enroll it first with `ziti edge enroll <jwt> -o identity.json`, then " +
+						"pass `--openziti identity.json`")
+			}
+			identity = ident
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
 
 			// WHAT THIS MACHINE CALLS ITSELF, WHICH IS NOT WHAT IT IS CALLED.
@@ -94,6 +114,17 @@ func joinCmd() *cobra.Command {
 	c.Flags().StringVar(&agent, "agent", "127.0.0.1:7811", "where this room's agents report")
 	c.Flags().StringVar(&identity, "identity", "",
 		"a ziti identity file, when the join string is for a ziti service")
+	// The transport flags: how to reach the hub and what to prove the right with,
+	// on top of the token that names the room. Exactly one may be given; none
+	// falls back to the transport the token itself encodes. See joinflags.go.
+	c.Flags().StringVar(&flags.mtls, "mtls", "",
+		"reach the hub by direct mutual TLS at this url or host:port (the LAN and no-overlay path)")
+	c.Flags().StringVar(&flags.zrokPrivate, "zrok-private", "",
+		"reach the hub over a private zrok share, with the share's access token")
+	c.Flags().StringVar(&flags.openziti, "openziti", "",
+		"reach the hub over an OpenZiti service, with an enrolled identity .json (or a jwt to enroll)")
+	c.Flags().StringVar(&flags.service, "service", "",
+		"the ziti service to dial with --openziti, default \"atrium\"")
 	isolatedFlag(c, &isolated)
 	acceptUpgradeFlag(c)
 	return c
