@@ -75,8 +75,8 @@ func (k *keyedMutex) lock(keys ...string) func() {
 
 // launchTaskKey and launchResumeKey namespace the two kinds of key so a card id
 // and a resume id that happen to be the same string cannot collide on one lock.
-func launchTaskKey(taskID string) string     { return "task:" + taskID }
-func launchResumeKey(resume string) string    { return "resume:" + resume }
+func launchTaskKey(taskID string) string   { return "task:" + taskID }
+func launchResumeKey(resume string) string { return "resume:" + resume }
 
 // launchKeys is the set of locks a launch or restart must hold across its
 // check-then-spawn region: the card it lands on, and the conversation it
