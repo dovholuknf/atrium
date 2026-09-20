@@ -75,6 +75,11 @@ type Proxy struct {
 	// audit is the operational audit log. Nil until SetAuditLog wires it, and a
 	// hub without one answers /_hub/audit empty. See audit.go.
 	audit AuditLog
+
+	// approver enforces the hub-wide auto-approve flag on the permission relay.
+	// Nil until an inventory is wired, because the flag it reads lives in the
+	// hub's store. See autoapprove.go.
+	approver *autoApprover
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -843,13 +848,33 @@ type Inventory interface {
 	// while looking at all rooms lands somewhere instead of being refused for
 	// want of a room.
 	SetHubSkin(name string) error
+	// BoardAuto reports the hub-wide auto-approve flag: whether it is on, and
+	// when it stops (nil for no deadline). Board policy, held by the hub and
+	// enforced hub-side on the permission relay, so it reaches every session the
+	// instant a request appears, whatever room registered it. See
+	// `autoapprove.go` and `docs/auto-mode.md`.
+	BoardAuto() (on bool, until *time.Time, err error)
+	// SetBoardAuto turns the hub-wide flag on (optionally with a deadline) or
+	// off, which is how the board's ALL view lands the toggle somewhere instead
+	// of being refused for want of a room.
+	SetBoardAuto(on bool, until *time.Time) error
 }
 
 // SetInventory wires the durable room list up. Optional.
+//
+// STARTS THE AUTO-APPROVER, because the hub-wide flag it enforces lives in this
+// store. A hub with no inventory has no flag to hold and so no approver: the
+// permission chain is then whatever each room's own gate does, exactly as
+// before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.stock = s
+	if p.approver == nil {
+		p.approver = newAutoApprover(p)
+	}
+	ap := p.approver
+	p.mu.Unlock()
+	ap.start()
 }
 
 func (p *Proxy) inventory() Inventory {
