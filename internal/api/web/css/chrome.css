@@ -22,6 +22,13 @@
     flex-wrap: nowrap; min-width: 0;
   }
   .bar > * { flex: none; }
+  /* The tabs give up their width first, as the note above says. `.bar > *` sets
+     every child to `flex: none`, which is what keeps the action buttons their
+     size, but it also caught the nav and pinned it at its full content width, so
+     between 900px and a wide desktop the header ran off the right edge and every
+     view scrolled sideways with it. This wins on specificity and lets the nav
+     shrink and scroll again, which is what its own `overflow-x: auto` is for. */
+  .bar > nav { flex: 0 1 auto; min-width: 0; }
   .wordmark {
     font-size: var(--fs-3xl); font-weight: 700; letter-spacing: .34em; margin: 0;
     text-transform: uppercase; white-space: nowrap;
