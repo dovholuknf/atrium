@@ -194,10 +194,27 @@ macos_install() {
     # is the supported way to reload, and it is allowed to fail because on a
     # first install there is nothing to boot out.
     launchctl bootout "$macos_target" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$macos_plist"
-    launchctl enable "$macos_target"
-    say "loaded and running."
-    macos_status
+
+    # A LaunchAgent LOADS INTO THE GUI SESSION, and there is not always one.
+    #
+    # `launchctl bootstrap gui/$uid` needs an Aqua login session for this user.
+    # Over ssh with nobody at the screen, or on a headless Mac, that domain does
+    # not exist and bootstrap fails with "125: Domain does not support specified
+    # action". That is not an install failure: the plist is already written to
+    # ~/Library/LaunchAgents, which is exactly where launchd looks at the next GUI
+    # login, so it loads by itself then. So a failed bootstrap degrades to "starts
+    # at next login" and says so, the same way the Linux side degrades to writing
+    # the enable symlink by hand. This is what makes the no-sudo tarball install
+    # work over ssh: the file lands and the load waits for a session.
+    if launchctl bootstrap "gui/$(id -u)" "$macos_plist" 2>/dev/null; then
+        launchctl enable "$macos_target"
+        say "loaded and running."
+        macos_status
+    else
+        say "the agent is written but not loaded now: there is no GUI login session"
+        say "(headless, or over ssh). it loads by itself at your next desktop login."
+        say "  log in at the screen, or:  launchctl bootstrap gui/$(id -u) $macos_plist"
+    fi
 }
 
 macos_uninstall() {

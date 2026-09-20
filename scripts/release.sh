@@ -87,6 +87,27 @@ for target in $targets; do
       -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" \
     -o "$binary" ./cmd/atrium
 
+  # THE SERVICE SCRIPTS TRAVEL WITH THE ARCHIVE, so the no-sudo path is
+  # self-contained. A user who unpacks this and never runs the MSI, the .deb, the
+  # .rpm or the .pkg still has everything to register autostart AS THEMSELVES,
+  # with no elevation and without touching a system location.
+  #
+  # Windows gets the two PowerShell scripts: `scripts\atrium-service.ps1 install`
+  # registers the per-user logon task, which the MSI deliberately does not.
+  # Linux and macOS get scripts/atrium-service.sh plus the unit and the plist it
+  # renders: `scripts/atrium-service.sh install` writes a systemd --user unit or
+  # a LaunchAgent under the home directory and needs no root. The packages carry
+  # these same files at system paths; the archive carries them for the person who
+  # wants no installer at all.
+  mkdir -p "$out/$name/scripts"
+  if [ "$goos" = "windows" ]; then
+    cp scripts/atrium-service.ps1 scripts/atrium-autostart.ps1 "$out/$name/scripts/"
+  else
+    cp scripts/atrium-service.sh "$out/$name/scripts/"
+    mkdir -p "$out/$name/packaging"
+    cp packaging/atrium.service packaging/atrium.plist "$out/$name/packaging/"
+  fi
+
   # An archive per platform, in the shape each ecosystem expects: zip for
   # Windows because scoop and everything else on that platform reads one, tar.gz
   # everywhere else.
