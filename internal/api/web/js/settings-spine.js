@@ -1389,6 +1389,11 @@ function connect() {
     // is debounced and single-flight, so an event that also fires coalesces
     // with it rather than firing a second fetch.
     refreshSoon();
+    // The audit pane heals on reconnect the same way the lists do: a stream that
+    // dropped may have missed an `audit` delta, so re-fetch the feed now. Guarded
+    // to an open pane by `onAuditEvent`, so a closed one pays nothing. See
+    // js/audit.js.
+    if (typeof onAuditEvent === "function") onAuditEvent();
   };
   es.onerror = () => {
     conn.classList.remove("live");
