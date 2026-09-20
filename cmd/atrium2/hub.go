@@ -35,10 +35,12 @@ func hubCmd() *cobra.Command {
 		open      bool
 
 		// Reaching the board from off this machine. Empty binds loopback only,
-		// which is the default and the safe one. "zrok" also serves the same
-		// board over a zrok share. See hubshare.go.
+		// which is the default and the safe one. "zrok" serves the same board
+		// over a zrok share; "ziti" binds it to an OpenZiti service. See
+		// hubshare.go and link.Ziti.
 		boardTransport string
 		boardShareMode string
+		boardService   string
 
 		// Binaries to offer rooms, one per platform. Empty means this hub can
 		// only offer what it is running, which is no use to a room on another
@@ -280,25 +282,25 @@ func hubCmd() *cobra.Command {
 			}
 
 			// REACHING THE BOARD FROM ELSEWHERE, when asked. Loopback above
-			// stays exactly as it was: this adds a second listener on a zrok
-			// share and serves the SAME handler on it, so nothing is proxied
-			// and the local board is untouched. The share is released when the
-			// daemon stops.
+			// stays exactly as it was: this adds a SECOND listener over an overlay
+			// and serves the SAME handler on it, so nothing is proxied and the
+			// local board is untouched. The listener is released when the hub
+			// stops.
+			//
+			// NON-FATAL, ON PURPOSE. The board share is additive: the loopback
+			// board is the hub's real job and must come up even when the overlay
+			// is slow, down, or unauthorised. Every failure here logs the reason
+			// and the hub serves loopback anyway, rather than a transient outage
+			// taking the board with it.
 			if bt := strings.TrimSpace(boardTransport); bt != "" && bt != "none" {
-				if bt != "zrok" {
-					return fmt.Errorf("no board transport called %q. one of: zrok", bt)
-				}
-				// NON-FATAL, ON PURPOSE. The board share is additive: the local
-				// board on loopback is the hub's real job and must come up even
-				// when the overlay API is slow or down. A share creation that
-				// times out at zrok logs the reason and the hub serves loopback
-				// anyway, rather than a transient outage taking the board with
-				// it.
-				bs, shareLn, err := openBoardShare(boardShareMode)
-				if err != nil {
-					log.Printf("[hub] could not put the board on a zrok share, "+
-						"serving loopback only: %v", err)
-				} else {
+				switch bt {
+				case "zrok":
+					bs, shareLn, err := openBoardShare(boardShareMode)
+					if err != nil {
+						log.Printf("[hub] could not put the board on a zrok share, "+
+							"serving loopback only: %v", err)
+						break
+					}
 					defer bs.release()
 					if bs.Mode == "public" {
 						log.Printf("[hub] the board is on a PUBLIC zrok share with no login " +
@@ -308,16 +310,33 @@ func hubCmd() *cobra.Command {
 					log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
 					proxy.RecordAudit("", "board-share-opened",
 						"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
-					shareSrv := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
-					go func() {
-						<-ctx.Done()
-						_ = shareSrv.Close()
-					}()
-					go func() {
-						if err := shareSrv.Serve(shareLn); err != nil && ctx.Err() == nil {
-							log.Printf("[hub] the board's zrok share stopped: %v", err)
-						}
-					}()
+					serveBoardOn(ctx, shareLn, proxy, "zrok share")
+
+				case "ziti":
+					// The headless equivalent of the panel's OpenZiti toggle. The
+					// hub binds a ziti service and answers the board on it, so a
+					// phone running the ziti tunneler reaches it with no port open
+					// on this machine. Who may reach it is a policy on that network,
+					// which is why a ziti board needs no login the way a public zrok
+					// share does. The service must already exist with a bind policy
+					// this identity satisfies: link.Ziti.Listen says so plainly if
+					// it does not, rather than failing opaquely. See the design's
+					// OpenZiti precondition.
+					z := &link.Ziti{Identity: zitiIdentity, Service: boardService}
+					shareLn, err := z.Listen()
+					if err != nil {
+						log.Printf("[hub] could not bind the board to the ziti service %q, "+
+							"serving loopback only: %v", boardService, err)
+						break
+					}
+					defer z.Close()
+					log.Printf("[hub] serving the board on the ziti service %q", boardService)
+					proxy.RecordAudit("", "board-share-opened",
+						"the board is on the ziti service "+boardService)
+					serveBoardOn(ctx, shareLn, proxy, "ziti service")
+
+				default:
+					return fmt.Errorf("no board transport called %q. one of: zrok, ziti", bt)
 				}
 			}
 
@@ -351,11 +370,33 @@ func hubCmd() *cobra.Command {
 	c.Flags().StringVar(&buildDir, "builds", "",
 		"a directory of atrium2_<os>_<arch> binaries to offer rooms that asked for upgrades")
 	c.Flags().StringVar(&boardTransport, "board-transport", "",
-		"also serve the board off this machine over an overlay: none (default) or zrok")
+		"also serve the board off this machine over an overlay: none (default), zrok or ziti")
+	c.Flags().StringVar(&boardService, "board-service", "atrium",
+		"with --board-transport ziti: the ziti service to bind the board to (uses --identity)")
 	c.Flags().StringVar(&boardShareMode, "board-share", "private",
 		"with --board-transport zrok: private (needs zrok on the other end) or public (a URL, no login)")
 	c.AddCommand(hubRoomsCmd(), hubBackupsCmd(), hubRestoreCmd())
 	return c
+}
+
+// serveBoardOn serves the hub board on a second listener, an overlay's, so the
+// board is reachable off this machine without touching the loopback one.
+//
+// What is the same for every board transport lives here: an http.Server with the
+// same read-header timeout as the loopback board, closed when the hub stops. How
+// the listener is obtained differs per overlay and stays at the call site, which
+// is the one thing that is not shared. `what` is only for the log line.
+func serveBoardOn(ctx context.Context, ln net.Listener, h http.Handler, what string) {
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+	go func() {
+		if err := srv.Serve(ln); err != nil && ctx.Err() == nil {
+			log.Printf("[hub] the board's %s stopped: %v", what, err)
+		}
+	}()
 }
 
 // greet is the first thing anybody sees, and it is the whole setup experience.
