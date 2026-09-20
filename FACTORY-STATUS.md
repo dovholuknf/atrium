@@ -4,6 +4,35 @@ Autonomous backlog run while clint was AFK. Orchestrator handle `atrium-87300`. 
 `claude/orchestrator`, authored as clint (no Claude attribution), build + vet + `go test ./...` green at each
 integration. Cherry-pick individual commits or merge the branch to `dovholuknf/main`.
 
+## MORNING BRIEFING (overnight 2026-09-19 -> 20)
+
+READ THIS FIRST when you wake.
+
+- **#1 unresolved bug: the attach-WS flicker.** The terminal attach WebSocket sometimes "closes before the
+  connection is established", and the board's solo.js retries in a tight visual loop (screen flickers, WebGL
+  contexts exhaust). It happens at ONE room too (not only tagged/multi-room), on specific cards. The earlier
+  attach-loop fix (shipped) BOUNDED the spin (90ms -> ~500ms) but did not stop the underlying attach failing. It
+  blocks safe multi-room, so I kept the board at ONE room all night. This needs a real root-cause fix (why the
+  server closes the attach ws) before bringing sgg/other rooms back.
+- **Live hub build: `4482e385a81488da`.** Shipped hub-only overnight (room never restarted): hub-held
+  approve-everything (auto covers new/reconnecting sessions), audit tab, terminate-dismiss, launch cap (agent-only),
+  paste-by-card-id, the responsive header + mobile header-overflow fix, ci.sh green. Revert snapshots are in
+  `C:/Users/claude/.atrium2/bin/atrium2.revert-*.exe`.
+- **Mobile pass: effectively done.** Root cause was the header overflowing (sideways scroll); fixed. Main views,
+  rooms, perms, dialogs, and the theme picker reflow at 390/768/1150. Follow-up: port the css responsive
+  assertions into the shared `test-board-headless.js` (a duplicate run was removed, note left in check-board.sh).
+- **OpenZiti/zrok: designed + Mercurius-reviewed + partly implemented.** `docs/ziti-zrok-flow-design.md` (+
+  `.mercurius-synopsis.md`). Hub-only: `--board-transport ziti` (`1425367`, inert until used). ROOM-SIDE/PARKED:
+  `atrium2 join` transport flags (`5b85e64`) and the public-zrok-requires-login gate (`9f2a781`).
+  DECISIONS FOR YOU: (1) OIDC-only vs any-login for public zrok; (2) the hub binary has NO login system, so a hub
+  `--board-share public` cannot enforce a login - add a hub login or forbid hub public shares; (3) JWT-enroll-at-
+  join (parked follow-up).
+- **Parked for one planned ROOM restart** (all committed, NOT deployed - a room restart kills your live sessions):
+  msg-truncation, say-caller, width-note removal, audit session-lifecycle events, the ziti `join` flags, and the
+  public-zrok gate. Run the room restart when you are present.
+- **Rooms:** held at one (sg4). sgg + wsl/claudevm/m1mini bring-up is paused - multi-room triggers the flicker.
+  The packaging installers were proven (deb fully; MSI on claudevm; no-sudo path per OS).
+
 ## Deployed live this session (hub-only, browser-verified where board JS)
 
 Live hub build `cf99ce3f17b38cf7`. All of the below is on `claude/orchestrator` and running on the hub now, the
