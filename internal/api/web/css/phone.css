@@ -18,6 +18,14 @@
     button.newagent { font-size: var(--fs-md); padding: 8px 14px; }
     button.icon { font-size: var(--fs-2xl); padding: 6px 9px; }
     .conn { font-size: var(--fs-md); }
+    /* A thumb needs about forty pixels, and padding alone left the header controls
+       short of it here. Centre their contents so the taller box does not float the
+       label or the glyph against the top edge. */
+    .tab, .gauto, button.newagent, button.icon {
+      min-height: 40px; box-sizing: border-box;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .rooms, .conn, .sharing, button.working { min-height: 40px; box-sizing: border-box; }
     main { padding: 14px 12px; }
 
     /* One column at a time. A kanban that scrolls sideways on a phone means
