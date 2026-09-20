@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 )
@@ -131,6 +133,12 @@ func (i inventory) Holding() ([]string, error) { return i.store.Holding() }
 // hub's own rather than a room's. See `internal/link` and `internal/hubstore`.
 func (i inventory) HubSkin() (string, error)     { return i.store.HubSkin() }
 func (i inventory) SetHubSkin(name string) error { return i.store.SetHubSkin(name) }
+
+// BoardAuto and SetBoardAuto are the board-wide auto-approve flag, held by the
+// hub and enforced hub-side on the permission relay. Board policy, so the hub's
+// to hold, the same as the skin. See `internal/link/autoapprove.go`.
+func (i inventory) BoardAuto() (bool, *time.Time, error)         { return i.store.BoardAuto() }
+func (i inventory) SetBoardAuto(on bool, until *time.Time) error { return i.store.SetBoardAuto(on, until) }
 
 // fold matches how a room name is compared everywhere else: ASCII only, so a
 // name folds the same on every machine regardless of locale.

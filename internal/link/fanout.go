@@ -661,9 +661,101 @@ func (p *Proxy) hubSettings(w http.ResponseWriter, r *http.Request) bool {
 		writeJSONBody(w, http.StatusOK, body)
 		return true
 	case http.MethodPost, http.MethodPut:
-		return p.saveHubSkin(w, r, stock)
+		// Read once and route on what the body names. The board's board-wide
+		// switch posts `global_auto`, the skin picker posts `board_skin`, and
+		// they are never the same request. Anything else falls through to the
+		// borrow, which asks which room it is for.
+		payload, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+		if err != nil {
+			return false
+		}
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &keys); err != nil {
+			return false
+		}
+		if _, ok := keys["global_auto"]; ok {
+			return p.saveBoardAuto(w, payload, stock)
+		}
+		return p.saveHubSkin(w, r, payload, stock)
 	}
 	return false
+}
+
+// maxBoardAutoMinutes bounds how long the board-wide switch can be left on, the
+// same day the room's own switch uses and for the same reason: "for the next
+// hour" is the shape this is for, and a deadline in three weeks is a switch left
+// on with extra steps. See internal/api maxAutoMinutes.
+const maxBoardAutoMinutes = 24 * 60
+
+// applyBoardAuto overwrites the switch fields in a settings payload with the
+// HUB's flag, so the ALL view shows one board-wide answer rather than whichever
+// room it borrowed the payload from.
+func (p *Proxy) applyBoardAuto(body map[string]any, stock Inventory) {
+	on, until, err := stock.BoardAuto()
+	if err != nil {
+		on, until = false, nil
+	}
+	body["global_auto"] = on
+	// A stale deadline borrowed from a room must not survive: the hub's flag is
+	// the answer now, and a leftover `global_auto_until` would read as a switch
+	// expiring at a time the hub never set.
+	delete(body, "global_auto_until")
+	delete(body, "global_auto_seconds")
+	if until != nil {
+		body["global_auto_until"] = until.Format(time.RFC3339)
+		// Seconds left, so the board does not have to agree with the hub about
+		// what time it is, the same rule the room's own view follows.
+		if left := time.Until(*until); left > 0 {
+			body["global_auto_seconds"] = int64(left.Seconds())
+		}
+	}
+}
+
+// boardAutoView is the switch as the board reads it back after a save, built
+// from the hub flag alone so an old tab and a fresh one cannot disagree.
+func (p *Proxy) boardAutoView(stock Inventory) map[string]any {
+	out := map[string]any{}
+	p.applyBoardAuto(out, stock)
+	return out
+}
+
+// saveBoardAuto lands the board-wide switch on the HUB, which is how the toggle
+// in the ALL view lands somewhere instead of being refused for want of a room.
+//
+// It does NOT touch any room's own `global_auto`: a room-scoped view still turns
+// that room loose on its own. This is the wider switch, enforced hub-side on the
+// permission relay. See autoapprove.go.
+func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inventory) bool {
+	var body struct {
+		GlobalAuto *bool `json:"global_auto"`
+		Minutes    int   `json:"global_auto_minutes"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil || body.GlobalAuto == nil {
+		return false
+	}
+	if body.Minutes < 0 || body.Minutes > maxBoardAutoMinutes {
+		writeErrBody(w, http.StatusBadRequest, fmt.Sprintf(
+			"board-wide auto can be left on for up to %d minutes, or with no deadline at all",
+			maxBoardAutoMinutes))
+		return true
+	}
+	var until *time.Time
+	if *body.GlobalAuto && body.Minutes > 0 {
+		t := time.Now().UTC().Add(time.Duration(body.Minutes) * time.Minute)
+		until = &t
+	}
+	if err := stock.SetBoardAuto(*body.GlobalAuto, until); err != nil {
+		writeErrBody(w, http.StatusInternalServerError, err.Error())
+		return true
+	}
+	// Turning it on empties the queue at once rather than on the approver's next
+	// tick, which is what a person expects from a button they just pressed. See
+	// `docs/auto-mode.md`, "turning it on empties the queue".
+	if *body.GlobalAuto && p.approver != nil {
+		p.approver.nudge()
+	}
+	writeJSONBody(w, http.StatusOK, p.boardAutoView(stock))
+	return true
 }
 
 // hubSettingsBody borrows one room's whole settings answer and swaps in the
@@ -682,6 +774,10 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 		return nil, false
 	}
 	body["board_skin"] = p.hubSkinClamped(stock, body)
+	// The board-wide switch is the hub's answer too, not the borrowed room's, so
+	// the ALL view shows one board-wide state rather than whichever room sorted
+	// first. See applyBoardAuto and autoapprove.go.
+	p.applyBoardAuto(body, stock)
 	return body, true
 }
 
@@ -710,11 +806,7 @@ func (p *Proxy) hubSkinClamped(stock Inventory, borrowed map[string]any) string 
 // ONLY THE SKIN, AND NOTHING ELSE. A body that also names a machine-shaped
 // setting still has no room to land in, so it is left for `needsARoom` to ask
 // which room. A save that is purely the skin is the one the hub owns.
-func (p *Proxy) saveHubSkin(w http.ResponseWriter, r *http.Request, stock Inventory) bool {
-	payload, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
-	if err != nil {
-		return false
-	}
+func (p *Proxy) saveHubSkin(w http.ResponseWriter, r *http.Request, payload []byte, stock Inventory) bool {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &raw); err != nil {
 		return false // not a shape we handle; let the borrow refuse it

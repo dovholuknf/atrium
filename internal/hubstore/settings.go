@@ -3,6 +3,7 @@ package hubstore
 import (
 	"database/sql"
 	"strings"
+	"time"
 )
 
 // The hub's own settings, kept in the `hub_setting` table the schema already
@@ -25,6 +26,30 @@ import (
 
 // SettingBoardSkin names the hub's board skin in the setting table.
 const SettingBoardSkin = "board_skin"
+
+// SettingBoardAuto names the hub's board-wide auto-approve flag in the setting
+// table.
+//
+// ── why the hub owns this, and the room keeps its own ────
+//
+// Board-wide "approve everything" is BOARD POLICY: one answer for every session
+// on every room, including ones that have not started. `docs/hub-room-requirements.md`
+// gives anything about the board to the hub, so this is the hub's to hold, the
+// same as the skin above. It used to live in the room as `global_auto`, which
+// only ever covered sessions THAT room's gate had seen and, in the ALL view, had
+// no room to be written to at all. That is the bug this moves off the room.
+//
+// The room's own `global_auto` STAYS as the per-room switch: a room-scoped view
+// still turns that room loose on its own. This flag is the wider one, enforced
+// hub-side on the permission relay. See `internal/link/autoapprove.go`.
+const SettingBoardAuto = "board_auto"
+
+// boardAutoUntil marks a board-auto value that carries a deadline, encoded into
+// the value rather than given a second key. Mirrors the room's own `until:`
+// scheme (see store.SettingGlobalAuto) so the two read the same way: one thing
+// to write, one thing to read, and a deadline with the switch off cannot be
+// represented.
+const boardAutoUntil = "until:"
 
 // HubSetting reads one hub setting. A name never written reads as empty rather
 // than as an error, so a caller does not have to seed anything.
@@ -68,3 +93,49 @@ func (s *Store) HubSkin() (string, error) { return s.HubSetting(SettingBoardSkin
 // on the way out, so a bad value never leaves the board on a skin nothing
 // matches. The board is the only writer and only sends names the daemon offered.
 func (s *Store) SetHubSkin(name string) error { return s.SetHubSetting(SettingBoardSkin, name) }
+
+// BoardAuto reports whether board-wide auto-approve is on, and when it stops.
+//
+// A read failure answers false, and a deadline that has passed answers false,
+// both checked against the clock here rather than enforced by a timer. This sits
+// on the permission path, and the safe answer to "should the hub stop asking" is
+// no: a timer that has to fire is a timer that does not fire across a restart,
+// and the flag surviving a restart it should not have is the failure worth
+// designing against. Mirrors store.GlobalAutoUntil exactly.
+//
+// The second value is nil when it is on with no deadline, which is what turning
+// it on by hand means.
+func (s *Store) BoardAuto() (bool, *time.Time, error) {
+	v, err := s.HubSetting(SettingBoardAuto)
+	if err != nil {
+		return false, nil, err
+	}
+	if v == "on" {
+		return true, nil, nil
+	}
+	if !strings.HasPrefix(v, boardAutoUntil) {
+		return false, nil, nil
+	}
+	deadline, err := time.Parse(TimeFormat, strings.TrimPrefix(v, boardAutoUntil))
+	if err != nil {
+		// A value that will not parse is not a licence to approve everything.
+		return false, nil, nil
+	}
+	if !now().Before(deadline) {
+		return false, &deadline, nil
+	}
+	return true, &deadline, nil
+}
+
+// SetBoardAuto turns board-wide auto-approve on or off, with an optional
+// deadline. Turning it off always clears the deadline, for the same reason a
+// card's does: "off until Tuesday" is not a thing anybody means.
+func (s *Store) SetBoardAuto(on bool, until *time.Time) error {
+	if !on {
+		return s.SetHubSetting(SettingBoardAuto, "off")
+	}
+	if until == nil {
+		return s.SetHubSetting(SettingBoardAuto, "on")
+	}
+	return s.SetHubSetting(SettingBoardAuto, boardAutoUntil+ts(*until))
+}

@@ -17,10 +17,11 @@ import (
 
 // remembering is an Inventory holding cards for rooms that are not here.
 type remembering struct {
-	rooms []Known
-	cards map[string][]CardState
-	asked map[string]int
-	skin  string
+	rooms     []Known
+	cards     map[string][]CardState
+	asked     map[string]int
+	skin      string
+	boardAuto bool
 }
 
 func (r *remembering) Known() ([]Known, error) { return r.rooms, nil }
@@ -46,6 +47,10 @@ func (r *remembering) Holding() ([]string, error) {
 func (r *remembering) HubSkin() (string, error) { return r.skin, nil }
 
 func (r *remembering) SetHubSkin(name string) error { r.skin = name; return nil }
+
+func (r *remembering) BoardAuto() (bool, *time.Time, error) { return r.boardAuto, nil, nil }
+
+func (r *remembering) SetBoardAuto(on bool, _ *time.Time) error { r.boardAuto = on; return nil }
 
 func card(id, title, status string) CardState {
 	raw, _ := json.Marshal(map[string]any{"id": id, "title": title, "status": status})
