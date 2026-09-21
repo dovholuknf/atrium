@@ -295,7 +295,17 @@ func hubCmd() *cobra.Command {
 			if bt := strings.TrimSpace(boardTransport); bt != "" && bt != "none" {
 				switch bt {
 				case "zrok":
-					bs, shareLn, err := openBoardShare(boardShareMode)
+					// The public share's login, from the hub's own store: the
+					// operator set it on the settings screen and it is applied
+					// when the share is created. A private share ignores it. See
+					// hubshare.go and docs/ziti-zrok-flow-design.md.
+					shareAuth, err := store.ShareAuth()
+					if err != nil {
+						log.Printf("[hub] could not read the share login, "+
+							"serving loopback only: %v", err)
+						break
+					}
+					bs, shareLn, err := openBoardShare(boardShareMode, shareAuth)
 					if err != nil {
 						log.Printf("[hub] could not put the board on a zrok share, "+
 							"serving loopback only: %v", err)
@@ -303,9 +313,11 @@ func hubCmd() *cobra.Command {
 					}
 					defer bs.release()
 					if bs.Mode == "public" {
-						log.Printf("[hub] the board is on a PUBLIC zrok share with no login " +
-							"in front of it. whoever opens the link can read every command " +
-							"and answer permission requests")
+						// A public share now always carries a login (updb or
+						// OIDC); openBoardShare refuses one with none. Name the
+						// scheme so the log says what guards the URL.
+						log.Printf("[hub] the board is on a PUBLIC zrok share, guarded by %s at the "+
+							"zrok edge", shareLoginName(shareAuth))
 					}
 					log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
 					proxy.RecordAudit("", "board-share-opened",
