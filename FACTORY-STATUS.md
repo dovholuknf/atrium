@@ -4,34 +4,34 @@ Autonomous backlog run while clint was AFK. Orchestrator handle `atrium-87300`. 
 `claude/orchestrator`, authored as clint (no Claude attribution), build + vet + `go test ./...` green at each
 integration. Cherry-pick individual commits or merge the branch to `dovholuknf/main`.
 
-## MORNING BRIEFING (overnight 2026-09-19 -> 20)
+## MORNING BRIEFING (overnight 2026-09-20 -> 21)
 
-READ THIS FIRST when you wake.
+READ THIS FIRST when you wake. Live hub build `92dcf1e7bbaf8067`, room `claude-sg4` never restarted.
 
-- **#1 unresolved bug: the attach-WS flicker.** The terminal attach WebSocket sometimes "closes before the
-  connection is established", and the board's solo.js retries in a tight visual loop (screen flickers, WebGL
-  contexts exhaust). It happens at ONE room too (not only tagged/multi-room), on specific cards. The earlier
-  attach-loop fix (shipped) BOUNDED the spin (90ms -> ~500ms) but did not stop the underlying attach failing. It
-  blocks safe multi-room, so I kept the board at ONE room all night. This needs a real root-cause fix (why the
-  server closes the attach ws) before bringing sgg/other rooms back.
-- **Live hub build: `4482e385a81488da`.** Shipped hub-only overnight (room never restarted): hub-held
-  approve-everything (auto covers new/reconnecting sessions), audit tab, terminate-dismiss, launch cap (agent-only),
-  paste-by-card-id, the responsive header + mobile header-overflow fix, ci.sh green. Revert snapshots are in
-  `C:/Users/claude/.atrium2/bin/atrium2.revert-*.exe`.
-- **Mobile pass: effectively done.** Root cause was the header overflowing (sideways scroll); fixed. Main views,
-  rooms, perms, dialogs, and the theme picker reflow at 390/768/1150. Follow-up: port the css responsive
-  assertions into the shared `test-board-headless.js` (a duplicate run was removed, note left in check-board.sh).
-- **OpenZiti/zrok: designed + Mercurius-reviewed + partly implemented.** `docs/ziti-zrok-flow-design.md` (+
-  `.mercurius-synopsis.md`). Hub-only: `--board-transport ziti` (`1425367`, inert until used). ROOM-SIDE/PARKED:
-  `atrium2 join` transport flags (`5b85e64`) and the public-zrok-requires-login gate (`9f2a781`).
-  DECISIONS FOR YOU: (1) OIDC-only vs any-login for public zrok; (2) the hub binary has NO login system, so a hub
-  `--board-share public` cannot enforce a login - add a hub login or forbid hub public shares; (3) JWT-enroll-at-
-  join (parked follow-up).
-- **Parked for one planned ROOM restart** (all committed, NOT deployed - a room restart kills your live sessions):
-  msg-truncation, say-caller, width-note removal, audit session-lifecycle events, the ziti `join` flags, and the
-  public-zrok gate. Run the room restart when you are present.
-- **Rooms:** held at one (sg4). sgg + wsl/claudevm/m1mini bring-up is paused - multi-room triggers the flicker.
-  The packaging installers were proven (deb fully; MSI on claudevm; no-sudo path per OS).
+- **#1 bug FIXED and DEPLOYED: the attach-WS flicker.** Root cause was HUB-side, in the proxy: `roomHolding`
+  waited for EVERY attached room to answer before forwarding a bare-id attach upgrade, so one slow/asleep room
+  stalled the socket in CONNECTING, it got torn down and retried = the flicker, worse per room. Fix returns on the
+  FIRST room that claims the (globally-unique) id. Shipped hub-only (`e09967e`, Go-only so the board-hash build id
+  did not change; live-binary hash verified against the build). Reproduced + regression test in `internal/link`,
+  done on an in-process repro, live atrium never touched. This UNBLOCKS multi-room. Bringing sgg/others online is
+  now your call.
+- **Board-share auth (your 3 answers, all implemented, hub-only live):** public zrok share auth = OIDC or basic
+  (zrok updb) with the user/pass settable on the SETTINGS screen; a hub public share gets its creds from zrok updb
+  only (hub grows no login); JWT-enroll-at-join implemented for both transports (join client is ROOM-SIDE/PARKED).
+- **Expose-the-board REDO: three surfaces coexist, compare them live.** classic + menu 2 (collapsed rows) + menu 3
+  (goal chooser). Both Mercurius and a cold Claude judge ranked menu 2 #1; its confirmed correctness + a11y bugs
+  are fixed (public-share gate, id-collision, keyboard access, full OIDC fields). Pick a winner and delete the
+  losers. New interview answers are in `docs/interview-log.md` (the new canonical record - read before any future
+  interview so nothing is re-asked).
+- **Mobile:** terminals tab no longer blank; font no longer gigantic; the list/terminal split is DECOUPLED (list
+  collapses to a dropdown over a stable terminal, no tied resize). All hub-only, live.
+- **Parked for ONE planned ROOM restart** (all committed, NOT deployed - a room restart kills your live sessions,
+  so run it when you are present, detached): msg-truncation, say-caller, width-note removal, audit
+  session-lifecycle events, ziti `join` transport flags, public-zrok gate, multi-pane echo (display-only keystroke
+  fan-out, default OFF), the attach preamble removal + resize-churn guard, and the peer-typing race-fix (bus +
+  relay: a peer message never types into a line you are mid-composing). See the batch section below.
+- **Rooms:** held at ONE (sg4) all night per your rule. With the flicker fixed, multi-room is safe to try when you
+  want it.
 
 ## Deployed live this session (hub-only, browser-verified where board JS)
 
