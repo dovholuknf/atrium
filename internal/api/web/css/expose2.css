@@ -1,0 +1,117 @@
+  /* "expose the board 2": the redo surface, a coexisting alternate to the classic overlay panel. One quiet row
+     per thing you can turn on (board authentication, then the three transports), each collapsed to a single line
+     until you open it. The whole point is that an untouched panel is a short column of nouns and the common case
+     is one press, so the density lives behind a toggle rather than on the screen. Namespaced .xb so the classic
+     .ov panel is untouched and either can be deleted whole. */
+
+  .xb-lead {
+    margin: 0 0 var(--vs-3); max-width: 74ch;
+    font: var(--fs-sm)/1.55 var(--sans); color: var(--dim);
+  }
+
+  /* One row. Collapsed it is the head alone: an icon tile, a name and one line under it, a state word, and the
+     toggle. Open it grows a body below the head. */
+  .xb-row {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.35); margin-bottom: 10px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  /* Live, in the accent, so a running share is findable down the column without reading. Matches .ov.live so the
+     two surfaces agree on what "on" looks like. */
+  .xb-row.live {
+    border-color: var(--chip-accent-stroke);
+    box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset;
+  }
+
+  .xb-head {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 12px 13px; cursor: pointer; user-select: none;
+  }
+  /* The icon tile, the one part of the classic panel worth keeping. Same 40px tile and per-mark tint as .ov-mark,
+     so a zrok row here and a zrok panel there wear the same green. */
+  .xb-mark {
+    flex: none; width: 38px; height: 38px; display: grid; place-items: center;
+    border-radius: var(--r-md);
+  }
+  .xb-mark svg { width: 25px; height: 25px; display: block; }
+  .xb-mark[data-kind="zrok"] { background: rgba(155,243,22,.12); }
+  .xb-mark[data-kind="ziti"] { background: rgba(140,199,255,.12); }
+  /* Board authentication has no project logo, so it takes a key glyph in the board's own accent tile. */
+  .xb-mark[data-kind="auth"] { background: rgba(var(--teal-rgb),.12); color: var(--teal); font-size: 20px; }
+
+  .xb-head .grow { min-width: 0; }
+  .xb-name {
+    display: block; color: var(--head); font: 600 var(--fs-md)/1.2 var(--sans);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .xb-blurb {
+    display: block; margin-top: 2px; color: var(--dim); font-size: var(--fs-sm);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* The state word, in the colour that matches what it says. */
+  .xb-state {
+    flex: none; font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .08em;
+    text-transform: uppercase; color: var(--dim);
+    padding: 5px 9px; border-radius: var(--r-pill);
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+  }
+  .xb-state.on {
+    color: var(--chip-accent-text); background: var(--chip-accent);
+    border-color: var(--chip-accent-stroke);
+  }
+  .xb-state.on::before { content: "\25CF"; margin-right: 5px; }
+  .xb-state.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-stroke); }
+
+  /* The open/close caret, so the row says it has more under it without a second control competing with the head. */
+  .xb-caret {
+    flex: none; width: 22px; text-align: center; color: var(--dimmest);
+    font-size: var(--fs-md); transition: transform .15s, color .15s;
+  }
+  .xb-head:hover .xb-caret { color: var(--head); }
+  .xb-row.open .xb-caret { transform: rotate(90deg); color: var(--head); }
+
+  .xb-body {
+    padding: 0 13px 13px; border-top: 1px solid var(--stroke-dim); margin-top: -1px;
+  }
+  .xb-body-in { padding-top: 12px; }
+
+  /* The address a share hands out, the thing you came for. In the accent, its own line, with a copy button, the
+     same treatment as .ov-addr. */
+  .xb-addr {
+    display: flex; align-items: center; gap: var(--sp-3); margin-top: 10px;
+    padding: 9px 11px; border-radius: var(--r-sm);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+  }
+  .xb-addr code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
+  }
+  .xb-addr button { flex: none; }
+
+  .xb-note {
+    margin-top: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
+    color: var(--dim); font-size: var(--fs-xs); line-height: 1.5;
+  }
+  .xb-note code { font-family: var(--mono); color: var(--label); }
+  /* The one warning that refuses a press: a public share with no board authentication. Warn weight, since the
+     start button below it is going to be refused until it is answered. */
+  .xb-note.stop { background: var(--warn-bg); border-color: var(--warn-stroke); color: var(--warn); }
+
+  .xb-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 12px; }
+  .xb-actions .grow { flex: 1; }
+
+  /* A labelled input inside an open body. One column width, so the eye runs down a stack of boxes rather than a
+     ragged edge, the same rule the classic settings pane follows. */
+  .xb-field { margin-bottom: 12px; }
+  .xb-field:last-child { margin-bottom: 0; }
+  .xb-field > .eyebrow { display: block; margin-bottom: 5px; }
+  .xb-field > input:not([type=checkbox]),
+  .xb-field > textarea,
+  .xb-field > .picker { width: 100%; }
+  .xb-field > .picker { display: flex; gap: var(--sp-2); }
+  .xb-field > .picker > input,
+  .xb-field > .picker > select { flex: 1 1 auto; min-width: 0; }
+  .xb-field .hintline { display: block; margin-top: 5px; max-width: 64ch; line-height: 1.5; }
+  .xb-field textarea { font: var(--fs-sm)/1.5 var(--mono); resize: vertical; min-height: 62px; }
