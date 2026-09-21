@@ -297,6 +297,41 @@ func (pi *pendingInjector) drop(taskID string) {
 	pi.d.publishTask(taskID)
 }
 
+// deliveredElsewhere reconciles a card's held set after the hooks drained its
+// queue another way, so the board signal clears the moment the last pending
+// message is gone.
+//
+// WITHOUT THIS THE CHIP LATCHES ON. The permission and Stop hooks empty the
+// durable queue and mark the rows delivered, but the injector only learns of it
+// on its next backoff `attempt`, and that interval widens out to a day. So the
+// held badge stayed lit for hours after the message had already landed. Told
+// the ids just marked delivered, this forgets them and drops the card when
+// nothing is left to type, on the delivery itself rather than on the next tick.
+func (pi *pendingInjector) deliveredElsewhere(taskID string, ids []string) {
+	gone := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		gone[id] = true
+	}
+	pi.mu.Lock()
+	ht := pi.by[taskID]
+	if ht == nil {
+		pi.mu.Unlock()
+		return
+	}
+	kept := ht.entries[:0]
+	for _, e := range ht.entries {
+		if !gone[e.msgID] {
+			kept = append(kept, e)
+		}
+	}
+	ht.entries = kept
+	empty := len(ht.entries) == 0
+	pi.mu.Unlock()
+	if empty {
+		pi.drop(taskID)
+	}
+}
+
 // stopAll halts every backoff timer, for shutdown. The held messages stay in
 // the store and the next daemon's hooks deliver them, so nothing is lost by
 // giving up the on-screen retry here.

@@ -145,6 +145,42 @@ func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
 	}
 }
 
+// The hooks draining the queue clears the held set and the board signal at
+// once, rather than leaving the chip lit until the next backoff tick.
+func TestHookDeliveryClearsTheHeldSignal(t *testing.T) {
+	d := testDaemon(t)
+	target, r, _ := peerPair(t, d)
+	t.Cleanup(func() { d.pending.stopAll() })
+	// The operator is mid-line, so the message is held on a widening backoff and
+	// no retry will fire for a long time.
+	r.noteOperatorTyped([]byte("half a command"))
+
+	m, err := d.st.QueueFromPeer(target.ID, "handled by the hook", "sg4/doer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "handled by the hook")
+
+	if heldCount(d.pending, target.ID) != 1 {
+		t.Fatal("the message was not held for retry")
+	}
+	if a := d.act.get(target.ID); a == nil || a.HeldPeer == "" {
+		t.Fatalf("the held-message board signal is not set: %+v", a)
+	}
+
+	// The Stop hook drains the durable queue.
+	if _, err := d.takeMessages(target.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := heldCount(d.pending, target.ID); got != 0 {
+		t.Fatalf("the held set was not cleared when the hook drained the queue: %d entries", got)
+	}
+	if a := d.act.get(target.ID); a != nil && a.HeldPeer != "" {
+		t.Fatalf("the board signal still says a message is held after delivery: %+v", a)
+	}
+}
+
 // An operator keystroke re-arms the backoff to the front, so a message that had
 // slid out to a long interval gets an early retry once he is back.
 func TestAKeystrokeReArmsTheBackoff(t *testing.T) {
