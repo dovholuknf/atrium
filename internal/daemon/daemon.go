@@ -129,6 +129,12 @@ type Daemon struct {
 	// outlive the daemon either.
 	peerLimit *peerLimiter
 
+	// pending retries the on-screen delivery of peer messages the gate would not
+	// take right now, on a widening backoff. In memory, because the durable copy
+	// is the queued message row and the hooks deliver that whatever this does.
+	// See pendinginject.go.
+	pending *pendingInjector
+
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
@@ -184,6 +190,7 @@ func New(opts Options) (*Daemon, error) {
 		peerLimit: newPeerLimiter(),
 		launching: newKeyedMutex(),
 	}
+	d.pending = newPendingInjector(d)
 	// Card icons live beside the database, which is the one directory atrium
 	// already owns and already backs up with the rest of its state.
 	api.IconDir = filepath.Join(filepath.Dir(opts.DBPath), "icons")
@@ -1023,6 +1030,13 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// what it points at answers with a connection refused, which reads as the
 	// overlay being broken.
 	d.closeOverlays()
+
+	// The deferred-injection retries stop first, so a backoff timer cannot fire
+	// against a store that is closing under it. The queued messages stay on disk
+	// and the next daemon's hooks deliver them. See pendinginject.go.
+	if d.pending != nil {
+		d.pending.stopAll()
+	}
 
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be
