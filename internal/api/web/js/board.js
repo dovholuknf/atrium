@@ -1372,6 +1372,47 @@ function paintWorking(tasks) {
     : n + " sessions are mid-turn. click to go to the terminals";
 }
 
+// WHEN THE TITLE CANNOT TELL TWO CARDS APART, FALL BACK TO THE WIRE NAME.
+//
+// The board shows `display_title` everywhere, which is the right thing: it is
+// the readable name of the work, and a launcher that passed a title said what
+// to call it. But several sessions launched into one worktree derive the same
+// title from the same repo and branch, and then the board draws a column of
+// identical cards with no way to say which is which.
+//
+// The wire name is unique per session even when the title is not, so the tie is
+// broken by appending it. Only for the cards that actually collide, so a board
+// where every title is already distinct is left completely alone. Stable across
+// polls because it keys off the wire name, not off draw order, so the
+// reconciler still keeps the row it did not have to rebuild.
+//
+// This is a hub-side display fix. It cannot make the derived names themselves
+// unique -- that is the launcher's job, and lands room-side -- but it stops the
+// operator from staring at duplicates on a board that already knows the
+// difference.
+function disambiguateTitles(tasks) {
+  const counts = {};
+  for (const t of tasks) {
+    const key = t.display_title || "";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  for (const t of tasks) {
+    const key = t.display_title || "";
+    if (counts[key] > 1 && t.wire_name) {
+      t.display_title = key + " (" + localWire(t.wire_name) + ")";
+    }
+  }
+}
+
+// localWire strips this atrium's tenant prefix off a wire name, so a card on a
+// single-machine board does not repeat the machine's name. The separator is a
+// slash, and a local name never contains one (see store/tenant.go), so the tail
+// after the last slash is the session's own name.
+function localWire(name) {
+  const i = name.lastIndexOf("/");
+  return i >= 0 ? name.slice(i + 1) : name;
+}
+
 async function renderBoard(signal) {
   const { tasks } = await api("/v1/tasks", { signal });
   // SPLIT ONCE, HERE, AND NOT AT EVERY PLACE THAT COUNTS SOMETHING.
@@ -1388,6 +1429,7 @@ async function renderBoard(signal) {
   // The offline ones are drawn from `offline`, in their own group, which
   // carries its own count.
   const everything = tasks || [];
+  disambiguateTitles(everything);
   const all = everything.filter(t => !t.offline);
   const offline = everything.filter(t => t.offline);
   lastTasks = everything;
