@@ -169,11 +169,22 @@ function roomPickerRows() {
   ];
   for (const r of hubRooms) {
     const name = esc(r.name);
+    const q = name.replace(/'/g, "&#39;");
+    // A COG TO THAT ROOM'S OWN SETTINGS, on the live rows. `openRoomCog` is the
+    // rooms-tab's own opener: it scopes `/v1/settings` reads and writes to this
+    // room (board_skin, board auth and the rest) the same way selecting the room
+    // does, so this is the quick way into one room's settings without switching
+    // the whole board to it. A span and not a nested button, and it stops the
+    // click, for the same reasons the reject `x` below is drawn that way: a
+    // button inside a button is not markup a browser honours, and settling on a
+    // room's cog must never also be choosing to look at that room.
     rows.push(`<button class="${room === r.name ? "on" : ""}"
-      onclick="pickRoom('${name.replace(/'/g, "&#39;")}')">
+      onclick="pickRoom('${q}')">
         <span class="dot live"></span>
         <strong>${name}</strong>${r.host
-          ? `<span class="meta">${esc(r.host)}</span>` : ""}</button>`);
+          ? `<span class="meta">${esc(r.host)}</span>` : ""}
+        <span class="roomcog" title="settings for ${name}"
+          onclick="event.stopPropagation();openRoomCog('${q}')">&#9881;</span></button>`);
   }
   // Rooms that dialled in before and are not attached now. Listed after the live
   // ones and dimmed, because the board handles an offline room by showing what it
