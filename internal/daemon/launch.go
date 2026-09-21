@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -719,7 +718,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	onto := task != nil
 	claimed := task != nil && task.WireName == ""
 	if agentName == "" {
-		agentName = fmt.Sprintf("%s-%d", filepath.Base(cwd), time.Now().UnixNano()%100000)
+		agentName = d.launchedName(req.Title, cwd)
 	}
 	switch {
 	case task == nil:
@@ -929,6 +928,84 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 
 	d.publishTask(created.ID)
 	return d.st.Get(created.ID)
+}
+
+// launchedName is the wire name a launched runner reports itself under.
+//
+// PREFER THE TITLE, THEN DISAMBIGUATE. The board shows a card's title, and a
+// launcher that passed one has already said what to call this work. A name
+// slugged from that title reads the same as the card. The old fallback -- the
+// directory leaf with a random number stapled on -- did not: it produced
+// `unique-names-84523`, matched nothing on the board, and changed every launch,
+// so a session had no stable handle a peer could name. With no title the
+// directory leaf is the base, which is what a session joining on its own would
+// have called itself.
+//
+// UNIQUE AGAINST WHAT IS LIVE, not against everything ever registered. A wire
+// name is the key registration matches on, so two live sessions sharing one
+// silently hand the second the first's card, its history and its permission
+// rules (see store/tenant.go). A dead card's name is free to take back:
+// relaunching into the same worktree should land on the same name and the same
+// card, which is the point of a stable, title-derived name.
+func (d *Daemon) launchedName(title, cwd string) string {
+	return launchedName(title, cwd, d.wireNameTaken())
+}
+
+// wireNameTaken reports, for a local name, whether a live session already wears
+// it. Compared against LocalName because the argument is the unqualified name a
+// launch is about to hand out, while a stored wire name carries this atrium's
+// tenant prefix.
+func (d *Daemon) wireNameTaken() func(string) bool {
+	taken := map[string]bool{}
+	if tasks, err := d.st.List(); err == nil {
+		for _, t := range tasks {
+			if d.runnerIsLive(t) {
+				taken[store.LocalName(t.WireName)] = true
+			}
+		}
+	}
+	return func(name string) bool { return taken[name] }
+}
+
+// launchedName is the testable core of the method above: base from the title
+// when there is one, otherwise the directory leaf, then a numeric suffix until
+// nothing live holds it.
+func launchedName(title, cwd string, taken func(string) bool) string {
+	base := nameSlug(title)
+	if base == "" {
+		base = filepath.Base(cwd)
+	}
+	name := base
+	for n := 2; taken(name); n++ {
+		name = fmt.Sprintf("%s-%d", base, n)
+	}
+	return name
+}
+
+// nameSlug reduces a launch title to something usable as a wire name: lower
+// case, runs of anything else collapsed to a single dash, capped so a sentence
+// of a title does not become a sentence of a name. Empty when the title has no
+// usable characters, which is the signal to fall back to the directory leaf.
+func nameSlug(title string) string {
+	const max = 40
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(title)) {
+		if b.Len() >= max {
+			break
+		}
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			dash = false
+		default:
+			if !dash && b.Len() > 0 {
+				b.WriteByte('-')
+				dash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // launchFailed moves a card whose runner never got going, and records why.
