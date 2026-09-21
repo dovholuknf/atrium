@@ -1795,6 +1795,50 @@ function resyncCursorAfterFlip() {
   });
 }
 
+// A TAB RETURN CAN REFLOW THE GRID THE SAME WAY A ROOM FLIP DOES, and it leaves
+// the cursor misplaced for the same reason. clint hit this switching browser
+// tabs away from an attached sg4 pane and back: the typed input garbled again,
+// a different trigger from the room flip already fixed above.
+//
+// The mechanism is the one `cursor_refit_test.go` pins. A re-fit that changes
+// cols/rows reflows xterm's buffer and moves the cursor against it, and a viewer
+// that is not the binding one gets no SIGWINCH, so the runner never repaints and
+// the old cursor sits against a reflowed grid. While the tab is hidden the box
+// can change under it (the window resized behind it, a scrollbar came or went)
+// and the layout only flushes on return, so the fit that reflows runs as the tab
+// becomes visible rather than while it was away.
+//
+// So remember the grid on the way out, and on the way back settle the box
+// through `onTermResize` (which skips a no-op fit via `paneBoxUnchanged`, so a
+// return that changed nothing does nothing) and re-attach ONCE, the way a flip
+// does, only when the grid actually moved. The grid-change gate is what keeps an
+// ordinary glance-away-and-back from re-attaching the pane for no reason: no
+// reflow, no garble, no resync. It shares `resyncCursorAfterFlip`'s one-shot
+// gate, so a flip and a tab return that land together still re-attach once, and
+// it is skipped in a solo window for the same reason the flip is: solo owns its
+// own reconnect. HUB-ONLY: the reflow and its cure are both board-side, and the
+// daemon replay it leans on is the same one an initial attach already runs.
+let preHideGrid = "";
+function onTabVisibility() {
+  if (document.visibilityState !== "visible") {
+    preHideGrid = term ? term.cols + "x" + term.rows : "";
+    return;
+  }
+  const was = preHideGrid;
+  preHideGrid = "";
+  if (!was || termOnly() || !term || !termTask) return;
+  // A frame later, so the return's own re-render and the ResizeObserver fit have
+  // a chance to run first, then force the fit ourselves in case the observer has
+  // not fired yet. `onTermResize` is idempotent and box-gated, so calling it
+  // here costs nothing when the box did not move.
+  requestAnimationFrame(() => {
+    if (termOnly() || !term || !termTask) return;
+    onTermResize();
+    if (term.cols + "x" + term.rows !== was) resyncCursorAfterFlip();
+  });
+}
+document.addEventListener("visibilitychange", onTabVisibility);
+
 function retagTermId(id) {
   if (!termTask || !id || id === termTask.id) return;
   const was = termTask.id;

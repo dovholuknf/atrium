@@ -201,6 +201,17 @@ if ! node "$here/scripts/test-term-retag.js"; then
   fail=1
 fi
 
+# The tab-return cursor guard, RUN against a visibility toggle. The SAME reflow
+# that garbles input on a room flip also happens when a browser tab is hidden and
+# comes back: a box change that landed while the tab was away flushes to a re-fit
+# on return, reflows the grid, and a non-binding viewer is left showing its old
+# cursor. This asserts a return that reflowed the grid re-attaches once, a return
+# that changed nothing does not, and a solo window is skipped.
+if ! node "$here/scripts/test-term-tabreturn.js"; then
+  echo "a tab return would leave the terminal cursor misplaced. see above." >&2
+  fail=1
+fi
+
 # The refresh-storm guard, RUN against a simulated flap storm. A room that
 # attaches and detaches every few seconds used to make the board answer every
 # flip with a fresh fan-out of fetches, until the tab emptied its socket pool
