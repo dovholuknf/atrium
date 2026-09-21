@@ -18,6 +18,19 @@ type Harness struct {
 	Label   string            `json:"label"`
 	Enabled bool              `json:"enabled"`
 	Cmd     string            `json:"cmd"`
+	// BinPath is an explicit path to this runner's binary on THIS room, used
+	// instead of resolving Cmd against the room process PATH.
+	//
+	// PATH is not enough on its own. A runner can be installed on a machine and
+	// still be invisible to the room because the directory it landed in was not
+	// on the PATH the room process was started with, which is exactly what
+	// happened on sgg: claude installed to a user bin dir the room could not
+	// see, and the only fix was relaunching the room with PATH patched. An
+	// explicit path is the per-room "configured as to what it supports" answer,
+	// and it makes availability reliable: the question becomes whether this
+	// path exists on this room rather than whether a name resolves. Empty means
+	// fall back to PATH resolution of Cmd. See docs/runner-scoping-design.md.
+	BinPath string            `json:"bin_path"`
 	Args    []string          `json:"args"`
 	Cwd     string            `json:"cwd"`
 	Env     map[string]string `json:"env"`
@@ -188,7 +201,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -227,7 +240,7 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args, bracketed_paste, package`
+	model_args, bracketed_paste, package, bin_path`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -332,7 +345,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			bracketed = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -342,11 +355,11 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				sort = excluded.sort, prompt_args = excluded.prompt_args,
 				model_args = excluded.model_args,
 				bracketed_paste = excluded.bracketed_paste,
-				package = excluded.package`,
+				package = excluded.package, bin_path = excluded.bin_path`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
-			bracketed, strings.TrimSpace(h.Package))
+			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath))
 		return err
 	})
 	if err != nil {
@@ -389,6 +402,17 @@ func (h *Harness) ExitBytes() [][]byte {
 		}
 	}
 	return out
+}
+
+// Exe is the command to actually run: the explicit BinPath when set, otherwise
+// Cmd for the caller to resolve against PATH. An explicit path is used verbatim,
+// which is what lets a runner start on a room where its binary is installed but
+// not on the room process PATH. See docs/runner-scoping-design.md.
+func (h *Harness) Exe() string {
+	if p := strings.TrimSpace(h.BinPath); p != "" {
+		return p
+	}
+	return h.Cmd
 }
 
 func orEmptySlice(v []string) []string {
