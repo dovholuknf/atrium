@@ -185,12 +185,20 @@ function roomPickerRows() {
     if (r.name === room) continue;
     if (hubRooms.some(h => h.name === r.name)) continue;
     const name = esc(r.name);
+    const q = name.replace(/'/g, "&#39;");
+    // A REJECT AFFORDANCE, ON A NOT-ATTACHED ROW ONLY. A stale or duplicate
+    // record sits here with nothing to remove it, so this culls it from the
+    // hub. It is a plain element rather than a nested button, because a button
+    // inside a button is not markup a browser will honour, and it stops the
+    // click so choosing to forget a room is never also choosing to look at it.
     rows.push(`<button class="cold"
-      onclick="pickRoom('${name.replace(/'/g, "&#39;")}')">
+      onclick="pickRoom('${q}')">
         <span class="dot"></span>
         <strong>${name}</strong>
         <span class="meta">disconnected${r.last_seen
-          ? " &middot; " + esc(shortTime(r.last_seen)) : ""}</span></button>`);
+          ? " &middot; " + esc(shortTime(r.last_seen)) : ""}</span>
+        <span class="roomx" title="forget ${name}, removing this stale room from the hub"
+          onclick="event.stopPropagation();rejectRoom('${q}')">&times;</span></button>`);
   }
   // A room that was chosen and has since gone. Kept in the list so there is
   // something to click your way out of.
@@ -650,6 +658,39 @@ async function markRoom(name, marked) {
   } catch (e) { tellUser("rooms", e.message); return; }
   hubRead = 0;
   await loadHubRooms();
+  renderRooms();
+}
+
+// rejectRoom culls a stale or duplicate room record from the hub's picker.
+//
+// FORGET, NOT BAN, and the confirm says so: the record goes, the machine is
+// untouched, and a room still running `atrium2 join` writes itself back down
+// and reappears. The hub refuses an attached room by name, so this is offered
+// only on a not-attached row, and any refusal it does answer with is shown as
+// the sentence the hub sent rather than a generic apology.
+//
+// Named apart from runners.js `forgetRoom`, which drops a legacy `/v1/rooms`
+// federation record on the room daemon. This is the hub's own known-set, at
+// `/_hub/inventory/forget`, and the two must not be confused.
+async function rejectRoom(name) {
+  if (!await confirmUser("forget " + name + "?",
+    "It comes off this hub's picker now. Nothing on that machine changes, and this is not a " +
+    "block: if it is still running atrium it writes itself back down and reappears. Use this " +
+    "for a stale or duplicate record of a machine that has gone.",
+    "forget it")) return;
+  try {
+    const got = await plainFetch("/_hub/inventory/forget", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name })
+    });
+    if (!got.ok) {
+      const why = await got.json().catch(() => ({}));
+      throw new Error(why.error || "the hub refused that");
+    }
+  } catch (e) { tellUser("rooms", e.message); return; }
+  hubRead = 0;
+  await loadHubRooms();
+  refreshRoomsMenu();
   renderRooms();
 }
 

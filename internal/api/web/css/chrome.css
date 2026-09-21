@@ -160,6 +160,18 @@
     font: 500 var(--fs-sm)/1 var(--mono); color: var(--dim); white-space: nowrap;
   }
   .rooms-menu .none { padding: var(--sp-4); font-size: var(--fs-sm); color: var(--dim); line-height: 1.5; }
+  /* The reject affordance on a not-attached row. Dim until the row is hovered,
+     so it is out of the way of the ordinary click and there to reach for when
+     wanted. It carries its own hover so the target it hits is obvious, and it
+     turns danger-coloured because forgetting a room is the destructive one. */
+  .rooms-menu button .roomx {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: 0; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomx { opacity: .7; }
+  .rooms-menu button .roomx:hover { opacity: 1; color: var(--danger); background: var(--chip); }
 
   /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.
      A runner, a fixture, a source, a recogniser and an action all belong to one machine, so looking at several
