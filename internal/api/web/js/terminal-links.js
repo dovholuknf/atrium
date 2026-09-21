@@ -1506,12 +1506,19 @@ function sendResize() {
 // property of the screen somebody is reading, not of the work, so it has no
 // business travelling to another machine or being served to a guest holding a
 // share of one session.
+//
+// AND NOT ONE SIZE ACROSS A DESKTOP AND A PHONE. The size is the screen's, and
+// a phone is a different screen: a font read comfortably on a wide monitor drew
+// the runner's output about half again too big on a phone, because the two were
+// sharing one stored number. `termDeviceKey` puts the phone's answer under its
+// own key, so each screen keeps the size it was last read at and neither writes
+// over the other.
 const TERM_FONT_DEFAULT = 14;
 const TERM_FONT_MIN = 8;
 const TERM_FONT_MAX = 32;
 let termFontSize = TERM_FONT_DEFAULT;
 
-const termFontKey = (id) => "atrium.termfont." + id;
+const termFontKey = (id) => termDeviceKey("atrium.termfont." + id);
 
 // What this card's terminal was last read at, or the default.
 //
