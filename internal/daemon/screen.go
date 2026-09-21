@@ -315,8 +315,65 @@ func (s *screen) fromAlt() {
 // padding and trailing blank rows. Emit colour only when it changes and
 // reset it at line endings.
 func (s *screen) text() string {
+	body, _, _, _ := s.render()
+	return body
+}
+
+// textWithCursor is text() plus a trailing move that leaves the terminal's
+// cursor where the SESSION left its own, which is what the replay owes an
+// attaching viewer.
+//
+// The renderer reconstructs every cell and then the terminal sits its cursor at
+// the end of the last line it was handed. A terminal user interface does not
+// leave its cursor there: it parks it in its input box, some rows up from the
+// bottom-most output and at a column it worked out. Without this, the first
+// character the operator types echoes at the end of the output instead, and the
+// pane reads as corrupt.
+//
+// The move is RELATIVE, from the resting position at the bottom, because the
+// transcript is appended to whatever scrollback the terminal already holds and
+// there is no absolute row to aim at. That is safe precisely because a live
+// cursor sits within a screenful of the end: it is never up in the history that
+// has already scrolled past, so walking it up from the bottom always reaches
+// it. See `TestReplayRestoresTheCursor`.
+//
+// Until 8400fa8 this was done for free by the resize every attach performed:
+// the SIGWINCH made the runner repaint, and the repaint carried an absolute
+// cursor move. Once an attach at an unchanged size stopped resizing, the repaint
+// stopped coming, and restoring the cursor became the replay's own job.
+func (s *screen) textWithCursor() string {
+	body, curLine, total, ok := s.render()
+	if !ok {
+		return body
+	}
+	var b strings.Builder
+	b.WriteString(body)
+	// The terminal rests one line below the last emitted row, at column zero.
+	// Walk up to the cursor's row and across to its column.
+	if up := total - curLine; up > 0 {
+		b.WriteString("\x1b[" + strconv.Itoa(up) + "A")
+	}
+	b.WriteString("\r")
+	if s.col > 0 {
+		b.WriteString("\x1b[" + strconv.Itoa(s.col) + "C")
+	}
+	return b.String()
+}
+
+// render is text() plus where the cursor ended up: the emitted-line index of
+// the row the session's cursor is on, the number of lines emitted, and whether
+// the cursor is on emitted content at all. The cursor line is tracked through
+// the same trimming and blank-collapse the body goes through, since a naive
+// map from grid row to output line is wrong the moment either fires.
+//
+// `ok` is false when the cursor is below the last emitted row, which is a fresh
+// prompt with nothing under it: the resting position is already right and no
+// move is owed.
+func (s *screen) render() (body string, curLine, total int, ok bool) {
 	var b strings.Builder
 	rows := append(append([][]cell{}, s.history...), s.cells...)
+	// Where the session's cursor sits in the combined rows.
+	curRow := len(s.history) + s.row
 
 	// Drop blank lines at the very end. A screen is mostly empty and its
 	// padding is not part of what was said.
@@ -349,13 +406,28 @@ func (s *screen) text() string {
 	cur := ""
 	for i := 0; i <= last; i++ {
 		r := rows[i]
+		skip := false
 		if rowIsBlank(r) {
 			blanks++
 			if blanks > 1 {
-				continue
+				skip = true
 			}
 		} else {
 			blanks = 0
+		}
+		// The cursor's row, mapped to the line it is emitted on. A collapsed
+		// blank folds onto the one blank line its run kept.
+		if i == curRow {
+			if skip {
+				if total > 0 {
+					curLine, ok = total-1, true
+				}
+			} else {
+				curLine, ok = total, true
+			}
+		}
+		if skip {
+			continue
 		}
 		end := len(r)
 		for end > 0 && r[end-1].ch == ' ' || (end > 0 && r[end-1].ch == 0) {
@@ -382,8 +454,9 @@ func (s *screen) text() string {
 			cur = ""
 		}
 		b.WriteString("\r\n")
+		total++
 	}
-	return b.String()
+	return b.String(), curLine, total, ok
 }
 
 // apply feeds bytes into the screen model. Skip unsupported sequences
