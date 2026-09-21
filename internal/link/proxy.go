@@ -858,6 +858,29 @@ type Inventory interface {
 	// off, which is how the board's ALL view lands the toggle somewhere instead
 	// of being refused for want of a room.
 	SetBoardAuto(on bool, until *time.Time) error
+	// ShareAuth reports the login a PUBLIC zrok board share is created behind:
+	// the scheme ("updb", "oidc" or "" for none), the updb username and
+	// password, and the oidc provider. Board policy, so the hub's to hold, the
+	// same as the skin and the board-wide flag. See `hubSettings` in fanout.go
+	// and `docs/ziti-zrok-flow-design.md`.
+	ShareAuth() (ShareAuth, error)
+	// SetShareAuth writes that login, which is how the settings screen's share
+	// user/pass field lands somewhere. The password is written only when a new
+	// one is given, so a save that leaves the box blank keeps the stored one.
+	SetShareAuth(a ShareAuth) error
+}
+
+// ShareAuth is the public-share login the hub holds, mirrored from
+// `internal/hubstore.ShareAuth` so `internal/link` needs no import of the store.
+// The hub's inventory adapts between the two.
+type ShareAuth struct {
+	// Scheme is "updb", "oidc" or "" (none).
+	Scheme string
+	// User and Pass are the zrok updb credential, for the "updb" scheme.
+	User string
+	Pass string
+	// OIDCProvider is the zrok OIDC provider name, for the "oidc" scheme.
+	OIDCProvider string
 }
 
 // SetInventory wires the durable room list up. Optional.
