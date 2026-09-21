@@ -62,36 +62,44 @@
     .matchcount { margin-left: 0; }
     .seg { flex-wrap: wrap; }
 
-    /* The terminal takes the whole screen, with its session list above it
-       rather than beside it. The layout still fills the window, so the pane
-       gets whatever the list leaves. */
+    /* On a phone the session list IS the terminals view. It fills the space and
+       scrolls down, with its own header and the group toolbar at the top where
+       they belong.
+
+       This used to be a horizontal strip: `flex-direction: row`, on the idea
+       that the terminal took the screen and the list was a thin band of cards
+       above it. That held while the list was a flat row of cards. It is not one
+       any more: it grew a sort header, a `group` toolbar, a pinned bucket and a
+       nested tree of headings, and laid out sideways those stack ACROSS the
+       screen instead of down it. The two header bars and the toolbar alone are
+       wider than a phone, so every card was pushed off the right edge and the
+       tab rendered blank with the toolbar stranded mid-screen. Down the page,
+       the same markup that works on the desktop works here. */
     .term-layout { flex-direction: column; }
-    /* The gap comes BACK here, and only here. In the column layout it is off,
-       because spacing every child equally paid the same distance between a
-       heading and its own first row as between two unrelated repos, and
-       `.tnest` carries that space instead. Laid out as a row there are no
-       nests to carry it: the cards are siblings in a strip and without this
-       they butt together. */
     .term-list {
-      flex: 0 0 auto; flex-direction: row; max-height: none; gap: var(--sp-3);
-      overflow-x: auto; overflow-y: hidden; padding-bottom: 4px;
+      flex: 1 1 auto; flex-direction: column; width: 100%;
+      min-height: 0; max-height: none; overflow-x: hidden; overflow-y: auto;
+      padding: 3px 3px 6px;
     }
-    /* The width, the handle and the slide-over all answer the list being a
-       column beside the terminal. Here it is a row above it, so all three are
-       undone, and a stored width from a wide window must not survive into this
-       layout. */
-    .term-layout.tl-off .term-list,
-    .term-layout.tl-mini .term-list {
-      position: static; transform: none; width: auto; flex-basis: auto;
-      box-shadow: none; background: none; border: 0; padding: 3px 3px 6px;
-    }
-    .tl-mini .tname { display: inline; }
-    .tl-mini .tshort, .term-grip, .term-rail, .tl-off .term-rail { display: none; }
-    .tl-mini .term-list .card .title { display: -webkit-box; text-align: left; }
-    .tl-mini .term-list .card .title .rmark { display: inline-block; margin: 0 4px 0 0; }
-    /* No gutter to cross when the list is a row above the terminal. */
+    /* The resize handle and the slide-over rail both answer a list laid out
+       BESIDE the terminal, which is a shape a phone never takes. `mini` and
+       `off`, the two modes they reach, are held off the layout at this width in
+       `applyTermList`, so there is nothing here to undo: only the two controls
+       are hidden, since a full-width vertical list has no gutter to drag and no
+       edge to hover. */
+    .term-grip, .term-rail { display: none; }
+    /* Nothing attached: the list is the whole view. The empty pane, which shows
+       only a `nothing attached` bar, must not sit under it taking half the
+       screen the way it did when the list was pushed off to the side. */
+    .term-layout:not(.has-term) .term-pane { display: none; }
+    .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
+    /* Attached: the terminal takes over and the list becomes a short scroller
+       above it, so picking another session, or getting back to the list, is
+       still there without leaving the view. */
+    .term-layout.has-term .term-list { flex: 0 0 auto; max-height: 40vh; }
+    .term-layout.has-term .term-pane { flex: 1 1 auto; min-height: 0; }
+    /* No gutter to cross when the list is stacked above the terminal. */
     .tabbridge { display: none; }
-    .term-list .card { flex: 0 0 auto; min-width: 190px; }
     .term-bar { gap: var(--sp-3); padding: 8px 10px; }
     /* The name truncates rather than taking a row of its own. `width: 100%`
        suits a phone, where a bar is a stack, but a popped-out window is 894px

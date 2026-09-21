@@ -427,6 +427,69 @@ async function main() {
     }
     tasksMode = "first";
 
+    // ── the terminals tab is not blank at phone width ───────────────────────
+    // THE BUG THIS SECTION EXISTS FOR. The terminals list used to lay itself out
+    // as a horizontal strip on a phone, on the idea that it was a thin band of
+    // cards above the terminal. It stopped being a flat row of cards long ago:
+    // it grew a sort header, a `group` toolbar, a pinned bucket and a nested
+    // tree of headings, and laid out sideways those stack ACROSS the screen. The
+    // two header bars and the toolbar alone are wider than a phone, so every
+    // card was pushed off the right edge and the tab rendered blank with the
+    // toolbar stranded mid-screen. This asserts, at 390px, that the list fills
+    // the view, the group toolbar sits at the top of it (not floating below a
+    // gap), and the cards are on-screen and stacked down the page.
+    await page.setViewportSize({ width: 390, height: 780 });
+    tasksMode = "pinned";
+    resetPin();
+    await page.click('.tab[data-view="terms"]');
+    await page.evaluate(() => renderTermList());
+    await page.waitForSelector('#term-list .card.tab[data-id="pin1"]',
+      { state: "visible", timeout: 15000 });
+    const phoneTerm = await page.evaluate(() => {
+      const vw = window.innerWidth;
+      const list = document.getElementById("term-list");
+      const lr = list.getBoundingClientRect();
+      const groups = document.querySelector("#term-list .termgroups");
+      const gr = groups ? groups.getBoundingClientRect() : null;
+      const cards = [...document.querySelectorAll("#term-list .card.tab")]
+        .map(c => c.getBoundingClientRect());
+      const first = cards[0] || null;
+      return {
+        vw,
+        listFills: lr.height,
+        // Every card's right edge is within the viewport, so none is pushed off
+        // the side the way the horizontal strip pushed all of them.
+        cardsOnScreen: cards.length > 0 &&
+          cards.every(r => r.left >= -1 && r.right <= vw + 1),
+        // The group toolbar is above the first card, at the top of the list,
+        // rather than stranded in the blank space the missing cards left.
+        groupsAboveCards: !!(gr && first && gr.top <= first.top + 1),
+        // The document itself does not scroll sideways.
+        docScroll: document.documentElement.scrollWidth <= vw + 1
+      };
+    });
+    if (!phoneTerm.cardsOnScreen) {
+      fail("the terminals list drew cards off-screen at 390px: the list is laid " +
+        "out sideways and the cards are pushed past the right edge, which is the " +
+        "blank-tab bug.");
+    }
+    if (!phoneTerm.groupsAboveCards) {
+      fail("the group toolbar is not at the top of the terminals list at 390px: " +
+        "it is stranded in the blank space the off-screen cards left behind.");
+    }
+    if (phoneTerm.listFills < 200) {
+      fail("the terminals list did not fill the view at 390px (height " +
+        Math.round(phoneTerm.listFills) + "px): it collapsed instead of taking the pane.");
+    }
+    if (!phoneTerm.docScroll) {
+      fail("the terminals tab made the document scroll sideways at 390px.");
+    }
+    // Put the width, the view and the data back for the sections below.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    tasksMode = "first";
+    await page.click('.tab[data-view="stack"]');
+    await page.waitForSelector('#stack-list .stackrow', { timeout: 15000 });
+
     // ── a hung fetch does not blank the board, and a later refresh repaints ─
     // Back on the stack, make /v1/tasks hang, then drive one refresh through the
     // single-flight guard. The pass wedges on the hung fetch.
