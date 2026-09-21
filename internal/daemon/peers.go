@@ -419,9 +419,10 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if d.bracketedPasteFor(target.ID, false) {
 		body = "\x1b[200~" + text + "\x1b[201~"
 	}
-	// The state check and the write are one locked section inside injectPeer,
-	// so a keystroke cannot slip between "the line is clear" and the typing and
-	// leave a peer message tangled into what the operator was composing.
+	// injectPeer refuses a part written line and drops the closing Enter if the
+	// operator starts a line while it sends, so a keystroke can never leave a
+	// peer message tangled into what the operator was composing. It does this
+	// without ever blocking that keystroke. See injectPeer.
 	room, wrote, err := run.injectPeer(peerBanner(from), body)
 	if err != nil || !wrote {
 		return false, ""

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
@@ -646,6 +647,14 @@ type runner struct {
 	// IS THE OPERATOR PART WAY THROUGH SOMETHING. Two facts, kept here rather
 	// than in the browser.
 	//
+	// UNDER `typeMu`, NOT `r.mu`, and that split is the whole input-lag fix. The
+	// operator's keystroke path (`noteOperatorTyped`) touches only these two
+	// fields, so it must never wait behind anything that holds `r.mu` or behind a
+	// peer injection typing a message into the terminal. Giving the typing state
+	// its own small lock means a human keystroke is recorded immediately whatever
+	// else is going on, which is what the operator sitting at the keyboard feels.
+	// See `noteOperatorTyped`, `howBusy` and `injectPeer`.
+	//
 	// `midLine` is whether keystrokes have arrived since the last thing that
 	// ends a line, and `lastTyped` is when the most recent one landed. Between
 	// them they answer the only question that decides whether another session
@@ -664,13 +673,27 @@ type runner struct {
 	// mid-thought, and only their own keystrokes answer it. Reading the
 	// runner's output to guess at this is the line `B2-20` declines to cross,
 	// and it would be a guess where this is a record.
+	typeMu    sync.Mutex
 	midLine   bool
 	lastTyped time.Time
+	// injectMu serializes peer injections against each other, so two peers do
+	// not interleave their banners and bodies into the pty. It is DELIBERATELY
+	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
+	// that were `r.mu` the pause would stall output `fanout` and, before the
+	// typing state moved to `typeMu`, every operator keystroke. This lock is
+	// contended only by other injections, which are rare and already serial in
+	// spirit. See `injectPeer`.
+	injectMu sync.Mutex
 	// echoPeers turns on shared multi-pane input: keystrokes from one attach
 	// are mirrored display-only to the other attaches of this runner. OFF by
 	// default, because an unconditional echo doubles every character in a cooked
 	// shell. See `setEchoPeers` and `echoToPeers`.
-	echoPeers bool
+	//
+	// AN ATOMIC so the common OFF case costs a single load and never takes
+	// `r.mu`. `echoToPeers` is on the operator's keystroke path (one call per
+	// keystroke), and a plain bool under `r.mu` there would put every keystroke
+	// behind whatever else holds `r.mu`, which is the lag this fix removes.
+	echoPeers atomic.Bool
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -798,8 +821,10 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// typeMu, not r.mu: a human keystroke's bookkeeping must never wait behind a
+	// peer injection or output fanout. See the runner struct's typeMu note.
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
 	r.lastTyped = time.Now()
 	for _, b := range p {
 		switch b {
@@ -844,16 +869,12 @@ const (
 	peerMidLine
 )
 
+// Reads the typing state under typeMu, the same small lock noteOperatorTyped
+// writes it under, so this can be asked at any moment without contending with a
+// peer injection or output fanout.
 func (r *runner) howBusy() peerRoom {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.howBusyLocked()
-}
-
-// howBusyLocked is howBusy with r.mu already held, so a decision to type and
-// the typing itself can happen without releasing the lock in between. See
-// injectPeer.
-func (r *runner) howBusyLocked() peerRoom {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
 	if r.midLine {
 		return peerMidLine
 	}
@@ -866,31 +887,38 @@ func (r *runner) howBusyLocked() peerRoom {
 // injectPeer writes a peer's message into the terminal, and reports the state
 // it found and whether it wrote.
 //
-// THE CHECK AND THE WRITE ARE ONE LOCKED SECTION, which is the fix. howBusy
-// used to read `midLine` under the lock, release it, and only then write, so a
-// keystroke arriving on the attach goroutine between the two could turn a line
-// the operator was composing into one a peer message typed into and submitted.
-// `Say` widened that window with its pause before Enter. Holding r.mu across
-// both means `noteOperatorTyped` cannot record a keystroke mid-injection: the
-// operator's bytes queue behind the lock and land after this message, on a
-// fresh line, rather than tangled into it.
+// THE OPERATOR WINS AND NEVER WAITS. An earlier fix made the midLine check and
+// the write one locked section under r.mu, so a keystroke could not slip
+// between them. That closed the tangling race but coupled it to r.mu, and this
+// function holds its lock across a sayThenEnter pause: every operator keystroke
+// (which then took r.mu in noteOperatorTyped) blocked for up to that pause
+// while a peer message was being injected. On the busiest peer-message sink,
+// the orchestrator's own pane, it was a measured ~130ms hitch per injection.
+//
+// So the typing state moved to its own typeMu and this holds injectMu, which
+// nothing on the keystroke or output path touches. The keystroke is recorded at
+// once. The tangling race is now closed the other way, in the operator's
+// favour:
 //
 //   - peerMidLine: a part written line. Refused, and nothing is written. The
 //     caller queues instead.
 //   - peerWatching: somebody there but between lines. The text is left in the
 //     prompt, unsent.
-//   - peerFree: nobody typing. The text is typed and Enter is pressed.
+//   - peerFree: nobody typing. The text is typed, and Enter is pressed ONLY if
+//     the operator has not started a line during the pause. If they have, the
+//     peer text stays in the prompt unsent (reported as peerWatching) rather
+//     than this Enter submitting a line tangled with what they just typed.
 //
-// The banner carries no carriage return (see peerBanner), so even in the
-// window this closes a peer message can never submit a line for the operator.
+// The banner carries no carriage return (see peerBanner), so the body sitting
+// in the prompt can never submit on its own.
 func (r *runner) injectPeer(banner, body string) (peerRoom, bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	room := r.howBusyLocked()
+	r.injectMu.Lock()
+	defer r.injectMu.Unlock()
+	room := r.howBusy()
 	if room == peerMidLine {
 		return room, false, nil
 	}
-	// r.Write does not take r.mu, so calling it while the lock is held is safe.
+	// r.Write goes straight to the pty and takes no runner lock.
 	if err := r.Write([]byte(banner + body)); err != nil {
 		return room, false, err
 	}
@@ -898,6 +926,12 @@ func (r *runner) injectPeer(banner, body string) (peerRoom, bool, error) {
 		// The pause is what separates the text from the Enter, so a TUI reads
 		// the Enter as the key that submits rather than as pasted text. See Say.
 		time.Sleep(sayThenEnter)
+		// The operator wins. A keystroke landing during the pause makes the line
+		// theirs, so the peer text waits in the prompt instead of this Enter
+		// submitting it tangled with what they typed.
+		if r.howBusy() == peerMidLine {
+			return peerWatching, true, nil
+		}
 		if err := r.Write([]byte("\r")); err != nil {
 			return room, false, err
 		}
@@ -1101,9 +1135,7 @@ func (r *runner) fanout(chunk []byte) {
 // bare shell would double every character. The operator turns this on for a
 // terminal they know is a raw-mode agent, and it covers every pane on it.
 func (r *runner) setEchoPeers(on bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.echoPeers = on
+	r.echoPeers.Store(on)
 }
 
 // echoToPeers mirrors one pane's keystrokes, display-only, to the OTHER panes.
@@ -1124,11 +1156,14 @@ func (r *runner) echoToPeers(chunk []byte, self chan []byte) {
 	if len(chunk) == 0 {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.echoPeers {
+	// The OFF check first and WITHOUT r.mu, so the default path off every
+	// keystroke is one atomic load. Only when the mode is on does this take r.mu,
+	// which it must to read the watcher set. See the echoPeers struct note.
+	if !r.echoPeers.Load() {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for ch := range r.watchers {
 		if ch == self {
 			continue
