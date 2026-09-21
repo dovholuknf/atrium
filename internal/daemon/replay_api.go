@@ -39,7 +39,7 @@ func Replay(b []byte, mode string, cols, rows int) []byte {
 	default:
 		sc := newScreenSized(cols, rows)
 		sc.apply(b)
-		return []byte(sc.text())
+		return []byte(sc.textWithCursor())
 	}
 }
 
