@@ -485,59 +485,79 @@ async function main() {
       fail("the terminals tab made the document scroll sideways at 390px.");
     }
 
-    // ── the phone split resizes, and its size does not touch the desktop ─────
-    // With a terminal attached the list and the pane are stacked and the grip
-    // between them drags the split. This attaches a stand-in terminal (the
-    // `has-term` class and a theme, which is what `paintPaneBg` sets on a real
-    // attach), checks the grip is now a visible row-resize handle, drives the
-    // split larger and smaller, and asserts the list height tracks it. The
-    // stored key is device-namespaced, so setting it on a phone writes
-    // `atrium.termsplit.mobile` and leaves the desktop `atrium.termsplit`
-    // untouched: a split dragged on a phone must not follow the board to a
-    // desktop, which is the isolation clint asked for.
-    await page.evaluate(() => {
-      localStorage.removeItem("atrium.termsplit");
-      localStorage.removeItem("atrium.termsplit.mobile");
-      document.getElementById("term-layout").classList.add("has-term");
-      paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" });
-    });
-    const split = await page.evaluate(() => {
-      const grip = document.getElementById("term-grip");
-      const gcs = getComputedStyle(grip);
-      const listH = () => document.getElementById("term-list").getBoundingClientRect().height;
-      const small = 120, large = 300;
-      setTermSplit(small); saveTermSplit();
-      const hSmall = listH();
-      setTermSplit(large); saveTermSplit();
-      const hLarge = listH();
+    // ── attached, the terminal is decoupled from the switcher ───────────────
+    // With a terminal attached the phone collapses the list to a one-row trigger
+    // and the terminal takes the rest. Opening the switcher must NOT resize the
+    // terminal: the sessions float OVER it (position: absolute), the way the
+    // desktop `off` flyout floats the list over the pane, so the terminal is a
+    // stable surface with no shared split to drag. `paintPaneBg` with a theme is
+    // what a real attach runs, and it is what sets `has-term`. The filters
+    // button folds the sort and grouping controls away until asked for.
+    await page.evaluate(() =>
+      paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }));
+    const decoupled = await page.evaluate(() => {
+      const layout = document.getElementById("term-layout");
+      const paneH = () => document.getElementById("term-pane").getBoundingClientRect().height;
+      const drop = document.querySelector("#term-list .termdrop");
+      const dropShown = drop && getComputedStyle(drop).display !== "none";
+      const bodyDisp = () => {
+        const b = document.querySelector("#term-list .termbody");
+        return b ? getComputedStyle(b).display : "missing";
+      };
+      const bodyPos = () => {
+        const b = document.querySelector("#term-list .termbody");
+        return b ? getComputedStyle(b).position : "missing";
+      };
+      const headShown = () => {
+        const h = document.querySelector("#term-list .termbody .termhead");
+        return h ? getComputedStyle(h).display !== "none" : false;
+      };
+      // Collapsed to begin with: the body hidden, the terminal at full height.
+      setTermListOpen(false);
+      const collapsedBody = bodyDisp();
+      const paneCollapsed = paneH();
+      // Open the switcher: the body appears as an overlay, and the terminal keeps
+      // its height rather than shrinking under a split.
+      setTermListOpen(true);
+      const openBody = bodyDisp();
+      const openPos = bodyPos();
+      const paneOpen = paneH();
+      // Filters fold away until the button is on.
+      const headBefore = headShown();
+      toggleTermFilters();
+      const headAfter = headShown();
+      toggleTermFilters();
       return {
-        gripShown: gcs.display !== "none",
-        gripResize: gcs.cursor,
-        grew: hLarge > hSmall + 20,
-        mobileKey: localStorage.getItem("atrium.termsplit.mobile"),
-        desktopKey: localStorage.getItem("atrium.termsplit")
+        dropShown, collapsedBody, openBody, openPos,
+        paneStable: Math.abs(paneOpen - paneCollapsed) <= 2,
+        headHiddenByDefault: !headBefore, headShownAfterToggle: headAfter,
+        gripHidden: getComputedStyle(document.getElementById("term-grip")).display === "none"
       };
     });
-    if (!split.gripShown || split.gripResize !== "row-resize") {
-      fail("the split grip is not a visible row-resize handle at 390px with a " +
-        "terminal attached (display/cursor: " + split.gripShown + "/" + split.gripResize + ").");
+    if (!decoupled.dropShown) {
+      fail("the phone switcher trigger is not shown with a terminal attached.");
     }
-    if (!split.grew) {
-      fail("dragging the split larger did not grow the list: the grip is not " +
-        "driving the list/terminal height on a phone.");
+    if (decoupled.collapsedBody !== "none") {
+      fail("the phone switcher did not collapse with a terminal attached: the list " +
+        "body was " + decoupled.collapsedBody + ", not hidden behind the trigger.");
     }
-    if (!split.mobileKey) {
-      fail("the phone split was not stored under its device key (atrium.termsplit.mobile).");
+    if (decoupled.openBody === "none" || decoupled.openPos !== "absolute") {
+      fail("opening the phone switcher did not float the list over the terminal " +
+        "(body display " + decoupled.openBody + ", position " + decoupled.openPos + ").");
     }
-    if (split.desktopKey) {
-      fail("setting the split on a phone wrote the desktop key (atrium.termsplit): " +
-        "mobile layout settings must not touch the desktop's.");
+    if (!decoupled.paneStable) {
+      fail("opening the phone switcher resized the terminal: the two must be " +
+        "decoupled, with the list floating over a stable terminal, not tied by a split.");
     }
-    await page.evaluate(() => {
-      document.getElementById("term-layout").classList.remove("has-term");
-      paintPaneBg(null);
-      localStorage.removeItem("atrium.termsplit.mobile");
-    });
+    if (!decoupled.gripHidden) {
+      fail("the width grip is shown on a phone: there is no tied split to drag there.");
+    }
+    if (!decoupled.headHiddenByDefault || !decoupled.headShownAfterToggle) {
+      fail("the filters toggle does not fold the sort/grouping controls on a phone " +
+        "(hidden-by-default " + decoupled.headHiddenByDefault + ", shown-after-toggle " +
+        decoupled.headShownAfterToggle + ").");
+    }
+    await page.evaluate(() => { setTermListOpen(false); paintPaneBg(null); });
 
     // Put the width, the view and the data back for the sections below.
     await page.setViewportSize({ width: 1280, height: 800 });

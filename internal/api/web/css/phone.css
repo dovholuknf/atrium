@@ -81,43 +81,75 @@
       min-height: 0; max-height: none; overflow-x: hidden; overflow-y: auto;
       padding: 3px 3px 6px;
     }
-    /* The slide-over rail answers a list laid out BESIDE the terminal, which is
-       a shape a phone never takes, so it stays hidden. `mini` and `off`, the
-       modes it and the grip reach, are held off the layout at this width in
-       `applyTermList`. */
-    .term-rail { display: none; }
-    /* The grip is the SPLIT handle here. The list and the terminal are stacked,
-       not side by side, so the grip that dragged the width on a desktop drags
-       the height between them on a phone: up gives the terminal more, down gives
-       the list more. It shows only once a terminal is attached, since with
-       nothing attached the list is the whole view and there is nothing to
-       split. `touch-action: none` so the drag is a drag and not a page scroll. */
-    .term-grip { display: none; }
-    .term-layout.has-term .term-grip {
-      display: block; flex: 0 0 16px; align-self: stretch; width: 100%;
-      cursor: row-resize; touch-action: none;
-    }
-    /* A bar across the width for a handle that moves up and down. The base grip
-       draws a 2px line DOWN a narrow track; here the line lies across it, and
-       the invisible hit area is a tall full-width strip rather than a wide thin
-       one. */
-    .term-layout.has-term .term-grip::before { inset: -6px 0; }
-    .term-layout.has-term .term-grip::after { inset: 6px 42%; border-radius: 2px; }
-    /* Nothing attached: the list is the whole view. The empty pane, which shows
-       only a `nothing attached` bar, must not sit under it taking half the
-       screen the way it did when the list was pushed off to the side. */
-    .term-layout:not(.has-term) .term-pane { display: none; }
-    .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
-    /* Attached: the terminal takes over and the list is a scroller above it, at
-       whatever height the split was last dragged to. `--termsplit` is a px value
-       set by the grip and namespaced by device, so a split set on a phone is the
-       phone's and never follows the board to a desktop. With nothing dragged yet
-       the var is unset and the 40vh fallback is the first split. */
+    /* The rail and the grip both answer a list laid out BESIDE the terminal,
+       which is a shape a phone never takes. The rail (the way back from `off`)
+       and the width grip have nothing to drag when the list is stacked, and the
+       terminal is NOT tied to the list by a draggable split, so both stay
+       hidden. `mini` and `off`, the modes they reach, are held off the layout at
+       this width in `applyTermList`. */
+    .term-rail, .term-grip { display: none; }
+
+    /* ATTACHED: THE TERMINAL IS ITS OWN SURFACE, NOT TIED TO THE LIST.
+       The list collapses to the trigger bar and the terminal takes the rest, at
+       a size that does not change when the switcher opens or closes. Opening the
+       switcher floats the sessions OVER the terminal rather than resizing it,
+       which is the same model as the desktop `off` flyout: a list that slides
+       over the pane never re-fits xterm, so the terminal is a stable surface the
+       way a popped-out window is. There is no shared split to drag. */
     .term-layout.has-term .term-list {
-      flex: 0 0 var(--termsplit, 40vh); max-height: none;
-      min-height: 0; overflow-y: auto;
+      flex: 0 0 auto; position: relative; overflow: visible;
+      z-index: 2; background: var(--shell-0);
     }
     .term-layout.has-term .term-pane { flex: 1 1 auto; min-height: 0; }
+    /* The trigger is the one row always on screen once attached: the session's
+       name, a caret that opens the list, and the filters button. */
+    .term-layout.has-term .termdrop {
+      display: flex; align-items: center; gap: var(--sp-2);
+      min-height: 44px; box-sizing: border-box; padding: 2px;
+    }
+    .termdrop-cur {
+      flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2);
+      background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+      color: var(--head); padding: 8px 12px; min-height: 40px; cursor: pointer;
+    }
+    .termdrop-cur .tname {
+      flex: 1 1 auto; min-width: 0; text-align: left;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .termdrop-cur .caret { flex: none; transition: transform .15s ease; }
+    .term-layout.has-term.tl-open .termdrop-cur .caret { transform: rotate(180deg); }
+    .termfilters-btn {
+      flex: none; min-height: 40px; padding: 8px 12px;
+      background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+      color: var(--dim); cursor: pointer;
+    }
+    .term-layout.has-term.tf-open .termfilters-btn { color: var(--head); border-color: var(--blue); }
+
+    /* COLLAPSED: only the trigger. Everything the list draws lives in
+       `.termbody`, which is hidden until the caret opens it. */
+    .term-layout.has-term .termbody { display: none; }
+    /* OPEN: the sessions float over the terminal, anchored under the trigger, so
+       the terminal underneath is untouched. It scrolls on its own and stops well
+       short of the bottom so the terminal is never fully covered. */
+    .term-layout.has-term.tl-open .termbody {
+      display: block; position: absolute; top: 100%; left: 0; right: 0;
+      max-height: 70vh; overflow-y: auto; z-index: 40;
+      background: var(--shell-0); border: 1px solid var(--stroke-dim);
+      border-top: none; border-radius: 0 0 var(--r-lg) var(--r-lg);
+      box-shadow: 0 18px 40px rgba(var(--shadow-rgb), .45); padding: 6px;
+    }
+    /* FILTERS: the sort chip and the grouping toolbar are a row and a half of
+       controls that pushed the sessions off the bottom. They fold under the
+       `filters` button and appear only when it is on. */
+    .term-layout.has-term .termbody .termhead { display: none; }
+    .term-layout.has-term.tf-open .termbody .termhead { display: flex; }
+
+    /* Nothing attached: the list is the whole view, the trigger and the empty
+       pane both out of the way. The empty pane shows only a `nothing attached`
+       bar and must not take half the screen. */
+    .term-layout:not(.has-term) .term-pane { display: none; }
+    .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
+
     /* No gutter to cross when the list is stacked above the terminal. */
     .tabbridge { display: none; }
     .term-bar { gap: var(--sp-3); padding: 8px 10px; }

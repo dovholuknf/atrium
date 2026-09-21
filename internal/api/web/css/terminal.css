@@ -45,6 +45,14 @@
     min-height: var(--barh); box-sizing: border-box; flex: none;
   }
 
+  /* The phone switcher and its wrapper. On a desktop neither exists as far as
+     the layout is concerned: the trigger is hidden, and `.termbody` is
+     `display: contents`, so the head and the cards it wraps sit in the list
+     exactly as they did before the wrapper was added. The phone stylesheet
+     turns both on. */
+  .termdrop { display: none; }
+  .termbody { display: contents; }
+
   /* The drag handle. A handle you can see is not a handle you can hit, and a 2px target is one you miss. */
   /* Six pixels of track. The line inside it is 2px and the rest was dead space either side that read as a gap
      between the list and the terminal rather than as something to grab. The `::before` below widens the hit
