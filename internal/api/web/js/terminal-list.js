@@ -29,6 +29,67 @@ function termNarrow() {
 }
 function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 
+// ── hiding the agent-launched doers ──────────────────────────────────────────
+//
+// A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the same one
+// the launch cap counts: the `origin:agent` tag the hub stamps on every card it
+// starts through the launch API (see internal/link/control_mcp.go, OriginTag).
+// A human's own terminal, or one started from the board's launch dialog, self
+// registers and never carries it. Matched trimmed and case-insensitively,
+// exactly as the daemon's `hasOriginTag` does, so the board and the cap agree on
+// what a doer is rather than keeping a second definition that can drift. A tag,
+// not a dedicated field, because that is the durable structural signal the
+// board actually receives per card and the one the cap already trusts.
+const DOER_TAG = "origin:agent";
+function isDoer(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
+}
+
+// HIDE, NOT COLLAPSE-INTO-A-GROUP, and here is why the plainer of the two won.
+// A collapsed "N doers" group would have to be a heading, and the strip already
+// has two heading systems fighting for the top level (the path tree and the
+// grouper). A doer group under `by tag` or `by pile` lands a card in several
+// places at once, so "the doers" stops being one foldable thing. A flat hide
+// filters the input list before any of that runs, so it means the same thing in
+// every GROUP mode and on the phone: the doers are simply not in the list, and
+// a count in the header says how many.
+//
+// DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
+// wall-mounted board and a laptop want different answers and neither should
+// write over the other. Default off: nothing hides until asked.
+const HIDE_DOERS_KEY = "atrium.hidedoers";
+function hideDoersOn() {
+  try { return localStorage.getItem(termDeviceKey(HIDE_DOERS_KEY)) === "1"; }
+  catch (e) { return false; }
+}
+function setHideDoers(on) {
+  try { localStorage.setItem(termDeviceKey(HIDE_DOERS_KEY), on ? "1" : "0"); }
+  catch (e) {}
+  renderTermList();
+}
+function toggleHideDoers() { setHideDoers(!hideDoersOn()); }
+
+// THE HEADER TOGGLE, drawn beside `sorted by activity`. It is only rendered when
+// it does something: when there are doers to hide, or when hiding is already on
+// (so it can be turned back off). `n` is the count that would go, so a folded
+// state can say "12 doers hidden" and nothing feels lost.
+//
+// PINNED AND ATTACHED DOERS ARE NOT COUNTED HERE because they are never hidden
+// (see `renderTermList`): the number has to match what actually disappears or
+// the header lies about it.
+function termDoersToggleHTML(n) {
+  const on = hideDoersOn();
+  if (!on && n === 0) return "";
+  const word = n === 1 ? "doer" : "doers";
+  const label = on ? `${n} ${word} hidden` : `hide ${n} ${word}`;
+  const title = on
+    ? "agent-launched sessions are hidden. click to show them. your own terminals and any pinned doers stay either way"
+    : "hide the agent-launched sessions so your own terminals are not buried. pinned ones and whatever is attached stay";
+  return `<button class="termsort termdoers${on ? " on" : ""}"
+      onclick="toggleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
+}
+
 // ── the phone dropdown ───────────────────────────────────────────────────────
 //
 // On a phone the list is a switcher competing with the one thing you came for,
@@ -1072,8 +1133,21 @@ async function renderTermList() {
   // were already safe; this is about the pinned ones.
   const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned));
   // The badge counts what is actually attachable, since it is a count of live
-  // terminals rather than of rows.
+  // terminals rather than of rows. It counts over the WHOLE set, before the
+  // doers are hidden: the nav badge is a fact about the board, not about how
+  // this one screen chose to read the strip.
   badge("c-term", tasks.filter(t => t.supervised).length);
+
+  // HIDE THE DOERS, when asked. Agent-launched sessions are dropped from the
+  // strip so a human's own terminals are not buried under a wave of them. Two
+  // are kept even with hiding on: a PINNED doer, since pinning is the operator
+  // saying "this one is mine, keep it", and the ATTACHED one, since hiding must
+  // never yank the pane out from under whatever is open (the teardown below
+  // keys off this same list). What is removed is counted so the header can say
+  // how many, and everything downstream draws `shown` rather than `tasks`.
+  const keepDoer = t => t.pinned || (termTask && t.id === termTask.id);
+  const hideable = tasks.filter(t => isDoer(t) && !keepDoer(t));
+  const shown = hideDoersOn() ? tasks.filter(t => !isDoer(t) || keepDoer(t)) : tasks;
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -1095,13 +1169,13 @@ async function renderTermList() {
   // here. The socket's own retry (or the ended state) settles the card. A render
   // must not. See `attachInFlight`.
   if (termTask && !attachIsInFlight(termTask.id) &&
-      !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
+      !shown.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
 
-  termOrder(tasks);
+  termOrder(shown);
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
-  termNoteDuplicates(tasks);
-  const pinnedTasks = tasks.filter(t => t.pinned);
+  termNoteDuplicates(shown);
+  const pinnedTasks = shown.filter(t => t.pinned);
   pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
@@ -1115,6 +1189,7 @@ async function renderTermList() {
       <button class="termsort" onclick="toggleTermSort()"
         title="newest activity first, and anything waiting on you above that">
         ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
+      ${termDoersToggleHTML(hideable.length)}
       <span class="grow"></span>
       ${termListButtons()}
     </div>
@@ -1141,7 +1216,7 @@ async function renderTermList() {
   setHTML(host, tasks.length
     ? termDropHTML() + `<div class="termbody">` + head +
       termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(tasks.filter(t => !t.pinned)) + `</div>`
+      termGroupsHTML(shown.filter(t => !t.pinned)) + `</div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);

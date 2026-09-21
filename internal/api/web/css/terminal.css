@@ -288,6 +288,15 @@
     background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
   }
   button.termsort:hover { color: var(--head); border-color: var(--blue); }
+  /* The hide-doers toggle is a sort-chip in every way but its lit state. When it
+     is ON the strip is showing less than it holds, and that is worth a standing
+     signal rather than something you only see by reading the label: an accent
+     border and brighter text, the same lit look the group buttons use for the
+     mode in force. */
+  button.termdoers.on {
+    color: var(--head); border-color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 14%, transparent);
+  }
   /* The pair sits together, so they read as one control with two directions rather than two adjacent
      buttons. `align-self: center` undoes the `flex-start` above: the sort button beside them is a pill of
      text and these are single glyphs, so anchoring all three to the top left the chevrons riding high. */
