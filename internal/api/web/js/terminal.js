@@ -483,6 +483,13 @@ function openTerm(task) {
   // and reading it off a screen to retype it is the worst way to spend a
   // minute.
   document.getElementById("t-chips").innerHTML =
+    // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
+    // the id's tag and answers "" with a single room attached, so this draws
+    // nothing until a second room makes the question real, the same as the room
+    // chip on the strip row (see `termRoomChip`). The name is the tag itself.
+    (roomOf(task.id) ? `<span class="chip room"
+       title="this card runs in room ${esc(roomOf(task.id))}"
+       >${esc(roomOf(task.id))}</span>` : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
     // button, so a row-width target sat over the bar saying `click to copy`

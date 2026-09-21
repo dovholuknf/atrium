@@ -854,6 +854,7 @@ function termRow(t, deep) {
 // popped-out marker. Drawn in one .chips box so a row can carry both.
 function termRowChips(t) {
   const held = termHeldChip(t);
+  const room = termRoomChip(t);
   const popped = poppedOut(t.id)
     // Says where it is rather than letting you click and wonder why nothing
     // happened. Clicking raises that window.
@@ -861,8 +862,23 @@ function termRowChips(t) {
          title="this session is showing in a window of its own. click to raise it"
          >&#8599;</span>`
     : "";
-  const inner = held + popped;
+  const inner = held + room + popped;
   return inner ? `<div class="chips">${inner}</div>` : "";
+}
+
+// WHICH ROOM THIS CARD RUNS IN, when that is a question worth asking. With one
+// room attached every id is bare, `roomOf` answers "", and this draws nothing: a
+// single room needs no label because every card is in it. The tag appears only
+// when a second room joins, so the badge appears with it, on every card at once,
+// which is exactly when clint could not tell an sg4 card from an sgg one. The
+// room name is the tag itself (e.g. claude-sg4 / claude-sgg). Mirrored in the
+// terminal pane header by `openTerm`, so a card names its room in the list and
+// when it is open.
+function termRoomChip(t) {
+  const room = roomOf(t && t.id);
+  if (!room) return "";
+  return `<span class="chip room" title="this card runs in room ${esc(room)}"
+    >${esc(room)}</span>`;
 }
 
 // A PULSING BANG WHEN A PEER MESSAGE IS WAITING to be typed into this terminal.

@@ -55,6 +55,26 @@ function lift(name) {
   return page.slice(at, end < 0 ? page.length : end);
 }
 
+// `roomOf` lives in notify.js beside `bareId`, and what follows it there is a
+// `const`, not another top-level function, so `lift`'s "slice to the next
+// function" would drag that whole block in with it. This cuts the function at
+// its own closing brace instead, so only `roomOf` comes across.
+function liftFn(name) {
+  const at = page.indexOf(`function ${name}(`);
+  if (at < 0) {
+    console.error(`FAIL: the board has no ${name}. It was renamed or removed, and the room ` +
+      `badge on the strip and the pane header both read it. Point this test at what replaced it.`);
+    process.exit(1);
+  }
+  let depth = 0, seen = false;
+  for (let i = at; i < page.length; i++) {
+    if (page[i] === "{") { depth++; seen = true; }
+    else if (page[i] === "}") { depth--; if (seen && depth === 0) return page.slice(at, i + 1); }
+  }
+  console.error(`FAIL: ${name}'s braces do not close. This test cannot lift it.`);
+  process.exit(1);
+}
+
 // The localStorage key the folds are kept under, lifted for the same reason as
 // the functions: `termFolded` reads it, and a copy here would go stale.
 const foldKeyAt = page.indexOf("const TERM_FOLDED =");
@@ -71,13 +91,14 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // a ReferenceError in the middle of the markup this parses. `termSuffix` is a
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
-  "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldChip", "termRowChips", "termRow",
+  "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldChip",
+  "termRoomChip", "termRowChips", "termRow",
   "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.
-const lifted = names.map(lift).join("\n");
+const lifted = [liftFn("roomOf"), ...names.map(lift)].join("\n");
 const src = (lifted.includes("const TERM_FOLDED =") ? "" : foldKey + "\n") + lifted;
 
 // The globals the strip reaches for. Everything here is either a browser thing
@@ -111,11 +132,11 @@ const terminalParts = (t) => {
 // the nesting is about.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
   "themeFor", "runnerMark", "poppedOut", "termTask", "isWaiting", "over",
-  src + "\nreturn { termGroupsHTML, termPathOf };")(
+  src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null,
   () => false, () => false);
-const { termGroupsHTML, termPathOf } = built;
+const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────
 
@@ -454,6 +475,22 @@ function checkNesting(list, what, opts = {}) {
     "every level of a chain of one gets its heading");
   is(rows[0].under.join("/"), "github/openziti/ziti-openwrt",
     "and the row is inside all three of them");
+}
+
+// 7. A CARD NAMES ITS ROOM ONLY WHEN THERE IS MORE THAN ONE. The hub tags a
+//    card id `room~id` exactly while a second room is attached (see the hub's
+//    tagFor / splitTag and `roomOf`), so the room chip must appear on a tagged
+//    id and vanish on a bare one. This is the whole feature: clint could not tell
+//    an sg4 card from an sgg one, and the tag is the only per-card room signal.
+{
+  is(roomOf("claude-sgg~01a0-beef"), "claude-sgg", "roomOf reads the tag off a tagged id");
+  is(roomOf("01a0-beef"), "", "roomOf answers empty for a bare id");
+
+  const tagged = termRoomChip({ id: "claude-sgg~01a0-beef" });
+  if (!/class="chip room"/.test(tagged) || !tagged.includes("claude-sgg")) {
+    fail(`a tagged card's row does not badge its room: ${JSON.stringify(tagged)}`);
+  }
+  is(termRoomChip({ id: "01a0-beef" }), "", "a bare card's row shows no room badge");
 }
 
 if (bad) {
