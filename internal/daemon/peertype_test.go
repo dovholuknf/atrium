@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,55 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 	}
 	if strings.Contains(f.written(), "stop what you are doing") {
 		t.Fatalf("wrote it anyway: %q", f.written())
+	}
+	// And nothing at all reached the terminal, so the operator's part written
+	// line was neither added to nor submitted. A single carriage return here
+	// would be an Enter pressed under his hands.
+	if f.written() != "" {
+		t.Fatalf("wrote into a part written line: %q", f.written())
+	}
+}
+
+// THE BANNER CAN NEVER PRESS ENTER. It is written into the operator's prompt,
+// so a carriage return in it submits whatever he had already typed. That is
+// what split his line: the banner used to open and close with `\r\n`.
+func TestThePeerBannerNeverSubmitsALine(t *testing.T) {
+	if strings.ContainsAny(peerBanner("sg4/builder"), "\r\n") {
+		t.Fatalf("the banner carries a line ending, so it can submit the operator's line: %q",
+			peerBanner("sg4/builder"))
+	}
+}
+
+// THE BUG CLINT HIT, end to end through the peer bus. He was composing a line
+// in a supervised session when a peer `atrium_say` arrived. It must not reach
+// the pty at all, and it must fall to the queue so nothing is lost.
+func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	d := testDaemon(t)
+	peerCard(t, d, "sender")
+	target, r, f := peerPair(t, d) // wire name "listener", with a fakePTY
+
+	// A part written line, the moment the peer message lands.
+	r.noteOperatorTyped([]byte("make peer message a bit"))
+
+	out, code := tell(t, d, "sender", "listener", "make progress on the redo")
+	if code != http.StatusOK {
+		t.Fatalf("the peer bus answered %d: %v", code, out)
+	}
+	if f.written() != "" {
+		t.Fatalf("a peer message reached the terminal while the operator was typing: %q", f.written())
+	}
+	if out["queued"] != true {
+		t.Fatalf("the message was not queued for later delivery: %v", out)
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("the deferred message was not queued: %d pending", len(pending))
+	}
+	if !strings.Contains(pending[0].FromPeer, "sender") {
+		t.Fatalf("the queued message lost its sender: %q", pending[0].FromPeer)
 	}
 }
 
