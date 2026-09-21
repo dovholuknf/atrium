@@ -327,17 +327,17 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// A peer or relay message types in too, marked with the banner so it is
-		// unmistakably not the operator. But ONLY INTO A CLEAR LINE, the same
-		// guard as the peer bus: injectPeer refuses a part written line and it
-		// falls to the queue below, and on a free line it drops the closing Enter
-		// if the operator starts typing during the send, so peer text never lands
-		// tangled into a line the operator is composing. This is the same bug
-		// clint hit on the bus, closed on this path too.
+		// unmistakably not the operator. But ONLY THROUGH THE GATE, the same guard
+		// as the peer bus: injectPeer types and submits only into an empty, idle
+		// line under the input lock, and writes nothing otherwise, so peer text
+		// never lands tangled into a line the operator is composing and never sits
+		// unsent in their prompt. A closed gate falls to the queue below. This is
+		// the same bug clint hit on the bus, closed on this path too.
 		payload := body.Text
 		if d.bracketedPasteFor(taskID, false) {
 			payload = "\x1b[200~" + body.Text + "\x1b[201~"
 		}
-		_, wrote, err := run.injectPeer(peerBanner(from), payload)
+		wrote, err := run.injectPeer(peerBanner(from), payload)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return

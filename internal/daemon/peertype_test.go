@@ -220,29 +220,55 @@ func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
 	}
 }
 
-// ATTACHED AND WATCHING. The pty is shared so the text goes in, and Enter is
-// not pressed: putting words in front of somebody is a different act from
-// submitting under their hands.
-func TestAPeerMessageIsNotSubmittedWhileTheOperatorIsAround(t *testing.T) {
+// OPERATOR JUST TYPED, EMPTY LINE. The line ended a moment ago, so the gate is
+// closed on the idle rule alone, and the message is DEFERRED rather than typed.
+//
+// This replaces the old "type it but do not press Enter" behaviour. Leaving
+// unsent peer text sitting in the operator's prompt is exactly what clint
+// wanted gone, so an operator who is clearly at the keyboard now gets nothing
+// dropped into their line: the message waits and is retried once the line is
+// empty and the keyboard has been quiet for peerGateIdle.
+func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
-	// A line that was finished a moment ago. Nothing is part written, but
-	// somebody is clearly there.
+	// A line finished this instant. Nothing is part written, but the keyboard
+	// was touched inside peerGateIdle, so the gate stays shut.
 	r.noteOperatorTyped([]byte("ls\r"))
+
+	typed, _ := d.tellByTyping(target, "sg4/builder", "have a look at this")
+	if typed {
+		t.Fatalf("typed into a terminal the operator just touched: %q", f.written())
+	}
+	if f.written() != "" {
+		t.Fatalf("left text in the prompt while the operator was active: %q", f.written())
+	}
+}
+
+// AND ONCE THE KEYBOARD GOES QUIET the same empty line takes the message. The
+// gate is the idle rule plus the empty line, so a finished line past
+// peerGateIdle is open.
+func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("ls\r"))
+	// Wind the last keystroke back past the idle gate, line still empty.
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
 
 	typed, how := d.tellByTyping(target, "sg4/builder", "have a look at this")
 	if !typed {
-		t.Fatal("refused to type at all, which is the old behaviour")
+		t.Fatalf("refused an empty, idle line: %q", f.written())
 	}
 	got := f.written()
 	if !strings.Contains(got, "have a look at this") {
 		t.Fatalf("the message never reached the terminal: %q", got)
 	}
-	if strings.Contains(got, "have a look at this\r") {
-		t.Fatalf("submitted it under the operator's hands: %q", got)
+	if !strings.HasSuffix(got, "\r") {
+		t.Fatalf("did not submit into an open gate: %q", got)
 	}
-	if !strings.Contains(how, "without sending") {
-		t.Fatalf("the answer does not say it was left unsent: %q", how)
+	if !strings.Contains(how, "sent") {
+		t.Fatalf("the answer does not say it was sent: %q", how)
 	}
 }
 

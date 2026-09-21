@@ -419,17 +419,14 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if d.bracketedPasteFor(target.ID, false) {
 		body = "\x1b[200~" + text + "\x1b[201~"
 	}
-	// injectPeer refuses a part written line and drops the closing Enter if the
-	// operator starts a line while it sends, so a keystroke can never leave a
-	// peer message tangled into what the operator was composing. It does this
-	// without ever blocking that keystroke. See injectPeer.
-	room, wrote, err := run.injectPeer(peerBanner(from), body)
+	// injectPeer types and submits ONLY when the gate is open right now: an empty
+	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt
+	// and never blocks the operator's keystrokes. A closed gate writes nothing,
+	// and the caller defers the message onto the backoff. See injectPeer and
+	// pendingInjector.
+	wrote, err := run.injectPeer(peerBanner(from), body)
 	if err != nil || !wrote {
 		return false, ""
-	}
-	if room == peerWatching {
-		d.notePeerTyped(target.ID, from, text, "left in the prompt, you were typing")
-		return true, "typed into the terminal without sending it, since you were just typing"
 	}
 	d.notePeerTyped(target.ID, from, text, "typed and sent")
 	return true, "typed into the terminal and sent"

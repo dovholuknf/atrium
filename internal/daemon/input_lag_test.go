@@ -6,32 +6,36 @@ import (
 	"time"
 )
 
-// The operator's keystroke path must stay fast while a peer message is being
-// injected into the same terminal.
+// The operator's keystroke BOOKKEEPING must stay fast while a peer message is
+// being injected into the same terminal.
 //
-// A peer injection on the peerFree path holds injectMu across a sayThenEnter
+// injectPeer holds injectMu and the input lock pasteMu across a sayThenEnter
 // pause. This drives one and, while it is mid-send, times the two calls the
 // attach reader makes on every keystroke: noteOperatorTyped (the typing-state
 // bookkeeping) and echoToPeers (the multi-pane mirror, off here). Neither may
 // wait behind the injection. Before the lock split both took r.mu, the same
-// lock injectPeer held across the pause, so each keystroke stalled ~130ms.
+// lock injectPeer held across the pause, so each keystroke stalled ~130ms. The
+// bytes an operator types DO wait on pasteMu, on purpose, so a paste and typing
+// never interleave, but that is a separate path (writeOperatorInput) and is not
+// on the recording that the input-lag fix protects.
 func TestOperatorKeystrokeStaysFastDuringPeerInjection(t *testing.T) {
 	d := testDaemon(t)
 	_, r, f := peerPair(t, d)
 
-	// Operator has been quiet past peerQuiet, so the injection takes the peerFree
-	// path (banner+body, sleep sayThenEnter, Enter) and holds injectMu throughout.
+	// A terminal nobody has typed into, so the gate is open and the injection
+	// runs the full banner+body, sleep sayThenEnter, Enter, holding pasteMu the
+	// whole time.
 	r.typeMu.Lock()
-	r.midLine = false
+	r.midLine, r.unsent = false, 0
 	r.lastTyped = time.Time{}
 	r.typeMu.Unlock()
 
-	roomCh := make(chan peerRoom, 1)
+	wroteCh := make(chan bool, 1)
 	go func() {
-		room, _, _ := r.injectPeer("[peer sg4/doer] ", "the migration is ready")
-		roomCh <- room
+		wrote, _ := r.injectPeer("[peer sg4/doer] ", "the migration is ready")
+		wroteCh <- wrote
 	}()
-	// Let the injection acquire injectMu, write the banner+body, and enter its
+	// Let the injection acquire its locks, write the banner+body, and enter its
 	// held pause. Well inside sayThenEnter, so it is still sending when we measure.
 	time.Sleep(15 * time.Millisecond)
 
@@ -53,14 +57,17 @@ func TestOperatorKeystrokeStaysFastDuringPeerInjection(t *testing.T) {
 		t.Fatalf("echoToPeers blocked %v behind the injection (ceiling %v)", echo, ceiling)
 	}
 
-	// The operator won: they started a line during the pause, so the peer text
-	// was left in the prompt unsent rather than submitted tangled with it.
-	room := <-roomCh
-	if room != peerWatching {
-		t.Fatalf("expected the injection to yield to the operator (peerWatching), got %v", room)
+	// The injection ran to completion and submitted on its own line. The
+	// operator's keystroke was recorded but its byte was never written here, so
+	// nothing is tangled into the peer message.
+	if wrote := <-wroteCh; !wrote {
+		t.Fatal("the injection did not complete into an open gate")
 	}
-	if got := f.written(); strings.Contains(got, "\r") {
-		t.Fatalf("the peer pressed Enter over the operator's line: %q", got)
+	if got := f.written(); !strings.Contains(got, "\r") {
+		t.Fatalf("the peer message never submitted: %q", got)
+	}
+	if got := f.written(); strings.Contains(got, "x") {
+		t.Fatalf("the operator's keystroke byte tangled into the paste: %q", got)
 	}
 	t.Logf("during-injection: note=%v echo=%v (sayThenEnter=%v)", note, echo, sayThenEnter)
 }
