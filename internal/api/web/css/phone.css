@@ -140,9 +140,15 @@
     }
     /* FILTERS: the sort chip and the grouping toolbar are a row and a half of
        controls that pushed the sessions off the bottom. They fold under the
-       `filters` button and appear only when it is on. */
-    .term-layout.has-term .termbody .termhead { display: none; }
+       `filters` button and appear only when it is on. The `.termstick` wrapper
+       folds with them, or it would leave a thin pinned strip of its background
+       at the top of the flyout with nothing in it. When it is shown it stays
+       sticky and rides the flyout's own scroll, pinning the controls while the
+       sessions under them scroll. */
+    .term-layout.has-term .termbody .termhead,
+    .term-layout.has-term .termbody .termstick { display: none; }
     .term-layout.has-term.tf-open .termbody .termhead { display: flex; }
+    .term-layout.has-term.tf-open .termbody .termstick { display: block; }
 
     /* Nothing attached: the list is the whole view, the trigger and the empty
        pane both out of the way. The empty pane shows only a `nothing attached`
