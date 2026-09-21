@@ -105,8 +105,16 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	if err != nil || len(msgs) == 0 {
 		return nil, err
 	}
-	if err := d.st.MarkDelivered(taskID, via, messageIDs(msgs)); err != nil {
+	ids := messageIDs(msgs)
+	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
 		return nil, err
+	}
+	// The hooks just drained the durable queue, so anything the injector was
+	// still retrying on screen has now landed. Clear its held set and the board
+	// signal here rather than waiting for the next backoff tick, which can be a
+	// day out and would leave the held chip lit long after the message arrived.
+	if d.pending != nil {
+		d.pending.deliveredElsewhere(taskID, ids)
 	}
 	log.Printf("[atrium] delivered %d message(s) to %s via the %s hook", len(msgs), taskID, via)
 	return msgs, nil
