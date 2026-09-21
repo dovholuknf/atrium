@@ -995,9 +995,9 @@ function termHeldChip(t) {
   if (!a || !a.held_peer) return "";
   const from = String(a.held_peer);
   const secs = Number(a.held_seconds) || 0;
-  const waited = secs > 0 ? ` (waiting ${termHeldAge(secs)})` : "";
-  const title = `${from} has a message waiting to be typed in. ` +
-    `clear or submit your line to receive it${waited}`;
+  const waited = secs > 0 ? ` waiting ${termHeldAge(secs)}` : "";
+  const title = `message from ${from}${waited} - delivers when your input line ` +
+    `is clear and idle. clear or submit your line to receive it now`;
   return `<span class="chip held" title="${esc(title)}">!</span>`;
 }
 
