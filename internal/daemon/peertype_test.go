@@ -137,6 +137,60 @@ func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
 	}
 }
 
+// THE RELAY PATH IS PEER TEXT TOO. A message posted with a `from`, as the hub's
+// atrium_say queues one, must not type into a line the operator is composing any
+// more than the bus may. Same guard, same fallback to the queue.
+func TestARelayPeerMessageWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("git comm"))
+
+	if code := message(t, d, target.ID, map[string]string{
+		"text": "look at the redo", "from": "expose-board-redo",
+	}); code != http.StatusOK {
+		t.Fatalf("the relay message answered %d", code)
+	}
+	if f.written() != "" {
+		t.Fatalf("a relay peer message typed into a part written line: %q", f.written())
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("the deferred relay message was not queued: %d pending", len(pending))
+	}
+	if pending[0].FromHuman() || !strings.Contains(pending[0].FromPeer, "expose-board-redo") {
+		t.Fatalf("the queued relay message lost its peer sender: from %q", pending[0].FromPeer)
+	}
+}
+
+// And into a clear terminal the relay path still types, so the guard is a defer
+// and not a refusal.
+func TestARelayPeerMessageTypesIntoAFreeTerminal(t *testing.T) {
+	d := testDaemon(t)
+	target, _, f := peerPair(t, d)
+
+	if code := message(t, d, target.ID, map[string]string{
+		"text": "the build is green", "from": "ci-green",
+	}); code != http.StatusOK {
+		t.Fatalf("the relay message answered %d", code)
+	}
+	if !strings.Contains(f.written(), "the build is green") {
+		t.Fatalf("a relay peer message never reached a free terminal: %q", f.written())
+	}
+	if !strings.Contains(f.written(), "ci-green") {
+		t.Fatalf("the banner did not name the sender: %q", f.written())
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("a typed relay message was also queued: %d pending", len(pending))
+	}
+}
+
 // And the line ending releases it. Submitting or abandoning a line both end
 // it, which is what makes the deferral temporary rather than a session that
 // can never be told anything again.
