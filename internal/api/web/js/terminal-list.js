@@ -18,6 +18,17 @@ let termListMode = localStorage.getItem("atrium.termlist.mode") || "full";
 let termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
 if (!["full", "mini", "off"].includes(termListMode)) termListMode = "full";
 
+// A PHONE IS A DIFFERENT SCREEN FROM A DESKTOP, and a few of the terminal's
+// settings are facts about the screen rather than about the work. A font that
+// is comfortable on a 32in monitor is gigantic on a phone, and a split dragged
+// on one screen is wrong on the other. Those keys are namespaced by device
+// class so the two screens keep their own answers and neither writes over the
+// other. The break is the same 900px the phone stylesheet uses.
+function termNarrow() {
+  return !!(window.matchMedia && window.matchMedia("(max-width: 900px)").matches);
+}
+function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
+
 function applyTermList() {
   const lay = document.getElementById("term-layout");
   if (!lay) return;
@@ -27,7 +38,7 @@ function applyTermList() {
   // and rail that reach them are hidden at this width. The stored mode is kept
   // (the same browser on a wide screen still honours it) but ignored on a
   // phone, where the list is the whole terminals view and must stay full.
-  const narrow = window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+  const narrow = termNarrow();
   lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
   lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
