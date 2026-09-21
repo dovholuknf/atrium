@@ -239,13 +239,83 @@ func TestTheReplayCannotEraseItself(t *testing.T) {
 		t.Fatal("dropped the newest output along with the moves")
 	}
 	// Colour is the one thing kept, because it cannot move or erase anything.
-	if !strings.Contains(got, "\x1b[38;5;244m") {
+	// The screen model re-emits it canonically from a reset (`ESC [ 0 ; ...`),
+	// which is why the assertion is the 244 colour rather than the bare form the
+	// runner wrote. Before the preamble was removed this passed on the divider's
+	// own grey, which hid that the content colour is emitted this way.
+	if !strings.Contains(got, "38;5;244m") {
 		t.Fatal("stripped the colour as well")
 	}
-	// And the boundary is drawn, or the first live redraw reads as the history
-	// having been corrupted.
-	if !strings.Contains(got, "live from here") {
-		t.Fatalf("did not mark where the flattened history ends: %q", got)
+	// And the history/live divider is GONE. It used to sit under the flattened
+	// history so the first live redraw did not read as corruption; clint found
+	// it noise on every reattach and asked to ditch the whole preamble.
+	if strings.Contains(got, "live from here") || strings.Contains(got, "everything above is history") {
+		t.Fatalf("emitted the attach preamble that was removed: %q", got)
+	}
+}
+
+// RESIZING A WIDER CONSOLE NEVER TOUCHES THE PTY, so it cannot churn the other
+// viewers. The pty follows the smallest viewer and moves only when that
+// smallest actually changes, which is the whole of the resize-sanity fix: a
+// viewer that is not the binding one drags freely.
+func TestAWiderViewerNeverResizesThePTY(t *testing.T) {
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   "decouple",
+		pty:      f,
+		buf:      newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
+	}
+	// The narrow viewer is the binding one and matches the launch width, so it
+	// is already a no-op.
+	if err := r.setViewport("narrow", 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	// A wider viewer joins and then drags wider still. Neither is the smallest,
+	// so the pty is never asked to resize.
+	_ = r.setViewport("wide", 200, 50)
+	_ = r.setViewport("wide", 300, 60)
+	if sizes := f.resized(); len(sizes) != 0 {
+		t.Fatalf("a wider viewer churned the pty: %+v", sizes)
+	}
+	// The binding viewer resizing IS applied, exactly once, because now the
+	// smallest moved.
+	_ = r.setViewport("narrow", 120, 40)
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{120, 40}) {
+		t.Fatalf("the binding viewer's resize was not applied once: %+v", sizes)
+	}
+	// The wider viewer detaching does not move the pty either.
+	r.dropViewport("wide")
+	if sizes := f.resized(); len(sizes) != 1 {
+		t.Fatalf("a wider viewer detaching churned the pty: %+v", sizes)
+	}
+}
+
+// A GENUINELY NARROWER READER STILL MOVES THE PTY, because the others cannot
+// read a width their pane cannot show, and when it leaves the pty follows back
+// up to the readers that remain. This is the coupling the fix keeps: only the
+// churn is removed, not the rule that the narrowest reader sets the size.
+func TestANarrowerViewerMovesThePTYAndReleasesIt(t *testing.T) {
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   "narrower",
+		pty:      f,
+		buf:      newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
+	}
+	_ = r.setViewport("wide", 80, 24)  // matches the launch width, a no-op
+	_ = r.setViewport("phone", 40, 20) // binding, so it shrinks the pty
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{40, 20}) {
+		t.Fatalf("the narrow reader did not shrink the pty: %+v", sizes)
+	}
+	// The phone leaves. The pty follows back up to the wide reader still there.
+	r.dropViewport("phone")
+	if sizes := f.resized(); len(sizes) != 2 || sizes[len(sizes)-1] != (viewport{80, 24}) {
+		t.Fatalf("the pty did not follow back up when the binding viewer left: %+v", sizes)
 	}
 }
 
