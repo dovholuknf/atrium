@@ -66,8 +66,10 @@ function isDoer(t) {
 // TWO STATES EACH. `none` shows every session of that kind. `inactive` hides the
 // ones idle, done or waiting on you, so the finished clutter goes and the moving
 // ones stay. A session working right now is NEVER hidden in either state: an
-// operator always wants to see the sessions actually doing work. A pinned
-// session and the attached one are never hidden either (see `sessionHiddenBy`).
+// operator always wants to see the sessions actually doing work. The attached
+// one is never hidden either (see `sessionHiddenBy`). Pinning is NOT an
+// exemption: a pinned session that is not working hides like any other inactive
+// one of its kind.
 //
 // DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
 // wall-mounted board and a laptop want different answers and neither should
@@ -117,13 +119,13 @@ function workingNow(t) {
     !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
 }
 
-// Whether this session is hidden by its kind's toggle, honouring the two that
-// are never hidden (see `renderTermList`): a pinned session and the attached
-// one. A subagent (`isDoer`) answers to the subagents toggle, everything else
-// to the agents toggle. Kept as one predicate so the count in the header and the
-// rows removed from the list are the same answer rather than two that can drift.
+// Whether this session is hidden by its kind's toggle, honouring what is never
+// hidden (see `renderTermList`): a working session and the attached one. A
+// subagent (`isDoer`) answers to the subagents toggle, everything else to the
+// agents toggle. Kept as one predicate so the count in the header and the rows
+// removed from the list are the same answer rather than two that can drift.
 // `inactive` hides the sessions of that kind not working right now (idle, done,
-// or waiting on you); one working always stays.
+// or waiting on you), pinned or not; one working always stays.
 function sessionHiddenBy(t, keep) {
   if (keep(t) || workingNow(t)) return false;
   const mode = isDoer(t) ? hideDoersMode() : hideAgentsMode();
@@ -138,9 +140,11 @@ function sessionHiddenBy(t, keep) {
 // neither, so both segments can be lit at once.
 //
 // A PRESSED SEGMENT is lit like agent|shell's selected side and carries the
-// count it is hiding right now, so the pill says how much is out of view. The
-// `hide inactive` caption says what pressing a segment does. Working sessions,
-// pinned ones and the attached one always stay, whatever is pressed.
+// count it is hiding right now in parentheses - `agents (3)` - so the pill says
+// how much is out of view. The `hide inactive` caption says what pressing a
+// segment does. Working sessions and the attached one always stay, whatever is
+// pressed; a pinned session that is not working hides like any other inactive
+// one of its kind and counts toward the number here.
 //
 // DRAWN WHEN IT DOES SOMETHING: when either kind has an inactive session it
 // could hide, or when either toggle is already on (so it can be turned back
@@ -151,12 +155,12 @@ function termHideControlsHTML(c) {
   const sOn = hideDoersMode() !== "none";
   if (!aOn && !sOn && !c.agentHideable && !c.subHideable) return "";
   const seg = (name, on, hidden, fn) => {
-    const label = on && hidden ? `${name} ${hidden}` : name;
+    const label = on && hidden ? `${name} (${hidden})` : name;
     const title = on
-      ? `inactive ${name} are hidden. click to show them. working ${name}, ` +
-        "pinned sessions and the attached one always stay"
+      ? `inactive ${name} are hidden. click to show them. working ${name} ` +
+        "and the attached one always stay"
       : `hide the inactive ${name} (idle, done or waiting on you). working ` +
-        `${name}, pinned sessions and the attached one always stay`;
+        `${name} and the attached one always stay`;
     return `<button class="${on ? "on" : ""}" onclick="${fn}"
         title="${esc(title)}">${esc(label)}</button>`;
   };
@@ -1284,13 +1288,15 @@ async function renderTermList() {
   // HIDE THE INACTIVE SESSIONS, per kind, when asked. Two independent toggles
   // (see `termHideControlsHTML`): the subagents side drops the inactive
   // agent-launched doers, the agents side drops the inactive human sessions, so
-  // neither kind buries the other. Two sessions are kept whatever the toggles
-  // say: a PINNED one, since pinning is the operator saying "this one is mine,
-  // keep it", and the ATTACHED one, since hiding must never yank the pane out
-  // from under whatever is open (the teardown below keys off this same list).
-  // What is removed is counted per kind so the pill can say how many, and
+  // neither kind buries the other. The ONLY sessions kept whatever the toggles
+  // say are a WORKING one (see `sessionHiddenBy`) and the ATTACHED one, since
+  // hiding must never yank the pane out from under whatever is open (the
+  // teardown below keys off this same list). Pinning is no longer an exemption:
+  // a pinned session that is not working hides with the rest of the inactive
+  // ones of its kind, in the pinned bucket and everywhere else the strip lists
+  // it. What is removed is counted per kind so the pill can say how many, and
   // everything downstream draws `shown` rather than `tasks`.
-  const keep = t => t.pinned || (termTask && t.id === termTask.id);
+  const keep = t => !!(termTask && t.id === termTask.id);
   const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
   const shown = hideable.length
     ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;

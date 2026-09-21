@@ -84,16 +84,17 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
-// The hide-strip. Five live rows exercising the two independent toggles. Two are
+// The hide-strip. Six live rows exercising the two independent toggles. Two are
 // SUBAGENTS (the `origin:agent` tag the launch cap counts): one IDLE (the tag,
 // no activity) and one working RIGHT NOW (the tag plus a live `activity`). Two
 // are AGENTS (no tag, a human's own top-level session): one IDLE and one
-// working. And a PINNED subagent. The subagents toggle drops the idle subagent
-// only; the agents toggle drops the idle agent only; the two are independent, so
-// both/either/neither. A session working right now is never hidden by either
-// toggle, and the pinned one always stays. All supervised so they draw as live
-// rows rather than cold, and so `staleActivity` is false and the working ones
-// read as working.
+// working. And two PINNED subagents: one IDLE, one working. The subagents toggle
+// drops the inactive subagents (the unpinned idle one AND the pinned idle one);
+// the agents toggle drops the idle agent only; the two are independent, so
+// both/either/neither. The ONLY rows never hidden are the ones working right now
+// (pinned or not) and the attached one: pinning is no longer an exemption. All
+// supervised so they draw as live rows rather than cold, and so `staleActivity`
+// is false and the working ones read as working.
 const DOER = {
   id: "doer1", status: "running", display_title: "idle doer", runner: "claude",
   rank: 1, worktree: "/tmp/doer", why: "", idle_seconds: 0, wait_seconds: 0,
@@ -110,8 +111,15 @@ const AHUMANT = Object.assign({}, DOER, {
   id: "ahumant", display_title: "my working terminal", tags: [],
   activity: { what: "thinking" }
 });
+// The pinned pair: an IDLE one that must now HIDE under the subagents toggle
+// (the pinned exemption is gone), and a WORKING one that must always STAY
+// (working outranks the toggle, pinned or not).
 const PINDOER = Object.assign({}, DOER, {
-  id: "pindoer", display_title: "pinned doer", pinned: true
+  id: "pindoer", display_title: "pinned idle doer", pinned: true
+});
+const APINDOER = Object.assign({}, DOER, {
+  id: "apindoer", display_title: "pinned working doer", pinned: true,
+  activity: { what: "thinking" }
 });
 
 let tasksMode = "first";   // first | hang | second | pinned | loop
@@ -242,9 +250,9 @@ const server = http.createServer((req, res) => {
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     // The hide strip: an idle subagent, a working subagent, an idle agent, a
-    // working agent, and a pinned subagent.
+    // working agent, a pinned idle subagent and a pinned working subagent.
     if (tasksMode === "doers") {
-      sendJSON(res, { tasks: [DOER, ADOER, HUMANT, AHUMANT, PINDOER] }); return;
+      sendJSON(res, { tasks: [DOER, ADOER, HUMANT, AHUMANT, PINDOER, APINDOER] }); return;
     }
     // The attach-loop repro. The cached LIST lags the live card: it carries the
     // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
@@ -479,13 +487,15 @@ async function main() {
 
     // ── the two independent hide toggles (agents and subagents) ──────────────
     // The strip carries an idle and a working SUBAGENT (both `origin:agent`), an
-    // idle and a working AGENT (no tag, a human's own session), and a pinned
-    // subagent. The control is one segmented pill with two segments that toggle
-    // independently. Each segment hides only the INACTIVE sessions of its kind;
-    // a working session of either kind, and the pinned one, are never hidden.
-    // The four on/off combinations are each asserted, so the two toggles are
-    // proven independent. Driven through the board's own functions so the
-    // device-scoped persistence for BOTH keys is exercised, not faked.
+    // idle and a working AGENT (no tag, a human's own session), a pinned IDLE
+    // subagent and a pinned WORKING subagent. The control is one segmented pill
+    // with two segments that toggle independently. Each segment hides the
+    // INACTIVE sessions of its kind, PINNED OR NOT: the pinned idle subagent
+    // hides under the subagents toggle and counts, while a working session of
+    // either kind (pinned or not) is never hidden. The four on/off combinations
+    // are each asserted, so the two toggles are proven independent. Driven
+    // through the board's own functions so the device-scoped persistence for
+    // BOTH keys is exercised, not faked.
     tasksMode = "doers";
     const hideState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
@@ -497,7 +507,7 @@ async function main() {
       return {
         idleSub: has("doer1"), workingSub: has("adoer"),
         idleAgent: has("humant"), workingAgent: has("ahumant"),
-        pinned: has("pindoer"),
+        pinIdleSub: has("pindoer"), pinWorkSub: has("apindoer"),
         agentMode: hideAgentsMode(), subMode: hideDoersMode(),
         agentLit: !!(a && a.classList.contains("on")),
         subLit: !!(s && s.classList.contains("on")),
@@ -522,8 +532,8 @@ async function main() {
     // two segments rather than two loose buttons.
     const hNone = await hideState();
     if (!hNone.idleSub || !hNone.workingSub || !hNone.idleAgent ||
-        !hNone.workingAgent || !hNone.pinned) {
-      fail("with neither toggle on the strip did not draw all five rows: " +
+        !hNone.workingAgent || !hNone.pinIdleSub || !hNone.pinWorkSub) {
+      fail("with neither toggle on the strip did not draw all six rows: " +
         JSON.stringify(hNone));
     }
     if (hNone.agentMode !== "none" || hNone.subMode !== "none" ||
@@ -540,58 +550,69 @@ async function main() {
         JSON.stringify(hNone));
     }
 
-    // SUBAGENTS on, agents off: the idle subagent goes, the working subagent
-    // stays (never hideable), and BOTH agent rows stay (the agents toggle is
-    // off). The subagents segment lights and carries its hidden count of 1; the
-    // agents segment stays unlit. This is the independence check on one side.
+    // SUBAGENTS on, agents off: BOTH inactive subagents go - the unpinned idle
+    // one AND the pinned idle one, since pinning is no longer an exemption. The
+    // working subagent stays (pinned working one too), and BOTH agent rows stay
+    // (the agents toggle is off). The subagents segment lights and carries its
+    // hidden count of 2 in parentheses; the agents segment stays unlit. This is
+    // the independence check on one side, and the pinned-inactive-hides proof.
     await page.evaluate(async () => { setHideDoers("inactive"); await renderTermList(); });
     const hSub = await hideState();
     if (hSub.idleSub) fail("the subagents toggle left the idle subagent in the strip.");
-    if (!hSub.workingSub) fail("the subagents toggle hid the WORKING subagent: only idle must go.");
+    if (hSub.pinIdleSub) {
+      fail("the subagents toggle left the PINNED idle subagent in the strip: " +
+        "pinning must no longer exempt an inactive session from hiding.");
+    }
+    if (!hSub.workingSub) fail("the subagents toggle hid the WORKING subagent: only inactive must go.");
+    if (!hSub.pinWorkSub) {
+      fail("the subagents toggle hid the pinned WORKING subagent: a working " +
+        "session is never hidden, pinned or not.");
+    }
     if (!hSub.idleAgent || !hSub.workingAgent) {
       fail("the subagents toggle also hid an AGENT row: the two toggles are not " +
         "independent: " + JSON.stringify(hSub));
     }
-    if (!hSub.pinned) fail("the subagents toggle hid the pinned subagent.");
     if (hSub.subMode !== "inactive" || !hSub.subLit || hSub.agentLit ||
         hSub.agentMode !== "none") {
       fail("the subagents toggle did not light its own segment alone: " +
         JSON.stringify(hSub));
     }
-    if (!/^subagents 1$/.test(hSub.subLabel)) {
-      fail("the lit subagents segment did not show its hidden count of 1: " +
-        JSON.stringify(hSub));
+    if (!/^subagents \(2\)$/.test(hSub.subLabel)) {
+      fail("the lit subagents segment did not show its hidden count of 2 (the " +
+        "unpinned idle and the pinned idle) in parens: " + JSON.stringify(hSub));
     }
 
     // AGENTS on too: now BOTH are on. The idle agent goes as well, the working
-    // agent stays, the working subagent still stays, and the pinned one stays.
-    // Both segments are lit at once, which agent|shell (one-of-two) cannot do.
+    // agent stays, the working subagent (pinned or not) still stays, and both
+    // idle subagents stay hidden. Both segments are lit at once, which agent|shell
+    // (one-of-two) cannot do.
     await page.evaluate(async () => { setHideAgents("inactive"); await renderTermList(); });
     const hBoth = await hideState();
-    if (hBoth.idleSub || hBoth.idleAgent) {
-      fail("with both toggles on an idle row of either kind survived: " +
+    if (hBoth.idleSub || hBoth.idleAgent || hBoth.pinIdleSub) {
+      fail("with both toggles on an inactive row of either kind survived: " +
         JSON.stringify(hBoth));
     }
-    if (!hBoth.workingSub || !hBoth.workingAgent || !hBoth.pinned) {
-      fail("with both toggles on a working or pinned row was hidden: " +
+    if (!hBoth.workingSub || !hBoth.workingAgent || !hBoth.pinWorkSub) {
+      fail("with both toggles on a working row was hidden: " +
         JSON.stringify(hBoth));
     }
     if (!hBoth.agentLit || !hBoth.subLit ||
         hBoth.agentMode !== "inactive" || hBoth.subMode !== "inactive") {
       fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
     }
-    if (!/^agents 1$/.test(hBoth.agentLabel) || !/^subagents 1$/.test(hBoth.subLabel)) {
-      fail("the two lit segments did not each show a hidden count of 1: " +
+    if (!/^agents \(1\)$/.test(hBoth.agentLabel) || !/^subagents \(2\)$/.test(hBoth.subLabel)) {
+      fail("the two lit segments did not show hidden counts of 1 and 2 in parens: " +
         JSON.stringify(hBoth));
     }
 
     // AGENTS on, subagents off: the other independence check. Turning the
-    // subagents side back off restores both subagent rows while the idle agent
-    // stays hidden. So the agents toggle held its state across the subagents
-    // toggle flipping, which is the two-keys-persist-independently proof.
+    // subagents side back off restores all three subagent rows (both idle ones
+    // and the working one) while the idle agent stays hidden. So the agents
+    // toggle held its state across the subagents toggle flipping, which is the
+    // two-keys-persist-independently proof.
     await page.evaluate(async () => { toggleHideDoers(); await renderTermList(); });
     const hAgent = await hideState();
-    if (!hAgent.idleSub || !hAgent.workingSub) {
+    if (!hAgent.idleSub || !hAgent.workingSub || !hAgent.pinIdleSub || !hAgent.pinWorkSub) {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
         JSON.stringify(hAgent));
     }
@@ -599,8 +620,8 @@ async function main() {
       fail("the agents toggle did not hold on across the subagents toggle flipping: " +
         "the idle agent came back: " + JSON.stringify(hAgent));
     }
-    if (!hAgent.workingAgent || !hAgent.pinned) {
-      fail("the agents-only state hid a working or pinned row: " + JSON.stringify(hAgent));
+    if (!hAgent.workingAgent) {
+      fail("the agents-only state hid the working agent: " + JSON.stringify(hAgent));
     }
     if (hAgent.agentMode !== "inactive" || !hAgent.agentLit ||
         hAgent.subMode !== "none" || hAgent.subLit) {
@@ -612,7 +633,8 @@ async function main() {
     await page.evaluate(async () => { toggleHideAgents(); await renderTermList(); });
     const hBack = await hideState();
     if (!hBack.idleSub || !hBack.workingSub || !hBack.idleAgent ||
-        !hBack.workingAgent || hBack.agentMode !== "none" || hBack.subMode !== "none") {
+        !hBack.workingAgent || !hBack.pinIdleSub || !hBack.pinWorkSub ||
+        hBack.agentMode !== "none" || hBack.subMode !== "none") {
       fail("turning both toggles off did not restore every row and reset both " +
         "segments: " + JSON.stringify(hBack));
     }
@@ -1658,8 +1680,9 @@ async function main() {
   console.log("a terminated pinned terminal can be dismissed from its right-click " +
     "menu and stays gone on the next render, " +
     "the two independent hide toggles drop the inactive agents and the inactive " +
-    "subagents each on their own (both/either/neither) while keeping the working " +
-    "and pinned rows and showing a per-kind hidden count, " +
+    "subagents each on their own (both/either/neither), hiding a pinned-but-" +
+    "inactive session and counting it while keeping the working rows (pinned or " +
+    "not) and showing a per-kind hidden count in parens, " +
     "the control cluster is a sticky header pinned to the top of the list, " +
     "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +
