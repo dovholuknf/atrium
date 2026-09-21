@@ -54,3 +54,18 @@ Implemented on `claude/board-auth` (merged). Settled - do NOT re-ask.
 
 Doer `expose-board-redo`. The functional design is settled above and in `docs/ziti-zrok-flow-design.md`; this
 interview is about VISUAL/UX only. New Q&A appended here by that doer as it goes.
+
+- **Q: How are the three transports (zrok private, zrok public, openziti) arranged?** A: three quiet collapsed
+  rows in one panel, each row showing only icon, name, one-line description, and an enable toggle. Flipping a
+  toggle expands that row to reveal only its inputs. An untouched panel is three tidy lines, so the common case
+  stays one click. clint: "seems reasonable" (tentative, deferred the visual judgement to the doer).
+- **Q: How does the redo coexist with the classic panel for side-by-side comparison?** A: a totally separate
+  settings menu entry called "expose the board 2". Its own pane in the settings nav spine, wholly separate from
+  the classic "expose the board" pane. Not an in-place toggle and not stacked sub-headings. clint decides which
+  wins later and the loser is deleted. Build note: the settings nav pane is cut on each `h3.s-section`, so the
+  redo is a new `<h3 class="s-section">expose the board 2</h3>` with its own content, which the spine turns into
+  a nav entry automatically.
+- **Q: Where does the one shared board login live in the redo, and what is it called?** A: call it "board
+  authentication". One collapsed row ABOVE the three transports, matching their shape, showing a one-line status
+  (no login set / name + password set / OIDC set). The zrok-public row carries an inline warning and stays
+  un-startable until a login exists, so the requirement is felt where it bites rather than read as a rule.

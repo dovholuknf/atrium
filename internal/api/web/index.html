@@ -56,6 +56,8 @@
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
+<link rel="stylesheet" href="/css/expose2.css">
+<link rel="stylesheet" href="/css/expose3.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -1200,6 +1202,32 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
         with open registration, the whole internet with an extra step.</span>
       <span class="hintline" id="auth-said"></span>
+    </div>
+
+    <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
+         Its own section so the settings spine gives it its own nav entry, and
+         so the whole thing can be deleted in one pass if it loses. Everything
+         in it is drawn by js/expose2.js into the one container below. See
+         docs/interview-log.md for the shape and why. -->
+    <h3 class="s-section">expose the board 2</h3>
+    <div class="field">
+      <p class="xb-lead">The same three ways out as above, redrawn: one quiet row each, collapsed
+        until you open it, so an untouched panel is a short list and the common case is one press.
+        Board authentication is shared across every transport and only zrok public is refused
+        without it.</p>
+      <div id="expose2"></div>
+    </div>
+
+    <!-- THE SECOND REDO, a different bet from `expose the board 2`. It hides
+         the transports and asks who needs to reach the board, turning the
+         answer into the right one. Own section, own nav entry, drawn by
+         js/expose3.js into the container below. Deletable in one pass. -->
+    <h3 class="s-section">expose the board 3</h3>
+    <div class="field">
+      <p class="x3-lead">A different take on the same three ways out: pick who needs to reach the
+        board and atrium picks the transport, so you never choose zrok or ziti by hand. One path is
+        on screen at a time.</p>
+      <div id="expose3"></div>
     </div>
 
     <!-- `notifications`, not `alerts`. Everything under it is a notification:
@@ -2586,6 +2614,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/toast-log.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
+<script src="/js/expose2.js"></script>
+<script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>
