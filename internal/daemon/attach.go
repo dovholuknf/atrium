@@ -421,7 +421,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		default:
 			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
 			sc.apply(backlog)
-			body = []byte(sc.text())
+			// WITH THE CURSOR RESTORED. The grid knows where the session parked
+			// its cursor; the attaching terminal would otherwise leave it at the
+			// end of the last line, so the operator's first keystroke echoes in
+			// the wrong column. See `screen.textWithCursor`.
+			body = []byte(sc.textWithCursor())
 		}
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return
