@@ -179,6 +179,62 @@ if ! node "$here/scripts/test-sort-order.js"; then
   fail=1
 fi
 
+# The reconnect-flood guard, RUN against re-tagged card sets. A single room
+# dropping flips every card id between `room~id` and bare when the count crosses
+# 1<->2, and the alert diff used to read that as the whole board arriving. This
+# asserts the bare-id diff and the room-set reseed keep it silent while a real
+# arrival still speaks.
+if ! node "$here/scripts/test-notify-reseed.js"; then
+  echo "a room dropping would flood the board with arrivals. see above." >&2
+  fail=1
+fi
+
+# The room-flip reattach guard, RUN against a re-tagged task list. The SAME
+# 1<->2 flip that re-tags card ids also stranded the attached pane: it held the
+# id from before the flip, the render read it as gone by raw id, tore it down,
+# and the watchdog re-attached the id the single-card endpoint still resolved,
+# forever. This asserts the attached card is matched and re-resolved by its bare
+# id in both directions, a genuinely gone card is still torn down, and the
+# in-flight guard survives the flip.
+if ! node "$here/scripts/test-term-retag.js"; then
+  echo "a room-set change would spin the terminal pane's reattach loop. see above." >&2
+  fail=1
+fi
+
+# The tab-return cursor guard, RUN against a visibility toggle. The SAME reflow
+# that garbles input on a room flip also happens when a browser tab is hidden and
+# comes back: a box change that landed while the tab was away flushes to a re-fit
+# on return, reflows the grid, and a non-binding viewer is left showing its old
+# cursor. This asserts a return that reflowed the grid re-attaches once, a return
+# that changed nothing does not, and a solo window is skipped.
+if ! node "$here/scripts/test-term-tabreturn.js"; then
+  echo "a tab return would leave the terminal cursor misplaced. see above." >&2
+  fail=1
+fi
+
+# The refresh-storm guard, RUN against a simulated flap storm. A room that
+# attaches and detaches every few seconds used to make the board answer every
+# flip with a fresh fan-out of fetches, until the tab emptied its socket pool
+# and everything failed with ERR_INSUFFICIENT_RESOURCES. This asserts a burst
+# collapses into one refresh, a pass in flight queues at most one more, a
+# superseding pass aborts the last, and a failing tab backs off.
+if ! node "$here/scripts/test-refresh-storm.js"; then
+  echo "a flapping room would storm the board with fetches. see above." >&2
+  fail=1
+fi
+
+# The same guards in a real browser: that the live-style board paints its task
+# and history lists from the daemon's answers, and that a fetch which hangs
+# forever does not leave the board frozen blank (the watchdog runs a later pass
+# that repaints). Serves the concatenated board off a throwaway localhost port
+# with mocked endpoints and drives headless Chromium. Skips itself, exit 0, when
+# Playwright or its browser is not installed, the same as the node guard above:
+# it is a check, not a build step.
+if ! node "$here/scripts/test-board-headless.js"; then
+  echo "the board blanks on a hung fetch, or does not paint its lists. see above." >&2
+  fail=1
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.
@@ -217,6 +273,12 @@ if ! node "$here/scripts/check-phone.js" "$whole" "$sw"; then
   echo "a phone invariant is broken. see above." >&2
   fail=1
 fi
+
+# FOLLOW-UP: the responsive/mobile assertions (no sideways document scroll at
+# 390/768/1150, no blank header control, tap targets) from the css-changes pass
+# still need porting into `test-board-headless.js` above. The header overflow FIX
+# (chrome.css) shipped; its dedicated headless guard is not yet in the shared
+# harness, so do not claim it here with a duplicate run.
 
 # NO TWO ELEMENTS SHARE AN id.
 #

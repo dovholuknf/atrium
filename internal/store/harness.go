@@ -6,8 +6,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"github.com/dovholuknf/atrium/internal/shellpick"
 )
 
 // Harness is a runner atrium knows how to start: claude, codex, ollama, a bare
@@ -20,6 +18,19 @@ type Harness struct {
 	Label   string            `json:"label"`
 	Enabled bool              `json:"enabled"`
 	Cmd     string            `json:"cmd"`
+	// BinPath is an explicit path to this runner's binary on THIS room, used
+	// instead of resolving Cmd against the room process PATH.
+	//
+	// PATH is not enough on its own. A runner can be installed on a machine and
+	// still be invisible to the room because the directory it landed in was not
+	// on the PATH the room process was started with, which is exactly what
+	// happened on sgg: claude installed to a user bin dir the room could not
+	// see, and the only fix was relaunching the room with PATH patched. An
+	// explicit path is the per-room "configured as to what it supports" answer,
+	// and it makes availability reliable: the question becomes whether this
+	// path exists on this room rather than whether a name resolves. Empty means
+	// fall back to PATH resolution of Cmd. See docs/runner-scoping-design.md.
+	BinPath string            `json:"bin_path"`
 	Args    []string          `json:"args"`
 	Cwd     string            `json:"cwd"`
 	Env     map[string]string `json:"env"`
@@ -110,13 +121,9 @@ const (
 // Only claude is enabled, because it is the only one whose invocation is known
 // to work on this machine. The rest are scaffolding with a plausible command,
 // left off until their command line is confirmed.
-// SEEDED ONCE, ON FIRST RUN, which is the honest limit of this half of the
-// fix. A database that already has a `shell` row keeps whatever it was seeded
-// with, because a harness is a row the operator may have edited and rewriting
-// it on every start would throw that away. Anybody whose row says `pwsh` on a
-// machine without it edits the row or the `shell_command` setting.
+// SEEDED ONCE, ON FIRST RUN. A harness is a row the operator may have edited,
+// and rewriting it on every start would throw that away.
 func DefaultHarnesses() []Harness {
-	shellCmd, shellArgs := shellpick.Pick()
 	return []Harness{
 		// Use a PTY by default so atrium can attach, terminate, and check liveness.
 		// Window mode remains available for runners that need to outlive the daemon.
@@ -134,7 +141,7 @@ func DefaultHarnesses() []Harness {
 			ModelArgs:   []string{"--model", "{model}"},
 			RulesSource: "claude", Sort: 10, BracketedPaste: true,
 			Package: "@anthropic-ai/claude-code",
-			Notes: "resume needs a session id, which only a runner that reports one can supply",
+			Notes:   "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			// `codex resume <SESSION_ID>` takes the same uuid codex puts in
@@ -152,7 +159,7 @@ func DefaultHarnesses() []Harness {
 			PromptArgs:     []string{"{prompt}"},
 			ModelArgs:      []string{"--model", "{model}"},
 			BracketedPaste: true, Package: "@openai/codex",
-			RulesSource:    "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
+			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
 		{
@@ -161,23 +168,26 @@ func DefaultHarnesses() []Harness {
 			ExitKeys: []string{"ctrl-d"},
 			Notes:    "set the model in args. ollama has no permission config to import",
 		},
-		{
-			// Not an agent. A plain shell in the chosen directory, running as
-			// whoever started the daemon, shown in the browser like any other
-			// supervised runner. Useful for the times the answer is a command
-			// rather than a conversation, and for watching one from a phone.
-			// THE SAME ANSWER THE CARD'S OWN SHELL GIVES. This said `pwsh`
-			// unconditionally, which is a guess that is right on this machine
-			// and wrong on any Windows without PowerShell 7 installed, where
-			// it produces a harness that cannot start. The board would then be
-			// offering two shells that disagree, since the other one resolved
-			// to `COMSPEC`.
-			ID: "shell", Label: "shell", Enabled: false,
-			Cmd: shellCmd, Args: shellArgs, LaunchMode: LaunchPTY, Sort: 40,
-			ExitKeys: []string{"exit"},
-			Notes: "a plain shell, not an agent. runs as whoever started the daemon, " +
-				"reports nothing about itself, and its card shows the terminal and nothing else",
-		},
+		// THERE IS NO `shell` RUNNER, AND THAT IS THE POINT.
+		//
+		// There was one, and it was a second answer to a question the machine
+		// had already answered. A shell is not something atrium can be
+		// configured to start: it is a property of the machine, held in the
+		// `shell_command` setting and found by `internal/shellpick` when that
+		// is empty, and `shellFor` reads it FRESH every time a shell is
+		// opened. The runner row was a copy of that taken on first run and
+		// then frozen, so changing the setting moved one shell and left the
+		// other one starting the program from months ago.
+		//
+		// It fitted the shape badly too. A runner is a command, a way to
+		// resume, a way to be given a prompt and a model, a set of hooks and a
+		// rules file. A shell has none of those. Half the row was blank and
+		// the other half was ignored, and `isShellRunner` existed purely to
+		// keep it out of the list of things that can be started as an agent.
+		//
+		// A shell is still one press away, on the terminal of any card that
+		// has one, which is where somebody wants a shell: beside the agent, in
+		// its directory. See `shellFor` in internal/daemon/shell.go.
 	}
 }
 
@@ -191,7 +201,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -230,7 +240,7 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args, bracketed_paste, package`
+	model_args, bracketed_paste, package, bin_path`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -335,7 +345,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			bracketed = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -345,11 +355,11 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				sort = excluded.sort, prompt_args = excluded.prompt_args,
 				model_args = excluded.model_args,
 				bracketed_paste = excluded.bracketed_paste,
-				package = excluded.package`,
+				package = excluded.package, bin_path = excluded.bin_path`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
-			bracketed, strings.TrimSpace(h.Package))
+			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath))
 		return err
 	})
 	if err != nil {
@@ -392,6 +402,17 @@ func (h *Harness) ExitBytes() [][]byte {
 		}
 	}
 	return out
+}
+
+// Exe is the command to actually run: the explicit BinPath when set, otherwise
+// Cmd for the caller to resolve against PATH. An explicit path is used verbatim,
+// which is what lets a runner start on a room where its binary is installed but
+// not on the room process PATH. See docs/runner-scoping-design.md.
+func (h *Harness) Exe() string {
+	if p := strings.TrimSpace(h.BinPath); p != "" {
+		return p
+	}
+	return h.Cmd
 }
 
 func orEmptySlice(v []string) []string {

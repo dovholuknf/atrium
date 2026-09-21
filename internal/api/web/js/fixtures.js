@@ -18,23 +18,32 @@ async function renderFixtures() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allFixtures.map((f, i) => `
+  // `i` and `mine` are the position WITHIN THE MACHINE, not within the merged
+  // list. A fixture's number is the order it starts in on its own machine, and
+  // the move buttons reorder it there, so counting across three rooms would
+  // number them 1 to 12 and grey out the wrong arrows.
+  setHTML(host, roomGroups(allFixtures, (f, i, mine) => `
     <div class="row line${f.last_error ? " broke" : ""}">
-      <span class="chip ${f.enabled ? "accent" : ""}">${f.enabled ? "on" : "off"}</span>
+      <span class="chip toggle ${f.enabled ? "accent" : ""}" role="button" tabindex="0"
+        title="${f.enabled ? "on. click to stop it starting with atrium" : "off. click to start it with atrium"}"
+        onclick="toggleFixture('${esc(f.id)}','${esc(f.room || "")}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"
+        >${f.enabled ? "on" : "off"}</span>
       <span class="ord">${i + 1}</span>
       <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
       <code class="grow ell" title="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
       <span class="by">${esc(f.harness)}</span>
       ${f.resume ? `<span class="by">resumes</span>` : `<span class="by">fresh</span>`}
       ${f.theme ? `<span class="chip">${esc(f.theme)}</span>` : ""}
-      <button onclick="moveFixture('${esc(f.id)}', -1)" ${i === 0 ? "disabled" : ""}
+      <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',-1)"
+        ${i === 0 ? "disabled" : ""}
         title="start this one earlier">&#9650;</button>
-      <button onclick="moveFixture('${esc(f.id)}', 1)"
-        ${i === allFixtures.length - 1 ? "disabled" : ""}
+      <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',1)"
+        ${i === mine.length - 1 ? "disabled" : ""}
         title="start this one later">&#9660;</button>
-      <button onclick="startFixtureNow('${esc(f.id)}')"
+      <button onclick="startFixtureNow('${esc(f.id)}','${esc(f.room || "")}')"
         title="start it now, without restarting atrium">start</button>
-      <button onclick="editFixture('${esc(f.id)}')">edit</button>
+      <button onclick="editFixture('${esc(f.id)}','${esc(f.room || "")}')">edit</button>
     </div>` +
     // Why the last start failed, under the row rather than in a tooltip. This
     // is the page the notification sends you to, so the reason has to be the
@@ -46,7 +55,30 @@ async function renderFixtures() {
       <span class="chip warn">did not start</span>
       <code class="grow ell" title="${esc(f.last_error)}">${esc(f.last_error)}</code>
       ${f.last_run_at ? `<span class="by">${esc(firstSeen(f.last_run_at))}</span>` : ""}
-    </div>` : "")).join("") + `</div>`);
+    </div>` : "")));
+}
+
+// Flip whether a fixture starts with the daemon, from its own pill.
+//
+// Off keeps the definition and only stops the auto-start, so the row stays put
+// and can be turned back on. Mirrors toggleHarness: the whole row is PUT back
+// with enabled flipped, and SaveFixture leaves the daemon-owned columns
+// (task_id, last_error, last_run_at) alone on conflict.
+//
+// Turning one on does NOT start it now: that is the `start` button's job, and
+// pairing the two would mean the pill both saved a setting and spawned a
+// terminal, which is two decisions on one click.
+async function toggleFixture(id, room) {
+  const f = rowOf(allFixtures, id, room);
+  if (!f) return;
+  if (!await chooseWriteRoom(f, "fixture")) return;
+  try {
+    await api(`/v1/fixtures/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, f, { enabled: !f.enabled }))
+    });
+  } catch (e) { tellUser("atrium", e.message); return; }
+  renderFixtures();
 }
 
 // Reordering by swapping sort values with the neighbor.
@@ -54,12 +86,18 @@ async function renderFixtures() {
 // The list is short and hand written, so this is two writes rather than a
 // fractional rank scheme. Midpoint insertion earns its keep on a board with
 // hundreds of cards, not on a list of five.
-async function moveFixture(id, delta) {
-  const i = allFixtures.findIndex(f => f.id === id);
+async function moveFixture(id, room, delta) {
+  // WITHIN ITS OWN MACHINE. The order a fixture starts in is an order on that
+  // machine, so the neighbour it swaps with has to be one of its own. Across a
+  // merged list it would trade sort values with a row on another machine and
+  // neither would move.
+  const mine = (allFixtures || []).filter(f => (f.room || "") === (room || ""));
+  const i = mine.findIndex(f => f.id === id);
   const j = i + delta;
-  if (i < 0 || j < 0 || j >= allFixtures.length) return;
+  if (i < 0 || j < 0 || j >= mine.length) return;
+  if (!await chooseWriteRoom(mine[i], "fixture")) return;
 
-  const a = allFixtures[i], b = allFixtures[j];
+  const a = mine[i], b = mine[j];
   const at = a.sort, bt = b.sort;
   // Equal sorts fall back to creation order, which makes a swap a no-op. Give
   // them distinct ones based on position instead.
@@ -79,8 +117,12 @@ async function moveFixture(id, delta) {
 }
 
 // Opens the form. A null id is a new one.
-function editFixture(id) {
-  const f = allFixtures.find(x => x.id === id) || {
+async function editFixture(id, room) {
+  // WHICH MACHINE THIS IS FOR, settled before anything is typed. An existing
+  // row knows; a new one with several rooms attached asks once. See
+  // `chooseWriteRoom` in js/rooms.js.
+  if (!await chooseWriteRoom(rowOf(allFixtures, id, room), "fixture")) return;
+  const f = rowOf(allFixtures, id, room) || {
     id: "", label: "", harness: "", cwd: "", theme: "",
     // A new fixture resumes and starts, because that is what somebody adding
     // one means. Anyone who wants otherwise is one click away from it.
@@ -112,7 +154,8 @@ function editFixture(id) {
   document.getElementById("f-delete").hidden = !f.id;
 
   if (!enabled.length) {
-    tellUser("atrium", "no runner is enabled yet. turn one on above first.");
+    tellUser("atrium", "no runner is enabled yet. turn one on under " +
+      paneLink("runners", "rooms &rsaquo; runners") + " first.");
     return;
   }
   dlg.showModal();
@@ -184,7 +227,8 @@ async function deleteFixture() {
   renderFixtures();
 }
 
-async function startFixtureNow(id) {
+async function startFixtureNow(id, room) {
+  if (!await chooseWriteRoom(rowOf(allFixtures, id, room), "fixture")) return;
   try {
     await api(`/v1/fixtures/${id}/start`, { method: "POST" });
     toast("starting", "it will appear in terminals");
@@ -192,28 +236,6 @@ async function startFixtureNow(id) {
     toast("could not start it", e.message);
   }
   refresh();
-}
-
-// Runners this machine has that atrium is not set up to use. Offered rather
-// than added: what to run is a decision, and a row that appeared on its own is
-// a row you did not agree to.
-async function renderDiscovered() {
-  const host = document.getElementById("discovered");
-  if (!host) return;
-  let found = [];
-  try { found = (await api("/v1/harnesses/discover")).candidates || []; } catch (e) { return; }
-  if (!found.length) { host.innerHTML = ""; return; }
-
-  host.innerHTML = `<div class="panel">
-    <div class="empty" style="text-align:left">
-      found on this machine and not set up yet
-    </div>` + found.map(c => `
-    <div class="row line">
-      <span class="tool">${esc(c.label)}</span>
-      <code class="grow ell" title="${esc(c.found)}">${esc(c.found)}</code>
-      <button class="go" onclick='addDiscovered(${JSON.stringify(c).replace(/'/g, "&#39;")})'
-        >set it up</button>
-    </div>`).join("") + `</div>`;
 }
 
 // Which runner's hooks file a row belongs to, or "" when atrium has none for
@@ -253,8 +275,7 @@ const HOOK_NAG = "hooks-nag";
 // again.
 function hooksChip(h) {
   const target = hookTargetFor(h);
-  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}"
-    >reports nothing</span>`;
+  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}">n/a</span>`;
   const rep = target === "codex" ? codexHooks : hookReport;
   // A row atrium could wire and has not looked at yet. The button still opens
   // the dialog, which is where the answer is; a count nobody fetched would be
@@ -622,32 +643,23 @@ async function copyText(btn, text) {
 // Opens the runner form pre-filled from what was found. The command and the
 // path are known; anything that was not is left empty with the reason shown,
 // since a guessed flag produces a runner that fails on first use.
-function addDiscovered(c) {
-  editHarness("");
-  document.getElementById("h-id").value = c.id;
-  document.getElementById("h-id").disabled = false;
-  document.getElementById("h-label").value = c.label;
-  document.getElementById("h-cmd").value = c.cmd;
-  document.getElementById("h-args").value = (c.args || []).join("\n");
-  document.getElementById("h-resume").value = (c.resume_args || []).join("\n");
-  document.getElementById("h-prompt").value = (c.prompt_args || []).join("\n");
-  document.getElementById("h-model").value = (c.model_args || []).join("\n");
-  document.getElementById("h-exit").value = (c.exit_keys || []).join("\n");
-  document.getElementById("h-prepare").value = "";
-  document.getElementById("h-notes").value = c.confirm || "";
-  if (c.confirm) toast("needs confirming", c.confirm);
-}
-
 function linesToList(v) {
   return (v || "").split("\n").map(s => s.trim()).filter(Boolean);
 }
 
-function editHarness(id) {
-  const h = allHarnesses.find(x => x.id === id) || {
+async function editHarness(id, room, seed) {
+  // `seed` is a row to fill the form FROM while still adding a new one, which
+  // is what duplicate is. Everything below keys off `id` for whether this is an
+  // edit, so a seeded form with no id is a new runner that starts out looking
+  // like an existing one.
+  const src = seed || rowOf(allHarnesses, id, room);
+  if (!await chooseWriteRoom(src, "runner")) return;
+  const h = src || {
     id: "", label: "", cmd: "", args: [], resume_args: [], prompt_args: [], model_args: [], cwd: "", env: {},
     launch_mode: "window", rules_source: "", package: "", notes: "", enabled: false
   };
-  document.getElementById("h-heading").textContent = id ? "edit " + h.label : "add a runner";
+  document.getElementById("h-heading").textContent =
+    id ? "edit " + h.label : seed ? "duplicate " + (seed.from || "") : "add a runner";
   document.getElementById("h-id").value = h.id;
   document.getElementById("h-id").disabled = !!id;
   document.getElementById("h-label").value = h.label || "";
@@ -668,7 +680,8 @@ function editHarness(id) {
   document.querySelectorAll("#h-mode button").forEach(b =>
     b.classList.toggle("on", b.dataset.v === (h.launch_mode || "window")));
   document.getElementById("h-delete").style.display = id ? "" : "none";
-  document.getElementById("harness").dataset.editing = h.id || "";
+  // What DELETE would act on, which is nothing for a form that is adding.
+  document.getElementById("harness").dataset.editing = id || "";
   document.getElementById("harness").dataset.enabled = h.enabled ? "1" : "0";
   document.getElementById("harness").showModal();
 }
@@ -733,9 +746,47 @@ async function deleteHarness() {
   refresh();
 }
 
-async function toggleHarness(id) {
-  const h = allHarnesses.find(x => x.id === id);
+// A copy of a runner, to change one thing about.
+//
+// THE REASON THIS EXISTS is that a runner is a command line with eight fields
+// around it, and the common case is wanting the same one with a different
+// model, a different flag or a different working directory. Retyping all eight
+// to change one is how somebody ends up editing the original instead and
+// losing the setup that worked.
+//
+// It comes up SWITCHED OFF and with a suggested id, because a duplicate that
+// arrived enabled would start appearing in the launch dialog before anybody had
+// changed the thing they made it to change.
+function copyHarness(id, room) {
+  const src = rowOf(allHarnesses, id, room);
+  if (!src) return;
+  editHarness("", room, Object.assign({}, src, {
+    id: nextCopyID(src.id, room),
+    label: src.label ? src.label + " copy" : "",
+    enabled: false,
+    // What it was a copy OF, for the heading. Not a field on a harness.
+    from: src.label || src.id
+  }));
+}
+
+// nextCopyID suggests an id that is free ON THAT MACHINE. A room's runners are
+// its own, so `claude-copy` being taken on sparta says nothing about athens.
+function nextCopyID(id, room) {
+  const taken = new Set((allHarnesses || [])
+    .filter(h => (h.room || "") === (room || ""))
+    .map(h => h.id));
+  const base = id + "-copy";
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) {
+    if (!taken.has(base + n)) return base + n;
+  }
+  return base;
+}
+
+async function toggleHarness(id, room) {
+  const h = rowOf(allHarnesses, id, room);
   if (!h) return;
+  if (!await chooseWriteRoom(h, "runner")) return;
   try {
     await api(`/v1/harnesses/${encodeURIComponent(id)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -872,6 +923,35 @@ function setLaunchModel(h) {
 
   const list = document.getElementById("l-model-seen");
   if (list) list.innerHTML = modelsSeen.map(m => `<option value="${esc(m)}">`).join("");
+
+  // The operator's own picker, as buttons. One click instead of typing an id
+  // from memory, which is the whole difference between comparing two models
+  // and meaning to. `default` is the empty box, said out loud, because
+  // "whatever the runner does on its own" is a choice worth being able to
+  // return to without knowing that clearing the field is how.
+  const pick = document.getElementById("l-model-pick");
+  if (!pick) return;
+  pick.hidden = !modelPicker.length;
+  if (!modelPicker.length) return;
+  pick.innerHTML = [{ ID: "", Label: "default" }].concat(modelPicker).map(m =>
+    `<button type="button" data-model="${esc(m.ID || m.model || "")}"
+       >${esc(m.Label || m.label || m.ID || m.model)}</button>`).join("");
+  pick.querySelectorAll("button").forEach(b => {
+    b.onclick = () => { box.value = b.dataset.model; paintModelPick(); };
+  });
+  paintModelPick();
+}
+
+// Which button is the box currently showing. Painted rather than tracked, so
+// typing an id by hand lights the matching button and typing something else
+// lights none, which is the truth either way.
+function paintModelPick() {
+  const box = document.getElementById("l-model");
+  const pick = document.getElementById("l-model-pick");
+  if (!box || !pick) return;
+  const now = box.value.trim();
+  pick.querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.model === now));
 }
 
 // setThrowaway disables directory selection because atrium creates the path.
@@ -885,6 +965,10 @@ function setThrowaway(on) {
 document.getElementById("l-throwaway-on").addEventListener("change", e => {
   setThrowaway(e.target.checked);
 });
+
+// Typing an id by hand lights the matching button, and typing something else
+// lights none.
+document.getElementById("l-model").addEventListener("input", paintModelPick);
 
 // loadHarnesses fills the runner list once, and answers with it.
 //
@@ -904,6 +988,9 @@ async function loadHarnesses() {
     // What has been typed into the model box before, which rides along with
     // the runners because both are read the moment the dialog opens.
     modelsSeen = got.models || [];
+    // The operator's own picker, when they have one. See
+    // `internal/claudeconf/models.go`.
+    modelPicker = got.model_picker || [];
   } catch (e) {}
   return allHarnesses;
 }
@@ -925,12 +1012,18 @@ async function loadHarnesses() {
 // Its own window is deliberately not offered: a second flyout under a flyout is
 // a level this menu does not draw, and a terminal already open pops out from
 // the attach entry two rows above.
-async function launchRunnerHere(harnessID, cwd, ontoTask) {
+async function launchRunnerHere(harnessID, cwd, ontoTask, room) {
+  // ON THE CARD'S OWN MACHINE. The directory is that machine's, so the launch
+  // has to land there whichever room the board happens to be looking at. Empty
+  // on a plain daemon and on a scoped board, where the request is already
+  // going to the only place it could.
+  const headers = { "Content-Type": "application/json" };
+  if (room) headers["X-Atrium-Room"] = room;
   let task;
   try {
     task = await api("/v1/launch", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
@@ -942,28 +1035,113 @@ async function launchRunnerHere(harnessID, cwd, ontoTask) {
   switchView("board");
 }
 
+// launchRoomNow is the room a launch will start in, as the dialog currently has
+// it. Empty when the room field is not shown, which is a scoped board, a single
+// room, or no hub, and in every one of those the runner list is already one
+// machine's and carries no room tag to match on.
+function launchRoomNow() {
+  const field = document.getElementById("l-room-field");
+  if (!field || field.hidden) return "";
+  return document.getElementById("l-room").value || "";
+}
+
+// launchableHarnesses is the runners a card can actually START on the given
+// room: turned on AND with their command resolvable there. `found` is what the
+// room reported from the same PATH lookup launching does, so a runner offered
+// here is one that will run rather than one that fails at exec. An empty room
+// means the one machine's list, which carries no room to match on. See
+// docs/runner-scoping-design.md.
+function launchableHarnesses(room) {
+  return allHarnesses.filter(h =>
+    h.enabled && h.found && (!room || (h.room || "") === room));
+}
+
+// refreshLaunchRunners fills the runner picker from the selected room and keeps
+// the current choice when it survives the change. Answers the selected runner
+// row, or null when the room has none to offer, which it draws as a dead end
+// rather than a launch that would fail later.
+//
+// Does nothing when the picker is hidden, which is a resume or a specific
+// runner: that row is named and must not be swapped out by a room change.
+function refreshLaunchRunners(preferId) {
+  if (document.getElementById("l-pick-field").hidden) return null;
+  const picker = document.getElementById("l-harness");
+  const note = document.getElementById("l-pick-note");
+  const go = document.getElementById("l-go");
+  const room = launchRoomNow();
+  const usable = launchableHarnesses(room);
+
+  if (!usable.length) {
+    picker.innerHTML = "";
+    if (go) go.disabled = true;
+    if (note) {
+      note.hidden = false;
+      const link = "<a href=\"#\" onclick=\"document.getElementById('launch').close();" +
+        "goRunners('runners');return false\">set one up</a>";
+      note.innerHTML = room
+        ? "No runner on " + esc(room) + " is turned on and installed. " + link +
+          " on that machine first."
+        : "No runner is turned on and installed. " + link + " first.";
+    }
+    return null;
+  }
+  if (go) go.disabled = false;
+  if (note) { note.hidden = true; note.innerHTML = ""; }
+
+  const want = usable.find(h => h.id === preferId) || usable[0];
+  picker.innerHTML = usable.map(x =>
+    `<option value="${esc(x.id)}"${x.id === want.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
+  launchTarget.harness = want.id;
+  setLaunchModel(want);
+  return want;
+}
+
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
   await loadHarnesses();
-  const enabled = allHarnesses.filter(h => h.enabled);
-  if (!enabled.length) {
-    tellUser("atrium", "no runner is enabled yet. turn one on in the runners tab.");
+  if (!allHarnesses.some(h => h.enabled)) {
+    tellUser("atrium", "no runner is enabled yet. turn one on under " +
+      paneLink("runners", "rooms &rsaquo; runners") + " first.");
     goRunners("runners");
     return;
   }
   const picking = !id;
-  const h = allHarnesses.find(x => x.id === id) || enabled[0];
 
+  // The room the card starts on is settled before the runner list is drawn,
+  // because in aggregate mode the runners a fresh pick can offer are the
+  // selected room's, not every room's. `fillLaunchRoom` binds the room control
+  // to `refreshLaunchRunners`, so switching machine re-draws the list.
   document.getElementById("l-pick-field").hidden = !picking;
+  fillLaunchRoom(ontoTask);
+
   const picker = document.getElementById("l-harness");
-  picker.innerHTML = enabled.map(x =>
-    `<option value="${esc(x.id)}"${x.id === h.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
   // Changing the runner re-asks the model question, because the answer is per
   // runner: a shell cannot be given one and the control has to go away rather
-  // than sit there producing a refusal.
-  picker.onchange = () => setLaunchModel(allHarnesses.find(x => x.id === picker.value));
+  // than sit there producing a refusal. It also keeps launchTarget pointing at
+  // what is selected.
+  picker.onchange = () => {
+    launchTarget.harness = picker.value;
+    setLaunchModel(launchableHarnesses(launchRoomNow()).find(x => x.id === picker.value));
+  };
 
-  launchTarget = { harness: h.id, resume: resume || "", task_id: ontoTask || "" };
+  // A resume or a specific runner names its row; a fresh pick draws from
+  // whatever the selected room can start. launchTarget is set first so the
+  // room and runner controls, both of which read it, have it to point at.
+  const fallback = allHarnesses.find(x => x.id === id) ||
+    allHarnesses.find(x => x.enabled) || allHarnesses[0];
+  launchTarget = { harness: (fallback && fallback.id) || id || "", resume: resume || "", task_id: ontoTask || "" };
+  let h = fallback;
+  if (picking) {
+    h = refreshLaunchRunners(id) || fallback;
+  } else {
+    // Picker hidden, so no room filtering applies. Clear any dead-end state a
+    // previous open left on the launch button and the note.
+    const go = document.getElementById("l-go");
+    if (go) go.disabled = false;
+    const note = document.getElementById("l-pick-note");
+    if (note) { note.hidden = true; note.innerHTML = ""; }
+  }
+
   document.getElementById("l-heading").textContent =
     resume ? "resume " + (h.label || h.id) : picking ? "new agent" : "start " + (h.label || h.id);
   const pre = prefill || {};
@@ -1017,6 +1195,31 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   syncMore();
   document.getElementById("launch").showModal();
   document.getElementById("l-cwd").focus();
+}
+
+// Which machine this card starts on, asked only when it is a question.
+//
+// NOT ASKED WHEN THERE IS ONE ANSWER, and the operator was explicit about
+// that: one room, or a board already scoped to a room, or no hub at all, and
+// the field never appears. A card already on the board is not asked either,
+// because it is already somewhere and its tagged id says where.
+function fillLaunchRoom(ontoTask) {
+  const field = document.getElementById("l-room-field");
+  if (!field) return;
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms);
+  const scoped = typeof roomNow === "function" ? roomNow() : "";
+  if (!hubIsHub || scoped || ontoTask || rooms.length < 2) {
+    field.hidden = true;
+    return;
+  }
+  const sel = document.getElementById("l-room");
+  sel.innerHTML = rooms.map(r =>
+    `<option value="${esc(r.name)}">${esc(r.name)}${r.host ? " — " + esc(r.host) : ""}</option>`
+  ).join("");
+  // Changing the machine re-draws the runner list, because a runner offered
+  // here is one the selected room can actually start. See refreshLaunchRunners.
+  sel.onchange = () => refreshLaunchRunners(launchTarget && launchTarget.harness);
+  field.hidden = false;
 }
 
 // Open the optional half when something is already in it.
@@ -1104,10 +1307,20 @@ async function doLaunch() {
       source_url: launchResolved.url || ""
     });
   }
+  // WHICH MACHINE IT STARTS ON. Only ever set when the field was shown, which
+  // is when there was a choice to make. Sent as the room header on this one
+  // request rather than by scoping the board: you can start a card somewhere
+  // while looking at everywhere. See `js/rooms.js`.
+  const headers = { "Content-Type": "application/json" };
+  const roomField = document.getElementById("l-room-field");
+  if (roomField && !roomField.hidden) {
+    const want = document.getElementById("l-room").value;
+    if (want) headers["X-Atrium-Room"] = want;
+  }
   let task;
   try {
     task = await api("/v1/launch", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      method: "POST", headers, body: JSON.stringify(body)
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
   document.getElementById("launch").close();

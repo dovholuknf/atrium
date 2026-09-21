@@ -34,6 +34,18 @@ type LaunchRequest struct {
 	// harness's PromptArgs say to. This is how a card raised from an issue
 	// starts with the issue in front of it rather than at an empty cursor.
 	Prompt string `json:"prompt,omitempty"`
+	// Brief is context to hand the new session, written to BRIEF.md in its
+	// directory before it starts and read first.
+	//
+	// A FILE, NOT A LONGER PROMPT, and that is the whole difference. A prompt is
+	// said once, is the first thing to fall out of a compaction, and cannot be
+	// consulted afterwards. A file in the working directory can be re-read at any
+	// point, survives compaction, and is there when a human takes the card over.
+	// See writeBriefFile. Written on the room's own machine, which is why this
+	// runs here rather than wherever the caller was: the hub has no directory to
+	// write to. Ignored on a resume, which continues a conversation and takes no
+	// first prompt.
+	Brief string `json:"brief,omitempty"`
 	// Model names the model this session runs on, handed over as the harness's
 	// ModelArgs say to.
 	//
@@ -524,7 +536,21 @@ func (d *Daemon) startedOnto(taskID string) {
 	log.Printf("[atrium] %s was %s and now has a runner on it", t.DisplayTitle(), t.Status)
 }
 
+// Launch starts a runner, holding the card's and the resume's launch lock across
+// the whole call so its check-then-spawn region is atomic against another
+// caller. See keyedmutex.go: without this two launches onto one card, or two
+// resumes of one conversation, both pass the liveness guard before either
+// registers and both spawn.
+//
+// RestartRunner holds the same lock itself and calls launchLocked, so a restart
+// and a launch onto the same card serialize rather than braid.
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
+	unlock := d.launching.lock(launchKeys(req.TaskID, req.Resume)...)
+	defer unlock()
+	return d.launchLocked(req)
+}
+
+func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
 		return nil, fmt.Errorf("unknown harness %q", req.Harness)
@@ -644,6 +670,16 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if wanted == "" && task != nil && req.Resume == "" {
 		wanted = task.Prompt
 	}
+	// The briefing lands in the directory and the runner is told to read it
+	// first. On a fresh start only: a resume continues a conversation and takes
+	// no first prompt, and rewriting the file under a session that already read
+	// it would be a second source of truth it believes. See writeBriefFile.
+	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
+		if _, err := writeBriefFile(cwd, brief); err != nil {
+			return nil, err
+		}
+		wanted = briefPrompt(wanted)
+	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an unshelve of a card that was started
 	// on a model has to come back on that model, or the session changes
@@ -731,7 +767,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 			h.ID, firstLine(h.Prepare))
 	}
 
-	env := childEnvFrom(base, h.Env, map[string]string{
+	atrium := map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
 		// Which harness this is, for the hooks it will run.
@@ -743,7 +779,16 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// started, so it says so, and the hook prefers this over the runner
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
-	})
+	}
+	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
+	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
+	// Only set when this daemon is a room: a plain daemon with no hub has no
+	// room to name, and an empty value would leave every session's control
+	// calls to the aggregate view, which is the honest answer there.
+	if room := strings.TrimSpace(d.opts.Room); room != "" {
+		atrium["ATRIUM_ROOM"] = room
+	}
+	env := childEnvFrom(base, h.Env, atrium)
 	via := ""
 
 	if h.LaunchMode == store.LaunchPTY {
@@ -755,9 +800,9 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			fresh = &launchSpec{cmd: h.Cmd, args: h.Args, cwd: cwd, env: env}
+			fresh = &launchSpec{cmd: h.Exe(), args: h.Args, cwd: cwd, env: env}
 		}
-		pid, err := d.spawnPTYResume(task.ID, h.Cmd, args, cwd, env, req.Resume != "", fresh)
+		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
 			// The card was created before the process, so a failure to start
 			// has to move it. Left in `running` it describes a process that
@@ -780,7 +825,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		// this, `codex` reaches wt.exe as a bare name and comes back as
 		// 0x80070002, "the system cannot find the file specified", about a
 		// file that is on PATH.
-		cmdName, cmdArgs := h.Cmd, args
+		cmdName, cmdArgs := h.Exe(), args
 		if resolved, err := exec.LookPath(cmdName); err == nil {
 			cmdName, cmdArgs = viaShellIfScript(resolved, args)
 		}
@@ -930,11 +975,57 @@ func inheritedTaint(key string) bool {
 		return true
 	case strings.HasPrefix(upper, "CLAUDECODE"):
 		return true
-	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" || upper == "ATRIUM_RUNNER":
-		// Replaced below with this launch's own values.
+	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" ||
+		upper == "ATRIUM_RUNNER" || upper == "ATRIUM_ROOM":
+		// Replaced below with this launch's own values. ATRIUM_ROOM is here too
+		// so a daemon started from inside a session cannot leak that session's
+		// room to the ones it launches: a child gets THIS daemon's room or none.
 		return true
 	}
 	return false
+}
+
+// briefFileName is what a briefing is called in the new session's directory.
+//
+// One fixed name so a second launch into the same directory replaces the
+// briefing rather than littering it with dated copies nobody reads. A stale
+// brief is worse than a missing one: the session believes it. Not CLAUDE.md,
+// deliberately: that file loads into every session in the directory forever,
+// including ones nobody meant to brief.
+const briefFileName = "BRIEF.md"
+
+// writeBriefFile puts the briefing where the new session will find it, and
+// returns the path written.
+//
+// Overwrites. See briefFileName. The directory is expected to exist already:
+// Launch has stat'd cwd by the time this runs, so a missing one is a launch
+// failure that happened earlier and not here.
+func writeBriefFile(cwd, brief string) (string, error) {
+	path := filepath.Join(cwd, briefFileName)
+	body := brief
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		return "", fmt.Errorf("could not write the briefing to %s: %w", path, err)
+	}
+	return filepath.ToSlash(path), nil
+}
+
+// briefPrompt puts the instruction to read the briefing ahead of the task.
+//
+// AHEAD, because the order is what makes it work: a session that reads the task
+// first starts answering it, and the briefing arrives as correction. The task
+// still has to be in the prompt rather than only in the file, or the session
+// reads a briefing and sits there waiting to be told what to do with it.
+func briefPrompt(prompt string) string {
+	read := "Read " + briefFileName + " in this directory first. It is your briefing, written " +
+		"for you by another agent, and it holds everything you are expected to know. " +
+		"Re-read it whenever you lose the thread rather than guessing."
+	if strings.TrimSpace(prompt) == "" {
+		return read + " Then do what it asks."
+	}
+	return read + "\n\nThen: " + prompt
 }
 
 // childEnv builds the environment for a launched runner: everything inherited

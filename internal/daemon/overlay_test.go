@@ -96,6 +96,55 @@ func TestZrokRefusesAModeItDoesNotKnow(t *testing.T) {
 	}
 }
 
+// A public share with no login is the whole internet with an extra step, so the
+// panel refuses to save the public toggle rather than letting it be discovered
+// when the phone cannot get in. This is the design's save-time refusal.
+func TestZrokPublicRefusedWithoutLogin(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	err := d.saveOverlay("zrok", []byte(`{"public":true}`))
+	if err == nil || !strings.Contains(err.Error(), "needs a login") {
+		t.Fatalf("a public share saved with no login gave %v", err)
+	}
+	// And starting one, in case a config predates the rule, is refused for the
+	// same reason before it ever reaches the share command.
+	if err := d.st.SetSetting(SettingOverlayZrok, `{"mode":"public","public":true}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.startOverlay("zrok"); err == nil || !strings.Contains(err.Error(), "needs a login") {
+		t.Fatalf("a public share started with no login gave %v", err)
+	}
+}
+
+// A private share is gated by an account holding its token, so it needs no login
+// of its own and saving it must not be refused for lacking one.
+func TestZrokPrivateSavesWithoutLogin(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	if err := d.saveOverlay("zrok", []byte(`{"private":true}`)); err != nil {
+		t.Fatalf("a private share was refused for lacking a login it does not need: %v", err)
+	}
+}
+
+// With a working login configured, the public toggle saves: the login is the
+// authorisation a public URL cannot get from reachability.
+func TestZrokPublicSavesWithALogin(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	if err := d.SaveAuth(AuthConfig{
+		Enabled: true, Issuer: "https://idp.example/realms/x", ClientID: "atrium",
+		Redirect: "https://atrium-abc.share.zrok.io/auth/callback", Allow: []string{"me@example.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.saveOverlay("zrok", []byte(`{"public":true}`)); err != nil {
+		t.Fatalf("a public share with a login configured was still refused: %v", err)
+	}
+}
+
 // Stopping something that is not running is a state the board can ask for,
 // since it can be a click behind. It must not panic on the nil it holds.
 func TestStoppingAnOverlayThatIsNotRunning(t *testing.T) {

@@ -33,6 +33,12 @@ type Options struct {
 	HumanAddr string        // human-facing listener, e.g. ":7778"
 	DBPath    string        // sqlite file
 	LongPoll  time.Duration // agent long-poll ceiling
+	// Room is the hub-facing name this daemon is known by, when it is a room
+	// attached to a hub. It is exported to every launched session as
+	// ATRIUM_ROOM, so the session's HTTP control MCP registration can send
+	// X-Atrium-Room and the hub can scope its control calls to this room. Empty
+	// for a daemon with no hub, where there is no room to name.
+	Room string
 	// ShutdownToken guards POST /v1/shutdown. Empty means loopback only.
 	// Setting one says the endpoint is meant to be reachable remotely.
 	ShutdownToken string
@@ -123,8 +129,24 @@ type Daemon struct {
 	// outlive the daemon either.
 	peerLimit *peerLimiter
 
+	// pending retries the on-screen delivery of peer messages the gate would not
+	// take right now, on a widening backoff. In memory, because the durable copy
+	// is the queued message row and the hooks deliver that whatever this does.
+	// See pendinginject.go.
+	pending *pendingInjector
+
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
+
+	// launching serializes the check-then-spawn region of a launch, keyed by the
+	// card and the resume id. Without it two restarts or launches onto one card
+	// both pass the "is a runner live" guard before either registers, and both
+	// resume the same conversation. See keyedmutex.go and launch.go.
+	launching *keyedMutex
+
+	// closeOnce guards releasing the store, so the shutdown path and a caller's
+	// deferred Close cannot both close the database. See closeDB.
+	closeOnce sync.Once
 
 	mu          sync.Mutex
 	agentServer *http.Server
@@ -166,7 +188,9 @@ func New(opts Options) (*Daemon, error) {
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
+		launching: newKeyedMutex(),
 	}
+	d.pending = newPendingInjector(d)
 	// Card icons live beside the database, which is the one directory atrium
 	// already owns and already backs up with the rest of its state.
 	api.IconDir = filepath.Join(filepath.Dir(opts.DBPath), "icons")
@@ -204,6 +228,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
+	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
 	d.ap.SaveOverlay = d.saveOverlay
@@ -390,7 +415,19 @@ func (d *Daemon) Hub() *hub.Hub { return d.hb }
 func (d *Daemon) Store() *store.Store { return d.st }
 
 // Close releases the database.
-func (d *Daemon) Close() error { return d.st.Close() }
+func (d *Daemon) Close() error { return d.closeDB() }
+
+// closeDB releases the store at most once.
+//
+// The shutdown path closes it explicitly so the detached room restarter's
+// invariant is real rather than incidental (see shutdown and
+// cmd/atrium2/restart.go), and a caller that keeps a `defer d.Close()` must not
+// then close it a second time. The once makes both callers safe.
+func (d *Daemon) closeDB() error {
+	var err error
+	d.closeOnce.Do(func() { err = d.st.Close() })
+	return err
+}
 
 // reportRunners says which configured runners this machine actually has.
 //
@@ -409,18 +446,18 @@ func (d *Daemon) reportRunners() {
 			width = len(h.ID)
 		}
 	}
-	log.Printf("[atrium] runners, resolved against this process's PATH:")
+	log.Printf("[atrium] runners, resolved by explicit path or against this process's PATH:")
 	missing := 0
 	for _, h := range hs {
 		state := "off"
 		if h.Enabled {
 			state = "on "
 		}
-		if p := api.LookPath(h.Cmd); p != "" {
+		if p := api.RunnerFound(h); p != "" {
 			log.Printf("[atrium]   %-*s  %s  %s", width, h.ID, state, p)
 			continue
 		}
-		log.Printf("[atrium]   %-*s  %s  NOT ON PATH (%s)", width, h.ID, state, h.Cmd)
+		log.Printf("[atrium]   %-*s  %s  NOT FOUND (%s)", width, h.ID, state, h.Exe())
 		if h.Enabled {
 			missing++
 		}
@@ -736,6 +773,20 @@ func (d *Daemon) publishTask(id string) {
 }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
+// BoardHandler is the human-facing surface: the JSON API, the event stream, the
+// terminal websocket and the board's own files.
+//
+// EXPORTED SO A ROOM CAN SERVE IT SOMEWHERE ELSE. `internal/link` runs this
+// same handler on connections the room dialled out to a hub, which is how the
+// board can be restarted without touching a single running agent. It is the
+// same handler the loopback listener uses, not a copy and not a subset: a room
+// whose hub is down is still a working atrium on its own address, and that is
+// the escape hatch the whole split depends on.
+//
+// NOT the agent listener. That one is a different mux on a different port and
+// `docs/overlays.md` says never to publish it. See `Run` below.
+func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
+
 func (d *Daemon) Run(ctx context.Context) error {
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)
@@ -763,7 +814,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
-	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.ap.Handler()}
+	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.BoardHandler()}
 
 	d.mu.Lock()
 	d.agentServer = agentSrv
@@ -773,17 +824,34 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent listener: %w", err)
 	}
-	humanLn, err := net.Listen("tcp", d.opts.HumanAddr)
-	if err != nil {
-		agentLn.Close()
-		return fmt.Errorf("human listener: %w", err)
+	// NO BOARD OF ITS OWN, when asked for with `-`.
+	//
+	// A room attached to a hub is reached through that hub, and its loopback
+	// board is a second address showing the same thing. For a room running
+	// INSIDE a hub there is not even a fallback argument for it: they are one
+	// process, so a hub that is down takes the loopback board with it.
+	//
+	// `-` rather than empty, because empty is a valid address meaning every
+	// interface on a random port, which is the opposite of what somebody
+	// leaving this blank would want.
+	var humanLn net.Listener
+	if strings.TrimSpace(d.opts.HumanAddr) != "-" {
+		humanLn, err = net.Listen("tcp", d.opts.HumanAddr)
+		if err != nil {
+			agentLn.Close()
+			return fmt.Errorf("human listener: %w", err)
+		}
 	}
 
 	// `addressOf`, not concatenation. An address that already names a host,
 	// which is what `atrium preview` passes, came out as
 	// `http://localhost127.0.0.1:53895`.
 	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
-	log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+	if strings.TrimSpace(d.opts.HumanAddr) == "-" {
+		log.Printf("[atrium] board   -> none of its own. reached through the hub")
+	} else {
+		log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+	}
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
 	// WHAT A SHELL WILL OPEN AS, said once at startup rather than discovered
 	// by opening one. The search looks at PATH, so the answer is a property of
@@ -818,6 +886,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// Handing the space a prune or an event roll-off freed back to disk, a
+	// bounded batch at a time while the room stays live. A no-op on an older
+	// database not in incremental auto_vacuum mode. See vacuum.go.
+	go d.vacuumLoop(ctx, VacuumEvery)
 	// The commands that find work. Its own loop rather than the reap ticker,
 	// because a source runs on the interval its own row names and the reaper
 	// asks one question at one rate. Nothing here can halt anything: intake is
@@ -891,13 +963,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 		errCh <- fmt.Errorf("agent listener: %w", err)
 	}()
-	go func() {
-		err := humanSrv.Serve(humanLn)
-		if errors.Is(err, http.ErrServerClosed) {
-			return
-		}
-		errCh <- fmt.Errorf("human listener: %w", err)
-	}()
+	if humanLn != nil {
+		go func() {
+			err := humanSrv.Serve(humanLn)
+			if errors.Is(err, http.ErrServerClosed) {
+				return
+			}
+			errCh <- fmt.Errorf("human listener: %w", err)
+		}()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -957,6 +1031,13 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// overlay being broken.
 	d.closeOverlays()
 
+	// The deferred-injection retries stop first, so a backoff timer cannot fire
+	// against a store that is closing under it. The queued messages stay on disk
+	// and the next daemon's hooks deliver them. See pendinginject.go.
+	if d.pending != nil {
+		d.pending.stopAll()
+	}
+
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be
 	// writing a file, and losing that costs far more than a slow shutdown.
@@ -1015,6 +1096,17 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 			log.Printf("[atrium] stopped in %s", time.Since(start).Round(time.Millisecond))
 			return
 		}
+	}
+
+	// Release the database before Run returns, so the invariant the detached room
+	// restarter relies on is explicit rather than incidental. It treats a free
+	// --http port as proof the old room and its sqlite handle are gone, and that
+	// was true only because the process exits right after Run returns and the OS
+	// releases the handle. Closing it here makes it a thing the code does rather
+	// than a thing the OS happens to do. See cmd/atrium2/restart.go's
+	// waitForRoomRestart. Idempotent, so a caller's deferred Close is still safe.
+	if err := d.closeDB(); err != nil {
+		log.Printf("[atrium] closing the database: %v", err)
 	}
 
 	log.Printf("[atrium] state is on disk at %s", d.opts.DBPath)

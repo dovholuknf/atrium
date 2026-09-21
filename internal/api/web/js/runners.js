@@ -5,6 +5,9 @@ let allHarnesses = [];
 // anything typed into it. Arrives alongside the runners, since the launch
 // dialog reads both at once.
 let modelsSeen = [];
+// The operator's own model picker, read from Claude Code's settings by the
+// daemon. Empty on a machine that has not configured one, which is most.
+let modelPicker = [];
 let launchTarget = null;
 
 // Which pane of the runners page was last open, remembered the same way the
@@ -30,6 +33,15 @@ const RUNNERS_PANE = "atrium.runnersPane";
 // The split happens in `renderRunners`, which `switchView` calls, so the pane
 // is asked for after that rather than before: there are no panes to show yet
 // on the first visit.
+// A link that takes you where the fix is, from inside a dialog.
+//
+// The dialog is closed first. A modal over the page it just sent you to is a
+// page you cannot touch, and the only sign of what happened is an ok button.
+function paneLink(pane, label) {
+  return `<a href="#" onclick="document.getElementById('ask').close();` +
+    `goRunners('${pane}');return false">${label}</a>`;
+}
+
 function goRunners(pane) {
   switchView("runners");
   const host = document.getElementById("runners");
@@ -134,24 +146,38 @@ function termLinkTo(board, card) {
   return String(board).split("#")[0] + "#term=" + encodeURIComponent(card.id);
 }
 
+// ONE LIST, TWO WAYS OF BEING A ROOM.
+//
+// A room is a machine running agents, and there are two ways one reaches this
+// board. It can ATTACH: dial the hub and stay connected, so its board, its
+// terminals and its database are all reachable through here and the hub can be
+// restarted without touching it. Or it can CHECK IN: POST a summary of itself
+// on a timer, which is the older way and the only one available to a machine
+// that is not talking to a hub.
+//
+// They were two panes with the same name, which is how somebody looking at
+// `2/2 rooms` in the header found an empty list under `rooms` and concluded the
+// feature did not work. They are one list now, because to the person reading it
+// they are one question: what machines are there.
 async function renderRooms() {
   const el = document.getElementById("room-list");
   if (!el) return;
+  const attached = typeof hubAttachedRows === "function" ? await hubAttachedRows() : "";
   const rooms = await loadRooms();
   if (!roomsRead.answered) {
     // A daemon too old to have the endpoint. Not an error worth drawing:
     // nothing has ever been in this list on that machine.
-    setHTML(el, "");
+    setHTML(el, attached);
     return;
   }
   if (!rooms.length) {
-    setHTML(el, `<div class="panel"><div class="empty">
-      No other machines are reporting in. <a href="#" onclick="openRoomJoin();return false;">Add
+    setHTML(el, attached + (attached ? "" : `<div class="panel"><div class="empty">
+      No machines are here. <a href="#" onclick="openRoomJoin();return false;">Add
       a room</a> to see what to run on one.
-    </div></div>`);
+    </div></div>`));
     return;
   }
-  setHTML(el, rooms.map(r => {
+  setHTML(el, attached + rooms.map(r => {
     // STALE IS SAID, not hidden. A room that has stopped checking in is the
     // thing worth noticing, and dropping it from the list would make a machine
     // that died look like one that was never there.
@@ -381,6 +407,26 @@ async function forgetRoom(name) {
 let roomJoinInfo = null;
 
 async function openRoomJoin() {
+  // A HUB ENROLS ROOMS WITH A TOKEN, and the token is minted on the hub's own
+  // machine rather than from this page. Anybody who can open the board could
+  // otherwise enrol a machine that runs agents, and a board reachable over an
+  // overlay is exactly the case that matters. So this says what to run and
+  // where, and mints nothing.
+  if (typeof hubIsHub !== "undefined" && hubIsHub) {
+    tellUser("add a room",
+      "<p>The hub names its rooms, so adding one is where the name is chosen. " +
+      "On the machine running the hub:</p>" +
+      "<pre>atrium2 hub room add &lt;name&gt;</pre>" +
+      "<p>That prints one line. On the machine your agents are on, paste it:</p>" +
+      "<pre>atrium2 join atr1_...</pre>" +
+      "<p>The string is good once, for an hour, and for that name only. It is shown " +
+      "once, because the hub keeps a hash of it rather than the string. " +
+      "<code>atrium2 hub room token &lt;name&gt;</code> mints another and retires the " +
+      "old one.</p>" +
+      "<p>The room dials the hub, so nothing needs opening on either side, and the hub " +
+      "can be restarted without touching the sessions running there.</p>");
+    return;
+  }
   const dlg = document.getElementById("roomjoin");
   try {
     roomJoinInfo = await api("/v1/rooms/join");
@@ -489,20 +535,11 @@ async function renderRunners() {
   // Before the list is drawn: the claude row carries the count.
   await loadHooks();
 
-  const on = allHarnesses.filter(h => h.enabled);
-  document.getElementById("launchers").innerHTML = on.length
-    ? `<div class="toolbar">` + on.map(h =>
-        `<button class="go big" onclick="openLaunch('${esc(h.id)}')">start a ${esc(h.label)}</button>`
-      ).join("") + `</div>`
-    : `<div class="panel"><div class="empty">
-        nothing is enabled. turn a runner on below, or add one.
-      </div></div>`;
-
   // Whether the command exists is the difference between a runner that works
   // and one that fails on first use looking like atrium is broken. The daemon
   // resolves it the same way launching does, so what this shows is what will
   // actually run.
-  document.getElementById("harness-list").innerHTML = `<div class="panel">` + allHarnesses.map(h => `
+  document.getElementById("harness-list").innerHTML = roomGroups(allHarnesses, h => `
     <div class="row line">
       <span class="chip ${h.enabled ? "accent" : ""}">${h.enabled ? "on" : "off"}</span>
       <span class="tool">${esc(h.label)}</span>
@@ -510,15 +547,17 @@ async function renderRunners() {
         esc([h.cmd].concat(h.args || []).join(" "))}</code>
       ${h.found
         ? `<span class="by found" title="${esc(h.found)}">on PATH</span>`
-        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not installed</span>`}
+        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
-      ${hooksChip(h)}
+      <span class="hookcell">${hooksChip(h)}</span>
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
-        onclick="toggleHarness('${esc(h.id)}')">${h.enabled ? "disable" : "enable"}</button>
-      <button onclick="editHarness('${esc(h.id)}')">edit</button>
-    </div>`).join("") + `</div>`;
+        onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
+          h.enabled ? "disable" : "enable"}</button>
+      <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
+      <button title="a copy of this runner, to change one thing about"
+        onclick="copyHarness('${esc(h.id)}','${esc(h.room || "")}')">duplicate</button>
+    </div>`);
 
-  renderDiscovered();
   renderFixtures();
   renderSources();
   renderProviders();
@@ -579,6 +618,7 @@ function historyRow(t) {
     <span class="grow ell" title="${esc(t.recap || t.why || t.worktree || "")}">${
       esc(t.recap || t.why || t.worktree || "")}</span>
     ${originChip(t)}
+    ${roomChip(t)}
     ${t.recap
       ? `<span class="chip recap" title="${esc(t.recap)}">recap</span>`
       : `<span class="by" title="no account of what this session did">&mdash;</span>`}
@@ -617,7 +657,7 @@ async function renderActions() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allActions.map(a => `
+  setHTML(host, roomGroups(allActions, a => `
     <div class="row line">
       <span class="chip ${a.enabled ? "accent" : ""}">${a.enabled ? "on" : "off"}</span>
       <span class="tool">${esc(a.label)}</span>
@@ -626,15 +666,16 @@ async function renderActions() {
         >and exit</span>` : ""}
       ${a.tag ? `<span class="chip tag" style="--ghue:${groupHue(a.tag)}">${esc(a.tag)}</span>` : ""}
       ${a.runner ? `<span class="by">${esc(a.runner)}</span>` : ""}
-      <button data-edit="${esc(a.id)}">edit</button>
-    </div>`).join("") + `</div>`);
+      <button data-edit="${esc(a.id)}" data-room="${esc(a.room || "")}">edit</button>
+    </div>`));
   host.querySelectorAll("button[data-edit]").forEach(b => {
-    b.onclick = () => editAction(b.dataset.edit);
+    b.onclick = () => editAction(b.dataset.edit, b.dataset.room);
   });
 }
 
-function editAction(id) {
-  const a = allActions.find(x => x.id === id) || {
+async function editAction(id, room) {
+  if (!await chooseWriteRoom(rowOf(allActions, id, room), "action")) return;
+  const a = rowOf(allActions, id, room) || {
     id: "", label: "", prompt: "", after: "keep", tag: "", runner: "",
     enabled: true, sort: allActions.length * 10
   };
@@ -719,7 +760,7 @@ async function renderSources() {
     return;
   }
 
-  setHTML(host, `<div class="panel">` + allSources.map(s => `
+  setHTML(host, roomGroups(allSources, s => `
     <div class="row line">
       <span class="chip ${s.enabled ? "accent" : s.last_error ? "warn" : ""}"
         >${s.enabled ? "on" : s.last_error ? "off" : "off"}</span>
@@ -728,8 +769,8 @@ async function renderSources() {
         esc([s.cmd].concat(s.args || []).join(" "))}</code>
       <span class="by" title="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
       ${sourceStateChip(s)}
-      <button onclick="editSource('${esc(s.id)}')">edit</button>
-    </div>`).join("") + `</div>`);
+      <button onclick="editSource('${esc(s.id)}','${esc(s.room || "")}')">edit</button>
+    </div>`));
 }
 
 // How a source is doing, as one chip.
@@ -759,8 +800,9 @@ function everyLabel(secs) {
   return "every " + secs + "s";
 }
 
-function editSource(id) {
-  const s = allSources.find(x => x.id === id) || {
+async function editSource(id, room) {
+  if (!await chooseWriteRoom(rowOf(allSources, id, room), "source")) return;
+  const s = rowOf(allSources, id, room) || {
     id: "", label: "", cmd: "", args: [], cwd: "",
     // Off by default. A source is a command somebody just wrote, and the first
     // thing to do with one is run it by hand and read what it printed.
@@ -903,7 +945,7 @@ async function renderRecognisers() {
 
   // In the order they are asked, which is the order they are drawn. Somebody
   // debugging "why did the wrong row answer" is looking for exactly this.
-  setHTML(host, `<div class="panel">` + allRecognisers.map(r => `
+  setHTML(host, roomGroups(allRecognisers, r => `
     <div class="row line">
       <span class="chip ${r.enabled ? "accent" : ""}">${r.enabled ? "on" : "off"}</span>
       <span class="by" title="asked in this order, lowest first">${esc(String(r.rank))}</span>
@@ -913,19 +955,20 @@ async function renderRecognisers() {
       ${r.last_error ? `<span class="chip warn" title="${
         esc("the fetch failed " + r.failures + " time(s) in a row: " + r.last_error)
       }">fetch failing</span>` : ""}
-      <button class="editrec" data-id="${esc(r.id)}">edit</button>
-    </div>`).join("") + `</div>`);
+      <button class="editrec" data-id="${esc(r.id)}" data-room="${esc(r.room || "")}">edit</button>
+    </div>`));
 
   // THE ID COMES BACK THROUGH THE DOM, not through an inline handler. An id is
   // operator-typed free text, and HTML escaping does nothing about an
   // apostrophe inside a JavaScript string literal: a row called `it's mine`
   // would close the argument and the button would throw instead of opening.
   host.querySelectorAll(".editrec").forEach(b =>
-    b.onclick = () => editRecogniser(b.dataset.id));
+    b.onclick = () => editRecogniser(b.dataset.id, b.dataset.room));
 }
 
-function editRecogniser(id) {
-  const r = allRecognisers.find(x => x.id === id) || {
+async function editRecogniser(id, room) {
+  if (!await chooseWriteRoom(rowOf(allRecognisers, id, room), "recogniser")) return;
+  const r = rowOf(allRecognisers, id, room) || {
     id: "", label: "", pattern: "", enabled: false,
     // Below whatever is already there, so a new row cannot silently swallow
     // urls a more specific one was answering.

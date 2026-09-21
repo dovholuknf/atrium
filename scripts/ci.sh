@@ -72,7 +72,7 @@ step "the contrast"
 # Skipped rather than failed with no node, like the board check above: it is a
 # lint over a stylesheet, not a build step.
 if command -v node >/dev/null 2>&1; then
-  check "contrast" node scripts/check-contrast.js internal/api/web/board.css
+  check "contrast" node scripts/check-contrast.js internal/api/web/css
 else
   echo "skipped: no node on PATH, so the palette's contrast was not checked."
 fi
@@ -91,7 +91,9 @@ step "the packaging scripts parse"
 # parse without running: `sh -n` for the package scriptlets, and PowerShell's
 # own parser for the Windows side.
 for f in packaging/postinstall.sh packaging/preremove.sh \
+         packaging/macos/scripts/postinstall \
          scripts/atrium-service.sh scripts/package-linux.sh \
+         scripts/package-macos.sh \
          scripts/release.sh scripts/publish-release.sh \
          scripts/cut-release.sh scripts/check-release.sh; do
   if ! bash -n "$f"; then

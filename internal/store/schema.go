@@ -1344,6 +1344,52 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS idx_provider_repo_provider ON provider_repo (provider)`,
 		},
 	},
+	{
+		// THE SHELL STOPS BEING A RUNNER.
+		//
+		// It was a second answer to a question the machine had already
+		// answered. A shell is a property of the machine: the `shell_command`
+		// setting, or `internal/shellpick` when that is empty, read FRESH by
+		// `shellFor` every time one is opened. This row was a copy of that
+		// taken on first run and then frozen, so changing the setting moved
+		// the shell on every card and left this one starting the program that
+		// was found months ago.
+		//
+		// It fitted the shape badly besides. A runner is a command, a way to
+		// resume, a way to be given a prompt and a model, hooks and a rules
+		// file, and a shell has none of those.
+		//
+		// DELETED RATHER THAN DISABLED, because a disabled row is a thing to
+		// wonder about later. A shell is still one press away on any card's
+		// terminal, which is where somebody wants one: beside the agent, in
+		// its directory.
+		//
+		// Only the seeded row. `id = 'shell'` is the one atrium wrote; a
+		// runner somebody made themselves that happens to start a shell is
+		// theirs and is left alone. Cards that ran under it keep their
+		// `runner` name, which is an attribute and not a reference, so their
+		// history reads the same as it always did.
+		name: "0053_shell_is_not_a_runner",
+		stmts: []string{
+			`DELETE FROM harness WHERE id = 'shell'`,
+		},
+	},
+	{
+		// An explicit binary path per runner, so availability does not depend on
+		// the room process PATH.
+		//
+		// A runner installed on a machine can still be invisible to the room
+		// because the directory it landed in was not on the PATH the room was
+		// started with. An explicit path is the per-room answer, and it makes
+		// availability the question of whether this path exists on this room
+		// rather than whether a name resolves. Empty keeps PATH resolution of
+		// `cmd`, which is what every existing row wants. See
+		// docs/runner-scoping-design.md.
+		name: "0054_harness_bin_path",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN bin_path TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

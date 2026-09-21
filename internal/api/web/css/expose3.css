@@ -1,0 +1,90 @@
+  /* "expose the board 3": a second redo surface with a different bet. Where menu 2 lists the three transports as
+     rows, this one hides them. It asks one question, "who needs to reach the board", and turns the answer into
+     the right transport, so the operator never picks zrok-vs-ziti and never reads the word "transport". One path
+     is on screen at a time. Namespaced .x3 so it, menu 2, and the classic panel stay independent and deletable. */
+
+  .x3-q {
+    margin: 0 0 var(--vs-3); color: var(--head); font: 600 var(--fs-md)/1.3 var(--sans);
+  }
+
+  /* The three answers, as tiles. A grid rather than a row so they wrap to one column on a phone without a media
+     query fighting the settings pane's own. */
+  .x3-goals {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--sp-3); margin-bottom: var(--vs-4);
+  }
+  .x3-goal {
+    display: flex; flex-direction: column; gap: 4px; text-align: left;
+    padding: 13px 14px; border-radius: var(--r-md);
+    border: 1px solid var(--stroke-dim); background: rgba(var(--sink-rgb),.35);
+    color: var(--body); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .x3-goal:hover { border-color: var(--teal); background: var(--lift); }
+  .x3-goal.on {
+    border-color: var(--chip-accent-stroke); background: var(--chip-accent);
+  }
+  .x3-goal-t { color: var(--head); font: 600 var(--fs-base)/1.25 var(--sans); }
+  .x3-goal.on .x3-goal-t { color: var(--chip-accent-text); }
+  .x3-goal-s { color: var(--dim); font-size: var(--fs-sm); line-height: 1.4; }
+  /* A live tile carries the same dot the rest of the board uses for "on", so the chosen destination also says
+     whether it is currently reachable. */
+  .x3-goal-live {
+    margin-top: 6px; font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .08em;
+    text-transform: uppercase; color: var(--chip-accent-text);
+  }
+  .x3-goal-live::before { content: "\25CF"; margin-right: 5px; }
+
+  /* The one focused panel for the chosen answer. */
+  .x3-panel {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.35); padding: 15px 16px;
+  }
+  .x3-panel.live { border-color: var(--chip-accent-stroke); box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset; }
+  .x3-lead {
+    margin: 0 0 var(--vs-3); color: var(--dim); font: var(--fs-sm)/1.55 var(--sans); max-width: 70ch;
+  }
+  .x3-field { margin-bottom: 12px; }
+  .x3-field:last-of-type { margin-bottom: 0; }
+  .x3-field > .eyebrow { display: block; margin-bottom: 5px; }
+  .x3-field > input:not([type=checkbox]),
+  .x3-field > textarea,
+  .x3-field > .picker { width: 100%; }
+  .x3-field > .picker { display: flex; gap: var(--sp-2); }
+  .x3-field > .picker > input,
+  .x3-field > .picker > select { flex: 1 1 auto; min-width: 0; }
+  .x3-field .hintline { display: block; margin-top: 5px; max-width: 62ch; line-height: 1.5; }
+  .x3-field textarea { font: var(--fs-sm)/1.5 var(--mono); resize: vertical; min-height: 62px; }
+
+  /* Board authentication, folded into the phone path rather than standing alone: it only matters there, so it
+     appears there, as a small titled block the moment the phone answer is chosen. */
+  .x3-auth {
+    margin: 0 0 14px; padding: 12px 13px; border-radius: var(--r-sm);
+    background: var(--chip); border: 1px solid var(--stroke-dim);
+  }
+  .x3-auth.stop { background: var(--warn-bg); border-color: var(--warn-stroke); }
+  .x3-auth-t {
+    color: var(--head); font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .04em;
+    display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 8px;
+  }
+  .x3-auth.stop .x3-auth-t { color: var(--warn); }
+
+  .x3-addr {
+    display: flex; align-items: center; gap: var(--sp-3); margin: 12px 0 0;
+    padding: 9px 11px; border-radius: var(--r-sm);
+    background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
+  }
+  .x3-addr code {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--chip-accent-text);
+  }
+  .x3-note {
+    margin-top: 12px; padding: 8px 11px; border-radius: var(--r-sm);
+    background: rgba(var(--sink-rgb),.5); border: 1px solid var(--stroke-dim);
+    color: var(--dim); font-size: var(--fs-xs); line-height: 1.5;
+  }
+  .x3-note code { font-family: var(--mono); color: var(--label); }
+  .x3-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: 14px; }
+  .x3-actions .grow { flex: 1; }
+  /* The primary button is the whole point of this surface, so it is bigger than a settings button and reads as
+     the one thing to press. */
+  .x3-actions .x3-go { font-size: var(--fs-base); padding: 9px 16px; }

@@ -109,11 +109,10 @@ const carryCutNotice = "\x1b[38;5;244m" +
 // force when it was saved.
 //
 // That is deliberately less than the ring knows. Whoever reads this file back
-// gets a note saying the scrollback may sit in the wrong places, which is the
-// same thing they would be told about a live buffer resized twice, and it does
-// not need a mark table to say it. Carrying the marks would buy a more precise
-// sentence in a file that already spans a restart, and cost a format that has
-// to stay parseable by one Cut.
+// gets replay composed for the recorded width, the same as a live buffer that
+// was resized, and it does not need a mark table to do that. Carrying the marks
+// would buy a more precise layout in a file that already spans a restart, and
+// cost a format that has to stay parseable by one Cut.
 type carryover struct {
 	cols  int
 	bytes []byte

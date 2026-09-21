@@ -128,7 +128,9 @@ func newRoom() *cobra.Command {
 		"an OpenZiti service to reach the hub on, instead of --hub")
 	c.Flags().StringVar(&identity, "identity", "",
 		"the ziti identity file to dial that service with")
-	c.Flags().StringVar(&name, "name", "", "what to call this room (default: this machine's hostname)")
+	c.Flags().StringVar(&name, "name", "",
+		"what to call this room, shown on every card's room chip on the hub board, so keep it "+
+			"short (default: this machine's hostname)")
 	c.Flags().StringVar(&board, "board", "",
 		"where a browser should go to reach THIS machine directly, since terminals do not federate")
 	c.Flags().StringVar(&local, "local", "", "this machine's own daemon (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -192,6 +194,13 @@ func runRoom(ctx context.Context, o roomOpts) error {
 		return err
 	}
 	log.Printf("[atrium] room %q reporting to %s every %s", o.Name, hubURL, roomBeat)
+	// The name is the room chip drawn on EVERY card this machine reports, so a
+	// long one crowds the board once more than one room is attached. Said only
+	// when it is already long, so the common short name pays nothing.
+	if len([]rune(o.Name)) > 12 {
+		log.Printf("[atrium] this name shows on every card's room chip on the hub board. "+
+			"a shorter --name reads better there (this one is %d characters)", len([]rune(o.Name)))
+	}
 	// Said at startup, once, because it is the one thing about this room a
 	// person needs to have seen: whether the hub can start processes here.
 	switch {

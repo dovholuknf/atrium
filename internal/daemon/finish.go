@@ -109,6 +109,15 @@ func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 	d.act.forget(task.ID)
 	d.publishTask(task.ID)
 
+	// The room announces the session handing its work over, which the hub reads
+	// as a card changing column without knowing the session declared it done. See
+	// lifecycle.go.
+	finishLine := task.DisplayTitle() + " reported it finished (" + status + ")"
+	if strings.TrimSpace(in.Recap) != "" {
+		finishLine += " with a recap"
+	}
+	d.emitLifecycle("session-finish", finishLine)
+
 	log.Printf("[atrium] %s says it is finished%s", task.DisplayTitle(),
 		map[bool]string{true: ", and left a recap", false: " and said nothing about what it did"}[strings.TrimSpace(in.Recap) != ""])
 

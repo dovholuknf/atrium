@@ -63,10 +63,41 @@ func TestChildEnvLayering(t *testing.T) {
 	}
 }
 
+// A daemon started from inside a session carries that session's ATRIUM_ROOM.
+// The sessions it launches must get THIS daemon's room, not the inherited one,
+// or a control call from a launched session names the wrong room to the hub.
+func TestChildEnvDropsInheritedRoom(t *testing.T) {
+	t.Setenv("ATRIUM_ROOM", "stale-room")
+
+	env := childEnv(nil, map[string]string{"ATRIUM_ROOM": "this-room"})
+
+	var room string
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "ATRIUM_ROOM=") {
+			room = strings.TrimPrefix(kv, "ATRIUM_ROOM=")
+		}
+	}
+	if room != "this-room" {
+		t.Errorf("ATRIUM_ROOM is %q, want the launching daemon's own room", room)
+	}
+}
+
+// A daemon with no hub names no room, so it must not set ATRIUM_ROOM at all: an
+// empty value would still be sent as an empty X-Atrium-Room header, and leaving
+// it unset is what makes the session fall back to the aggregate view.
+func TestChildEnvOmitsRoomWhenUnset(t *testing.T) {
+	env := childEnv(nil, map[string]string{"ATRIUM_AGENT_NAME": "a"})
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "ATRIUM_ROOM=") {
+			t.Errorf("ATRIUM_ROOM should be absent when no room was named, got %q", kv)
+		}
+	}
+}
+
 func TestInheritedTaint(t *testing.T) {
 	for _, k := range []string{
 		"CLAUDE_CODE_CHILD_SESSION", "claude_code_entrypoint", "CLAUDECODE",
-		"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID",
+		"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_ROOM",
 	} {
 		if !inheritedTaint(k) {
 			t.Errorf("%s should be stripped", k)

@@ -125,6 +125,15 @@
      display:grid kept the board visible on every tab. This has to win. */
   [hidden] { display: none !important; }
   html, body { height: 100%; }
+  /* Hold text at the size the layout asked for, on a phone as much as on a
+     desktop. A mobile browser's default is `text-size-adjust: auto`, which
+     inflates text it decides is too small to read: on the board it left the
+     chrome alone but hit the terminal hard. xterm measures its cell from the
+     computed font size of `.xterm`, and auto pushed a 14px terminal to ~20px,
+     so the runner's output drew about half again too big while everything
+     around it stayed put. The whole board is sized in explicit units for the
+     width it is on, so there is nothing here for the heuristic to help. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   /* The page fills the window and never scrolls as a whole. The views that need to scroll do it inside
      themselves.
 

@@ -123,6 +123,18 @@ type Activity struct {
 	// of a process rather than of a card, and it would be a lie the moment the
 	// daemon restarted. See docs/activity-design.md.
 	Dialog bool `json:"dialog,omitempty"`
+	// HeldPeer names the session whose message is waiting to be typed into this
+	// terminal, empty when nothing is held. HeldSeconds is how long it has
+	// waited.
+	//
+	// NOT SUBJECT TO THE STALENESS CUTOFF, unlike everything else here. The rest
+	// is about a running process and expires when the hooks go quiet. A held
+	// message is a fact about a queued injection, and it stays true while the
+	// operator's line is dirty however long that runs, which is exactly when the
+	// process is idle and the rest of this has expired. See the held map and
+	// `pendingInjector`.
+	HeldPeer    string `json:"held_peer,omitempty"`
+	HeldSeconds int64  `json:"held_seconds,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -145,6 +157,16 @@ type activityTracker struct {
 	// telAt is when each CALLER last got a post accepted, for the floor. Keyed
 	// by what the caller said it was, not by a card id.
 	telAt map[string]time.Time
+	// held is the peer message waiting to be typed into each card's terminal,
+	// kept apart from `by` because it does not expire on the activity clock. See
+	// the HeldPeer note on Activity and `pendingInjector`.
+	held map[string]heldPeer
+}
+
+// heldPeer is a queued injection waiting on the operator's line to clear.
+type heldPeer struct {
+	from  string
+	since time.Time
 }
 
 func newActivityTracker() *activityTracker {
@@ -153,6 +175,7 @@ func newActivityTracker() *activityTracker {
 		by:    map[string]*Activity{},
 		tel:   map[string]*Telemetry{},
 		telAt: map[string]time.Time{},
+		held:  map[string]heldPeer{},
 	}
 }
 
@@ -161,13 +184,16 @@ func newActivityTracker() *activityTracker {
 func (a *activityTracker) get(taskID string) *Activity {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// A held peer message rides along whatever the running-process activity is
+	// doing, and outlives its staleness. Computed first so it can be attached to
+	// a fresh, a stale, or an absent activity all the same. See withHeld.
 	cur := a.by[taskID]
 	if cur == nil {
-		return nil
+		return a.withHeld(taskID, nil)
 	}
 	age := a.now().Sub(cur.Since)
 	if age > staleAfter {
-		return nil
+		return a.withHeld(taskID, nil)
 	}
 	out := *cur
 	out.Seconds = int64(age.Seconds())
@@ -201,7 +227,47 @@ func (a *activityTracker) get(taskID string) *Activity {
 	// session that had subagents running, which is the report this note comes
 	// from. Clamping here was tried and is wrong: it would make the number
 	// claim an agent had not finished when the runner said it had.
-	return &out
+	return a.withHeld(taskID, &out)
+}
+
+// withHeld attaches a held peer message to an activity, synthesising one when
+// the card has no running-process activity to carry it. Caller holds the lock.
+//
+// The synthesised activity has no `What`, so a card that is only holding a
+// message and doing nothing else reads as exactly that: nothing running, a
+// message waiting. Returns the input untouched, possibly nil, when nothing is
+// held, so the no-message path is what it always was.
+func (a *activityTracker) withHeld(taskID string, out *Activity) *Activity {
+	h, ok := a.held[taskID]
+	if !ok {
+		return out
+	}
+	if out == nil {
+		out = &Activity{}
+	}
+	out.HeldPeer = h.from
+	out.HeldSeconds = int64(a.now().Sub(h.since).Seconds())
+	return out
+}
+
+// setHeld records that a peer message is waiting to be typed into this card's
+// terminal, keeping the first sender's clock so the age is how long the OLDEST
+// held message has waited.
+func (a *activityTracker) setHeld(taskID, from string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, ok := a.held[taskID]; ok {
+		return
+	}
+	a.held[taskID] = heldPeer{from: from, since: a.now()}
+}
+
+// clearHeld says nothing is waiting any more, because it landed, was delivered
+// another way, or the terminal went away.
+func (a *activityTracker) clearHeld(taskID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.held, taskID)
 }
 
 // set replaces the activity, keeping the subagent count: that is a running
@@ -360,6 +426,7 @@ func (a *activityTracker) forget(taskID string) {
 	defer a.mu.Unlock()
 	delete(a.by, taskID)
 	delete(a.tel, taskID)
+	delete(a.held, taskID)
 }
 
 // ActivityEvent is what a hook posts to /activity.

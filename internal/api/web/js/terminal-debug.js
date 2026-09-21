@@ -185,6 +185,31 @@ async function exitTerm() {
   toast("asked to exit", t.display_title);
 }
 
+// Restarts THIS session in place: the runner exits and the same conversation
+// starts again on the same card. It is exit-then-relaunch, done by the daemon
+// as one move so the card, its history and its resume id never move. See
+// RestartRunner in internal/daemon/restart_session.go.
+//
+// The expectation is armed BEFORE the POST, because the socket closes partway
+// through the daemon's stop-then-start and its `runner exited` reason would
+// otherwise read as a plain exit and tear the pane down. With the arm set,
+// `onclose` waits the card out and reattaches when it comes back. See
+// `sessionRestartComing`. The POST resolves only after the relaunch, so a
+// refusal is cleared here rather than left to expire on its own.
+async function restartTerm() {
+  if (!termTask) return;
+  const t = termTask;
+  if (!await confirmUser(`restart ${t.display_title}?`,
+    "Exits this session and immediately resumes the same conversation on the " +
+    "same card. The terminal drops for a few seconds while it comes back." +
+    "<br><br>Nothing is lost: it picks up where it left off.",
+    "restart it", "restart-session")) return;
+  armSessionRestart(t.id);
+  try { await api(`/v1/tasks/${t.id}/restart`, { method: "POST" }); }
+  catch (e) { clearSessionRestart(t.id); toast("could not restart", e.message); return; }
+  toast("restarting", t.display_title);
+}
+
 // The runner is gone. Keeps the scrollback, drops every claim that it is live.
 function markTermDead() {
   const pane = document.getElementById("term-pane");
@@ -302,6 +327,9 @@ function closeTerm(switching) {
 // Tears the pane down without refreshing, so it can be called from inside one.
 function clearTermPane(switching) {
   const was = termTask ? termTask.id : "";
+  // The pane is going, so no attach is in flight for what it was showing. A new
+  // one is marked afresh by whatever attaches next.
+  clearAttachInFlight(was);
   if (termSock) { termSock.close(); termSock = null; }
   // Before the terminal goes, so the disposable is not left holding a
   // reference to a disposed one.
@@ -359,7 +387,13 @@ function clearTermPane(switching) {
     // empty pane for ninety seconds and then gave up. Where it goes instead is
     // `attachLastInstead`.
     if (endedOnPurpose(was)) { attachLastInstead(was); return; }
-    waitAndAttach(was);
+    // SCHEDULED, NOT INLINE. Calling `waitAndAttach` straight from here is what
+    // let a lagging render spin the board: it polls the card, attaches the
+    // instant it answers, and attaching repaints, and the repaint lands back in
+    // this teardown. Routed through the backoff scheduler, at most one reattach
+    // is pending and it slows down if it keeps having to fire. See
+    // `scheduleReattach`.
+    scheduleReattach(was);
   }
 }
 

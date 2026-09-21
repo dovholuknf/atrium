@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,109 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 	if strings.Contains(f.written(), "stop what you are doing") {
 		t.Fatalf("wrote it anyway: %q", f.written())
 	}
+	// And nothing at all reached the terminal, so the operator's part written
+	// line was neither added to nor submitted. A single carriage return here
+	// would be an Enter pressed under his hands.
+	if f.written() != "" {
+		t.Fatalf("wrote into a part written line: %q", f.written())
+	}
+}
+
+// THE BANNER CAN NEVER PRESS ENTER. It is written into the operator's prompt,
+// so a carriage return in it submits whatever he had already typed. That is
+// what split his line: the banner used to open and close with `\r\n`.
+func TestThePeerBannerNeverSubmitsALine(t *testing.T) {
+	if strings.ContainsAny(peerBanner("sg4/builder"), "\r\n") {
+		t.Fatalf("the banner carries a line ending, so it can submit the operator's line: %q",
+			peerBanner("sg4/builder"))
+	}
+}
+
+// THE BUG CLINT HIT, end to end through the peer bus. He was composing a line
+// in a supervised session when a peer `atrium_say` arrived. It must not reach
+// the pty at all, and it must fall to the queue so nothing is lost.
+func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	d := testDaemon(t)
+	peerCard(t, d, "sender")
+	target, r, f := peerPair(t, d) // wire name "listener", with a fakePTY
+
+	// A part written line, the moment the peer message lands.
+	r.noteOperatorTyped([]byte("make peer message a bit"))
+
+	out, code := tell(t, d, "sender", "listener", "make progress on the redo")
+	if code != http.StatusOK {
+		t.Fatalf("the peer bus answered %d: %v", code, out)
+	}
+	if f.written() != "" {
+		t.Fatalf("a peer message reached the terminal while the operator was typing: %q", f.written())
+	}
+	if out["queued"] != true {
+		t.Fatalf("the message was not queued for later delivery: %v", out)
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("the deferred message was not queued: %d pending", len(pending))
+	}
+	if !strings.Contains(pending[0].FromPeer, "sender") {
+		t.Fatalf("the queued message lost its sender: %q", pending[0].FromPeer)
+	}
+}
+
+// THE RELAY PATH IS PEER TEXT TOO. A message posted with a `from`, as the hub's
+// atrium_say queues one, must not type into a line the operator is composing any
+// more than the bus may. Same guard, same fallback to the queue.
+func TestARelayPeerMessageWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("git comm"))
+
+	if code := message(t, d, target.ID, map[string]string{
+		"text": "look at the redo", "from": "expose-board-redo",
+	}); code != http.StatusOK {
+		t.Fatalf("the relay message answered %d", code)
+	}
+	if f.written() != "" {
+		t.Fatalf("a relay peer message typed into a part written line: %q", f.written())
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("the deferred relay message was not queued: %d pending", len(pending))
+	}
+	if pending[0].FromHuman() || !strings.Contains(pending[0].FromPeer, "expose-board-redo") {
+		t.Fatalf("the queued relay message lost its peer sender: from %q", pending[0].FromPeer)
+	}
+}
+
+// And into a clear terminal the relay path still types, so the guard is a defer
+// and not a refusal.
+func TestARelayPeerMessageTypesIntoAFreeTerminal(t *testing.T) {
+	d := testDaemon(t)
+	target, _, f := peerPair(t, d)
+
+	if code := message(t, d, target.ID, map[string]string{
+		"text": "the build is green", "from": "ci-green",
+	}); code != http.StatusOK {
+		t.Fatalf("the relay message answered %d", code)
+	}
+	if !strings.Contains(f.written(), "the build is green") {
+		t.Fatalf("a relay peer message never reached a free terminal: %q", f.written())
+	}
+	if !strings.Contains(f.written(), "ci-green") {
+		t.Fatalf("the banner did not name the sender: %q", f.written())
+	}
+	pending, err := d.st.PendingMessages(target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("a typed relay message was also queued: %d pending", len(pending))
+	}
 }
 
 // And the line ending releases it. Submitting or abandoning a line both end
@@ -116,29 +220,55 @@ func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
 	}
 }
 
-// ATTACHED AND WATCHING. The pty is shared so the text goes in, and Enter is
-// not pressed: putting words in front of somebody is a different act from
-// submitting under their hands.
-func TestAPeerMessageIsNotSubmittedWhileTheOperatorIsAround(t *testing.T) {
+// OPERATOR JUST TYPED, EMPTY LINE. The line ended a moment ago, so the gate is
+// closed on the idle rule alone, and the message is DEFERRED rather than typed.
+//
+// This replaces the old "type it but do not press Enter" behaviour. Leaving
+// unsent peer text sitting in the operator's prompt is exactly what clint
+// wanted gone, so an operator who is clearly at the keyboard now gets nothing
+// dropped into their line: the message waits and is retried once the line is
+// empty and the keyboard has been quiet for peerGateIdle.
+func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
-	// A line that was finished a moment ago. Nothing is part written, but
-	// somebody is clearly there.
+	// A line finished this instant. Nothing is part written, but the keyboard
+	// was touched inside peerGateIdle, so the gate stays shut.
 	r.noteOperatorTyped([]byte("ls\r"))
+
+	typed, _ := d.tellByTyping(target, "sg4/builder", "have a look at this")
+	if typed {
+		t.Fatalf("typed into a terminal the operator just touched: %q", f.written())
+	}
+	if f.written() != "" {
+		t.Fatalf("left text in the prompt while the operator was active: %q", f.written())
+	}
+}
+
+// AND ONCE THE KEYBOARD GOES QUIET the same empty line takes the message. The
+// gate is the idle rule plus the empty line, so a finished line past
+// peerGateIdle is open.
+func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("ls\r"))
+	// Wind the last keystroke back past the idle gate, line still empty.
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
 
 	typed, how := d.tellByTyping(target, "sg4/builder", "have a look at this")
 	if !typed {
-		t.Fatal("refused to type at all, which is the old behaviour")
+		t.Fatalf("refused an empty, idle line: %q", f.written())
 	}
 	got := f.written()
 	if !strings.Contains(got, "have a look at this") {
 		t.Fatalf("the message never reached the terminal: %q", got)
 	}
-	if strings.Contains(got, "have a look at this\r") {
-		t.Fatalf("submitted it under the operator's hands: %q", got)
+	if !strings.HasSuffix(got, "\r") {
+		t.Fatalf("did not submit into an open gate: %q", got)
 	}
-	if !strings.Contains(how, "without sending") {
-		t.Fatalf("the answer does not say it was left unsent: %q", how)
+	if !strings.Contains(how, "sent") {
+		t.Fatalf("the answer does not say it was sent: %q", how)
 	}
 }
 

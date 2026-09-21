@@ -148,14 +148,12 @@ func attachAs(t *testing.T, d *Daemon, taskID string, cols, rows int) string {
 	return got.String()
 }
 
-// ATTACHING WIDE TO NARROW HISTORY HANDS IT OVER, LABELLED.
+// ATTACHING WIDE TO NARROW HISTORY HANDS IT OVER, UNANNOUNCED.
 //
-// This asserted the opposite until the operator resized a window and lost an
-// hour of scrollback to a rule that was protecting them from imperfect
-// rendering. The bytes really do land in the wrong columns; the fix is to say
-// so rather than to withhold them, because the alternative on screen is
-// nothing and nothing cannot be read either.
-func TestAttachingWideReplaysNarrowOutputWithALabel(t *testing.T) {
+// The history is replayed whatever width it was drawn at, and the width-mismatch
+// note that used to sit above it is gone: the operator found it noise and it
+// fired on every reattach after a hub restart. The bytes still arrive.
+func TestAttachingWideReplaysNarrowOutputWithoutANote(t *testing.T) {
 	d := testDaemon(t)
 	narrow := "an hour of output composed for eighty columns\n"
 	f := narrowSession(t, d, "wide-attach", narrow)
@@ -163,10 +161,10 @@ func TestAttachingWideReplaysNarrowOutputWithALabel(t *testing.T) {
 	got := attachAs(t, d, "wide-attach", 200, 50)
 
 	if !strings.Contains(got, "eighty columns") {
-		t.Fatalf("withheld the history instead of labelling it: %q", got)
+		t.Fatalf("withheld the history: %q", got)
 	}
-	if !strings.Contains(got, "columns wide") {
-		t.Fatalf("handed over output drawn elsewhere without saying so: %q", got)
+	if strings.Contains(got, "columns wide") || strings.Contains(got, "resized while it ran") {
+		t.Fatalf("emitted the width note that was removed: %q", got)
 	}
 	// And the terminal was told the size the viewer asked for, so the runner
 	// is already repainting into the space the drop left.
@@ -187,17 +185,13 @@ func TestAttachingAtTheSameWidthStillShowsTheScrollback(t *testing.T) {
 	if !strings.Contains(got, "eighty columns") {
 		t.Fatalf("threw away scrollback that renders correctly: %q", got)
 	}
-	if strings.Contains(got, "columns wide") {
-		t.Fatalf("announced a width mismatch that did not happen: %q", got)
-	}
 }
 
 // A SECOND VIEWER MUST NOT COST THE FIRST ONE ITS SCREEN.
 //
 // The smallest attached viewer decides, so a narrow window joining a wide
-// session resizes the terminal. The narrow viewer still gets the history, with
-// the line saying what it was drawn for.
-func TestASecondNarrowerViewerIsToldWhatItIsLookingAt(t *testing.T) {
+// session resizes the terminal. The narrow viewer still gets the history.
+func TestASecondNarrowerViewerStillGetsTheHistory(t *testing.T) {
 	d := testDaemon(t)
 	f := narrowSession(t, d, "two-viewers", "drawn at eighty columns\n")
 
@@ -207,9 +201,10 @@ func TestASecondNarrowerViewerIsToldWhatItIsLookingAt(t *testing.T) {
 	}
 	// It stays attached in no meaningful sense here: `attachAs` returns after
 	// its socket closes, and dropping a viewport gives the size back. What
-	// matters is that the terminal now moves to forty columns for the second.
-	if got := attachAs(t, d, "two-viewers", 40, 20); !strings.Contains(got, "columns wide") {
-		t.Fatalf("the narrow viewer was sent eighty column output unlabelled: %q", got)
+	// matters is that the terminal now moves to forty columns for the second,
+	// and that viewer still receives the scrollback.
+	if got := attachAs(t, d, "two-viewers", 40, 20); !strings.Contains(got, "eighty columns") {
+		t.Fatalf("the narrow viewer lost its scrollback: %q", got)
 	}
 	if sizes := f.resized(); len(sizes) == 0 || sizes[len(sizes)-1].cols != 40 {
 		t.Fatalf("the terminal did not follow the narrow viewer: %+v", sizes)
@@ -244,47 +239,83 @@ func TestTheReplayCannotEraseItself(t *testing.T) {
 		t.Fatal("dropped the newest output along with the moves")
 	}
 	// Colour is the one thing kept, because it cannot move or erase anything.
-	if !strings.Contains(got, "\x1b[38;5;244m") {
+	// The screen model re-emits it canonically from a reset (`ESC [ 0 ; ...`),
+	// which is why the assertion is the 244 colour rather than the bare form the
+	// runner wrote. Before the preamble was removed this passed on the divider's
+	// own grey, which hid that the content colour is emitted this way.
+	if !strings.Contains(got, "38;5;244m") {
 		t.Fatal("stripped the colour as well")
 	}
-	// And the boundary is drawn, or the first live redraw reads as the history
-	// having been corrupted.
-	if !strings.Contains(got, "live from here") {
-		t.Fatalf("did not mark where the flattened history ends: %q", got)
+	// And the history/live divider is GONE. It used to sit under the flattened
+	// history so the first live redraw did not read as corruption; clint found
+	// it noise on every reattach and asked to ditch the whole preamble.
+	if strings.Contains(got, "live from here") || strings.Contains(got, "everything above is history") {
+		t.Fatalf("emitted the attach preamble that was removed: %q", got)
 	}
 }
 
-// THE NOTE IS THE WHOLE PAYMENT for handing over output drawn elsewhere, so it
-// has to be right in each case that says something and silent in the two that
-// have nothing to say.
-func TestWidthNoteSaysWhatTheReaderIsLookingAt(t *testing.T) {
-	cases := []struct {
-		name   string
-		widths []int
-		want   int
-		expect string
-		absent bool
-	}{
-		{name: "the ordinary attach", widths: []int{80}, want: 80, absent: true},
-		{name: "no backlog at all", widths: nil, want: 80, absent: true},
-		{name: "all of it drawn elsewhere", widths: []int{80}, want: 200,
-			expect: "80 columns wide and this one is 200"},
-		{name: "resized while it ran", widths: []int{80, 200, 120}, want: 200,
-			expect: "drawn at 80, 200, 120 columns and this terminal is 200"},
+// RESIZING A WIDER CONSOLE NEVER TOUCHES THE PTY, so it cannot churn the other
+// viewers. The pty follows the smallest viewer and moves only when that
+// smallest actually changes, which is the whole of the resize-sanity fix: a
+// viewer that is not the binding one drags freely.
+func TestAWiderViewerNeverResizesThePTY(t *testing.T) {
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   "decouple",
+		pty:      f,
+		buf:      newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := widthNote(c.widths, c.want)
-			if c.absent {
-				if got != "" {
-					t.Fatalf("said something when there was nothing to say: %q", got)
-				}
-				return
-			}
-			if !strings.Contains(got, c.expect) {
-				t.Fatalf("wanted %q in the note, got %q", c.expect, got)
-			}
-		})
+	// The narrow viewer is the binding one and matches the launch width, so it
+	// is already a no-op.
+	if err := r.setViewport("narrow", 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	// A wider viewer joins and then drags wider still. Neither is the smallest,
+	// so the pty is never asked to resize.
+	_ = r.setViewport("wide", 200, 50)
+	_ = r.setViewport("wide", 300, 60)
+	if sizes := f.resized(); len(sizes) != 0 {
+		t.Fatalf("a wider viewer churned the pty: %+v", sizes)
+	}
+	// The binding viewer resizing IS applied, exactly once, because now the
+	// smallest moved.
+	_ = r.setViewport("narrow", 120, 40)
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{120, 40}) {
+		t.Fatalf("the binding viewer's resize was not applied once: %+v", sizes)
+	}
+	// The wider viewer detaching does not move the pty either.
+	r.dropViewport("wide")
+	if sizes := f.resized(); len(sizes) != 1 {
+		t.Fatalf("a wider viewer detaching churned the pty: %+v", sizes)
+	}
+}
+
+// A GENUINELY NARROWER READER STILL MOVES THE PTY, because the others cannot
+// read a width their pane cannot show, and when it leaves the pty follows back
+// up to the readers that remain. This is the coupling the fix keeps: only the
+// churn is removed, not the rule that the narrowest reader sets the size.
+func TestANarrowerViewerMovesThePTYAndReleasesIt(t *testing.T) {
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   "narrower",
+		pty:      f,
+		buf:      newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
+	}
+	_ = r.setViewport("wide", 80, 24)  // matches the launch width, a no-op
+	_ = r.setViewport("phone", 40, 20) // binding, so it shrinks the pty
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{40, 20}) {
+		t.Fatalf("the narrow reader did not shrink the pty: %+v", sizes)
+	}
+	// The phone leaves. The pty follows back up to the wide reader still there.
+	r.dropViewport("phone")
+	if sizes := f.resized(); len(sizes) != 2 || sizes[len(sizes)-1] != (viewport{80, 24}) {
+		t.Fatalf("the pty did not follow back up when the binding viewer left: %+v", sizes)
 	}
 }
 
@@ -311,8 +342,8 @@ func TestAResizedSessionReplaysEverythingOverTheSocket(t *testing.T) {
 	if !strings.Contains(got, "drawn after the drag") {
 		t.Fatalf("the output from after the resize never arrived: %q", got)
 	}
-	if !strings.Contains(got, "resized while it ran") {
-		t.Fatalf("handed over output drawn at two widths without saying so: %q", got)
+	if strings.Contains(got, "resized while it ran") {
+		t.Fatalf("emitted the width note that was removed: %q", got)
 	}
 	if sizes := f.resized(); len(sizes) == 0 || sizes[len(sizes)-1].cols != 200 {
 		t.Fatalf("the terminal was not resized for this viewer: %+v", sizes)

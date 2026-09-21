@@ -639,7 +639,26 @@ let termKindFor = "";
 function paintTermKind() {
   const wrap = document.getElementById("t-kind");
   if (!wrap) return;
-  wrap.hidden = !(termTask && termTask.supervised);
+  // AND NOT WHEN THERE IS NO SHELL TO OFFER.
+  //
+  // Two cases, both of which drew a button that could only fail.
+  //
+  // A CARD WHOSE RUNNER IS ITSELF A SHELL. `agent | shell` there offers to
+  // switch between a shell and a shell, and calls the first one an agent.
+  // Atrium no longer ships a shell runner, but a database from before that
+  // has one and cards that ran under it are still on the board.
+  //
+  // A MACHINE WITH NO SHELL. `shell_command_now` always names something,
+  // because the search behind it ends at `cmd.exe` or `/bin/sh` whether or not
+  // either is installed. `shell_command_ok` is whether that name actually
+  // resolves, which is the question this control is really asking.
+  const shellCard = !!(termTask && isShellRunner({ id: termTask.runner || "",
+    cmd: termTask.runner || "" }));
+  // Absent rather than false while settings are still loading: the daemon has
+  // a shell far more often than not, and hiding the control on every attach
+  // until a poll lands would be a worse wrong answer.
+  const canShell = !pastePrefs || pastePrefs.shell_command_ok !== false;
+  wrap.hidden = !(termTask && termTask.supervised) || shellCard || !canShell;
   const agent = document.getElementById("t-kind-agent");
   const shell = document.getElementById("t-kind-shell");
   if (agent) agent.classList.toggle("on", termKind !== "shell");
@@ -715,11 +734,39 @@ function connectTerm(taskID) {
     // its own: leaving it armed would make a session ended half an hour from
     // now look like the tail of this restart.
     restartAt = 0;
+    // Back after a single-session restart too, for the same reason. The card is
+    // up, so the expectation has done its job and a later exit is an exit.
+    clearSessionRestart(taskID);
     termWait("");
-    if (attachSaidGone && term) {
+    // RESET BEFORE THE REPLAY LANDS, on a reconnect only.
+    //
+    // The daemon replays the whole scrollback on every attach. A session switch
+    // builds a new terminal, so its replay fills an empty screen, but a
+    // reconnect keeps this one and the replay would append a second copy of
+    // everything under the old content, with a second history/live boundary.
+    // That was the mess after a hub restart. `termReplayed` is false on a fresh
+    // terminal's first open and true on every open after, so this is a reattach
+    // when it is already set. The replay that follows repaints the current
+    // screen once, and it carries the same scrollback the buffer holds, so
+    // nothing is lost.
+    const reattach = termReplayed;
+    termReplayed = true;
+    if (reattach && term) {
+      // No "reconnected" line here: the reset wipes it, and the replay's own
+      // "everything above is history … live from here" boundary already marks
+      // the seam. On the first open below there is nothing to reset, so the
+      // line still earns its place after a wait.
+      term.reset();
+    } else if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
     }
     attachSaidGone = false;
+    // The attach settled, so the pane is no longer in flight and nothing may
+    // spin it. The retry and reattach backoffs go back to their short delay so
+    // the next real outage recovers quickly. See `attachInFlight`.
+    clearAttachInFlight(taskID);
+    attachTries = 0;
+    resetReattach();
     sendResize();
     focusTerm();
     // THE BRIDGE, once there is a terminal for it to reach.
@@ -786,6 +833,22 @@ function connectTerm(taskID) {
     // when the event was the one that got lost.
     if (why === "restarting" && !restartComing()) restartAt = Date.now();
 
+    // THIS ONE SESSION was asked to restart from the cog. The daemon exits the
+    // runner and lands the same conversation on the same card a few seconds
+    // later, so `runner exited` here is expected and is not the end of
+    // anything. Ahead of that branch, which would otherwise mark the pane dead
+    // and detach. Scoped to this card and short-lived, so a plain exit after
+    // the window is still an exit. See `armSessionRestart`.
+    if (sessionRestartComing(taskID)) {
+      attachSaidGone = false;
+      if (!attachSince) attachSince = Date.now();
+      if (Date.now() - attachSince < attachRetryFor) {
+        termWait("restarting " + waitName(termTask) + ". reconnecting…");
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+        return;
+      }
+    }
+
     // A SHELL CLOSING IS NOT A SESSION GOING AWAY, and every branch below this
     // one assumes it is.
     //
@@ -807,7 +870,7 @@ function connectTerm(taskID) {
       if (!attachSince) attachSince = Date.now();
       if (Date.now() - attachSince < attachRetryFor) {
         termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
         return;
       }
     }
@@ -900,7 +963,7 @@ function connectTerm(taskID) {
           ? "atrium is restarting. reconnecting to " + waitName(termTask) + "…"
           : "reconnecting to " + waitName(termTask) + "…");
       }
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -912,7 +975,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -938,7 +1001,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("waiting for " + waitName(termTask) + " to come back…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryEvery);
+      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -1443,12 +1506,19 @@ function sendResize() {
 // property of the screen somebody is reading, not of the work, so it has no
 // business travelling to another machine or being served to a guest holding a
 // share of one session.
+//
+// AND NOT ONE SIZE ACROSS A DESKTOP AND A PHONE. The size is the screen's, and
+// a phone is a different screen: a font read comfortably on a wide monitor drew
+// the runner's output about half again too big on a phone, because the two were
+// sharing one stored number. `termDeviceKey` puts the phone's answer under its
+// own key, so each screen keeps the size it was last read at and neither writes
+// over the other.
 const TERM_FONT_DEFAULT = 14;
 const TERM_FONT_MIN = 8;
 const TERM_FONT_MAX = 32;
 let termFontSize = TERM_FONT_DEFAULT;
 
-const termFontKey = (id) => "atrium.termfont." + id;
+const termFontKey = (id) => termDeviceKey("atrium.termfont." + id);
 
 // What this card's terminal was last read at, or the default.
 //
@@ -1485,6 +1555,10 @@ function setTermFont(px) {
   if (size === termFontSize) return;
   termFontSize = size;
   term.options.fontSize = size;
+  // A font change resizes the grid at the SAME pixel box: more or fewer cells
+  // fit. Clear the box mark `paneBoxUnchanged` keeps, or the re-fit below would
+  // be skipped as a no-op and the font change would not take.
+  term._atriumBox = null;
   // Written against the card rather than against the pane, so switching to
   // another session and back finds it again. See the note above `readTermFont`
   // for why that is not the same as making it a preference.
@@ -1494,12 +1568,61 @@ function setTermFont(px) {
   onTermResize();
 }
 
+// SIT THE GRID ON THE FOOTER. xterm draws whole rows, so the grid is
+// `rows * cellHeight` and rarely the exact height of `#t-screen`: the leftover
+// is up to one line, and left to itself it falls below the last row as a band
+// of the host's background between the terminal and the help bar. That band is
+// the dead space clint circled.
+//
+// The fix is to size `.xterm` to the grid exactly and let `#t-screen`'s
+// `justify-content: flex-end` park it at the bottom, so the leftover joins the
+// air under the bar rather than sitting above the footer. `fit()` measures
+// `#t-screen`, not `.xterm`, so writing this height back is not a feedback loop:
+// the next fit proposes the same rows.
+//
+// Called after every fit, since both the row count (a resize) and the cell
+// height (a font change) move the grid.
+function sizeTermHost() {
+  if (!term) return;
+  const host = document.getElementById("t-screen");
+  const el = host && host.querySelector(".xterm");
+  if (!el) return;
+  let cell = 0;
+  try { cell = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
+  // Nothing measured yet: leave the 100% fallback in place rather than collapse
+  // the host to zero.
+  if (!cell) { el.style.height = ""; return; }
+  el.style.height = Math.round(term.rows * cell) + "px";
+}
+
+// A RE-FIT COSTS NOTHING WHEN THE PANE'S PIXELS DID NOT MOVE, so do not pay it.
+//
+// A room-set change re-renders the strip and moves the header, and both fire
+// `onTermResize` through the ResizeObserver even when the terminal's own box did
+// not change. `fit()` then hands xterm a `resize` to the size it already has,
+// which reflows the buffer and snaps a scrolled-up pane to the bottom, and on a
+// room flip it is that reflow that leaves the cursor misplaced. So skip the fit
+// when the element is the size it was at the last one.
+//
+// The mark is kept ON THE TERM INSTANCE, so a freshly opened terminal (which has
+// no mark yet) always fits once, and a terminal switch does not inherit the old
+// one's box. Returns true when there is nothing to do.
+function paneBoxUnchanged() {
+  if (!term || !term.element) return false;
+  const box = term.element.clientWidth + "x" + term.element.clientHeight;
+  if (term._atriumBox === box) return true;
+  term._atriumBox = box;
+  return false;
+}
+
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached
   // terminal or not.
   placeTabBridge();
   if (!termFit || !term) return;
+  // Skip a re-fit when the pane's pixels did not move. See `paneBoxUnchanged`.
+  if (paneBoxUnchanged()) return;
 
   const before = term.buffer.active;
   const wasAtBottom = before.viewportY >= before.baseY;
@@ -1507,6 +1630,9 @@ function onTermResize() {
   const wasCols = term.cols, wasRows = term.rows;
 
   termFit.fit();
+  // After the fit, whatever it decided: the grid may have changed rows, or the
+  // cell height may have moved under a font change with the rows the same.
+  sizeTermHost();
 
   const changed = term.cols !== wasCols || term.rows !== wasRows;
   noteScrollAct(changed ? "fit(changed)" : "fit(same)");

@@ -381,10 +381,18 @@ function paintPaneBg(theme) {
   // The class is the switch every one of those rules reads. There are two
   // states, themed and not, and nothing may be half way between them.
   pane.classList.toggle("themed", !!bg);
+  // WHETHER A SESSION IS ATTACHED, on the layout so the phone stylesheet can
+  // reach it. The list is the terminals view on a phone and it fills the
+  // screen; the empty pane must not take half of it while nothing is attached,
+  // and the list sits before the pane in the DOM so no sibling selector on the
+  // pane can style it. The layout is the ancestor of both, which is where
+  // `tl-mini` and `tl-off` already live. Set here because `paintPaneBg` runs on
+  // every attach and every teardown, which is exactly the transition this marks.
+  const bare = document.getElementById("term-layout");
+  if (bare) bare.classList.toggle("has-term", !!bg);
   if (!bg) {
     ["--term-bg", "--term-fg", "--term-edge", "--term-line",
      "--term-thumb", "--term-thumb-hi"].forEach(v => pane.style.removeProperty(v));
-    const bare = document.getElementById("term-layout");
     if (bare) {
       bare.style.removeProperty("--term-line");
       bare.style.removeProperty("--term-thumb-hi");

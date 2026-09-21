@@ -59,17 +59,36 @@ guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
 // own line has run. See the temporal dead zone note at the top of this file.
 const POLL_MS = 10000;
 
-if (termOnly()) {
-  // The same stream and the same interval as the board. `refresh` sends a
-  // popped-out window down `soloRefresh`, so this costs one card's worth of
-  // polling rather than a second board's.
-  bootTerminalOnly().then(() => {
-    connect();
-    setInterval(refresh, POLL_MS);
-  });
-} else {
-  bootBoard();
-}
+// WHICH ROOM, BEFORE ANYTHING IS ASKED FOR.
+//
+// On a plain daemon this answers in one 404 and turns itself off. On a hub it
+// decides which of three event streams to open and whether every request this
+// page makes carries a room, so it cannot run after the first of them. See
+// `js/rooms.js`.
+startRooms().then(() => {
+  if (termOnly()) {
+    // The same stream and the same interval as the board. `refresh` sends a
+    // popped-out window down `soloRefresh`, so this costs one card's worth of
+    // polling rather than a second board's.
+    // The claim heartbeat starts HERE, before `bootTerminalOnly` resolves,
+    // because that is exactly where a reconnect blocks: `soloFetchCard` sits
+    // through a hub restart for as long as it takes, which can be longer than
+    // `soloClaimFor`, and the single claim `bootTerminalOnly` posts on its way in
+    // would lapse before the poll below ever starts. The beat is a no-op until
+    // `soloID` is set (an early step of `bootTerminalOnly`), then keeps the
+    // board's claim fresh no matter how long the card poll blocks. `soloBeatMs`
+    // is well under 15s. See `soloClaimBeat`.
+    setInterval(soloClaimBeat, soloBeatMs);
+    bootTerminalOnly().then(() => {
+      connect();
+      // Through the single-flight guard, so a poll cannot start a second solo
+      // fan-out over one already running while the wire is slow. See runRefresh.
+      setInterval(runRefresh, POLL_MS);
+    });
+  } else {
+    bootBoard();
+  }
+});
 
 // The board, once it is known to be a board.
 //
@@ -99,8 +118,13 @@ async function bootBoard() {
   // a frame. Half a second is many times that, and it is paid once at load.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
   setTimeout(() => {
-    refresh();
+    runRefresh();
     restoreWhereYouWere();
+    // AND THE COVER COMES OFF, on the view you were reading rather than on the
+    // one the markup starts with. Here rather than earlier because this line
+    // above is what puts the board back where it was, and uncovering before it
+    // would show exactly the frame the cover exists to hide. See `pickRoom`.
+    if (typeof doneSwitching === "function") doneSwitching();
     // WHERE THIS VISIT STARTED, recorded once so it can be returned to.
     //
     // Without it the first `navPush` finds no state of ours and REPLACES the
@@ -117,7 +141,7 @@ async function bootBoard() {
       history.replaceState(navState(), "");
     }
   }, soloRollCall);
-  setInterval(refresh, POLL_MS);
+  setInterval(runRefresh, POLL_MS);
   // Every other way this page goes away: a manual reload, a close, a
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.
