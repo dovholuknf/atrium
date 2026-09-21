@@ -129,6 +129,11 @@ type Server struct {
 	// StopRunner asks a runner to exit the way its harness says to, rather
 	// than killing it. Supplied by the daemon, which owns the terminal.
 	StopRunner func(taskID string) error
+	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
+	// the same conversation again on the SAME card. Unshelve without the shelve,
+	// for a wedged session or one running an old binary. Supplied by the daemon,
+	// which owns the terminal and process spawning.
+	RestartRunner func(taskID string) (*store.Task, error)
 	// Unshelve starts it again from where the conversation left off. Returns
 	// whether it started, and why not when it did not, so the board can say so.
 	Unshelve func(taskID string) (bool, string, error)
@@ -339,6 +344,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/overlays/zrok/account", s.zrokAccount)
 	}
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
+	// What a hub may cache about this room. See state.go: the stored rows, not
+	// the view, because the view carries what is true only this second.
+	mux.HandleFunc("GET /v1/state", s.roomState)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.getTask)
 	// Every question this card is waiting on, oldest first.
 	//
@@ -435,6 +443,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	if s.StopRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/exit", s.exitRunner)
+	}
+	if s.RestartRunner != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
 	}
 	if s.Attach != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/attach", s.Attach)
@@ -1036,7 +1047,15 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+	// rolled_off tells the board that older events left the db hot window, so it
+	// can say history rolled off rather than present the window as the whole
+	// history. False under the default, where nothing rolls off.
+	rolledOff, err := s.st.HistoryRolledOff(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff})
 }
 
 // reviewTask answers "what did this session actually do".
@@ -1496,6 +1515,19 @@ func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// restartRunner stops a card's runner and starts the same conversation again on
+// the same card. The refreshed card is broadcast so the board follows the new
+// runner rather than the one that just left.
+func (s *Server) restartRunner(w http.ResponseWriter, r *http.Request) {
+	task, err := s.RestartRunner(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	s.Broadcast("task", toView(task))
+	writeJSON(w, http.StatusOK, toView(task))
 }
 
 // events is the SSE stream every live client subscribes to.

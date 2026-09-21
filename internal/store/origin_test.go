@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -167,12 +168,27 @@ func TestPromptArgsAreSeededOnlyWhereTheyWork(t *testing.T) {
 		t.Fatalf("claude takes a prompt as %q", claude.PromptArgs[0])
 	}
 
-	shell, err := s.Harness("shell")
+	// The shell row this used to check is gone: a shell is the machine's, not
+	// a runner. What is left is the rule itself, over whatever is seeded. A
+	// runner that declares prompt arguments has to put the prompt somewhere in
+	// them, or a launch carrying one silently drops it.
+	rows, err := s.Harnesses()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shell.PromptArgs) != 0 {
-		t.Fatal("a shell claims to take a prompt, which it would try to execute")
+	for _, h := range rows {
+		if len(h.PromptArgs) == 0 {
+			continue
+		}
+		var carries bool
+		for _, a := range h.PromptArgs {
+			if strings.Contains(a, "{prompt}") {
+				carries = true
+			}
+		}
+		if !carries {
+			t.Errorf("%s takes a prompt but never uses it: %q", h.ID, h.PromptArgs)
+		}
 	}
 }
 

@@ -118,6 +118,18 @@ func globalAutoView(s *Server) map[string]any {
 	// is a search of PATH on the daemon's machine, so it is not something the
 	// person reading the box could work out for themselves.
 	out["shell_command_now"] = shellpick.Chosen()
+	// AND WHETHER IT IS ACTUALLY THERE.
+	//
+	// `Chosen` always answers something: the search ends at `cmd.exe` or
+	// `/bin/sh` whether or not either exists, because a floor that reports
+	// nothing would leave the board unable to say anything at all. So the
+	// board has no way to know a shell cannot be opened until it tries, and
+	// what it draws in the meantime is a button that fails.
+	//
+	// The override is checked rather than the search, since the override is
+	// what would run. Somebody who typed a name with a spelling mistake into
+	// `shell_command` is the case this exists for.
+	out["shell_command_ok"] = shellIsThere(s.st)
 	// What the board is wearing, and everything it could wear. The list is
 	// sent rather than written into the page so the picker and the validator
 	// cannot disagree: there is one list and the daemon holds it.
@@ -193,6 +205,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
+		// WHICH SHELL A PANE OPENS, or `off` for none at all.
+		//
+		// This field was missing while the board posted it and the settings
+		// pane drew a box for it, so the box has never done anything: the
+		// value was decoded into a struct that had nowhere to put it and
+		// dropped, and the answer came back with the old value, which reads
+		// exactly like a save that worked.
+		//
+		// Nothing rejected it either. The guard above is a rule about one
+		// specific pair of fields and not a check that every key is known.
+		ShellCommand *string `json:"shell_command"`
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
@@ -419,6 +442,20 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.ShellCommand != nil {
+		// Stored as typed, including `off`, which means this machine opens no
+		// shells at all. Not validated against PATH: a name that is wrong
+		// today is right the moment the thing is installed, and refusing it
+		// would mean the box cannot be filled in before the tool is. What the
+		// name comes out as, and whether it resolves, are both reported back
+		// by `shell_command_now` and `shell_command_ok`.
+		if err := s.st.SetSetting(SettingShellCommand,
+			strings.TrimSpace(*body.ShellCommand)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.BoardSkin != nil {
 		// Refused rather than stored, unlike the browse roots above, and the
 		// two differ for a reason. A root that does not exist yet is a list
@@ -458,4 +495,41 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	out := globalAutoView(s)
 	out["drained"] = drained
 	writeJSON(w, http.StatusOK, out)
+}
+
+// shellIsThere reports whether a shell could actually be opened on this
+// machine.
+//
+// The board draws a control that opens one, and it had no way to know the
+// answer before pressing it. `shellpick.Chosen` always names something,
+// because its search ends at `cmd.exe` or `/bin/sh` whether or not either is
+// installed: a floor that reported nothing would leave the board unable to say
+// what an empty box means.
+//
+// So the name is resolved on PATH, the same lookup the daemon does when it
+// starts one. The override wins, since the override is what would run, and a
+// spelling mistake typed into `shell_command` is the case this exists for.
+func shellIsThere(st *store.Store) bool {
+	v := ""
+	if got, err := st.Setting(SettingShellCommand); err == nil {
+		v = strings.TrimSpace(got)
+	}
+	// OFF MEANS NO SHELL ON THIS MACHINE, and it is the same word the worktree
+	// command already uses for the same idea. See `worktreeTemplate`.
+	//
+	// There was an off switch and it was an accident: the shell was a runner,
+	// and disabling that row turned shells off. Removing the row removed the
+	// switch with it, which left the only way to stop atrium opening a shell
+	// being to name a command that does not exist.
+	if strings.EqualFold(v, "off") {
+		return false
+	}
+	name := ""
+	if fields := strings.Fields(v); len(fields) > 0 {
+		name = fields[0]
+	}
+	if name == "" {
+		name, _ = shellpick.Pick()
+	}
+	return name != "" && LookPath(name) != ""
 }

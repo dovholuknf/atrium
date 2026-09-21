@@ -603,6 +603,44 @@ if (byClass) {
     `\`document.getElementById("term-pane")\`.`);
 }
 
+// Rule 18: a reconnect resets the terminal before the replay lands.
+//
+// The daemon replays the WHOLE scrollback on every attach. A session switch
+// builds a new terminal in openTerm, so its replay fills an empty screen. A
+// reconnect keeps the same terminal, so without a reset the replay appends a
+// second full copy of the history under the first, with a second history/live
+// boundary: the mess after a hub restart.
+//
+// `termReplayed` tells the two apart. It is false on a fresh terminal and true
+// once a socket has opened, so onopen resets only when it is already set. Both
+// halves are checked: a reset with no guard would wipe the first attach's own
+// replay, and a guard with no reset on openTerm would never re-arm, so the
+// second session onto the same tab would not reset either.
+if (/\btermReplayed\b/.test(html)) {
+  const openAt = html.indexOf("function openTerm(");
+  if (openAt >= 0) {
+    const openEnd = html.indexOf("\nfunction ", openAt + 1);
+    const openBody = html.slice(openAt, openEnd < 0 ? html.length : openEnd);
+    if (!/termReplayed = false/.test(openBody)) {
+      fail("openTerm builds a fresh terminal without clearing termReplayed, so the first " +
+        "attach onto it would be treated as a reconnect and reset away its own replay.");
+    }
+  }
+  const openHandlerAt = html.indexOf("termSock.onopen");
+  const openHandler = openHandlerAt < 0 ? "" : html.slice(openHandlerAt, openHandlerAt + 2200);
+  if (!/const reattach = termReplayed/.test(openHandler)) {
+    fail("termSock.onopen does not read termReplayed before flipping it, so it cannot tell " +
+      "a reconnect from a first attach and either resets always or never.");
+  }
+  if (!/if \(reattach && term\)/.test(openHandler) || !/term\.reset\(\)/.test(openHandler)) {
+    fail("termSock.onopen does not reset the terminal on a reconnect, so the daemon's full " +
+      "scrollback replay lands under the pre-restart content as a second copy.");
+  }
+} else {
+  fail("nothing tracks whether a terminal has already been replayed into, so a reconnect's " +
+    "full-scrollback replay doubles the history. See termReplayed.");
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);

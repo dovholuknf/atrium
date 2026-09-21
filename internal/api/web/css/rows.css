@@ -37,6 +37,11 @@
   .row.compact .who b code { font-family: var(--mono); color: var(--head); }
   .row.compact .who span { font-size: var(--fs-base); color: var(--dimmest); }
   .row.compact .chip { font-size: var(--fs-sm); padding: 2px 9px; }
+  /* The hooks control sits in a fixed slot so the enable / edit / duplicate buttons line up down the
+     runners list whether a row shows a "hooks" button or a plain "n/a". Its contents fill the slot. */
+  .hookcell { display: inline-flex; justify-content: flex-end; min-width: 8.5em; }
+  .hookcell > * { margin: 0; }
+  .hookcell .by { color: var(--dimmest); }
   .row.compact button { padding: 4px 12px; font-size: var(--fs-base); }
   .row.compact .cmd { font-size: var(--fs-base); padding: 6px 10px; margin-top: 5px; }
 
@@ -137,8 +142,9 @@
      the text baseline, which puts a square icon low against lowercase letters and made it look like it was
      falling out of the chip. */
   #t-chips .chip.path {
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 3px;
     cursor: text; user-select: text;
+    padding: 1px 6px 1px 4px;
   }
   /* `all: unset` rather than a list of overrides. A button carries a padding, a border, a background, a font
      and a line-height of its own, and undoing four of the five left the fifth to make the chip taller than
@@ -238,6 +244,17 @@
   .chip.no { background: var(--warn-bg); color: var(--warn); cursor: pointer;
              border: 1px solid var(--warn-stroke); }
   .chip.no:hover { background: var(--warn-stroke); color: var(--head); }
+  /* A fixture's on/off pill is the switch, so it reads as one and lights on hover.
+     One box for both states: `off` is a character wider than `on`, and a pill that
+     changed width shoved the number and the name right on every off row, so the
+     columns down the list stopped lining up. A fixed min-width sized to the wider
+     word, with the text centred, keeps the switch the same size whichever way it is
+     flipped. */
+  .chip.toggle {
+    cursor: pointer; display: inline-block;
+    min-width: 3.5ch; text-align: center; box-sizing: content-box;
+  }
+  .chip.toggle:hover { border-color: var(--teal); color: var(--head); }
   .term-files .crumbs .crumb { color: var(--term-fg, var(--dim)); opacity: .75; }
   .term-files .crumbs .crumb.here { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
   .term-files .crumbs .crumb:hover { background: var(--term-line, var(--lift)); opacity: 1; }
@@ -395,6 +412,17 @@
     color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head));
   }
   .stackgroup > summary .gn { font: var(--fs-sm) var(--mono); color: var(--dimmest); }
+  /* Work on a machine that is not answering. Last in the list, shut unless somebody opened it, and dimmed:
+     the point is that it is not live. No hue of its own, because it is not a project and colouring it like one
+     would say it is a group of the same kind as the ones above it. */
+  .stackgroup.offline {
+    margin-top: var(--vs-3); padding-top: var(--vs-2);
+    border-top: 1px dashed var(--stroke-dim); opacity: .78;
+  }
+  .stackgroup.offline > summary .gname { color: var(--dim); font-family: var(--sans); }
+  .stackgroup.offline > summary .chip { margin-left: auto; margin-right: 0; }
+  .stackgroup.offline > .hintline { padding: 0 0 var(--vs-2); }
+  .stackgroup.offline .stackrow { cursor: default; }
   /* The same block treatment the board's groups get, from the same two variables. With only the bar down the
      left, the two views coloured one grouping differently and the stack read as a flat list with coloured
      headings in it. */
@@ -524,4 +552,32 @@
     color: var(--warn); margin-left: 6px; font-weight: 500;
   }
   .toolbar { display: flex; gap: var(--sp-3); margin-top: 12px; flex-wrap: wrap; align-items: center; }
+
+  /* The audit pane. One row per operational event: when, which room, what kind,
+     and the detail. A reading grid rather than a table, so a long detail wraps
+     under the meta rather than stretching the row. Colours are the skin's own
+     text and muted tokens, so it reads on every skin without a check of its own. */
+  .aud-row {
+    display: grid;
+    grid-template-columns: max-content max-content max-content 1fr;
+    gap: var(--sp-3); align-items: baseline;
+    padding: var(--row-y-sm) var(--sp-2);
+    border-bottom: 1px solid var(--stroke-dim);
+    font-size: var(--fs-sm);
+  }
+  .aud-when { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .aud-room {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--head);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 1px 7px; white-space: nowrap;
+  }
+  .aud-room.aud-hub { color: var(--dim); }
+  .aud-kind {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--teal); white-space: nowrap;
+  }
+  .aud-detail { color: var(--body); overflow-wrap: anywhere; }
+  /* On a narrow screen the meta stacks above the detail rather than crushing it. */
+  @media (max-width: 640px) {
+    .aud-row { grid-template-columns: 1fr; gap: 2px; }
+  }
 

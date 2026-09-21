@@ -263,6 +263,12 @@ func (d *Daemon) turnResumed(taskID string) {
 func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
+		// From is the wire name of the session that sent this, when a session
+		// did. Empty when the operator sent it through their own channel (the
+		// board's message box). An empty From is delivered without attribution
+		// rather than as a broken "from ": this endpoint carries both, and a
+		// missing sender means the operator, never a failed send.
+		From string `json:"from"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -273,6 +279,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	taskID := r.PathValue("id")
+	from := strings.TrimSpace(body.From)
 
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
@@ -290,24 +297,82 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// unsupervised card anyway, so this is a delivery atrium already knows how
 	// to make rather than a refusal.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		if err := run.Say(body.Text); err != nil {
+		if from == "" {
+			// The operator's own channel, the board's message box. A message the
+			// operator sent belongs on the line they are looking at, typed
+			// straight in. This path is unchanged.
+			//
+			// Bracketed paste when the runner supports it, so a long multi-line
+			// message arrives as one block rather than each newline submitting a
+			// partial line and leaving only the tail. See SayPasted and B2-47.
+			say := run.Say
+			if d.bracketedPasteFor(taskID, false) {
+				say = run.SayPasted
+			}
+			if err := say(body.Text); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+				"text": body.Text, "via": "terminal",
+			}); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			d.askAnswered(taskID, "the operator")
+			d.publishTask(taskID)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
+			return
+		}
+
+		// A peer or relay message types in too, marked with the banner so it is
+		// unmistakably not the operator. But ONLY THROUGH THE GATE, the same guard
+		// as the peer bus: injectPeer types and submits only into an empty, idle
+		// line under the input lock, and writes nothing otherwise, so peer text
+		// never lands tangled into a line the operator is composing and never sits
+		// unsent in their prompt. A closed gate falls to the queue below. This is
+		// the same bug clint hit on the bus, closed on this path too.
+		payload := body.Text
+		if d.bracketedPasteFor(taskID, false) {
+			payload = "\x1b[200~" + body.Text + "\x1b[201~"
+		}
+		wrote, err := run.injectPeer(peerBanner(from), payload)
+		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-			"text": body.Text, "via": "terminal",
-		}); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+		if wrote {
+			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+				"text": body.Text, "via": "terminal", "from_peer": from,
+			}); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			d.askAnswered(taskID, "the operator")
+			d.publishTask(taskID)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
 			return
 		}
-		d.askAnswered(taskID, "the operator")
-		d.publishTask(taskID)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
-		return
+		// A part written line: injectPeer wrote nothing. Fall through to the
+		// queue, the same fallback every untyped peer message takes.
 	}
 
-	m, err := d.st.QueueMessage(taskID, body.Text)
+	// A peer message carries its sender so the delivery banner can attribute it
+	// to that session and not to the operator. QueueFromPeer is a separate call
+	// on purpose: a message that claims the operator's authority when a peer sent
+	// it is the one mistake the envelope exists to prevent. Empty from stays the
+	// operator's own channel.
+	var (
+		m   *store.Message
+		err error
+	)
+	if from != "" {
+		m, err = d.st.QueueFromPeer(taskID, body.Text, from)
+	} else {
+		m, err = d.st.QueueMessage(taskID, body.Text)
+	}
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
@@ -325,6 +390,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
+	// A queued peer or relay message keeps trying to type in on the same backoff
+	// as the bus, so the two paths behave alike. The operator's own queued
+	// messages are not retried this way: they are already on the line they are
+	// looking at when a terminal is free, and the gate is about peer text. See
+	// pendinginject.go.
+	if from != "" {
+		d.deferPeerInjection(taskID, m.ID, from, body.Text)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
 }
@@ -355,7 +428,13 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	// Queued rather than typed while a dialog is on that screen. Same reason
 	// as `handleMessage` above: `Say` ends with an Enter.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		if err := run.Say(note); err != nil {
+		// Bracketed paste when supported, so a multi-line note is not split at
+		// its newlines into separate submissions. Same reason as handleMessage.
+		say := run.Say
+		if d.bracketedPasteFor(taskID, false) {
+			say = run.SayPasted
+		}
+		if err := say(note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}

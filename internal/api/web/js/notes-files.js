@@ -506,8 +506,64 @@ async function openEditor(taskID, path) {
   // Typed into means unsaved, said plainly, because a text box that looks the
   // same saved and unsaved is one you close without meaning to.
   box.oninput = () => editorState("not saved");
+  paintEditorElsewhere();
   document.getElementById("t-edit").hidden = false;
   box.focus();
+}
+
+// ── the same file, somewhere else ───────────────────────────────────────────
+
+// paintEditorElsewhere names the machine on the button that opens the file
+// there, and hides it when there is nothing configured to open it with.
+//
+// THE MACHINE IS IN THE LABEL because it is the whole decision. `files/open`
+// runs a command where the FILE is, which is where the agent is and not
+// necessarily where you are: over a share it opens a window beside somebody
+// else. A button called `open` would be a trap; one called `open on sg4` is a
+// choice.
+function paintEditorElsewhere() {
+  const b = document.getElementById("t-edit-there");
+  if (!b) return;
+  // The room the card is on, when the board is looking at several. On a plain
+  // daemon there is no name to use and "where the file is" is still the honest
+  // description: it is not this browser.
+  const where = (typeof termTask !== "undefined" && termTask && termTask.room) || "";
+  const cmd = (pastePrefs && pastePrefs.editor_command) || "";
+  b.hidden = !cmd;
+  b.textContent = where ? "open on " + where : "open where the file is";
+  b.title = cmd
+    ? "runs " + cmd + " on the machine the file is on, which is not this browser"
+    : "";
+}
+
+// openFileTab reads the file in a browser tab, served by atrium.
+//
+// NOT THE FILE'S OWN BYTES ON THE BOARD'S ORIGIN. `downloadFile` is always an
+// attachment and always octet-stream, deliberately: serving an HTML file out
+// of a working directory inline would be attacker-authored script running on
+// the origin that holds the settings, the grouping expression and every card.
+// That rule is not worth a convenience.
+//
+// So the tab gets atrium's own reader, which renders the file as TEXT whatever
+// it contains. Same origin, nothing executed, and it works from another
+// machine because the bytes still come from the room.
+function openFileTab() {
+  if (!editing) return;
+  const url = "/read.html#" + encodeURIComponent(editing.taskID) +
+    "/" + encodeURIComponent(editing.path);
+  window.open(url, "_blank", "noopener");
+}
+
+// openFileThere opens it with the editor command, on the machine it is on.
+async function openFileThere() {
+  if (!editing) return;
+  try {
+    await api(`/v1/tasks/${editing.taskID}/files/open`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: editing.path })
+    });
+  } catch (e) { toast("could not open it there", e.message); return; }
+  toast("opened", "on the machine the file is on");
 }
 
 function editorState(s) {
@@ -773,6 +829,101 @@ async function loadHousekeeping() {
   try { s = await api("/v1/settings"); } catch (e) { return; }
   setTimerValue("s-sweep", s.sweep_dead_after, "60");
   setTimerValue("s-prune", s.prune_after, "off");
+  // Everything per-room is filled by the room's own pane, from that room, and
+  // NOT from here. This endpoint answers for whichever room the board is
+  // scoped to, which on a hub looking at all of them is no particular one.
+  // Filling a shell command or a picker root from that would put one machine's
+  // answer in a box that saves to another.
+  pastePrefs = s;
+  fillSkins(s);
+  fillShareAuth(s);
+}
+
+// fillShareAuth writes the PUBLIC zrok share's login into the gear dialog.
+//
+// A board-owned setting, held on the hub like the skin, so it is filled from the
+// same `/v1/settings` answer and saved the same way. The password is never sent
+// here: `share_pass_set` says only whether one exists, which is all the box
+// needs to draw "set" versus "not set".
+function fillShareAuth(s) {
+  if (!s) return;
+  const scheme = document.getElementById("s-share-auth");
+  if (scheme) scheme.value = s.share_auth || "";
+  const user = document.getElementById("s-share-user");
+  if (user) user.value = s.share_user || "";
+  const oidc = document.getElementById("s-share-oidc");
+  if (oidc) oidc.value = s.share_oidc || "";
+  const pass = document.getElementById("s-share-pass");
+  // The box is always empty: the password is not sent back. It is cleared on
+  // every fill so a value left in it from a previous open is not re-saved.
+  if (pass) pass.value = "";
+  const said = document.getElementById("s-share-pass-said");
+  if (said) said.textContent = s.share_pass_set
+    ? "A password is set. Leave the box empty to keep it."
+    : "No password set.";
+  applyShareAuthRows();
+}
+
+// applyShareAuthRows shows only the fields the chosen scheme needs, so the
+// dialog does not offer an OIDC provider box beside a name-and-password login.
+function applyShareAuthRows() {
+  const scheme = document.getElementById("s-share-auth");
+  const val = scheme ? scheme.value : "";
+  const updb = document.getElementById("s-share-updb");
+  const oidc = document.getElementById("s-share-oidc-wrap");
+  if (updb) updb.style.display = val === "updb" ? "" : "none";
+  if (oidc) oidc.style.display = val === "oidc" ? "" : "none";
+}
+
+// shareAuthChanged is the scheme dropdown moving: repaint the rows, then save.
+// Switching to "none" or "oidc" is saved at once because it has no free-text box
+// waiting on a blur; updb is saved when its own boxes change too.
+function shareAuthChanged() {
+  applyShareAuthRows();
+  saveShareAuth();
+}
+
+// saveShareAuth posts the public-share login to the hub, the same board-owned
+// write path the skin uses. It carries no room so the hub answers it. A blank
+// password box means "keep the stored one", so an empty value is not sent.
+async function saveShareAuth() {
+  const scheme = document.getElementById("s-share-auth");
+  const user = document.getElementById("s-share-user");
+  const pass = document.getElementById("s-share-pass");
+  const oidc = document.getElementById("s-share-oidc");
+  const body = { share_auth: scheme ? scheme.value : "" };
+  if (user) body.share_user = user.value;
+  if (oidc) body.share_oidc = oidc.value;
+  // Only send a password when one was typed. An empty box keeps the stored one,
+  // which is why the box is always empty on open.
+  if (pass && pass.value) body.share_pass = pass.value;
+  // A share login is board-wide and the hub holds it, so the write must carry no
+  // room. `writeRoom` is set by a machine-setting editor and never cleared, so a
+  // stale one would send this to a room, which refuses it. Clear it in the ALL
+  // view, exactly as saveSkin does.
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
+  try {
+    const s = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+    // The answer carries the login back (minus the password), so the "set" hint
+    // and the rows reflect what actually saved.
+    fillShareAuth(Object.assign({}, pastePrefs || {}, s));
+  } catch (e) {
+    toast("that did not save", e.message);
+  }
+}
+
+// fillMachineFields writes one room's settings into the pane behind its cog.
+//
+// SEPARATE FROM THE BOARD'S OWN SETTINGS because the two are different kinds of
+// thing that happened to share a dialog. The skin, the notifications and the
+// housekeeping timers are one answer for one board. The editor command, the
+// picker roots, the worktree command and the shell are facts about a machine,
+// and a board serving four of them has four answers.
+function fillMachineFields(s) {
+  if (!s) return;
   const ed = document.getElementById("s-editor");
   if (ed) ed.value = s.editor_command || "";
   pastePrefs = s;
@@ -819,8 +970,26 @@ async function loadHousekeeping() {
       ? "Right now: " + list.join(", ")
       : "Right now: nothing resolves, so the picker has nowhere to open.";
   }
+  // NOT CACHED AS THE BOARD'S ANSWER. `pastePrefs` is what a paste and a new
+  // terminal read without asking, and they are about the card in front of you,
+  // which is not necessarily on the room whose settings somebody just opened.
+  // Looking at sparta's shell command must not decide where athens' next
+  // screenshot lands. It is only taken when the board is scoped to that room,
+  // where the two are the same question.
+  if (typeof roomNow === "function" && roomNow() &&
+      (typeof roomCfgFor === "undefined" || roomNow() === roomCfgFor)) {
+    pastePrefs = s;
+  }
+}
 
-  fillSkins(s);
+// afterMachineSave refreshes whichever pane the field that saved is in.
+//
+// The savers below were written when there was one machine and one dialog.
+// They now run from a room's own pane, and re-reading the hub's answer would
+// paint one machine's settings into boxes that just saved to another.
+function afterMachineSave() {
+  if (typeof roomCfgOpen !== "undefined" && roomCfgOpen) return loadRoomCfg();
+  return loadHousekeeping();
 }
 
 // The name of the skin that has no rule of its own, because it IS `:root`.
@@ -1088,6 +1257,12 @@ async function saveSkin(name) {
   const sel = document.getElementById("s-skin");
   const want = name || (sel && sel.value);
   if (!want) return;
+  // A SKIN FOLLOWS THE ROOM PICKER AND NOTHING ELSE. In the ALL view it is the
+  // hub's, so the write must carry no room and reach the hub. `writeRoom` is set
+  // by a machine-setting editor and never cleared, so a stale one would send the
+  // skin to that room instead. Clear it when looking at all rooms so the fetch
+  // wrapper adds no header. A room-scoped view routes by `roomNow` regardless.
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
   // Painted before the round trip, because this is the one setting whose whole
   // point is what it looks like. Waiting for the daemon to answer means half a
   // second of the old colours while you are staring at the control you just
@@ -1122,21 +1297,60 @@ async function saveSkin(name) {
 // reconciling means the flash only happens the first time a new browser sees
 // the board, which is the one time it is honest.
 const SKIN_KEY = "atrium.skin";
-function rememberSkin(name) {
-  try { name ? localStorage.setItem(SKIN_KEY, name) : localStorage.removeItem(SKIN_KEY); } catch (e) {}
+
+// PER SCOPE, because the skin now follows the room picker: ALL wears the hub's,
+// each room wears its own. One key would mean the reload after a scope change
+// flashes the skin of the scope you just left before the daemon's answer lands.
+// Keying the remembered skin by scope makes the flash show the right one. It is
+// still not the source of truth: the daemon holds the setting, and this only
+// kills the flash. A plain daemon has no rooms, so `roomNow` is empty and this
+// is `atrium.skin`, exactly as it was.
+function skinKey() {
+  try {
+    const room = typeof roomNow === "function" ? roomNow() : "";
+    return room ? SKIN_KEY + "." + room : SKIN_KEY;
+  } catch (e) { return SKIN_KEY; }
 }
 
-async function bootSkin() {
-  try {
-    const remembered = localStorage.getItem(SKIN_KEY);
-    if (remembered) document.documentElement.setAttribute("data-skin", remembered);
-  } catch (e) {}
-  let s;
-  try { s = await api("/v1/settings"); } catch (e) { return; }
+function rememberSkin(name) {
+  const key = skinKey();
+  try { name ? localStorage.setItem(key, name) : localStorage.removeItem(key); } catch (e) {}
+}
+
+// Wear the skin a `/v1/settings` answer names for the current scope, and remember
+// it. Split out of `bootSkin` so the same resolution can run more than once.
+//
+// IT HAS TO RUN MORE THAN ONCE, and that is the bug this fixes. `bootSkin` reads
+// settings once at load, but a hub that is still bringing its rooms up answers
+// `/v1/settings` with a 409 (`needsARoom`) until it has a room to borrow from, so
+// the read at load can fail outright. A skin picked for a scope then never
+// painted: the board sat on the default until a full manual reload, which on a
+// deploy-restart is exactly when the operator reloads and sees the dark default.
+// So the reconnect path (see loadGlobalAuto) and a room attaching (see
+// loadHubRooms) re-run this from the settings they read, and the skin heals the
+// moment the daemon can answer rather than at the next reload.
+//
+// The daemon's answer wins, including when it says the default: a skin cleared
+// from another browser has to reach this one.
+//
+// Left alone while a preview is up: the skin lab paints an unsaved skin, and a
+// reconnect or a room attaching mid-preview must not yank it back to the saved
+// one under the operator's hand. See `previewSkin`.
+//
+// SETTLED ONCE A SETTINGS READ HAS ACTUALLY RESOLVED A SKIN. The heal exists for
+// the load that could not read settings yet (the 409 a hub still bringing its
+// rooms up gives), so the room-set-change path re-reads until it lands. But once
+// it HAS landed, a room merely attaching or leaving must not re-resolve the skin
+// under the operator: their applied skin is their SELECTED scope's, not whatever
+// the attached set now borrows. `loadHubRooms` reads this to gate its re-apply.
+let skinSettled = false;
+function skinHasSettled() { return skinSettled; }
+function applyResolvedSkin(s) {
+  if (!s) return;
+  const lab = document.getElementById("skinlab");
+  if (lab && !lab.hidden) return;
   const names = s.board_skins || [];
   const now = s.board_skin || names[0] || "";
-  // The daemon's answer wins, including when it says the default: a skin
-  // cleared from another browser has to reach this one.
   if (now && names.length && now !== names[0]) {
     document.documentElement.setAttribute("data-skin", now);
     rememberSkin(now);
@@ -1144,6 +1358,18 @@ async function bootSkin() {
     document.documentElement.removeAttribute("data-skin");
     rememberSkin("");
   }
+  // A skin resolved from a real answer. The room-set-change re-apply stops here.
+  skinSettled = true;
+}
+
+async function bootSkin() {
+  try {
+    const remembered = localStorage.getItem(skinKey());
+    if (remembered) document.documentElement.setAttribute("data-skin", remembered);
+  } catch (e) {}
+  let s;
+  try { s = await api("/v1/settings"); } catch (e) { return; }
+  applyResolvedSkin(s);
 }
 
 async function saveBrowseRoots() {
@@ -1158,7 +1384,7 @@ async function saveBrowseRoots() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   toast("saved", "the picker opens in " +
     ((pastePrefs.browse_roots_now || []).length || 0) + " place(s)");
 }
@@ -1175,7 +1401,7 @@ async function saveSharedLocation() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   // Says the part that is easy to miss. The file is written when the daemon
   // starts, so saving this changes nothing until it does, and somebody who
   // saves it and immediately looks for the file finds nothing there.
@@ -1197,7 +1423,7 @@ async function saveShellCommand() {
     toast("that did not save", e.message);
     return;
   }
-  loadHousekeeping();
+  afterMachineSave();
   // Says the part that is easy to miss. A shell already open keeps being what
   // it was, because it is a running process rather than a setting.
   toast("saved", el.value.trim()
@@ -1226,7 +1452,7 @@ async function saveScrollback() {
   // somebody scrolling up in a session started an hour ago and finding the
   // old limit still in force.
   applyScrollback();
-  loadHousekeeping();
+  afterMachineSave();
   toast("scrollback saved",
     `${pastePrefs.scrollback_lines_now} lines here, now. ` +
     `${pastePrefs.scrollback_mb_now}MB in the daemon, for sessions started from here on.`);

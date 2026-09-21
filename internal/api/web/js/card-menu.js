@@ -391,16 +391,37 @@ function newAgentSub(id, t) {
   // here means this card takes the runner, which is what makes a card with a
   // worktree and a finished session worth reopening rather than replacing.
   const onto = t.supervised ? null : id;
-  const runnable = allHarnesses.filter(h => h.enabled && h.found && !isShellRunner(h));
+  // THE RUNNERS ON THIS CARD'S MACHINE, AND NO OTHERS.
+  //
+  // `allHarnesses` is merged across every attached room when the board is
+  // looking at all of them, so a hub with two rooms listed `claude code`
+  // twice, identically, and picking either was a coin toss. It is not even an
+  // ambiguous question: this starts a runner in THIS CARD'S DIRECTORY, which
+  // is on this card's machine, so the only runners that could possibly do it
+  // are that machine's.
+  //
+  // `t.room` is empty on a plain daemon and on a board scoped to one room,
+  // where every row is from the same place and this filter passes everything.
+  const mine = (allHarnesses || []).filter(h => (h.room || "") === (t.room || ""));
+  const runnable = mine.filter(h => h.enabled && h.found && !isShellRunner(h));
 
   const sub = runnable.map(h => ({
     label: h.label || h.id,
-    act: () => launchRunnerHere(h.id, t.worktree, onto)
+    act: () => launchRunnerHere(h.id, t.worktree, onto, t.room)
   }));
-  // Only when there is nothing to run, which means no runner on this machine
+  // WHICH MACHINE THESE ARE ON, said once above them, and only when there is
+  // more than one machine to confuse them with. Without it the list is right
+  // and looks arbitrary: two rooms with the same runners drew the same names
+  // and nothing said why one set was missing.
+  if (t.room) sub.unshift({ quiet: "on " + t.room });
+  // Only when there is nothing to run, which means no runner on that machine
   // has a command that resolves. The form is still offered below it, because
   // the form is where a runner gets pointed at something that does.
-  if (!sub.length) sub.push({ quiet: "no runner on this machine is ready" });
+  if (!sub.length) {
+    sub.push({ quiet: t.room
+      ? `no runner on ${t.room} is ready`
+      : "no runner on this machine is ready" });
+  }
   sub.push({
     label: "fill in a form…",
     act: () => openLaunch(t.runner || null, "", t.worktree, onto, null, "here")
@@ -446,6 +467,27 @@ async function cardMenu(e, id) {
   if (selectionTouches(e.target.closest(".card, .stackrow"))) return;
   e.preventDefault();
   e.stopPropagation();
+
+  // A CARD ON A MACHINE THAT IS NOT ANSWERING OPENS NO MENU.
+  //
+  // Every entry on it would be refused by the hub, correctly and with a good
+  // sentence, but a menu of eleven things that all fail is worse than being
+  // told once. There is no read-only version of it either: the menu's first
+  // act is to fetch the card, and what would answer is the cache, which is
+  // what the board is already showing.
+  //
+  // No queueing behind it and no "we will do this when it comes back". A queue
+  // of intentions against a machine nobody has heard from is a second source of
+  // truth, and reconciling it is the part that goes wrong.
+  const known = (typeof lastTasks !== "undefined" ? lastTasks : []).find(x => x.id === id);
+  if (known && known.offline) {
+    tellUser("that machine is not answering",
+      `<p>The room <b>${esc(known.room || "")}</b> is offline, so nothing on this card can
+        be opened or changed.</p>
+      <p class="by">What is shown of it is what that machine last said. It all works again
+        when the room is back, and nothing is queued up in the meantime.</p>`);
+    return;
+  }
   // The card, and whether this machine has a terminal command. Together rather
   // than one after the other: the menu is drawn on a click and the settings
   // read is not worth a second beat of waiting.

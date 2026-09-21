@@ -45,6 +45,7 @@ docs/backlog
 # repository. What comes OUT of one is a backlog item that stands on its own and
 # names nobody.
 *-comparison*.md
+
 # Playwright, which is not a dependency of atrium and is installed only when
 # somebody wants to watch a recorded walkthrough. The specs under
 # scripts/walkthrough ARE checked in. What it downloads and what it produces
@@ -52,3 +53,8 @@ docs/backlog
 node_modules
 package-lock.json
 test-results
+
+FACTORY-STATUS.md
+sgg-STATUS.md
+docs/parked-room-changes.md
+docs/interview-log.md

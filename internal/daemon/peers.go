@@ -345,11 +345,17 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := d.st.QueueFromPeer(target.ID, text, from); err != nil {
+	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.publishTask(target.ID)
+	// The queue is the durable copy and the hooks will drain it. On top of that,
+	// keep trying to type it in when the operator's line clears, on a widening
+	// backoff, so a message does not have to wait for the target's next tool call
+	// to appear on screen. See pendinginject.go.
+	d.deferPeerInjection(target.ID, m.ID, from, text)
 	log.Printf("[atrium] %s told %s something (%d chars)", from, to, len(text))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -364,8 +370,15 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 // this in the stream at all. Grey and named, in the sentinel style the rest of
 // the board uses for anything atrium says on a terminal it does not own the
 // content of.
+//
+// NO CARRIAGE RETURN AND NO NEWLINE, which is a rule and not a detail. This
+// banner is written into the operator's prompt, and a carriage return in it is
+// an Enter: it submits whatever the operator had already typed. It used to open
+// and close with `\r\n`, so a peer message split the operator's part written
+// line in two and sent the first half. The label leads with something that
+// cannot press Enter for him, and the body follows it on the same line.
 func peerBanner(from string) string {
-	return "\r\n\x1b[38;5;244m[atrium] " + from + " says:\x1b[0m\r\n"
+	return "\x1b[38;5;244m[atrium] " + from + " says: \x1b[0m"
 }
 
 // tellByTyping puts a peer's message into the terminal when the terminal is
@@ -397,47 +410,32 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	}
 	// A FOURTH STATE, and it refuses like the part written line does.
 	//
-	// A dialog the runner put up itself is on that screen, and both of the
-	// typing branches below end in an Enter: `Say` writes one, and even the
-	// watching branch leaves text on a line a person may then submit. An Enter
-	// landing on a dialog answers it with whatever option was highlighted.
-	//
-	// Refusing here sends it back to the queue, which is what the peer bus
-	// does by default anyway, so nothing is lost but the immediacy.
+	// A dialog the runner put up itself is on that screen, and a submitted
+	// peer message would end in an Enter that answers it with whatever option
+	// was highlighted. Refusing here sends it back to the queue, which is what
+	// the peer bus does by default anyway, so nothing is lost but the immediacy.
 	if d.act.dialogOpen(target.ID) {
 		return false, ""
 	}
-	switch run.howBusy() {
-	case peerMidLine:
-		return false, ""
-	case peerWatching:
-		// Use paste markers here too: leaving text in the prompt still needs
-		// protection against chunked input being interpreted as separate submissions.
-		body := text
-		if d.bracketedPasteFor(target.ID, false) {
-			body = "\x1b[200~" + text + "\x1b[201~"
-		}
-		if err := run.Write([]byte(peerBanner(from) + body)); err != nil {
-			return false, ""
-		}
-		d.notePeerTyped(target.ID, from, text, "left in the prompt, you were typing")
-		return true, "typed into the terminal without sending it, since you were just typing"
-	default:
-		if err := run.Write([]byte(peerBanner(from))); err != nil {
-			return false, ""
-		}
-		// Send supported runners a bracketed paste so long reports stay together
-		// when the PTY splits writes. See SayPasted and B2-47.
-		say := run.Say
-		if d.bracketedPasteFor(target.ID, false) {
-			say = run.SayPasted
-		}
-		if err := say(text); err != nil {
-			return false, ""
-		}
-		d.notePeerTyped(target.ID, from, text, "typed and sent")
-		return true, "typed into the terminal and sent"
+	// Bracketed paste when supported, so a long report stays together even if
+	// the PTY splits the write. See SayPasted and B2-47. The banner stays
+	// outside the markers so its grey label renders rather than arriving as
+	// literal paste text.
+	body := text
+	if d.bracketedPasteFor(target.ID, false) {
+		body = "\x1b[200~" + text + "\x1b[201~"
 	}
+	// injectPeer types and submits ONLY when the gate is open right now: an empty
+	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt
+	// and never blocks the operator's keystrokes. A closed gate writes nothing,
+	// and the caller defers the message onto the backoff. See injectPeer and
+	// pendingInjector.
+	wrote, err := run.injectPeer(peerBanner(from), body)
+	if err != nil || !wrote {
+		return false, ""
+	}
+	d.notePeerTyped(target.ID, from, text, "typed and sent")
+	return true, "typed into the terminal and sent"
 }
 
 // notePeerTyped records a typed message on the timeline.

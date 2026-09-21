@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +34,9 @@ type attachIn struct {
 	Cols int    `json:"cols"`
 	Rows int    `json:"rows"`
 	S    string `json:"s"`
+	// On carries the wanted state of shared multi-pane input for an
+	// {"t":"echo"} frame. See the case in the reader and `runner.setEchoPeers`.
+	On bool `json:"on"`
 }
 
 // attachCaps is what the board cannot work out from the bytes, sent once as
@@ -182,44 +184,6 @@ func humanBytes(n int64) string {
 	}
 }
 
-// widthNote is the line drawn above replayed output that was composed for a
-// terminal other than this one, and the empty string when there is nothing to
-// say.
-//
-// SAID RATHER THAN WITHHELD. The scrollback really may sit in the wrong
-// columns, and the reader is the one who gets to decide whether that is worth
-// having. Everything below the note is theirs to judge, and everything the
-// runner draws after it is composed for this terminal.
-//
-// Three cases, because "it might look wrong" is not the same sentence as
-// "here is which part":
-//
-//	nothing to say   one width, and it is this one
-//	one width        the whole backlog was drawn elsewhere
-//	several          the session was resized while it ran
-func widthNote(widths []int, wantCols int) string {
-	if len(widths) == 0 {
-		return ""
-	}
-	if len(widths) == 1 {
-		if widths[0] == wantCols || widths[0] <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("\x1b[38;5;244m[atrium] the scrollback that follows was drawn "+
-			"for a terminal %d columns wide and this one is %d, so it may sit in the "+
-			"wrong places. anything the session draws from now on is drawn for this "+
-			"one.\x1b[0m\r\n", widths[0], wantCols)
-	}
-	seen := make([]string, 0, len(widths))
-	for _, w := range widths {
-		seen = append(seen, strconv.Itoa(w))
-	}
-	return fmt.Sprintf("\x1b[38;5;244m[atrium] this session was resized while it ran, so the "+
-		"scrollback that follows was drawn at %s columns and this terminal is %d. some of "+
-		"it may sit in the wrong places. anything the session draws from now on is drawn "+
-		"for this one.\x1b[0m\r\n", strings.Join(seen, ", "), wantCols)
-}
-
 func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, shell bool) {
 	var run *runner
 	if shell {
@@ -277,15 +241,26 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// And give the size back when this viewer goes. A window that attached
-	// once and was closed would otherwise hold the session at its width
-	// forever, which is worse than the bug this pairs with: at least a
-	// last-writer-wins resize could be undone by dragging something.
+	// Forget this viewer when it goes. A window that attached once and was
+	// closed must stop constraining the size, or a phone that popped in and out
+	// would hold the session at its width forever. The pty only follows this
+	// back up if the viewer that left was the binding (smallest) one: see
+	// `dropViewport`, which resizes only when the agreed size actually changes.
 	defer run.dropViewport(c)
 
 	// Closed once this viewer has said how big it is. See the wait below.
 	sized := make(chan struct{})
 	var sizedOnce sync.Once
+
+	// This attach's own output channel, so the keystroke fan-out can skip it:
+	// a pane already shows its own typing. Set once `subscribeSized` has run
+	// below, and read under a lock because the reader goroutine started here
+	// races that assignment. Nil until then, which `echoToPeers` treats as
+	// "exclude nobody" because this attach is not yet a watcher.
+	var (
+		selfMu sync.Mutex
+		self   chan []byte
+	)
 
 	// Reader: control frames from the browser.
 	go func() {
@@ -310,9 +285,26 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// atrium reading its own typing as the person being busy.
 				// See `runner.noteOperatorTyped`.
 				run.noteOperatorTyped([]byte(in.D))
-				if err := run.Write([]byte(in.D)); err != nil {
+				// Through the input lock, so these bytes wait behind a peer
+				// paste in flight rather than interleaving with it. The
+				// bookkeeping above is not locked and stays instant. See
+				// runner.writeOperatorInput and injectPeer.
+				if err := run.writeOperatorInput([]byte(in.D)); err != nil {
 					return
 				}
+				// SHARED MULTI-PANE INPUT, off unless this runner was opted in.
+				// A DISPLAY echo to the OTHER panes, after the one Write above,
+				// so stdin is written exactly once. See `runner.echoToPeers`.
+				selfMu.Lock()
+				me := self
+				selfMu.Unlock()
+				run.echoToPeers([]byte(in.D), me)
+			case "echo":
+				// Turn shared multi-pane input on or off for the whole runner.
+				// The HUB board sends this from a per-terminal toggle. Ignored
+				// by a daemon that does not know the frame, which is what makes
+				// the board piece safe to ship ahead of this one.
+				run.setEchoPeers(in.On)
 			case "resize":
 				// THIS VIEWER'S SIZE, not the terminal's. Several browsers can
 				// be on one session, a pty has one size, and passing each
@@ -326,7 +318,8 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {
-					_ = run.Write([]byte{0x03})
+					run.noteOperatorTyped([]byte{0x03})
+					_ = run.writeOperatorInput([]byte{0x03})
 				}
 			}
 		}
@@ -374,6 +367,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 
 	backlog, widths, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
+	// Now that this attach is a watcher, the fan-out can recognise its channel
+	// and skip it, so this pane is not echoed its own keystrokes.
+	selfMu.Lock()
+	self = updates
+	selfMu.Unlock()
 	if len(backlog) > 0 {
 		// WHY THE SCROLLBACK STOPS WHERE IT STOPS, said at the top where
 		// somebody who has scrolled all the way up is looking.
@@ -389,11 +387,6 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					"holds %s and this session has produced more than that, so older output "+
 					"has been overwritten. raise it in settings, scrollback ----\x1b[0m\r\n",
 				humanBytes(int64(api.ScrollbackBytes(d.st))))))
-		}
-		// Report width differences before replaying history. Cursor-based output
-		// was drawn for the recorded width, which may differ from this pane.
-		if note := widthNote(widths, wantCols); note != "" {
-			_ = c.Write(ctx, websocket.MessageBinary, []byte(note))
 		}
 		// REPLAYED THROUGH A SCREEN, not stripped of everything that moves.
 		//
@@ -433,28 +426,22 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		default:
 			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
 			sc.apply(backlog)
-			body = []byte(sc.text())
+			// WITH THE CURSOR RESTORED. The grid knows where the session parked
+			// its cursor; the attaching terminal would otherwise leave it at the
+			// end of the last line, so the operator's first keystroke echoes in
+			// the wrong column. See `screen.textWithCursor`.
+			body = []byte(sc.textWithCursor())
 		}
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return
 		}
-		// AND A LINE UNDER IT, so the boundary between history and live output
-		// is visible. Without it the first redraw after attaching reads as the
-		// history having been corrupted.
-		// SAYS WHICH RENDERING PRODUCED IT, because three are possible and the
-		// answer to "why does this look like that" starts with which one ran.
-		// Naming the mode also means a screenshot carries it, which is most of
-		// how this gets reported.
-		how := map[string]string{
-			"raw":  "exactly as the session wrote it, rendered by this terminal",
-			"flat": "laid out flat so it could not erase itself",
-		}[mode]
-		if how == "" {
-			how = "replayed through a screen so it could not erase itself"
-		}
-		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
-			"[atrium] ---- everything above is history, "+how+
-			". live from here ----\x1b[0m\r\n"))
+		// NO DIVIDER UNDER THE HISTORY, deliberately. A line reading "everything
+		// above is history, live from here" used to sit here to stop the first
+		// live redraw reading as corrupted scrollback. In practice it read as
+		// noise on every reattach, and clint asked to ditch the whole preamble.
+		// Silence is the better default: the live output picks up where the
+		// history stops, and the honest "the buffer overwrote older output" note
+		// above still fires when there is a real reason to say something.
 	}
 
 	// Writer: output from the runner.

@@ -184,6 +184,23 @@ for (const name of (sw.match(/\bawait (\w+)\(/g) || []).map(m => m.slice(6, -1))
   }
 }
 
+// Rule 8: THE AUTO SWITCH IS NEVER A BLANK PILL.
+//
+// At narrow width the header's global-auto toggle cannot fit its full phrase
+// (`approving everything, 5m`). Dropping it to `font-size: 0` and nothing else
+// left a coloured dot in an empty pill that said neither what the control was
+// nor whether it was on: the symptom that started the whole responsive pass. The
+// collapse has to leave a word behind, and the word has to answer the state, so
+// both `::after` labels are required.
+if (/\.gauto\s*\{[^}]*font-size:\s*0/.test(html)) {
+  if (!/\.gauto::after\s*\{[^}]*content:/.test(html) ||
+      !/\.gauto\.on::after\s*\{[^}]*content:/.test(html)) {
+    fail("the narrow `.gauto` sets `font-size: 0` but leaves no `::after` label for " +
+      "each state. That is the empty pill: a dot with no word for what the control " +
+      "is or whether it is on. Give `.gauto::after` and `.gauto.on::after` a content.");
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} phone invariant${bad === 1 ? "" : "s"} broken.`);
   process.exit(1);

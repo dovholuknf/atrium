@@ -85,8 +85,15 @@ const SettingShellCommand = api.SettingShellCommand
 // over `SettingShellCommand` already knew that and offered the setting as the
 // workaround. See `internal/shellpick` for the order and why the middle of it
 // matters most.
+// OFF IS A VALUE, and it means this machine opens no shells at all. The same
+// word the worktree command uses for the same idea. A machine where a shell
+// beside an agent is not wanted says so here, and the board stops offering
+// one: see `shellIsThere` in internal/api.
 func (d *Daemon) shellFor() (string, []string) {
 	if v, err := d.st.Setting(SettingShellCommand); err == nil && strings.TrimSpace(v) != "" {
+		if strings.EqualFold(strings.TrimSpace(v), "off") {
+			return "", nil
+		}
 		fields := strings.Fields(strings.TrimSpace(v))
 		return fields[0], fields[1:]
 	}
@@ -155,6 +162,13 @@ func (d *Daemon) EnsureShell(taskID string) error {
 	}
 
 	cmdName, args := d.shellFor()
+	// REFUSED HERE, not only hidden on the board. The board stops offering the
+	// control, and a caller that asks anyway -- an old tab, a script, another
+	// board -- gets the reason rather than a shell somebody switched off.
+	if cmdName == "" {
+		return fmt.Errorf("shells are switched off on this machine. " +
+			"clear `shell command` in settings to turn them back on")
+	}
 	return d.spawnShell(taskID, cmdName, args, cwd)
 }
 

@@ -33,11 +33,18 @@
     font-size: .9em; line-height: 1; margin-right: 6px;
     position: relative; top: -1px;
   }
-  /* Narrow: the label goes, the dot and its colour stay. What matters is whether it is on, and the colour says
-     that on its own. */
+  /* Narrow: the full phrase does not fit. Dropping it to nothing left a coloured dot in an empty pill that said
+     neither what the control was nor whether it was on. So the phrase goes and a short word the state picks stays
+     beside the dot: ASK while it is gating, AUTO while it is approving everything. The countdown is the only thing
+     lost, and the tooltip still carries it. */
   @media (max-width: 1150px) {
     .gauto { font-size: 0; padding: 7px 10px; }
-    .gauto::before { margin-right: 0; font-size: var(--fs-md); }
+    .gauto::before { margin-right: 6px; font-size: var(--fs-md); }
+    .gauto::after {
+      content: "ASK"; vertical-align: middle;
+      font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    }
+    .gauto.on::after { content: "AUTO"; }
   }
   .gauto.on {
     color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
@@ -86,9 +93,33 @@
     padding: 11px 0; border-bottom: 1px solid var(--stroke-dim);
   }
   .sharerow:last-child { border-bottom: none; }
-  /* A machine reporting into this one. One panel per room, its cards listed rather than drawn as cards, since
-     they cannot be acted on from here and a card's affordances would be a promise this board cannot keep. */
-  .roomrow { margin-bottom: var(--vs-3); }
+  /* The rooms, listed inside one panel and divided by a hairline rather than each floating in its own box.
+     One row is one machine: a top line (name, how it connects, how it is doing, the cog) and, only when there
+     is something to do about it, a line underneath. */
+  .roomlist { padding: 0; }
+  .roomgroup {
+    display: flex; align-items: center; margin: var(--vs-6) 0 var(--vs-2);
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--label);
+  }
+  /* The first title sits under the page's buttons rather than another list, so it
+     wants less room above than the ones that divide two lists, but not none: flush
+     against the buttons it read as their caption. */
+  .roomgroup:first-child { margin-top: var(--vs-4); }
+  .roomrow { padding: var(--row-y) var(--row-x); border-bottom: 1px solid var(--stroke-dim); }
+  .roomrow:last-child { border-bottom: none; }
+  .roomrow-top { display: flex; align-items: center; gap: var(--sp-3); }
+  .roomname {
+    font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--head);
+  }
+  .roomrow .hintline { margin-top: 6px; }
+  .roomrow .roomcog { flex: none; }
+  /* What the hub knows about one room, behind its cog. A table because it is one: a label and a value per
+     line, and the labels want to line up or the eye has to find each one again. */
+  .kv { border-collapse: collapse; margin-bottom: var(--vs-3); }
+  .kv td { padding: 2px var(--sp-3) 2px 0; vertical-align: top; }
+  .kv td:first-child { white-space: nowrap; }
   .roomcards { display: flex; flex-direction: column; gap: 2px; }
   .roomcard {
     display: flex; align-items: center; gap: var(--sp-3);
@@ -181,11 +212,35 @@
 
      Still a modal rather than a seventh tab. Settings is where you go from wherever you are and come straight
      back, and a modal returns you there for free. */
+  /* ── reading a pane of settings ──────────────────────────
+     `this machine` is nine independent settings and it read as a form to be filled in and submitted: a save
+     button beside every box, each a different width because the box in front of it was, and a paragraph of
+     explanation under each one competing with the next field for attention.
+
+     Three rules fix it. The boxes are one width, so the eye has a column to run down. The explanations are
+     narrower than the boxes and quieter, so they read as a footnote to the field rather than as the field.
+     And the save buttons are gone: a `change` event saves each one on its own, which is what they always
+     were. See `wireSelfSaving`. */
+  #settings .field > .picker > input:not([type=number]),
+  #settings .field > .picker > textarea,
+  #settings .field > .picker > select { flex: 1 1 auto; min-width: 0; }
+  #settings .field .hintline { max-width: 68ch; line-height: 1.55; }
+  /* A saved field says so where you were looking. The toast says WHAT happened and this says WHERE, which on
+     a pane of nine boxes is the half that stops you checking you edited the one you meant. */
+  #settings .justsaved {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 1px rgba(var(--teal-rgb), .5);
+    transition: border-color .2s, box-shadow .2s;
+  }
+
   .pane-split { display: flex; gap: 18px; align-items: flex-start; }
   .pane-nav {
     flex: 0 0 auto; min-width: 15ch; display: flex; flex-direction: column;
     gap: 2px; position: sticky; top: 0;
   }
+  /* Pinned a few pixels down on the runners page, so when the list scrolls the
+     selected pill's top border does not clip against the scroll box's top. */
+  #runners .pane-nav { top: 4px; }
   .pane-nav button {
     text-align: left; background: transparent; border: 1px solid transparent;
     color: var(--dim); padding: 7px 10px; border-radius: var(--r-sm);
@@ -423,7 +478,7 @@
     font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
   }
   .tgroup:hover { background: var(--lift); color: var(--head); }
-  .tgroup .tcaret { font-size: 9px; opacity: .8; width: 9px; text-align: center; }
+  .tgroup .tcaret { font-size: 11px; opacity: 1; width: 11px; text-align: center; }
   .tgroup .tgname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* How much a fold is hiding. It inherits the heading's own font and colour rather than being styled: as a
      nine pixel pill in the chip colours it was the quietest thing on the row, and a count nobody can read is a

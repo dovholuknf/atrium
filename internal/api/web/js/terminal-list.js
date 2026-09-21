@@ -18,11 +18,296 @@ let termListMode = localStorage.getItem("atrium.termlist.mode") || "full";
 let termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
 if (!["full", "mini", "off"].includes(termListMode)) termListMode = "full";
 
+// A PHONE IS A DIFFERENT SCREEN FROM A DESKTOP, and a few of the terminal's
+// settings are facts about the screen rather than about the work. A font that
+// is comfortable on a 32in monitor is gigantic on a phone, and a split dragged
+// on one screen is wrong on the other. Those keys are namespaced by device
+// class so the two screens keep their own answers and neither writes over the
+// other. The break is the same 900px the phone stylesheet uses.
+function termNarrow() {
+  return !!(window.matchMedia && window.matchMedia("(max-width: 900px)").matches);
+}
+function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
+
+// ── hiding the agent-launched doers ──────────────────────────────────────────
+//
+// A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the same one
+// the launch cap counts: the `origin:agent` tag the hub stamps on every card it
+// starts through the launch API (see internal/link/control_mcp.go, OriginTag).
+// A human's own terminal, or one started from the board's launch dialog, self
+// registers and never carries it. Matched trimmed and case-insensitively,
+// exactly as the daemon's `hasOriginTag` does, so the board and the cap agree on
+// what a doer is rather than keeping a second definition that can drift. A tag,
+// not a dedicated field, because that is the durable structural signal the
+// board actually receives per card and the one the cap already trusts.
+const DOER_TAG = "origin:agent";
+function isDoer(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
+}
+
+// HIDE, NOT COLLAPSE-INTO-A-GROUP, and here is why the plainer of the two won.
+// A collapsed "N doers" group would have to be a heading, and the strip already
+// has two heading systems fighting for the top level (the path tree and the
+// grouper). A doer group under `by tag` or `by pile` lands a card in several
+// places at once, so "the doers" stops being one foldable thing. A flat hide
+// filters the input list before any of that runs, so it means the same thing in
+// every GROUP mode and on the phone: the doers are simply not in the list, and
+// a count in the header says how many.
+//
+// TWO INDEPENDENT TOGGLES, ONE PILL. The strip holds two kinds of session, and
+// each gets its own hide toggle. A SUBAGENT is an agent-launched doer (the
+// `origin:agent` tag, `isDoer`). An AGENT is everything else: a human's own
+// top-level terminal, the sessions clint starts himself. The two toggles are
+// independent, so an operator can hide the subagents, the inactive agents, both,
+// or neither. They read as one segmented control (see `termHideControlsHTML`)
+// and behave as two switches.
+//
+// BOTH TOGGLES SAY "HIDE INACTIVE", BUT INACTIVE MEANS A DIFFERENT THING PER
+// KIND. Each toggle keeps the sessions of its kind still worth a glance and drops
+// the rest; what counts as inactive differs because the two kinds are watched
+// differently:
+//   - A SUBAGENT is inactive when it is NOT WORKING RIGHT NOW (`workingNow`):
+//     idle, waiting on input, OR exited. The subagents toggle keeps ONLY the ones
+//     actively computing, since a board fills with atrium's launched doers and
+//     the operator wants to see the ones doing something, not the idle husks.
+//   - An AGENT is inactive when it has EXITED - no live connection
+//     (`supervised`). The agents toggle keeps every live one, EVEN idle or
+//     waiting on you (connected at a prompt is still a session you can go to), and
+//     drops only the dead ones.
+// `none` shows every session of that kind. The attached one is never hidden by
+// either toggle (see `sessionHiddenBy`). Pinning is NOT an exemption: a pinned
+// row whose runner has gone (a cold row) hides with the rest of its kind.
+//
+// TWO SIGNALS. The agents rule reads `supervised`, the strip's own live-connection
+// signal (what the row reads to draw itself cold when there is no runner, see
+// `termRow`, what the nav badge counts as attachable, the board's green/live
+// state). The subagents rule reads `workingNow`, the same live-activity test the
+// board's activity chip makes. So an idle-but-connected session is INACTIVE to
+// the subagents toggle but ALIVE to the agents toggle - deliberately, because the
+// two kinds are triaged differently.
+//
+// DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
+// wall-mounted board and a laptop want different answers and neither should
+// write over the other. The subagents side DEFAULTS ON (a board fills with
+// atrium's launched doers and their dead husks, and hiding those by default
+// keeps the strip about the human sessions); the agents side defaults off, so a
+// human's own sessions are never hidden until asked.
+const HIDE_SUBAGENTS_KEY = "atrium.hidesubagents"; // the atrium-launched doers
+const HIDE_AGENTS_KEY = "atrium.hideagents";       // the human/top-level sessions
+const HIDE_MODES = ["none", "on"];
+// A prior build stored the subagents toggle under `atrium.hidedoers`, with values
+// that meant a different thing (a liveness-gated hide, or an older tri-state).
+// The subagents toggle now hides on the `workingNow` signal and DEFAULTS ON, so a
+// stale value there would show a prior test click instead of the intended
+// default. Drop the legacy key (both device variants) once, so the new key's
+// default takes.
+(function clearLegacyHideKey() {
+  try {
+    localStorage.removeItem("atrium.hidedoers");
+    localStorage.removeItem("atrium.hidedoers.mobile");
+  } catch (e) {}
+})();
+function hideModeFrom(key, dflt) {
+  try {
+    const v = localStorage.getItem(termDeviceKey(key));
+    if (HIDE_MODES.includes(v)) return v;
+    // Old stored values map to the surviving on-state. The subagents key's binary
+    // "1" and the agents key's "inactive" both meant "this toggle is engaged",
+    // which is now `on`. The dropped tri-state `active` hid the working ones, a
+    // thing neither toggle offers now, so it falls through to this kind's default
+    // rather than flip to hiding the opposite set behind the operator's back.
+    if (v === "1" || v === "inactive") return "on";
+    return dflt;
+  } catch (e) { return dflt; }
+}
+function setHideMode(key, mode) {
+  if (!HIDE_MODES.includes(mode)) mode = "none";
+  try { localStorage.setItem(termDeviceKey(key), mode); } catch (e) {}
+  renderTermList();
+}
+// The subagents side defaults ON, the agents side OFF: see the note above.
+function hideSubagentsMode() { return hideModeFrom(HIDE_SUBAGENTS_KEY, "on"); }
+function hideAgentsMode() { return hideModeFrom(HIDE_AGENTS_KEY, "none"); }
+function setHideSubagents(mode) { setHideMode(HIDE_SUBAGENTS_KEY, mode); }
+function setHideAgents(mode) { setHideMode(HIDE_AGENTS_KEY, mode); }
+function toggleHideSubagents() {
+  setHideSubagents(hideSubagentsMode() === "none" ? "on" : "none");
+}
+function toggleHideAgents() {
+  setHideAgents(hideAgentsMode() === "none" ? "on" : "none");
+}
+
+// IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
+// strip reads from: the doer filter's hide-inactive test, the runner mark that
+// animates, and the `by activity` sort all ask this and get the same answer,
+// rather than three copies that drift. It is the same test the board's
+// `activityChip` makes (board.js): a live `activity.what` that is not idle, on a
+// card that is not waiting on you, not shelved, and whose activity is not stale
+// (a done or dead card can still carry a `thinking` that outlived its status).
+function workingNow(t) {
+  const a = t && t.activity;
+  return !!(a && a.what && a.what !== "idle" &&
+    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
+}
+
+// HAS A LIVE CONNECTION, the one aliveness test the hide filter reads. `supervised`
+// is set while atrium holds a runner for the card and drops when that runner
+// exits or disconnects, which is exactly the alive/dead line the show-only-alive
+// toggle draws. Idle and waiting sessions stay `supervised`, so this keeps them,
+// which is the point: a connected agent sitting at a prompt is not dead. A cold
+// pinned row (the runner gone, the row held by its pin) reads false and hides.
+function hasLiveConnection(t) { return !!(t && t.supervised); }
+
+// Whether this session is hidden by its kind's toggle, honouring what is never
+// hidden (see `renderTermList`): the attached one, and whatever its kind's rule
+// keeps. A subagent (`isDoer`) answers to the subagents toggle, everything else
+// to the agents toggle. Kept as one predicate so the count in the header and the
+// rows removed from the list are the same answer rather than two that can drift.
+// The two toggles both mean "hide inactive", but read DIFFERENT signals: a
+// subagent is inactive unless it is working right now (`workingNow`), so an idle
+// or exited one hides; an agent is inactive when it has no live connection
+// (`hasLiveConnection`), so only a dead one hides, pinned or not.
+function sessionHiddenBy(t, keep) {
+  if (keep(t)) return false;
+  if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
+  return !hasLiveConnection(t) && hideAgentsMode() !== "none";
+}
+
+// THE HEADER CONTROL, a segmented pill drawn beside `sorted by activity`. It
+// reads as one control - `agents | subagents` in a single rounded container,
+// styled like the card's agent|shell pair (it borrows `.termkind`) - but each
+// segment is an INDEPENDENT on/off toggle. agent|shell is one-of-two; this is
+// two switches: hide the inactive agents, the inactive subagents, both, or
+// neither, so both segments can be lit at once.
+//
+// A PRESSED SEGMENT is lit like agent|shell's selected side and carries the
+// count it is hiding right now in parentheses - `agents (3)` - so the pill says
+// how much is out of view. The `hide inactive` caption says what pressing a
+// segment does. INACTIVE MEANS A DIFFERENT THING PER SIDE (see the note above),
+// so the tooltips differ: an agent is inactive when it has EXITED (no live
+// connection), a subagent is inactive when it is NOT WORKING right now (idle,
+// waiting, or exited). The attached one always stays, whatever is pressed.
+//
+// DRAWN WHEN IT DOES SOMETHING: when either kind has an inactive session it
+// could hide, or when either toggle is already on (so it can be turned back
+// off). Both segments are drawn together whenever the control shows, so it
+// always reads as the same pair rather than growing and shrinking a side.
+function termHideControlsHTML(c) {
+  const aOn = hideAgentsMode() !== "none";
+  const sOn = hideSubagentsMode() !== "none";
+  if (!aOn && !sOn && !c.agentHideable && !c.subHideable) return "";
+  const seg = (name, on, hidden, fn, title) => {
+    const label = on && hidden ? `${name} (${hidden})` : name;
+    return `<button class="${on ? "on" : ""}" onclick="${fn}"
+        title="${esc(title)}">${esc(label)}</button>`;
+  };
+  // Agents: inactive = exited (no live connection). A live agent stays, even idle
+  // or waiting on you.
+  const agentTitle = aOn
+    ? "inactive agents are hidden (exited, no live connection). click to show " +
+      "them. connected agents and the attached one always stay, even idle or waiting"
+    : "hide the inactive agents (exited, no live connection). connected agents " +
+      "and the attached one always stay, even idle or waiting";
+  // Subagents: inactive = not working right now. Only the actively-computing ones
+  // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
+  // subagent IS, since the word is atrium's own: the sessions atrium launched
+  // (the `origin:agent` tag), not any a human started.
+  const subNote = "subagents are the sessions atrium launched itself " +
+    "(origin:agent), not ones you started";
+  const subTitle = (sOn
+    ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
+      "now). click to show them. only actively-working subagents and the attached " +
+      "one stay"
+    : "hide the inactive subagents (idle, waiting, or exited - not working right " +
+      "now). only actively-working subagents and the attached one stay") +
+    ". " + subNote;
+  return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
+      seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
+    }${
+      seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
+    }</span>`;
+}
+
+// ── the phone dropdown ───────────────────────────────────────────────────────
+//
+// On a phone the list is a switcher competing with the one thing you came for,
+// and its header alone (a sort chip, a row of grouping buttons, a pinned
+// heading) pushed the sessions off the bottom before a single card was drawn.
+// So with a terminal attached the list COLLAPSES to one row naming the attached
+// session, and a tap opens the full list back up. The sort and grouping
+// controls fold under a `filters` button in the same spirit: shown when asked
+// for, out of the way otherwise.
+//
+// Only on a phone, and only with a terminal attached. A desktop has the width
+// for the list beside the terminal, and a phone with nothing attached is
+// already showing the list as its whole view, so there is nothing to collapse.
+// The trigger and the filters button are hidden by CSS in both of those.
+//
+// `open` is not persisted: attaching collapses it (see `openTerm`) and it opens
+// on a tap, so a stored value would only ever fight one of those. `filters` is
+// persisted, since it is a preference about how much chrome you want, not a
+// per-attach state.
+let termListOpen = false;
+let termFiltersOpen = false;
+try { termFiltersOpen = localStorage.getItem("atrium.termfilters") === "1"; } catch (e) {}
+
+// The classes the phone stylesheet reads, set from state rather than toggled in
+// place so a poll's re-render keeps whatever the taps left. Called from
+// `applyTermList`, which runs on every render.
+function applyTermDrop(lay) {
+  lay.classList.toggle("tl-open", termListOpen);
+  lay.classList.toggle("tf-open", termFiltersOpen);
+}
+
+function setTermListOpen(open) {
+  termListOpen = !!open;
+  const lay = document.getElementById("term-layout");
+  if (lay) lay.classList.toggle("tl-open", termListOpen);
+  // Opening or closing trades height with the terminal below, and xterm only
+  // knows its size because something measured it. A frame later, after the
+  // layout it is measuring.
+  requestAnimationFrame(onTermResize);
+}
+function toggleTermListOpen() { setTermListOpen(!termListOpen); }
+
+function toggleTermFilters() {
+  termFiltersOpen = !termFiltersOpen;
+  try { localStorage.setItem("atrium.termfilters", termFiltersOpen ? "1" : "0"); } catch (e) {}
+  const lay = document.getElementById("term-layout");
+  if (lay) lay.classList.toggle("tf-open", termFiltersOpen);
+}
+
+// The collapsed trigger: the attached session's name and a caret that opens the
+// list, plus the filters button. Hidden by CSS everywhere except a phone with a
+// terminal attached, so it is always rendered and never in the way.
+function termDropHTML() {
+  const t = termTask;
+  const label = t
+    ? (String(t.display_title || "").trim() || terminalLabel(t) || "this session")
+    : "choose a session";
+  return `<div class="termdrop">
+      <button class="termdrop-cur" onclick="toggleTermListOpen()"
+        title="switch session"><span class="tname">${esc(label)}</span
+        ><span class="caret">&#9662;</span></button>
+      <button class="termfilters-btn" onclick="toggleTermFilters()"
+        title="sort and grouping">filters</button>
+    </div>`;
+}
+
 function applyTermList() {
   const lay = document.getElementById("term-layout");
   if (!lay) return;
-  lay.classList.toggle("tl-mini", termListMode === "mini");
-  lay.classList.toggle("tl-off", termListMode === "off");
+  applyTermDrop(lay);
+  // `mini` and `off` are the desktop's answer to a list competing with the
+  // terminal beside it: shrink it, or hide it behind a rail. A phone does not
+  // lay them side by side, so neither mode means anything there, and the grip
+  // and rail that reach them are hidden at this width. The stored mode is kept
+  // (the same browser on a wide screen still honours it) but ignored on a
+  // phone, where the list is the whole terminals view and must stay full.
+  const narrow = termNarrow();
+  lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
+  lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
 }
 
@@ -155,6 +440,10 @@ function termListButtons() {
 // alone does not.
 let gripFrom = 0, gripWas = 0;
 function startGrip(e) {
+  // The grip drags the list's WIDTH beside the terminal. This is a desktop
+  // control: a phone stacks the terminal on its own and never ties its size to
+  // the list, so the grip is hidden there and this never runs. See the phone
+  // dropdown, where the list floats OVER the terminal instead of resizing it.
   if (termListMode === "off") return;
   e.preventDefault();
   // THE ELEMENT IS HELD IN A LOCAL, not read off the event inside the
@@ -319,7 +608,24 @@ async function termMenu(e, id) {
     // `done` is not: a card is filed when its work is finished and its runner
     // may still be sitting at a prompt, which is exactly when you want this.
     (t.supervised || t.pid > 0) && t.status !== "dead"
-      ? { label: "terminate", danger: true, act: () => killById(id) } : null
+      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
+    // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is
+    // unpinning it. The strip draws a row when it is supervised or pinned, so a
+    // card whose runner is gone shows only while the pin holds it, and clearing
+    // the pin drops it from the list and keeps it gone on the next poll rather
+    // than hiding it once.
+    //
+    // This is the entry that makes a dead terminal's menu never a dead end.
+    // `terminate` above is gone once the process is (its guards drop it on a
+    // `dead` card, and there is nothing to signal), which left the card the
+    // operator just killed with a menu full of things that do not remove it.
+    // `resume` still stands beside this for the ordinary cold pinned fixture:
+    // dismiss is for the one you are done with, resume for the one you keep.
+    !t.supervised && t.pinned
+      ? { label: "dismiss",
+          help: "Takes this exited terminal out of the list by unpinning it. " +
+            "The card and its history stay on the board.",
+          act: () => togglePin(id, false) } : null
   ].filter(Boolean));
 }
 
@@ -564,9 +870,7 @@ function termTree(list) {
 function termRunnerMark(t) {
   const mark = runnerMark(t.runner);
   const a = t.activity;
-  const working = a && a.what && a.what !== "idle" &&
-    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t);
-  if (!working) return mark;
+  if (!workingNow(t)) return mark;
   // Inserted into the class list the shared builder produced, rather than the
   // builder growing a parameter. `runnerMark` is the board's and is called
   // from three places that do not want this.
@@ -592,12 +896,18 @@ function termRow(t, deep) {
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
-  // Both empty for most rows. See termExtraName and termNoteDuplicates.
-  const extra = termExtraName(t);
   const tail = termSuffix.get(t.id) || "";
-  const shown = (deep ? leaf : full) + tail;
-  // The hover keeps the whole address whatever the row had room to draw.
-  const hover = full + tail + (extra ? ": " + extra : "");
+  // THE NAME LEADS, THE ADDRESS FOLLOWS. Every session in one checkout derives
+  // the same address, so a row led by the address buried the one thing that tells
+  // them apart: the name somebody gave it. So `display_title` is the primary label
+  // and the address is a dim second line under it. A card with no name of its own
+  // has only the address to show, and then that is the single line it draws.
+  const path = (deep ? leaf : full) || "";
+  const named = String((t && t.display_title) || "").trim();
+  const primary = (named || path) + tail;
+  const secondary = named ? path : "";
+  // The hover keeps the whole address and the name whatever the row had room to draw.
+  const hover = named ? named + " · " + full + tail : full + tail;
   return `
     <div class="card tab ${termTask && t.id === termTask.id ? "on" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
@@ -619,29 +929,83 @@ function termRow(t, deep) {
             title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
-            class="tname" title="${esc(hover)}">${esc(shown)}</span>${
-              // WHAT THIS SESSION IS FOR, after where it lives.
-              //
-              // A SIBLING OF `.tname`, NOT A CHILD OF IT. `.tname` is
-              // `direction: rtl` so that a name too long for the strip keeps
-              // its tail, and an inline box added inside an rtl one is laid
-              // out at the LEFT, which would put the note in front of the
-              // address it is annotating.
-              extra
-                ? `<span class="tnote" title="${esc(hover)}">${esc(extra)}</span>`
+            class="tstack"><span
+            class="tname${secondary ? "" : " aspath"}" title="${esc(hover)}"
+            >${esc(primary)}</span>${
+              // Where it lives, under the name and dimmed. Only when the name is
+              // its own: an unnamed card already shows the address as its name,
+              // so a second copy of it under itself says nothing.
+              secondary
+                ? `<span class="tpath" title="${esc(hover)}">${esc(secondary)}</span>`
                 : ""
-            }<span
-            class="tshort" title="${esc(hover)}"
-            >${esc(shortLabel(t))}</span>
+            }</span>
         </div>
-        ${poppedOut(t.id)
-          // Says where it is rather than letting you click and wonder why
-          // nothing happened. Clicking raises that window.
-          ? `<div class="chips"><span class="chip accent"
-               title="this session is showing in a window of its own. click to raise it"
-               >&#8599;</span></div>` : ""}
+        ${termRowChips(t)}
       </div>
     </div>`;
+}
+
+// The chips on the right of a terminal row: a held peer message, and the
+// popped-out marker. Drawn in one .chips box so a row can carry both.
+function termRowChips(t) {
+  const held = termHeldChip(t);
+  const room = termRoomChip(t);
+  const popped = poppedOut(t.id)
+    // Says where it is rather than letting you click and wonder why nothing
+    // happened. Clicking raises that window.
+    ? `<span class="chip accent"
+         title="this session is showing in a window of its own. click to raise it"
+         >&#8599;</span>`
+    : "";
+  const inner = held + room + popped;
+  return inner ? `<div class="chips">${inner}</div>` : "";
+}
+
+// WHICH ROOM THIS CARD RUNS IN, when that is a question worth asking. With one
+// room attached every id is bare, `roomOf` answers "", and this draws nothing: a
+// single room needs no label because every card is in it. The tag appears only
+// when a second room joins, so the badge appears with it, on every card at once,
+// which is exactly when clint could not tell an sg4 card from an sgg one. The
+// room name is the tag itself (e.g. claude-sg4 / claude-sgg). Mirrored in the
+// terminal pane header by `openTerm`, so a card names its room in the list and
+// when it is open.
+function termRoomChip(t) {
+  const room = roomOf(t && t.id);
+  if (!room) return "";
+  return `<span class="chip room" style="--rhue:${roomHue(room)}"
+    title="this card runs in room ${esc(room)}"
+    >${esc(room)}</span>`;
+}
+
+// A PULSING BANG WHEN A PEER MESSAGE IS WAITING to be typed into this terminal.
+//
+// The room-side gate holds a peer message when the operator's line is dirty or
+// he has just been typing, and retries it on a widening backoff. Until it lands
+// the card carries this so a glance across the strip finds the one holding
+// something for him, and the title says what clears it. Distinct from the
+// working spinner on the runner mark: that is the session moving, this is a
+// message stuck behind his own line.
+//
+// COUPLED TO THE ROOM SIDE. `activity.held_peer` is the live signal a daemon
+// with the injector raises. Against a daemon without it the field is never set
+// and this draws nothing, the same way the multi-pane echo toggle shows nothing
+// until its half ships.
+function termHeldChip(t) {
+  const a = t && t.activity;
+  if (!a || !a.held_peer) return "";
+  const from = String(a.held_peer);
+  const secs = Number(a.held_seconds) || 0;
+  const waited = secs > 0 ? ` waiting ${termHeldAge(secs)}` : "";
+  const title = `message from ${from}${waited} - delivers when your input line ` +
+    `is clear and idle. clear or submit your line to receive it now`;
+  return `<span class="chip held" title="${esc(title)}">!</span>`;
+}
+
+// A coarse age for the held tooltip, in the largest unit that is not zero.
+function termHeldAge(secs) {
+  if (secs >= 3600) return Math.floor(secs / 3600) + "h";
+  if (secs >= 60) return Math.floor(secs / 60) + "m";
+  return secs + "s";
 }
 
 // The whole strip, everything under where it lives.
@@ -682,6 +1046,18 @@ function termGroupsHTML(list) {
   // is in. Every other mode has no path to nest, so it draws flat.
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : null;
   const g = typeof grouper === "function" ? grouper() : null;
+  // OFF MEANS OFF, and it did not.
+  //
+  // `grouper()` answers null for two different reasons: grouping is switched
+  // OFF, or the mode is one this strip draws its own way. Both arrived here as
+  // "no grouper", and the fallback is the path tree, so pressing `off` swapped
+  // one set of headings for another set of headings. The one thing it could not
+  // do was stop grouping.
+  //
+  // `p.on` is the question that was being skipped. Off is a flat list in the
+  // order it was handed over, which is what sorting by activity means when
+  // nothing is allowed to reorder it into buckets.
+  if (p && !p.on) return list.map(t => termRow(t, false)).join("");
   if (!g || !p || (p.mode === "project" && !String(p.by || "").trim())) {
     return termNodeHTML(termTree(list), 0, "", folded);
   }
@@ -883,9 +1259,19 @@ function termCount(node) {
 // lets test-sort-order.js check stability across different input orders.
 function termOrder(tasks) {
   if (sortByActivity) {
-    // Waiting sessions come first, then recent activity. Use the shared tiebreak
-    // so equal values do not cause rows to move between polls.
+    // WORKING NOW SITS ON TOP. "Sorted by activity" is about which sessions are
+    // doing something, so the live signal leads: a card running a tool or
+    // thinking (`workingNow`, the same badge the mark animates) outranks one
+    // that is idle or waiting. This used to sort on `idle_seconds` alone, which
+    // is a stored gap since the last event and not the same thing: a session
+    // grinding through a long build logs nothing for a stretch and so read as
+    // idle and sank, which is exactly backwards. Under it, anything waiting on
+    // you is lifted next so a "wants you" card is not buried under idle rows,
+    // and then most-recent activity breaks the rest. The shared tiebreak keeps
+    // equal values from reshuffling between two polls that said the same thing.
     tasks.sort((a, b) => {
+      const act = (workingNow(b) ? 1 : 0) - (workingNow(a) ? 1 : 0);
+      if (act) return act;
       const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
       if (w) return w;
       return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
@@ -944,10 +1330,48 @@ async function renderTermList() {
   // the work that pinning it was supposed to save. A cold row still does
   // something, it just is not attaching: it holds its place, and clicking it
   // starts the session again in the same directory, onto the same card.
-  const tasks = all.filter(t => t.supervised || t.pinned);
+  // A CARD FROM A ROOM THAT IS NOT ANSWERING IS NOT A TERMINAL ROW.
+  //
+  // It cannot be attached to, and a pinned one would otherwise sit here as a
+  // cold row whose whole purpose is to start the session again on a machine
+  // that is not there. `supervised` never survives the cache, so the live rows
+  // were already safe; this is about the pinned ones.
+  const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned));
   // The badge counts what is actually attachable, since it is a count of live
-  // terminals rather than of rows.
+  // terminals rather than of rows. It counts over the WHOLE set, before the
+  // doers are hidden: the nav badge is a fact about the board, not about how
+  // this one screen chose to read the strip.
   badge("c-term", tasks.filter(t => t.supervised).length);
+
+  // HIDE THE INACTIVE SESSIONS, per kind, when asked. Two independent toggles
+  // (see `termHideControlsHTML`), and each reads a DIFFERENT inactive signal: the
+  // subagents side drops the doers that are not working right now (idle, waiting,
+  // or exited), the agents side drops the human sessions with no live connection
+  // (dead), so neither kind buries the other. The ATTACHED one is kept whatever
+  // the toggles say, since hiding must never yank the pane out from under whatever
+  // is open (the teardown below keys off this same list); a live agent is kept by
+  // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
+  // Pinning is no longer an exemption: a pinned session that is inactive by its
+  // kind's rule hides with the rest, in the pinned bucket and everywhere else the
+  // strip lists it. What is removed is counted per kind so the pill can say how
+  // many, and everything downstream draws `shown` rather than `tasks`.
+  const keep = t => !!(termTask && t.id === termTask.id);
+  const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
+  const shown = hideable.length
+    ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
+  // What each segment could hide (an inactive, un-kept session of its kind) and
+  // what it is hiding right now: the first decides whether a segment is worth
+  // offering while its toggle is off, the second is the count a lit segment
+  // shows. Each uses its own kind's inactive signal - agents on live connection,
+  // subagents on working-right-now - so the offer and the act agree.
+  const inactiveAgent = t => !keep(t) && !hasLiveConnection(t);
+  const inactiveSub = t => !keep(t) && !workingNow(t);
+  const hideCounts = {
+    agentHideable: tasks.filter(t => !isDoer(t) && inactiveAgent(t)).length,
+    subHideable: tasks.filter(t => isDoer(t) && inactiveSub(t)).length,
+    agentHidden: hideable.filter(t => !isDoer(t)).length,
+    subHidden: hideable.filter(t => isDoer(t)).length
+  };
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -961,49 +1385,84 @@ async function renderTermList() {
   // ATTACHABLE, not merely present. A pinned row outlives its runner now, so
   // testing that the id is still in the list would leave the pane holding a
   // dead terminal for as long as the row stayed pinned, which is forever.
-  if (termTask && !tasks.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
+  //
+  // NOT WHILE AN ATTACH IS IN FLIGHT FOR IT. The cached list drops `supervised`
+  // before the single-card poll does, so a card being attached right now reads
+  // as stale here for a beat. Tearing it down on that lag is what let a failed
+  // attach spin the board: teardown -> reattach -> openTerm -> refresh -> back
+  // here. The socket's own retry (or the ended state) settles the card. A render
+  // must not. See `attachInFlight`.
+  //
+  // A ROOM-SET CHANGE FLIPS THE ID; IT DOES NOT REMOVE THE CARD. The aggregate
+  // view tags a card `room~id` while more than one room is attached and serves
+  // it bare with one (see `bareId` and the hub's splitTag). A room joining or
+  // leaving flips every id in `/v1/tasks` at once, but the attached `termTask`
+  // still holds the id from before the flip. Comparing raw ids read the attached
+  // card as gone and tore the pane down, the single-card endpoint still resolved
+  // the stale tagged id so the watchdog re-attached, and the next poll tore it
+  // down again: the infinite teardown/reattach loop a room-set change spun,
+  // which kept going after the second room had already left because the browser
+  // held the tagged id it remembered while there were two. So the attached card
+  // is matched by its BARE id here, and when the tag flipped the remembered id
+  // is re-resolved to the form the hub serves now rather than looped on.
+  reconcileAttached(tasks);
 
-  termOrder(tasks);
+  termOrder(shown);
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
-  termNoteDuplicates(tasks);
-  const pinnedTasks = tasks.filter(t => t.pinned);
+  termNoteDuplicates(shown);
+  const pinnedTasks = shown.filter(t => t.pinned);
   pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
-  const toggle = `<div class="termhead">
-      <button class="termsort" onclick="toggleTermSort()"
-        title="newest activity first, and anything waiting on you above that">
-        ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
-      <span class="grow"></span>
-      ${termListButtons()}
-    </div>
-    <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
-         \`paintGroupSegs\` from the same list. Grouping is a way of reading the
-         same sessions rather than a property of one screen, so the control
-         belongs wherever you are when you decide you want it, and there is one
-         setting behind all three.
-         Its own row, because five buttons do not fit beside the sort toggle in
-         a strip this narrow. Hidden in \`mini\`, where there is no room for any
-         of it. -->
-    <div class="termhead termgroups">
-      <span class="barlabel">group</span>
-      <div class="seg groupseg" id="term-group"></div>
+  // The phone's collapsed switcher, hidden by CSS on a desktop and while nothing
+  // is attached. It names the attached session and opens the list over the
+  // terminal. See `termDropHTML`.
+  // The head is the sort chip and the grouping control. On a phone both fold
+  // under the `filters` button in the trigger; on a desktop they sit at the top
+  // of the list as always.
+  // WRAPPED IN `.termstick` AND PINNED. The control cluster (the sort chip, the
+  // hide pill and the `group` row) stays put at the top
+  // of the list while the cards scroll under it. The wrapper is `position:
+  // sticky` and rides whichever box actually scrolls: `#term-list` on a desktop
+  // and when nothing is attached, and the floating `.termbody` flyout on a phone
+  // with a session open (see terminal.css and phone.css). Both control rows go
+  // inside it so they stick as one header rather than one pinning and the other
+  // scrolling out from under it.
+  const head = `<div class="termstick">
+      <div class="termhead">
+        <button class="termsort" onclick="toggleTermSort()"
+          title="working sessions first, then anything waiting on you, then newest activity">
+          ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
+        ${termHideControlsHTML(hideCounts)}
+        <span class="grow"></span>
+        ${termListButtons()}
+      </div>
+      <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
+           \`paintGroupSegs\` from the same list. Grouping is a way of reading the
+           same sessions rather than a property of one screen, so the control
+           belongs wherever you are when you decide you want it, and there is one
+           setting behind all three.
+           Its own row, because five buttons do not fit beside the sort toggle in
+           a strip this narrow. Hidden in \`mini\`, where there is no room for any
+           of it. -->
+      <div class="termhead termgroups">
+        <span class="barlabel">group</span>
+        <div class="seg groupseg" id="term-group"></div>
+      </div>
     </div>`;
 
+  // THE TRIGGER STAYS IN FLOW; THE BODY CAN FLOAT. On a phone the trigger is the
+  // one row you always see and `.termbody` is what the caret opens OVER the
+  // terminal, so opening the switcher never resizes the terminal under it. On a
+  // desktop `.termbody` is `display: contents` and the head and cards sit in the
+  // list exactly as before. The board card, its shape and class, is unchanged:
+  // this list is a switcher, and what it drops (the status chip, the duration)
+  // it drops because the board says those better.
   setHTML(host, tasks.length
-    // A BOARD CARD, the same shape and the same class. The switcher had grown
-    // its own card with its own borders, its own hover and its own chips, and
-    // the two drifted until the same session looked like two different things
-    // depending on which view you were in.
-    //
-    // What it does NOT carry is the status chip and the duration beside it.
-    // This list is a switcher: the question it answers is which session, and
-    // a pill that rewrites itself every few seconds in the corner of your eye
-    // answers a question nobody asked it. The board is where "how long has
-    // this been sitting" belongs, and it says it better.
-    ? toggle + termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(tasks.filter(t => !t.pinned))
+    ? termDropHTML() + `<div class="termbody">` + head +
+      termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
+      termGroupsHTML(shown.filter(t => !t.pinned)) + `</div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
@@ -1212,6 +1671,19 @@ function wireTermDrag(host) {
 // itself two seconds before the daemon comes back.
 const attachRetryFor = 5 * 60 * 1000;
 const attachRetryEvery = 700;
+// The retry delay GROWS and is capped, rather than hammering at a flat rate. A
+// card whose attach keeps closing before it opens is either mid-restart or gone
+// for good, and neither wants a fixed 700ms forever: the first recovers in a
+// beat or two, the second should back off toward the cap so a dead card costs a
+// handful of attempts a minute, not one every 700ms. Reset when the socket
+// opens so the next outage starts from the short delay again.
+const attachRetryMax = 8000;
+let attachTries = 0;
+function attachRetryDelay() {
+  const d = Math.min(attachRetryMax, attachRetryEvery * Math.pow(2, attachTries));
+  attachTries++;
+  return d;
+}
 // How long a refused attach stays silent before it says it is waiting.
 //
 // `/v1/launch` returns before the supervisor has registered the runner, and
@@ -1221,6 +1693,210 @@ let attachSince = 0;
 // Said once per outage rather than once per attempt. At 700ms a five minute
 // wait is four hundred lines of the same sentence.
 let attachSaidGone = false;
+
+// THE CARD AN ATTACH IS IN FLIGHT FOR, and the guard that stops a render from
+// spinning the whole board.
+//
+// The failure this closes seized the screen. An attach whose socket closes
+// before it opens, together with a task LIST that lags the live card (the
+// cached list drops `supervised` while the single-card poll still has it, see
+// `renderTermList`), used to loop: the render found the pane stale, tore it
+// down, the watchdog re-attached, and re-attaching ran openTerm -> switchView
+// -> refresh -> renderTermList, which tore it down again. Hundreds of times a
+// second, a new WebGL context each pass, until the tab ran out of them.
+//
+// So the card openTerm has committed to is recorded from the moment it commits
+// until the socket opens or the attempt is abandoned. While it is in flight a
+// render must not tear the pane down and the watchdog must not start a second
+// attach for it: either one re-enters the loop above. Set in `openTerm`,
+// cleared when the socket opens and on any teardown.
+// COMPARED BY BARE ID, so a room-set change that flips the attached card
+// between `room~id` and bare does not strand the in-flight mark on the old
+// spelling. `onopen` clears with the id the socket was opened under, and a
+// render may retag `termTask` to the new form before the socket lands (see
+// `retagTermId`), so raw equality would leave the mark stuck and the pane
+// unclearable. The bare id is the same across the flip. See `bareId`.
+let attachInFlight = "";
+function markAttachInFlight(card) { attachInFlight = card || ""; }
+function clearAttachInFlight(card) {
+  if (!card || bareId(attachInFlight) === bareId(card)) attachInFlight = "";
+}
+function attachIsInFlight(card) {
+  return !!card && !!attachInFlight && bareId(attachInFlight) === bareId(card);
+}
+
+// Re-point the attached card at the id the hub serves NOW, after a room-set
+// change flipped it between `room~id` and bare. The two ids are the same card
+// (same bare id) so the socket stays open and nothing reattaches: only the id
+// the board remembers it by changes, so the strip's `on` row, the pane check
+// and the reload slot all speak the current form again instead of a stale tag
+// the single-card endpoint happens to still resolve. The in-flight and reattach
+// marks are left alone: they compare by bare id and so already match either
+// spelling. Called from `renderTermList` when the fresh list disagrees with
+// `termTask.id` on the tag but not on the card.
+// The attached pane, reconciled against the freshly polled task list.
+//
+// Two decisions, in this order, and the order matters: re-resolve first, tear
+// down only if there is genuinely nothing left. A room-set change flips every
+// id between `room~id` and bare (see `retagTermId`), so the attached card is
+// found by its BARE id; when the tag flipped, the remembered id is re-pointed
+// at the live form rather than read as gone. Only when no supervised row shares
+// the attached card's bare id is the pane stale, and even then not while an
+// attach for it is in flight (the cached list lags the single-card poll). Split
+// out of `renderTermList` so the room-flip loop it closes can be tested against
+// the real code. Returns whether it tore the pane down.
+function reconcileAttached(tasks) {
+  if (!termTask) return false;
+  const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
+  if (live && live.id !== termTask.id) {
+    retagTermId(live.id);
+    // The room set just changed under an attached pane, which is what flipped the
+    // id. That same change moves the header's height (the room picker and chips
+    // come and go), the header ResizeObserver re-fits the terminal, and a re-fit
+    // that resizes the grid leaves the cursor misplaced: a viewer that is not the
+    // binding one gets no SIGWINCH and so no repaint, and a claude-code TUI does
+    // repaint but does not fully re-park its own input-line cursor. Neither is
+    // caught by the retag above, which keeps the socket open and replays nothing.
+    // So re-attach once, which is the only thing that restores the cursor the way
+    // an initial attach does: `openTerm`/`onopen` resets the terminal and the
+    // daemon replays through `screen.textWithCursor`. See `resyncCursorAfterFlip`.
+    resyncCursorAfterFlip();
+  }
+  if (!attachIsInFlight(termTask.id) && !live) { clearTermPane(); return true; }
+  return false;
+}
+
+// A ROOM FLIP RE-ATTACHES THE PANE ONCE, so the cursor is restored the way it is
+// on a first attach. This is the fix for the garble that came back whenever a
+// room attached or detached.
+//
+// It is deliberately the re-attach the flicker-flap work took OUT of the render
+// loop, put back as a single gated event rather than a per-poll one. `retagTermId`
+// keeps the socket open on a flip, which is right for everything except the
+// cursor: no new socket means no replay, and the live re-fit that the flip
+// triggers moves xterm's grid with nothing to re-sync the cursor against. A
+// re-attach runs the daemon's replay, and that replay ends with the cursor move
+// `textWithCursor` owes an attaching viewer.
+//
+// GATED TO ONE PENDING RECONNECT, and never in a solo window: a solo window
+// carries its own reconnect path keyed off its hash, not this slot. The next
+// poll sees the id already re-resolved, so this fires once per flip and cannot
+// loop the way the raw-id teardown did.
+let cursorResyncPending = false;
+function resyncCursorAfterFlip() {
+  if (termOnly() || !term || !termTask) return;
+  if (cursorResyncPending) return;
+  cursorResyncPending = true;
+  // A frame later, so the flip's re-render and its re-fit have settled before the
+  // reconnect measures and replays into the pane.
+  requestAnimationFrame(() => {
+    cursorResyncPending = false;
+    if (term && termTask) connectTerm(termTask.id);
+  });
+}
+
+// A TAB RETURN CAN REFLOW THE GRID THE SAME WAY A ROOM FLIP DOES, and it leaves
+// the cursor misplaced for the same reason. clint hit this switching browser
+// tabs away from an attached sg4 pane and back: the typed input garbled again,
+// a different trigger from the room flip already fixed above.
+//
+// The mechanism is the one `cursor_refit_test.go` pins. A re-fit that changes
+// cols/rows reflows xterm's buffer and moves the cursor against it, and a viewer
+// that is not the binding one gets no SIGWINCH, so the runner never repaints and
+// the old cursor sits against a reflowed grid. While the tab is hidden the box
+// can change under it (the window resized behind it, a scrollbar came or went)
+// and the layout only flushes on return, so the fit that reflows runs as the tab
+// becomes visible rather than while it was away.
+//
+// So remember the grid on the way out, and on the way back settle the box
+// through `onTermResize` (which skips a no-op fit via `paneBoxUnchanged`, so a
+// return that changed nothing does nothing) and re-attach ONCE, the way a flip
+// does, only when the grid actually moved. The grid-change gate is what keeps an
+// ordinary glance-away-and-back from re-attaching the pane for no reason: no
+// reflow, no garble, no resync. It shares `resyncCursorAfterFlip`'s one-shot
+// gate, so a flip and a tab return that land together still re-attach once, and
+// it is skipped in a solo window for the same reason the flip is: solo owns its
+// own reconnect. HUB-ONLY: the reflow and its cure are both board-side, and the
+// daemon replay it leans on is the same one an initial attach already runs.
+let preHideGrid = "";
+function onTabVisibility() {
+  if (document.visibilityState !== "visible") {
+    preHideGrid = term ? term.cols + "x" + term.rows : "";
+    return;
+  }
+  const was = preHideGrid;
+  preHideGrid = "";
+  if (!was || termOnly() || !term || !termTask) return;
+  // A frame later, so the return's own re-render and the ResizeObserver fit have
+  // a chance to run first, then force the fit ourselves in case the observer has
+  // not fired yet. `onTermResize` is idempotent and box-gated, so calling it
+  // here costs nothing when the box did not move.
+  requestAnimationFrame(() => {
+    if (termOnly() || !term || !termTask) return;
+    onTermResize();
+    if (term.cols + "x" + term.rows !== was) resyncCursorAfterFlip();
+  });
+}
+document.addEventListener("visibilitychange", onTabVisibility);
+
+function retagTermId(id) {
+  if (!termTask || !id || id === termTask.id) return;
+  const was = termTask.id;
+  rlog("room set changed; re-resolving", was, "to", id);
+  termTask.id = id;
+  // `termKindFor` keys the runner/shell choice to the attached card; move it so
+  // the next open of this card does not read as a different one and reset it.
+  if (typeof termKindFor !== "undefined" && termKindFor === was) termKindFor = id;
+  // The reload slot, so a restart comes back to the card under the id this hub
+  // now serves rather than waiting out a tag it no longer answers to. Only in
+  // the board: a solo window is addressed by its hash, not this slot.
+  if (!termOnly()) {
+    try {
+      if (localStorage.getItem("atrium.term") === was) localStorage.setItem("atrium.term", id);
+    } catch (e) {}
+  }
+}
+
+// A REATTACH AFTER A TEARDOWN IS SCHEDULED AND BACKS OFF, never run straight
+// out of the render that noticed the pane was stale.
+//
+// This is the other half of not spinning. `clearTermPane` used to call
+// `waitAndAttach` inline, which polls the card and calls `openTerm` the instant
+// it answers, and `openTerm` repaints the board, and the repaint tears the pane
+// down again. Routed through here instead, at most one reattach is ever pending,
+// it will not fire while an attach for the card is already in flight, and each
+// time it has to fire again for the same card without the attach settling it
+// waits longer, capped. A card whose runner is genuinely gone settles onto one
+// ended state rather than a retry storm.
+let reattachTimer = 0, reattachCard = "", reattachTries = 0;
+const reattachMin = 500;
+const reattachMax = 8000;
+function scheduleReattach(card) {
+  if (!card) return;
+  // openTerm is already on it, or a reattach for it is already queued. Either
+  // way, do not stack a second one.
+  if (attachIsInFlight(card)) return;
+  // Bare id, for the reason `attachIsInFlight` gives: a queued reattach and a
+  // teardown that arrives under the other spelling after a room flip are the
+  // same card, and stacking a second one is what the guard is here to refuse.
+  if (reattachTimer && bareId(reattachCard) === bareId(card)) return;
+  if (reattachTimer) clearTimeout(reattachTimer);
+  reattachCard = card;
+  const wait = Math.min(reattachMax, reattachMin * Math.pow(2, reattachTries));
+  reattachTries++;
+  reattachTimer = setTimeout(() => {
+    reattachTimer = 0;
+    reattachCard = "";
+    waitAndAttach(card);
+  }, wait);
+}
+// Cleared when an attach settles, so the next genuine outage starts from the
+// short delay again rather than from wherever a previous flap left the backoff.
+function resetReattach() {
+  reattachTries = 0;
+  reattachCard = "";
+  if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = 0; }
+}
 
 // Draw the terminal on the GPU rather than in the DOM.
 //

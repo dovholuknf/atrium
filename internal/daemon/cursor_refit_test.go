@@ -1,0 +1,135 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+)
+
+// A LIVE RE-FIT RESTORES THE CURSOR ONLY WHEN THE PTY ACTUALLY MOVES, which is
+// the room-side half of the room-set-change garble and the reason the board fix
+// (a re-attach on a room flip) has to exist.
+//
+// The attach replay restores the cursor (see cursor_position_test.go). But a
+// viewer that re-fits WHILE ATTACHED gets a cursor only if that re-fit moves the
+// pty: the pty resize raises SIGWINCH and the runner repaints, and the repaint
+// carries the move. Since 8400fa8 the pty moves only when the smallest attached
+// viewport changes, so a viewer that is not the binding one re-fits, the pty
+// stays put, no SIGWINCH fires, nothing is sent, and that viewer is left showing
+// its old cursor against a reflowed grid.
+//
+// Nothing here can make the runner repaint (the pty is a fake), so this asserts
+// the DECISION the cursor rides on: whether the pty moved. A room flip on the
+// board triggers exactly this re-fit, which is why the board re-attaches to
+// replay the cursor rather than trusting the resize to carry it.
+//
+// ROOM-SIDE reproduction, PARKED. The fix that ships is the board's.
+
+// keptOpenViewer attaches over the real socket, states its size, drains output
+// in the background, and lets the test resize it and read what came back. A
+// per-read cancel closes the whole coder/websocket conn, so one long-lived read
+// runs for the socket's life.
+type keptOpenViewer struct {
+	c      *websocket.Conn
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	buf    strings.Builder
+}
+
+func attachKeptOpen(t *testing.T, wsURL string, cols, rows int) *keptOpenViewer {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		cancel()
+		t.Fatalf("dial: %v", err)
+	}
+	v := &keptOpenViewer{c: c, cancel: cancel}
+	go func() {
+		for {
+			_, data, err := c.Read(ctx)
+			if err != nil {
+				return
+			}
+			v.mu.Lock()
+			v.buf.Write(data)
+			v.mu.Unlock()
+		}
+	}()
+	v.resize(t, cols, rows)
+	t.Cleanup(func() { cancel(); c.CloseNow() })
+	return v
+}
+
+func (v *keptOpenViewer) resize(t *testing.T, cols, rows int) {
+	t.Helper()
+	frame, _ := json.Marshal(attachIn{T: "resize", Cols: cols, Rows: rows})
+	if err := v.c.Write(context.Background(), websocket.MessageText, frame); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+}
+
+func (v *keptOpenViewer) seen() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.buf.String()
+}
+
+// The move `textWithCursor` appends: up from the resting row, carriage return,
+// across to the column. Its presence is what "the cursor was restored" means.
+func hasCursorMove(s string) bool {
+	return strings.Contains(s, "\x1b[") && strings.Contains(s, "A\r")
+}
+
+func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
+	d := testDaemon(t)
+	// A parked cursor, not at the bottom: row 2 col 6 of three drawn rows.
+	f := narrowSession(t, d, "refit", "line one\r\nline two\r\nline three\r\n\x1b[2;6H")
+
+	srv := httptest.NewServer(d.ap.Handler())
+	t.Cleanup(srv.Close)
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/tasks/refit/attach"
+
+	// The small viewer binds the pty at 40x20.
+	small := attachKeptOpen(t, wsURL, 40, 20)
+	time.Sleep(300 * time.Millisecond)
+
+	// The large viewer attaches. Its initial replay restores the cursor, which is
+	// the attach fix working: this is the baseline the re-fit is measured against.
+	large := attachKeptOpen(t, wsURL, 100, 30)
+	time.Sleep(500 * time.Millisecond)
+	if !hasCursorMove(large.seen()) {
+		t.Fatalf("the initial attach did not restore the cursor: %q", large.seen())
+	}
+	before := len(large.seen())
+	ptyMovesBefore := len(f.resized())
+
+	// NON-BINDING RE-FIT: the large viewer re-fits, but 40 is still the smallest,
+	// so the pty does not move. No SIGWINCH, no repaint, nothing sent. The board
+	// re-attaches to cover exactly this.
+	large.resize(t, 90, 28)
+	time.Sleep(500 * time.Millisecond)
+	if delta := large.seen()[before:]; delta != "" {
+		t.Fatalf("a non-binding re-fit sent bytes it should not have: %q", delta)
+	}
+	if moves := len(f.resized()); moves != ptyMovesBefore {
+		t.Fatalf("a non-binding re-fit moved the pty: %+v", f.resized())
+	}
+	_ = small
+
+	// BINDING RE-FIT: the small viewer re-fits smaller, which IS the smallest, so
+	// the pty moves. A real runner would get SIGWINCH here and repaint, which is
+	// how a binding viewer's cursor is carried without a re-attach.
+	small.resize(t, 30, 16)
+	time.Sleep(400 * time.Millisecond)
+	sizes := f.resized()
+	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{30, 16}) {
+		t.Fatalf("a binding re-fit did not move the pty: %+v", sizes)
+	}
+}

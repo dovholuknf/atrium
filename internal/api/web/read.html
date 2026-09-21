@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atrium</title>
+<link rel="stylesheet" href="/css/tokens.css">
+<!--
+  ONE FILE, IN A TAB OF ITS OWN.
+
+  The board's editor is a panel in a drawer beside a terminal, which is right
+  for changing one line and cramped for reading a long file next to the output
+  that produced it. This is the same file with the window to itself.
+
+  ── why this page exists at all ───────────────────────────
+
+  The obvious answer is a link to the file's own bytes, and atrium will not
+  serve those inline. `downloadFile` is always an attachment and always
+  octet-stream, deliberately: an HTML file out of a working directory, served
+  inline, is attacker-authored script running on the origin that holds the
+  settings, the grouping expression and every card. An agent writes files. That
+  rule is not worth a convenience.
+
+  So this page asks for the file as TEXT, through the endpoint the editor
+  already uses, and puts it in a `<pre>`. Nothing is parsed as markup and
+  nothing is executed, whatever the file contains. It works from another
+  machine, because the bytes still come from the room rather than from the
+  browser's own disk.
+
+  ── the address ──────────────────────────────────────────
+
+  The card and the path are in the FRAGMENT, not the query. A fragment is not
+  sent to the server on navigation and does not reach a proxy's log: the path
+  is only ever transmitted by the fetch below, which needs it, and never by the
+  act of opening the tab.
+-->
+<style>
+  body {
+    margin: 0; background: var(--bg-1); color: var(--body);
+    font: var(--fs-base)/1.5 var(--sans);
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px; border-bottom: 1px solid var(--stroke-dim);
+    background: var(--shell-0); position: sticky; top: 0;
+  }
+  header code { font: var(--fs-sm)/1.4 var(--mono); color: var(--head); }
+  header .by { color: var(--dim); font-size: var(--fs-sm); margin-left: auto; }
+  pre {
+    margin: 0; padding: 18px; white-space: pre-wrap; word-break: break-word;
+    font: var(--fs-sm)/1.55 var(--mono); color: var(--head); tab-size: 4;
+  }
+  .oops { padding: 18px; color: var(--warn); }
+</style>
+</head>
+<body>
+<header><code id="where">reading…</code><span class="by" id="what"></span></header>
+<pre id="text"></pre>
+<script>
+  const esc = s => String(s == null ? "" : s)
+    .replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // `id/path`, where the id cannot contain a slash and a path can, so the
+  // first one separates them and the rest belongs to the file.
+  const frag = decodeURIComponent(location.hash.slice(1));
+  const cut = frag.indexOf("/");
+  const id = cut < 0 ? "" : decodeURIComponent(frag.slice(0, cut));
+  const path = cut < 0 ? "" : decodeURIComponent(frag.slice(cut + 1));
+
+  const where = document.getElementById("where");
+  const what = document.getElementById("what");
+  const text = document.getElementById("text");
+
+  if (!id || !path) {
+    where.textContent = "nothing to read";
+    text.className = "oops";
+    text.textContent = "This address names no file.";
+  } else {
+    where.textContent = path;
+    document.title = path.split("/").pop() + " — atrium";
+    fetch(`/v1/tasks/${encodeURIComponent(id)}/files/text` +
+          `?path=${encodeURIComponent(path)}`)
+      .then(async r => {
+        if (!r.ok) throw new Error((await r.text()) || r.statusText);
+        return r.json();
+      })
+      .then(res => {
+        where.textContent = res.path || path;
+        // textContent, never innerHTML. The whole point of this page.
+        text.textContent = res.text || "";
+        const lines = (res.text || "").split("\n").length;
+        what.textContent = lines + (lines === 1 ? " line" : " lines");
+      })
+      .catch(e => {
+        text.className = "oops";
+        text.textContent = "Could not read it: " + e.message;
+      });
+  }
+</script>
+</body>
+</html>

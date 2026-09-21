@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The two halves of choosing a model, in the store: what a runner can be asked
 // for, and what a card was asked for.
@@ -68,17 +71,33 @@ func TestAnExistingClaudeRowCanBeGivenAModel(t *testing.T) {
 	}
 }
 
-// A shell is left alone. It has no model and would try to execute the flag, so
-// its row must stay empty and a launch naming a model must keep being refused.
-func TestAShellIsNotGivenAModel(t *testing.T) {
+// NOTHING THAT CANNOT TAKE A MODEL IS GIVEN ONE.
+//
+// This used to name the shell row, which no longer exists: a shell is the
+// machine's, not a runner. The rule it was protecting is not about shells. A
+// runner that would treat `--model` as something to execute must have an empty
+// `model_args`, so a launch naming a model is refused rather than started with
+// the flag as an argument.
+func TestOnlyRunnersThatTakeAModelDeclareOne(t *testing.T) {
 	s := openTestStore(t)
 
-	h, err := s.Harness("shell")
+	rows, err := s.Harnesses()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(h.ModelArgs) != 0 {
-		t.Fatalf("a shell was given model arguments: %q", h.ModelArgs)
+	for _, h := range rows {
+		if len(h.ModelArgs) == 0 {
+			continue
+		}
+		var carries bool
+		for _, a := range h.ModelArgs {
+			if strings.Contains(a, "{model}") {
+				carries = true
+			}
+		}
+		if !carries {
+			t.Errorf("%s declares model arguments that never use the name: %q", h.ID, h.ModelArgs)
+		}
 	}
 }
 

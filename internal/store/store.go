@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -489,7 +491,19 @@ type Store struct {
 	// runners. It must not call back into the store.
 	OnHalt func(cause error)
 
+	// hot serves Recent and takes every event synchronously, on the halt path.
+	// cold are write-only durability sinks fed best-effort. See eventsink.go.
+	// Both are wired once at Open from the event_sink setting; the default is
+	// the db table alone and no cold sinks, which is byte-for-byte today.
+	hot  EventSink
+	cold []EventSink
+
 	fresh bool
+
+	// incrementalVacuum is whether this database is in incremental auto_vacuum
+	// mode, read back once at Open. Only such a database keeps free pages this
+	// store can hand back to disk, so IncrementalVacuum is a no-op otherwise.
+	incrementalVacuum bool
 }
 
 // Fresh reports whether Open created the database rather than found one.
@@ -517,6 +531,22 @@ func Open(path string) (*Store, error) {
 	// busy_timeout absorbs most contention before it ever reaches our retry
 	// loop.
 	db.SetMaxOpenConns(1)
+	// auto_vacuum only takes on a database with no tables yet, so it has to be
+	// set on a FRESH file before migrations create the schema, and before WAL is
+	// turned on. This is the half that gives freed space back to disk: pages a
+	// prune or an event roll-off releases are reclaimed incrementally while the
+	// room stays live, rather than sitting at the file's high water mark.
+	//
+	// An existing file is left exactly as it was. Switching an existing database
+	// to incremental needs a full VACUUM, which needs exclusive access a live
+	// room cannot give without taking its terminals down. It keeps whatever mode
+	// it was created with, and IncrementalVacuum below is a no-op on it.
+	if fresh {
+		if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL"); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("PRAGMA auto_vacuum = INCREMENTAL: %w", err)
+		}
+	}
 	for _, pragma := range []string{
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA busy_timeout = 5000",
@@ -528,7 +558,23 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("%s: %w", pragma, err)
 		}
 	}
-	s := &Store{db: db, fresh: fresh}
+	// Read back the mode that is actually in force. A fresh file is now
+	// incremental; an existing one is whatever it was made as. An existing file
+	// not in incremental mode is left alone, and said quietly so it is not a
+	// mystery that the file never shrinks.
+	incremental, err := autoVacuumIncremental(db)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("read auto_vacuum: %w", err)
+	}
+	if !fresh && !incremental {
+		log.Printf("store: %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
+	}
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental}
+	// The default hot sink is the event table, so a store is usable before the
+	// setting is read. configureSinks below may add cold sinks; it never
+	// replaces this with anything that fails Recent.
+	s.hot = newDBSink(db)
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -541,11 +587,25 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("seed card actions: %w", err)
 	}
+	// Read the event_sink setting and attach any cold sinks. A bad or unknown
+	// setting is logged and skipped rather than fatal: a misconfigured cold
+	// trail must never keep the daemon from starting.
+	s.configureSinks(path)
 	return s, nil
 }
 
-// Close releases the database.
-func (s *Store) Close() error { return s.db.Close() }
+// Close releases the database, after flushing and closing any cold sinks so a
+// buffered file sink writes what it is holding before the process exits.
+func (s *Store) Close() error {
+	for _, c := range s.cold {
+		if cl, ok := c.(io.Closer); ok {
+			if err := cl.Close(); err != nil {
+				log.Printf("event sink: close: %v", err)
+			}
+		}
+	}
+	return s.db.Close()
+}
 
 // Halted reports whether the store has halted, and why.
 func (s *Store) Halted() (bool, error) {
@@ -641,3 +701,44 @@ func tsOrEmpty(t *time.Time) string {
 }
 
 func parseTS(s string) (time.Time, error) { return time.Parse(TimeFormat, s) }
+
+// autoVacuumModeIncremental is the value PRAGMA auto_vacuum reports for a
+// database in incremental mode. 0 is none, 1 is full, 2 is incremental.
+const autoVacuumModeIncremental = 2
+
+// autoVacuumIncremental reads back whether the open database is in incremental
+// auto_vacuum mode.
+func autoVacuumIncremental(db *sql.DB) (bool, error) {
+	var mode int
+	if err := db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		return false, err
+	}
+	return mode == autoVacuumModeIncremental, nil
+}
+
+// IncrementalVacuumPages bounds how many free pages one vacuum tick hands back.
+// Small on purpose: the pragma takes the write lock while it runs, and this is
+// meant to trim the file gradually rather than block a request with a long
+// reclaim. At the default page size this is roughly a megabyte a tick.
+const IncrementalVacuumPages = 256
+
+// IncrementalVacuum hands a bounded batch of free pages back to disk.
+//
+// A no-op on a database not in incremental mode, and a no-op with no free pages
+// even when it is, so it is safe to call on a timer against any store. Routed
+// through guard like every other write, so contention retries and a hard
+// failure halts.
+func (s *Store) IncrementalVacuum() error {
+	if !s.incrementalVacuum {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(fmt.Sprintf("PRAGMA incremental_vacuum(%d)", IncrementalVacuumPages))
+		return err
+	})
+}
+
+// IncrementalVacuumOn reports whether this database can hand freed pages back to
+// disk. False for an existing database created before incremental mode, whose
+// file stays at its high water mark.
+func (s *Store) IncrementalVacuumOn() bool { return s.incrementalVacuum }

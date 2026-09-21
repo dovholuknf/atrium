@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The productbuild distribution for the atrium installer, and a template rather
+  than a finished file for the same reason the plist is: an installer distribution
+  cannot expand a variable, so scripts/package-macos.sh substitutes the three
+  @PLACEHOLDERS@ once per architecture and hands the result to productbuild.
+
+  WHY productbuild WRAPS THE pkgbuild COMPONENT AT ALL. `pkgbuild` alone writes a
+  component package that installs, and `installer -pkg` will take it. What it
+  cannot do is refuse the wrong architecture. atrium is built per GOARCH, so an
+  arm64 payload on an Intel Mac would install a binary that cannot run and say
+  nothing about it. `hostArchitectures` below is the whole reason this second
+  wrapper exists: the installer checks it before copying a byte, and an arm64
+  package declines on x86_64 with a message rather than a broken binary.
+
+  A LaunchAGENT, not a LaunchDAEMON, and the postinstall that installs it is the
+  macOS spelling of the one decision made three times. `packaging/atrium.service`
+  is a systemd user unit and `scripts/atrium-autostart.ps1` is a Windows logon
+  task for the same reason: atrium supervises pseudo terminals that need the
+  user's PATH, shell, ssh agent and Claude Code configuration, and a root context
+  has none of those. Change the three together.
+-->
+<installer-gui-script minSpecVersion="2">
+    <title>@TITLE@</title>
+
+    <!--
+      THE ARCHITECTURE GATE. @ARCH@ is x86_64 or arm64, written by the driver.
+      This is what turns "installed a binary that cannot run" into "the installer
+      said this package is for the other Mac".
+    -->
+    <options hostArchitectures="@ARCH@" customize="never" require-scripts="false"/>
+
+    <!--
+      Installs for every user by writing to /usr/local, which is a system path,
+      so it needs an administrator. The per-user half, the LaunchAgent, is done
+      by the postinstall for the one person at the console rather than for root,
+      which is the subtle part recorded in packaging/macos/scripts/postinstall.
+    -->
+    <domains enable_localSystem="true"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="io.github.dovholuknf.atrium"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="io.github.dovholuknf.atrium" visible="false">
+        <pkg-ref id="io.github.dovholuknf.atrium"/>
+    </choice>
+
+    <pkg-ref id="io.github.dovholuknf.atrium" version="@VERSION@" onConclusion="none">@COMPONENT@</pkg-ref>
+</installer-gui-script>

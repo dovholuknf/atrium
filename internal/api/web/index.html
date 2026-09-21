@@ -56,6 +56,29 @@
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
+<link rel="stylesheet" href="/css/expose2.css">
+<link rel="stylesheet" href="/css/expose3.css">
+<!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
+     The board comes up on the stack, because that is what the markup says, and
+     then the script puts you back on the view you were reading. Between those
+     is a frame of somebody else's screen: you leave the terminals, watch the
+     stack draw, and arrive back at the terminals. It reads as the board
+     glitching rather than as a room being changed.
+     This is in the HEAD and inline on purpose. Every other script on this page
+     is at the end of the body, which is after the first paint, so nothing down
+     there can prevent a flash of a view you did not ask for. This runs before
+     anything is drawn.
+     Only when a switch is in flight. An ordinary reload is not covered up,
+     because an ordinary reload is not going anywhere. -->
+<script>
+  try {
+    var to = sessionStorage.getItem("atrium.switching");
+    if (to) {
+      document.documentElement.className += " switching";
+      document.documentElement.dataset.switchingTo = to;
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 <header>
@@ -69,10 +92,17 @@
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            title="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
-      <!-- Put runner configuration and the permissions audit after the daily work views. -->
-      <div class="tab" data-view="runners">runners</div>
+      <!-- Put machine configuration and the permissions audit after the daily work views.
+           Called `rooms` because a room is the machine, and everything under this tab is a
+           fact about one: its runners, its fixtures, its sources, its recognisers, its
+           actions. The view keeps its old internal name so nothing else has to change. -->
+      <div class="tab" data-view="runners">rooms</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
            title="requests waiting to be answered"></span></div>
+      <!-- Hub only. `/_hub/audit` is a 404 on a plain daemon, so this reveals
+           itself once the hub probe finds a hub, the same as the room counter.
+           See js/audit.js and js/rooms.js. -->
+      <div class="tab" data-view="audit" hidden>audit</div>
     </nav>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
@@ -110,6 +140,15 @@
       title="what the board has told you">&#128276;<span class="count"></span></button>
     <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" title="sound settings">&#9881;</button>
+    <!-- WHICH ROOM, and it is a selector as much as a counter.
+         Hidden outright on a plain daemon, which is every atrium that is not a
+         hub: `js/rooms.js` probes for one and turns this off when there is
+         none. Left alone it reads `2/2 rooms` and the board shows all of them
+         at once. Click a room and the whole board becomes that machine's
+         atrium. -->
+    <div class="rooms" id="rooms" hidden onclick="openRooms()">
+      <span class="dot"></span><span id="rooms-t">rooms</span>
+    </div>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
   </div>
   <div class="rule"></div>
@@ -385,6 +424,17 @@ Exports honor whatever filter is applied.">?</span>
             <div class="filebar">
               <code class="grow ell" id="t-edit-where"></code>
               <span class="by" id="t-edit-state"></span>
+              <!-- THE SAME FILE, SOMEWHERE ELSE. This editor is a panel in a
+                   drawer, which is right for changing one line and cramped for
+                   reading a long file next to the terminal that produced it.
+                   `new tab` is atrium serving it to this browser, so it works
+                   from another machine. `open on` runs the editor command
+                   where the FILE is, which is where the agent is and not
+                   necessarily where you are: the button says which machine so
+                   that is a choice rather than a surprise. -->
+              <button id="t-edit-tab" onclick="openFileTab()"
+                title="read it in a browser tab, served by atrium">new tab</button>
+              <button id="t-edit-there" onclick="openFileThere()"></button>
               <button class="go" onclick="saveEditor()">save</button>
               <button onclick="closeEditor()">close</button>
             </div>
@@ -498,6 +548,31 @@ The useful cut is which ones left an account of themselves. A session that finis
     <div id="history-list"></div>
   </div>
 
+  <!-- The operational feed. What happened to atrium, as opposed to what one
+       card did: a room attaching or detaching, the hub starting, a launch
+       refused by the cap, the board put on a share. Read-only, newest first,
+       filterable by room and by kind. Hub only, drawn by js/audit.js. See
+       docs/audit-design.md. -->
+  <div id="audit" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>what has happened here</span>
+      <span class="help" tabindex="0" data-tip="Operational events across the hub and its rooms, newest first.
+
+A room attaching or detaching, the hub starting, a launch refused by the cap, the board put on a share. This is the cross-cutting feed those were scattered out of: some were a hub log line, some a delta on one card, some nowhere.
+
+Read-only. It says what happened, it does not change anything. Filter by room to follow one machine, or by kind to see every refused launch.">?</span>
+    </div>
+    <p class="pane-lead">Operational events across the hub and its rooms. What happened to atrium,
+      not what one card did.</p>
+    <div class="filters" style="margin-bottom:12px">
+      <span class="barlabel">room</span>
+      <select id="audit-room"></select>
+      <span class="barlabel">kind</span>
+      <select id="audit-kind"></select>
+    </div>
+    <div id="audit-list"></div>
+  </div>
+
   <!-- FIVE THINGS, NOT ONE SCROLL.
        One flow of headings in the markup, cut into panes at runtime by
        `splitIntoPanes`, which is the same machinery the settings dialog uses.
@@ -509,16 +584,33 @@ The useful cut is which ones left an account of themselves. A session that finis
        accordion, because an accordion is right when the common case is closed,
        and nobody opens this page except to do one of these five things. -->
   <div id="runners" hidden>
-    <div class="col-head r-section" data-pane="start" style="margin:0 0 10px">
-      <span>start something</span>
-      <span class="help" tabindex="0" data-tip="Runners are rows in a table, not code. A runner is a command, a working directory, an environment, and a way to resume.
+    <!-- ROOMS FIRST, BECAUSE EVERYTHING ELSE ON THIS PAGE BELONGS TO ONE.
+         A runner, a fixture, a source, a recogniser and an action are all
+         facts about a MACHINE: what it can start, what comes up with it, what
+         it polls, what it recognises. A room IS that machine. So the room is
+         the thing you pick and the rest of this page is what you then see.
 
-Add your own with 'add a runner'. Nothing about claude, codex or ollama is special-cased.
+         With one room, or none, nothing here asks anything: the list says
+         what is attached and the panes below are simply that machine's. -->
+    <div class="col-head r-section" data-pane="rooms" style="margin:0 0 10px">
+      <span>rooms</span>
+      <span class="help" tabindex="0" data-tip="A room is a machine running agents. Everything else on this page belongs to one: its runners, its fixtures, its sources, its recognisers, its actions.
 
-window mode opens a real terminal. pty mode has atrium own the process and stream it to the browser, and is not built yet.">?</span>
+A room attached to a hub dials out and stays connected, so the hub can be restarted without touching the sessions running there, and a room behind a firewall needs nothing opened. The hub holds the board. The room holds the database, the terminals and the agents.
+
+The older way is still listed here: a machine that POSTs a summary of itself on a timer. It cannot be typed into from this board, because a pseudo terminal cannot leave the machine that made it, so its rows link to that machine's own board instead.
+
+Pick a room and this whole board becomes that machine's atrium. Pick none and you see all of them at once.">?</span>
     </div>
-    <p class="pane-lead">Every runner that is switched on, ready to start in a directory you pick.</p>
-    <div id="launchers"></div>
+    <p class="pane-lead">The machines that run your agents. Click the room counter up top to
+      show just one, or all of them at once.</p>
+    <!-- "add a room" opens instructions, not a form. Worth being clear about,
+         since every other add button on this page creates something. -->
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="go" onclick="openRoomJoin()">add a room</button>
+      <button class="go" onclick="openDispatch('')">queue work for a machine</button>
+    </div>
+    <div id="room-list"></div>
 
     <div class="col-head r-section" data-pane="runners" style="margin:0 0 10px"><span>runners</span></div>
     <p class="pane-lead">What atrium knows how to start. A command, a working directory, an environment
@@ -527,9 +619,6 @@ window mode opens a real terminal. pty mode has atrium own the process and strea
       <button class="go" onclick="editHarness(null)">add a runner</button>
     </div>
     <div id="harness-list"></div>
-    <!-- Runners found on PATH that have no row yet. Offered, never added on
-         their own: what to run is a decision. -->
-    <div id="discovered"></div>
 
     <!-- Terminals that come up with the daemon.
          Here rather than in the gear because a fixture names a runner, and
@@ -638,27 +727,6 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
       <button class="go" onclick="editAction(null)">add an action</button>
     </div>
     <div id="action-list"></div>
-
-    <div class="col-head r-section" data-pane="rooms" style="margin:0 0 10px">
-      <span>rooms</span>
-      <span class="help" tabindex="0" data-tip="Other machines running their own atrium, reporting what is on them.
-
-Each room keeps its own daemon, its own database and its own terminals. This hub holds nothing durable about them: what you see here is a summary, replaced every time that room checks in, that goes stale and then disappears when it stops.
-
-TERMINALS DO NOT TRAVEL. A pseudo terminal cannot leave the machine that made it, so attaching to a runner on a room means opening that room's own board. That is the link on each row.
-
-A room is started with 'atrium room' on that machine.">?</span>
-    </div>
-    <p class="pane-lead">Other machines running their own atrium and reporting into this one. This
-      board holds nothing about them that survives a restart, and their terminals stay where
-      they are.</p>
-    <!-- "add a room" opens instructions, not a form. Worth being clear about,
-         since every other add button on this page creates something. -->
-    <div class="toolbar" style="margin-bottom:12px">
-      <button class="go" onclick="openRoomJoin()">add a room</button>
-      <button class="go" onclick="openDispatch('')">send work to a machine</button>
-    </div>
-    <div id="room-list"></div>
 
     <!-- The queue, drawn UNDER the rooms rather than beside them, because it is
          a different kind of fact. A room row is what that machine says about
@@ -1098,146 +1166,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         seems large. Never touches shelved cards or the inbox.</span>
     </div>
 
-    <h3 class="s-section">this machine</h3>
-    <!-- The one setting that starts a process nobody named. Off until it is
-         filled in: guessing an editor means atrium picks a program to run on
-         your machine, and a wrong guess is a process you did not want. -->
-    <div class="field">
-      <label class="eyebrow" for="s-editor">open a file with</label>
-      <div class="picker">
-        <input id="s-editor" spellcheck="false"
-          placeholder="empty means the open button does nothing">
-        <button onclick="saveEditorCommand()">save</button>
-      </div>
-      <span class="hintline">Runs on <b>the machine atrium is on</b>, not the one this browser is on.
-        That is the point over an overlay: the file is where the agent is. <code>{path}</code> is where the
-        filename goes, and is appended when you leave it out. Never a shell, so nothing in a filename can
-        become another command. Examples: <code>code -g {path}</code>, <code>notepad</code>,
-        <code>subl</code>.</span>
-    </div>
-
-    <!-- Where a pasted screenshot ends up. There is no third answer here: a
-         pseudo terminal carries input characters, and an image is not one, so
-         the file has to exist somewhere the agent can open it. The choice is
-         whether that somewhere is your repository or a scratch directory. -->
-    <div class="field">
-      <label class="eyebrow" for="s-pastekeep">a pasted file</label>
-      <div class="picker">
-        <select id="s-pastekeep" onchange="savePastePrefs()">
-          <option value="keep">stays in the card, under .atrium/incoming</option>
-          <option value="scrap">goes to a scratch folder, emptied on restart</option>
-        </select>
-      </div>
-      <span class="hintline">The path is what reaches the agent either way. <b>Stays</b> means you still
-        have the screenshot tomorrow, and also every screenshot you ever pasted. <b>Scratch</b> keeps your
-        working directory clean, and the file is gone the next time atrium starts, so anything you want to
-        keep gets saved before then.</span>
-    </div>
-
-    <div class="field">
-      <label class="eyebrow" for="s-pastepre">and is announced as</label>
-      <div class="picker">
-        <input id="s-pastepre" spellcheck="false" placeholder="just the path, on its own">
-        <button onclick="savePastePrefs()">save</button>
-      </div>
-      <span class="hintline">Typed in front of the path, into the line you are already writing. Nothing is
-        submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part
-        of what you type here, so keep one.</span>
-    </div>
-
-    <!-- Where the launch dialog's directory picker may look.
-         It used to be the whole machine, which is right for a picker on
-         loopback and wrong the moment the board is published: a share
-         terminates here, so every request over one looks like loopback and
-         nothing can be decided by address. -->
-    <div class="field">
-      <label class="eyebrow" for="s-browseroots">the picker may open</label>
-      <div class="picker">
-        <textarea id="s-browseroots" spellcheck="false" rows="3"
-          placeholder="one directory per line. empty means your home directory and every card's directory"
-          ></textarea>
-        <button onclick="saveBrowseRoots()">save</button>
-      </div>
-      <span class="hintline">One per line. Leave it empty and the picker offers your home directory plus
-        every directory a card already uses, which is where work already is. Anything outside is refused
-        whether or not it exists, so the refusal cannot be used to find out what is on the machine.
-        <b id="s-browseroots-now"></b></span>
-    </div>
-
-    <!-- The worktree command and the scan depth used to sit here.
-         Both were knobs on a mechanism that INFERRED where repositories live,
-         so one tuned how deep to guess and the other was a shell command atrium
-         could not see inside. Both are gone: a provider is told the layout and
-         makes worktrees with `git worktree add` directly. See runners,
-         providers. -->
-
-    <!-- Where to leave the address for somebody else.
-         The daemon already writes where it is listening, into this account's
-         own state directory, which is the right place and unreadable to
-         anybody else. A script running as another user cannot find it, so it
-         either gets told the port or gets a profile path hardcoded into it,
-         and both are the thing the file was written to prevent. -->
-    <div class="field">
-      <label class="eyebrow" for="s-shared-loc">also leave my address at</label>
-      <div class="picker">
-        <input id="s-shared-loc" spellcheck="false"
-          placeholder="empty means only this account can find the daemon">
-        <button onclick="saveSharedLocation()">save</button>
-      </div>
-      <span class="hintline">A file a <b>different account</b> can read, so a script running as somebody
-        else finds the board without being told the port. A directory you both already reach is the
-        answer: <code>D:/worktrees/atrium/daemon.json</code> if that is where the work is. It holds a
-        loopback address, a pid and two paths, and nothing secret.<br>
-        Written on start, so this takes effect at the next restart.
-        <b id="s-shared-loc-now"></b></span>
-    </div>
-
-    <!-- WHICH SHELL A PANE OPENS.
-         Documented, carried by the config export, and settable nowhere until
-         now: the only routes were editing the database or importing a config.
-         That mattered more than an ordinary gap, because this setting was the
-         WORKAROUND for a shell that always came up as cmd, so the escape
-         hatch was unreachable by the person who needed it. -->
-    <div class="field">
-      <label class="eyebrow" for="s-shell">a shell opens</label>
-      <div class="picker">
-        <input id="s-shell" spellcheck="false"
-          placeholder="empty means whatever this machine has">
-        <button onclick="saveShellCommand()">save</button>
-      </div>
-      <span class="hintline">The shell behind the <b>shell</b> button on a terminal. Empty searches this
-        machine: <code>pwsh</code>, then <code>powershell</code>, then the command shell. Set it when
-        that search finds the wrong one. Takes effect on the next shell you open, not on ones already
-        running.<br>
-        Right now that comes out as <b id="s-shell-now"></b></span>
-    </div>
-
-    <!-- Two buffers, one question. Kept side by side because the smaller of
-         the two is what you actually get, and setting one without seeing the
-         other is how somebody pays for 512MB of daemon and still scrolls back
-         five thousand lines. -->
-    <div class="field">
-      <label class="eyebrow" for="s-sbmb">a terminal remembers</label>
-      <div class="picker">
-        <input id="s-sbmb" type="number" min="1" placeholder="16" style="max-width:110px">
-        <span class="unit">MB in the daemon</span>
-        <input id="s-sblines" type="number" min="1" placeholder="50000" style="max-width:130px">
-        <span class="unit">lines in the browser</span>
-        <button onclick="saveScrollback()">save</button>
-      </div>
-      <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
-        the lot over when you attach, so nothing older than that can reach the page at all. The browser
-        then keeps that many lines of it. <b>Whichever runs out first is what you get</b>, and which one
-        that is depends on how long the lines are: fifty thousand ordinary lines is about four megabytes,
-        but one progress bar redrawing itself is a single line and can be megabytes on its own. Megabytes
-        are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
-        is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
-        empty for the default.</span>
-      <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
-      <span class="hintline" id="s-sbcost" hidden></span>
-    </div>
-
-    <h3 class="s-section">the board</h3>
+    <!-- FIRST, because it is the one everybody opens this dialog for: how the
+         board looks, how big it is, how it groups. Named `board` rather than
+         `the board` so the nav reads as a column of nouns beside `this
+         machine` and `notifications`. -->
+    <h3 class="s-section">board</h3>
     <!-- The board's own colours, which are NOT the terminal's. A terminal
          theme is picked on the terminal bar and belongs to that terminal. This
          is the chrome around them, there is one of it, and it is stored on the
@@ -1376,8 +1309,170 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         to the default and says so rather than blanking the board.</span>
     </div>
 
+
+
+
   </div>
 </dialog>
+<!-- One room's settings, opened by the cog on its row.
+     A ROOM IS THE UNIT, NOT A MACHINE. One machine can hold more than one room
+     and a hub can be a room itself, so every one of these is a fact about the
+     room named in the title and about nothing else. They used to sit in the
+     settings dialog under "this machine", where the name meant nothing on a
+     board serving four of them and the list had grown by accretion: each
+     setting added where there was space rather than where it belonged.
+     No guard: every field here writes as it changes, the same as settings. -->
+<dialog id="roomcfg">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="rc-heading">room</h2></div>
+    <button onclick="closeRoomCfg()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field" id="rc-facts-field">
+      <table class="kv" id="rc-facts"></table>
+      <div class="picker"><button id="rc-mark" onclick="markFromCog()" hidden></button></div>
+      <span class="hintline" id="rc-state"></span>
+    </div>
+
+    <div class="field" id="rc-offline-field" hidden>
+      <span class="hintline"><b>This room is not answering.</b> The only authoritative
+        answer about a room comes from that room, so nothing here can be read or changed
+        until it is back. What is shown above is what it last said.</span>
+    </div>
+
+    <!-- The one setting that starts a process nobody named. Off until it is
+         filled in: guessing an editor means atrium picks a program to run on
+         your machine, and a wrong guess is a process you did not want. -->
+    <div class="field">
+      <label class="eyebrow" for="s-editor">editor command</label>
+      <div class="picker">
+        <input id="s-editor" spellcheck="false" data-saves="saveEditorCommand"
+          placeholder="empty means the open button does nothing">
+      </div>
+      <span class="hintline">Runs on <b>the machine atrium is on</b>, not the one this browser is on.
+        That is the point over an overlay: the file is where the agent is. <code>{path}</code> is where the
+        filename goes, and is appended when you leave it out. Never a shell, so nothing in a filename can
+        become another command. Examples: <code>code -g {path}</code>, <code>notepad</code>,
+        <code>subl</code>.</span>
+    </div>
+
+    <!-- Where a pasted screenshot ends up. There is no third answer here: a
+         pseudo terminal carries input characters, and an image is not one, so
+         the file has to exist somewhere the agent can open it. The choice is
+         whether that somewhere is your repository or a scratch directory. -->
+    <div class="field">
+      <label class="eyebrow" for="s-pastekeep">pasted files go</label>
+      <div class="picker">
+        <select id="s-pastekeep" onchange="savePastePrefs()">
+          <option value="keep">stays in the card, under .atrium/incoming</option>
+          <option value="scrap">goes to a scratch folder, emptied on restart</option>
+        </select>
+      </div>
+      <span class="hintline">The path is what reaches the agent either way. <b>Stays</b> means you still
+        have the screenshot tomorrow, and also every screenshot you ever pasted. <b>Scratch</b> keeps your
+        working directory clean, and the file is gone the next time atrium starts, so anything you want to
+        keep gets saved before then.</span>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-pastepre">what is typed before a pasted path</label>
+      <div class="picker">
+        <input id="s-pastepre" spellcheck="false" data-saves="savePastePrefs"
+          placeholder="just the path, on its own">
+      </div>
+      <span class="hintline">Typed in front of the path, into the line you are already writing. Nothing is
+        submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part
+        of what you type here, so keep one.</span>
+    </div>
+
+    <!-- Where the launch dialog's directory picker may look.
+         It used to be the whole machine, which is right for a picker on
+         loopback and wrong the moment the board is published: a share
+         terminates here, so every request over one looks like loopback and
+         nothing can be decided by address. -->
+    <div class="field">
+      <label class="eyebrow" for="s-browseroots">directories the picker may open</label>
+      <div class="picker">
+        <textarea id="s-browseroots" spellcheck="false" rows="3" data-saves="saveBrowseRoots"
+          placeholder="one directory per line. empty means your home directory and every card's directory"
+          ></textarea>
+      </div>
+      <span class="hintline">One per line. Leave it empty and the picker offers your home directory plus
+        every directory a card already uses, which is where work already is. Anything outside is refused
+        whether or not it exists, so the refusal cannot be used to find out what is on the machine.
+        <b id="s-browseroots-now"></b></span>
+    </div>
+
+    <!-- Where to leave the address for somebody else.
+         The daemon already writes where it is listening, into this account's
+         own state directory, which is the right place and unreadable to
+         anybody else. A script running as another user cannot find it, so it
+         either gets told the port or gets a profile path hardcoded into it,
+         and both are the thing the file was written to prevent. -->
+    <div class="field">
+      <label class="eyebrow" for="s-shared-loc">shared address file</label>
+      <div class="picker">
+        <input id="s-shared-loc" spellcheck="false" data-saves="saveSharedLocation"
+          placeholder="empty means only this account can find the daemon">
+      </div>
+      <span class="hintline">A file a <b>different account</b> can read, so a script running as somebody
+        else finds the board without being told the port. A directory you both already reach is the
+        answer: <code>D:/worktrees/atrium/daemon.json</code> if that is where the work is. It holds a
+        loopback address, a pid and two paths, and nothing secret.<br>
+        Written on start, so this takes effect at the next restart.
+        <b id="s-shared-loc-now"></b></span>
+    </div>
+
+    <!-- WHICH SHELL A PANE OPENS.
+         Documented, carried by the config export, and settable nowhere until
+         now: the only routes were editing the database or importing a config.
+         That mattered more than an ordinary gap, because this setting was the
+         WORKAROUND for a shell that always came up as cmd, so the escape
+         hatch was unreachable by the person who needed it. -->
+    <div class="field">
+      <label class="eyebrow" for="s-shell">shell command</label>
+      <div class="picker">
+        <input id="s-shell" spellcheck="false" data-saves="saveShellCommand"
+          placeholder="empty means whatever this machine has">
+      </div>
+      <span class="hintline">The shell behind the <b>shell</b> button on a terminal. Empty searches this
+        machine: <code>pwsh</code>, then <code>powershell</code>, then the command shell. Set it when
+        that search finds the wrong one. Takes effect on the next shell you open, not on ones already
+        running.<br>
+        Type <code>off</code> for no shells on this machine at all: the button stops being offered and
+        a request for one is refused. The same word the worktree command takes, for the same
+        reason.<br>
+        Right now that comes out as <b id="s-shell-now"></b></span>
+    </div>
+
+    <!-- Two buffers, one question. Kept side by side because the smaller of
+         the two is what you actually get, and setting one without seeing the
+         other is how somebody pays for 512MB of daemon and still scrolls back
+         five thousand lines. -->
+    <div class="field">
+      <label class="eyebrow" for="s-sbmb">scrollback a terminal keeps</label>
+      <div class="picker">
+        <input id="s-sbmb" type="number" min="1" placeholder="16" data-saves="saveScrollback"
+          style="max-width:110px">
+        <span class="unit">MB in the daemon</span>
+        <input id="s-sblines" type="number" min="1" placeholder="50000" data-saves="saveScrollback"
+          style="max-width:130px">
+        <span class="unit">lines in the browser</span>
+      </div>
+      <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
+        the lot over when you attach, so nothing older than that can reach the page at all. The browser
+        then keeps that many lines of it. <b>Whichever runs out first is what you get</b>, and which one
+        that is depends on how long the lines are: fifty thousand ordinary lines is about four megabytes,
+        but one progress bar redrawing itself is a single line and can be megabytes on its own. Megabytes
+        are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
+        is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
+        empty for the default.</span>
+      <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
+      <span class="hintline" id="s-sbcost" hidden></span>
+    </div>
+  </div>
+</dialog>
+
 
 <!-- data-guard: this holds edits that are only kept when you press save, so
      something navigating away has to ask first. The settings and detail
@@ -2100,12 +2195,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('launch').close()">close</button>
   </div>
   <div class="dlg-body">
+    <!-- WHICH MACHINE THIS RUNS ON. Hidden when there is nothing to ask: no
+         hub, or one room, or a board already scoped to a room. A card starts
+         on a machine and it stays there, so this is asked once, here, and
+         never again. -->
+    <div class="field" id="l-room-field" hidden>
+      <label class="eyebrow" for="l-room">room</label>
+      <select id="l-room"></select>
+    </div>
     <div class="field" id="l-pick-field">
       <label class="eyebrow" for="l-harness">runner</label>
       <div class="picker">
         <select id="l-harness"></select>
         <button onclick="goRunners('runners');document.getElementById('launch').close()">configure</button>
       </div>
+      <!-- Said when the selected room has no runner it can actually start, so a
+           dead end is a sentence here rather than a launch that fails at exec.
+           See refreshLaunchRunners in js/fixtures.js. -->
+      <span class="hintline" id="l-pick-note" hidden></span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
@@ -2133,6 +2240,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
         <button onclick="openBrowse()">browse</button>
       </div>
+    </div>
+    <!-- WITH THE DIRECTORY, because it is an answer to the directory question
+         rather than an option about something else: ticking it says "I am not
+         going to pick one". Under `more` it was three fields below the box it
+         empties, so the way to avoid choosing a directory was hidden behind a
+         fold you opened to look for something else. -->
+    <div class="field" id="l-throwaway-field">
+      <label class="check">
+        <input type="checkbox" id="l-throwaway-on">
+        <span>throw it away when the session ends</span>
+      </label>
+      <span class="hintline">Atrium makes a temporary directory and starts here. When the
+        session ends the directory, the card and the conversation are all deleted. If it turns
+        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
     </div>
     <!-- Only shown when there is a conversation to pick up. Checked by
          default: if you had one, continuing it is almost always the intent.
@@ -2180,17 +2301,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
         below, and nothing starts until you press launch.</span>
     </div>
-    <!-- Offer a temporary directory below the directory picker, with cleanup
-         behavior explained before launch. -->
-    <div class="field" id="l-throwaway-field">
-      <label class="check">
-        <input type="checkbox" id="l-throwaway-on">
-        <span>throw it away when the session ends</span>
-      </label>
-      <span class="hintline">Atrium makes a temporary directory and starts here. When the
-        session ends the directory, the card and the conversation are all deleted. If it turns
-        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
-    </div>
     <!-- Which model, for THIS launch and nothing else.
          Empty every time this opens, and nothing is written to the runner's
          row. Empty IS the runner's own default, which is why nothing guards
@@ -2204,6 +2314,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          out of date within months. -->
     <div class="field" id="l-model-field">
       <label class="eyebrow" for="l-model">model</label>
+      <!-- BUTTONS WHEN THE OPERATOR HAS A PICKER, and the box either way.
+           Comparing two models means launching the same work on each, which is
+           two launches where the only difference is a string typed from memory:
+           `claude-opus-4-7`, not `Opus 4.7`. A task that fiddly quietly stops
+           happening.
+           The names are not atrium's. They are read out of the operator's own
+           `modelPicker` in Claude Code's settings, so they are whatever they
+           decided and they change when they change it. Nothing here is a
+           catalog, which is the rule `discover.go` sets out at length. -->
+      <div class="toolbar" id="l-model-pick" hidden></div>
       <input type="text" id="l-model" list="l-model-seen" spellcheck="false"
         placeholder="empty runs the runner's own default">
       <datalist id="l-model-seen"></datalist>
@@ -2235,10 +2355,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         argument. A runner with no way to take one will say so.</span>
     </div>
     </details>
-    <!-- `launch`, which is the verb. It said `start it`, a sentence where every
-         other button here is a word, and `atrium launch` is what the CLI calls
-         the same act. One verb for both surfaces. -->
-    <div class="toolbar"><button class="go big" onclick="doLaunch()">launch</button></div>
+  </div>
+  <!-- `launch`, which is the verb. It said `start it`, a sentence where every
+       other button here is a word, and `atrium launch` is what the CLI calls
+       the same act. One verb for both surfaces.
+
+       PINNED TO THE BOTTOM OF THE DIALOG rather than sitting at the end of the
+       form. Opening `more` makes this form taller than the window, and the
+       button that starts the thing was then below ten optional fields nobody
+       filled in: the way to launch was to scroll past everything you had
+       already decided not to answer. -->
+  <div class="dlg-foot">
+    <button onclick="document.getElementById('launch').close()">close</button>
+    <span class="grow"></span>
+    <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
 </dialog>
 
@@ -2294,6 +2424,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- Right click a card. Every entry here used to cost opening the detail
      dialog, reading it, and closing it again. -->
 <div id="cardmenu"></div>
+
+<!-- The room picker, OUT HERE RATHER THAN IN THE HEADER IT HANGS FROM.
+     The header has a backdrop filter, which makes it a stacking context, so a
+     menu inside it is trapped at the header's own depth no matter what z-index
+     it is given and the page draws over it. `#cardmenu` above solved this the
+     same way: a body-level element, fixed, positioned from the thing that
+     opened it. -->
+<div class="rooms-menu" id="rooms-menu" hidden></div>
+
+<!-- What is over the board while a room is being changed. Drawn from the
+     attribute the head script set, so it names the room before any of this
+     page's own JavaScript has run. -->
+<div id="switching"><div class="s-card">
+  <div class="s-spin"></div>
+  <div class="s-what">switching rooms</div>
+</div></div>
 
 <!-- Browsing the DAEMON's filesystem, not the browser's. The board is meant to
      be opened from a phone and over an overlay network, and the browser's own
@@ -2469,7 +2615,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field" id="d-actions-field" hidden>
       <label class="eyebrow">do this</label>
       <div class="toolbar" id="d-actions"></div>
-      <span class="hintline">Your own, edited in the runners tab. Each one is a prompt sent the
+      <span class="hintline">Your own, edited under rooms &rsaquo; actions. Each one is a prompt sent the
         same way as anything else you say, and the ones marked <b>and exit</b> ask the runner to
         quit afterwards.</span>
     </div>
@@ -2519,6 +2665,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 </dialog>
 
 <script src="/js/core.js"></script>
+<script src="/js/rooms.js"></script>
+<script src="/js/audit.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/card-menu.js"></script>
 <script src="/js/sharing.js"></script>
@@ -2532,6 +2680,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/toast-log.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
+<script src="/js/expose2.js"></script>
+<script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>

@@ -66,6 +66,43 @@ const (
 // every attach, so changing it takes effect on the next attach.
 const SettingReplayMode = "replay_mode"
 
+// SettingEventSink names the hot sink and any cold sinks a card's history goes
+// to, as a comma-separated list. The FIRST name is the hot sink that serves
+// Recent; the rest are write-only cold sinks fanned out best-effort.
+//
+// Unset, or `db` alone, is the default: the event table is the hot sink and
+// there are no cold sinks, which is byte-for-byte how every install behaved
+// before this existed. `db,file` keeps the db hot and also appends every event
+// to rolling JSONL files. Per the observed-versus-overrides rule this is an
+// override a human types; nothing infers it.
+//
+// A name this build does not know is logged and skipped rather than fatal. A
+// misconfigured cold trail must never keep the daemon from starting.
+const SettingEventSink = "event_sink"
+
+// SettingEventWindowBytes bounds the db hot sink to a recent window per card,
+// measured in bytes of event payload. When a card's retained events exceed the
+// window the OLDEST roll off the db, so the primary database stops growing
+// without limit.
+//
+// The measure is a byte cap rather than a last-N-events count, for the same
+// reason scrollback is bounded by size: `output` events carry chunks of
+// terminal text and dominate the table, and their size varies wildly, so a
+// count cannot bound what the db actually holds while a byte cap can.
+//
+// OFF BY DEFAULT. Unset, empty, or a value at or below zero means no bound: the
+// db keeps every event, which is byte-for-byte how every install behaved before
+// this existed. The bound only applies when an operator sets a positive value.
+// Per the observed-versus-overrides rule this is an override a human types;
+// nothing infers it and nothing auto-enables it.
+//
+// Safety with the cold trail: cold sinks receive every event at append time, so
+// an event that later rolls off the db is already durable in any configured cold
+// sink (a `file` sink, say). With no cold sink the roll-off is the operator's
+// explicit choice to keep only the window; the board reports history rolled off
+// rather than pretend the window is the whole story. See HistoryRolledOff.
+const SettingEventWindowBytes = "event_window_bytes"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {

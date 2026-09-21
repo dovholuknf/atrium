@@ -22,6 +22,13 @@
     flex-wrap: nowrap; min-width: 0;
   }
   .bar > * { flex: none; }
+  /* The tabs give up their width first, as the note above says. `.bar > *` sets
+     every child to `flex: none`, which is what keeps the action buttons their
+     size, but it also caught the nav and pinned it at its full content width, so
+     between 900px and a wide desktop the header ran off the right edge and every
+     view scrolled sideways with it. This wins on specificity and lets the nav
+     shrink and scroll again, which is what its own `overflow-x: auto` is for. */
+  .bar > nav { flex: 0 1 auto; min-width: 0; }
   .wordmark {
     font-size: var(--fs-3xl); font-weight: 700; letter-spacing: .34em; margin: 0;
     text-transform: uppercase; white-space: nowrap;
@@ -60,6 +67,134 @@
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+
+  /* ── changing rooms ─────────────────────────────────────
+     A reload shows the view the markup says (the stack) and then the script puts you back on the one you were
+     reading, so a switch made from the terminals meant watching somebody else's screen draw on the way past.
+     `html.switching` is set by an inline script in the head, before the first paint, so the board underneath is
+     never seen mid-change. Removed once the board is on the right view. */
+  #switching { display: none; }
+  html.switching #switching {
+    display: flex; position: fixed; inset: 0; z-index: 500;
+    align-items: center; justify-content: center;
+    background: var(--bg-1);
+  }
+  /* The board is not merely covered, it is not drawn. A cover over a live board still lets a terminal attach,
+     a poll land and a pane repaint underneath, which is work thrown away and, on a slow machine, a cover that
+     arrives after the flash it was meant to hide. */
+  html.switching body > header,
+  html.switching body > main { visibility: hidden; }
+  #switching .s-card {
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
+    color: var(--dim); font: 500 var(--fs-lg)/1 var(--mono);
+  }
+  #switching .s-spin {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid var(--stroke); border-top-color: var(--teal);
+    animation: s-turn .7s linear infinite;
+  }
+  @keyframes s-turn { to { transform: rotate(360deg); } }
+  #switching .s-what b { color: var(--teal); font-weight: 600; }
+
+  /* ── which room ─────────────────────────────────────────
+     Only ever drawn on a hub, which is an atrium that serves this board and holds nothing. It reads as a
+     counter and behaves as a selector: `2/2 rooms` is every machine at once, a name is one machine and the
+     whole board is that machine's atrium.
+
+     Sits beside the connection dot and is styled like it, because they answer neighbouring questions: one says
+     whether the board is live, the other says what it is live to. */
+  .rooms {
+    font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 5px 11px; border-radius: var(--r-pill);
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+  }
+  .rooms:hover { color: var(--head); border-color: var(--stroke); }
+  .rooms .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+  /* Scoped to one room, which is a mode worth seeing from across the desk. */
+  .rooms.scoped { color: var(--teal); border-color: var(--teal); }
+  /* Nothing attached. The hub is up and has nothing to show, which is a normal state every time a room
+     restarts and must not look like the board being broken. */
+  .rooms.cold .dot { background: var(--warn); box-shadow: none; }
+  /* The board lost the hub. This chip is the only connection indicator on a hub, so it has to be able to say
+     so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
+  .rooms.down { color: var(--danger-text); border-color: var(--danger); }
+  .rooms.down .dot { background: var(--danger); box-shadow: none; }
+  /* Fixed and body-level, positioned by script from the chip. See the note on the element itself: the header
+     is a stacking context, so a menu inside it cannot be lifted above the page. */
+  .rooms-menu {
+    position: fixed; z-index: 90; min-width: 19rem;
+    display: flex; flex-direction: column; padding: var(--sp-2);
+    border: 1px solid var(--stroke); border-radius: var(--r-md);
+    /* --shell-0 and not --bg-1, which is the page. A popover wants the panel colour, and it is the same one
+       #cardmenu uses so the two look like the same kind of thing. An undefined token here resolves to
+       transparent, which reads as a z-index fault: the border and the text draw, and the page shows through. */
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55);
+  }
+  /* `display: flex` above beats the browser's own `[hidden] { display: none }`, because an author rule wins
+     over the user agent one whatever the specificity. Without this the menu is never closed. */
+  .rooms-menu[hidden] { display: none; }
+  /* One line per room: a state dot, the name, and the meta pushed to the right.
+     The dot carries the state the way the header chip does, so live and offline
+     read at a glance from the same colours. */
+  .rooms-menu button {
+    display: flex; flex-direction: row; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4); border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--body); text-align: left; cursor: pointer;
+    transition: background .12s;
+  }
+  .rooms-menu button:hover { background: var(--chip); }
+  .rooms-menu button.on { color: var(--teal); background: var(--teal-bg); }
+  .rooms-menu button strong { font: 600 var(--fs-lg)/1.3 var(--mono); }
+  /* Live is teal and lit, the same green the pill uses. Offline is a flat amber,
+     also the pill's, so the two states are one language across the header. */
+  .rooms-menu button .dot { width: 8px; height: 8px; flex: none; background: var(--warn); box-shadow: none; }
+  .rooms-menu button .dot.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .rooms-menu button .dot.ghost { background: transparent; box-shadow: none; }
+  /* A disconnected room. Dimmed so the live ones read first, but still a button:
+     the board shows what an offline room last said, so it stays selectable. */
+  .rooms-menu button.cold strong { color: var(--dim); }
+  .rooms-menu button .meta {
+    margin-left: auto; padding-left: var(--sp-4);
+    font: 500 var(--fs-sm)/1 var(--mono); color: var(--dim); white-space: nowrap;
+  }
+  .rooms-menu .none { padding: var(--sp-4); font-size: var(--fs-sm); color: var(--dim); line-height: 1.5; }
+  /* The reject affordance on a not-attached row. Dim until the row is hovered,
+     so it is out of the way of the ordinary click and there to reach for when
+     wanted. It carries its own hover so the target it hits is obvious, and it
+     turns danger-coloured because forgetting a room is the destructive one. */
+  .rooms-menu button .roomx {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: 0; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomx { opacity: .7; }
+  .rooms-menu button .roomx:hover { opacity: 1; color: var(--danger); background: var(--chip); }
+  /* The per-room settings cog on a live row. Sits at the right edge after the host meta, and unlike the reject
+     `x` it stays visible rather than waiting on hover: it is the quick way into one room's own settings, not a
+     rare destructive action. Dim at rest so the room name reads first, and it lifts on hover like a control. */
+  .rooms-menu button .roomcog {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: .55; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomcog { opacity: .85; }
+  .rooms-menu button .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
+
+  /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.
+     A runner, a fixture, a source, a recogniser and an action all belong to one machine, so looking at several
+     machines means several lists rather than one long one with a repeated label near the right edge. The
+     heading is the boundary and the boundary is the point. */
+  .roomgroup {
+    margin: var(--vs-4) 0 var(--sp-3);
+    font: 600 var(--fs-md)/1 var(--mono); color: var(--teal);
+    letter-spacing: .08em; text-transform: lowercase;
+  }
+  /* The first one sits under the pane's own lead text, which has already paid for the space. */
+  .roomgroup:first-child { margin-top: 0; }
 
   #halted {
     display: none; padding: 13px 26px; gap: var(--sp-4); align-items: baseline;
@@ -176,6 +311,9 @@
   main > #perms,
   main > #runners,
   .board .col > .cards { padding-right: 12px; }
+  /* A few pixels above the runners page so the sticky nav's selected pill is not
+     flush with the scroll box's top edge, which clipped its top border. */
+  main > #runners { padding-top: 4px; }
   /* A hidden view must not claim its share of the column. */
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }

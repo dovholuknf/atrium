@@ -36,7 +36,14 @@
 // layout are the host and the org and are exactly what is missing.
 function windowTitle(task) {
   const label = terminalLabel(task);
-  return label ? label + " - atrium" : "atrium terminal";
+  // THE NAME LEADS HERE TOO. A popped-out window showed only the derived address,
+  // so a session somebody named `doer1` was `github/.../atrium:main` in alt-tab and
+  // nowhere did it say `doer1`. Lead with the name and keep the address after it,
+  // unless the address already carries the name, which is the unnamed case.
+  const name = String((task && task.display_title) || "").trim();
+  const named = name && (!label || !label.toLowerCase().includes(name.toLowerCase()));
+  const lead = named ? (label ? name + " · " + label : name) : label;
+  return lead ? lead + " - atrium" : "atrium terminal";
 }
 
 // Where a session lives and what it is on, kept apart.
@@ -447,6 +454,52 @@ async function takeSoloCard(id) {
   return true;
 }
 
+// Backoff for the popped-out window's first card poll, capped so a flapping hub
+// cannot spin it hot. The wait grows from soloReconnectMin, doubling up to
+// soloReconnectMax, and every retry goes through api(), so it is held under the
+// same in-flight cap and single-flight the board's refresh runs under.
+const soloReconnectMin = 500;
+const soloReconnectMax = 5000;
+
+// The popped-out window's first card poll, told apart the way `waitLoop` tells
+// it apart.
+//
+// The board survives a hub restart because its refresh path retries. This is
+// that posture for the solo window's open path, which had none: a hub with no
+// room yet is a RECONNECT this window waits out and recovers from on its own,
+// not a dead card. So a 503 (the hub saying no room is attached), any other
+// 5xx, or a transport error waits and retries behind a non-blocking
+// "reconnecting" line, and when the room reattaches the poll succeeds and the
+// caller paints the card without a click.
+//
+// The two codes it does NOT wait on are 404 and 409, the same two `waitLoop`
+// stops on: the room answering that the card is not there, or naming no room
+// when several are attached. Those are final, and only they let the caller show
+// the dead-end modal.
+async function soloFetchCard(id) {
+  let wait = soloReconnectMin, said = false;
+  while (true) {
+    try {
+      return await api("/v1/tasks/" + encodeURIComponent(id));
+    } catch (e) {
+      // A real missing card, not a hub that is a moment from answering. Final.
+      if (e.status === 404 || e.status === 409) throw e;
+      // 503 / 5xx / transport error: the reconnect this window exists to sit
+      // through. Say so once, non-blocking, then wait and try again. No bound:
+      // the window recovers whenever the room comes back, even across a long
+      // deploy, the same way the board's own refresh loop never gives up.
+      if (!said) {
+        said = true;
+        rlog("solo: card poll not answered, reconnecting:", e.message);
+        termWait((restartComing() ? "atrium is restarting. reconnecting to "
+                                  : "reconnecting to ") + waitName(soloTask) + "…");
+      }
+      await new Promise(r => setTimeout(r, wait));
+      wait = Math.min(wait * 2, soloReconnectMax);
+    }
+  }
+}
+
 async function bootTerminalOnly() {
   const want = decodeURIComponent(location.hash.slice("#term=".length));
   document.body.classList.add("solo");
@@ -498,12 +551,22 @@ async function bootTerminalOnly() {
 
   let task;
   try {
-    task = await api("/v1/tasks/" + encodeURIComponent(soloID));
+    task = await soloFetchCard(soloID);
   } catch (e) {
+    // ONLY A GENUINE MISSING CARD REACHES HERE. A hub-only deploy restarts the
+    // hub, and for about a second the hub has no room and answers this poll with
+    // the 503 "no room is attached" error, not a real 404. That used to pop this
+    // blocking modal and stop, so the window stayed dead-ended over a session
+    // that reattached seconds later. `soloFetchCard` now sits through the
+    // reconnect and only throws for the room saying the card is not there, which
+    // is the one case the dead-end message is still right about.
     document.title = "atrium: no such card";
+    termWait("");
     tellUser("nothing to attach to", e.message);
     return;
   }
+  // Reconnected, or answered first time. Any reconnecting line comes down.
+  termWait("");
   soloTask = task;
   // The title bar is the whole reason this window is worth having: it is what
   // alt-tab shows.
@@ -531,6 +594,27 @@ function paintSoloTitle() {
   document.title = (soloMark ? soloMark + " " : "") + windowTitle(soloTask);
 }
 
+// The claim heartbeat, on its own timer rather than the card poll.
+//
+// A claim is a heartbeat the board believes for `soloClaimFor` (15s), so this
+// window has to be heard inside that window or the board drops its card and
+// double-opens the terminal. It lived on `soloRefresh`, which is fine until that
+// poll can stall past 15s: a hub restart puts the card poll into a backoff and
+// holds `runRefresh`'s single-flight pass for the length of the reconnect, and
+// no claim goes out the whole time. A timer of its own beats regardless of how
+// long the poll is stuck, and `soloBeatMs` is well under `soloClaimFor` so a
+// live window is never lost between two beats.
+//
+// Not while yielded, for the reason `soloRefresh` gave: a window that handed its
+// card to another one must stop claiming it, or the window that took it is
+// refused on its own next roll call.
+const soloBeatMs = 5000;
+function soloClaimBeat() {
+  if (soloBus && soloID && !soloYielded) {
+    soloBus.postMessage({ type: "solo-claim", task: soloID });
+  }
+}
+
 // One card's worth of the board's polling pass.
 //
 // Deliberately not `alerting.check`, which keeps board-wide sets of what it
@@ -547,14 +631,15 @@ function paintSoloTitle() {
 let soloKnown = { perm: null, ready: null };
 async function soloRefresh() {
   if (!soloID) return;
-  // The heartbeat behind every board's `soloHeld`. On the poll rather than a
-  // timer of its own: it is the same question at the same rate, and a second
-  // timer is a second thing to get wrong.
-  //
-  // Not while yielded. This window handed the card to another one, and a
-  // heartbeat for a card it no longer shows would have the board refuse to
-  // attach to it and "raise" a window with nothing in it.
-  if (soloBus && !soloYielded) soloBus.postMessage({ type: "solo-claim", task: soloID });
+  // The claim heartbeat no longer rides this poll. It used to (one question, one
+  // rate, no second timer to get wrong), and that held until the poll could
+  // stall past `soloClaimFor`: a hub restart sends the card poll into
+  // `soloFetchCard`'s backoff and holds `runRefresh`'s single-flight pass for as
+  // long as the reconnect lasts, which is longer than the 15s a claim is
+  // believed for. The board then dropped a window still very much open and
+  // double-opened its terminal. So the claim moved to `soloClaimBeat` on its own
+  // sub-15s timer, which keeps beating no matter how long this poll is stuck.
+  // One source only, so a card is claimed once per beat and never twice.
 
   const [task, waiting, perms] = await Promise.all([
     api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
@@ -684,6 +769,17 @@ async function restoreWhereYouWere() {
     card = localStorage.getItem("atrium.term") || "";
   } catch (e) { return; }
   rlog("boot. remembered view", view || "(none)", "card", card || "(none)");
+  // A CARD THAT BELONGS TO ANOTHER MACHINE. An id from the merged view carries
+  // its room, so a value written before this browser was scoped to one room can
+  // be recognised as somebody else's and dropped rather than waited for.
+  // `pickRoom` clears this too; this catches what was already in there.
+  const scope = typeof roomNow === "function" ? roomNow() : "";
+  const carried = card.indexOf("~") > 0 ? card.slice(0, card.indexOf("~")) : "";
+  if (scope && carried && carried !== scope) {
+    rlog("dropping", card, "which is on", carried, "and you are looking at", scope);
+    try { localStorage.removeItem("atrium.term"); } catch (e) {}
+    card = "";
+  }
   if (!VIEWS.includes(view) || view === "board") return;
   switchView(view);
   if (view !== "terms" || !card) return;
@@ -742,6 +838,10 @@ let waitingFor = "";
 
 async function waitAndAttach(card) {
   if (waitingFor === card) { rlog("already waiting for", card); return; }
+  // An attach for this card is already in flight (openTerm has it, the socket is
+  // connecting or retrying). Starting a wait-and-attach on top of it is the
+  // second attach loop the re-entry guard exists to refuse. See `attachInFlight`.
+  if (attachIsInFlight(card)) { rlog("attach already in flight for", card); return; }
   waitingFor = card;
   rlog("waiting for", card, "to come back");
   try { await waitLoop(card); } finally { if (waitingFor === card) waitingFor = ""; }
@@ -830,9 +930,37 @@ async function waitLoop(card) {
     if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); termWait(""); return; }
     if (poppedOut(card)) { rlog("stopped: it is in its own window"); termWait(""); return; }
 
-    let task = null, err = "";
+    let task = null, err = "", gone = false;
     try { task = await api("/v1/tasks/" + encodeURIComponent(card)); }
-    catch (e) { err = e.message; }
+    catch (e) {
+      err = e.message;
+      // A CARD THAT IS NOT THERE IS NOT A CARD THAT IS COMING BACK.
+      //
+      // 404 is the room answering, not the room being unreachable, and the
+      // difference matters: unreachable is what this loop exists to wait out,
+      // while not-there is final. A throwaway is deleted the moment its
+      // session ends, so waiting ninety seconds for one left the board saying
+      // "waiting for the session to come back" over an empty terminal list,
+      // which is the board contradicting itself.
+      //
+      // 409 counts too, and only a hub says it: "that card names no room, and
+      // there are several". A bare id remembered from a board that was scoped
+      // to one room cannot be addressed once it is looking at all of them, so
+      // waiting is waiting for something that will never resolve itself.
+      //
+      // 503 is NOT in this list. That is the hub saying no room is attached,
+      // which is the reconnect this loop exists to sit through.
+      gone = e.status === 404 || e.status === 409;
+    }
+    if (gone) {
+      rlog("stopped: the card is gone");
+      termWait("");
+      // And forgotten, or the next reload waits for it all over again.
+      try {
+        if (localStorage.getItem("atrium.term") === card) localStorage.removeItem("atrium.term");
+      } catch (e) {}
+      return;
+    }
     tries++;
     rlog("try", tries, err ? "no answer: " + err
       : "supervised=" + !!(task && task.supervised) +

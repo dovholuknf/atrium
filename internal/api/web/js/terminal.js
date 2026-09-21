@@ -6,6 +6,16 @@ let term = null, termFit = null, termSock = null, termTask = null;
 // The keystroke listener, held so a reconnect can replace it rather than stack
 // another one on top. See `connectTerm`.
 let termData = null;
+// Whether this `term` has already had a socket open and be replayed into it.
+//
+// The daemon replays the whole scrollback on EVERY attach, and a reconnect
+// reuses the same `term` rather than building a fresh one the way a session
+// switch does. So a hub restart used to append a second full copy of the
+// history under the first, with a second history/live boundary: the visible
+// mess after a restart. Cleared when `openTerm` builds a new terminal, set the
+// first time a socket opens, and read on the next open to reset before the
+// replay lands. See `connectTerm`.
+let termReplayed = false;
 
 // Runner capabilities arrive in the first attach message. Reset per socket
 // so reconnects cannot reuse another session's capabilities. See attachCaps.
@@ -49,6 +59,35 @@ function armRestart(why) {
 // happened.
 function restartComing() {
   return restartAt > 0 && Date.now() - restartAt < restartWindow;
+}
+
+// ONE SESSION asked to restart from the cog, as opposed to the whole daemon
+// going down. The runner exits and the same conversation lands again on the
+// same card a few seconds later, so the close that follows is expected: the
+// pane waits for the card rather than tearing down the way a plain exit does.
+//
+// Scoped to a card and stamped with a time, the same as `restartAt` and for the
+// same reasons: an expectation left lying around would answer for an exit
+// somebody types an hour from now, and a restart that never comes back must not
+// wait forever. The window is generous because a cold harness can be slow to
+// come up, but it still expires. `onopen` clears it the moment the card is back.
+let sessionRestartCard = "", sessionRestartAt = 0;
+const sessionRestartWindow = 90 * 1000;
+
+function armSessionRestart(card) {
+  sessionRestartCard = card || "";
+  sessionRestartAt = Date.now();
+}
+
+function clearSessionRestart(card) {
+  if (card && sessionRestartCard !== card) return;
+  sessionRestartCard = "";
+  sessionRestartAt = 0;
+}
+
+function sessionRestartComing(card) {
+  return !!card && sessionRestartCard === card && sessionRestartAt > 0 &&
+    Date.now() - sessionRestartAt < sessionRestartWindow;
 }
 
 // WHY THE LAST ATTACH ENDED, read off the websocket close frame.
@@ -305,6 +344,17 @@ async function termSettings(e) {
         "was killed. Not shown in the terminal because a terminal can only " +
         "add to the bottom.",
       act: () => openOlderScrollback(t.id) },
+    // Only for a session atrium owns a terminal for. A window-mode session owns
+    // itself and one joined by hand belongs to whoever started it, so there is
+    // no terminal here to exit and relaunch. The daemon refuses either way, but
+    // an item that can only toast a refusal is one the operator should not see.
+    t.supervised ? {
+      label: "restart this session", note: "resumes the same conversation",
+      help: "Exits this session and immediately resumes the same conversation " +
+        "on the same card, for applying changed defaults or clearing a " +
+        "`restart to update` nag. The terminal drops for a few seconds while " +
+        "it comes back. Nothing is lost: it picks up where it left off.",
+      act: () => restartTerm() } : null,
     { sep: true },
     // Only meaningful from the window whose size is being remembered. From the
     // board there is no popped-out window to measure.
@@ -341,6 +391,16 @@ function openTerm(task) {
     tellUser("atrium", "the terminal library did not load");
     return;
   }
+  // ALREADY ATTACHING THIS EXACT CARD. A render or a watchdog that fires again
+  // while the pane is still up and its socket still connecting must not build a
+  // second terminal onto the same card: that is the re-entry that spun the
+  // board. A switch to a DIFFERENT card falls through, and so does a reattach
+  // after the pane was torn down, where nothing is showing this card any more.
+  // See `attachInFlight`.
+  if (attachIsInFlight(task.id) && termTask && termTask.id === task.id) {
+    rlog("attach already in flight for", task.id, "- not re-entering openTerm");
+    return;
+  }
   // Switching sessions means tearing the old one down first, or two sockets
   // write into one screen.
   if (termSock || term) closeTerm(true);
@@ -369,6 +429,15 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  // Picking a session closes the phone switcher, so the terminal you just chose
+  // is what you land on rather than the list you chose it from. No-op on a
+  // desktop, where the list is not a dropdown. See `setTermListOpen`.
+  if (typeof termNarrow === "function" && termNarrow()) setTermListOpen(false);
+  // Committed to this card now, and the socket has not opened yet. Held so a
+  // render or the watchdog cannot tear this pane down or start a second attach
+  // for it before the connection settles. Cleared when the socket opens and on
+  // teardown. See `attachInFlight`.
+  markAttachInFlight(task.id);
   // Written down so a reload comes back here. Only in the board: a solo
   // window is addressed by its hash and has no business voting on where the
   // board lands.
@@ -389,8 +458,21 @@ function openTerm(task) {
   // The same address the popped-out window carries, so a session is one name
   // whichever way you are looking at it. The full path matters here too: the
   // switcher beside it lists sessions whose short titles collide.
-  document.getElementById("t-title").textContent = terminalLabel(task) || task.display_title;
-  document.getElementById("t-title").title = task.worktree || "";
+  //
+  // POPPED OUT, THE NAME LEADS. A window of its own has no card beside it and no
+  // list to match against, so a header reading the derived address said nothing
+  // about which session it was: the list now leads with the name, and a popped
+  // window that led with the address could not be tied back to it. In solo the
+  // header is the name and the address moves to the tooltip. The board's own
+  // bar keeps the address, since there the card and the list already name it.
+  const solo = document.body.classList.contains("solo");
+  const label = terminalLabel(task) || task.display_title;
+  const named = String(task.display_title || "").trim();
+  const titleEl = document.getElementById("t-title");
+  titleEl.textContent = solo && named ? named : label;
+  titleEl.title = solo && named && named !== label
+    ? label + " · " + (task.worktree || "")
+    : (task.worktree || "");
   // The runner as its mark, in front of the name, the way a card carries it.
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.
@@ -401,6 +483,13 @@ function openTerm(task) {
   // and reading it off a screen to retype it is the worst way to spend a
   // minute.
   document.getElementById("t-chips").innerHTML =
+    // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
+    // the id's tag and answers "" with a single room attached, so this draws
+    // nothing until a second room makes the question real, the same as the room
+    // chip on the strip row (see `termRoomChip`). The name is the tag itself.
+    (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
+       title="this card runs in room ${esc(roomOf(task.id))}"
+       >${esc(roomOf(task.id))}</span>` : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
     // button, so a row-width target sat over the bar saying `click to copy`
@@ -421,6 +510,10 @@ function openTerm(task) {
   // somebody had just set: `openTerm` runs on every switch, not only on the
   // first one.
   termFontSize = readTermFont(task.id);
+  // A FRESH TERMINAL HAS SEEN NO REPLAY. Set before the socket opens so the
+  // first attach fills an empty screen and only a later reconnect resets. See
+  // `termReplayed`.
+  termReplayed = false;
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
@@ -675,6 +768,9 @@ function openTerm(task) {
   // hidden element and the runner is told a nonsense width.
   requestAnimationFrame(() => {
     termFit.fit();
+    // Size the host to the fitted grid so the terminal sits on the footer with
+    // no remainder band above it. See `sizeTermHost`.
+    sizeTermHost();
     connectTerm(task.id);
     renderTermList();
   });

@@ -264,6 +264,36 @@ if ! bash scripts/package-linux.sh "$version"; then
   echo "  the linux packages did not build. under --execute this would stop here."
 fi
 
+step "the macOS .pkg"
+# pkgbuild and productbuild exist only on macOS, so this builds nothing on any
+# other machine and says so. It is NEVER fatal, even under --execute, because a
+# release is routinely cut from Linux or Windows and the .pkg is then built and
+# signed on a Mac afterwards: the darwin binaries and their archives are in the
+# release either way. What is lost by cutting elsewhere is only the .pkg wrapper,
+# which is stated rather than allowed to fail the release.
+if ! bash scripts/package-macos.sh "$version"; then
+  echo
+  echo "  no .pkg was built here (expected off macOS). the darwin archives are"
+  echo "  still in the release; build and sign the .pkg on a Mac."
+fi
+
+step "the Windows .msi"
+# The MSI is built with WiX, a .NET tool package-windows.ps1 fetches, so it needs
+# pwsh and dotnet. On a machine with neither this is reported and skipped, and the
+# windows/amd64 zip is still in the release for scoop. NEVER fatal here for the
+# same reason as the .pkg: a release is routinely cut from a machine that cannot
+# build every platform's native installer, and the archives carry the binary
+# regardless.
+if command -v pwsh >/dev/null 2>&1; then
+  if ! pwsh -NoProfile -File scripts/package-windows.ps1 "$version"; then
+    echo
+    echo "  the MSI did not build. the windows zip is still in the release."
+  fi
+else
+  echo
+  echo "  no pwsh here, so no MSI was built. the windows zip is still in the release."
+fi
+
 # ==============================================================================
 # 4. IDENTITY: does the binary agree with the release it is in
 # ==============================================================================

@@ -1,6 +1,15 @@
 // ── settings dialog ─────────────────────────────────────
 const settingsDlg = document.getElementById("settings");
-document.getElementById("gear").onclick = () => { paintSettings(); settingsDlg.showModal(); };
+document.getElementById("gear").onclick = () => {
+  // A fresh visit asks again which machine it is editing, if it has to ask.
+  settingsRoom = "";
+  paintSettings();
+  // Every field that saves itself, wired once. Here rather than at load
+  // because the panes are cut up at runtime and this is the moment they are
+  // all certain to exist. See `wireSelfSaving`.
+  wireSelfSaving();
+  settingsDlg.showModal();
+};
 
 function soundOptions(selected) {
   return Object.entries(SOUNDS)
@@ -99,6 +108,73 @@ function toggleGrouping() {
 // One setting behind both, so turning grouping off on the stack turns it off
 // on the board too. Grouping is a way of reading the same cards, not a
 // property of one screen.
+// ── settings that save themselves ───────────────────────────────────────────
+//
+// EIGHT SAVE BUTTONS ON ONE PANE was the state of `this machine`, one beside
+// every box, each a different width because the box in front of it was. The
+// pane read as a form to be filled in and submitted, which it is not: these
+// are independent settings and each one is done the moment you have typed it.
+//
+// A `change` event, which fires on blur and only when the value actually
+// changed. Tabbing through the pane saves nothing. Typing and leaving saves
+// once. The existing save functions are unchanged and still say what happened,
+// so a failure is still a toast rather than a silent loss.
+//
+// `data-saves` names the function on the element. Wiring it from the markup
+// keeps the list of what-saves-what next to the fields rather than in a table
+// here that has to be kept in step with them.
+// settingsRoom is which machine a pane is editing, asked once per opening.
+//
+// MOSTLY UNUSED NOW, and kept for the one case left. The per-machine settings
+// moved behind each room's own cog, where the room is not a question: you
+// opened that room's pane, so it is that room, and `openRoomCog` sets the write
+// scope before a field is ever touched. This remains for a self-saving field
+// that is still in the settings dialog and belongs to a machine.
+let settingsRoom = "";
+
+function wireSelfSaving() {
+  // BOTH DIALOGS. The machine settings live behind a room's cog and the board's
+  // own live in settings, and both hold fields that save themselves. Wiring
+  // only the first is how those nine boxes silently stopped saving when they
+  // moved: nothing threw, nothing logged, and every edit was simply dropped.
+  document.querySelectorAll("#settings [data-saves], #roomcfg [data-saves]").forEach(el => {
+    if (el.dataset.wired) return;
+    el.dataset.wired = "1";
+    el.addEventListener("change", async () => {
+      const fn = window[el.dataset.saves];
+      if (typeof fn !== "function") return;
+      // WHICH MACHINE, when the board is looking at all of them. A hub with two
+      // rooms refuses a write that names none.
+      //
+      // Skipped entirely for a field in a room's own pane: the room is already
+      // decided and already set, and asking there would be asking somebody to
+      // name the room whose name is in the title of the dialog they are in.
+      const inRoomPane = !!el.closest("#roomcfg");
+      if (!inRoomPane && typeof hubIsHub !== "undefined" && hubIsHub &&
+          typeof roomNow === "function" && !roomNow()) {
+        if (!settingsRoom) {
+          if (!await chooseWriteRoom(null, "setting")) return;
+          settingsRoom = writeRoom;
+        } else {
+          writeRoom = settingsRoom;
+        }
+      }
+      try {
+        await fn();
+        flashSaved(el);
+      } catch (e) {}
+    });
+  });
+}
+
+// A GREEN EDGE FOR A MOMENT. The save functions toast, which says what
+// happened but not WHERE, and on a pane of nine boxes "saved" alone leaves you
+// checking you edited the one you meant.
+function flashSaved(el) {
+  el.classList.add("justsaved");
+  setTimeout(() => el.classList.remove("justsaved"), 1400);
+}
+
 function paintGroupSegs() {
   const p = groupingPrefs();
   const mode = p.on ? (p.mode || "project") : "off";
@@ -108,9 +184,13 @@ function paintGroupSegs() {
       "cut the cards the way whatever launched them said to: pull requests, tangents, " +
       "support threads. a card that was not told falls back to its project"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
-    ["recency", "by when",
+    // `by age`, not `by when`. There is a SORT control beside this one, and
+    // `by when` reads as an answer to that: it sounds like an ordering, so
+    // pressing it and getting five headings looks like sorting that did not
+    // work. It cuts the cards into age buckets, which is what age means.
+    ["recency", "by age",
       "today, yesterday, this week, this month, and everything older, which is dormant"],
-    ["off", "off", "one flat list"]
+    ["off", "off", "one flat list, in the order the sort above put them"]
   ];
   const html = opts.map(([v, label, title]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
@@ -169,6 +249,12 @@ async function loadGlobalAuto() {
     const s = await api("/v1/settings");
     globalAuto = !!s.global_auto;
     globalAutoLeft = s.global_auto_seconds || 0;
+    // Re-wear the scope's skin off this same read. Called on every stream
+    // reopen (see connect), which is when a hub that was down or still
+    // attaching rooms first answers settings, so a skin the load-time read
+    // could not fetch heals here rather than staying dark until a reload. Uses
+    // this fetch rather than a second one. See `applyResolvedSkin`.
+    if (typeof applyResolvedSkin === "function") applyResolvedSkin(s);
   } catch (e) { return; }
   paintGlobalAuto();
 }

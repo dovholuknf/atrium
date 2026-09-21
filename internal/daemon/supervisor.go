@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
@@ -286,6 +287,18 @@ func (r *ringBuffer) CurrentWidth() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.marks[len(r.marks)-1].cols
+}
+
+// CurrentSize is the width AND height output is being composed at right now.
+//
+// The change-guard in `setViewport` needs both, because a shorter viewer moves
+// the pty the same way a narrower one does and must be recognised as a no-op
+// when nothing changed. Read from the same last mark as `CurrentWidth`.
+func (r *ringBuffer) CurrentSize() (cols, rows int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m := r.marks[len(r.marks)-1]
+	return m.cols, m.rows
 }
 
 // Snapshot returns the retained output, oldest first, whatever width it was
@@ -634,10 +647,26 @@ type runner struct {
 	// IS THE OPERATOR PART WAY THROUGH SOMETHING. Two facts, kept here rather
 	// than in the browser.
 	//
+	// UNDER `typeMu`, NOT `r.mu`, and that split is the whole input-lag fix. The
+	// operator's keystroke path (`noteOperatorTyped`) touches only these two
+	// fields, so it must never wait behind anything that holds `r.mu` or behind a
+	// peer injection typing a message into the terminal. Giving the typing state
+	// its own small lock means a human keystroke is recorded immediately whatever
+	// else is going on, which is what the operator sitting at the keyboard feels.
+	// See `noteOperatorTyped`, `howBusy` and `injectPeer`.
+	//
 	// `midLine` is whether keystrokes have arrived since the last thing that
 	// ends a line, and `lastTyped` is when the most recent one landed. Between
 	// them they answer the only question that decides whether another session
 	// may type into this terminal.
+	//
+	// `unsent` is the real count of characters sitting on the operator's current
+	// line, and it is stricter than `midLine`. A printable key adds one, a
+	// backspace takes one off, and a submit or a cancel resets it to zero. So a
+	// line typed and then backspaced all the way back to empty reads as EMPTY
+	// here, where `midLine` alone still read it as dirty and refused an injection
+	// into a line that no longer had anything on it. Zero is the only count that
+	// lets a peer message be typed. See `noteOperatorTyped` and `peerGateOpen`.
 	//
 	// THE DAEMON IS THE RIGHT PLACE and the board is not, even though the
 	// board already tracks something similar for path completion. That copy is
@@ -652,8 +681,43 @@ type runner struct {
 	// mid-thought, and only their own keystrokes answer it. Reading the
 	// runner's output to guess at this is the line `B2-20` declines to cross,
 	// and it would be a guess where this is a record.
+	typeMu    sync.Mutex
 	midLine   bool
 	lastTyped time.Time
+	unsent    int
+	// onKey is called after every operator keystroke is recorded, outside
+	// typeMu. It is how a deferred peer message learns the operator is back at
+	// the keyboard and re-arms its retry to the front of the backoff. Nil when
+	// nothing is waiting, which is the overwhelming common case, so the keystroke
+	// path pays one atomic load and no more. See `pendingInjector`.
+	onKey atomic.Pointer[func()]
+	// pasteMu is the input lock. injectPeer holds it across the whole paste and
+	// Enter, and the operator's keystroke WRITES take it too, so a peer's paste
+	// and the human's typing can never interleave their bytes on the pty. It is
+	// only ever contended when a peer message is being typed into a terminal the
+	// gate already judged idle, so in practice the human is not typing and the
+	// lock is invisible. It guards the pty WRITE only, never the typing-state
+	// bookkeeping, which stays on typeMu and is never blocked. See
+	// `writeOperatorInput` and `injectPeer`.
+	pasteMu sync.Mutex
+	// injectMu serializes peer injections against each other, so two peers do
+	// not interleave their banners and bodies into the pty. It is DELIBERATELY
+	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
+	// that were `r.mu` the pause would stall output `fanout` and, before the
+	// typing state moved to `typeMu`, every operator keystroke. This lock is
+	// contended only by other injections, which are rare and already serial in
+	// spirit. See `injectPeer`.
+	injectMu sync.Mutex
+	// echoPeers turns on shared multi-pane input: keystrokes from one attach
+	// are mirrored display-only to the other attaches of this runner. OFF by
+	// default, because an unconditional echo doubles every character in a cooked
+	// shell. See `setEchoPeers` and `echoToPeers`.
+	//
+	// AN ATOMIC so the common OFF case costs a single load and never takes
+	// `r.mu`. `echoToPeers` is on the operator's keystroke path (one call per
+	// keystroke), and a plain bool under `r.mu` there would put every keystroke
+	// behind whatever else holds `r.mu`, which is the lag this fix removes.
+	echoPeers atomic.Bool
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -774,25 +838,47 @@ func (r *runner) Write(p []byte) error {
 // had just typed something.
 //
 // What ends a line: a carriage return or a newline submits it, and the two
-// ways a line is thrown away are control-c and control-u. Everything else
-// leaves something part written, including a backspace, because a line being
-// edited down to nothing is still a line somebody is working on.
+// ways a line is thrown away are control-c and control-u. Both reset the count
+// to zero. A backspace takes one character off, so a line edited all the way
+// back to nothing counts as empty rather than as something still being worked
+// on, which is the whole reason the count exists beside `midLine`. A printable
+// key adds one. Anything else, an arrow or a bare escape, is activity that
+// moves `lastTyped` without adding to the line.
+//
+// A UTF-8 lead or continuation byte counts as one each, so a multi-byte glyph
+// over-counts and a backspace after it clears only the last byte. The count
+// then floors at empty on a submit or a cancel, and a mid-line injection was
+// never going to land during active multi-byte input anyway, so the rough edge
+// costs nothing the gate cares about.
 func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// typeMu, not r.mu: a human keystroke's bookkeeping must never wait behind a
+	// peer injection or output fanout. See the runner struct's typeMu note.
+	r.typeMu.Lock()
 	r.lastTyped = time.Now()
 	for _, b := range p {
-		switch b {
-		case '\r', '\n':
-			r.midLine = false
-		case 0x03, 0x15: // control-c, control-u
-			r.midLine = false
-		default:
-			r.midLine = true
+		switch {
+		case b == '\r' || b == '\n' || b == 0x03 || b == 0x15:
+			r.unsent = 0
+		case b == 0x7f || b == 0x08: // delete, backspace
+			if r.unsent > 0 {
+				r.unsent--
+			}
+		case b >= 0x20:
+			r.unsent++
 		}
+	}
+	r.midLine = r.unsent > 0
+	r.typeMu.Unlock()
+	// Outside typeMu, and last, so the reset a deferred message does cannot
+	// deadlock against the lock this just held. A keystroke means the operator
+	// is at the keyboard now, so any peer message waiting on a long backoff
+	// interval is re-armed to retry soon. Nil unless something is waiting, which
+	// is one atomic load on the common path. See `pendingInjector`.
+	if h := r.onKey.Load(); h != nil {
+		(*h)()
 	}
 }
 
@@ -804,6 +890,15 @@ func (r *runner) noteOperatorTyped(p []byte) {
 // uncommon case. Long enough that a pause for thought between two commands is
 // not read as having walked away.
 const peerQuiet = 20 * time.Second
+
+// peerGateIdle is how long the operator must have been off the keyboard before
+// a peer message may be typed in, on top of the line being empty.
+//
+// Short, because the case this feature exists for is an agent talking to an
+// agent while nobody is there, and a long wait would make that the slow path.
+// Long enough that the gap between two keystrokes of ordinary typing never
+// opens the gate mid-line, so a message can only land in a genuine pause.
+const peerGateIdle = 2 * time.Second
 
 // howBusy says whether another session may type into this terminal now.
 //
@@ -827,9 +922,12 @@ const (
 	peerMidLine
 )
 
+// Reads the typing state under typeMu, the same small lock noteOperatorTyped
+// writes it under, so this can be asked at any moment without contending with a
+// peer injection or output fanout.
 func (r *runner) howBusy() peerRoom {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
 	if r.midLine {
 		return peerMidLine
 	}
@@ -837,6 +935,101 @@ func (r *runner) howBusy() peerRoom {
 		return peerWatching
 	}
 	return peerFree
+}
+
+// peerGateOpen reports whether a peer message may be typed into this terminal
+// right now.
+//
+// THE GATE, and it is stricter than `howBusy`. Two things have to hold at once:
+// the operator's current line is empty (`unsent` is zero, which counts a line
+// typed and then backspaced to nothing as empty), and no keystroke has landed
+// in the last `peerGateIdle`. So a message lands only in a real gap, never into
+// a part written line and never a fraction of a second after the operator
+// stopped. A terminal nobody has ever typed into is open at once, which is the
+// agent-to-agent case this exists for.
+//
+// Read under typeMu, the same small lock the keystroke path writes, so it can
+// be asked at any moment without waiting behind a peer injection or fanout.
+func (r *runner) peerGateOpen() bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	if r.unsent != 0 {
+		return false
+	}
+	if r.lastTyped.IsZero() {
+		return true
+	}
+	return time.Since(r.lastTyped) >= peerGateIdle
+}
+
+// writeOperatorInput writes the operator's own keystrokes to the pty under the
+// input lock, so a peer's paste in flight and the human's typing never
+// interleave their bytes.
+//
+// The lock, not the bookkeeping. `noteOperatorTyped` has already recorded the
+// keystroke under typeMu and returned, so the typing state is never delayed.
+// Only the bytes wait here, and only for the paste window of a message the gate
+// already judged the terminal idle enough to take, which is a window the
+// operator is by definition not typing in. See `injectPeer`.
+func (r *runner) writeOperatorInput(p []byte) error {
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	return r.Write(p)
+}
+
+// injectPeer types a peer's message into the terminal and presses Enter, once,
+// if the gate is open right now. It reports whether it did.
+//
+// TRY ONCE, ATOMICALLY. The waiting and the retrying are the caller's, in
+// `pendingInjector`. This is the single indivisible act of putting a message
+// on screen and submitting it, and the operator can neither tangle their typing
+// into it nor be made to wait behind it.
+//
+// The gate is stricter than the old midLine refusal: `peerGateOpen` requires an
+// empty line AND `peerGateIdle` of quiet. When it is open there is exactly one
+// outcome, the message is typed and submitted. There is no "leave it unsent in
+// the prompt" any more, because unsent peer text sitting in the operator's
+// prompt is the thing clint wanted gone. If the gate is not open the message is
+// not touched, and the caller defers it.
+//
+// THE INPUT LOCK closes the tangle race without ever blocking the keystroke
+// bookkeeping. `pasteMu` is held across the banner, body, pause and Enter, so
+// an operator keystroke's BYTES wait behind the paste rather than landing in
+// the middle of it. Their recording under typeMu is not blocked, so the typing
+// state stays instant, which is the input-lag fix this branch is built on.
+//
+//   - A keystroke that lands the instant before the lock fails the re-check
+//     under `pasteMu` and the paste is ABORTED with nothing written, so the
+//     operator wins and the caller re-waits.
+//   - A keystroke that lands during the paused window waits on `pasteMu`. The
+//     message submits cleanly on its own line and the operator's byte starts a
+//     fresh line after the lock releases, so nothing is ever tangled.
+//
+// The banner carries no carriage return (see peerBanner), so nothing can submit
+// before the deliberate Enter below.
+func (r *runner) injectPeer(banner, body string) (bool, error) {
+	r.injectMu.Lock()
+	defer r.injectMu.Unlock()
+	// The input lock, held across the whole paste. Taken before the gate is
+	// re-checked so a keystroke that raced us to the lock is already recorded
+	// and closes the gate below.
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	if !r.peerGateOpen() {
+		return false, nil
+	}
+	// r.Write goes straight to the pty and takes no runner lock. The operator's
+	// own writes are held on pasteMu, which this owns, for the duration.
+	if err := r.Write([]byte(banner + body)); err != nil {
+		return false, err
+	}
+	// The pause is what separates the text from the Enter, so a TUI reads the
+	// Enter as the key that submits rather than as part of a paste. See Say.
+	time.Sleep(sayThenEnter)
+	if err := r.Write([]byte("\r")); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // A pseudo terminal has ONE size and a shared session has several viewers.
@@ -851,11 +1044,27 @@ func (r *runner) howBusy() peerRoom {
 // THE SMALLEST VIEWER DECIDES, which is what every multiplexer settled on for
 // the same reason. Every attached viewer can then render what it is sent
 // correctly, and the cost is unused margin in the larger window rather than
-// a screen nobody can read. First attach and last detach are both just
-// recomputes.
+// a screen nobody can read.
+//
+// THE PTY MOVES ONLY WHEN THE AGREED SIZE ACTUALLY CHANGES, which is the whole
+// of the resize-sanity fix. A shared raw-mode TUI cannot be decoupled from the
+// pty outright: it composes for one width, and a viewer narrower than that
+// width gets a garbled screen, so the narrowest reader has to set the size.
+// That is coupling, and it is inherent. What was NOT inherent is the CHURN: the
+// pty was resized on every attach, detach and drag, so a `Resize` to the size
+// it already was still raised SIGWINCH and every viewer repainted. One
+// console's drag flickered the others even when it changed nothing binding.
+//
+// So `setViewport` and `dropViewport` compute the agreed size exactly as before
+// and resize only when it differs from the size the pty is already at. A viewer
+// wider than the current width drags freely and touches nobody. An attach or
+// detach that does not change the smallest lays no mark and repaints no one. A
+// genuinely narrower reader still moves the pty, because the others cannot read
+// a width their pane cannot show. See `docs/terminal-resize-decoupling-design.md`.
 type viewport struct{ cols, rows int }
 
-// setViewport records one viewer's size and applies the agreed one.
+// setViewport records one viewer's size and applies the agreed one, but only
+// when it changed.
 //
 // Keyed by the attachment rather than counted, because a viewer that goes away
 // has to stop constraining the others: a phone that attached once and closed
@@ -871,6 +1080,13 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	r.views[id] = viewport{cols, rows}
 	agreed := smallestViewport(r.views)
 	r.mu.Unlock()
+	// THE GUARD. A resize to the size the pty is already at is not free: it
+	// raises SIGWINCH and repaints every viewer, which is exactly the churn one
+	// console's drag inflicted on the others. Skip it when nothing moved.
+	curCols, curRows := r.buf.CurrentSize()
+	if agreed.cols == curCols && agreed.rows == curRows {
+		return nil
+	}
 	// Marked BEFORE the resize, so the first byte drawn at the new width is
 	// already on the new side of the mark. The other order leaves a repaint
 	// filed under the width it replaced, which is the whole bug.
@@ -878,7 +1094,8 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	return r.pty.Resize(agreed.cols, agreed.rows)
 }
 
-// dropViewport forgets a viewer that has detached and gives the size back.
+// dropViewport forgets a viewer that has detached, and lets the pty follow the
+// size back up only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
 	r.mu.Lock()
 	if r.views == nil {
@@ -897,6 +1114,15 @@ func (r *runner) dropViewport(id any) {
 	// would be a resize to nothing, and the size a detached session keeps is
 	// the one it had, which is what a runner reading it expects.
 	if left == 0 {
+		return
+	}
+	// The same guard as `setViewport`. A wider viewer detaching leaves the
+	// smallest unchanged, so nothing resizes and no other viewer is churned.
+	// Only the binding viewer's departure moves the pty, and the ring merges
+	// the marks when nothing was drawn in between, so a popped window costs no
+	// scrollback.
+	curCols, curRows := r.buf.CurrentSize()
+	if agreed.cols == curCols && agreed.rows == curRows {
 		return
 	}
 	r.buf.SetSize(agreed.cols, agreed.rows)
@@ -977,6 +1203,64 @@ func (r *runner) fanout(chunk []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for ch := range r.watchers {
+		cp := make([]byte, len(chunk))
+		copy(cp, chunk)
+		select {
+		case ch <- cp:
+		default:
+		}
+	}
+}
+
+// SHARED MULTI-PANE INPUT, and it is OFF by default. See
+// `docs/multi-pane-input-design.md`.
+//
+// The panes already share one pty and one output stream, so a peer sees
+// anything the RUNNER draws. What it does not see is a line still being typed:
+// a raw-mode app repaints its own input line for the pane that is typing and
+// emits nothing broadcastable until submit. This mirrors those keystrokes to
+// the other panes so all of them show what any pane is typing.
+//
+// PER RUNNER, NOT PER VIEWER, because the hazard it guards against is a
+// property of the runner. In cooked mode, or under any app that echoes its
+// input back to the output stream, the typed byte already reaches every pane
+// through `fanout`. Echo it again on top and each peer shows it twice, so a
+// bare shell would double every character. The operator turns this on for a
+// terminal they know is a raw-mode agent, and it covers every pane on it.
+func (r *runner) setEchoPeers(on bool) {
+	r.echoPeers.Store(on)
+}
+
+// echoToPeers mirrors one pane's keystrokes, display-only, to the OTHER panes.
+//
+// A DISPLAY ECHO AND NOTHING ELSE. The bytes still reach the pty exactly once,
+// through the single `Write` the attach reader already makes. This never calls
+// `Write` and never touches the pty, so turning the mode on cannot double what
+// the app receives, only what peers see.
+//
+// `self` is the writer's own output channel, skipped because that pane already
+// shows its own typing: the app it is talking to repaints the line there. Every
+// other watcher is a peer and gets the bytes. A nil `self`, which is a keystroke
+// that somehow arrived before this attach subscribed, excludes nobody, and that
+// is correct: the writer is not yet a watcher, so there is no pane to double.
+//
+// A no-op unless the mode is on, so the default costs one lock and a bool.
+func (r *runner) echoToPeers(chunk []byte, self chan []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	// The OFF check first and WITHOUT r.mu, so the default path off every
+	// keystroke is one atomic load. Only when the mode is on does this take r.mu,
+	// which it must to read the watcher set. See the echoPeers struct note.
+	if !r.echoPeers.Load() {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for ch := range r.watchers {
+		if ch == self {
+			continue
+		}
 		cp := make([]byte, len(chunk))
 		copy(cp, chunk)
 		select {
@@ -1150,6 +1434,67 @@ type launchSpec struct {
 	env  []string
 }
 
+// declareATerminal says what the pseudo terminal atrium just opened is.
+//
+// ── why this is not guesswork ────────────────────────────
+//
+// Programs decide whether to emit colour by reading `TERM` and `COLORTERM`.
+// Without them, claude prints its banner in plain white and a board full of
+// agents looks broken in a way nobody can trace: the palette is right, the
+// theme is right, and the child simply decided not to use them.
+//
+// It cost nothing while atrium was always started from a terminal, because
+// the child inherited that terminal's markers. It stops being free the moment
+// the daemon is started by anything else -- a service, a scheduled task, a
+// detached process, a room dialling a hub -- and the failure is silent.
+//
+// ── what is declared ─────────────────────────────────────
+//
+// `xterm-256color`, because the far end is xterm.js and that is what it is.
+// `truecolor` for `COLORTERM`, because xterm.js renders 24 bit colour and
+// claude's own banner is a 24 bit orange.
+//
+// ANYTHING ALREADY SET WINS. A harness row naming a `TERM` is somebody saying
+// they know better about their own runner, and this is a default rather than
+// a policy.
+func declareATerminal(env []string) []string {
+	has := func(key string) bool {
+		for _, kv := range env {
+			if i := strings.Index(kv, "="); i > 0 && strings.EqualFold(kv[:i], key) {
+				return true
+			}
+		}
+		return false
+	}
+	out := env
+	if !has("TERM") {
+		out = append(out, "TERM=xterm-256color")
+	}
+	if !has("COLORTERM") {
+		out = append(out, "COLORTERM=truecolor")
+	}
+	// AND THE ONE NODE ACTUALLY READS.
+	//
+	// `TERM` and `COLORTERM` are the unix answer and most things honour them.
+	// Node does not: its `supports-color` asks whether stdout is a TTY, and
+	// under a daemon started detached with its own output redirected to a file
+	// that check comes back false even though the CHILD is on a pseudo
+	// terminal this process opened. Claude Code is Node, which is why its
+	// banner came out white while everything else about the terminal was
+	// right.
+	//
+	// `3` is truecolor, matching COLORTERM, because the far end is xterm.js.
+	//
+	// This is a claim about the child and not about atrium: it is only ever
+	// set for a runner atrium is putting ON A PSEUDO TERMINAL, where "is this
+	// a terminal" has one correct answer and it is yes. Window-mode launches
+	// never reach here.
+	if !has("FORCE_COLOR") {
+		out = append(out, "FORCE_COLOR=3")
+	}
+	return out
+}
+
 // spawnPTY starts a runner under a pseudo terminal and returns its pid.
 func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env []string) (int, error) {
 	return d.spawnPTYResume(taskID, cmdName, args, cwd, env, false, nil)
@@ -1180,7 +1525,18 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	sizeAtLaunch(p, cols)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
-	c.Env = env
+	// ATRIUM MADE THIS TERMINAL, SO ATRIUM SAYS WHAT IT IS.
+	//
+	// A program decides whether to use colour by reading the environment, and
+	// until now that environment was whatever the DAEMON happened to be started
+	// with. Started from a terminal it carried the terminal's markers and
+	// everything was in colour; started from a service, a scheduled task or a
+	// detached process it carried none, and every agent came out monochrome for
+	// a reason nobody could see from the board.
+	//
+	// That is a bad thing to leave to chance: the child is on a pseudo terminal
+	// this process opened, and whether it is a terminal is not in doubt.
+	c.Env = declareATerminal(env)
 	if err := c.Start(); err != nil {
 		p.Close()
 		return 0, fmt.Errorf("could not start %s: %w", cmdName, err)
@@ -1265,6 +1621,16 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 
 	go d.awaitExit(r)
 
+	// The room announces the session starting, so the hub's audit log carries a
+	// line the hub could not derive on its own. Best effort and after the runner
+	// is really up, so a failed start never reads as one that began. See
+	// lifecycle.go.
+	runner := cmdName
+	if t, err := d.st.Get(taskID); err == nil && t.Runner != "" {
+		runner = t.Runner
+	}
+	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
+
 	pid := 0
 	if c.Process != nil {
 		pid = c.Process.Pid
@@ -1313,6 +1679,15 @@ func (d *Daemon) awaitExit(r *runner) {
 	if err := d.st.AppendEvent(r.taskID, store.EventExited, payload); err != nil {
 		log.Printf("[atrium] record exit for %s: %v", r.taskID, err)
 	}
+
+	// The room announces the exit with its reason, which the hub cannot see: it
+	// watches a card go dead, not why. See lifecycle.go.
+	exitLine := fmt.Sprintf("%s exited with code %d after %s",
+		d.taskTitle(r.taskID), code, lived.Round(time.Millisecond))
+	if lived < startupFailureWindow && tail != "" {
+		exitLine += ", " + firstLine(tail)
+	}
+	d.emitLifecycle("session-exit", exitLine)
 
 	// A resume that died on the way up gets one try as a fresh start.
 	//
@@ -1496,6 +1871,18 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		log.Printf("[atrium] runner for %s is still up, killing it", r.taskID)
 		if r.cmd.Process != nil {
 			_ = r.cmd.Process.Kill()
+			// Wait for the kill to actually take before returning, so a caller
+			// that does not poll for the slot to clear can trust that the runner
+			// is gone. StopRunner's RestartRunner caller polls waitRunnerGone and
+			// was covered, but Shelve and exitRunner do not, and returning here
+			// while r.done had not fired left the supervisor entry live under a
+			// call that reported success. Bounded, because shutdown is bounded.
+			select {
+			case <-r.done:
+				log.Printf("[atrium] runner for %s stopped after being killed", r.taskID)
+			case <-time.After(2 * time.Second):
+				log.Printf("[atrium] runner for %s did not exit even after a kill", r.taskID)
+			}
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/claudeconf"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -98,6 +99,19 @@ func LookPath(cmd string) string {
 	return filepath.ToSlash(p)
 }
 
+// RunnerFound is where a runner's binary actually is on this machine, or "" when
+// it is not resolvable. An explicit BinPath is checked directly, so a runner
+// installed off the room process PATH still reports as available; otherwise Cmd
+// is resolved against PATH. exec.LookPath validates an absolute path too, so the
+// same "is it really there and runnable" check covers both. See
+// docs/runner-scoping-design.md.
+func RunnerFound(h *store.Harness) string {
+	if p := strings.TrimSpace(h.BinPath); p != "" {
+		return LookPath(p)
+	}
+	return LookPath(h.Cmd)
+}
+
 // listHarnesses returns the configured runners, each saying whether its command
 // exists on this machine, and the model names this board has been asked for
 // before.
@@ -119,14 +133,20 @@ func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]harnessView, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, harnessView{Harness: h, Found: LookPath(h.Cmd)})
+		out = append(out, harnessView{Harness: h, Found: RunnerFound(h)})
 	}
 	models, err := s.st.ModelsUsed()
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"harnesses": out, "models": models})
+	// AND THE OPERATOR'S OWN PICKER, which is not a list atrium holds. See
+	// `internal/claudeconf/models.go`: it is read from their settings file,
+	// the same one Claude Code reads it from, so the names are whatever they
+	// decided and they change when the operator changes them.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"harnesses": out, "models": models, "model_picker": claudeconf.Models(),
+	})
 }
 
 // discoverRunners reports runners this machine has that are not set up yet.

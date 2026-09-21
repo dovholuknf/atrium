@@ -77,11 +77,15 @@ for (const mode of Object.keys(STACK_SORTS)) {
 }
 
 // Pass sort mode in a mutable object so tests can toggle it. Stub waiting
-// state and labels, whose own behavior is tested elsewhere.
-const strip = new Function("isWaiting", "terminalLabel", "mode",
+// state, live-activity and labels, whose own behavior is tested elsewhere (the
+// activity ordering itself is covered by the headless strip test). `workingNow`
+// reads the same live badge the sort now leads with; here it answers off a
+// fixture field so the tie fixtures, which carry none, all read as not working.
+const strip = new Function("isWaiting", "workingNow", "terminalLabel", "mode",
   tieBreak + "\n" + lift("function termOrder(", "\n}") +
   "\nreturn (tasks) => { sortByActivity = mode.on; return termOrder(tasks); };")(
-  (t) => t.status === "needs-input", (t) => t.label || "", (globalThis.__mode = { on: true }));
+  (t) => t.status === "needs-input", (t) => !!t.working,
+  (t) => t.label || "", (globalThis.__mode = { on: true }));
 
 // `sortByActivity` is declared in terminal-list.js and lifted out of its
 // declaration, so the function above needs it to exist. Declared here as the
@@ -136,6 +140,23 @@ const withPin = strip(pinned.slice()).map(t => t.id).join("");
 if (withPin !== "cabd") {
   fail(`pinning moved more than the pinned row: ${withPin}, expected cabd. The pin ` +
     `pass is meant to lift one row and leave the order underneath it alone.`);
+}
+
+// WORKING NOW SORTS ABOVE EVERYTHING under `by activity`, which is the whole
+// point of the mode and used to be inverted: a session logging nothing during a
+// long build read as idle and sank. A card doing work outranks a waiting one,
+// and a waiting one outranks a plain idle one, whatever order they arrived in.
+mode.on = true;
+const act = [
+  { id: "idle", created_at: "2026-09-11T10:00:01Z", idle_seconds: 5 },
+  { id: "work", created_at: "2026-09-11T10:00:02Z", idle_seconds: 99, working: true },
+  { id: "wait", created_at: "2026-09-11T10:00:03Z", idle_seconds: 40, status: "needs-input" }
+];
+const actOrder = strip(act.slice()).map(t => t.id).join(",");
+if (actOrder !== "work,wait,idle") {
+  fail(`by activity ranked ${actOrder}, expected work,wait,idle: a session working ` +
+    `now sits on top, then one waiting on you, then the idle rest. A high idle_seconds ` +
+    `on the working card must not sink it.`);
 }
 
 if (bad) {

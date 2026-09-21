@@ -122,6 +122,20 @@
   .cardgroup > summary .gn { font-family: var(--mono); color: var(--dimmest); letter-spacing: 0; }
   .cardgroup > summary .chip.sweep { margin-left: auto; margin-right: 0; }
 
+  /* Work on a machine that is not answering. Always last in its column and shut unless somebody opened it: it
+     cannot be acted on, so open it is a screen of things that do not respond to being clicked. Dimmed rather
+     than coloured, because the point is that it is not live, and a separator above it so it reads as the other
+     side of a line rather than as more of the same list. */
+  .cardgroup.offline {
+    margin-top: var(--vs-3); padding-top: var(--vs-2);
+    border-top: 1px dashed var(--stroke-dim); opacity: .78;
+  }
+  .cardgroup.offline > summary::before { color: var(--dimmest); }
+  .cardgroup.offline > summary .chip { margin-left: auto; margin-right: 0; }
+  .cardgroup.offline > .hintline { padding: 0 3px var(--vs-2); }
+  /* Nothing in here is clickable, so nothing in here pretends to be. */
+  .cardgroup.offline .card { cursor: default; }
+
   /* A project group. Colored from a hash of its name, so a project keeps the same color with nothing to
      configure, and two groups in one column tell apart at a glance. */
   /* A wash of the group's own hue at low alpha, with an outline in the same hue, so the block itself is what
@@ -279,6 +293,32 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* Which room a card runs in, shown only while more than one is attached (the id carries a `room~` tag
+     exactly then). A STABLE colour PER ROOM, so sg4 and sgg read apart at a glance rather than letter by
+     letter, the whole reason the badge exists. The hue is hashed from the room name in `roomHue` and handed
+     in on `--rhue`; a given room always gets the same hue and different rooms different ones. This is the one
+     rule for the class: the strip badge, the pane-header badge and the board's clickable room chip all wear
+     it. Built with `color-mix` toward the skin's own ink and card so it stays a subtle, legible pill on a
+     paper board and a dark one alike, the same technique the group headings use. */
+  .chip.room {
+    --rhue: 205;
+    --room-ink: hsl(var(--rhue) 62% 52%);
+    background: color-mix(in srgb, var(--room-ink) 14%, transparent);
+    border-color: color-mix(in srgb, var(--room-ink) 34%, transparent);
+    color: color-mix(in srgb, var(--room-ink) 72%, var(--head));
+    font-weight: 600; font-family: var(--mono); cursor: pointer;
+  }
+  .chip.room:hover { background: color-mix(in srgb, var(--room-ink) 24%, transparent); }
+  /* A peer message is waiting to be typed into this terminal and the operator's line is in the way. A pulsing
+     bang, distinct from the breathing activity dot, so a glance across the strip finds the card holding
+     something for him. Opacity only, like the other live marks, so it composites on the GPU. Shows nothing
+     until the room-side held signal ships (activity.held_peer). */
+  .chip.held {
+    background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke);
+    font-weight: 700; text-align: center; min-width: 1.4em;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  body.tabhidden .chip.held { animation: none; }
   /* Published. Danger rather than warn, and the same mark as the header, so a card reachable from outside this
      machine says so in the colour that means it. */
   .chip.shared {

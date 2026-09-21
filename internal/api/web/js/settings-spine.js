@@ -125,6 +125,9 @@ function paintSettings() {
   // only changes when something in here changes it, and the event stream
   // carries the ones that happen elsewhere.
   loadOverlays();
+  // The redo surface ("expose the board 2"), painted from the same overlay
+  // state. Guarded so removing js/expose2.js leaves this a no-op.
+  if (typeof loadExpose2 === "function") loadExpose2();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -528,7 +531,7 @@ function turnEndReach() {
   const h = (hookReport && hookReport.hooks || []).find(x => x.event === "turn-end");
   if (h && h.installed && !h.stale) return ", or when its turn ends.";
   return ". a session sitting idle makes no tool calls, so it will wait there until " +
-    "something happens. wire the Stop hook in the runners tab to reach an idle session.";
+    "something happens. wire the Stop hook under rooms > runners to reach an idle session.";
 }
 
 // What has been said and has not arrived. Only ever queued messages: one typed
@@ -1065,13 +1068,30 @@ function applyHeld() {
   repaintLists();
 }
 
-function repaintLists() {
+function repaintLists(signal) {
   const view = document.querySelector(".tab.on").dataset.view;
   const render = {
     board: renderBoard, stack: renderStack, perms: renderPerms,
-    runners: renderRunners, terms: renderTerms
+    runners: renderRunners, terms: renderTerms,
+    // HISTORY IS A VIEW LIKE THE REST and was missing from this table, so any
+    // event arriving while it was open threw "render is not a function" and
+    // took the repaint with it: the list stopped updating and the only sign was
+    // in the console. A tab added without a line here fails exactly this way,
+    // which is why the fallback below exists as well.
+    history: () => renderHistory(false)
   }[view];
-  render().catch(e => console.error(e));
+  // A VIEW NOBODY WIRED UP MUST NOT STOP THE REPAINT. Every other list on the
+  // page is behind this call, and one unknown tab name would silently freeze
+  // all of them.
+  if (typeof render !== "function") {
+    console.error("no renderer for the " + view + " view");
+    return;
+  }
+  // Returned so a refresh pass can await the paint's own fetches, and passed the
+  // pass's abort signal so the watchdog can actually cancel a hung list fetch,
+  // not just stop waiting on it. The single-flight guard counts a pass done only
+  // when everything it started has settled.
+  return render(signal).catch(e => console.error(e));
 }
 
 // One refresh for a burst of events.
@@ -1087,27 +1107,130 @@ function repaintLists() {
 // worth drawing is the one at the end of the clump. A quarter second is below
 // what anybody notices on a board and far above the gap between two events
 // from the same tool call.
-let refreshPending = 0;
+// A trailing debounce, so a clump of events draws once at the end of the clump.
+// The window is reset on every event, which is what collapses ten flaps in three
+// seconds into one refresh instead of ten. A room that never stops flapping would
+// reset the window forever and the board would never repaint, so the wait is
+// capped: past REFRESH_MAXWAIT since the first held event, the pass runs anyway
+// and a fresh window begins.
+const REFRESH_DEBOUNCE = 300;
+const REFRESH_MAXWAIT = 1500;
+let refreshTimer = 0;
+let refreshFirst = 0;
 function refreshSoon() {
-  if (refreshPending) return;
-  refreshPending = setTimeout(() => {
-    refreshPending = 0;
-    refresh();
-  }, 250);
+  const now = Date.now();
+  if (!refreshFirst) refreshFirst = now;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const wait = Math.min(REFRESH_DEBOUNCE,
+    Math.max(0, refreshFirst + REFRESH_MAXWAIT - now));
+  refreshTimer = setTimeout(() => {
+    refreshTimer = 0;
+    refreshFirst = 0;
+    runRefresh();
+  }, wait);
 }
 
-async function refresh() {
+// SINGLE-FLIGHT. One full pass runs at a time. A trigger that lands while a pass
+// is in flight marks the board dirty and runs EXACTLY ONE more pass when the
+// current one settles, rather than starting a second overlapping fan-out. This
+// is what bounds the storm: whatever the event rate, at most one pass worth of
+// fetches (and the cap in `api()` bounds those in turn) is ever on the wire.
+//
+// SUPERSEDE. Each pass runs under an AbortController. Starting the next pass
+// aborts the last one's controller, so any fetch still holding a socket from a
+// pass that has been overtaken is dropped rather than left to occupy the pool.
+//
+// BACK OFF. When the wire is down, `api()` counts the failures. A dirty pass
+// then waits before it runs, growing the wait with the failure streak, so a tab
+// that cannot reach the hub does not turn a flap into hundreds of queued fetches.
+//
+// WATCHDOG. A pass counts done when its fan-out settles, which is the whole
+// point of the await inside `refresh`. But a fetch can hang and never resolve or
+// reject: a proxy that holds the socket open, a hub wedged mid-answer, a request
+// caught behind an exhausted pool with no timeout of its own. If that happened
+// the in-flight flag would never clear and the board would stop refreshing for
+// good, blank on whatever it last drew. So the pass also races a deadline: past
+// RUN_TIMEOUT it is treated as finished, its fetches aborted so they stop
+// holding sockets, and the loop is free to run the next pass. The hung fetch is
+// abandoned rather than waited on.
+// Thirty seconds, past any answer a healthy hub gives and well short of a person
+// giving up on a frozen board. Overridable only so a headless test can prove the
+// unwedge without waiting the full timeout; a plain board never sets it.
+const RUN_TIMEOUT =
+  (typeof window !== "undefined" && window.__atriumRunTimeout) || 30000;
+let refreshInFlight = false;
+let refreshDirty = false;
+let refreshController = null;
+function runRefresh() {
+  if (refreshInFlight) { refreshDirty = true; return; }
+  refreshInFlight = true;
+  refreshDirty = false;
+  if (refreshController) refreshController.abort();
+  refreshController = typeof AbortController !== "undefined"
+    ? new AbortController() : null;
+  const ctrl = refreshController;
+  let watchdog = 0;
+  const guard = new Promise(done => {
+    watchdog = setTimeout(() => {
+      // Abort the stale pass so its sockets are released, and mark the board
+      // dirty so the pass that replaces it actually repaints rather than
+      // assuming the hung one will.
+      if (ctrl) ctrl.abort();
+      refreshDirty = true;
+      done();
+    }, RUN_TIMEOUT);
+  });
+  Promise.race([
+    Promise.resolve(refresh(ctrl && ctrl.signal)).catch(() => {}),
+    guard
+  ]).finally(() => {
+    clearTimeout(watchdog);
+    refreshInFlight = false;
+    if (refreshDirty) {
+      refreshDirty = false;
+      const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
+      const backoff = streak > 0 ? Math.min(5000, 500 * streak) : 0;
+      setTimeout(runRefresh, backoff);
+    }
+  });
+}
+
+async function refresh(signal) {
   // A popped-out window polls for ONE card. Falling through here meant it ran
   // the board's whole alerting pass, so a window opened onto one session put
   // up desktop notifications for every other one, from a document with no
   // board to click through to.
   if (termOnly()) return soloRefresh();
 
+  // THE ROLL CALL, ON EVERY BOARD POLL, NOT JUST AT BOOT.
+  //
+  // `boot.js` asks `solo-who` once at load so a board starting after a window was
+  // already popped out learns of it. That was the ONLY time it ever asked, and
+  // that was the bug: a solo window re-claims on its own poll, but if that poll
+  // stalls past `soloClaimFor` (15s) - which a reconnect/backoff through a hub
+  // restart can cause - the board's claim expires and nothing ever refreshes it,
+  // so `poppedOut` reads false and the pane takes the terminal back into a second
+  // view. Asking again here makes it self-healing: any window still open answers
+  // and re-stamps its claim every cycle, so a live card stays claimed. A window
+  // that truly went away stops answering, so its claim still expires and its card
+  // is still freed - the 15s heartbeat semantics are unchanged, only re-heard in
+  // time. The board polls every `POLL_MS` (10s), comfortably under `soloClaimFor`,
+  // so a live window is never dropped between two roll calls. It is a
+  // BroadcastChannel round trip between documents in one browser, well under a
+  // frame (see the note in `boot.js`), so it rides the poll it already pays for
+  // and needs no timer of its own.
+  if (soloBus) soloBus.postMessage({ type: "solo-who" });
+
   // A deadline that is running is re-read from the daemon rather than counted
   // down here. It costs one small request while a switch is temporary and
   // nothing at all the rest of the time, and it means the label cannot drift
   // away from the thing that actually decides.
   if (globalAuto && globalAutoLeft > 0) loadGlobalAuto();
+
+  // A pass is done only when everything it started has settled. The jobs are
+  // collected and awaited at the end so the single-flight guard cannot call a
+  // pass finished while its fetches are still holding sockets.
+  const jobs = [];
 
   if (isEditing()) {
     // Hold the repaint, but keep the counters, sounds and toasts live: those
@@ -1119,12 +1242,12 @@ async function refresh() {
     heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
-    repaintLists();
+    jobs.push(Promise.resolve(repaintLists(signal)));
   }
 
   // What is lent out, so a card can say so and the menu knows without asking.
   // Cheap: an in-memory map on the daemon, usually empty.
-  loadShares();
+  jobs.push(loadShares());
 
   // Waiting and permissions are polled whichever view is open, because the
   // badges, the title, and the alert all have to work while you are looking at
@@ -1138,9 +1261,9 @@ async function refresh() {
   // Merged into `perms` rather than alerted on separately, so the badge, the
   // window title and the widening nag all count one queue and none of them can
   // learn about rooms later.
-  Promise.all([
-    api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
-    api("/v1/permissions").then(r => r.permissions || []).catch(() => null),
+  jobs.push(Promise.all([
+    api("/v1/waiting", { signal }).then(r => r.tasks || []).catch(() => null),
+    api("/v1/permissions", { signal }).then(r => r.permissions || []).catch(() => null),
     remoteRequests().catch(() => [])
   ]).then(([waiting, local, remote]) => {
     // A failed local fetch stays null, so the badge and the title keep saying
@@ -1209,9 +1332,9 @@ async function refresh() {
     // reported a blocked agent twice.
     retitle(waiting && waiting.filter(t => t.status !== "needs-permission").length,
       perms && perms.length);
-  });
+  }));
 
-  api("/v1/health").then(h => {
+  jobs.push(api("/v1/health", { signal }).then(h => {
     checkBuild(h.build);
     // Before anything else reads it. A daemon that is still putting sessions
     // back says so here, and the arrival alert re-seeds rather than announcing
@@ -1223,11 +1346,21 @@ async function refresh() {
       document.getElementById("halt-t").innerHTML =
         `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
     }
-  }).catch(() => {});
+  }).catch(() => {}));
+
+  // Wait for the whole fan-out. The catches above keep a single failed fetch
+  // from rejecting the pass, so this settles once every socket this pass opened
+  // has been returned, which is the moment the single-flight guard may run the
+  // next one.
+  await Promise.allSettled(jobs);
 }
 
 function connect() {
-  const es = new EventSource("/v1/events");
+  // `/v1/events` on a plain daemon, and one of the hub's two spellings when a
+  // hub is serving this. An EventSource sets no headers, so the room this
+  // board is scoped to can only be said in the URL. See `js/rooms.js`.
+  const es = new EventSource(
+    typeof eventsURL === "function" ? eventsURL() : "/v1/events");
   const conn = document.getElementById("conn");
   const label = document.getElementById("conn-t");
   // A reconnect means the daemon went and came back, and everything held in
@@ -1238,6 +1371,9 @@ function connect() {
   es.onopen = () => {
     conn.classList.add("live");
     label.textContent = "live";
+    // On a hub the room counter carries this, so that two indicators cannot
+    // disagree about whether the board is connected. See `paintRooms`.
+    if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
     // Assume the daemon is coming up until it says otherwise.
     //
@@ -1248,8 +1384,25 @@ function connect() {
     // here and the next health poll either confirms it or clears it a few
     // seconds later.
     alerting.settling(true);
+    // AND PULL THE CARDS NOW, not at the next poll. The stream reopening is the
+    // first sign the daemon is back, and without this the board sat on whatever
+    // it held when the hub went, for up to a poll interval, while the badge
+    // already said live. A restart is exactly when the held state is most
+    // likely stale, so this is where the wait was most visible. `refreshSoon`
+    // is debounced and single-flight, so an event that also fires coalesces
+    // with it rather than firing a second fetch.
+    refreshSoon();
+    // The audit pane heals on reconnect the same way the lists do: a stream that
+    // dropped may have missed an `audit` delta, so re-fetch the feed now. Guarded
+    // to an open pane by `onAuditEvent`, so a closed one pays nothing. See
+    // js/audit.js.
+    if (typeof onAuditEvent === "function") onAuditEvent();
   };
-  es.onerror = () => { conn.classList.remove("live"); label.textContent = "reconnecting"; };
+  es.onerror = () => {
+    conn.classList.remove("live");
+    label.textContent = "reconnecting";
+    if (typeof paintRooms === "function") paintRooms();
+  };
   ["task", "task-removed", "permission", "halted"]
     .forEach(k => es.addEventListener(k, refreshSoon));
   // A card that has gone takes its remembered placement with it. See
@@ -1280,6 +1433,13 @@ function connect() {
   //
   // So the daemon announces it and every window arms itself. What arrives
   // after this is the restart. What arrives without it is the session ending.
+  // The operational feed got a new line. Only re-fetched while the audit pane
+  // is open, so a closed pane pays nothing. The pane also re-fetches on this
+  // stream reopening via `refreshSoon`'s siblings and on being switched to. See
+  // js/audit.js.
+  es.addEventListener("audit", () => {
+    if (typeof onAuditEvent === "function") onAuditEvent();
+  });
   es.addEventListener("going-down", e => {
     let why = "";
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
@@ -1289,6 +1449,30 @@ function connect() {
   // only drawn on the runners pane, and `renderDispatch` is a single fetch, so
   // this redraws rather than trying to patch a row.
   es.addEventListener("dispatch", () => { renderDispatch(); });
+  // A ROOM CAME OR WENT. Only the merged stream carries this, because a board
+  // scoped to one room is talking to that room and not to the hub. The counter
+  // in the header is the thing that has to move, and a poll would make a room
+  // attaching take up to ten seconds to show.
+  //
+  // The event says WHICH rooms, and `loadHubRooms` is asked anyway rather than
+  // trusting it: the chip draws a host and an uptime the event does not carry,
+  // and one source of truth is worth one request.
+  es.addEventListener("rooms", () => {
+    // RE-SEED THE ALERT BASELINE BEFORE THE REFRESH RUNS, not after. A room
+    // attaching or detaching churns the whole card set: the incoming room's
+    // idle cards enter the aggregate as new ids, and the count crossing 1<->2
+    // flips every id between `room~id` and bare. `loadHubRooms` also reseeds,
+    // but only after an awaited `/_hub/rooms` fetch and never at all when the
+    // 2s throttle drops the call, so `refreshSoon`'s `check` could win the race
+    // and announce the incoming room's two-hour-idle cards as freshly ready.
+    // This event only fires on a membership change, so the set is by definition
+    // not stable and reseeding is exactly right. Guarded like loadHubRooms, in
+    // case notify.js is absent.
+    if (typeof alerting !== "undefined" && alerting.reseed) alerting.reseed();
+    loadHubRooms();
+    // The cards belong to the rooms that are gone or newly here.
+    refreshSoon();
+  });
   es.addEventListener("overlays", e => {
     let next;
     try { next = JSON.parse(e.data) || []; } catch (err) { return; }
@@ -1362,7 +1546,7 @@ function connect() {
         : bad.slice(0, 3).map(f => f.label).join(", ") + ` and ${bad.length - 3} more`);
     alerting.play("permission");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
-    toast(title, body + ". the runners tab says why", "runners");
+    toast(title, body + ". the rooms tab says why", "runners");
   });
   // Atrium is asking a registry whether a newer runner is published, and a
   // launch is waiting on the answer.

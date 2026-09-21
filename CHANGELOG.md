@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The board header holds its shape from a phone to a wide monitor.**
+
+  Between 900 and 1150 pixels the header used to run off the right edge and hand you a sideways scrollbar. Now the
+  navigation shrinks and scrolls inside its own track, so the header stays put and only the controls that cannot
+  fit move. At touch widths the header tap targets reach 40 pixels, a thumb rather than a mouse point. And the
+  board-wide auto toggle keeps its word: it reads ASK or AUTO even when the pill is at its narrowest, instead of
+  collapsing to an empty capsule you had to guess at.
+
+  A headless browser test pins all of this down so it cannot regress unseen. Run steps are in the header of
+  `scripts/test-board-headless.js`.
+
 - **Atrium is told where your repositories live, instead of walking the disk guessing.**
 
   A provider is a name you choose, a root folder, and the layout under it. Defining one adopts every checkout
@@ -41,6 +52,293 @@ section heading is just "what landed in this iteration."
 
   `docs/providers-design.md`, `docs/test-plan-z-providers.md`, and a recorded walkthrough at
   `scripts/walkthrough/providers.spec.js`.
+
+- **The board and the room link are separate, independently-bound surfaces.**
+
+  The hub serves two things: the board you open, and the socket rooms dial in to. They are now cleanly split. The
+  board (`--addr`) is loopback-only and refuses a non-loopback bind, because it has no login. The room link
+  (`--link`) may bind wide (`0.0.0.0` or a chosen interface) and carries the transport menu (direct/mTLS, zrok,
+  OpenZiti) - safe on a wide bind because the direct transport is mTLS with a pinned CA and hub-signed room certs,
+  which the board lacks. `--link-advertise` sets the address minted into join tokens and is required when the link
+  binds wide, so a token never carries an unreachable loopback address. This lets a LAN room dial the hub over
+  mTLS directly, with no overlay.
+
+- **The db event window can be bounded, so the primary database stops growing (opt-in).**
+
+  The db event sink can keep only a recent per-card window instead of every event forever. Off by default: with no
+  window set, the db is unbounded exactly as before. When the window is set, the oldest events roll off (already
+  durable in a cold sink if one is configured), and a card's event feed reports `rolled_off` so the board can show
+  that history rolled off rather than pretend it is complete. Together with db-shrink handing freed pages back to
+  disk, the operational database now plateaus instead of climbing.
+
+- **A restart item in the terminal cog menu.**
+
+  The terminal settings menu now has a restart that exits the session and resumes it on the same card, so an
+  operator can pick up new defaults or clear an update nag without losing the conversation. It calls the phase-2
+  `POST /v1/tasks/{id}/restart` behind a confirm, since the session drops for a few seconds before it reattaches.
+
+- **A throwaway or second room on one machine can keep off the machine's hooks: `--isolated`.**
+
+  A room writes its address to a FIXED shared file so hooks, the CLI and the control MCP find it without knowing its
+  dir. That is right for the one-room-per-machine case and wrong for two: a second room started with only port, dir
+  and database overrides still writes that same file, overwrites it, and every hook aimed at the first room starts
+  arriving at the second. `atrium2 room` and `atrium2 join` now take `--isolated`, which keeps this room's address in
+  a private file beside its `--dir` and never publishes the shared one, so the first room's hooks are left alone. The
+  takeover warning now also names the flag. Two rooms on two different machines never needed this: each machine has
+  its own file.
+
+- **The restart and launch path is concurrency-safe.**
+
+  Two restarts or launches racing on one card could both pass the "is a runner live" check before either spawned,
+  and both resume the same conversation id, braiding one transcript out of two. Launch and restart now serialize per
+  card id and per resume id through a keyed mutex held across the whole check-then-spawn window, a duplicate
+  `restart_atrium` ask is dropped while one is in flight, wind-down waits for the kill to take before it returns,
+  and the store is closed explicitly on the shutdown path. Covered by a concurrency test that spawns racing
+  restarts and asserts one runner survives.
+
+- **Databases give freed space back to disk.**
+
+  New room and hub databases open in SQLite incremental auto-vacuum mode, and a timer reclaims freed pages while the
+  daemon runs, so a store that pruned cards or rolled off history shrinks on its own instead of sitting at its
+  high-water mark. Existing databases are left as they are, because the mode cannot be switched without a full
+  rebuild, and the reclaim is a no-op when there is nothing to free. This is the complement to the event sink: the
+  sink keeps the database small going forward, this hands the space already freed back to the disk.
+
+- **A terminal theme through the launch tool, and a pluggable event sink (phase 1).**
+
+  `atrium_launch` now takes a `theme`, so a session started through the hub control MCP comes up in the palette the
+  operator meant rather than the board default. And event storage sits behind an `EventSink` interface: the SQLite
+  `event` table is the `db` implementation, a rolling-JSONL `file` cold sink can run alongside it, and an
+  `event_sink` setting names which sinks are active, defaulting to `db` so nothing changes unless opted in. This is
+  the seam that lets the high-volume audit trail leave the primary database later, without a schema break.
+
+- **Control MCP phase 2, fixtures on/off from the board, and the board over a zrok share.**
+
+  Phase 2 finishes the hub-side control MCP. `restart_atrium` now forwards an instruction down the link and the
+  room restarts itself: it parks its other agents, spawns a detached restarter that outlives it, winds down, and
+  comes back via `atrium2 room`. One session can be restarted onto its own card with `--resume`, so a runner picks
+  up new defaults or clears an update nag without losing its conversation. Launch writes `BRIEF.md` on the room
+  again, so a hub-driven launch can hand a new session a briefing file. The room exports `ATRIUM_ROOM` to the
+  sessions it starts, so the per-session `X-Atrium-Room` header the http MCP registration carries actually
+  resolves. Separately, a fixture can be toggled on or off from its board pill without being deleted, and the hub
+  can optionally serve its board over a zrok share for remote access, with a failed share isolated so it never
+  takes the local board down.
+
+- **Control MCP moved off per-session stdio children onto one HTTP server on the hub (phase 1).**
+
+  Every claude session spawned its own `atrium-control.exe` stdio child, one process per session at about 24MB,
+  a dozen live at once. A single HTTP MCP server now runs on the hub at `/_hub/mcp`, so a session opens a
+  connection from inside its own claude process instead of spawning anything. It lives on the hub for the same
+  reason `internal/cli/control.go` exists: the thing that restarts a daemon has to outlive it, and the hub
+  already outlives rooms. Identity arrives per request in headers rather than per process in env: each session
+  sends `X-Atrium-Agent` and `X-Atrium-Room`, which Claude Code expands per session at connect, and the server
+  runs stateless. Loopback only, guarded on the caller's own RemoteAddr, because the overlay is not an auth
+  layer. Phase 1 ships `atrium_status` and the peer tools (peers, say, task, exit, and launch without its brief
+  file); `restart_atrium` and launch's brief return "not yet wired" until phase 2 adds the room-side handler.
+  Turning it on is a manual flip of the `atrium-control` entry in `.atrium/mcp.json` from the stdio child to the
+  http URL.
+
+- **Board terminal bar and path chip tidied, shipped by hub-only restart.**
+
+  Two board-CSS fixes, each built from a `claude/*` worktree and deployed by rebuilding `atrium2`, swapping the
+  binary, and restarting the hub process alone while the room kept running. The terminal bar's folder and cog
+  icons now match the worded buttons: a global `button.icon` rule in `dialogs.css` loaded after `terminal.css`
+  and drew them as a 23px transparent glyph, so `.term-bar button.icon` now pins the size and restores the chip
+  box and hover. The path chip's copy button was floating in full chip side-padding, so `#t-chips .chip.path`
+  drops the gap to 3px and tightens the padding, pulling the glyph next to the path.
+
+- **The hub snapshots its own store, and a restore is one command.**
+
+  The store halts on a corrupt database and refuses to start on one. That is the right posture and it is only
+  tolerable if there is something to go back to. Without this, "it halts" meant "it is gone".
+
+  A running hub writes a snapshot every ten minutes, using SQLite's own `VACUUM INTO` rather than copying the
+  file: everything committed since the last checkpoint lives in the write-ahead log beside it, so an operating
+  system copy of `hub.db` alone is a database missing exactly what happened most recently.
+
+  **Kept in tiers, not by count.** Everything from the last hour, one an hour for a day, one a day for a week,
+  one a week for a month: about thirty files covering a month, and the oldest as easy to find as the newest.
+  Fifty of something written every ten minutes is eight hours of history, all of it from today, and the two
+  questions people ask are "put it back to twenty minutes ago" and "what did this look like last week".
+
+  `atrium2 hub backups` lists them. `atrium2 hub restore <path>` puts one back, with the hub stopped, and
+  **moves what was there aside rather than deleting it**, printing where it went. Restoring is done under
+  pressure from a list of timestamps and the wrong one is one keypress away, so undoing a restore is another
+  restore. The snapshot is opened and checked before anything moves, because restoring a damaged file over a
+  working one turns a bad afternoon into a lost hub.
+
+  Neither is a pane on the board. A restore is what somebody reaches for when the board will not come up.
+
+- **Deleting a room is four steps, and the room takes one of them.**
+
+  Marking a room for deletion now does the thing it promised: **that room starts no new work.** Launching,
+  raising a card, posting intake or queueing a dispatch onto it is refused with the reason. Everything already
+  running carries on and can still be renamed, answered, shelved and finished, because work in flight is meant
+  to be worked out normally. Marking is still one click to undo and still destroys nothing.
+
+  **The room confirms it is finished, and the confirmation is the room saying it holds nothing.** The hub cannot
+  see whether a directory was cleaned up, a throwaway deleted or a session really ended, so it does not decide:
+  it waits to be told, in the one way a room speaks about itself. That is withdrawn the moment the room has work
+  again, so a confirmation cannot go stale into a removal.
+
+  So the ordinary path is: mark it, clear its cards, let it say so, stop it, remove it. A connected room is
+  never deleted, and one that never said it was finished is refused by name with what to do about it.
+
+  `--force` is still there for a machine that is never coming back, and still says what it does not do: it
+  removes the hub's record and nothing else.
+
+  `atrium2 hub room log` prints the whole of that, for one room or all of them, and answers for a room that has
+  already been removed.
+
+- **A machine that is not answering still shows its work, and nothing on it can be touched.**
+
+  A shut laptop used to drop off the board entirely, which reads as the work having gone. Its cards are drawn
+  now, from what that room last said, in one group at the bottom of every column and of the stack, shut unless
+  somebody opens it. What is running is what the board is for and is never pushed down the page by what is not,
+  and cards nobody can act on are one line saying the work still exists rather than a screen of things that do
+  not respond to being clicked.
+
+  One group for all of them, not one per room: it is the same kind of thing, and four headings for four dead
+  laptops is four times the furniture for one fact.
+
+  **Nothing opens.** A no-entry mark where the attach button would be, saying `room <name> is offline. cannot
+  restore terminal`. Clicking the card says the same in a sentence. The attach, resume and start chips are not
+  drawn, the terminals list does not hold those rows, and the hub refuses every request for that room by name:
+  "the room athens is not answering, so nothing on it can be opened or changed."
+
+  **Nothing is queued.** Not "we will apply this when the machine returns". A queue of intentions against a
+  machine nobody has heard from is a second source of truth, and reconciling it is the part that goes wrong.
+
+  **A room that has never connected still appears nowhere but the rooms tab.** It cannot have cards, so there is
+  nothing to draw, and it is inventory rather than work.
+
+  One room attached no longer means the hub skips merging. It used to, which was right when one room attached
+  was the same as one room existing, and it would now drop every shut machine's work off the board.
+
+- **A room tells its hub what it is holding, so a hub whose room is offline shows what was there.**
+
+  Rooms push, the hub writes it down. Not polled: the room is the only thing that knows something changed, and
+  a timer is either late or wasteful and is usually both. The room watches its own event stream and sends when
+  something happens, with a ceiling of a couple of seconds so a busy machine cannot thrash the hub's database,
+  and an announcement identical to the last one is dropped rather than sent. That last part is what keeps a
+  noisy room from being a noisy database: activity, output and telemetry all publish events and none of them
+  are cached, so most of what wakes the announcer up has nothing to say.
+
+  **What is cached is exactly what the room persists.** There is a new endpoint, `GET /v1/state`, that answers
+  with the stored rows rather than the view `/v1/tasks` returns. The view carries what is true only this
+  second: whether a card is supervised, what tool it is running, its telemetry, how long it has been idle. The
+  obvious answer was to send the view and strip those, and the obvious answer is a field list that goes stale
+  the day somebody adds a live field. Sending the stored row cannot drift, because there is nothing to keep in
+  step.
+
+  **The announcement is taken whole.** Anything the hub was holding that is not in it is discarded, because it
+  is no longer there. No merging and no row-by-row reconciliation. A discard is written to the audit log, which
+  is what turns "I am sure there was a card there" from an argument into a lookup. An announcement that
+  discarded nothing is not logged: a line every couple of seconds saying nothing was lost is a log nobody can
+  read.
+
+  **The cache is read only when the room is not answering.** While a room is connected it is asked, every time,
+  and the cache is written and never read. There is no third state where some of what you are reading is
+  current and some is remembered and nothing says which.
+
+  `atrium2 hub room log` prints that audit, for one room or all of them, and it outlives the rooms it is about.
+
+- **A room's settings are behind that room's cog, not in a list called "this machine".**
+
+  `settings -> this machine` had grown into nine unrelated things: the editor command, where pasted files land,
+  what is typed in front of a pasted path, which directories the picker may open, the worktree command, how
+  deep to look for repositories, the shared address file, the shell command and the scrollback. The name meant
+  nothing. On a board serving four machines it meant less than nothing, and the pane asked which machine you
+  meant the first time you touched any box in it.
+
+  A ROOM IS THE UNIT, NOT A MACHINE. One machine can hold more than one room and a hub can be a room itself, so
+  each of those is a fact about one room. They now open from the cog on that room's row, already scoped: the
+  room is in the title of the dialog, and nothing asks again.
+
+  **`run agents here too` moved there too**, onto the hub's own room, which now appears in the list whether or
+  not it is running. That was the one control that could not live behind a cog until the row it belongs to
+  existed before the switch was thrown.
+
+  **A board with no hub draws one row, `this machine`, with the same cog.** The daemon is the hub with its own
+  room, and without that row the settings would have been in the page and unreachable.
+
+  **An offline room's pane shows what the hub knows and no fields.** The only authoritative answer about a room
+  comes from that room. An empty box that saves nowhere is worse than no box.
+
+- **The rooms tab shows every room, not only the ones that answered.**
+
+  The tab listed what was attached, which meant a machine somebody shut disappeared from the one screen whose
+  job is to say what exists. A room added and not yet joined had nowhere to appear at all.
+
+  It now draws the hub's own record, in three groups and in this order:
+
+  - **here now**, because what is running is what the board is for and is never pushed down the page by what
+    is not
+  - **not answering**, which says what was last heard and that it cannot be acted on
+  - **never connected**, which cannot have cards and so appears here and nowhere else on the board
+
+  Every row carries a transport badge, a cog, and what the machine calls itself beside what the hub calls it.
+  The badge is a badge and never a column: transport is worth seeing at a glance and is not a concept in this
+  UI.
+
+  **The header counter now reports the other half.** `1/2 rooms` is the one place a missing room is counted,
+  because every other number on the board is live only on purpose. Three agents waiting for permission on a
+  laptop that is shut is not three things to do. A room that has never connected is not counted either: nothing
+  is missing because of it.
+
+  The cog holds what the hub knows about that room and one action, marking it for deletion, which destroys
+  nothing and is one click to undo. **The board still cannot mint a join string**, and that line has not moved:
+  atrium has no login, the board may be served over an overlay, and a page that could mint one would let
+  anybody who opens it enrol a machine that runs agents. Adding a room, replacing its join string and removing
+  one are done at a terminal on the hub, where being there is the credential.
+
+  `/_hub/rooms` still answers what is attached, because the picker, the grouping and every counter mean that
+  one. The durable list is `/_hub/inventory`, and the two are separate because they are different questions.
+
+- **The hub knows which rooms exist, and it names them.**
+
+  A hub held nothing at all, which made its restart free and left it unable to answer the one question only it
+  can: have I already made that room. A join string authorised a join rather than a join AS ANYTHING IN
+  PARTICULAR, so a room named itself at enrolment and the hub signed whatever it asked for.
+
+  The hub now has a store of its own, `internal/hubstore`. It still holds no WORK: no sessions, no terminals,
+  no agent processes, and no authority over any of them, so stopping it still costs nobody a session. What it
+  holds is its own truth, which nothing else can answer. Which rooms exist, what they are called, how they may
+  connect, their join secrets, and which are on their way out.
+
+  **The hub names the room, and the name is minted into the join string.** You add a room on the hub, and the
+  secret that authorises it is bound to that one name. Spending it is the proof and the answer in one step, so
+  there is nothing left for a room to claim and no hand-written check refusing a name already taken. The room
+  reads its own name back out of the certificate the hub signed rather than out of the string it was handed:
+  editing the string changes nothing, because the string is not what the hub reads afterwards. `--name` on the
+  room is gone, and so is the fallback that let a signing request supply a name when the hub had none.
+
+  A room the hub has no record of cannot attach, even holding a certificate this hub signed. That is checked on
+  every heartbeat rather than only at attach, because the store is a file and forcing a room out is another
+  process writing to it.
+
+  New commands, all of which work whether or not a hub is running:
+
+  - `atrium2 hub room add <name>` writes the room down and prints its join string, once
+  - `atrium2 hub room ls` lists every room, connected or not, with what each calls itself beside what it is
+    called
+  - `atrium2 hub room token <name>` mints a fresh string and retires the old one, because the hub holds a hash
+    and cannot show what it printed before
+  - `atrium2 hub room mark <name>` puts a room on its way out, reversibly
+  - `atrium2 hub room rm <name>` refuses a room that is not marked, one the hub last saw holding cards, and any
+    room heard from in the last twenty seconds. `--force` is for a machine that is never coming back and says
+    what it does not do.
+
+  `atrium2 hub token` is gone with the anonymous join it printed. An empty hub now says how to give itself a
+  room instead of printing a string that would have enrolled anything under any name.
+
+  The cache and the audit log are in the schema and nothing writes to them yet. Rooms over zrok and OpenZiti
+  still name themselves, which is what they always did and is not what the direct path now does: the hub says
+  so at startup rather than implying a guarantee it is not keeping. See `docs/decisions.md` 18.
+
+  The store halts rather than degrading, the same posture `internal/store` already has, and refuses to start on
+  a database it cannot read. The room listener closes and stays closed, so rooms park on the backoff they
+  already have, and the board stays up to say what broke.
 
 - **One alert per event, in one form, wherever you are looking.**
 
