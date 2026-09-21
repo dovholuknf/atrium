@@ -449,7 +449,15 @@ const alerting = (() => {
     }
 
     // 3. NOBODY IS LOOKING. Windows says it, and no window toasts.
+    //
+    // Recorded FIRST, because this is the one path that never reaches `toast`
+    // and so the one the toast log never saw. A desktop alert fired while every
+    // window was unfocused rang and popped and then left no trace: the whole
+    // symptom this fixes. Cases 1, 2 and 4 all land on a `toast`, here or in a
+    // sibling window sharing this origin's localStorage, and the wrapper in
+    // toast-log.js records those. Only this branch has to say so itself.
     if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
+      logNotification(title, body, goTo, key, taskFor || null);
       showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor);
       return;
     }

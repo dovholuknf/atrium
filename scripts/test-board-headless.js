@@ -917,6 +917,55 @@ async function main() {
     }
     await page.evaluate(() => { try { window.__fakeSolo.close(); } catch (e) {} });
 
+    // ── a desktop notification lands in the toast log ───────────────────────
+    // THE BUG THIS SECTION EXISTS FOR. When no atrium window has focus, notify
+    // fires ONE desktop notification and no toast. The log was fed only by the
+    // toast, so an alert that rang and popped while the board was unfocused left
+    // no trace: clint saw and heard two and could find neither. This drives the
+    // nobody-looking branch and asserts the alert is recorded even though no
+    // toast is shown, and that a toast is NOT also shown (either/or, not both).
+    const toastRecord = await page.evaluate(() => {
+      // The nobody-looking branch: this window is not focused and no sibling
+      // claims focus, desktop is allowed, and sound is on. The OS notification
+      // is stubbed so the headless run does not try to raise a real one, and it
+      // is counted so the desktop path is provable, not merely inferred from
+      // the log.
+      localStorage.setItem("atrium.toastlog", "[]");
+      localStorage.removeItem("atrium.toastlog.seen");
+      window.focusIsHere = () => false;
+      window.focusIsElsewhere = () => "";
+      window.desktopAllowed = () => true;
+      window.__notified = 0;
+      window.showNotification = () => { window.__notified++; return null; };
+      document.getElementById("toasts").innerHTML = "";
+      alerting.set({ muted: false, desktop: true });
+      alerting.notify("clint: a held message", "a peer is waiting on this session",
+        "stack", "", "held-1", null, "", "", {});
+      return {
+        notified: window.__notified,
+        toasts: document.querySelectorAll("#toasts .toast").length,
+        log: JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+      };
+    });
+    if (toastRecord.notified !== 1) {
+      fail("the nobody-looking alert did not take the desktop path (showNotification " +
+        "called " + toastRecord.notified + " times): the test did not exercise the bug.");
+    }
+    if (toastRecord.toasts !== 0) {
+      fail("the nobody-looking alert also drew a toast: the either-toast-or-desktop " +
+        "behavior was broken, they must never both fire.");
+    }
+    if (toastRecord.log.length !== 1 ||
+        toastRecord.log[0].title !== "clint: a held message") {
+      fail("a desktop-only notification was not recorded in the toast log: " +
+        JSON.stringify(toastRecord.log) + ". A desktop alert fired while the board " +
+        "is unfocused must still be findable afterward.");
+    }
+    // Restore the stubs so nothing below inherits them, and clear the log.
+    await page.evaluate(() => {
+      try { localStorage.setItem("atrium.toastlog", "[]"); } catch (e) {}
+    });
+
     // ── a popped-out window rides out a hub restart, then recovers ──────────
     // A hub-only deploy leaves the hub with no room for about a second, and it
     // answers a card poll with a 503 "no room is attached" in that window. The
@@ -1416,8 +1465,10 @@ async function main() {
     "picks up a live event on the `audit` delta with no reload, and the board " +
     "skin follows the room-picker scope (ALL wears the " +
     "hub's, each room its own, a save lands in the current scope, a room " +
-    "attaching leaves the ALL skin alone), and a persisted skin heals when a " +
-    "room attaches after a load that could not read settings, with no reload.");
+    "attaching leaves the ALL skin alone), a persisted skin heals when a " +
+    "room attaches after a load that could not read settings, with no reload, " +
+    "and a desktop notification fired while no window has focus is recorded in " +
+    "the toast log without also drawing a toast.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
