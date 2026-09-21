@@ -1564,6 +1564,33 @@ function setTermFont(px) {
   onTermResize();
 }
 
+// SIT THE GRID ON THE FOOTER. xterm draws whole rows, so the grid is
+// `rows * cellHeight` and rarely the exact height of `#t-screen`: the leftover
+// is up to one line, and left to itself it falls below the last row as a band
+// of the host's background between the terminal and the help bar. That band is
+// the dead space clint circled.
+//
+// The fix is to size `.xterm` to the grid exactly and let `#t-screen`'s
+// `justify-content: flex-end` park it at the bottom, so the leftover joins the
+// air under the bar rather than sitting above the footer. `fit()` measures
+// `#t-screen`, not `.xterm`, so writing this height back is not a feedback loop:
+// the next fit proposes the same rows.
+//
+// Called after every fit, since both the row count (a resize) and the cell
+// height (a font change) move the grid.
+function sizeTermHost() {
+  if (!term) return;
+  const host = document.getElementById("t-screen");
+  const el = host && host.querySelector(".xterm");
+  if (!el) return;
+  let cell = 0;
+  try { cell = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
+  // Nothing measured yet: leave the 100% fallback in place rather than collapse
+  // the host to zero.
+  if (!cell) { el.style.height = ""; return; }
+  el.style.height = Math.round(term.rows * cell) + "px";
+}
+
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached
@@ -1577,6 +1604,9 @@ function onTermResize() {
   const wasCols = term.cols, wasRows = term.rows;
 
   termFit.fit();
+  // After the fit, whatever it decided: the grid may have changed rows, or the
+  // cell height may have moved under a font change with the rows the same.
+  sizeTermHost();
 
   const changed = term.cols !== wasCols || term.rows !== wasRows;
   noteScrollAct(changed ? "fit(changed)" : "fit(same)");

@@ -768,6 +768,9 @@ function openTerm(task) {
   // hidden element and the runner is told a nonsense width.
   requestAnimationFrame(() => {
     termFit.fit();
+    // Size the host to the fitted grid so the terminal sits on the footer with
+    // no remainder band above it. See `sizeTermHost`.
+    sizeTermHost();
     connectTerm(task.id);
     renderTermList();
   });
