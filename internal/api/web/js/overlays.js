@@ -206,6 +206,9 @@ function paintOverlays() {
   const host = document.getElementById("overlays");
   if (!host) return;
   setHTML(host, overlays.map(overlayCard).join(""));
+  // The redo surface reads the same `overlays` global, so a change made on the
+  // classic panel repaints it too. Guarded so js/expose2.js is deletable.
+  if (typeof paintExpose2 === "function") paintExpose2();
 }
 
 function overlayCard(o) {
