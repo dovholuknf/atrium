@@ -390,6 +390,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
+	// A queued peer or relay message keeps trying to type in on the same backoff
+	// as the bus, so the two paths behave alike. The operator's own queued
+	// messages are not retried this way: they are already on the line they are
+	// looking at when a terminal is free, and the gate is about peer text. See
+	// pendinginject.go.
+	if from != "" {
+		d.deferPeerInjection(taskID, m.ID, from, body.Text)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
 }

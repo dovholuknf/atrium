@@ -345,11 +345,17 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := d.st.QueueFromPeer(target.ID, text, from); err != nil {
+	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.publishTask(target.ID)
+	// The queue is the durable copy and the hooks will drain it. On top of that,
+	// keep trying to type it in when the operator's line clears, on a widening
+	// backoff, so a message does not have to wait for the target's next tool call
+	// to appear on screen. See pendinginject.go.
+	d.deferPeerInjection(target.ID, m.ID, from, text)
 	log.Printf("[atrium] %s told %s something (%d chars)", from, to, len(text))
 
 	w.Header().Set("Content-Type", "application/json")
