@@ -1680,9 +1680,51 @@ function attachIsInFlight(card) {
 function reconcileAttached(tasks) {
   if (!termTask) return false;
   const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
-  if (live && live.id !== termTask.id) retagTermId(live.id);
+  if (live && live.id !== termTask.id) {
+    retagTermId(live.id);
+    // The room set just changed under an attached pane, which is what flipped the
+    // id. That same change moves the header's height (the room picker and chips
+    // come and go), the header ResizeObserver re-fits the terminal, and a re-fit
+    // that resizes the grid leaves the cursor misplaced: a viewer that is not the
+    // binding one gets no SIGWINCH and so no repaint, and a claude-code TUI does
+    // repaint but does not fully re-park its own input-line cursor. Neither is
+    // caught by the retag above, which keeps the socket open and replays nothing.
+    // So re-attach once, which is the only thing that restores the cursor the way
+    // an initial attach does: `openTerm`/`onopen` resets the terminal and the
+    // daemon replays through `screen.textWithCursor`. See `resyncCursorAfterFlip`.
+    resyncCursorAfterFlip();
+  }
   if (!attachIsInFlight(termTask.id) && !live) { clearTermPane(); return true; }
   return false;
+}
+
+// A ROOM FLIP RE-ATTACHES THE PANE ONCE, so the cursor is restored the way it is
+// on a first attach. This is the fix for the garble that came back whenever a
+// room attached or detached.
+//
+// It is deliberately the re-attach the flicker-flap work took OUT of the render
+// loop, put back as a single gated event rather than a per-poll one. `retagTermId`
+// keeps the socket open on a flip, which is right for everything except the
+// cursor: no new socket means no replay, and the live re-fit that the flip
+// triggers moves xterm's grid with nothing to re-sync the cursor against. A
+// re-attach runs the daemon's replay, and that replay ends with the cursor move
+// `textWithCursor` owes an attaching viewer.
+//
+// GATED TO ONE PENDING RECONNECT, and never in a solo window: a solo window
+// carries its own reconnect path keyed off its hash, not this slot. The next
+// poll sees the id already re-resolved, so this fires once per flip and cannot
+// loop the way the raw-id teardown did.
+let cursorResyncPending = false;
+function resyncCursorAfterFlip() {
+  if (termOnly() || !term || !termTask) return;
+  if (cursorResyncPending) return;
+  cursorResyncPending = true;
+  // A frame later, so the flip's re-render and its re-fit have settled before the
+  // reconnect measures and replays into the pane.
+  requestAnimationFrame(() => {
+    cursorResyncPending = false;
+    if (term && termTask) connectTerm(termTask.id);
+  });
 }
 
 function retagTermId(id) {

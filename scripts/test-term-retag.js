@@ -61,11 +61,16 @@ const harness = new Function(`
     removeItem: k => { delete store[k]; },
   };
   let tornDown = 0;
+  let resynced = 0;
   let termTask = null;
   let termKindFor = "";
   function termOnly() { return false; }
   function rlog() {}
   function clearTermPane() { tornDown++; termTask = null; }
+  // The real one reconnects the socket a frame later so the daemon replays with
+  // the cursor restored. Here we only need to know reconcileAttached ASKS for it
+  // on a flip, and never on a steady poll or a genuine teardown.
+  function resyncCursorAfterFlip() { resynced++; }
   ${reconcileSrc}
   ${retagSrc}
   return {
@@ -78,6 +83,7 @@ const harness = new Function(`
     inFlight: attachIsInFlight,
     store,
     torn: () => tornDown,
+    resynced: () => resynced,
   };
 `)();
 
@@ -107,12 +113,27 @@ if (harness.getKindFor() !== "01a0") {
   fail("termKindFor kept the stale tagged id, so the next open of this card reads " +
     "as a different one and resets its runner/shell choice.");
 }
+// THE FLIP ASKS FOR A CURSOR RESYNC. The re-fit a room-set change triggers is
+// what left the cursor misplaced, and re-resolving the id in place replays
+// nothing, so the flip has to re-attach once to restore the cursor.
+if (harness.resynced() !== 1) {
+  fail("a room-set change re-resolved the id but did not schedule a cursor resync, " +
+    "so the input garble that returns on a room attach/detach is not fixed. " +
+    "resync count is " + harness.resynced() + ".");
+}
 
 // And a second, unchanged poll is stable: nothing to re-resolve, nothing torn.
 tore = harness.reconcile([sup("01a0"), sup("02b1")]);
 if (tore || harness.getTask().id !== "01a0") {
   fail("the reconciled pane did not settle: a steady-state poll tore it down or " +
     "re-tagged it again.");
+}
+// A STEADY POLL DOES NOT RESYNC. The resync is a one-shot per flip, or a room
+// that never changes would re-attach the pane on every poll and reset the
+// terminal under whoever is typing.
+if (harness.resynced() !== 1) {
+  fail("a steady-state poll scheduled another cursor resync, so a quiet board " +
+    "would re-attach the pane on every poll. resync count is " + harness.resynced() + ".");
 }
 
 // ── 1 -> 2: the bare attached card is re-resolved to tagged, both directions ──
@@ -127,6 +148,13 @@ if (harness.getTask().id !== "claude-sg4~01a0") {
   fail("the attached card was not re-resolved to the tagged id after a room " +
     "joined. termTask.id is " + JSON.stringify(harness.getTask().id) + ".");
 }
+// The other direction of the flip resyncs too: the re-fit that misplaces the
+// cursor happens whether a room joined or left.
+if (harness.resynced() !== 2) {
+  fail("a room joining re-resolved the id but did not schedule a cursor resync. " +
+    "The bare->tagged direction must restore the cursor as well. resync count is " +
+    harness.resynced() + ".");
+}
 
 // ── a genuinely gone card is still torn down ─────────────────────────────────
 harness.setTask({ id: "01a0", supervised: true });
@@ -134,6 +162,12 @@ tore = harness.reconcile([sup("09z9")]);
 if (!tore) {
   fail("an attached card with no supervised match by bare id was NOT torn down. " +
     "The fix must not blind the poll to a card that really left.");
+}
+// A CARD THAT LEFT DOES NOT RESYNC. There is nothing to re-attach to, and the
+// resync is only for a card that is still here under a re-resolved id.
+if (harness.resynced() !== 2) {
+  fail("a torn-down card scheduled a cursor resync, which would re-attach a pane " +
+    "whose card is gone. resync count is " + harness.resynced() + ".");
 }
 
 // ── a torn card while an attach is in flight is left alone ───────────────────
