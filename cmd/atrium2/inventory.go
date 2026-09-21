@@ -104,6 +104,24 @@ func (i inventory) MarkRoom(name string, marked bool) error {
 	return i.store.Mark(r.ID, marked)
 }
 
+// ForgetRoom drops a room's durable record.
+//
+// FORGET, NOT BAN, and the store's Force is the honest name for it: the record
+// and its cached cards and its secret go, the machine is left holding whatever
+// it had, and a room that dials in again is written down fresh. `Force` rather
+// than `Remove` because Remove insists on the mark-clear-confirm ceremony a
+// terminal operator goes through, and forgetting a stale or duplicate row from
+// the picker is exactly the case where none of that has happened and there is
+// nothing to wait for. The caller in internal/link has already refused an
+// attached room, which is the one guard that matters here. See `Inventory`.
+func (i inventory) ForgetRoom(name string) error {
+	r, err := i.store.ByName(name)
+	if err != nil {
+		return knownRooms(i.store, name, err)
+	}
+	return i.store.Force(r.ID, "forgotten from the board")
+}
+
 // Remembered is what a room last said it was holding.
 //
 // THE ONLY PLACE THE CACHE IS READ, and the caller is responsible for only
@@ -137,8 +155,10 @@ func (i inventory) SetHubSkin(name string) error { return i.store.SetHubSkin(nam
 // BoardAuto and SetBoardAuto are the board-wide auto-approve flag, held by the
 // hub and enforced hub-side on the permission relay. Board policy, so the hub's
 // to hold, the same as the skin. See `internal/link/autoapprove.go`.
-func (i inventory) BoardAuto() (bool, *time.Time, error)         { return i.store.BoardAuto() }
-func (i inventory) SetBoardAuto(on bool, until *time.Time) error { return i.store.SetBoardAuto(on, until) }
+func (i inventory) BoardAuto() (bool, *time.Time, error) { return i.store.BoardAuto() }
+func (i inventory) SetBoardAuto(on bool, until *time.Time) error {
+	return i.store.SetBoardAuto(on, until)
+}
 
 // ShareAuth, SetShareAuth and SetSharePass are the login a PUBLIC zrok board
 // share is created behind, held by the hub the same as the skin. This adapts
