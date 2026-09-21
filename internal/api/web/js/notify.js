@@ -306,6 +306,19 @@ function bareId(id) {
   return i > 0 ? s.slice(i + 1) : s;
 }
 
+// The room a card lives in, read off the tag the hub writes on its id. The other
+// half of `bareId`: the aggregate view addresses a card as `room~id` while MORE
+// THAN ONE room is attached and serves it bare with one (see the hub's tagFor /
+// splitTag in internal/link/rooms.go), so the tag is present EXACTLY when there
+// is more than one room and telling them apart matters. Answers "" for a bare id,
+// which is one room attached or scoped mode, and the badge that reads this then
+// draws nothing on its own. The tag is the room name, not an id.
+function roomOf(id) {
+  const s = String(id);
+  const i = s.indexOf("~");
+  return i > 0 ? s.slice(0, i) : "";
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();

@@ -293,6 +293,13 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* Which room a card runs in, shown only while more than one is attached (the id carries a `room~` tag
+     exactly then). The path colour, because a room is where a card lives, kept distinct from the runner and
+     warn chips beside it. */
+  .chip.room {
+    background: rgba(var(--path-rgb),.14); border-color: rgba(var(--path-rgb),.32); color: var(--path);
+    font-weight: 600;
+  }
   /* A peer message is waiting to be typed into this terminal and the operator's line is in the way. A pulsing
      bang, distinct from the breathing activity dot, so a glance across the strip finds the card holding
      something for him. Opacity only, like the other live marks, so it composites on the GPU. Shows nothing
