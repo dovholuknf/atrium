@@ -84,6 +84,24 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
+// The hide-doers strip. Three live rows: an agent-launched doer (the
+// `origin:agent` tag the launch cap counts), a human's own terminal with no
+// such tag, and a PINNED doer. Hiding the doers must drop the first and keep the
+// other two, since pinning is the operator keeping one and the human's own is
+// never a doer. All supervised so they draw as live rows rather than cold.
+const DOER = {
+  id: "doer1", status: "running", display_title: "agent doer", runner: "claude",
+  rank: 1, worktree: "/tmp/doer", why: "", idle_seconds: 0, wait_seconds: 0,
+  created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
+  tags: ["origin:agent"], supervised: true, offline: false, pinned: false, auto_approve: false
+};
+const HUMANT = Object.assign({}, DOER, {
+  id: "humant", display_title: "my terminal", tags: []
+});
+const PINDOER = Object.assign({}, DOER, {
+  id: "pindoer", display_title: "pinned doer", pinned: true
+});
+
 let tasksMode = "first";   // first | hang | second | pinned | loop
 // Whether the cached list agrees the loop card is attachable. Off during the
 // loop repro (the list lags the live card), on once it has recovered.
@@ -205,6 +223,8 @@ const server = http.createServer((req, res) => {
     // The pinned-cold strip: the terminated card while its pin holds it, and an
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
+    // The hide-doers strip: a doer, a human's terminal, and a pinned doer.
+    if (tasksMode === "doers") { sendJSON(res, { tasks: [DOER, HUMANT, PINDOER] }); return; }
     // The attach-loop repro. The cached LIST lags the live card: it carries the
     // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
     // it down) while the single-card poll above still says supervised (so the
@@ -425,6 +445,75 @@ async function main() {
           "drop it from the strip for good, not hide it once.");
       }
     }
+    tasksMode = "first";
+
+    // ── the hide-doers toggle hides agent-launched doers, keeps human rows ──
+    // The strip carries a doer (the `origin:agent` tag), a human's own terminal,
+    // and a pinned doer. With the toggle off all three draw. Turning it on drops
+    // the plain doer and keeps the human row and the pinned doer, and the header
+    // says how many went. Driven through the board's own functions so the
+    // device-scoped persistence and the count are exercised, not faked.
+    tasksMode = "doers";
+    await page.evaluate(() => {
+      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
+      setHideDoers(false);
+      renderTermList();
+    });
+    await page.waitForSelector('#term-list .card.tab[data-id="doer1"]',
+      { state: "attached", timeout: 15000 });
+    const doersBefore = await page.evaluate(() => ({
+      doer: !!document.querySelector('#term-list .card.tab[data-id="doer1"]'),
+      human: !!document.querySelector('#term-list .card.tab[data-id="humant"]'),
+      pinned: !!document.querySelector('#term-list .card.tab[data-id="pindoer"]'),
+      toggleOff: !hideDoersOn()
+    }));
+    if (!doersBefore.doer || !doersBefore.human || !doersBefore.pinned) {
+      fail("with hide-doers off the strip did not draw all three rows: " +
+        JSON.stringify(doersBefore));
+    }
+
+    // Turn it on. The plain doer goes, the human row and the pinned doer stay,
+    // the toggle lights up, and it reads "1 doer hidden".
+    await page.evaluate(() => { setHideDoers(true); renderTermList(); });
+    const doersAfter = await page.evaluate(() => {
+      const btn = document.querySelector("#term-list .termdoers");
+      return {
+        doer: !!document.querySelector('#term-list .card.tab[data-id="doer1"]'),
+        human: !!document.querySelector('#term-list .card.tab[data-id="humant"]'),
+        pinned: !!document.querySelector('#term-list .card.tab[data-id="pindoer"]'),
+        on: hideDoersOn(),
+        label: btn ? btn.textContent.trim() : "",
+        lit: !!(btn && btn.classList.contains("on"))
+      };
+    });
+    if (doersAfter.doer) {
+      fail("hide-doers left the agent-launched doer in the strip.");
+    }
+    if (!doersAfter.human) {
+      fail("hide-doers hid the human's own terminal: only doers must go.");
+    }
+    if (!doersAfter.pinned) {
+      fail("hide-doers hid a PINNED doer: pinning keeps a row even when hiding.");
+    }
+    if (!doersAfter.on || !doersAfter.lit) {
+      fail("the hide-doers toggle did not persist/light when turned on: " +
+        JSON.stringify(doersAfter));
+    }
+    if (!/1 doer hidden/.test(doersAfter.label)) {
+      fail("the hide-doers header did not show the hidden count '1 doer hidden': " +
+        JSON.stringify(doersAfter.label));
+    }
+
+    // Off again: the doer comes back, so hiding is a view, not a deletion.
+    await page.evaluate(() => { setHideDoers(false); renderTermList(); });
+    const doersRestored = await page.evaluate(() =>
+      !!document.querySelector('#term-list .card.tab[data-id="doer1"]'));
+    if (!doersRestored) {
+      fail("turning hide-doers back off did not restore the doer row.");
+    }
+    await page.evaluate(() => {
+      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
+    });
     tasksMode = "first";
 
     // ── the terminals tab is not blank at phone width ───────────────────────
@@ -1213,6 +1302,8 @@ async function main() {
   if (bad) process.exit(1);
   console.log("a terminated pinned terminal can be dismissed from its right-click " +
     "menu and stays gone on the next render, " +
+    "the hide-doers toggle hides agent-launched doers while keeping the human's " +
+    "own and pinned rows and showing a hidden count, " +
     "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
