@@ -654,6 +654,11 @@ type runner struct {
 	// and it would be a guess where this is a record.
 	midLine   bool
 	lastTyped time.Time
+	// echoPeers turns on shared multi-pane input: keystrokes from one attach
+	// are mirrored display-only to the other attaches of this runner. OFF by
+	// default, because an unconditional echo doubles every character in a cooked
+	// shell. See `setEchoPeers` and `echoToPeers`.
+	echoPeers bool
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -977,6 +982,63 @@ func (r *runner) fanout(chunk []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for ch := range r.watchers {
+		cp := make([]byte, len(chunk))
+		copy(cp, chunk)
+		select {
+		case ch <- cp:
+		default:
+		}
+	}
+}
+
+// SHARED MULTI-PANE INPUT, and it is OFF by default. See
+// `docs/multi-pane-input-design.md`.
+//
+// The panes already share one pty and one output stream, so a peer sees
+// anything the RUNNER draws. What it does not see is a line still being typed:
+// a raw-mode app repaints its own input line for the pane that is typing and
+// emits nothing broadcastable until submit. This mirrors those keystrokes to
+// the other panes so all of them show what any pane is typing.
+//
+// PER RUNNER, NOT PER VIEWER, because the hazard it guards against is a
+// property of the runner. In cooked mode, or under any app that echoes its
+// input back to the output stream, the typed byte already reaches every pane
+// through `fanout`. Echo it again on top and each peer shows it twice, so a
+// bare shell would double every character. The operator turns this on for a
+// terminal they know is a raw-mode agent, and it covers every pane on it.
+func (r *runner) setEchoPeers(on bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.echoPeers = on
+}
+
+// echoToPeers mirrors one pane's keystrokes, display-only, to the OTHER panes.
+//
+// A DISPLAY ECHO AND NOTHING ELSE. The bytes still reach the pty exactly once,
+// through the single `Write` the attach reader already makes. This never calls
+// `Write` and never touches the pty, so turning the mode on cannot double what
+// the app receives, only what peers see.
+//
+// `self` is the writer's own output channel, skipped because that pane already
+// shows its own typing: the app it is talking to repaints the line there. Every
+// other watcher is a peer and gets the bytes. A nil `self`, which is a keystroke
+// that somehow arrived before this attach subscribed, excludes nobody, and that
+// is correct: the writer is not yet a watcher, so there is no pane to double.
+//
+// A no-op unless the mode is on, so the default costs one lock and a bool.
+func (r *runner) echoToPeers(chunk []byte, self chan []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.echoPeers {
+		return
+	}
+	for ch := range r.watchers {
+		if ch == self {
+			continue
+		}
 		cp := make([]byte, len(chunk))
 		copy(cp, chunk)
 		select {
