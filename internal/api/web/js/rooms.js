@@ -686,9 +686,8 @@ async function markRoom(name, marked) {
 // `/_hub/inventory/forget`, and the two must not be confused.
 async function rejectRoom(name) {
   if (!await confirmUser("forget " + name + "?",
-    "It comes off this hub's picker now. Nothing on that machine changes, and this is not a " +
-    "block: if it is still running atrium it writes itself back down and reappears. Use this " +
-    "for a stale or duplicate record of a machine that has gone.",
+    "Removes it from this hub's room list. Nothing on that machine changes. If it is still " +
+    "running atrium, it reappears when it reconnects. Use this to clear a stale or duplicate room.",
     "forget it")) return;
   try {
     const got = await plainFetch("/_hub/inventory/forget", {
