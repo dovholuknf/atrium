@@ -60,18 +60,29 @@ func joinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jwt != "" {
-				// Enrolling a JWT during join is the design's follow-up, not yet
-				// wired. The daemon already enrols a JWT for board exposure
-				// (internal/daemon.EnrollZiti); join will reuse it. Until then,
-				// say the exact next step rather than failing at the first dial.
-				return fmt.Errorf(
-					"--openziti was given a JWT, and enrolling it during join is not wired yet. " +
-						"enroll it first with `ziti edge enroll <jwt> -o identity.json`, then " +
-						"pass `--openziti identity.json`")
-			}
 			identity = ident
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+
+			if jwt != "" {
+				// ENROLLING A JWT IN PLACE, the design's room-link ziti path. The
+				// token is turned into an identity `.json` kept on THIS room's own
+				// disk, beside its certificate, and that file is what every later
+				// dial uses. This is the same shell-out the board-exposure path
+				// makes (internal/daemon.EnrollZiti); the identity name is the
+				// room's own so a machine with more than one is told them apart.
+				// See docs/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT
+				// in place".
+				dir := filepath.Join(keys.Dir, "identities")
+				path, out, err := daemon.EnrollZitiInto(jwt, j.Name, dir)
+				if err != nil {
+					if strings.TrimSpace(out) != "" {
+						return fmt.Errorf("could not enroll the ziti identity: %w\n%s", err, out)
+					}
+					return fmt.Errorf("could not enroll the ziti identity: %w", err)
+				}
+				fmt.Println("  enrolled a ziti identity at " + path)
+				identity = path
+			}
 
 			// WHAT THIS MACHINE CALLS ITSELF, WHICH IS NOT WHAT IT IS CALLED.
 			// Sent so the hub can show the two side by side, and it decides
