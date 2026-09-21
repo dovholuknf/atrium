@@ -81,22 +81,42 @@
       min-height: 0; max-height: none; overflow-x: hidden; overflow-y: auto;
       padding: 3px 3px 6px;
     }
-    /* The resize handle and the slide-over rail both answer a list laid out
-       BESIDE the terminal, which is a shape a phone never takes. `mini` and
-       `off`, the two modes they reach, are held off the layout at this width in
-       `applyTermList`, so there is nothing here to undo: only the two controls
-       are hidden, since a full-width vertical list has no gutter to drag and no
-       edge to hover. */
-    .term-grip, .term-rail { display: none; }
+    /* The slide-over rail answers a list laid out BESIDE the terminal, which is
+       a shape a phone never takes, so it stays hidden. `mini` and `off`, the
+       modes it and the grip reach, are held off the layout at this width in
+       `applyTermList`. */
+    .term-rail { display: none; }
+    /* The grip is the SPLIT handle here. The list and the terminal are stacked,
+       not side by side, so the grip that dragged the width on a desktop drags
+       the height between them on a phone: up gives the terminal more, down gives
+       the list more. It shows only once a terminal is attached, since with
+       nothing attached the list is the whole view and there is nothing to
+       split. `touch-action: none` so the drag is a drag and not a page scroll. */
+    .term-grip { display: none; }
+    .term-layout.has-term .term-grip {
+      display: block; flex: 0 0 16px; align-self: stretch; width: 100%;
+      cursor: row-resize; touch-action: none;
+    }
+    /* A bar across the width for a handle that moves up and down. The base grip
+       draws a 2px line DOWN a narrow track; here the line lies across it, and
+       the invisible hit area is a tall full-width strip rather than a wide thin
+       one. */
+    .term-layout.has-term .term-grip::before { inset: -6px 0; }
+    .term-layout.has-term .term-grip::after { inset: 6px 42%; border-radius: 2px; }
     /* Nothing attached: the list is the whole view. The empty pane, which shows
        only a `nothing attached` bar, must not sit under it taking half the
        screen the way it did when the list was pushed off to the side. */
     .term-layout:not(.has-term) .term-pane { display: none; }
     .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
-    /* Attached: the terminal takes over and the list becomes a short scroller
-       above it, so picking another session, or getting back to the list, is
-       still there without leaving the view. */
-    .term-layout.has-term .term-list { flex: 0 0 auto; max-height: 40vh; }
+    /* Attached: the terminal takes over and the list is a scroller above it, at
+       whatever height the split was last dragged to. `--termsplit` is a px value
+       set by the grip and namespaced by device, so a split set on a phone is the
+       phone's and never follows the board to a desktop. With nothing dragged yet
+       the var is unset and the 40vh fallback is the first split. */
+    .term-layout.has-term .term-list {
+      flex: 0 0 var(--termsplit, 40vh); max-height: none;
+      min-height: 0; overflow-y: auto;
+    }
     .term-layout.has-term .term-pane { flex: 1 1 auto; min-height: 0; }
     /* No gutter to cross when the list is stacked above the terminal. */
     .tabbridge { display: none; }

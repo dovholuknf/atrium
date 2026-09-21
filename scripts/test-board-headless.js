@@ -484,6 +484,61 @@ async function main() {
     if (!phoneTerm.docScroll) {
       fail("the terminals tab made the document scroll sideways at 390px.");
     }
+
+    // ── the phone split resizes, and its size does not touch the desktop ─────
+    // With a terminal attached the list and the pane are stacked and the grip
+    // between them drags the split. This attaches a stand-in terminal (the
+    // `has-term` class and a theme, which is what `paintPaneBg` sets on a real
+    // attach), checks the grip is now a visible row-resize handle, drives the
+    // split larger and smaller, and asserts the list height tracks it. The
+    // stored key is device-namespaced, so setting it on a phone writes
+    // `atrium.termsplit.mobile` and leaves the desktop `atrium.termsplit`
+    // untouched: a split dragged on a phone must not follow the board to a
+    // desktop, which is the isolation clint asked for.
+    await page.evaluate(() => {
+      localStorage.removeItem("atrium.termsplit");
+      localStorage.removeItem("atrium.termsplit.mobile");
+      document.getElementById("term-layout").classList.add("has-term");
+      paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" });
+    });
+    const split = await page.evaluate(() => {
+      const grip = document.getElementById("term-grip");
+      const gcs = getComputedStyle(grip);
+      const listH = () => document.getElementById("term-list").getBoundingClientRect().height;
+      const small = 120, large = 300;
+      setTermSplit(small); saveTermSplit();
+      const hSmall = listH();
+      setTermSplit(large); saveTermSplit();
+      const hLarge = listH();
+      return {
+        gripShown: gcs.display !== "none",
+        gripResize: gcs.cursor,
+        grew: hLarge > hSmall + 20,
+        mobileKey: localStorage.getItem("atrium.termsplit.mobile"),
+        desktopKey: localStorage.getItem("atrium.termsplit")
+      };
+    });
+    if (!split.gripShown || split.gripResize !== "row-resize") {
+      fail("the split grip is not a visible row-resize handle at 390px with a " +
+        "terminal attached (display/cursor: " + split.gripShown + "/" + split.gripResize + ").");
+    }
+    if (!split.grew) {
+      fail("dragging the split larger did not grow the list: the grip is not " +
+        "driving the list/terminal height on a phone.");
+    }
+    if (!split.mobileKey) {
+      fail("the phone split was not stored under its device key (atrium.termsplit.mobile).");
+    }
+    if (split.desktopKey) {
+      fail("setting the split on a phone wrote the desktop key (atrium.termsplit): " +
+        "mobile layout settings must not touch the desktop's.");
+    }
+    await page.evaluate(() => {
+      document.getElementById("term-layout").classList.remove("has-term");
+      paintPaneBg(null);
+      localStorage.removeItem("atrium.termsplit.mobile");
+    });
+
     // Put the width, the view and the data back for the sections below.
     await page.setViewportSize({ width: 1280, height: 800 });
     tasksMode = "first";

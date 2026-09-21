@@ -42,6 +42,13 @@ function applyTermList() {
   lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
   lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
+  // The phone split, if one was dragged. Only on a narrow screen, and only as a
+  // px value someone set: with nothing stored the var is cleared and the
+  // stylesheet's 40vh fallback stands. Cleared on a wide screen so a phone split
+  // never leaks into the desktop layout, where `--termsplit` is unused anyway.
+  const split = narrow ? readTermSplit() : 0;
+  if (split) lay.style.setProperty("--termsplit", split + "px");
+  else lay.style.removeProperty("--termsplit");
 }
 
 // Puts the bridge across the gutter, level with the attached card.
@@ -173,7 +180,12 @@ function termListButtons() {
 // alone does not.
 let gripFrom = 0, gripWas = 0;
 function startGrip(e) {
-  if (termListMode === "off") return;
+  // ONE HANDLE, TWO AXES. On a desktop the list is a column beside the terminal
+  // and the grip drags its WIDTH. On a phone the two are stacked and the same
+  // grip drags the HEIGHT split between them. The gesture and the storage differ
+  // by axis; everything else about the drag is one path.
+  const vertical = termNarrow();
+  if (!vertical && termListMode === "off") return;
   e.preventDefault();
   // THE ELEMENT IS HELD IN A LOCAL, not read off the event inside the
   // closures. `currentTarget` is only set while an event is being dispatched
@@ -184,19 +196,23 @@ function startGrip(e) {
   // during a drag that ended long ago, which is why the list grew a little
   // wider every time you moved across the cards.
   const el = e.currentTarget;
-  gripFrom = e.clientX;
-  gripWas = clampTermW(termListW);
+  gripFrom = vertical ? e.clientY : e.clientX;
+  // The height split starts from what the list is ACTUALLY drawn at, not a
+  // stored number, so the first drag from the 40vh fallback does not jump.
+  gripWas = vertical ? currentSplitPx() : clampTermW(termListW);
   el.setPointerCapture(e.pointerId);
   el.classList.add("dragging");
   document.body.classList.add("gripping");
-  const move = ev => setTermW(gripWas + (ev.clientX - gripFrom));
+  const move = ev => vertical
+    ? setTermSplit(gripWas + (ev.clientY - gripFrom))
+    : setTermW(gripWas + (ev.clientX - gripFrom));
   const done = () => {
     el.classList.remove("dragging");
     document.body.classList.remove("gripping");
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", done);
     el.removeEventListener("pointercancel", done);
-    saveTermW();
+    if (vertical) saveTermSplit(); else saveTermW();
   };
   el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", done);
@@ -205,9 +221,68 @@ function startGrip(e) {
 
 function gripKey(e) {
   const step = e.shiftKey ? 40 : 10;
+  // Up and down move the split on a phone; left and right move the width on a
+  // desktop. Same handle, the axis its layout uses.
+  if (termNarrow()) {
+    if (e.key === "ArrowUp") { e.preventDefault(); setTermSplit(currentSplitPx() - step); saveTermSplit(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setTermSplit(currentSplitPx() + step); saveTermSplit(); }
+    return;
+  }
   if (e.key === "ArrowLeft") { e.preventDefault(); setTermW(termListW - step); saveTermW(); }
   else if (e.key === "ArrowRight") { e.preventDefault(); setTermW(termListW + step); saveTermW(); }
   else return;
+}
+
+// ── the phone split between the list and the terminal ────────────────────────
+//
+// A px height on the list, stacked above the terminal, dragged with the grip.
+// Stored under a device-namespaced key so a split set on a phone is the phone's
+// and never rides onto a desktop, where the same grip means width. Below the
+// floor it is not written, and with nothing written the stylesheet's 40vh
+// fallback stands.
+const TERMSPLIT_MIN = 80;
+function termSplitKey() { return termDeviceKey("atrium.termsplit"); }
+
+// What the list is drawn at right now, which is where a drag or a key nudge
+// starts from. Reads the laid-out height rather than the stored number, so the
+// first move from the fallback does not jump.
+function currentSplitPx() {
+  const list = document.getElementById("term-list");
+  return list ? Math.round(list.getBoundingClientRect().height) : 0;
+}
+
+// The floor is a handful of rows; the ceiling leaves the terminal a usable
+// strip rather than letting the list eat the whole layout.
+function clampTermSplit(px) {
+  const lay = document.getElementById("term-layout");
+  const max = lay
+    ? Math.max(TERMSPLIT_MIN, Math.round(lay.getBoundingClientRect().height) - 120)
+    : 600;
+  return Math.max(TERMSPLIT_MIN, Math.min(max, Math.round(px || 0)));
+}
+
+function setTermSplit(px) {
+  const lay = document.getElementById("term-layout");
+  if (!lay) return;
+  lay.style.setProperty("--termsplit", clampTermSplit(px) + "px");
+  // Live, so the terminal reflows under the handle rather than jumping when it
+  // is let go. Same reasoning as `setTermW`.
+  onTermResize();
+}
+
+function readTermSplit() {
+  try {
+    const v = Number(localStorage.getItem(termSplitKey()));
+    if (v >= TERMSPLIT_MIN) return v;
+  } catch (e) {}
+  return 0;
+}
+
+function saveTermSplit() {
+  const lay = document.getElementById("term-layout");
+  if (!lay) return;
+  const v = parseInt(lay.style.getPropertyValue("--termsplit"), 10);
+  if (v) { try { localStorage.setItem(termSplitKey(), String(v)); } catch (e) {} }
 }
 
 // The width is set on the element as it moves and written down only when the
