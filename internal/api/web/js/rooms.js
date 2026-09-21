@@ -902,6 +902,14 @@ async function loadHubRooms() {
       typeof alerting !== "undefined" && alerting.reseed) {
     alerting.reseed();
   }
+  // A ROOM ATTACHING RE-RESOLVES THE SKIN, because the ALL view borrows its
+  // settings from a room and a hub with none yet answers `/v1/settings` with a
+  // 409. The load-time read (see bootSkin) then failed and left the board on the
+  // default; when the first room attaches the stream is already open, so the
+  // reconnect path does not fire, and only this does. Re-read on any change to
+  // the attached set, which the api cap bounds and which is rare next to a poll.
+  // See applyResolvedSkin.
+  if (roomKey !== attachedRoomKey && typeof bootSkin === "function") bootSkin();
   attachedRoomKey = roomKey;
   // THE DURABLE LIST COMES WITH IT, because the header's counter needs both
   // halves: how many rooms are answering, and how many exist to answer. Asked

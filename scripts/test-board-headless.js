@@ -124,6 +124,12 @@ let soloMode = "ok";       // ok | noroom | gone
 // disconnected to live under the open dropdown.
 let hubMode = false;
 let sggAttached = false;
+// Whether the hub has a room to borrow `/v1/settings` from. False is the window
+// right after a hub restart: no room has re-attached, so the ALL-view read is
+// answered with the same 409 the real hub gives, and the board's load-time skin
+// read fails. Flipping it true and pushing a `rooms` event is a room attaching,
+// which is when the skin must heal without a reload. See the skin-heals test.
+let hubHasRoom = true;
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
 
@@ -285,6 +291,14 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+    // A hub with no room to borrow from cannot answer the ALL view, the same 409
+    // the real proxy gives until a room re-attaches. A room-scoped read still
+    // goes straight to that room and is unaffected.
+    if (!room && !hubHasRoom) {
+      res.writeHead(409, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "pick a room first" }));
+      return;
+    }
     sendJSON(res, settingsBody(room));
     return;
   }
@@ -308,6 +322,7 @@ const server = http.createServer((req, res) => {
   // test turns `hubMode` on so the board runs as a hub with two rooms.
   if (url === "/_hub/rooms") {
     if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    if (!hubHasRoom) { sendJSON(res, { rooms: [] }); return; }
     sendJSON(res, { rooms: sggAttached ? [ALPHA, SGG] : [ALPHA] });
     return;
   }
@@ -1327,6 +1342,55 @@ async function main() {
       sggAttached = false;
       resetSkins();
     }
+
+    // ── a persisted skin heals when a room attaches, with no reload ──────────
+    // The board loads against a hub that has no room to borrow settings from
+    // yet, the window right after a hub restart. The ALL-view `/v1/settings`
+    // read is a 409, so the load-time skin read fails and the board is on the
+    // default dark. This is exactly what clint saw: a deploy restarts the hub,
+    // he reloads before a room is back, and the paper skin never paints. When a
+    // room attaches the read succeeds, and the skin must heal there rather than
+    // waiting for another manual reload.
+    hubMode = true;
+    hubHasRoom = false;
+    sggAttached = false;
+    // The hub wears paper, a light skin, which is the one clint set and did not
+    // see paint. resetSkins in the finally puts the default back.
+    skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
+    const healCtx = await browser.newContext();
+    const heal = await healCtx.newPage();
+    const healErrors = [];
+    heal.on("pageerror", e => healErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
+    }
+    try {
+      await heal.goto(base, { waitUntil: "domcontentloaded" });
+      // No room to borrow from: the load-time read 409s and the board is dark.
+      await heal.waitForTimeout(1500);
+      const dark = await heal.evaluate(() =>
+        document.documentElement.getAttribute("data-skin"));
+      if (dark !== null) {
+        fail("with the hub unable to answer settings, the board should be on the " +
+          "default, but data-skin was " + JSON.stringify(dark));
+      }
+      // Past loadHubRooms' 2s throttle, then a room attaches: the read now
+      // succeeds and the skin heals to the hub's paper without a reload.
+      await heal.waitForTimeout(2200);
+      hubHasRoom = true;
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      await heal.waitForFunction(() =>
+        document.documentElement.getAttribute("data-skin") === "paper", { timeout: 15000 });
+      if (healErrors.length) {
+        fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
+      }
+    } finally {
+      await heal.close();
+      await healCtx.close();
+      hubMode = false;
+      hubHasRoom = true;
+      resetSkins();
+    }
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -1364,7 +1428,8 @@ async function main() {
     "picks up a live event on the `audit` delta with no reload, and the board " +
     "skin follows the room-picker scope (ALL wears the " +
     "hub's, each room its own, a save lands in the current scope, a room " +
-    "attaching leaves the ALL skin alone).");
+    "attaching leaves the ALL skin alone), and a persisted skin heals when a " +
+    "room attaches after a load that could not read settings, with no reload.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

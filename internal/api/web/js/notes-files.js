@@ -1333,17 +1333,31 @@ function rememberSkin(name) {
   try { name ? localStorage.setItem(key, name) : localStorage.removeItem(key); } catch (e) {}
 }
 
-async function bootSkin() {
-  try {
-    const remembered = localStorage.getItem(skinKey());
-    if (remembered) document.documentElement.setAttribute("data-skin", remembered);
-  } catch (e) {}
-  let s;
-  try { s = await api("/v1/settings"); } catch (e) { return; }
+// Wear the skin a `/v1/settings` answer names for the current scope, and remember
+// it. Split out of `bootSkin` so the same resolution can run more than once.
+//
+// IT HAS TO RUN MORE THAN ONCE, and that is the bug this fixes. `bootSkin` reads
+// settings once at load, but a hub that is still bringing its rooms up answers
+// `/v1/settings` with a 409 (`needsARoom`) until it has a room to borrow from, so
+// the read at load can fail outright. A skin picked for a scope then never
+// painted: the board sat on the default until a full manual reload, which on a
+// deploy-restart is exactly when the operator reloads and sees the dark default.
+// So the reconnect path (see loadGlobalAuto) and a room attaching (see
+// loadHubRooms) re-run this from the settings they read, and the skin heals the
+// moment the daemon can answer rather than at the next reload.
+//
+// The daemon's answer wins, including when it says the default: a skin cleared
+// from another browser has to reach this one.
+//
+// Left alone while a preview is up: the skin lab paints an unsaved skin, and a
+// reconnect or a room attaching mid-preview must not yank it back to the saved
+// one under the operator's hand. See `previewSkin`.
+function applyResolvedSkin(s) {
+  if (!s) return;
+  const lab = document.getElementById("skinlab");
+  if (lab && !lab.hidden) return;
   const names = s.board_skins || [];
   const now = s.board_skin || names[0] || "";
-  // The daemon's answer wins, including when it says the default: a skin
-  // cleared from another browser has to reach this one.
   if (now && names.length && now !== names[0]) {
     document.documentElement.setAttribute("data-skin", now);
     rememberSkin(now);
@@ -1351,6 +1365,16 @@ async function bootSkin() {
     document.documentElement.removeAttribute("data-skin");
     rememberSkin("");
   }
+}
+
+async function bootSkin() {
+  try {
+    const remembered = localStorage.getItem(skinKey());
+    if (remembered) document.documentElement.setAttribute("data-skin", remembered);
+  } catch (e) {}
+  let s;
+  try { s = await api("/v1/settings"); } catch (e) { return; }
+  applyResolvedSkin(s);
 }
 
 async function saveBrowseRoots() {
