@@ -51,6 +51,103 @@ const SettingBoardAuto = "board_auto"
 // represented.
 const boardAutoUntil = "until:"
 
+// The credential a PUBLIC zrok board share is created behind.
+//
+// ── why the hub owns this, like the skin ─────────────────
+//
+// A public zrok share is a URL anyone can open, so it carries a login at the
+// edge. `docs/ziti-zrok-flow-design.md` (decision 1) gives the operator two
+// choices for that login, per share: zrok `updb` (a username and password) or
+// OIDC. Either way it is BOARD POLICY, one answer for the one board, so it is
+// the hub's to hold, the same as the skin and the board-wide auto flag above.
+//
+// zrok private and OpenZiti carry no credential: the overlay is already the
+// gate. Only the public zrok channel needs this, and it is enforced at the zrok
+// edge, not by the hub binary, which grows no login system of its own.
+//
+// ── why the password is stored in the clear ──────────────
+//
+// The hub hands the username and password to the zrok controller every time it
+// creates the share, which is on every hub start (exposure survives a restart).
+// A one-way hash cannot be replayed to zrok, so this is a credential the hub
+// must be able to read back, not one it only ever compares. It is never sent to
+// the board: the GET reports only WHETHER a password is set, so a stored
+// password does not leave the machine over the board it protects.
+const (
+	// SettingShareAuth names the public-share login scheme: "updb", "oidc" or
+	// "" for none. Empty means a public share has no login and, per the design,
+	// must be refused at the point it would be created.
+	SettingShareAuth = "share_auth"
+	// SettingShareUser and SettingSharePass are the zrok updb username and
+	// password, used when SettingShareAuth is "updb".
+	SettingShareUser = "share_user"
+	SettingSharePass = "share_pass"
+	// SettingShareOIDC names the OIDC provider zrok fronts the share with, used
+	// when SettingShareAuth is "oidc". The provider itself is configured on the
+	// zrok account; this is only which one to name on the share.
+	SettingShareOIDC = "share_oidc"
+)
+
+// ShareAuth is the public-share login as one value, so the share-creation call
+// site reads it in one place rather than assembling four settings itself.
+type ShareAuth struct {
+	// Scheme is "updb", "oidc" or "" (none).
+	Scheme string
+	// User and Pass are the zrok updb credential, set only for the updb scheme.
+	User string
+	Pass string
+	// OIDCProvider is the zrok OIDC provider name, set only for the oidc scheme.
+	OIDCProvider string
+}
+
+// ShareAuth reads the public-share login as one value.
+func (s *Store) ShareAuth() (ShareAuth, error) {
+	var out ShareAuth
+	for field, dst := range map[string]*string{
+		SettingShareAuth: &out.Scheme,
+		SettingShareUser: &out.User,
+		SettingSharePass: &out.Pass,
+		SettingShareOIDC: &out.OIDCProvider,
+	} {
+		v, err := s.HubSetting(field)
+		if err != nil {
+			return ShareAuth{}, err
+		}
+		*dst = v
+	}
+	return out, nil
+}
+
+// SetShareAuth writes the public-share login. The scheme decides which of the
+// other fields matter; the rest are stored as given so switching schemes and
+// switching back does not lose what was typed.
+func (s *Store) SetShareAuth(a ShareAuth) error {
+	for field, val := range map[string]string{
+		SettingShareAuth: a.Scheme,
+		SettingShareUser: a.User,
+		SettingShareOIDC: a.OIDCProvider,
+	} {
+		if err := s.SetHubSetting(field, val); err != nil {
+			return err
+		}
+	}
+	// The password is written only when one is given, so saving the username
+	// alone does not blank an already-set password. Clearing it needs an
+	// explicit empty, which SetSharePass below is for.
+	if a.Pass != "" {
+		return s.SetHubSetting(SettingSharePass, a.Pass)
+	}
+	return nil
+}
+
+// SetSharePass writes the updb password on its own, including clearing it. Kept
+// separate from SetShareAuth so a settings save that does not mention the
+// password leaves the stored one alone, the way a password box that is left
+// blank should.
+func (s *Store) SetSharePass(pass string) error {
+	return s.SetHubSetting(SettingSharePass, pass)
+}
+
 // HubSetting reads one hub setting. A name never written reads as empty rather
 // than as an error, so a caller does not have to seed anything.
 func (s *Store) HubSetting(name string) (string, error) {
