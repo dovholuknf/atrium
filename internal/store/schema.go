@@ -1314,6 +1314,22 @@ var migrations = []struct {
 			`DELETE FROM harness WHERE id = 'shell'`,
 		},
 	},
+	{
+		// An explicit binary path per runner, so availability does not depend on
+		// the room process PATH.
+		//
+		// A runner installed on a machine can still be invisible to the room
+		// because the directory it landed in was not on the PATH the room was
+		// started with. An explicit path is the per-room answer, and it makes
+		// availability the question of whether this path exists on this room
+		// rather than whether a name resolves. Empty keeps PATH resolution of
+		// `cmd`, which is what every existing row wants. See
+		// docs/runner-scoping-design.md.
+		name: "0054_harness_bin_path",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN bin_path TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

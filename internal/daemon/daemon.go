@@ -439,18 +439,18 @@ func (d *Daemon) reportRunners() {
 			width = len(h.ID)
 		}
 	}
-	log.Printf("[atrium] runners, resolved against this process's PATH:")
+	log.Printf("[atrium] runners, resolved by explicit path or against this process's PATH:")
 	missing := 0
 	for _, h := range hs {
 		state := "off"
 		if h.Enabled {
 			state = "on "
 		}
-		if p := api.LookPath(h.Cmd); p != "" {
+		if p := api.RunnerFound(h); p != "" {
 			log.Printf("[atrium]   %-*s  %s  %s", width, h.ID, state, p)
 			continue
 		}
-		log.Printf("[atrium]   %-*s  %s  NOT ON PATH (%s)", width, h.ID, state, h.Cmd)
+		log.Printf("[atrium]   %-*s  %s  NOT FOUND (%s)", width, h.ID, state, h.Exe())
 		if h.Enabled {
 			missing++
 		}

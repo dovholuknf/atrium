@@ -800,9 +800,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			fresh = &launchSpec{cmd: h.Cmd, args: h.Args, cwd: cwd, env: env}
+			fresh = &launchSpec{cmd: h.Exe(), args: h.Args, cwd: cwd, env: env}
 		}
-		pid, err := d.spawnPTYResume(task.ID, h.Cmd, args, cwd, env, req.Resume != "", fresh)
+		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
 			// The card was created before the process, so a failure to start
 			// has to move it. Left in `running` it describes a process that
@@ -825,7 +825,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// this, `codex` reaches wt.exe as a bare name and comes back as
 		// 0x80070002, "the system cannot find the file specified", about a
 		// file that is on PATH.
-		cmdName, cmdArgs := h.Cmd, args
+		cmdName, cmdArgs := h.Exe(), args
 		if resolved, err := exec.LookPath(cmdName); err == nil {
 			cmdName, cmdArgs = viaShellIfScript(resolved, args)
 		}
