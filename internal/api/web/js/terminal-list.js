@@ -803,14 +803,55 @@ function termRow(t, deep) {
                 : ""
             }</span>
         </div>
-        ${poppedOut(t.id)
-          // Says where it is rather than letting you click and wonder why
-          // nothing happened. Clicking raises that window.
-          ? `<div class="chips"><span class="chip accent"
-               title="this session is showing in a window of its own. click to raise it"
-               >&#8599;</span></div>` : ""}
+        ${termRowChips(t)}
       </div>
     </div>`;
+}
+
+// The chips on the right of a terminal row: a held peer message, and the
+// popped-out marker. Drawn in one .chips box so a row can carry both.
+function termRowChips(t) {
+  const held = termHeldChip(t);
+  const popped = poppedOut(t.id)
+    // Says where it is rather than letting you click and wonder why nothing
+    // happened. Clicking raises that window.
+    ? `<span class="chip accent"
+         title="this session is showing in a window of its own. click to raise it"
+         >&#8599;</span>`
+    : "";
+  const inner = held + popped;
+  return inner ? `<div class="chips">${inner}</div>` : "";
+}
+
+// A PULSING BANG WHEN A PEER MESSAGE IS WAITING to be typed into this terminal.
+//
+// The room-side gate holds a peer message when the operator's line is dirty or
+// he has just been typing, and retries it on a widening backoff. Until it lands
+// the card carries this so a glance across the strip finds the one holding
+// something for him, and the title says what clears it. Distinct from the
+// working spinner on the runner mark: that is the session moving, this is a
+// message stuck behind his own line.
+//
+// COUPLED TO THE ROOM SIDE. `activity.held_peer` is the live signal a daemon
+// with the injector raises. Against a daemon without it the field is never set
+// and this draws nothing, the same way the multi-pane echo toggle shows nothing
+// until its half ships.
+function termHeldChip(t) {
+  const a = t && t.activity;
+  if (!a || !a.held_peer) return "";
+  const from = String(a.held_peer);
+  const secs = Number(a.held_seconds) || 0;
+  const waited = secs > 0 ? ` (waiting ${termHeldAge(secs)})` : "";
+  const title = `${from} has a message waiting to be typed in. ` +
+    `clear or submit your line to receive it${waited}`;
+  return `<span class="chip held" title="${esc(title)}">!</span>`;
+}
+
+// A coarse age for the held tooltip, in the largest unit that is not zero.
+function termHeldAge(secs) {
+  if (secs >= 3600) return Math.floor(secs / 3600) + "h";
+  if (secs >= 60) return Math.floor(secs / 60) + "m";
+  return secs + "s";
 }
 
 // The whole strip, everything under where it lives.
