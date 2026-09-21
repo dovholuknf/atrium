@@ -1247,7 +1247,17 @@ function cardsHTML(cards, g, keyPrefix) {
 
   // Taken out before anything else looks at them, so they cannot also appear
   // under a project.
-  const pins = cards.filter(t => t.pinned);
+  //
+  // BY RANK, ALWAYS, and never by the board sort. `columnOrder` has already run
+  // over the whole column by the time we get here, so the pins arrive in
+  // activity or name order like everything else. But pinning is the one order a
+  // person set by hand, so it is held to rank the way manual mode is: rank is
+  // what the move up and move down write and the only field that survives a
+  // card going quiet. Sorting here rather than trusting the API order restores
+  // it after `columnOrder` disturbed it. `cardTieBreak` keeps two equal ranks
+  // from swapping between polls.
+  const pins = cards.filter(t => t.pinned)
+    .sort((a, b) => (a.rank || 0) - (b.rank || 0) || cardTieBreak(a, b));
   const rest = cards.filter(t => !t.pinned);
   const head = pinnedGroupHTML(pins, keyPrefix);
 
