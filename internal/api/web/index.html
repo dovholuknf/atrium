@@ -1080,6 +1080,47 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         card.</span>
     </div>
 
+    <!-- THE PUBLIC ZROK SHARE'S LOGIN, enforced at the zrok edge, not by this
+         hub. A public zrok share is a URL anyone can open, so it must carry a
+         login: either a name and password (zrok updb) or an OIDC provider, the
+         operator's choice. Held hub-side the same way the skin is, and sent to
+         zrok when the share is created. zrok PRIVATE and OpenZiti need none:
+         the overlay is already the gate. See docs/ziti-zrok-flow-design.md. -->
+    <h4 class="s-sub">public share login (zrok)</h4>
+    <div class="field">
+      <label class="eyebrow" for="s-share-auth">how a public zrok share asks people in</label>
+      <div class="picker">
+        <select id="s-share-auth" onchange="shareAuthChanged()">
+          <option value="">no login (a public share is refused)</option>
+          <option value="updb">a name and a password</option>
+          <option value="oidc">an OIDC provider</option>
+        </select>
+      </div>
+      <span class="hintline">Only the PUBLIC zrok share uses this, and zrok enforces it at the
+        edge. A private zrok share or an OpenZiti service needs nothing here: the overlay already
+        decides who may reach the board. With no login set, a public share is refused rather than
+        opened to everyone.</span>
+    </div>
+    <div class="field" id="s-share-updb">
+      <label class="eyebrow" for="s-share-user">name</label>
+      <input type="text" id="s-share-user" spellcheck="false" autocomplete="off"
+        onchange="saveShareAuth()" placeholder="who types the password">
+      <label class="eyebrow" for="s-share-pass">password</label>
+      <input type="password" id="s-share-pass" autocomplete="new-password"
+        onchange="saveShareAuth()" placeholder="typing here sets it">
+      <span class="hintline" id="s-share-pass-said"></span>
+      <span class="hintline">Sent to zrok to guard the public share, and never sent back to this
+        page. Atrium cannot tell you what it is, only that there is one. Leave the box empty to keep
+        the password already set.</span>
+    </div>
+    <div class="field" id="s-share-oidc-wrap">
+      <label class="eyebrow" for="s-share-oidc">OIDC provider</label>
+      <input type="text" id="s-share-oidc" spellcheck="false" onchange="saveShareAuth()"
+        placeholder="the provider name your zrok account is configured with">
+      <span class="hintline">The provider must already be configured on your zrok account. This
+        only names which one to put in front of the share.</span>
+    </div>
+
     <!-- A SUB-HEADING, not a section, so it stays in this pane.
          The login only ever applies to the published board, so somebody asking
          about it is already here looking at what publishes it. As its own

@@ -836,6 +836,83 @@ async function loadHousekeeping() {
   // answer in a box that saves to another.
   pastePrefs = s;
   fillSkins(s);
+  fillShareAuth(s);
+}
+
+// fillShareAuth writes the PUBLIC zrok share's login into the gear dialog.
+//
+// A board-owned setting, held on the hub like the skin, so it is filled from the
+// same `/v1/settings` answer and saved the same way. The password is never sent
+// here: `share_pass_set` says only whether one exists, which is all the box
+// needs to draw "set" versus "not set".
+function fillShareAuth(s) {
+  if (!s) return;
+  const scheme = document.getElementById("s-share-auth");
+  if (scheme) scheme.value = s.share_auth || "";
+  const user = document.getElementById("s-share-user");
+  if (user) user.value = s.share_user || "";
+  const oidc = document.getElementById("s-share-oidc");
+  if (oidc) oidc.value = s.share_oidc || "";
+  const pass = document.getElementById("s-share-pass");
+  // The box is always empty: the password is not sent back. It is cleared on
+  // every fill so a value left in it from a previous open is not re-saved.
+  if (pass) pass.value = "";
+  const said = document.getElementById("s-share-pass-said");
+  if (said) said.textContent = s.share_pass_set
+    ? "A password is set. Leave the box empty to keep it."
+    : "No password set.";
+  applyShareAuthRows();
+}
+
+// applyShareAuthRows shows only the fields the chosen scheme needs, so the
+// dialog does not offer an OIDC provider box beside a name-and-password login.
+function applyShareAuthRows() {
+  const scheme = document.getElementById("s-share-auth");
+  const val = scheme ? scheme.value : "";
+  const updb = document.getElementById("s-share-updb");
+  const oidc = document.getElementById("s-share-oidc-wrap");
+  if (updb) updb.style.display = val === "updb" ? "" : "none";
+  if (oidc) oidc.style.display = val === "oidc" ? "" : "none";
+}
+
+// shareAuthChanged is the scheme dropdown moving: repaint the rows, then save.
+// Switching to "none" or "oidc" is saved at once because it has no free-text box
+// waiting on a blur; updb is saved when its own boxes change too.
+function shareAuthChanged() {
+  applyShareAuthRows();
+  saveShareAuth();
+}
+
+// saveShareAuth posts the public-share login to the hub, the same board-owned
+// write path the skin uses. It carries no room so the hub answers it. A blank
+// password box means "keep the stored one", so an empty value is not sent.
+async function saveShareAuth() {
+  const scheme = document.getElementById("s-share-auth");
+  const user = document.getElementById("s-share-user");
+  const pass = document.getElementById("s-share-pass");
+  const oidc = document.getElementById("s-share-oidc");
+  const body = { share_auth: scheme ? scheme.value : "" };
+  if (user) body.share_user = user.value;
+  if (oidc) body.share_oidc = oidc.value;
+  // Only send a password when one was typed. An empty box keeps the stored one,
+  // which is why the box is always empty on open.
+  if (pass && pass.value) body.share_pass = pass.value;
+  // A share login is board-wide and the hub holds it, so the write must carry no
+  // room. `writeRoom` is set by a machine-setting editor and never cleared, so a
+  // stale one would send this to a room, which refuses it. Clear it in the ALL
+  // view, exactly as saveSkin does.
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
+  try {
+    const s = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+    // The answer carries the login back (minus the password), so the "set" hint
+    // and the rows reflect what actually saved.
+    fillShareAuth(Object.assign({}, pastePrefs || {}, s));
+  } catch (e) {
+    toast("that did not save", e.message);
+  }
 }
 
 // fillMachineFields writes one room's settings into the pane behind its cog.

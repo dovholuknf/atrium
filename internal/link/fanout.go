@@ -676,6 +676,15 @@ func (p *Proxy) hubSettings(w http.ResponseWriter, r *http.Request) bool {
 		if _, ok := keys["global_auto"]; ok {
 			return p.saveBoardAuto(w, payload, stock)
 		}
+		// The public-share login, set on the settings screen. Routed on any of
+		// its keys being present, ahead of the skin save, because it is a
+		// board-owned setting the hub holds and it is never a machine-shaped
+		// write with a room to land in. See saveShareAuth and the design.
+		for _, k := range []string{"share_auth", "share_user", "share_pass", "share_oidc"} {
+			if _, ok := keys[k]; ok {
+				return p.saveShareAuth(w, r, payload, stock)
+			}
+		}
 		return p.saveHubSkin(w, r, payload, stock)
 	}
 	return false
@@ -778,7 +787,140 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	// the ALL view shows one board-wide state rather than whichever room sorted
 	// first. See applyBoardAuto and autoapprove.go.
 	p.applyBoardAuto(body, stock)
+	// And the public-share login, which is the hub's the same way. See
+	// applyShareAuth.
+	p.applyShareAuth(body, stock)
 	return body, true
+}
+
+// applyShareAuth writes the public-share login into a settings payload: the
+// scheme, the updb username and the oidc provider as stored, plus whether a
+// password is set. THE PASSWORD ITSELF IS NEVER SENT. It guards the very board
+// this payload travels over, so the board is told only that one exists, which is
+// all a settings screen needs to draw "set" versus "not set".
+func (p *Proxy) applyShareAuth(body map[string]any, stock Inventory) {
+	a, err := stock.ShareAuth()
+	if err != nil {
+		a = ShareAuth{}
+	}
+	body["share_auth"] = a.Scheme
+	body["share_user"] = a.User
+	body["share_oidc"] = a.OIDCProvider
+	body["share_pass_set"] = a.Pass != ""
+}
+
+// shareAuthView is the login as the board reads it back after a save, built from
+// the hub's stored value alone so an old tab and a fresh one cannot disagree.
+func (p *Proxy) shareAuthView(stock Inventory) map[string]any {
+	out := map[string]any{}
+	p.applyShareAuth(out, stock)
+	return out
+}
+
+// saveShareAuth lands the public-share login on the hub, which is how the
+// settings screen's share user/pass field lands somewhere instead of being
+// refused for want of a room.
+//
+// ── validation is where the design's rule lives ──────────
+//
+// The scheme is "updb", "oidc" or "" (none). updb needs a username and, unless
+// one is already stored, a password: a public share with an empty credential is
+// the whole internet with an extra step, which the design refuses at
+// configuration time rather than at share time. oidc needs a provider. None is
+// allowed to be saved, because turning the login off and then not opening a
+// public share is a legitimate state; the refusal that matters is at the point a
+// PUBLIC share would actually be created (see cmd/atrium2/hubshare.go), which is
+// the only place that knows a public share is being asked for.
+//
+// The password is written only when the body carries a non-empty one, so a save
+// that leaves the box blank keeps the stored password. An explicit empty string
+// in the body clears it, which is the one way to remove a password.
+func (p *Proxy) saveShareAuth(w http.ResponseWriter, r *http.Request, payload []byte, stock Inventory) bool {
+	// ONLY THE SHARE-LOGIN KEYS, AND NOTHING ELSE. A body that also names a
+	// machine-shaped setting still has no room to land in, so it falls through to
+	// `needsARoom` rather than being applied by halves. The share login alone is
+	// the escape hatch the hub owns, the same rule saveHubSkin follows.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return false
+	}
+	allowed := map[string]bool{"share_auth": true, "share_user": true, "share_pass": true, "share_oidc": true}
+	for k := range raw {
+		if !allowed[k] {
+			return false
+		}
+	}
+	var body struct {
+		Scheme   *string `json:"share_auth"`
+		User     *string `json:"share_user"`
+		Pass     *string `json:"share_pass"`
+		Provider *string `json:"share_oidc"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return false
+	}
+	// Start from what is stored and overlay only what the body names, so a save
+	// that mentions one field does not blank the others.
+	cur, err := stock.ShareAuth()
+	if err != nil {
+		writeErrBody(w, http.StatusInternalServerError, err.Error())
+		return true
+	}
+	if body.Scheme != nil {
+		cur.Scheme = strings.ToLower(strings.TrimSpace(*body.Scheme))
+	}
+	if body.User != nil {
+		cur.User = strings.TrimSpace(*body.User)
+	}
+	if body.Provider != nil {
+		cur.OIDCProvider = strings.TrimSpace(*body.Provider)
+	}
+	// THE PASSWORD BOX: a blank box means "keep the stored password", not "clear
+	// it". A password is not shown back to the board (only whether one is set),
+	// so a settings screen reopened after a save shows an empty box even though a
+	// password is stored, and treating that empty box as a clear would wipe the
+	// credential every time somebody saved an unrelated change. So only a
+	// non-empty value changes the stored password. The store's SetShareAuth
+	// follows the same rule on the way down.
+	if body.Pass != nil && strings.TrimSpace(*body.Pass) != "" {
+		cur.Pass = *body.Pass
+	}
+
+	switch cur.Scheme {
+	case "", "updb", "oidc":
+	default:
+		writeErrBody(w, http.StatusBadRequest, fmt.Sprintf(
+			"no share login called %q. one of: updb, oidc, or empty for none", cur.Scheme))
+		return true
+	}
+	if cur.Scheme == "updb" {
+		if cur.User == "" {
+			writeErrBody(w, http.StatusBadRequest,
+				"a username and password guard a public share with updb. set the username")
+			return true
+		}
+		// A password must exist in the end, whether it was already stored or is
+		// being set now. Switching only the username, with a password already
+		// stored, is fine; setting updb with nothing stored and no password given
+		// is refused, so a public share is never left with an empty credential.
+		if cur.Pass == "" {
+			writeErrBody(w, http.StatusBadRequest,
+				"a public share with updb needs a password. set one")
+			return true
+		}
+	}
+	if cur.Scheme == "oidc" && cur.OIDCProvider == "" {
+		writeErrBody(w, http.StatusBadRequest,
+			"an oidc share needs a provider. name the one your zrok account is configured with")
+		return true
+	}
+
+	if err := stock.SetShareAuth(cur); err != nil {
+		writeErrBody(w, http.StatusInternalServerError, err.Error())
+		return true
+	}
+	writeJSONBody(w, http.StatusOK, p.shareAuthView(stock))
+	return true
 }
 
 // hubSkinClamped is the hub's stored skin, kept inside the list the board
