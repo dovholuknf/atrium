@@ -910,7 +910,8 @@ function termRowChips(t) {
 function termRoomChip(t) {
   const room = roomOf(t && t.id);
   if (!room) return "";
-  return `<span class="chip room" title="this card runs in room ${esc(room)}"
+  return `<span class="chip room" style="--rhue:${roomHue(room)}"
+    title="this card runs in room ${esc(room)}"
     >${esc(room)}</span>`;
 }
 

@@ -98,7 +98,7 @@ const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.
-const lifted = [liftFn("roomOf"), ...names.map(lift)].join("\n");
+const lifted = [liftFn("roomOf"), liftFn("roomHue"), ...names.map(lift)].join("\n");
 const src = (lifted.includes("const TERM_FOLDED =") ? "" : foldKey + "\n") + lifted;
 
 // The globals the strip reaches for. Everything here is either a browser thing
