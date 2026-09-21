@@ -22,6 +22,7 @@ type remembering struct {
 	asked     map[string]int
 	skin      string
 	boardAuto bool
+	shareAuth ShareAuth
 }
 
 func (r *remembering) Known() ([]Known, error) { return r.rooms, nil }
@@ -51,6 +52,18 @@ func (r *remembering) SetHubSkin(name string) error { r.skin = name; return nil 
 func (r *remembering) BoardAuto() (bool, *time.Time, error) { return r.boardAuto, nil, nil }
 
 func (r *remembering) SetBoardAuto(on bool, _ *time.Time) error { r.boardAuto = on; return nil }
+
+func (r *remembering) ShareAuth() (ShareAuth, error) { return r.shareAuth, nil }
+
+func (r *remembering) SetShareAuth(a ShareAuth) error {
+	// Mirror the store: a blank password does not blank the stored one.
+	if a.Pass == "" {
+		a.Pass = r.shareAuth.Pass
+	}
+	r.shareAuth = a
+	return nil
+}
+
 
 func card(id, title, status string) CardState {
 	raw, _ := json.Marshal(map[string]any{"id": id, "title": title, "status": status})

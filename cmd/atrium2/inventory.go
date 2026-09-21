@@ -140,6 +140,25 @@ func (i inventory) SetHubSkin(name string) error { return i.store.SetHubSkin(nam
 func (i inventory) BoardAuto() (bool, *time.Time, error)         { return i.store.BoardAuto() }
 func (i inventory) SetBoardAuto(on bool, until *time.Time) error { return i.store.SetBoardAuto(on, until) }
 
+// ShareAuth, SetShareAuth and SetSharePass are the login a PUBLIC zrok board
+// share is created behind, held by the hub the same as the skin. This adapts
+// between the store's ShareAuth and the link package's identical copy, so
+// neither has to import the other. See `hubSettings` in internal/link and
+// `docs/ziti-zrok-flow-design.md`.
+func (i inventory) ShareAuth() (link.ShareAuth, error) {
+	a, err := i.store.ShareAuth()
+	if err != nil {
+		return link.ShareAuth{}, err
+	}
+	return link.ShareAuth{Scheme: a.Scheme, User: a.User, Pass: a.Pass, OIDCProvider: a.OIDCProvider}, nil
+}
+
+func (i inventory) SetShareAuth(a link.ShareAuth) error {
+	return i.store.SetShareAuth(hubstore.ShareAuth{
+		Scheme: a.Scheme, User: a.User, Pass: a.Pass, OIDCProvider: a.OIDCProvider,
+	})
+}
+
 // fold matches how a room name is compared everywhere else: ASCII only, so a
 // name folds the same on every machine regardless of locale.
 func fold(s string) string {

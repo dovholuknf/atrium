@@ -244,11 +244,21 @@ func (d *Daemon) DisableZrok() (string, error) {
 	return "disabled, and removed from this machine." + note, nil
 }
 
-// EnrollZiti turns an enrollment token into an identity file.
+// EnrollZiti turns an enrollment token into an identity file, under this
+// daemon's own identity directory.
 //
 // Returns the path it wrote, so the caller can store it as the configured
 // identity without somebody having to find it.
 func (d *Daemon) EnrollZiti(token, name string) (string, string, error) {
+	return EnrollZitiInto(token, name, d.zitiIdentityDir())
+}
+
+// EnrollZitiInto turns an enrollment token into an identity file under a given
+// directory. Split from EnrollZiti so `atrium2 join` can enroll a JWT during a
+// room join, before any daemon exists, keeping the identity on the room's own
+// disk. See docs/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT in
+// place".
+func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return "", "", fmt.Errorf("no token: paste the enrollment JWT")
@@ -265,7 +275,6 @@ func (d *Daemon) EnrollZiti(token, name string) (string, string, error) {
 		return "", "", fmt.Errorf("ziti is not installed, or not on the daemon's PATH")
 	}
 
-	dir := d.zitiIdentityDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", err
 	}
