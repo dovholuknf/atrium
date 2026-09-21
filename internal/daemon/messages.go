@@ -297,39 +297,66 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// unsupervised card anyway, so this is a delivery atrium already knows how
 	// to make rather than a refusal.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		// Bracketed paste when the runner supports it, so a long multi-line
-		// message arrives as one block rather than each newline submitting a
-		// partial line and leaving only the tail. See SayPasted and B2-47.
-		say := run.Say
-		if d.bracketedPasteFor(taskID, false) {
-			say = run.SayPasted
-		}
-		// A peer message is marked in the stream so it is unmistakably not the
-		// operator, the same banner handleTell uses. From the operator (from
-		// empty) nothing is prepended: it is the board's own message channel.
-		if from != "" {
-			if err := run.Write([]byte(peerBanner(from))); err != nil {
+		if from == "" {
+			// The operator's own channel, the board's message box. A message the
+			// operator sent belongs on the line they are looking at, typed
+			// straight in. This path is unchanged.
+			//
+			// Bracketed paste when the runner supports it, so a long multi-line
+			// message arrives as one block rather than each newline submitting a
+			// partial line and leaving only the tail. See SayPasted and B2-47.
+			say := run.Say
+			if d.bracketedPasteFor(taskID, false) {
+				say = run.SayPasted
+			}
+			if err := say(body.Text); err != nil {
 				writeJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
+			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+				"text": body.Text, "via": "terminal",
+			}); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			d.askAnswered(taskID, "the operator")
+			d.publishTask(taskID)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
+			return
 		}
-		if err := say(body.Text); err != nil {
+
+		// A peer or relay message types in too, marked with the banner so it is
+		// unmistakably not the operator. But ONLY INTO A CLEAR LINE, the same
+		// guard as the peer bus: injectPeer holds the lock across the midLine
+		// check and the write, so peer text can never land in a line the operator
+		// is composing, and a part written line is refused and falls to the queue
+		// below. This is the same bug clint hit on the bus, closed on this path
+		// too.
+		payload := body.Text
+		if d.bracketedPasteFor(taskID, false) {
+			payload = "\x1b[200~" + body.Text + "\x1b[201~"
+		}
+		_, wrote, err := run.injectPeer(peerBanner(from), payload)
+		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		ev := map[string]any{"text": body.Text, "via": "terminal"}
-		if from != "" {
-			ev["from_peer"] = from
-		}
-		if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+		if wrote {
+			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+				"text": body.Text, "via": "terminal", "from_peer": from,
+			}); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			d.askAnswered(taskID, "the operator")
+			d.publishTask(taskID)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
 			return
 		}
-		d.askAnswered(taskID, "the operator")
-		d.publishTask(taskID)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
-		return
+		// A part written line: injectPeer wrote nothing. Fall through to the
+		// queue, the same fallback every untyped peer message takes.
 	}
 
 	// A peer message carries its sender so the delivery banner can attribute it
