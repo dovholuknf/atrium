@@ -22,6 +22,12 @@
     border-color: var(--chip-accent-stroke);
     box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset;
   }
+  /* Being edited since the last save: drop the live look so a half-typed change does not read as stored. Cleared on
+     the next repaint, which a fresh save triggers. */
+  .xb-row.editing {
+    border-color: var(--warn-stroke);
+    box-shadow: none;
+  }
 
   /* A real <button> reset to look like the row head it replaced: full width, no chrome, inherited type. The
      focus ring is kept (not removed) because this is now the keyboard handle for the whole row. */
