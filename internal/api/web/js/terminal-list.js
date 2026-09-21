@@ -21,8 +21,15 @@ if (!["full", "mini", "off"].includes(termListMode)) termListMode = "full";
 function applyTermList() {
   const lay = document.getElementById("term-layout");
   if (!lay) return;
-  lay.classList.toggle("tl-mini", termListMode === "mini");
-  lay.classList.toggle("tl-off", termListMode === "off");
+  // `mini` and `off` are the desktop's answer to a list competing with the
+  // terminal beside it: shrink it, or hide it behind a rail. A phone does not
+  // lay them side by side, so neither mode means anything there, and the grip
+  // and rail that reach them are hidden at this width. The stored mode is kept
+  // (the same browser on a wide screen still honours it) but ignored on a
+  // phone, where the list is the whole terminals view and must stay full.
+  const narrow = window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+  lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
+  lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
 }
 
