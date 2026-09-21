@@ -66,12 +66,23 @@ async function loadExpose2() {
 }
 
 // Whether the board login is set at all, and how it reads in one line.
+//
+// A updb login is real only with BOTH a name and a password: a name alone, or a
+// password alone, is an incomplete login that lets nobody in, so it must read as
+// un-set rather than "login set". The password half is the daemon's has_password
+// flag, never the presence of a name.
 function exp2AuthState() {
   const a = exp2Auth;
   if (!a || !a.enabled) return { on: false, word: "no login", line: "nobody is asked to sign in" };
-  if (a.basic && a.issuer) return { on: true, word: "login set", line: "a name and password, and an OIDC provider" };
-  if (a.basic) return { on: true, word: "login set", line: "a name and a password" };
-  if (a.issuer) return { on: true, word: "login set", line: "an OIDC provider" };
+  const basicOk = !!(a.basic && (a.user || "").trim() && a.has_password);
+  const oidcOk = !!((a.issuer || "").trim());
+  if (basicOk && oidcOk) return { on: true, word: "login set", line: "a name and password, and an OIDC provider" };
+  if (basicOk) return { on: true, word: "login set", line: "a name and a password" };
+  if (oidcOk) return { on: true, word: "login set", line: "an OIDC provider" };
+  if (a.basic && (a.user || "").trim() && !a.has_password)
+    return { on: false, word: "no login", line: "a name is set but no password yet, so nobody can sign in" };
+  if (a.basic && a.has_password)
+    return { on: false, word: "no login", line: "a password is set but no name yet, so nobody can sign in" };
   return { on: false, word: "no login", line: "sign-in is on but nothing is configured to check" };
 }
 
@@ -143,12 +154,12 @@ function exp2AuthBody() {
       <label class="eyebrow" for="xb-auth-user">name</label>
       <input type="text" id="xb-auth-user" spellcheck="false" autocomplete="off"
         value="${esc(a.user || "")}" placeholder="who types the password"
-        onchange="exp2SaveAuth()">
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
     </div>
     <div class="xb-field">
       <label class="eyebrow" for="xb-auth-pass">password</label>
       <input type="password" id="xb-auth-pass" autocomplete="new-password"
-        placeholder="typing here sets it" onchange="exp2SaveAuth()">
+        placeholder="typing here sets it" oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
       <span class="hintline">${a.has_password
         ? "a password is set. typing replaces it, empty keeps it."
         : "no password set yet."}</span>
@@ -159,18 +170,20 @@ function exp2AuthBody() {
       <label class="eyebrow" for="xb-auth-issuer">provider</label>
       <input type="text" id="xb-auth-issuer" spellcheck="false"
         value="${esc(a.issuer || "")}" placeholder="https://keycloak.example/realms/yours"
-        onchange="exp2SaveAuth()">
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
       <span class="hintline">The realm URL, not the admin console.</span>
     </div>
     <div class="xb-field">
       <label class="eyebrow" for="xb-auth-client">client id</label>
       <input type="text" id="xb-auth-client" spellcheck="false"
-        value="${esc(a.client_id || "")}" placeholder="atrium" onchange="exp2SaveAuth()">
+        value="${esc(a.client_id || "")}" placeholder="atrium"
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
     </div>
     <div class="xb-field">
       <label class="eyebrow" for="xb-auth-secret">client secret</label>
       <input type="password" id="xb-auth-secret" spellcheck="false" autocomplete="off"
-        placeholder="leave empty to keep the one already set" onchange="exp2SaveAuth()">
+        placeholder="leave empty to keep the one already set"
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
       <span class="hintline">${a.has_client_secret
         ? "a secret is set. typing replaces it, empty keeps it."
         : "no secret set. leave empty for a public client."}</span>
@@ -179,18 +192,31 @@ function exp2AuthBody() {
       <label class="eyebrow" for="xb-auth-redirect">where the provider sends people back</label>
       <input type="text" id="xb-auth-redirect" spellcheck="false"
         value="${esc(a.redirect || "")}" placeholder="https://your-board-address/auth/callback"
-        onchange="exp2SaveAuth()">
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
     </div>
     <div class="xb-field">
       <label class="eyebrow" for="xb-auth-allow">who may in</label>
       <input type="text" id="xb-auth-allow" spellcheck="false"
         value="${esc((a.allow || []).join(", "))}"
-        placeholder="you@example.com, someone-else@example.com" onchange="exp2SaveAuth()">
+        placeholder="you@example.com, someone-else@example.com"
+        oninput="exp2AuthEdited()" onchange="exp2SaveAuth()">
       <span class="hintline">Comma separated. Empty means nobody, on purpose.</span>
     </div>` : "";
 
   const said = `<span class="hintline" id="xb-auth-said"></span>`;
   return sel + basic + oidc + said;
+}
+
+// An input event after a save means the field no longer holds what was saved, so
+// the "saved." note is stale and must go the moment the next keystroke lands.
+// Wired to oninput on every auth field, ahead of the onchange that saves: the
+// note clears while typing and returns only when a fresh save sets it again. The
+// row drops its saved look too, so a half-typed change does not read as stored.
+function exp2AuthEdited() {
+  const said = document.getElementById("xb-auth-said");
+  if (said) { said.textContent = ""; said.className = "hintline"; }
+  const row = said && said.closest(".xb-row");
+  if (row) row.classList.add("editing");
 }
 
 // Reads the login form back and writes it, the same shape as classic saveAuth.
