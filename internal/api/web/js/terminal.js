@@ -429,6 +429,10 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  // Picking a session closes the phone switcher, so the terminal you just chose
+  // is what you land on rather than the list you chose it from. No-op on a
+  // desktop, where the list is not a dropdown. See `setTermListOpen`.
+  if (typeof termNarrow === "function" && termNarrow()) setTermListOpen(false);
   // Committed to this card now, and the socket has not opened yet. Held so a
   // render or the watchdog cannot tear this pane down or start a second attach
   // for it before the connection settles. Cleared when the socket opens and on

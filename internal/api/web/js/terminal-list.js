@@ -29,9 +29,76 @@ function termNarrow() {
 }
 function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 
+// ── the phone dropdown ───────────────────────────────────────────────────────
+//
+// On a phone the list is a switcher competing with the one thing you came for,
+// and its header alone (a sort chip, a row of grouping buttons, a pinned
+// heading) pushed the sessions off the bottom before a single card was drawn.
+// So with a terminal attached the list COLLAPSES to one row naming the attached
+// session, and a tap opens the full list back up. The sort and grouping
+// controls fold under a `filters` button in the same spirit: shown when asked
+// for, out of the way otherwise.
+//
+// Only on a phone, and only with a terminal attached. A desktop has the width
+// for the list beside the terminal, and a phone with nothing attached is
+// already showing the list as its whole view, so there is nothing to collapse.
+// The trigger and the filters button are hidden by CSS in both of those.
+//
+// `open` is not persisted: attaching collapses it (see `openTerm`) and it opens
+// on a tap, so a stored value would only ever fight one of those. `filters` is
+// persisted, since it is a preference about how much chrome you want, not a
+// per-attach state.
+let termListOpen = false;
+let termFiltersOpen = false;
+try { termFiltersOpen = localStorage.getItem("atrium.termfilters") === "1"; } catch (e) {}
+
+// The classes the phone stylesheet reads, set from state rather than toggled in
+// place so a poll's re-render keeps whatever the taps left. Called from
+// `applyTermList`, which runs on every render.
+function applyTermDrop(lay) {
+  lay.classList.toggle("tl-open", termListOpen);
+  lay.classList.toggle("tf-open", termFiltersOpen);
+}
+
+function setTermListOpen(open) {
+  termListOpen = !!open;
+  const lay = document.getElementById("term-layout");
+  if (lay) lay.classList.toggle("tl-open", termListOpen);
+  // Opening or closing trades height with the terminal below, and xterm only
+  // knows its size because something measured it. A frame later, after the
+  // layout it is measuring.
+  requestAnimationFrame(onTermResize);
+}
+function toggleTermListOpen() { setTermListOpen(!termListOpen); }
+
+function toggleTermFilters() {
+  termFiltersOpen = !termFiltersOpen;
+  try { localStorage.setItem("atrium.termfilters", termFiltersOpen ? "1" : "0"); } catch (e) {}
+  const lay = document.getElementById("term-layout");
+  if (lay) lay.classList.toggle("tf-open", termFiltersOpen);
+}
+
+// The collapsed trigger: the attached session's name and a caret that opens the
+// list, plus the filters button. Hidden by CSS everywhere except a phone with a
+// terminal attached, so it is always rendered and never in the way.
+function termDropHTML() {
+  const t = termTask;
+  const label = t
+    ? (String(t.display_title || "").trim() || terminalLabel(t) || "this session")
+    : "choose a session";
+  return `<div class="termdrop">
+      <button class="termdrop-cur" onclick="toggleTermListOpen()"
+        title="switch session"><span class="tname">${esc(label)}</span
+        ><span class="caret">&#9662;</span></button>
+      <button class="termfilters-btn" onclick="toggleTermFilters()"
+        title="sort and grouping">filters</button>
+    </div>`;
+}
+
 function applyTermList() {
   const lay = document.getElementById("term-layout");
   if (!lay) return;
+  applyTermDrop(lay);
   // `mini` and `off` are the desktop's answer to a list competing with the
   // terminal beside it: shrink it, or hide it behind a rail. A phone does not
   // lay them side by side, so neither mode means anything there, and the grip
@@ -42,13 +109,6 @@ function applyTermList() {
   lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
   lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
-  // The phone split, if one was dragged. Only on a narrow screen, and only as a
-  // px value someone set: with nothing stored the var is cleared and the
-  // stylesheet's 40vh fallback stands. Cleared on a wide screen so a phone split
-  // never leaks into the desktop layout, where `--termsplit` is unused anyway.
-  const split = narrow ? readTermSplit() : 0;
-  if (split) lay.style.setProperty("--termsplit", split + "px");
-  else lay.style.removeProperty("--termsplit");
 }
 
 // Puts the bridge across the gutter, level with the attached card.
@@ -180,12 +240,11 @@ function termListButtons() {
 // alone does not.
 let gripFrom = 0, gripWas = 0;
 function startGrip(e) {
-  // ONE HANDLE, TWO AXES. On a desktop the list is a column beside the terminal
-  // and the grip drags its WIDTH. On a phone the two are stacked and the same
-  // grip drags the HEIGHT split between them. The gesture and the storage differ
-  // by axis; everything else about the drag is one path.
-  const vertical = termNarrow();
-  if (!vertical && termListMode === "off") return;
+  // The grip drags the list's WIDTH beside the terminal. This is a desktop
+  // control: a phone stacks the terminal on its own and never ties its size to
+  // the list, so the grip is hidden there and this never runs. See the phone
+  // dropdown, where the list floats OVER the terminal instead of resizing it.
+  if (termListMode === "off") return;
   e.preventDefault();
   // THE ELEMENT IS HELD IN A LOCAL, not read off the event inside the
   // closures. `currentTarget` is only set while an event is being dispatched
@@ -196,23 +255,19 @@ function startGrip(e) {
   // during a drag that ended long ago, which is why the list grew a little
   // wider every time you moved across the cards.
   const el = e.currentTarget;
-  gripFrom = vertical ? e.clientY : e.clientX;
-  // The height split starts from what the list is ACTUALLY drawn at, not a
-  // stored number, so the first drag from the 40vh fallback does not jump.
-  gripWas = vertical ? currentSplitPx() : clampTermW(termListW);
+  gripFrom = e.clientX;
+  gripWas = clampTermW(termListW);
   el.setPointerCapture(e.pointerId);
   el.classList.add("dragging");
   document.body.classList.add("gripping");
-  const move = ev => vertical
-    ? setTermSplit(gripWas + (ev.clientY - gripFrom))
-    : setTermW(gripWas + (ev.clientX - gripFrom));
+  const move = ev => setTermW(gripWas + (ev.clientX - gripFrom));
   const done = () => {
     el.classList.remove("dragging");
     document.body.classList.remove("gripping");
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", done);
     el.removeEventListener("pointercancel", done);
-    if (vertical) saveTermSplit(); else saveTermW();
+    saveTermW();
   };
   el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", done);
@@ -221,68 +276,9 @@ function startGrip(e) {
 
 function gripKey(e) {
   const step = e.shiftKey ? 40 : 10;
-  // Up and down move the split on a phone; left and right move the width on a
-  // desktop. Same handle, the axis its layout uses.
-  if (termNarrow()) {
-    if (e.key === "ArrowUp") { e.preventDefault(); setTermSplit(currentSplitPx() - step); saveTermSplit(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setTermSplit(currentSplitPx() + step); saveTermSplit(); }
-    return;
-  }
   if (e.key === "ArrowLeft") { e.preventDefault(); setTermW(termListW - step); saveTermW(); }
   else if (e.key === "ArrowRight") { e.preventDefault(); setTermW(termListW + step); saveTermW(); }
   else return;
-}
-
-// ── the phone split between the list and the terminal ────────────────────────
-//
-// A px height on the list, stacked above the terminal, dragged with the grip.
-// Stored under a device-namespaced key so a split set on a phone is the phone's
-// and never rides onto a desktop, where the same grip means width. Below the
-// floor it is not written, and with nothing written the stylesheet's 40vh
-// fallback stands.
-const TERMSPLIT_MIN = 80;
-function termSplitKey() { return termDeviceKey("atrium.termsplit"); }
-
-// What the list is drawn at right now, which is where a drag or a key nudge
-// starts from. Reads the laid-out height rather than the stored number, so the
-// first move from the fallback does not jump.
-function currentSplitPx() {
-  const list = document.getElementById("term-list");
-  return list ? Math.round(list.getBoundingClientRect().height) : 0;
-}
-
-// The floor is a handful of rows; the ceiling leaves the terminal a usable
-// strip rather than letting the list eat the whole layout.
-function clampTermSplit(px) {
-  const lay = document.getElementById("term-layout");
-  const max = lay
-    ? Math.max(TERMSPLIT_MIN, Math.round(lay.getBoundingClientRect().height) - 120)
-    : 600;
-  return Math.max(TERMSPLIT_MIN, Math.min(max, Math.round(px || 0)));
-}
-
-function setTermSplit(px) {
-  const lay = document.getElementById("term-layout");
-  if (!lay) return;
-  lay.style.setProperty("--termsplit", clampTermSplit(px) + "px");
-  // Live, so the terminal reflows under the handle rather than jumping when it
-  // is let go. Same reasoning as `setTermW`.
-  onTermResize();
-}
-
-function readTermSplit() {
-  try {
-    const v = Number(localStorage.getItem(termSplitKey()));
-    if (v >= TERMSPLIT_MIN) return v;
-  } catch (e) {}
-  return 0;
-}
-
-function saveTermSplit() {
-  const lay = document.getElementById("term-layout");
-  if (!lay) return;
-  const v = parseInt(lay.style.getPropertyValue("--termsplit"), 10);
-  if (v) { try { localStorage.setItem(termSplitKey(), String(v)); } catch (e) {} }
 }
 
 // The width is set on the element as it moves and written down only when the
@@ -1109,7 +1105,13 @@ async function renderTermList() {
   pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
-  const toggle = `<div class="termhead">
+  // The phone's collapsed switcher, hidden by CSS on a desktop and while nothing
+  // is attached. It names the attached session and opens the list over the
+  // terminal. See `termDropHTML`.
+  // The head is the sort chip and the grouping control. On a phone both fold
+  // under the `filters` button in the trigger; on a desktop they sit at the top
+  // of the list as always.
+  const head = `<div class="termhead">
       <button class="termsort" onclick="toggleTermSort()"
         title="newest activity first, and anything waiting on you above that">
         ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
@@ -1129,19 +1131,17 @@ async function renderTermList() {
       <div class="seg groupseg" id="term-group"></div>
     </div>`;
 
+  // THE TRIGGER STAYS IN FLOW; THE BODY CAN FLOAT. On a phone the trigger is the
+  // one row you always see and `.termbody` is what the caret opens OVER the
+  // terminal, so opening the switcher never resizes the terminal under it. On a
+  // desktop `.termbody` is `display: contents` and the head and cards sit in the
+  // list exactly as before. The board card, its shape and class, is unchanged:
+  // this list is a switcher, and what it drops (the status chip, the duration)
+  // it drops because the board says those better.
   setHTML(host, tasks.length
-    // A BOARD CARD, the same shape and the same class. The switcher had grown
-    // its own card with its own borders, its own hover and its own chips, and
-    // the two drifted until the same session looked like two different things
-    // depending on which view you were in.
-    //
-    // What it does NOT carry is the status chip and the duration beside it.
-    // This list is a switcher: the question it answers is which session, and
-    // a pill that rewrites itself every few seconds in the corner of your eye
-    // answers a question nobody asked it. The board is where "how long has
-    // this been sitting" belongs, and it says it better.
-    ? toggle + termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(tasks.filter(t => !t.pinned))
+    ? termDropHTML() + `<div class="termbody">` + head +
+      termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
+      termGroupsHTML(tasks.filter(t => !t.pinned)) + `</div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
