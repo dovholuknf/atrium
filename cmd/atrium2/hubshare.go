@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
@@ -44,7 +45,14 @@ type boardShare struct {
 // openBoardShare creates a zrok share for the board and returns the listener to
 // serve on. The caller serves the board handler on the listener and calls
 // release on the way out.
-func openBoardShare(mode string) (*boardShare, net.Listener, error) {
+//
+// A PUBLIC SHARE MUST CARRY A LOGIN, and it is applied here. The login is the
+// operator's choice held hub-side (see internal/hubstore.ShareAuth): zrok updb
+// (a username and password) or OIDC. A public share with neither is refused,
+// because a public zrok URL is reachable by anyone and reachability cannot be
+// the authorisation. A private share ignores the login entirely: the access
+// token is already the gate. See docs/ziti-zrok-flow-design.md, decisions 1-2.
+func openBoardShare(mode string, auth hubstore.ShareAuth) (*boardShare, net.Listener, error) {
 	mode = strings.TrimSpace(mode)
 	if mode == "" {
 		mode = "private"
@@ -75,6 +83,13 @@ func openBoardShare(mode string) (*boardShare, net.Listener, error) {
 		Target: "atrium-hub-board",
 	}
 
+	// The public share's login. Refused rather than opened wide with none.
+	if mode == "public" {
+		if err := applyShareAuth(req, auth); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	shr, err := zroksdk.CreateShare(root, req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not create a %s zrok share for the board: %w", mode, err)
@@ -96,6 +111,59 @@ func openBoardShare(mode string) (*boardShare, net.Listener, error) {
 		bs.Address = "zrok access private " + shr.Token
 	}
 	return bs, ln, nil
+}
+
+// applyShareAuth puts the operator's chosen login onto a PUBLIC share request.
+//
+// This is the whole of decision 1: a public zrok share is created behind zrok
+// updb (a username and password) OR an OIDC provider, and zrok enforces it at
+// the edge. The hub binary grows no login of its own; it only tells zrok which
+// to use. An empty scheme, a missing credential, or an unknown scheme is
+// refused here rather than producing a public URL anyone can open. The settings
+// screen refuses the same cases at save time, so this is the second wall, for a
+// public share started headless with --board-share public and nothing set.
+func applyShareAuth(req *zroksdk.ShareRequest, auth hubstore.ShareAuth) error {
+	switch strings.TrimSpace(auth.Scheme) {
+	case "updb":
+		user := strings.TrimSpace(auth.User)
+		if user == "" || auth.Pass == "" {
+			return fmt.Errorf("a public board share needs a username and password. " +
+				"set them under the gear, `expose the board`, `public share login`")
+		}
+		// zrok's SDK reads "user:password" pairs and sets the updb auth scheme.
+		// A colon in the username would split wrong, so it is refused: the
+		// password may hold anything, but the username is the left of one colon.
+		if strings.Contains(user, ":") {
+			return fmt.Errorf("the share username cannot contain a colon")
+		}
+		req.BasicAuth = []string{user + ":" + auth.Pass}
+		return nil
+	case "oidc":
+		provider := strings.TrimSpace(auth.OIDCProvider)
+		if provider == "" {
+			return fmt.Errorf("a public board share set to OIDC needs a provider. " +
+				"name it under the gear, `expose the board`, `public share login`")
+		}
+		req.OauthProvider = provider
+		return nil
+	default:
+		return fmt.Errorf("a public board share has no login configured, so it would be a URL " +
+			"anyone can open. set one under the gear, `expose the board`, `public share login`, " +
+			"or use a private share or an OpenZiti service instead")
+	}
+}
+
+// shareLoginName is the login scheme in words, for a log line. A public share
+// always has one by the time this is reached.
+func shareLoginName(auth hubstore.ShareAuth) string {
+	switch strings.TrimSpace(auth.Scheme) {
+	case "updb":
+		return "a username and password (zrok updb)"
+	case "oidc":
+		return "OIDC (" + strings.TrimSpace(auth.OIDCProvider) + ")"
+	default:
+		return "no login"
+	}
 }
 
 // release deletes the share the hub created.
