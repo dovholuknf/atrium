@@ -189,6 +189,18 @@ if ! node "$here/scripts/test-notify-reseed.js"; then
   fail=1
 fi
 
+# The room-flip reattach guard, RUN against a re-tagged task list. The SAME
+# 1<->2 flip that re-tags card ids also stranded the attached pane: it held the
+# id from before the flip, the render read it as gone by raw id, tore it down,
+# and the watchdog re-attached the id the single-card endpoint still resolved,
+# forever. This asserts the attached card is matched and re-resolved by its bare
+# id in both directions, a genuinely gone card is still torn down, and the
+# in-flight guard survives the flip.
+if ! node "$here/scripts/test-term-retag.js"; then
+  echo "a room-set change would spin the terminal pane's reattach loop. see above." >&2
+  fail=1
+fi
+
 # The refresh-storm guard, RUN against a simulated flap storm. A room that
 # attaches and detaches every few seconds used to make the board answer every
 # flip with a fresh fan-out of fetches, until the tab emptied its socket pool
