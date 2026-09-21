@@ -288,6 +288,18 @@ func (r *ringBuffer) CurrentWidth() int {
 	return r.marks[len(r.marks)-1].cols
 }
 
+// CurrentSize is the width AND height output is being composed at right now.
+//
+// The change-guard in `setViewport` needs both, because a shorter viewer moves
+// the pty the same way a narrower one does and must be recognised as a no-op
+// when nothing changed. Read from the same last mark as `CurrentWidth`.
+func (r *ringBuffer) CurrentSize() (cols, rows int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m := r.marks[len(r.marks)-1]
+	return m.cols, m.rows
+}
+
 // Snapshot returns the retained output, oldest first, whatever width it was
 // composed at.
 //
@@ -856,11 +868,27 @@ func (r *runner) howBusy() peerRoom {
 // THE SMALLEST VIEWER DECIDES, which is what every multiplexer settled on for
 // the same reason. Every attached viewer can then render what it is sent
 // correctly, and the cost is unused margin in the larger window rather than
-// a screen nobody can read. First attach and last detach are both just
-// recomputes.
+// a screen nobody can read.
+//
+// THE PTY MOVES ONLY WHEN THE AGREED SIZE ACTUALLY CHANGES, which is the whole
+// of the resize-sanity fix. A shared raw-mode TUI cannot be decoupled from the
+// pty outright: it composes for one width, and a viewer narrower than that
+// width gets a garbled screen, so the narrowest reader has to set the size.
+// That is coupling, and it is inherent. What was NOT inherent is the CHURN: the
+// pty was resized on every attach, detach and drag, so a `Resize` to the size
+// it already was still raised SIGWINCH and every viewer repainted. One
+// console's drag flickered the others even when it changed nothing binding.
+//
+// So `setViewport` and `dropViewport` compute the agreed size exactly as before
+// and resize only when it differs from the size the pty is already at. A viewer
+// wider than the current width drags freely and touches nobody. An attach or
+// detach that does not change the smallest lays no mark and repaints no one. A
+// genuinely narrower reader still moves the pty, because the others cannot read
+// a width their pane cannot show. See `docs/terminal-resize-decoupling-design.md`.
 type viewport struct{ cols, rows int }
 
-// setViewport records one viewer's size and applies the agreed one.
+// setViewport records one viewer's size and applies the agreed one, but only
+// when it changed.
 //
 // Keyed by the attachment rather than counted, because a viewer that goes away
 // has to stop constraining the others: a phone that attached once and closed
@@ -876,6 +904,13 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	r.views[id] = viewport{cols, rows}
 	agreed := smallestViewport(r.views)
 	r.mu.Unlock()
+	// THE GUARD. A resize to the size the pty is already at is not free: it
+	// raises SIGWINCH and repaints every viewer, which is exactly the churn one
+	// console's drag inflicted on the others. Skip it when nothing moved.
+	curCols, curRows := r.buf.CurrentSize()
+	if agreed.cols == curCols && agreed.rows == curRows {
+		return nil
+	}
 	// Marked BEFORE the resize, so the first byte drawn at the new width is
 	// already on the new side of the mark. The other order leaves a repaint
 	// filed under the width it replaced, which is the whole bug.
@@ -883,7 +918,8 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	return r.pty.Resize(agreed.cols, agreed.rows)
 }
 
-// dropViewport forgets a viewer that has detached and gives the size back.
+// dropViewport forgets a viewer that has detached, and lets the pty follow the
+// size back up only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
 	r.mu.Lock()
 	if r.views == nil {
@@ -902,6 +938,15 @@ func (r *runner) dropViewport(id any) {
 	// would be a resize to nothing, and the size a detached session keeps is
 	// the one it had, which is what a runner reading it expects.
 	if left == 0 {
+		return
+	}
+	// The same guard as `setViewport`. A wider viewer detaching leaves the
+	// smallest unchanged, so nothing resizes and no other viewer is churned.
+	// Only the binding viewer's departure moves the pty, and the ring merges
+	// the marks when nothing was drawn in between, so a popped window costs no
+	// scrollback.
+	curCols, curRows := r.buf.CurrentSize()
+	if agreed.cols == curCols && agreed.rows == curRows {
 		return
 	}
 	r.buf.SetSize(agreed.cols, agreed.rows)
