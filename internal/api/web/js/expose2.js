@@ -61,6 +61,8 @@ async function loadExpose2() {
   try { exp2Auth = await api("/v1/auth"); }
   catch (e) { exp2Auth = null; }
   paintExpose2();
+  // Menu 3 reads the same login state. Guarded so either surface is deletable.
+  if (typeof paintExpose3 === "function") paintExpose3();
 }
 
 // Whether the board login is set at all, and how it reads in one line.
@@ -472,5 +474,6 @@ async function exp2Stop(kind) {
 async function loadExpose2Overlays() {
   try { overlays = (await api("/v1/overlays")).overlays || overlays; } catch (e) {}
   paintExpose2();
+  if (typeof paintExpose3 === "function") paintExpose3();
   if (typeof paintOverlays === "function") paintOverlays();
 }
