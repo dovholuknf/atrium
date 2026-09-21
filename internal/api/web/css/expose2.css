@@ -23,10 +23,15 @@
     box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset;
   }
 
+  /* A real <button> reset to look like the row head it replaced: full width, no chrome, inherited type. The
+     focus ring is kept (not removed) because this is now the keyboard handle for the whole row. */
   .xb-head {
-    display: flex; align-items: center; gap: var(--sp-3);
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%;
     padding: 12px 13px; cursor: pointer; user-select: none;
+    background: transparent; border: none; color: inherit; font: inherit; text-align: left;
+    border-radius: var(--r-md);
   }
+  .xb-head:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
   /* The icon tile, the one part of the classic panel worth keeping. Same 40px tile and per-mark tint as .ov-mark,
      so a zrok row here and a zrok panel there wear the same green. */
   .xb-mark {

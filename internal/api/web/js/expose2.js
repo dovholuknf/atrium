@@ -87,16 +87,21 @@ function paintExpose2() {
 
 // One row's head, shared by the login row and the transport rows: icon tile,
 // name, one line, a state word, a caret.
-function exp2Head(id, mark, kind, name, blurb, state) {
-  return `<div class="xb-head" onclick="exp2Toggle('${esc(id)}')">
+// A real <button>, not a click-only <div>: a div carries no keyboard focus, no
+// Enter/Space activation, and nothing for a screen reader, so the whole panel
+// was mouse-only. aria-expanded and aria-controls tell an assistive reader the
+// row is a disclosure and which region it opens.
+function exp2Head(id, mark, kind, name, blurb, state, open) {
+  return `<button type="button" class="xb-head" onclick="exp2Toggle('${esc(id)}')"
+      aria-expanded="${open ? "true" : "false"}" aria-controls="xb-body-${esc(id)}">
     <span class="xb-mark" data-kind="${esc(kind)}">${mark}</span>
     <span class="grow">
       <span class="xb-name">${esc(name)}</span>
       <span class="xb-blurb">${esc(blurb)}</span>
     </span>
     <span class="xb-state ${state.cls || ""}">${esc(state.word)}</span>
-    <span class="xb-caret">&#8250;</span>
-  </div>`;
+    <span class="xb-caret" aria-hidden="true">&#8250;</span>
+  </button>`;
 }
 
 // The board authentication row. First, because the interview put it there: it
@@ -108,11 +113,11 @@ function exp2AuthRow(auth) {
     ? { cls: "on", word: "login set" }
     : { cls: "", word: "no login" };
   const head = exp2Head("board-auth", key, "auth", "board authentication",
-    auth.line, state);
-  const body = open ? `<div class="xb-body"><div class="xb-body-in">
+    auth.line, state, open);
+  const body = open ? `<div class="xb-body" id="xb-body-board-auth"><div class="xb-body-in">
     ${exp2AuthBody()}
   </div></div>` : "";
-  return `<div class="xb-row ${open ? "open" : ""} ${auth.on ? "" : ""}">${head}${body}</div>`;
+  return `<div class="xb-row ${open ? "open" : ""} ${auth.on ? "live" : ""}">${head}${body}</div>`;
 }
 
 // The board login, as three choices rather than a wall of fields: off, a name
@@ -228,8 +233,8 @@ function exp2Row(t, auth) {
       ? { cls: "", word: "ready" }
       : { cls: "warn", word: "set up" };
 
-  const head = exp2Head(t.id, mark, t.kind, t.name, t.blurb, state);
-  const body = open ? `<div class="xb-body"><div class="xb-body-in">
+  const head = exp2Head(t.id, mark, t.kind, t.name, t.blurb, state, open);
+  const body = open ? `<div class="xb-body" id="xb-body-${esc(t.id)}"><div class="xb-body-in">
     ${exp2Body(t, o, ready, running, auth)}
   </div></div>` : "";
   return `<div class="xb-row ${open ? "open" : ""} ${running ? "live" : ""}">${head}${body}</div>`;
@@ -285,35 +290,41 @@ function exp2Setup(t, o) {
       + "token your network administrator issues.";
   const tokLabel = isZrok ? "account token" : "enrollment token";
   const tokPlace = isZrok ? "paste your zrok account token" : "paste the enrollment JWT";
+  // Ids are scoped to the ROW, not the kind. The two zrok rows share one kind,
+  // so kind-scoped ids collided when both were open and unenabled: two elements
+  // with id="xb-zrok-token" and getElementById reading only the first, so the
+  // public row's "enable" read the private row's box. The row id is unique.
+  const p = `xb-setup-${esc(t.id)}`;
   const tokInput = isZrok
-    ? `<input type="password" id="xb-${esc(t.kind)}-token" spellcheck="false" autocomplete="off"
+    ? `<input type="password" id="${p}-token" spellcheck="false" autocomplete="off"
          placeholder="${esc(tokPlace)}">`
-    : `<textarea id="xb-${esc(t.kind)}-token" rows="3" spellcheck="false"
+    : `<textarea id="${p}-token" rows="3" spellcheck="false"
          placeholder="${esc(tokPlace)}"></textarea>`;
   const nameLabel = isZrok ? "what to call this machine" : "call this identity";
   const namePlace = isZrok ? "left to zrok's default when empty" : "atrium";
   return `<div class="xb-note">${esc(title)}</div>
     <p class="xb-lead" style="margin-top:10px">${esc(what)}</p>
     <div class="xb-field">
-      <label class="eyebrow" for="xb-${esc(t.kind)}-token">${esc(tokLabel)}</label>
+      <label class="eyebrow" for="${p}-token">${esc(tokLabel)}</label>
       ${tokInput}
     </div>
     <div class="xb-field">
-      <label class="eyebrow" for="xb-${esc(t.kind)}-name">${esc(nameLabel)}</label>
-      <input type="text" id="xb-${esc(t.kind)}-name" spellcheck="false" placeholder="${esc(namePlace)}">
+      <label class="eyebrow" for="${p}-name">${esc(nameLabel)}</label>
+      <input type="text" id="${p}-name" spellcheck="false" placeholder="${esc(namePlace)}">
     </div>
     <div class="xb-actions">
-      <button class="go" onclick="exp2SetupRun('${esc(t.kind)}')">${
+      <button class="go" onclick="exp2SetupRun('${esc(t.kind)}','${esc(t.id)}')">${
         isZrok ? "enable this machine" : "enroll this machine"}</button>
       <span class="grow"></span>
-      <span class="hintline" id="xb-${esc(t.kind)}-said"></span>
+      <span class="hintline" id="${p}-said"></span>
     </div>`;
 }
 
-async function exp2SetupRun(kind) {
-  const token = (document.getElementById(`xb-${kind}-token`) || {}).value || "";
-  const name = (document.getElementById(`xb-${kind}-name`) || {}).value || "";
-  const said = document.getElementById(`xb-${kind}-said`);
+async function exp2SetupRun(kind, rowId) {
+  const p = `xb-setup-${rowId}`;
+  const token = (document.getElementById(`${p}-token`) || {}).value || "";
+  const name = (document.getElementById(`${p}-name`) || {}).value || "";
+  const said = document.getElementById(`${p}-said`);
   if (!token.trim()) { if (said) said.textContent = "paste the token first"; return; }
   try {
     const res = await api(`/v1/overlays/${kind}/setup`, {
@@ -431,9 +442,19 @@ async function exp2Start(rowId) {
   const t = EXP2_TRANSPORTS.find(x => x.id === rowId);
   if (!t) return;
   if (t.id === "zrok-public") {
+    // The copy on the row promises a public share is REFUSED without board
+    // authentication, so this refuses it rather than warning and starting. The
+    // hub refuses it too (board-auth 836fcf3); this makes the button match the
+    // words instead of leaning on a confirm dialog and a server round trip.
+    if (!exp2AuthState().on) {
+      toast("board authentication is not set",
+        "a public URL with no login is the open internet. open board authentication above "
+        + "and set a login, then publish.");
+      return;
+    }
     const ok = await confirmUser("share this publicly?",
       "A public zrok share is a link anyone who has it can open. Whoever opens it sees every "
-      + "card and can answer permission requests. Set board authentication first if you have not.",
+      + "card and can answer permission requests.",
       "share it publicly");
     if (!ok) return;
   }
