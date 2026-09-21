@@ -908,6 +908,21 @@ async function landOnATerminal() {
 
 // ── finding out whether this is a hub at all ────────────────────────────────
 
+// roomSetDelta is the rooms that came or went between two attached-set keys, as
+// a Set of names. Both keys are the newline-joined name lists loadHubRooms
+// compares by; the older one is null on the first read, treated as empty. Used
+// to tell whether the SELECTED room is the one whose attachment just changed.
+function roomSetDelta(prevKey, nextKey) {
+  const prev = prevKey ? prevKey.split("\n") : [];
+  const next = nextKey ? nextKey.split("\n") : [];
+  const a = new Set(prev);
+  const b = new Set(next);
+  const out = new Set();
+  prev.forEach(n => { if (!b.has(n)) out.add(n); });
+  next.forEach(n => { if (!a.has(n)) out.add(n); });
+  return out;
+}
+
 // loadHubRooms asks what is attached. Answers false when this is a plain daemon,
 // which is how everything above turns itself off.
 let hubRead = 0;
@@ -943,14 +958,27 @@ async function loadHubRooms() {
       typeof alerting !== "undefined" && alerting.reseed) {
     alerting.reseed();
   }
-  // A ROOM ATTACHING RE-RESOLVES THE SKIN, because the ALL view borrows its
-  // settings from a room and a hub with none yet answers `/v1/settings` with a
-  // 409. The load-time read (see bootSkin) then failed and left the board on the
-  // default; when the first room attaches the stream is already open, so the
-  // reconnect path does not fire, and only this does. Re-read on any change to
-  // the attached set, which the api cap bounds and which is rare next to a poll.
-  // See applyResolvedSkin.
-  if (roomKey !== attachedRoomKey && typeof bootSkin === "function") bootSkin();
+  // A ROOM ATTACHING RE-RESOLVES THE SKIN ONLY TO HEAL A LOAD THAT COULD NOT
+  // READ SETTINGS YET, or when the room that changed IS the scope the operator
+  // is looking at. A hub still bringing its rooms up answers `/v1/settings` with
+  // a 409, so the load-time read (see bootSkin) fails and the board sits on the
+  // default; the first room to attach makes the read succeed and the skin heals
+  // here, since the stream was already open and the reconnect path did not fire.
+  //
+  // ONCE THE SKIN HAS SETTLED, a room merely attaching or leaving must NOT
+  // re-resolve it. The applied skin belongs to the operator's SELECTED scope
+  // (ALL wears the hub's, each room its own), so a room the operator is not
+  // looking at coming or going must leave the theme alone. Re-resolving on every
+  // flip is the bug this fixes: a room connecting swapped the theme to its own
+  // skin and its leaving reverted it, under an operator who never changed scope.
+  // The one exception is a change to the SELECTED room itself, which the picker's
+  // scope pins and which should re-read that room's own skin. See applyResolvedSkin.
+  if (roomKey !== attachedRoomKey && typeof bootSkin === "function") {
+    const settled = typeof skinHasSettled === "function" && skinHasSettled();
+    const sel = typeof roomNow === "function" ? roomNow() : "";
+    const changed = roomSetDelta(attachedRoomKey, roomKey);
+    if (!settled || (sel && changed.has(sel))) bootSkin();
+  }
   attachedRoomKey = roomKey;
   // THE DURABLE LIST COMES WITH IT, because the header's counter needs both
   // halves: how many rooms are answering, and how many exist to answer. Asked
