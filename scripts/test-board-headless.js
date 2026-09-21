@@ -84,15 +84,16 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
-// The hide-doers strip. Four live rows exercising the 3-way control: an
-// agent-launched doer working RIGHT NOW (the `origin:agent` tag the launch cap
-// counts, plus a live `activity`), an agent-launched doer that is IDLE (the tag,
-// no activity), a human's own terminal with no tag, and a PINNED doer. `active`
-// hiding drops the working doer only; `inactive` hiding drops the idle doer
-// only; the human and the pinned doer stay in every mode, since pinning is the
-// operator keeping one and the human's own is never a doer. All supervised so
-// they draw as live rows rather than cold, and so `staleActivity` is false and
-// the working doer reads as working.
+// The hide-strip. Five live rows exercising the two independent toggles. Two are
+// SUBAGENTS (the `origin:agent` tag the launch cap counts): one IDLE (the tag,
+// no activity) and one working RIGHT NOW (the tag plus a live `activity`). Two
+// are AGENTS (no tag, a human's own top-level session): one IDLE and one
+// working. And a PINNED subagent. The subagents toggle drops the idle subagent
+// only; the agents toggle drops the idle agent only; the two are independent, so
+// both/either/neither. A session working right now is never hidden by either
+// toggle, and the pinned one always stays. All supervised so they draw as live
+// rows rather than cold, and so `staleActivity` is false and the working ones
+// read as working.
 const DOER = {
   id: "doer1", status: "running", display_title: "idle doer", runner: "claude",
   rank: 1, worktree: "/tmp/doer", why: "", idle_seconds: 0, wait_seconds: 0,
@@ -104,6 +105,10 @@ const ADOER = Object.assign({}, DOER, {
 });
 const HUMANT = Object.assign({}, DOER, {
   id: "humant", display_title: "my terminal", tags: []
+});
+const AHUMANT = Object.assign({}, DOER, {
+  id: "ahumant", display_title: "my working terminal", tags: [],
+  activity: { what: "thinking" }
 });
 const PINDOER = Object.assign({}, DOER, {
   id: "pindoer", display_title: "pinned doer", pinned: true
@@ -236,9 +241,11 @@ const server = http.createServer((req, res) => {
     // The pinned-cold strip: the terminated card while its pin holds it, and an
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
-    // The hide-doers strip: an idle doer, a working doer, a human's terminal,
-    // and a pinned doer.
-    if (tasksMode === "doers") { sendJSON(res, { tasks: [DOER, ADOER, HUMANT, PINDOER] }); return; }
+    // The hide strip: an idle subagent, a working subagent, an idle agent, a
+    // working agent, and a pinned subagent.
+    if (tasksMode === "doers") {
+      sendJSON(res, { tasks: [DOER, ADOER, HUMANT, AHUMANT, PINDOER] }); return;
+    }
     // The attach-loop repro. The cached LIST lags the live card: it carries the
     // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
     // it down) while the single-card poll above still says supervised (so the
@@ -470,83 +477,153 @@ async function main() {
     }
     tasksMode = "first";
 
-    // ── the 2-state hide-doers control ──────────────────────────────────────
-    // The strip carries an idle doer and a working doer (both `origin:agent`), a
-    // human's own terminal, and a pinned doer. `none` shows all four and the
-    // control reads "subagents shown". Toggled to `inactive` it drops the idle
-    // doer only: the working doer, the human row and the pinned doer all stay,
-    // and the control reads "hide inactive subagents". A working doer is never
-    // hideable. Driven through the board's own functions so the device-scoped
-    // persistence and the split are exercised, not faked.
+    // ── the two independent hide toggles (agents and subagents) ──────────────
+    // The strip carries an idle and a working SUBAGENT (both `origin:agent`), an
+    // idle and a working AGENT (no tag, a human's own session), and a pinned
+    // subagent. The control is one segmented pill with two segments that toggle
+    // independently. Each segment hides only the INACTIVE sessions of its kind;
+    // a working session of either kind, and the pinned one, are never hidden.
+    // The four on/off combinations are each asserted, so the two toggles are
+    // proven independent. Driven through the board's own functions so the
+    // device-scoped persistence for BOTH keys is exercised, not faked.
     tasksMode = "doers";
-    const doerState = () => page.evaluate(() => {
-      const btn = document.querySelector("#term-list .termdoers");
+    const hideState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
+      const seg = which => {
+        const btns = [...document.querySelectorAll("#term-list .termhide button")];
+        return btns.find(b => new RegExp("^" + which + "\\b").test(b.textContent.trim())) || null;
+      };
+      const a = seg("agents"), s = seg("subagents");
       return {
-        idle: has("doer1"), working: has("adoer"),
-        human: has("humant"), pinned: has("pindoer"),
-        mode: hideDoersMode(),
-        label: btn ? btn.textContent.trim() : "",
-        lit: !!(btn && btn.classList.contains("on"))
+        idleSub: has("doer1"), workingSub: has("adoer"),
+        idleAgent: has("humant"), workingAgent: has("ahumant"),
+        pinned: has("pindoer"),
+        agentMode: hideAgentsMode(), subMode: hideDoersMode(),
+        agentLit: !!(a && a.classList.contains("on")),
+        subLit: !!(s && s.classList.contains("on")),
+        agentLabel: a ? a.textContent.trim() : "",
+        subLabel: s ? s.textContent.trim() : "",
+        onePill: document.querySelectorAll("#term-list .termhide").length === 1,
+        segCount: document.querySelectorAll("#term-list .termhide button").length
       };
     });
-    await page.evaluate(() => {
-      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
-      setHideDoers("none");
-      renderTermList();
+    await page.evaluate(async () => {
+      try {
+        localStorage.removeItem(termDeviceKey("atrium.hidedoers"));
+        localStorage.removeItem(termDeviceKey("atrium.hideagents"));
+      } catch (e) {}
+      setHideDoers("none"); setHideAgents("none");
+      await renderTermList();
     });
     await page.waitForSelector('#term-list .card.tab[data-id="doer1"]',
       { state: "attached", timeout: 15000 });
-    const dNone = await doerState();
-    if (!dNone.idle || !dNone.working || !dNone.human || !dNone.pinned) {
-      fail("with hide-doers at `none` the strip did not draw all four rows: " +
-        JSON.stringify(dNone));
+
+    // NEITHER on: every row is drawn, both segments unlit, and it is ONE pill of
+    // two segments rather than two loose buttons.
+    const hNone = await hideState();
+    if (!hNone.idleSub || !hNone.workingSub || !hNone.idleAgent ||
+        !hNone.workingAgent || !hNone.pinned) {
+      fail("with neither toggle on the strip did not draw all five rows: " +
+        JSON.stringify(hNone));
     }
-    if (dNone.mode !== "none" || dNone.lit) {
-      fail("the doers control was not in the unlit `none` state to begin with: " +
-        JSON.stringify(dNone));
+    if (hNone.agentMode !== "none" || hNone.subMode !== "none" ||
+        hNone.agentLit || hNone.subLit) {
+      fail("the hide pill was not in the unlit `none`/`none` state to begin with: " +
+        JSON.stringify(hNone));
     }
-    if (!/^subagents shown$/.test(dNone.label)) {
-      fail("the doers control at `none` did not read exactly 'subagents shown': " +
-        JSON.stringify(dNone));
+    if (!hNone.onePill || hNone.segCount !== 2) {
+      fail("the hide control is not one pill with exactly two segments: " +
+        JSON.stringify(hNone));
+    }
+    if (!/^agents$/.test(hNone.agentLabel) || !/^subagents$/.test(hNone.subLabel)) {
+      fail("the hide segments are not labelled 'agents' and 'subagents': " +
+        JSON.stringify(hNone));
     }
 
-    // `inactive`: the idle doer goes, the working doer stays (never hideable),
-    // and so do the human row and the pinned doer. The control lights up and
-    // reads exactly "hide inactive subagents".
-    await page.evaluate(() => { setHideDoers("inactive"); renderTermList(); });
-    const dInactive = await doerState();
-    if (dInactive.idle) {
-      fail("hide-doers `inactive` left the idle agent-launched doer in the strip.");
+    // SUBAGENTS on, agents off: the idle subagent goes, the working subagent
+    // stays (never hideable), and BOTH agent rows stay (the agents toggle is
+    // off). The subagents segment lights and carries its hidden count of 1; the
+    // agents segment stays unlit. This is the independence check on one side.
+    await page.evaluate(async () => { setHideDoers("inactive"); await renderTermList(); });
+    const hSub = await hideState();
+    if (hSub.idleSub) fail("the subagents toggle left the idle subagent in the strip.");
+    if (!hSub.workingSub) fail("the subagents toggle hid the WORKING subagent: only idle must go.");
+    if (!hSub.idleAgent || !hSub.workingAgent) {
+      fail("the subagents toggle also hid an AGENT row: the two toggles are not " +
+        "independent: " + JSON.stringify(hSub));
     }
-    if (!dInactive.working) {
-      fail("hide-doers `inactive` hid the WORKING doer: only the idle ones must go.");
+    if (!hSub.pinned) fail("the subagents toggle hid the pinned subagent.");
+    if (hSub.subMode !== "inactive" || !hSub.subLit || hSub.agentLit ||
+        hSub.agentMode !== "none") {
+      fail("the subagents toggle did not light its own segment alone: " +
+        JSON.stringify(hSub));
     }
-    if (!dInactive.human || !dInactive.pinned) {
-      fail("hide-doers `inactive` hid the human's terminal or a PINNED doer: " +
-        JSON.stringify(dInactive));
-    }
-    if (dInactive.mode !== "inactive" || !dInactive.lit ||
-        !/^hide inactive subagents$/.test(dInactive.label)) {
-      fail("hide-doers `inactive` did not persist, light, and read exactly " +
-        "'hide inactive subagents': " + JSON.stringify(dInactive));
+    if (!/^subagents 1$/.test(hSub.subLabel)) {
+      fail("the lit subagents segment did not show its hidden count of 1: " +
+        JSON.stringify(hSub));
     }
 
-    // Toggling once more returns to `none` and every row comes back, so hiding
-    // is a view, not a deletion.
-    await page.evaluate(() => { toggleHideDoers(); });
-    const dBack = await doerState();
-    if (!dBack.idle || !dBack.working || dBack.mode !== "none" ||
-        !/^subagents shown$/.test(dBack.label)) {
-      fail("toggling the doers control off `inactive` did not return to `none` " +
-        "with every row restored and the label reset: " + JSON.stringify(dBack));
+    // AGENTS on too: now BOTH are on. The idle agent goes as well, the working
+    // agent stays, the working subagent still stays, and the pinned one stays.
+    // Both segments are lit at once, which agent|shell (one-of-two) cannot do.
+    await page.evaluate(async () => { setHideAgents("inactive"); await renderTermList(); });
+    const hBoth = await hideState();
+    if (hBoth.idleSub || hBoth.idleAgent) {
+      fail("with both toggles on an idle row of either kind survived: " +
+        JSON.stringify(hBoth));
+    }
+    if (!hBoth.workingSub || !hBoth.workingAgent || !hBoth.pinned) {
+      fail("with both toggles on a working or pinned row was hidden: " +
+        JSON.stringify(hBoth));
+    }
+    if (!hBoth.agentLit || !hBoth.subLit ||
+        hBoth.agentMode !== "inactive" || hBoth.subMode !== "inactive") {
+      fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
+    }
+    if (!/^agents 1$/.test(hBoth.agentLabel) || !/^subagents 1$/.test(hBoth.subLabel)) {
+      fail("the two lit segments did not each show a hidden count of 1: " +
+        JSON.stringify(hBoth));
+    }
+
+    // AGENTS on, subagents off: the other independence check. Turning the
+    // subagents side back off restores both subagent rows while the idle agent
+    // stays hidden. So the agents toggle held its state across the subagents
+    // toggle flipping, which is the two-keys-persist-independently proof.
+    await page.evaluate(async () => { toggleHideDoers(); await renderTermList(); });
+    const hAgent = await hideState();
+    if (!hAgent.idleSub || !hAgent.workingSub) {
+      fail("turning the subagents toggle off did not restore the subagent rows: " +
+        JSON.stringify(hAgent));
+    }
+    if (hAgent.idleAgent) {
+      fail("the agents toggle did not hold on across the subagents toggle flipping: " +
+        "the idle agent came back: " + JSON.stringify(hAgent));
+    }
+    if (!hAgent.workingAgent || !hAgent.pinned) {
+      fail("the agents-only state hid a working or pinned row: " + JSON.stringify(hAgent));
+    }
+    if (hAgent.agentMode !== "inactive" || !hAgent.agentLit ||
+        hAgent.subMode !== "none" || hAgent.subLit) {
+      fail("the agents-only state did not light the agents segment alone: " +
+        JSON.stringify(hAgent));
+    }
+
+    // Both off again: every row comes back, so hiding is a view, not a deletion.
+    await page.evaluate(async () => { toggleHideAgents(); await renderTermList(); });
+    const hBack = await hideState();
+    if (!hBack.idleSub || !hBack.workingSub || !hBack.idleAgent ||
+        !hBack.workingAgent || hBack.agentMode !== "none" || hBack.subMode !== "none") {
+      fail("turning both toggles off did not restore every row and reset both " +
+        "segments: " + JSON.stringify(hBack));
     }
 
     // The control cluster is a sticky header: it stays pinned to the top of the
     // list rather than scrolling away with the cards. Asserted structurally,
     // since a headless run has no tall list to scroll: the two control rows live
     // inside one `.termstick`, and it is `position: sticky` pinned to `top: 0`.
-    await page.evaluate(() => { setHideDoers("none"); renderTermList(); });
+    await page.evaluate(async () => {
+      setHideDoers("none"); setHideAgents("none"); await renderTermList();
+    });
     const sticky = await page.evaluate(() => {
       const st = document.querySelector("#term-list .termstick");
       if (!st) return { ok: false, why: "no .termstick wrapper" };
@@ -561,12 +638,15 @@ async function main() {
       fail("the terminals control cluster is not a sticky header pinned to the top: " +
         JSON.stringify(sticky));
     } else if (sticky.rows < 2 || !sticky.group) {
-      fail("the sticky header is missing a control row (sort/doers or the group row): " +
+      fail("the sticky header is missing a control row (sort/hide or the group row): " +
         JSON.stringify(sticky));
     }
 
     await page.evaluate(() => {
-      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
+      try {
+        localStorage.removeItem(termDeviceKey("atrium.hidedoers"));
+        localStorage.removeItem(termDeviceKey("atrium.hideagents"));
+      } catch (e) {}
     });
     tasksMode = "first";
 
@@ -1577,8 +1657,9 @@ async function main() {
   if (bad) process.exit(1);
   console.log("a terminated pinned terminal can be dismissed from its right-click " +
     "menu and stays gone on the next render, " +
-    "the 3-way hide-doers control drops the active or the inactive agent-launched " +
-    "doers while keeping the human's own and pinned rows and showing a hidden count, " +
+    "the two independent hide toggles drop the inactive agents and the inactive " +
+    "subagents each on their own (both/either/neither) while keeping the working " +
+    "and pinned rows and showing a per-kind hidden count, " +
     "the control cluster is a sticky header pinned to the top of the list, " +
     "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +

@@ -55,37 +55,53 @@ function isDoer(t) {
 // every GROUP mode and on the phone: the doers are simply not in the list, and
 // a count in the header says how many.
 //
-// TWO STATES, A TOGGLE. `none` shows every doer. `inactive` hides the ones that
-// are idle, done or waiting on you, so the finished clutter goes and the moving
-// ones stay. A doer working right now is NEVER hidden in either state: an
-// operator always wants to see the sessions actually doing work. One button
-// flips between the two, and its label reads the state it is in.
+// TWO INDEPENDENT TOGGLES, ONE PILL. The strip holds two kinds of session, and
+// each gets its own hide toggle. A SUBAGENT is an agent-launched doer (the
+// `origin:agent` tag, `isDoer`). An AGENT is everything else: a human's own
+// top-level terminal, the sessions clint starts himself. The two toggles are
+// independent, so an operator can hide the inactive subagents, the inactive
+// agents, both, or neither. They read as one segmented control (see
+// `termHideControlsHTML`) and behave as two switches.
+//
+// TWO STATES EACH. `none` shows every session of that kind. `inactive` hides the
+// ones idle, done or waiting on you, so the finished clutter goes and the moving
+// ones stay. A session working right now is NEVER hidden in either state: an
+// operator always wants to see the sessions actually doing work. A pinned
+// session and the attached one are never hidden either (see `sessionHiddenBy`).
 //
 // DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
 // wall-mounted board and a laptop want different answers and neither should
 // write over the other. Default `none`: nothing hides until asked.
-const HIDE_DOERS_KEY = "atrium.hidedoers";
-const DOER_MODES = ["none", "inactive"];
-function hideDoersMode() {
+const HIDE_DOERS_KEY = "atrium.hidedoers";    // the subagents
+const HIDE_AGENTS_KEY = "atrium.hideagents";  // the human/top-level sessions
+const HIDE_MODES = ["none", "inactive"];
+function hideModeFrom(key) {
   try {
-    const v = localStorage.getItem(termDeviceKey(HIDE_DOERS_KEY));
-    if (DOER_MODES.includes(v)) return v;
-    // Old stored values map to the nearest surviving state. The binary "1"
-    // meant hide every doer, which is now `inactive` (working ones stay). The
-    // dropped tri-state `active` hid the working ones, the one thing this no
-    // longer offers, so it falls back to `none` rather than flip to hiding the
-    // opposite set behind the operator's back.
+    const v = localStorage.getItem(termDeviceKey(key));
+    if (HIDE_MODES.includes(v)) return v;
+    // Old stored values map to the nearest surviving state. The subagents key's
+    // binary "1" meant hide every doer, which is now `inactive` (working ones
+    // stay). The dropped tri-state `active` hid the working ones, the one thing
+    // this no longer offers, so it falls back to `none` rather than flip to
+    // hiding the opposite set behind the operator's back.
     if (v === "1") return "inactive";
     return "none";
   } catch (e) { return "none"; }
 }
-function setHideDoers(mode) {
-  if (!DOER_MODES.includes(mode)) mode = "none";
-  try { localStorage.setItem(termDeviceKey(HIDE_DOERS_KEY), mode); } catch (e) {}
+function setHideMode(key, mode) {
+  if (!HIDE_MODES.includes(mode)) mode = "none";
+  try { localStorage.setItem(termDeviceKey(key), mode); } catch (e) {}
   renderTermList();
 }
+function hideDoersMode() { return hideModeFrom(HIDE_DOERS_KEY); }
+function hideAgentsMode() { return hideModeFrom(HIDE_AGENTS_KEY); }
+function setHideDoers(mode) { setHideMode(HIDE_DOERS_KEY, mode); }
+function setHideAgents(mode) { setHideMode(HIDE_AGENTS_KEY, mode); }
 function toggleHideDoers() {
   setHideDoers(hideDoersMode() === "none" ? "inactive" : "none");
+}
+function toggleHideAgents() {
+  setHideAgents(hideAgentsMode() === "none" ? "inactive" : "none");
 }
 
 // IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
@@ -101,37 +117,54 @@ function workingNow(t) {
     !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
 }
 
-// Which doers the hide-inactive mode drops, honouring the two that are never
-// hidden (see `renderTermList`): a pinned doer and the attached one. Kept as one
-// predicate so the count in the header and the rows removed from the list are
-// the same answer rather than two that can drift. `inactive` hides the doers not
-// working right now (idle, done, or waiting on you); a working doer always stays.
-function doerHiddenBy(mode, t, keep) {
-  if (mode === "none" || !isDoer(t) || keep(t)) return false;
-  return !workingNow(t);
+// Whether this session is hidden by its kind's toggle, honouring the two that
+// are never hidden (see `renderTermList`): a pinned session and the attached
+// one. A subagent (`isDoer`) answers to the subagents toggle, everything else
+// to the agents toggle. Kept as one predicate so the count in the header and the
+// rows removed from the list are the same answer rather than two that can drift.
+// `inactive` hides the sessions of that kind not working right now (idle, done,
+// or waiting on you); one working always stays.
+function sessionHiddenBy(t, keep) {
+  if (keep(t) || workingNow(t)) return false;
+  const mode = isDoer(t) ? hideDoersMode() : hideAgentsMode();
+  return mode === "inactive";
 }
 
-// THE HEADER CONTROL, drawn beside `sorted by activity`. Rendered when it does
-// something: when there are doers it could hide, or when the hide is already on
-// (so it can be turned back off). `doerCount` is how many doers are hideable at
-// all, which is what decides whether an offer to hide is worth showing while the
-// mode is still `none`.
+// THE HEADER CONTROL, a segmented pill drawn beside `sorted by activity`. It
+// reads as one control - `agents | subagents` in a single rounded container,
+// styled like the card's agent|shell pair (it borrows `.termkind`) - but each
+// segment is an INDEPENDENT on/off toggle. agent|shell is one-of-two; this is
+// two switches: hide the inactive agents, the inactive subagents, both, or
+// neither, so both segments can be lit at once.
 //
-// THE LABEL READS THE STATE, exactly: "subagents shown" when nothing is hidden,
-// "hide inactive subagents" when the inactive ones are dropped. Working doers,
-// pinned doers and the attached one always stay, in either state.
-function termDoersToggleHTML(doerCount) {
-  const mode = hideDoersMode();
-  if (mode === "none" && doerCount === 0) return "";
-  const on = mode !== "none";
-  const label = on ? "hide inactive subagents" : "subagents shown";
-  const title = on
-    ? "the inactive subagents (idle, done or waiting on you) are hidden. click " +
-      "to show them. working subagents, your own terminals and any pinned doers always stay"
-    : "every subagent is showing. click to hide the inactive ones (idle, done " +
-      "or waiting on you). working subagents, your own terminals and any pinned doers always stay";
-  return `<button class="termsort termdoers${on ? " on" : ""}"
-      onclick="toggleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
+// A PRESSED SEGMENT is lit like agent|shell's selected side and carries the
+// count it is hiding right now, so the pill says how much is out of view. The
+// `hide inactive` caption says what pressing a segment does. Working sessions,
+// pinned ones and the attached one always stay, whatever is pressed.
+//
+// DRAWN WHEN IT DOES SOMETHING: when either kind has an inactive session it
+// could hide, or when either toggle is already on (so it can be turned back
+// off). Both segments are drawn together whenever the control shows, so it
+// always reads as the same pair rather than growing and shrinking a side.
+function termHideControlsHTML(c) {
+  const aOn = hideAgentsMode() !== "none";
+  const sOn = hideDoersMode() !== "none";
+  if (!aOn && !sOn && !c.agentHideable && !c.subHideable) return "";
+  const seg = (name, on, hidden, fn) => {
+    const label = on && hidden ? `${name} ${hidden}` : name;
+    const title = on
+      ? `inactive ${name} are hidden. click to show them. working ${name}, ` +
+        "pinned sessions and the attached one always stay"
+      : `hide the inactive ${name} (idle, done or waiting on you). working ` +
+        `${name}, pinned sessions and the attached one always stay`;
+    return `<button class="${on ? "on" : ""}" onclick="${fn}"
+        title="${esc(title)}">${esc(label)}</button>`;
+  };
+  return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
+      seg("agents", aOn, c.agentHidden, "toggleHideAgents()")
+    }${
+      seg("subagents", sOn, c.subHidden, "toggleHideDoers()")
+    }</span>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
@@ -1247,23 +1280,30 @@ async function renderTermList() {
   // this one screen chose to read the strip.
   badge("c-term", tasks.filter(t => t.supervised).length);
 
-  // HIDE THE DOERS, when asked. Agent-launched sessions are dropped from the
-  // strip so a human's own terminals are not buried under a wave of them. The
-  // control is 2-way: `none` hides nothing, `inactive` drops the idle, done and
-  // waiting ones while the ones working right now always stay. Two doers are
-  // kept whatever the mode: a PINNED one, since pinning is the operator saying
-  // "this one is mine, keep it", and the ATTACHED one, since hiding must never
-  // yank the pane out from under whatever is open (the teardown below keys off
-  // this same list). What is removed is counted so the header can say how many,
-  // and everything downstream draws `shown` rather than `tasks`.
-  const keepDoer = t => t.pinned || (termTask && t.id === termTask.id);
-  const doerMode = hideDoersMode();
-  // How many doers could be hidden at all, independent of the mode: what
-  // decides whether an offer to hide is worth drawing while the mode is `none`.
-  const doerCount = tasks.filter(t => isDoer(t) && !keepDoer(t)).length;
-  const hideable = tasks.filter(t => doerHiddenBy(doerMode, t, keepDoer));
+  // HIDE THE INACTIVE SESSIONS, per kind, when asked. Two independent toggles
+  // (see `termHideControlsHTML`): the subagents side drops the inactive
+  // agent-launched doers, the agents side drops the inactive human sessions, so
+  // neither kind buries the other. Two sessions are kept whatever the toggles
+  // say: a PINNED one, since pinning is the operator saying "this one is mine,
+  // keep it", and the ATTACHED one, since hiding must never yank the pane out
+  // from under whatever is open (the teardown below keys off this same list).
+  // What is removed is counted per kind so the pill can say how many, and
+  // everything downstream draws `shown` rather than `tasks`.
+  const keep = t => t.pinned || (termTask && t.id === termTask.id);
+  const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
   const shown = hideable.length
-    ? tasks.filter(t => !doerHiddenBy(doerMode, t, keepDoer)) : tasks;
+    ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
+  // What each segment could hide (an inactive, un-kept session of its kind) and
+  // what it is hiding right now: the first decides whether a segment is worth
+  // offering while its toggle is off, the second is the count a lit segment
+  // shows. Same `inactive` test the hide uses, so the offer and the act agree.
+  const inactiveKeepable = t => !keep(t) && !workingNow(t);
+  const hideCounts = {
+    agentHideable: tasks.filter(t => !isDoer(t) && inactiveKeepable(t)).length,
+    subHideable: tasks.filter(t => isDoer(t) && inactiveKeepable(t)).length,
+    agentHidden: hideable.filter(t => !isDoer(t)).length,
+    subHidden: hideable.filter(t => isDoer(t)).length
+  };
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -1314,7 +1354,7 @@ async function renderTermList() {
   // under the `filters` button in the trigger; on a desktop they sit at the top
   // of the list as always.
   // WRAPPED IN `.termstick` AND PINNED. The control cluster (the sort chip, the
-  // doers control and the `group` row) stays put at the top
+  // hide pill and the `group` row) stays put at the top
   // of the list while the cards scroll under it. The wrapper is `position:
   // sticky` and rides whichever box actually scrolls: `#term-list` on a desktop
   // and when nothing is attached, and the floating `.termbody` flyout on a phone
@@ -1326,7 +1366,7 @@ async function renderTermList() {
         <button class="termsort" onclick="toggleTermSort()"
           title="working sessions first, then anything waiting on you, then newest activity">
           ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
-        ${termDoersToggleHTML(doerCount)}
+        ${termHideControlsHTML(hideCounts)}
         <span class="grow"></span>
         ${termListButtons()}
       </div>
