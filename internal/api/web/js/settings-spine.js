@@ -125,6 +125,9 @@ function paintSettings() {
   // only changes when something in here changes it, and the event stream
   // carries the ones that happen elsewhere.
   loadOverlays();
+  // The redo surface ("expose the board 2"), painted from the same overlay
+  // state. Guarded so removing js/expose2.js leaves this a no-op.
+  if (typeof loadExpose2 === "function") loadExpose2();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
