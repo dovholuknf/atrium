@@ -119,6 +119,20 @@ func TestEnrollZitiRefusesWithNoToken(t *testing.T) {
 	}
 }
 
+// EnrollZitiInto is the daemon-free entry point `atrium2 join` uses to enroll a
+// JWT in place. It refuses the same bad inputs, without a daemon, and into a
+// directory the caller names.
+func TestEnrollZitiIntoRefusesBadInputWithoutADaemon(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := EnrollZitiInto("", "room", dir); err == nil {
+		t.Fatal("enrolling was accepted with no token")
+	}
+	tok := makeJWT(t, "https://ctrl.example.com", "room", time.Now().Add(-time.Hour))
+	if _, _, err := EnrollZitiInto(tok, "room", dir); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("an expired token should be refused with its date, got %v", err)
+	}
+}
+
 // An expired token is refused here, with its date, rather than by a controller
 // with something less useful.
 func TestEnrollZitiRefusesAnExpiredToken(t *testing.T) {
