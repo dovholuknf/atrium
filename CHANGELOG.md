@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launched worker's approvals go through atrium's gate, so board-wide auto covers it.** See
+  `docs/auto-mode.md` "A launched worker is gated by default" and `docs/test-plan.md` section BR.
+
+  A worker never runs `atrium join`, so the permission hook let it through and its approvals were Claude Code's own
+  prompts in a terminal nobody watched, while the board-wide switch said nothing would ask. A launch now sets
+  `ATRIUM_PERM_GATE=on` unless the harness row names the variable itself, so `ATRIUM_PERM_GATE=off` on a row opts
+  that runner out. With auto off the worker gates to the operator as a joined session does.
+  `internal/daemon/launch.go`: ROOM RESTART, and it reaches a worker at its next launch.
+
 - **A keep-alive refresh whose ledger row fails to save no longer forks again every minute.** Mercurius finding C1
   of session s_GqkzdtBKudfM.
 

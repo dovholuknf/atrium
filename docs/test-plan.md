@@ -4051,3 +4051,30 @@ a delay. It stays up at least about a second, and goes once the runner shows the
 
 **Expected:** an alert `that paste is too big` naming its size and the 4MB limit. Nothing is sent. The terminal
 stays attached. It does not say `detached` or reconnect, which is what a frame over the daemon's limit used to do.
+
+## BR. A launched worker's approvals go through atrium's gate
+
+Go tests: `TestLaunchGatesTheRunnerByDefault`, `TestLaunchHonorsAHarnessGateSetting` and
+`TestLaunchedSessionUnderGlobalAuto` in `internal/daemon/launch_permgate_test.go`. Run the rest on a throwaway room
+with the dotfiles permission hook installed, so a live worker is not the test.
+
+### BR1. Board-wide auto covers a launched worker
+
+1. Turn board-wide auto on. Launch a claude worker with `atrium_launch` and a prompt that runs `git status` and
+   calls `atrium_peers`.
+
+**Expected:** both run with no prompt in the worker's terminal and no card in `needs-permission`. The review lists
+both as `global-auto`, the MCP call included.
+
+2. Turn board-wide auto off. Tell the worker to run `git log -1`.
+
+**Expected:** the card moves to `needs-permission` and the request is on the board. Claude Code's own prompt does
+not appear in the worker's terminal. Approve it and the command runs.
+
+### BR2. A runner set to off stays ungated
+
+1. On a claude harness row, set `ATRIUM_PERM_GATE=off` in its environment. Launch a worker from it, with board-wide
+   auto on, and tell it to run `git status`.
+
+**Expected:** Claude Code's own permission flow runs in the worker's terminal. Nothing reaches the board and the
+review has no row for it.
