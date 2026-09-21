@@ -45,6 +45,21 @@
     min-height: var(--barh); box-sizing: border-box; flex: none;
   }
 
+  /* The control cluster stays pinned while the cards scroll under it. Sticky
+     rather than fixed, so it rides whichever box is actually scrolling: on a
+     desktop and when nothing is attached that is `#term-list`; on a phone with a
+     session open it is the floating `.termbody` flyout (see phone.css). Both
+     control rows live in here so they pin as one header instead of the sort row
+     sticking and the group row scrolling out from under it.
+     The list's own background so the cards passing behind it do not show
+     through, and it sits above them. `flex: none` keeps it from being squeezed
+     by the scrolling rows below. A hair of top padding matches the list's own,
+     so a card cannot peek above it at the seam. */
+  .termstick {
+    position: sticky; top: 0; z-index: 5; flex: none;
+    background: var(--shell-0); padding-top: 2px;
+  }
+
   /* The phone switcher and its wrapper. On a desktop neither exists as far as
      the layout is concerned: the trigger is hidden, and `.termbody` is
      `display: contents`, so the head and the cards it wraps sit in the list

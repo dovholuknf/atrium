@@ -55,39 +55,92 @@ function isDoer(t) {
 // every GROUP mode and on the phone: the doers are simply not in the list, and
 // a count in the header says how many.
 //
+// THREE STATES, NOT A TOGGLE. `none` shows every doer. `active` hides the ones
+// that are working right now, so a swarm grinding through builds stops burying
+// the sessions you are steering. `inactive` hides the ones that are idle, done
+// or waiting on you, so the finished clutter goes and the moving ones stay. One
+// button cycles none -> active -> inactive and the label says which is on and
+// how many went.
+//
 // DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
 // wall-mounted board and a laptop want different answers and neither should
-// write over the other. Default off: nothing hides until asked.
+// write over the other. Default `none`: nothing hides until asked.
 const HIDE_DOERS_KEY = "atrium.hidedoers";
-function hideDoersOn() {
-  try { return localStorage.getItem(termDeviceKey(HIDE_DOERS_KEY)) === "1"; }
-  catch (e) { return false; }
+const DOER_MODES = ["none", "active", "inactive"];
+function hideDoersMode() {
+  try {
+    const v = localStorage.getItem(termDeviceKey(HIDE_DOERS_KEY));
+    if (DOER_MODES.includes(v)) return v;
+    // The old binary value. "1" meant hide EVERY doer, which the 3-way no
+    // longer has as one state, so it maps to the nearer intent: clear out the
+    // idle and finished ones and leave the working ones visible.
+    if (v === "1") return "inactive";
+    return "none";
+  } catch (e) { return "none"; }
 }
-function setHideDoers(on) {
-  try { localStorage.setItem(termDeviceKey(HIDE_DOERS_KEY), on ? "1" : "0"); }
-  catch (e) {}
+function setHideDoers(mode) {
+  if (!DOER_MODES.includes(mode)) mode = "none";
+  try { localStorage.setItem(termDeviceKey(HIDE_DOERS_KEY), mode); } catch (e) {}
   renderTermList();
 }
-function toggleHideDoers() { setHideDoers(!hideDoersOn()); }
+function cycleHideDoers() {
+  const at = DOER_MODES.indexOf(hideDoersMode());
+  setHideDoers(DOER_MODES[(at + 1) % DOER_MODES.length]);
+}
 
-// THE HEADER TOGGLE, drawn beside `sorted by activity`. It is only rendered when
-// it does something: when there are doers to hide, or when hiding is already on
-// (so it can be turned back off). `n` is the count that would go, so a folded
-// state can say "12 doers hidden" and nothing feels lost.
+// IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
+// strip reads from: the doer filter's `active`/`inactive` split, the runner
+// mark that animates, and the `by activity` sort all ask this and get the same
+// answer, rather than three copies that drift. It is the same test the board's
+// `activityChip` makes (board.js): a live `activity.what` that is not idle, on a
+// card that is not waiting on you, not shelved, and whose activity is not stale
+// (a done or dead card can still carry a `thinking` that outlived its status).
+function workingNow(t) {
+  const a = t && t.activity;
+  return !!(a && a.what && a.what !== "idle" &&
+    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
+}
+
+// Which doers a given mode hides, honouring the two that are never hidden (see
+// `renderTermList`): a pinned doer and the attached one. Kept as one predicate
+// so the count in the header and the rows removed from the list are the same
+// answer rather than two that can drift. `active` hides the ones working now;
+// `inactive` hides the rest (idle, done, or waiting on you).
+function doerHiddenBy(mode, t, keep) {
+  if (mode === "none" || !isDoer(t) || keep(t)) return false;
+  return mode === "active" ? workingNow(t) : !workingNow(t);
+}
+
+// THE HEADER CONTROL, drawn beside `sorted by activity`. Rendered when it does
+// something: when there are doers it could hide, or when a hide is already on
+// (so it can be cycled back to `none`). `n` is how many the current mode hides,
+// so the label can say "3 active hidden" and nothing feels lost. `doerCount` is
+// how many doers are hideable at all, which is what decides whether an offer to
+// hide is worth showing while the mode is still `none`.
 //
-// PINNED AND ATTACHED DOERS ARE NOT COUNTED HERE because they are never hidden
-// (see `renderTermList`): the number has to match what actually disappears or
-// the header lies about it.
-function termDoersToggleHTML(n) {
-  const on = hideDoersOn();
-  if (!on && n === 0) return "";
-  const word = n === 1 ? "doer" : "doers";
-  const label = on ? `${n} ${word} hidden` : `hide ${n} ${word}`;
-  const title = on
-    ? "agent-launched sessions are hidden. click to show them. your own terminals and any pinned doers stay either way"
-    : "hide the agent-launched sessions so your own terminals are not buried. pinned ones and whatever is attached stay";
+// PINNED AND ATTACHED DOERS ARE NOT COUNTED HERE because they are never hidden:
+// the number has to match what actually disappears or the header lies about it.
+function termDoersToggleHTML(n, doerCount) {
+  const mode = hideDoersMode();
+  if (mode === "none" && doerCount === 0) return "";
+  const on = mode !== "none";
+  let label, title;
+  if (mode === "active") {
+    label = `${n} active hidden`;
+    title = "the working agent-launched sessions are hidden. click to hide the " +
+      "idle ones instead. your own terminals and any pinned doers always stay";
+  } else if (mode === "inactive") {
+    label = `${n} inactive hidden`;
+    title = "the idle, done and waiting agent-launched sessions are hidden. " +
+      "click to show them all. your own terminals and any pinned doers stay";
+  } else {
+    label = "hide doers";
+    title = "the agent-launched sessions are all showing. click to hide the " +
+      "working ones so your own terminals are not buried. click again for the " +
+      "idle ones. pinned ones and whatever is attached always stay";
+  }
   return `<button class="termsort termdoers${on ? " on" : ""}"
-      onclick="toggleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
+      onclick="cycleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
@@ -731,9 +784,7 @@ function termTree(list) {
 function termRunnerMark(t) {
   const mark = runnerMark(t.runner);
   const a = t.activity;
-  const working = a && a.what && a.what !== "idle" &&
-    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t);
-  if (!working) return mark;
+  if (!workingNow(t)) return mark;
   // Inserted into the class list the shared builder produced, rather than the
   // builder growing a parameter. `runnerMark` is the board's and is called
   // from three places that do not want this.
@@ -1064,9 +1115,19 @@ function termCount(node) {
 // lets test-sort-order.js check stability across different input orders.
 function termOrder(tasks) {
   if (sortByActivity) {
-    // Waiting sessions come first, then recent activity. Use the shared tiebreak
-    // so equal values do not cause rows to move between polls.
+    // WORKING NOW SITS ON TOP. "Sorted by activity" is about which sessions are
+    // doing something, so the live signal leads: a card running a tool or
+    // thinking (`workingNow`, the same badge the mark animates) outranks one
+    // that is idle or waiting. This used to sort on `idle_seconds` alone, which
+    // is a stored gap since the last event and not the same thing: a session
+    // grinding through a long build logs nothing for a stretch and so read as
+    // idle and sank, which is exactly backwards. Under it, anything waiting on
+    // you is lifted next so a "wants you" card is not buried under idle rows,
+    // and then most-recent activity breaks the rest. The shared tiebreak keeps
+    // equal values from reshuffling between two polls that said the same thing.
     tasks.sort((a, b) => {
+      const act = (workingNow(b) ? 1 : 0) - (workingNow(a) ? 1 : 0);
+      if (act) return act;
       const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
       if (w) return w;
       return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
@@ -1139,15 +1200,22 @@ async function renderTermList() {
   badge("c-term", tasks.filter(t => t.supervised).length);
 
   // HIDE THE DOERS, when asked. Agent-launched sessions are dropped from the
-  // strip so a human's own terminals are not buried under a wave of them. Two
-  // are kept even with hiding on: a PINNED doer, since pinning is the operator
-  // saying "this one is mine, keep it", and the ATTACHED one, since hiding must
-  // never yank the pane out from under whatever is open (the teardown below
-  // keys off this same list). What is removed is counted so the header can say
-  // how many, and everything downstream draws `shown` rather than `tasks`.
+  // strip so a human's own terminals are not buried under a wave of them. The
+  // control is 3-way: `none` hides nothing, `active` drops the ones working
+  // right now, `inactive` drops the idle, done and waiting ones. Two doers are
+  // kept whatever the mode: a PINNED one, since pinning is the operator saying
+  // "this one is mine, keep it", and the ATTACHED one, since hiding must never
+  // yank the pane out from under whatever is open (the teardown below keys off
+  // this same list). What is removed is counted so the header can say how many,
+  // and everything downstream draws `shown` rather than `tasks`.
   const keepDoer = t => t.pinned || (termTask && t.id === termTask.id);
-  const hideable = tasks.filter(t => isDoer(t) && !keepDoer(t));
-  const shown = hideDoersOn() ? tasks.filter(t => !isDoer(t) || keepDoer(t)) : tasks;
+  const doerMode = hideDoersMode();
+  // How many doers could be hidden at all, independent of the mode: what
+  // decides whether an offer to hide is worth drawing while the mode is `none`.
+  const doerCount = tasks.filter(t => isDoer(t) && !keepDoer(t)).length;
+  const hideable = tasks.filter(t => doerHiddenBy(doerMode, t, keepDoer));
+  const shown = hideable.length
+    ? tasks.filter(t => !doerHiddenBy(doerMode, t, keepDoer)) : tasks;
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -1197,25 +1265,35 @@ async function renderTermList() {
   // The head is the sort chip and the grouping control. On a phone both fold
   // under the `filters` button in the trigger; on a desktop they sit at the top
   // of the list as always.
-  const head = `<div class="termhead">
-      <button class="termsort" onclick="toggleTermSort()"
-        title="newest activity first, and anything waiting on you above that">
-        ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
-      ${termDoersToggleHTML(hideable.length)}
-      <span class="grow"></span>
-      ${termListButtons()}
-    </div>
-    <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
-         \`paintGroupSegs\` from the same list. Grouping is a way of reading the
-         same sessions rather than a property of one screen, so the control
-         belongs wherever you are when you decide you want it, and there is one
-         setting behind all three.
-         Its own row, because five buttons do not fit beside the sort toggle in
-         a strip this narrow. Hidden in \`mini\`, where there is no room for any
-         of it. -->
-    <div class="termhead termgroups">
-      <span class="barlabel">group</span>
-      <div class="seg groupseg" id="term-group"></div>
+  // WRAPPED IN `.termstick` AND PINNED. The control cluster (the sort chip, the
+  // doers control, the mode buttons, and the `group` row) stays put at the top
+  // of the list while the cards scroll under it. The wrapper is `position:
+  // sticky` and rides whichever box actually scrolls: `#term-list` on a desktop
+  // and when nothing is attached, and the floating `.termbody` flyout on a phone
+  // with a session open (see terminal.css and phone.css). Both control rows go
+  // inside it so they stick as one header rather than one pinning and the other
+  // scrolling out from under it.
+  const head = `<div class="termstick">
+      <div class="termhead">
+        <button class="termsort" onclick="toggleTermSort()"
+          title="working sessions first, then anything waiting on you, then newest activity">
+          ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
+        ${termDoersToggleHTML(hideable.length, doerCount)}
+        <span class="grow"></span>
+        ${termListButtons()}
+      </div>
+      <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
+           \`paintGroupSegs\` from the same list. Grouping is a way of reading the
+           same sessions rather than a property of one screen, so the control
+           belongs wherever you are when you decide you want it, and there is one
+           setting behind all three.
+           Its own row, because five buttons do not fit beside the sort toggle in
+           a strip this narrow. Hidden in \`mini\`, where there is no room for any
+           of it. -->
+      <div class="termhead termgroups">
+        <span class="barlabel">group</span>
+        <div class="seg groupseg" id="term-group"></div>
+      </div>
     </div>`;
 
   // THE TRIGGER STAYS IN FLOW; THE BODY CAN FLOAT. On a phone the trigger is the

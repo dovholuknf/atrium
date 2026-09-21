@@ -84,17 +84,24 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
-// The hide-doers strip. Three live rows: an agent-launched doer (the
-// `origin:agent` tag the launch cap counts), a human's own terminal with no
-// such tag, and a PINNED doer. Hiding the doers must drop the first and keep the
-// other two, since pinning is the operator keeping one and the human's own is
-// never a doer. All supervised so they draw as live rows rather than cold.
+// The hide-doers strip. Four live rows exercising the 3-way control: an
+// agent-launched doer working RIGHT NOW (the `origin:agent` tag the launch cap
+// counts, plus a live `activity`), an agent-launched doer that is IDLE (the tag,
+// no activity), a human's own terminal with no tag, and a PINNED doer. `active`
+// hiding drops the working doer only; `inactive` hiding drops the idle doer
+// only; the human and the pinned doer stay in every mode, since pinning is the
+// operator keeping one and the human's own is never a doer. All supervised so
+// they draw as live rows rather than cold, and so `staleActivity` is false and
+// the working doer reads as working.
 const DOER = {
-  id: "doer1", status: "running", display_title: "agent doer", runner: "claude",
+  id: "doer1", status: "running", display_title: "idle doer", runner: "claude",
   rank: 1, worktree: "/tmp/doer", why: "", idle_seconds: 0, wait_seconds: 0,
   created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
   tags: ["origin:agent"], supervised: true, offline: false, pinned: false, auto_approve: false
 };
+const ADOER = Object.assign({}, DOER, {
+  id: "adoer", display_title: "working doer", activity: { what: "thinking" }
+});
 const HUMANT = Object.assign({}, DOER, {
   id: "humant", display_title: "my terminal", tags: []
 });
@@ -223,8 +230,9 @@ const server = http.createServer((req, res) => {
     // The pinned-cold strip: the terminated card while its pin holds it, and an
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
-    // The hide-doers strip: a doer, a human's terminal, and a pinned doer.
-    if (tasksMode === "doers") { sendJSON(res, { tasks: [DOER, HUMANT, PINDOER] }); return; }
+    // The hide-doers strip: an idle doer, a working doer, a human's terminal,
+    // and a pinned doer.
+    if (tasksMode === "doers") { sendJSON(res, { tasks: [DOER, ADOER, HUMANT, PINDOER] }); return; }
     // The attach-loop repro. The cached LIST lags the live card: it carries the
     // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
     // it down) while the single-card poll above still says supervised (so the
@@ -447,70 +455,113 @@ async function main() {
     }
     tasksMode = "first";
 
-    // ── the hide-doers toggle hides agent-launched doers, keeps human rows ──
-    // The strip carries a doer (the `origin:agent` tag), a human's own terminal,
-    // and a pinned doer. With the toggle off all three draw. Turning it on drops
-    // the plain doer and keeps the human row and the pinned doer, and the header
-    // says how many went. Driven through the board's own functions so the
-    // device-scoped persistence and the count are exercised, not faked.
+    // ── the 3-way hide-doers control ────────────────────────────────────────
+    // The strip carries an idle doer and a working doer (both `origin:agent`), a
+    // human's own terminal, and a pinned doer. `none` shows all four. `active`
+    // drops the working doer only. `inactive` drops the idle doer only. The
+    // human row and the pinned doer stay in every mode. Driven through the
+    // board's own functions so the device-scoped persistence, the mode split and
+    // the count are exercised, not faked.
     tasksMode = "doers";
-    await page.evaluate(() => {
-      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
-      setHideDoers(false);
-      renderTermList();
-    });
-    await page.waitForSelector('#term-list .card.tab[data-id="doer1"]',
-      { state: "attached", timeout: 15000 });
-    const doersBefore = await page.evaluate(() => ({
-      doer: !!document.querySelector('#term-list .card.tab[data-id="doer1"]'),
-      human: !!document.querySelector('#term-list .card.tab[data-id="humant"]'),
-      pinned: !!document.querySelector('#term-list .card.tab[data-id="pindoer"]'),
-      toggleOff: !hideDoersOn()
-    }));
-    if (!doersBefore.doer || !doersBefore.human || !doersBefore.pinned) {
-      fail("with hide-doers off the strip did not draw all three rows: " +
-        JSON.stringify(doersBefore));
-    }
-
-    // Turn it on. The plain doer goes, the human row and the pinned doer stay,
-    // the toggle lights up, and it reads "1 doer hidden".
-    await page.evaluate(() => { setHideDoers(true); renderTermList(); });
-    const doersAfter = await page.evaluate(() => {
+    const doerState = () => page.evaluate(() => {
       const btn = document.querySelector("#term-list .termdoers");
+      const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
       return {
-        doer: !!document.querySelector('#term-list .card.tab[data-id="doer1"]'),
-        human: !!document.querySelector('#term-list .card.tab[data-id="humant"]'),
-        pinned: !!document.querySelector('#term-list .card.tab[data-id="pindoer"]'),
-        on: hideDoersOn(),
+        idle: has("doer1"), working: has("adoer"),
+        human: has("humant"), pinned: has("pindoer"),
+        mode: hideDoersMode(),
         label: btn ? btn.textContent.trim() : "",
         lit: !!(btn && btn.classList.contains("on"))
       };
     });
-    if (doersAfter.doer) {
-      fail("hide-doers left the agent-launched doer in the strip.");
+    await page.evaluate(() => {
+      try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
+      setHideDoers("none");
+      renderTermList();
+    });
+    await page.waitForSelector('#term-list .card.tab[data-id="doer1"]',
+      { state: "attached", timeout: 15000 });
+    const dNone = await doerState();
+    if (!dNone.idle || !dNone.working || !dNone.human || !dNone.pinned) {
+      fail("with hide-doers at `none` the strip did not draw all four rows: " +
+        JSON.stringify(dNone));
     }
-    if (!doersAfter.human) {
-      fail("hide-doers hid the human's own terminal: only doers must go.");
-    }
-    if (!doersAfter.pinned) {
-      fail("hide-doers hid a PINNED doer: pinning keeps a row even when hiding.");
-    }
-    if (!doersAfter.on || !doersAfter.lit) {
-      fail("the hide-doers toggle did not persist/light when turned on: " +
-        JSON.stringify(doersAfter));
-    }
-    if (!/1 doer hidden/.test(doersAfter.label)) {
-      fail("the hide-doers header did not show the hidden count '1 doer hidden': " +
-        JSON.stringify(doersAfter.label));
+    if (dNone.mode !== "none" || dNone.lit) {
+      fail("the doers control was not in the unlit `none` state to begin with: " +
+        JSON.stringify(dNone));
     }
 
-    // Off again: the doer comes back, so hiding is a view, not a deletion.
-    await page.evaluate(() => { setHideDoers(false); renderTermList(); });
-    const doersRestored = await page.evaluate(() =>
-      !!document.querySelector('#term-list .card.tab[data-id="doer1"]'));
-    if (!doersRestored) {
-      fail("turning hide-doers back off did not restore the doer row.");
+    // `active`: the working doer goes, everything else stays, header reads
+    // "1 active hidden" and the control lights up.
+    await page.evaluate(() => { setHideDoers("active"); renderTermList(); });
+    const dActive = await doerState();
+    if (dActive.working) {
+      fail("hide-doers `active` left the working agent-launched doer in the strip.");
     }
+    if (!dActive.idle) {
+      fail("hide-doers `active` hid the IDLE doer: only the working ones must go.");
+    }
+    if (!dActive.human || !dActive.pinned) {
+      fail("hide-doers `active` hid the human's terminal or a PINNED doer: " +
+        JSON.stringify(dActive));
+    }
+    if (dActive.mode !== "active" || !dActive.lit || !/1 active hidden/.test(dActive.label)) {
+      fail("hide-doers `active` did not persist, light, and read '1 active hidden': " +
+        JSON.stringify(dActive));
+    }
+
+    // `inactive`: now the idle doer goes and the working one comes back, header
+    // reads "1 inactive hidden".
+    await page.evaluate(() => { setHideDoers("inactive"); renderTermList(); });
+    const dInactive = await doerState();
+    if (dInactive.idle) {
+      fail("hide-doers `inactive` left the idle agent-launched doer in the strip.");
+    }
+    if (!dInactive.working) {
+      fail("hide-doers `inactive` hid the WORKING doer: only the idle ones must go.");
+    }
+    if (!dInactive.human || !dInactive.pinned) {
+      fail("hide-doers `inactive` hid the human's terminal or a PINNED doer: " +
+        JSON.stringify(dInactive));
+    }
+    if (dInactive.mode !== "inactive" || !dInactive.lit ||
+        !/1 inactive hidden/.test(dInactive.label)) {
+      fail("hide-doers `inactive` did not persist, light, and read '1 inactive hidden': " +
+        JSON.stringify(dInactive));
+    }
+
+    // Cycling once more returns to `none` and every row comes back, so hiding is
+    // a view, not a deletion.
+    await page.evaluate(() => { cycleHideDoers(); });
+    const dBack = await doerState();
+    if (!dBack.idle || !dBack.working || dBack.mode !== "none") {
+      fail("cycling the doers control past `inactive` did not return to `none` " +
+        "with every row restored: " + JSON.stringify(dBack));
+    }
+
+    // The control cluster is a sticky header: it stays pinned to the top of the
+    // list rather than scrolling away with the cards. Asserted structurally,
+    // since a headless run has no tall list to scroll: the two control rows live
+    // inside one `.termstick`, and it is `position: sticky` pinned to `top: 0`.
+    await page.evaluate(() => { setHideDoers("none"); renderTermList(); });
+    const sticky = await page.evaluate(() => {
+      const st = document.querySelector("#term-list .termstick");
+      if (!st) return { ok: false, why: "no .termstick wrapper" };
+      const cs = getComputedStyle(st);
+      const rows = st.querySelectorAll(".termhead").length;
+      const group = !!st.querySelector("#term-group");
+      return { ok: true, position: cs.position, top: cs.top, rows, group };
+    });
+    if (!sticky.ok) {
+      fail("the terminals control cluster is not wrapped for pinning: " + sticky.why);
+    } else if (sticky.position !== "sticky" || sticky.top !== "0px") {
+      fail("the terminals control cluster is not a sticky header pinned to the top: " +
+        JSON.stringify(sticky));
+    } else if (sticky.rows < 2 || !sticky.group) {
+      fail("the sticky header is missing a control row (sort/doers or the group row): " +
+        JSON.stringify(sticky));
+    }
+
     await page.evaluate(() => {
       try { localStorage.removeItem(termDeviceKey("atrium.hidedoers")); } catch (e) {}
     });
@@ -1302,8 +1353,9 @@ async function main() {
   if (bad) process.exit(1);
   console.log("a terminated pinned terminal can be dismissed from its right-click " +
     "menu and stays gone on the next render, " +
-    "the hide-doers toggle hides agent-launched doers while keeping the human's " +
-    "own and pinned rows and showing a hidden count, " +
+    "the 3-way hide-doers control drops the active or the inactive agent-launched " +
+    "doers while keeping the human's own and pinned rows and showing a hidden count, " +
+    "the control cluster is a sticky header pinned to the top of the list, " +
     "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
