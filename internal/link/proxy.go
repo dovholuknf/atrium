@@ -294,6 +294,17 @@ const cardRoomTTL = 5 * time.Second
 //
 // A quiet room contributes nothing, exactly as the aggregate fan-out treats one:
 // it is skipped rather than failing the whole resolution.
+//
+// RETURN ON THE FIRST ROOM THAT CLAIMS IT, not once every room has answered.
+// This resolution gates a terminal attach: the websocket upgrade is not
+// forwarded until the owning room is known, and the browser's socket sits in
+// CONNECTING the whole time. Waiting for the slowest room meant one room
+// mid-restart or asleep held every attach for its whole card lookup, the
+// connecting socket was torn down and retried, and the flicker got worse with
+// every room added. Because the id is globally unique there is no second opinion
+// to wait for: the first room to answer yes is the owner, so a slow non-owner
+// can no longer stall the attach. The all-miss case still drains every answer,
+// which is correct - a card no room claims is genuinely gone.
 func (p *Proxy) roomHolding(r *http.Request, bare string, rooms []Attached) (string, bool) {
 	if room, ok := p.cachedCardRoom(bare); ok {
 		return room, true
@@ -302,19 +313,14 @@ func (p *Proxy) roomHolding(r *http.Request, bare string, rooms []Attached) (str
 		room string
 		has  bool
 	}
-	out := make([]held, len(rooms))
-	var wg sync.WaitGroup
-	for i, room := range rooms {
-		wg.Add(1)
-		go func(i int, name string) {
-			defer wg.Done()
-			out[i] = held{room: name, has: p.roomHasCard(r, name, bare)}
-		}(i, room.Name)
+	results := make(chan held, len(rooms))
+	for _, room := range rooms {
+		go func(name string) {
+			results <- held{room: name, has: p.roomHasCard(r, name, bare)}
+		}(room.Name)
 	}
-	wg.Wait()
-	// First by room order, so two resolutions of the same id cannot disagree.
-	for _, h := range out {
-		if h.has {
+	for range rooms {
+		if h := <-results; h.has {
 			p.rememberCardRoom(bare, h.room)
 			return h.room, true
 		}
