@@ -249,6 +249,12 @@ async function loadGlobalAuto() {
     const s = await api("/v1/settings");
     globalAuto = !!s.global_auto;
     globalAutoLeft = s.global_auto_seconds || 0;
+    // Re-wear the scope's skin off this same read. Called on every stream
+    // reopen (see connect), which is when a hub that was down or still
+    // attaching rooms first answers settings, so a skin the load-time read
+    // could not fetch heals here rather than staying dark until a reload. Uses
+    // this fetch rather than a second one. See `applyResolvedSkin`.
+    if (typeof applyResolvedSkin === "function") applyResolvedSkin(s);
   } catch (e) { return; }
   paintGlobalAuto();
 }
