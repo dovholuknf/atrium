@@ -1035,29 +1035,113 @@ async function launchRunnerHere(harnessID, cwd, ontoTask, room) {
   switchView("board");
 }
 
+// launchRoomNow is the room a launch will start in, as the dialog currently has
+// it. Empty when the room field is not shown, which is a scoped board, a single
+// room, or no hub, and in every one of those the runner list is already one
+// machine's and carries no room tag to match on.
+function launchRoomNow() {
+  const field = document.getElementById("l-room-field");
+  if (!field || field.hidden) return "";
+  return document.getElementById("l-room").value || "";
+}
+
+// launchableHarnesses is the runners a card can actually START on the given
+// room: turned on AND with their command resolvable there. `found` is what the
+// room reported from the same PATH lookup launching does, so a runner offered
+// here is one that will run rather than one that fails at exec. An empty room
+// means the one machine's list, which carries no room to match on. See
+// docs/runner-scoping-design.md.
+function launchableHarnesses(room) {
+  return allHarnesses.filter(h =>
+    h.enabled && h.found && (!room || (h.room || "") === room));
+}
+
+// refreshLaunchRunners fills the runner picker from the selected room and keeps
+// the current choice when it survives the change. Answers the selected runner
+// row, or null when the room has none to offer, which it draws as a dead end
+// rather than a launch that would fail later.
+//
+// Does nothing when the picker is hidden, which is a resume or a specific
+// runner: that row is named and must not be swapped out by a room change.
+function refreshLaunchRunners(preferId) {
+  if (document.getElementById("l-pick-field").hidden) return null;
+  const picker = document.getElementById("l-harness");
+  const note = document.getElementById("l-pick-note");
+  const go = document.getElementById("l-go");
+  const room = launchRoomNow();
+  const usable = launchableHarnesses(room);
+
+  if (!usable.length) {
+    picker.innerHTML = "";
+    if (go) go.disabled = true;
+    if (note) {
+      note.hidden = false;
+      const link = "<a href=\"#\" onclick=\"document.getElementById('launch').close();" +
+        "goRunners('runners');return false\">set one up</a>";
+      note.innerHTML = room
+        ? "No runner on " + esc(room) + " is turned on and installed. " + link +
+          " on that machine first."
+        : "No runner is turned on and installed. " + link + " first.";
+    }
+    return null;
+  }
+  if (go) go.disabled = false;
+  if (note) { note.hidden = true; note.innerHTML = ""; }
+
+  const want = usable.find(h => h.id === preferId) || usable[0];
+  picker.innerHTML = usable.map(x =>
+    `<option value="${esc(x.id)}"${x.id === want.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
+  launchTarget.harness = want.id;
+  setLaunchModel(want);
+  return want;
+}
+
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
   await loadHarnesses();
-  const enabled = allHarnesses.filter(h => h.enabled);
-  if (!enabled.length) {
+  if (!allHarnesses.some(h => h.enabled)) {
     tellUser("atrium", "no runner is enabled yet. turn one on under " +
       paneLink("runners", "rooms &rsaquo; runners") + " first.");
     goRunners("runners");
     return;
   }
   const picking = !id;
-  const h = allHarnesses.find(x => x.id === id) || enabled[0];
 
+  // The room the card starts on is settled before the runner list is drawn,
+  // because in aggregate mode the runners a fresh pick can offer are the
+  // selected room's, not every room's. `fillLaunchRoom` binds the room control
+  // to `refreshLaunchRunners`, so switching machine re-draws the list.
   document.getElementById("l-pick-field").hidden = !picking;
+  fillLaunchRoom(ontoTask);
+
   const picker = document.getElementById("l-harness");
-  picker.innerHTML = enabled.map(x =>
-    `<option value="${esc(x.id)}"${x.id === h.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
   // Changing the runner re-asks the model question, because the answer is per
   // runner: a shell cannot be given one and the control has to go away rather
-  // than sit there producing a refusal.
-  picker.onchange = () => setLaunchModel(allHarnesses.find(x => x.id === picker.value));
+  // than sit there producing a refusal. It also keeps launchTarget pointing at
+  // what is selected.
+  picker.onchange = () => {
+    launchTarget.harness = picker.value;
+    setLaunchModel(launchableHarnesses(launchRoomNow()).find(x => x.id === picker.value));
+  };
 
-  launchTarget = { harness: h.id, resume: resume || "", task_id: ontoTask || "" };
+  // A resume or a specific runner names its row; a fresh pick draws from
+  // whatever the selected room can start. launchTarget is set first so the
+  // room and runner controls, both of which read it, have it to point at.
+  const fallback = allHarnesses.find(x => x.id === id) ||
+    allHarnesses.find(x => x.enabled) || allHarnesses[0];
+  launchTarget = { harness: (fallback && fallback.id) || id || "", resume: resume || "", task_id: ontoTask || "" };
+  let h = fallback;
+  if (picking) {
+    h = refreshLaunchRunners(id) || fallback;
+  } else {
+    // Picker hidden, so no room filtering applies. Clear any dead-end state a
+    // previous open left on the launch button and the note.
+    const go = document.getElementById("l-go");
+    if (go) go.disabled = false;
+    const note = document.getElementById("l-pick-note");
+    if (note) { note.hidden = true; note.innerHTML = ""; }
+  }
+
   document.getElementById("l-heading").textContent =
     resume ? "resume " + (h.label || h.id) : picking ? "new agent" : "start " + (h.label || h.id);
   const pre = prefill || {};
@@ -1108,8 +1192,6 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // remember to turn back, which is what this is not.
   setLaunchModel(h);
 
-  fillLaunchRoom(ontoTask);
-
   syncMore();
   document.getElementById("launch").showModal();
   document.getElementById("l-cwd").focus();
@@ -1134,6 +1216,9 @@ function fillLaunchRoom(ontoTask) {
   sel.innerHTML = rooms.map(r =>
     `<option value="${esc(r.name)}">${esc(r.name)}${r.host ? " — " + esc(r.host) : ""}</option>`
   ).join("");
+  // Changing the machine re-draws the runner list, because a runner offered
+  // here is one the selected room can actually start. See refreshLaunchRunners.
+  sel.onchange = () => refreshLaunchRunners(launchTarget && launchTarget.harness);
   field.hidden = false;
 }
 

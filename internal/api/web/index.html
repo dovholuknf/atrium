@@ -2135,6 +2135,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <select id="l-harness"></select>
         <button onclick="goRunners('runners');document.getElementById('launch').close()">configure</button>
       </div>
+      <!-- Said when the selected room has no runner it can actually start, so a
+           dead end is a sentence here rather than a launch that fails at exec.
+           See refreshLaunchRunners in js/fixtures.js. -->
+      <span class="hintline" id="l-pick-note" hidden></span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
@@ -2282,7 +2286,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-foot">
     <button onclick="document.getElementById('launch').close()">close</button>
     <span class="grow"></span>
-    <button class="go big" onclick="doLaunch()">launch</button>
+    <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
 </dialog>
 
