@@ -835,6 +835,13 @@ const (
 func (r *runner) howBusy() peerRoom {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.howBusyLocked()
+}
+
+// howBusyLocked is howBusy with r.mu already held, so a decision to type and
+// the typing itself can happen without releasing the lock in between. See
+// injectPeer.
+func (r *runner) howBusyLocked() peerRoom {
 	if r.midLine {
 		return peerMidLine
 	}
@@ -842,6 +849,48 @@ func (r *runner) howBusy() peerRoom {
 		return peerWatching
 	}
 	return peerFree
+}
+
+// injectPeer writes a peer's message into the terminal, and reports the state
+// it found and whether it wrote.
+//
+// THE CHECK AND THE WRITE ARE ONE LOCKED SECTION, which is the fix. howBusy
+// used to read `midLine` under the lock, release it, and only then write, so a
+// keystroke arriving on the attach goroutine between the two could turn a line
+// the operator was composing into one a peer message typed into and submitted.
+// `Say` widened that window with its pause before Enter. Holding r.mu across
+// both means `noteOperatorTyped` cannot record a keystroke mid-injection: the
+// operator's bytes queue behind the lock and land after this message, on a
+// fresh line, rather than tangled into it.
+//
+//   - peerMidLine: a part written line. Refused, and nothing is written. The
+//     caller queues instead.
+//   - peerWatching: somebody there but between lines. The text is left in the
+//     prompt, unsent.
+//   - peerFree: nobody typing. The text is typed and Enter is pressed.
+//
+// The banner carries no carriage return (see peerBanner), so even in the
+// window this closes a peer message can never submit a line for the operator.
+func (r *runner) injectPeer(banner, body string) (peerRoom, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	room := r.howBusyLocked()
+	if room == peerMidLine {
+		return room, false, nil
+	}
+	// r.Write does not take r.mu, so calling it while the lock is held is safe.
+	if err := r.Write([]byte(banner + body)); err != nil {
+		return room, false, err
+	}
+	if room == peerFree {
+		// The pause is what separates the text from the Enter, so a TUI reads
+		// the Enter as the key that submits rather than as pasted text. See Say.
+		time.Sleep(sayThenEnter)
+		if err := r.Write([]byte("\r")); err != nil {
+			return room, false, err
+		}
+	}
+	return room, true, nil
 }
 
 // A pseudo terminal has ONE size and a shared session has several viewers.
