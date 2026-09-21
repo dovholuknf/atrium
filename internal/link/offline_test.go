@@ -2,6 +2,7 @@ package link
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -23,11 +24,25 @@ type remembering struct {
 	skin      string
 	boardAuto bool
 	shareAuth ShareAuth
+	forgot    []string
 }
 
 func (r *remembering) Known() ([]Known, error) { return r.rooms, nil }
 
 func (r *remembering) MarkRoom(string, bool) error { return nil }
+
+// ForgetRoom drops the room's record, mirroring the store: an unknown name is
+// an error, and a known one leaves the list.
+func (r *remembering) ForgetRoom(name string) error {
+	for i, k := range r.rooms {
+		if equalFold(k.Name, name) {
+			r.rooms = append(r.rooms[:i:i], r.rooms[i+1:]...)
+			r.forgot = append(r.forgot, name)
+			return nil
+		}
+	}
+	return fmt.Errorf("this hub has no room called %q", name)
+}
 
 func (r *remembering) Remembered(name string) ([]CardState, error) {
 	if r.asked == nil {
@@ -63,7 +78,6 @@ func (r *remembering) SetShareAuth(a ShareAuth) error {
 	r.shareAuth = a
 	return nil
 }
-
 
 func card(id, title, status string) CardState {
 	raw, _ := json.Marshal(map[string]any{"id": id, "title": title, "status": status})
@@ -315,5 +329,84 @@ func TestActingOnAnOfflineRoomIsRefusedByName(t *testing.T) {
 	}
 	if !strings.Contains(body.Error, "not answering") {
 		t.Fatalf("the refusal does not say what is wrong: %s", body.Error)
+	}
+}
+
+// forget posts to the hub's forget endpoint and hands back the status and body.
+func forget(t *testing.T, front, name string) (int, string) {
+	t.Helper()
+	res, err := http.Post(front+"/_hub/inventory/forget", "application/json",
+		strings.NewReader(fmt.Sprintf(`{"name":%q}`, name)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(raw)
+}
+
+// FORGETTING A STALE ROOM CULLS ITS RECORD, and forgetting an attached one is
+// refused by name.
+//
+// The picker lists what is attached beside what the hub has written down, so a
+// room that connected twice and left a duplicate stale record sits there with
+// nothing to remove it. Forget drops the durable record. A room answering right
+// now is not stale, so it is refused with the sentence that says to detach it
+// first rather than pulled off the board mid-conversation.
+func TestForgettingAStaleRoomCullsItAndRefusesAnAttachedOne(t *testing.T) {
+	seen := time.Now().Add(-time.Hour)
+	now := time.Now()
+	stock := &remembering{
+		rooms: []Known{
+			{Name: "athens", FirstSeen: &seen, LastSeen: &seen},
+			// testroom is what `pair` attaches, so the hub sees it live.
+			{Name: "testroom", Attached: true, FirstSeen: &now, LastSeen: &now},
+		},
+		cards: map[string][]CardState{},
+	}
+
+	front, hub, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer done()
+	front.Config.Handler.(*Proxy).SetInventory(stock)
+
+	// A KNOWN, NOT-ATTACHED ROOM IS FORGOTTEN. athens has gone quiet, so the hub
+	// drops its record and it leaves the picker.
+	if hub.Has("athens") {
+		t.Fatal("athens should not be attached in this test")
+	}
+	code, body := forget(t, front.URL, "athens")
+	if code != http.StatusOK {
+		t.Fatalf("forgetting a stale room answered %d: %s", code, body)
+	}
+	if len(stock.forgot) != 1 || stock.forgot[0] != "athens" {
+		t.Fatalf("the store was not told to forget athens: %+v", stock.forgot)
+	}
+	for _, k := range stock.rooms {
+		if equalFold(k.Name, "athens") {
+			t.Fatal("athens is still in the known set after being forgotten")
+		}
+	}
+
+	// AN ATTACHED ROOM IS REFUSED BY NAME. testroom is answering right now, so
+	// forgetting it would pull a live machine off the board.
+	if !hub.Has("testroom") {
+		t.Fatal("testroom should be attached via pair")
+	}
+	code, body = forget(t, front.URL, "testroom")
+	if code != http.StatusConflict {
+		t.Fatalf("forgetting an attached room answered %d, wanted 409: %s", code, body)
+	}
+	if !strings.Contains(body, "testroom") {
+		t.Fatalf("the refusal does not name the room: %s", body)
+	}
+	if !strings.Contains(body, "detach") {
+		t.Fatalf("the refusal does not say to detach first: %s", body)
+	}
+	for _, n := range stock.forgot {
+		if equalFold(n, "testroom") {
+			t.Fatal("an attached room was forgotten in the store, which the endpoint must refuse")
+		}
 	}
 }

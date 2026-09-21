@@ -833,6 +833,15 @@ type Inventory interface {
 	Known() ([]Known, error)
 	// MarkRoom puts a room on its way out, or takes the mark back off.
 	MarkRoom(name string, marked bool) error
+	// ForgetRoom drops a room's durable record, so it disappears from the
+	// picker and the rooms tab.
+	//
+	// FORGET, NOT BAN. It removes what the hub wrote down and nothing else: the
+	// machine is untouched, and a room that dials in again is written down afresh
+	// and reappears. The caller refuses an attached room before calling this, the
+	// same division startsNothing and changeInventory follow, because attachment
+	// is a live socket this package cannot see from a durable record.
+	ForgetRoom(name string) error
 	// Remembered is what a room last said it was holding.
 	//
 	// ONLY EVER CALLED FOR A ROOM THAT IS NOT ANSWERING. A connected room is
@@ -1024,6 +1033,62 @@ func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+// forgetInventory drops a room's durable record so it leaves the picker.
+//
+// REFUSE-IF-ATTACHED IS THE SAFER DEFAULT, and it is chosen here rather than in
+// the store because attachment is a live socket in this process and the store
+// cannot see one. A room answering right now is not stale: forgetting it would
+// pull a live machine off the board mid-conversation, and it would reappear on
+// its next beat anyway, so the record would flap rather than go. So an attached
+// room is refused by name with "detach it first", and only a room that is not
+// answering can be forgotten. This is the same division startsNothing and
+// changeInventory already draw: the live check is the hub's, the record change
+// is the store's.
+//
+// FORGET, NOT BAN. The record goes and nothing takes its place, so a machine
+// still running `atrium2 join` writes itself back down and returns. There is no
+// block-list variant: a durable record of a refusal would be the second source
+// of truth rooms exist to not keep. Culling a machine that has genuinely gone is
+// what this is for.
+func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
+	stock := p.inventory()
+	if stock == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		fmt.Fprintf(w, `{"error":%q}`, "this hub keeps no record of its rooms, "+
+			"so there is nothing to forget")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":%q}`, "could not read that: "+err.Error())
+		return
+	}
+	// A ROOM ANSWERING RIGHT NOW IS NOT STALE. Refused by name, and the sentence
+	// says what to do instead, because the board shows it to whoever clicked.
+	if p.hub.Has(body.Name) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, "the room "+body.Name+" is attached right now, so it "+
+			"is not stale. detach it first (stop atrium on that machine), then forget it")
+		return
+	}
+	if err := stock.ForgetRoom(body.Name); err != nil {
+		// The most likely thing to go wrong is a name that is not there, which is
+		// an answer rather than a failure. 409 so the board shows the sentence.
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 // SetControl mounts the hub-side control MCP server at /_hub/mcp.
 //
 // `boardAddr` is this hub's own board listen address, e.g. `:7778`. The control
@@ -1076,6 +1141,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveInventory(w, r)
 	case "inventory/mark":
 		p.changeInventory(w, r)
+	case "inventory/forget":
+		p.forgetInventory(w, r)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.
