@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
@@ -646,10 +647,26 @@ type runner struct {
 	// IS THE OPERATOR PART WAY THROUGH SOMETHING. Two facts, kept here rather
 	// than in the browser.
 	//
+	// UNDER `typeMu`, NOT `r.mu`, and that split is the whole input-lag fix. The
+	// operator's keystroke path (`noteOperatorTyped`) touches only these two
+	// fields, so it must never wait behind anything that holds `r.mu` or behind a
+	// peer injection typing a message into the terminal. Giving the typing state
+	// its own small lock means a human keystroke is recorded immediately whatever
+	// else is going on, which is what the operator sitting at the keyboard feels.
+	// See `noteOperatorTyped`, `howBusy` and `injectPeer`.
+	//
 	// `midLine` is whether keystrokes have arrived since the last thing that
 	// ends a line, and `lastTyped` is when the most recent one landed. Between
 	// them they answer the only question that decides whether another session
 	// may type into this terminal.
+	//
+	// `unsent` is the real count of characters sitting on the operator's current
+	// line, and it is stricter than `midLine`. A printable key adds one, a
+	// backspace takes one off, and a submit or a cancel resets it to zero. So a
+	// line typed and then backspaced all the way back to empty reads as EMPTY
+	// here, where `midLine` alone still read it as dirty and refused an injection
+	// into a line that no longer had anything on it. Zero is the only count that
+	// lets a peer message be typed. See `noteOperatorTyped` and `peerGateOpen`.
 	//
 	// THE DAEMON IS THE RIGHT PLACE and the board is not, even though the
 	// board already tracks something similar for path completion. That copy is
@@ -664,13 +681,43 @@ type runner struct {
 	// mid-thought, and only their own keystrokes answer it. Reading the
 	// runner's output to guess at this is the line `B2-20` declines to cross,
 	// and it would be a guess where this is a record.
+	typeMu    sync.Mutex
 	midLine   bool
 	lastTyped time.Time
+	unsent    int
+	// onKey is called after every operator keystroke is recorded, outside
+	// typeMu. It is how a deferred peer message learns the operator is back at
+	// the keyboard and re-arms its retry to the front of the backoff. Nil when
+	// nothing is waiting, which is the overwhelming common case, so the keystroke
+	// path pays one atomic load and no more. See `pendingInjector`.
+	onKey atomic.Pointer[func()]
+	// pasteMu is the input lock. injectPeer holds it across the whole paste and
+	// Enter, and the operator's keystroke WRITES take it too, so a peer's paste
+	// and the human's typing can never interleave their bytes on the pty. It is
+	// only ever contended when a peer message is being typed into a terminal the
+	// gate already judged idle, so in practice the human is not typing and the
+	// lock is invisible. It guards the pty WRITE only, never the typing-state
+	// bookkeeping, which stays on typeMu and is never blocked. See
+	// `writeOperatorInput` and `injectPeer`.
+	pasteMu sync.Mutex
+	// injectMu serializes peer injections against each other, so two peers do
+	// not interleave their banners and bodies into the pty. It is DELIBERATELY
+	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
+	// that were `r.mu` the pause would stall output `fanout` and, before the
+	// typing state moved to `typeMu`, every operator keystroke. This lock is
+	// contended only by other injections, which are rare and already serial in
+	// spirit. See `injectPeer`.
+	injectMu sync.Mutex
 	// echoPeers turns on shared multi-pane input: keystrokes from one attach
 	// are mirrored display-only to the other attaches of this runner. OFF by
 	// default, because an unconditional echo doubles every character in a cooked
 	// shell. See `setEchoPeers` and `echoToPeers`.
-	echoPeers bool
+	//
+	// AN ATOMIC so the common OFF case costs a single load and never takes
+	// `r.mu`. `echoToPeers` is on the operator's keystroke path (one call per
+	// keystroke), and a plain bool under `r.mu` there would put every keystroke
+	// behind whatever else holds `r.mu`, which is the lag this fix removes.
+	echoPeers atomic.Bool
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -791,25 +838,47 @@ func (r *runner) Write(p []byte) error {
 // had just typed something.
 //
 // What ends a line: a carriage return or a newline submits it, and the two
-// ways a line is thrown away are control-c and control-u. Everything else
-// leaves something part written, including a backspace, because a line being
-// edited down to nothing is still a line somebody is working on.
+// ways a line is thrown away are control-c and control-u. Both reset the count
+// to zero. A backspace takes one character off, so a line edited all the way
+// back to nothing counts as empty rather than as something still being worked
+// on, which is the whole reason the count exists beside `midLine`. A printable
+// key adds one. Anything else, an arrow or a bare escape, is activity that
+// moves `lastTyped` without adding to the line.
+//
+// A UTF-8 lead or continuation byte counts as one each, so a multi-byte glyph
+// over-counts and a backspace after it clears only the last byte. The count
+// then floors at empty on a submit or a cancel, and a mid-line injection was
+// never going to land during active multi-byte input anyway, so the rough edge
+// costs nothing the gate cares about.
 func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// typeMu, not r.mu: a human keystroke's bookkeeping must never wait behind a
+	// peer injection or output fanout. See the runner struct's typeMu note.
+	r.typeMu.Lock()
 	r.lastTyped = time.Now()
 	for _, b := range p {
-		switch b {
-		case '\r', '\n':
-			r.midLine = false
-		case 0x03, 0x15: // control-c, control-u
-			r.midLine = false
-		default:
-			r.midLine = true
+		switch {
+		case b == '\r' || b == '\n' || b == 0x03 || b == 0x15:
+			r.unsent = 0
+		case b == 0x7f || b == 0x08: // delete, backspace
+			if r.unsent > 0 {
+				r.unsent--
+			}
+		case b >= 0x20:
+			r.unsent++
 		}
+	}
+	r.midLine = r.unsent > 0
+	r.typeMu.Unlock()
+	// Outside typeMu, and last, so the reset a deferred message does cannot
+	// deadlock against the lock this just held. A keystroke means the operator
+	// is at the keyboard now, so any peer message waiting on a long backoff
+	// interval is re-armed to retry soon. Nil unless something is waiting, which
+	// is one atomic load on the common path. See `pendingInjector`.
+	if h := r.onKey.Load(); h != nil {
+		(*h)()
 	}
 }
 
@@ -821,6 +890,15 @@ func (r *runner) noteOperatorTyped(p []byte) {
 // uncommon case. Long enough that a pause for thought between two commands is
 // not read as having walked away.
 const peerQuiet = 20 * time.Second
+
+// peerGateIdle is how long the operator must have been off the keyboard before
+// a peer message may be typed in, on top of the line being empty.
+//
+// Short, because the case this feature exists for is an agent talking to an
+// agent while nobody is there, and a long wait would make that the slow path.
+// Long enough that the gap between two keystrokes of ordinary typing never
+// opens the gate mid-line, so a message can only land in a genuine pause.
+const peerGateIdle = 2 * time.Second
 
 // howBusy says whether another session may type into this terminal now.
 //
@@ -844,16 +922,12 @@ const (
 	peerMidLine
 )
 
+// Reads the typing state under typeMu, the same small lock noteOperatorTyped
+// writes it under, so this can be asked at any moment without contending with a
+// peer injection or output fanout.
 func (r *runner) howBusy() peerRoom {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.howBusyLocked()
-}
-
-// howBusyLocked is howBusy with r.mu already held, so a decision to type and
-// the typing itself can happen without releasing the lock in between. See
-// injectPeer.
-func (r *runner) howBusyLocked() peerRoom {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
 	if r.midLine {
 		return peerMidLine
 	}
@@ -863,46 +937,99 @@ func (r *runner) howBusyLocked() peerRoom {
 	return peerFree
 }
 
-// injectPeer writes a peer's message into the terminal, and reports the state
-// it found and whether it wrote.
+// peerGateOpen reports whether a peer message may be typed into this terminal
+// right now.
 //
-// THE CHECK AND THE WRITE ARE ONE LOCKED SECTION, which is the fix. howBusy
-// used to read `midLine` under the lock, release it, and only then write, so a
-// keystroke arriving on the attach goroutine between the two could turn a line
-// the operator was composing into one a peer message typed into and submitted.
-// `Say` widened that window with its pause before Enter. Holding r.mu across
-// both means `noteOperatorTyped` cannot record a keystroke mid-injection: the
-// operator's bytes queue behind the lock and land after this message, on a
-// fresh line, rather than tangled into it.
+// THE GATE, and it is stricter than `howBusy`. Two things have to hold at once:
+// the operator's current line is empty (`unsent` is zero, which counts a line
+// typed and then backspaced to nothing as empty), and no keystroke has landed
+// in the last `peerGateIdle`. So a message lands only in a real gap, never into
+// a part written line and never a fraction of a second after the operator
+// stopped. A terminal nobody has ever typed into is open at once, which is the
+// agent-to-agent case this exists for.
 //
-//   - peerMidLine: a part written line. Refused, and nothing is written. The
-//     caller queues instead.
-//   - peerWatching: somebody there but between lines. The text is left in the
-//     prompt, unsent.
-//   - peerFree: nobody typing. The text is typed and Enter is pressed.
-//
-// The banner carries no carriage return (see peerBanner), so even in the
-// window this closes a peer message can never submit a line for the operator.
-func (r *runner) injectPeer(banner, body string) (peerRoom, bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	room := r.howBusyLocked()
-	if room == peerMidLine {
-		return room, false, nil
+// Read under typeMu, the same small lock the keystroke path writes, so it can
+// be asked at any moment without waiting behind a peer injection or fanout.
+func (r *runner) peerGateOpen() bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	if r.unsent != 0 {
+		return false
 	}
-	// r.Write does not take r.mu, so calling it while the lock is held is safe.
+	if r.lastTyped.IsZero() {
+		return true
+	}
+	return time.Since(r.lastTyped) >= peerGateIdle
+}
+
+// writeOperatorInput writes the operator's own keystrokes to the pty under the
+// input lock, so a peer's paste in flight and the human's typing never
+// interleave their bytes.
+//
+// The lock, not the bookkeeping. `noteOperatorTyped` has already recorded the
+// keystroke under typeMu and returned, so the typing state is never delayed.
+// Only the bytes wait here, and only for the paste window of a message the gate
+// already judged the terminal idle enough to take, which is a window the
+// operator is by definition not typing in. See `injectPeer`.
+func (r *runner) writeOperatorInput(p []byte) error {
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	return r.Write(p)
+}
+
+// injectPeer types a peer's message into the terminal and presses Enter, once,
+// if the gate is open right now. It reports whether it did.
+//
+// TRY ONCE, ATOMICALLY. The waiting and the retrying are the caller's, in
+// `pendingInjector`. This is the single indivisible act of putting a message
+// on screen and submitting it, and the operator can neither tangle their typing
+// into it nor be made to wait behind it.
+//
+// The gate is stricter than the old midLine refusal: `peerGateOpen` requires an
+// empty line AND `peerGateIdle` of quiet. When it is open there is exactly one
+// outcome, the message is typed and submitted. There is no "leave it unsent in
+// the prompt" any more, because unsent peer text sitting in the operator's
+// prompt is the thing clint wanted gone. If the gate is not open the message is
+// not touched, and the caller defers it.
+//
+// THE INPUT LOCK closes the tangle race without ever blocking the keystroke
+// bookkeeping. `pasteMu` is held across the banner, body, pause and Enter, so
+// an operator keystroke's BYTES wait behind the paste rather than landing in
+// the middle of it. Their recording under typeMu is not blocked, so the typing
+// state stays instant, which is the input-lag fix this branch is built on.
+//
+//   - A keystroke that lands the instant before the lock fails the re-check
+//     under `pasteMu` and the paste is ABORTED with nothing written, so the
+//     operator wins and the caller re-waits.
+//   - A keystroke that lands during the paused window waits on `pasteMu`. The
+//     message submits cleanly on its own line and the operator's byte starts a
+//     fresh line after the lock releases, so nothing is ever tangled.
+//
+// The banner carries no carriage return (see peerBanner), so nothing can submit
+// before the deliberate Enter below.
+func (r *runner) injectPeer(banner, body string) (bool, error) {
+	r.injectMu.Lock()
+	defer r.injectMu.Unlock()
+	// The input lock, held across the whole paste. Taken before the gate is
+	// re-checked so a keystroke that raced us to the lock is already recorded
+	// and closes the gate below.
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	if !r.peerGateOpen() {
+		return false, nil
+	}
+	// r.Write goes straight to the pty and takes no runner lock. The operator's
+	// own writes are held on pasteMu, which this owns, for the duration.
 	if err := r.Write([]byte(banner + body)); err != nil {
-		return room, false, err
+		return false, err
 	}
-	if room == peerFree {
-		// The pause is what separates the text from the Enter, so a TUI reads
-		// the Enter as the key that submits rather than as pasted text. See Say.
-		time.Sleep(sayThenEnter)
-		if err := r.Write([]byte("\r")); err != nil {
-			return room, false, err
-		}
+	// The pause is what separates the text from the Enter, so a TUI reads the
+	// Enter as the key that submits rather than as part of a paste. See Say.
+	time.Sleep(sayThenEnter)
+	if err := r.Write([]byte("\r")); err != nil {
+		return false, err
 	}
-	return room, true, nil
+	return true, nil
 }
 
 // A pseudo terminal has ONE size and a shared session has several viewers.
@@ -1101,9 +1228,7 @@ func (r *runner) fanout(chunk []byte) {
 // bare shell would double every character. The operator turns this on for a
 // terminal they know is a raw-mode agent, and it covers every pane on it.
 func (r *runner) setEchoPeers(on bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.echoPeers = on
+	r.echoPeers.Store(on)
 }
 
 // echoToPeers mirrors one pane's keystrokes, display-only, to the OTHER panes.
@@ -1124,11 +1249,14 @@ func (r *runner) echoToPeers(chunk []byte, self chan []byte) {
 	if len(chunk) == 0 {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.echoPeers {
+	// The OFF check first and WITHOUT r.mu, so the default path off every
+	// keystroke is one atomic load. Only when the mode is on does this take r.mu,
+	// which it must to read the watcher set. See the echoPeers struct note.
+	if !r.echoPeers.Load() {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for ch := range r.watchers {
 		if ch == self {
 			continue

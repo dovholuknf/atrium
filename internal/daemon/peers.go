@@ -345,11 +345,17 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := d.st.QueueFromPeer(target.ID, text, from); err != nil {
+	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.publishTask(target.ID)
+	// The queue is the durable copy and the hooks will drain it. On top of that,
+	// keep trying to type it in when the operator's line clears, on a widening
+	// backoff, so a message does not have to wait for the target's next tool call
+	// to appear on screen. See pendinginject.go.
+	d.deferPeerInjection(target.ID, m.ID, from, text)
 	log.Printf("[atrium] %s told %s something (%d chars)", from, to, len(text))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -419,16 +425,14 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if d.bracketedPasteFor(target.ID, false) {
 		body = "\x1b[200~" + text + "\x1b[201~"
 	}
-	// The state check and the write are one locked section inside injectPeer,
-	// so a keystroke cannot slip between "the line is clear" and the typing and
-	// leave a peer message tangled into what the operator was composing.
-	room, wrote, err := run.injectPeer(peerBanner(from), body)
+	// injectPeer types and submits ONLY when the gate is open right now: an empty
+	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt
+	// and never blocks the operator's keystrokes. A closed gate writes nothing,
+	// and the caller defers the message onto the backoff. See injectPeer and
+	// pendingInjector.
+	wrote, err := run.injectPeer(peerBanner(from), body)
 	if err != nil || !wrote {
 		return false, ""
-	}
-	if room == peerWatching {
-		d.notePeerTyped(target.ID, from, text, "left in the prompt, you were typing")
-		return true, "typed into the terminal without sending it, since you were just typing"
 	}
 	d.notePeerTyped(target.ID, from, text, "typed and sent")
 	return true, "typed into the terminal and sent"

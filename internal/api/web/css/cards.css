@@ -293,6 +293,16 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* A peer message is waiting to be typed into this terminal and the operator's line is in the way. A pulsing
+     bang, distinct from the breathing activity dot, so a glance across the strip finds the card holding
+     something for him. Opacity only, like the other live marks, so it composites on the GPU. Shows nothing
+     until the room-side held signal ships (activity.held_peer). */
+  .chip.held {
+    background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke);
+    font-weight: 700; text-align: center; min-width: 1.4em;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  body.tabhidden .chip.held { animation: none; }
   /* Published. Danger rather than warn, and the same mark as the header, so a card reachable from outside this
      machine says so in the colour that means it. */
   .chip.shared {
