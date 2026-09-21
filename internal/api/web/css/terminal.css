@@ -524,8 +524,17 @@
        than the board's. Falls back to nothing when there is no terminal, which is when the pane should look
        like the rest of the board. */
     background: var(--term-bg, transparent);
+    /* Sit the terminal on the footer, not under the bar. xterm draws WHOLE ROWS, so the grid is
+       `rows * cellHeight` and almost never the exact pixel height of this box: the leftover is
+       `(height - 6) mod cellHeight`, up to one line, and it used to fall BELOW the last row as a band of
+       this element's background between the terminal and the help bar. `sizeTermHost` sizes `.xterm` to the
+       grid exactly, and `flex-end` parks that grid at the bottom, so the leftover joins the 6px of air under
+       the bar instead. The live prompt then sits flush on the footer, which is the end you are reading. */
+    display: flex; flex-direction: column; justify-content: flex-end;
   }
-  #t-screen .xterm { height: 100%; width: 100%; }
+  /* Height is set by `sizeTermHost` to the fitted grid so there is no sub-row remainder inside this box; the
+     100% is the fallback for the frame before the first fit runs and for a host with no `.xterm` yet. */
+  #t-screen .xterm { height: 100%; width: 100%; flex: 0 0 auto; }
   /* Why a terminal jumped to the bottom whenever it was focused. xterm parks a 20x20 textarea at the cursor
      to receive keystrokes, so an input method draws its candidates in the right place, and the cursor is at
      the bottom. A browser scrolls a focused element into view, so every path that focused that textarea took

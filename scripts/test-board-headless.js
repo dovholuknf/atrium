@@ -852,6 +852,111 @@ async function main() {
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow', { timeout: 15000 });
 
+    // ── the terminal fills the pane down to the footer, no dead band ────────
+    // THE BUG THIS SECTION EXISTS FOR. xterm draws whole rows, so the grid is
+    // `rows * cellHeight` and rarely the exact height of `#t-screen`. The
+    // leftover, up to one line, used to fall BELOW the last row as a band of the
+    // host's background between the terminal and the help bar: dead vertical
+    // space above the footer. `sizeTermHost` sizes `.xterm` to the grid and
+    // `#t-screen`'s `justify-content: flex-end` parks it on the footer, so the
+    // grid's bottom meets the help bar's top and the leftover joins the air under
+    // the bar instead. A real terminal is built (attach socket mocked to open and
+    // idle) at a height whose remainder is non-zero, then the grid is measured
+    // against the footer.
+    // A FRESH PAGE, isolated from the timers the sections above left running (the
+    // capped attach-retry from the loop repro would otherwise tear this pane down
+    // mid-measure). The attach socket is mocked at load to open and idle, so
+    // `openTerm` builds a real Terminal that fits and stays.
+    const fillPage = await browser.newPage();
+    const fillErrors = [];
+    fillPage.on("pageerror", e => fillErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      fillPage.on("console", m => console.error("[fill] " + m.type() + ": " + m.text()));
+    }
+    await fillPage.addInitScript(() => {
+      window.__realWS = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (/\/attach(\?|$)/.test(url)) {
+          const s = { url, readyState: 0, binaryType: "arraybuffer",
+            onopen: null, onclose: null, onmessage: null, onerror: null,
+            send() {}, close() { this.readyState = 3; } };
+          setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+          return s;
+        }
+        return new window.__realWS(url, protocols);
+      };
+    });
+    try {
+      // A height whose leftover against the cell size is a visible fraction of a
+      // row, which is where the dead band used to show.
+      await fillPage.setViewportSize({ width: 1280, height: 900 });
+      await fillPage.goto(base, { waitUntil: "domcontentloaded" });
+      // Let the board's first poll fire and settle before attaching.
+      await fillPage.waitForTimeout(900);
+      await fillPage.click('.tab[data-view="terms"]');
+      // Build, fill, and measure in ONE step. The mocked attach opens but never
+      // replays, so a poll or watchdog that ran between steps would read the card
+      // as not-truly-attached and clear the pane; `closeTerm` and `clearTermPane`
+      // are frozen for the duration so nothing tears the terminal down under the
+      // measurement. This page is thrown away right after, so the freeze leaks
+      // nowhere.
+      const fill = await fillPage.evaluate(async () => {
+        const t = await api("/v1/tasks/t1");
+        openTerm(t);
+        if (typeof term === "undefined" || !term) return { ok: false, why: "no terminal" };
+        try { closeTerm = () => {}; } catch (e) {}
+        try { clearTermPane = () => {}; } catch (e) {}
+        paintPaneBg({ background: "#1C5A2B", foreground: "#e6f0e6", cursor: "#9be29b" });
+        for (let i = 0; i < 120; i++) term.write("line " + i + " of terminal output\r\n");
+        term.write(">> a live prompt on the last row");
+        const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await frame();
+        term.scrollToBottom();
+        await frame();
+        const r = s => { const el = document.querySelector(s); return el ? el.getBoundingClientRect() : null; };
+        const host = r("#t-screen"), help = r(".term-help");
+        const grid = r("#t-screen .xterm-screen"), vp = r("#t-screen .xterm-viewport");
+        if (!host || !help || !grid || !vp) {
+          return { ok: false, why: "missing element " +
+            JSON.stringify({ host: !!host, help: !!help, grid: !!grid, vp: !!vp }) };
+        }
+        return {
+          ok: true,
+          // The drawn grid's bottom sits on the help bar's top: no host-coloured
+          // band between the last terminal row and the footer.
+          gridToFooter: Math.round(help.top - grid.bottom),
+          // The scrollable viewport reaches the footer too, so nothing shows the
+          // host background below it.
+          viewportToFooter: Math.round(help.top - vp.bottom),
+          // The host still fills the pane down to the footer (flex:1 intact).
+          hostToFooter: Math.round(help.top - host.bottom)
+        };
+      });
+      if (!fill.ok) {
+        fail("could not measure the attached terminal against the footer (" +
+          (fill.why || "unknown") + ").");
+      } else {
+        // A pixel or two of sub-pixel rounding is fine; a whole line is the bug.
+        if (Math.abs(fill.gridToFooter) > 3) {
+          fail("the terminal grid does not sit on the footer (gap " + fill.gridToFooter +
+            "px): a remainder band of dead space is back above the help bar.");
+        }
+        if (Math.abs(fill.viewportToFooter) > 3) {
+          fail("the terminal viewport does not reach the footer (gap " +
+            fill.viewportToFooter + "px).");
+        }
+        if (Math.abs(fill.hostToFooter) > 3) {
+          fail("the terminal host does not fill the pane down to the footer (gap " +
+            fill.hostToFooter + "px): the pane layout regressed.");
+        }
+      }
+      if (fillErrors.length) {
+        fail("the terminal-fill page threw uncaught errors: " + fillErrors.join(" | "));
+      }
+    } finally {
+      await fillPage.close();
+    }
+
     // ── a live popped-out window is re-heard on the board's roll call ───────
     // The board asks `solo-who` on every poll now, not just at boot. A window
     // still open answers and re-stamps its claim, so a claim that lapsed while
