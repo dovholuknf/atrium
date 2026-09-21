@@ -1168,8 +1168,20 @@ async function renderTermList() {
   // attach spin the board: teardown -> reattach -> openTerm -> refresh -> back
   // here. The socket's own retry (or the ended state) settles the card. A render
   // must not. See `attachInFlight`.
-  if (termTask && !attachIsInFlight(termTask.id) &&
-      !shown.some(t => t.id === termTask.id && t.supervised)) clearTermPane();
+  //
+  // A ROOM-SET CHANGE FLIPS THE ID; IT DOES NOT REMOVE THE CARD. The aggregate
+  // view tags a card `room~id` while more than one room is attached and serves
+  // it bare with one (see `bareId` and the hub's splitTag). A room joining or
+  // leaving flips every id in `/v1/tasks` at once, but the attached `termTask`
+  // still holds the id from before the flip. Comparing raw ids read the attached
+  // card as gone and tore the pane down, the single-card endpoint still resolved
+  // the stale tagged id so the watchdog re-attached, and the next poll tore it
+  // down again: the infinite teardown/reattach loop a room-set change spun,
+  // which kept going after the second room had already left because the browser
+  // held the tagged id it remembered while there were two. So the attached card
+  // is matched by its BARE id here, and when the tag flipped the remembered id
+  // is re-resolved to the form the hub serves now rather than looped on.
+  reconcileAttached(tasks);
 
   termOrder(shown);
   // Before anything is drawn, and over the rows that will BE drawn: a card
@@ -1464,10 +1476,66 @@ let attachSaidGone = false;
 // render must not tear the pane down and the watchdog must not start a second
 // attach for it: either one re-enters the loop above. Set in `openTerm`,
 // cleared when the socket opens and on any teardown.
+// COMPARED BY BARE ID, so a room-set change that flips the attached card
+// between `room~id` and bare does not strand the in-flight mark on the old
+// spelling. `onopen` clears with the id the socket was opened under, and a
+// render may retag `termTask` to the new form before the socket lands (see
+// `retagTermId`), so raw equality would leave the mark stuck and the pane
+// unclearable. The bare id is the same across the flip. See `bareId`.
 let attachInFlight = "";
 function markAttachInFlight(card) { attachInFlight = card || ""; }
-function clearAttachInFlight(card) { if (!card || attachInFlight === card) attachInFlight = ""; }
-function attachIsInFlight(card) { return !!card && attachInFlight === card; }
+function clearAttachInFlight(card) {
+  if (!card || bareId(attachInFlight) === bareId(card)) attachInFlight = "";
+}
+function attachIsInFlight(card) {
+  return !!card && !!attachInFlight && bareId(attachInFlight) === bareId(card);
+}
+
+// Re-point the attached card at the id the hub serves NOW, after a room-set
+// change flipped it between `room~id` and bare. The two ids are the same card
+// (same bare id) so the socket stays open and nothing reattaches: only the id
+// the board remembers it by changes, so the strip's `on` row, the pane check
+// and the reload slot all speak the current form again instead of a stale tag
+// the single-card endpoint happens to still resolve. The in-flight and reattach
+// marks are left alone: they compare by bare id and so already match either
+// spelling. Called from `renderTermList` when the fresh list disagrees with
+// `termTask.id` on the tag but not on the card.
+// The attached pane, reconciled against the freshly polled task list.
+//
+// Two decisions, in this order, and the order matters: re-resolve first, tear
+// down only if there is genuinely nothing left. A room-set change flips every
+// id between `room~id` and bare (see `retagTermId`), so the attached card is
+// found by its BARE id; when the tag flipped, the remembered id is re-pointed
+// at the live form rather than read as gone. Only when no supervised row shares
+// the attached card's bare id is the pane stale, and even then not while an
+// attach for it is in flight (the cached list lags the single-card poll). Split
+// out of `renderTermList` so the room-flip loop it closes can be tested against
+// the real code. Returns whether it tore the pane down.
+function reconcileAttached(tasks) {
+  if (!termTask) return false;
+  const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
+  if (live && live.id !== termTask.id) retagTermId(live.id);
+  if (!attachIsInFlight(termTask.id) && !live) { clearTermPane(); return true; }
+  return false;
+}
+
+function retagTermId(id) {
+  if (!termTask || !id || id === termTask.id) return;
+  const was = termTask.id;
+  rlog("room set changed; re-resolving", was, "to", id);
+  termTask.id = id;
+  // `termKindFor` keys the runner/shell choice to the attached card; move it so
+  // the next open of this card does not read as a different one and reset it.
+  if (typeof termKindFor !== "undefined" && termKindFor === was) termKindFor = id;
+  // The reload slot, so a restart comes back to the card under the id this hub
+  // now serves rather than waiting out a tag it no longer answers to. Only in
+  // the board: a solo window is addressed by its hash, not this slot.
+  if (!termOnly()) {
+    try {
+      if (localStorage.getItem("atrium.term") === was) localStorage.setItem("atrium.term", id);
+    } catch (e) {}
+  }
+}
 
 // A REATTACH AFTER A TEARDOWN IS SCHEDULED AND BACKS OFF, never run straight
 // out of the render that noticed the pane was stale.
@@ -1488,7 +1556,10 @@ function scheduleReattach(card) {
   // openTerm is already on it, or a reattach for it is already queued. Either
   // way, do not stack a second one.
   if (attachIsInFlight(card)) return;
-  if (reattachTimer && reattachCard === card) return;
+  // Bare id, for the reason `attachIsInFlight` gives: a queued reattach and a
+  // teardown that arrives under the other spelling after a room flip are the
+  // same card, and stacking a second one is what the guard is here to refuse.
+  if (reattachTimer && bareId(reattachCard) === bareId(card)) return;
   if (reattachTimer) clearTimeout(reattachTimer);
   reattachCard = card;
   const wait = Math.min(reattachMax, reattachMin * Math.pow(2, reattachTries));
