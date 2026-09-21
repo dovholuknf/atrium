@@ -42,7 +42,8 @@ function paintExpose3() {
   const tiles = EXP3_GOALS.map(g => {
     const o = (overlays || []).find(v => v.kind === g.kind) || {};
     const running = !!o.running && (g.kind !== "zrok" || (o.config || {}).mode === g.mode);
-    return `<button class="x3-goal ${chosen === g.id ? "on" : ""}" onclick="exp3PickGoal('${g.id}')">
+    return `<button class="x3-goal ${chosen === g.id ? "on" : ""}" onclick="exp3PickGoal('${g.id}')"
+        aria-pressed="${chosen === g.id ? "true" : "false"}">
       <span class="x3-goal-t">${esc(g.tile)}</span>
       <span class="x3-goal-s">${esc(g.sub)}</span>
       ${running ? `<span class="x3-goal-live">reachable now</span>` : ""}
@@ -185,6 +186,13 @@ function exp3AuthBlock(auth) {
         placeholder="https://keycloak.example/realms/yours" onchange="exp3SaveAuth()">
     </div>
     <div class="x3-field">
+      <label class="eyebrow" for="x3-auth-redirect">where the provider sends people back</label>
+      <input type="text" id="x3-auth-redirect" spellcheck="false" value="${esc(a.redirect || "")}"
+        placeholder="https://your-board-address/auth/callback" onchange="exp3SaveAuth()">
+      <span class="hintline">The public URL with <code>/auth/callback</code>, matching what the
+        provider was registered with exactly.</span>
+    </div>
+    <div class="x3-field">
       <label class="eyebrow" for="x3-auth-allow">who may in</label>
       <input type="text" id="x3-auth-allow" spellcheck="false" value="${esc((a.allow || []).join(", "))}"
         placeholder="you@example.com" onchange="exp3SaveAuth()">
@@ -209,7 +217,7 @@ async function exp3SaveAuth() {
     password: val("x3-auth-pass"),
     issuer: mode === "oidc" ? val("x3-auth-issuer").trim() : a.issuer || "",
     client_id: a.client_id || "",
-    redirect: a.redirect || "",
+    redirect: mode === "oidc" ? val("x3-auth-redirect").trim() : a.redirect || "",
     allow: mode === "oidc" ? val("x3-auth-allow").split(",").map(s => s.trim()).filter(Boolean) : a.allow || [],
     client_secret: ""
   };
