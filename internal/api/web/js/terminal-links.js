@@ -1555,6 +1555,10 @@ function setTermFont(px) {
   if (size === termFontSize) return;
   termFontSize = size;
   term.options.fontSize = size;
+  // A font change resizes the grid at the SAME pixel box: more or fewer cells
+  // fit. Clear the box mark `paneBoxUnchanged` keeps, or the re-fit below would
+  // be skipped as a no-op and the font change would not take.
+  term._atriumBox = null;
   // Written against the card rather than against the pane, so switching to
   // another session and back finds it again. See the note above `readTermFont`
   // for why that is not the same as making it a preference.
@@ -1591,12 +1595,34 @@ function sizeTermHost() {
   el.style.height = Math.round(term.rows * cell) + "px";
 }
 
+// A RE-FIT COSTS NOTHING WHEN THE PANE'S PIXELS DID NOT MOVE, so do not pay it.
+//
+// A room-set change re-renders the strip and moves the header, and both fire
+// `onTermResize` through the ResizeObserver even when the terminal's own box did
+// not change. `fit()` then hands xterm a `resize` to the size it already has,
+// which reflows the buffer and snaps a scrolled-up pane to the bottom, and on a
+// room flip it is that reflow that leaves the cursor misplaced. So skip the fit
+// when the element is the size it was at the last one.
+//
+// The mark is kept ON THE TERM INSTANCE, so a freshly opened terminal (which has
+// no mark yet) always fits once, and a terminal switch does not inherit the old
+// one's box. Returns true when there is nothing to do.
+function paneBoxUnchanged() {
+  if (!term || !term.element) return false;
+  const box = term.element.clientWidth + "x" + term.element.clientHeight;
+  if (term._atriumBox === box) return true;
+  term._atriumBox = box;
+  return false;
+}
+
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached
   // terminal or not.
   placeTabBridge();
   if (!termFit || !term) return;
+  // Skip a re-fit when the pane's pixels did not move. See `paneBoxUnchanged`.
+  if (paneBoxUnchanged()) return;
 
   const before = term.buffer.active;
   const wasAtBottom = before.viewportY >= before.baseY;
