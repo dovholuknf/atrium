@@ -168,6 +168,14 @@ function exp2AuthBody() {
         value="${esc(a.client_id || "")}" placeholder="atrium" onchange="exp2SaveAuth()">
     </div>
     <div class="xb-field">
+      <label class="eyebrow" for="xb-auth-secret">client secret</label>
+      <input type="password" id="xb-auth-secret" spellcheck="false" autocomplete="off"
+        placeholder="leave empty to keep the one already set" onchange="exp2SaveAuth()">
+      <span class="hintline">${a.has_client_secret
+        ? "a secret is set. typing replaces it, empty keeps it."
+        : "no secret set. leave empty for a public client."}</span>
+    </div>
+    <div class="xb-field">
       <label class="eyebrow" for="xb-auth-redirect">where the provider sends people back</label>
       <input type="text" id="xb-auth-redirect" spellcheck="false"
         value="${esc(a.redirect || "")}" placeholder="https://your-board-address/auth/callback"
@@ -203,7 +211,10 @@ async function exp2SaveAuth() {
     allow: mode === "oidc"
       ? val("xb-auth-allow").split(",").map(s => s.trim()).filter(Boolean)
       : (exp2Auth || {}).allow || [],
-    client_secret: ""
+    // Sent in plain and stored by the daemon, the only place it ever exists.
+    // Empty keeps the one already set, so a repaint with a blank box does not
+    // wipe it, the same convention the classic panel follows.
+    client_secret: mode === "oidc" ? val("xb-auth-secret") : ""
   };
   try {
     await api("/v1/auth", {
@@ -211,6 +222,9 @@ async function exp2SaveAuth() {
       body: JSON.stringify(body)
     });
     if (said) { said.textContent = "saved."; said.className = "hintline ok"; }
+    // Cleared so the secret does not sit in the DOM for the rest of the session.
+    const s = document.getElementById("xb-auth-secret");
+    if (s) s.value = "";
     loadExpose2();
   } catch (e) {
     if (said) { said.textContent = e.message; said.className = "hintline bad"; }
