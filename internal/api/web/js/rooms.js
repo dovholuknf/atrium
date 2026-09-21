@@ -269,7 +269,8 @@ function roomChip(t) {
   // answering is an invitation to a board that can show nothing.
   if (t.offline) return "";
   const name = esc(t.room);
-  return `<span class="chip room" title="on ${name}. click to focus on it."
+  return `<span class="chip room" style="--rhue:${roomHue(t.room)}"
+    title="on ${name}. click to focus on it."
     onclick="event.stopPropagation();pickRoom('${name.replace(/'/g, "&#39;")}')"
     >${name}</span>`;
 }

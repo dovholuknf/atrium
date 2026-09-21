@@ -487,7 +487,7 @@ function openTerm(task) {
     // the id's tag and answers "" with a single room attached, so this draws
     // nothing until a second room makes the question real, the same as the room
     // chip on the strip row (see `termRoomChip`). The name is the tag itself.
-    (roomOf(task.id) ? `<span class="chip room"
+    (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
        title="this card runs in room ${esc(roomOf(task.id))}"
        >${esc(roomOf(task.id))}</span>` : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +

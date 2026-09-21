@@ -319,6 +319,23 @@ function roomOf(id) {
   return i > 0 ? s.slice(0, i) : "";
 }
 
+// A STABLE colour per room, so sg4 and sgg are told apart at a glance rather than
+// read letter by letter. Hashed from the name the same way `groupHue` colours a
+// project group, then landed on a curated wheel of hues spread far enough apart
+// that two rooms are always tellable, and offset from the group palette so a room
+// chip does not echo the group heading beside it. A given room always gets the
+// same hue and different rooms get different ones, with nothing configured. The
+// chip renders it through `--rhue` and the skin decides the rest, so it stays
+// legible on a paper board and a dark one alike (see `.chip.room` in cards.css).
+// The palette lives inside the function so the strip's harness can lift it whole.
+function roomHue(name) {
+  const hues = [205, 150, 285, 25, 175, 320, 95, 250, 45, 190, 130, 350];
+  const s = String(name || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 2147483647;
+  return hues[h % hues.length];
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
