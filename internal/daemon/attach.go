@@ -241,10 +241,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// And give the size back when this viewer goes. A window that attached
-	// once and was closed would otherwise hold the session at its width
-	// forever, which is worse than the bug this pairs with: at least a
-	// last-writer-wins resize could be undone by dragging something.
+	// Forget this viewer when it goes. A window that attached once and was
+	// closed must stop constraining the size, or a phone that popped in and out
+	// would hold the session at its width forever. The pty only follows this
+	// back up if the viewer that left was the binding (smallest) one: see
+	// `dropViewport`, which resizes only when the agreed size actually changes.
 	defer run.dropViewport(c)
 
 	// Closed once this viewer has said how big it is. See the wait below.
@@ -425,23 +426,13 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return
 		}
-		// AND A LINE UNDER IT, so the boundary between history and live output
-		// is visible. Without it the first redraw after attaching reads as the
-		// history having been corrupted.
-		// SAYS WHICH RENDERING PRODUCED IT, because three are possible and the
-		// answer to "why does this look like that" starts with which one ran.
-		// Naming the mode also means a screenshot carries it, which is most of
-		// how this gets reported.
-		how := map[string]string{
-			"raw":  "exactly as the session wrote it, rendered by this terminal",
-			"flat": "laid out flat so it could not erase itself",
-		}[mode]
-		if how == "" {
-			how = "replayed through a screen so it could not erase itself"
-		}
-		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m"+
-			"[atrium] ---- everything above is history, "+how+
-			". live from here ----\x1b[0m\r\n"))
+		// NO DIVIDER UNDER THE HISTORY, deliberately. A line reading "everything
+		// above is history, live from here" used to sit here to stop the first
+		// live redraw reading as corrupted scrollback. In practice it read as
+		// noise on every reattach, and clint asked to ditch the whole preamble.
+		// Silence is the better default: the live output picks up where the
+		// history stops, and the honest "the buffer overwrote older output" note
+		// above still fires when there is a real reason to say something.
 	}
 
 	// Writer: output from the runner.
