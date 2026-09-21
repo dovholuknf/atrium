@@ -285,7 +285,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// atrium reading its own typing as the person being busy.
 				// See `runner.noteOperatorTyped`.
 				run.noteOperatorTyped([]byte(in.D))
-				if err := run.Write([]byte(in.D)); err != nil {
+				// Through the input lock, so these bytes wait behind a peer
+				// paste in flight rather than interleaving with it. The
+				// bookkeeping above is not locked and stays instant. See
+				// runner.writeOperatorInput and injectPeer.
+				if err := run.writeOperatorInput([]byte(in.D)); err != nil {
 					return
 				}
 				// SHARED MULTI-PANE INPUT, off unless this runner was opted in.
@@ -314,7 +318,8 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {
-					_ = run.Write([]byte{0x03})
+					run.noteOperatorTyped([]byte{0x03})
+					_ = run.writeOperatorInput([]byte{0x03})
 				}
 			}
 		}

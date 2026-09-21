@@ -327,17 +327,17 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// A peer or relay message types in too, marked with the banner so it is
-		// unmistakably not the operator. But ONLY INTO A CLEAR LINE, the same
-		// guard as the peer bus: injectPeer holds the lock across the midLine
-		// check and the write, so peer text can never land in a line the operator
-		// is composing, and a part written line is refused and falls to the queue
-		// below. This is the same bug clint hit on the bus, closed on this path
-		// too.
+		// unmistakably not the operator. But ONLY THROUGH THE GATE, the same guard
+		// as the peer bus: injectPeer types and submits only into an empty, idle
+		// line under the input lock, and writes nothing otherwise, so peer text
+		// never lands tangled into a line the operator is composing and never sits
+		// unsent in their prompt. A closed gate falls to the queue below. This is
+		// the same bug clint hit on the bus, closed on this path too.
 		payload := body.Text
 		if d.bracketedPasteFor(taskID, false) {
 			payload = "\x1b[200~" + body.Text + "\x1b[201~"
 		}
-		_, wrote, err := run.injectPeer(peerBanner(from), payload)
+		wrote, err := run.injectPeer(peerBanner(from), payload)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
@@ -390,6 +390,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
+	// A queued peer or relay message keeps trying to type in on the same backoff
+	// as the bus, so the two paths behave alike. The operator's own queued
+	// messages are not retried this way: they are already on the line they are
+	// looking at when a terminal is free, and the gate is about peer text. See
+	// pendinginject.go.
+	if from != "" {
+		d.deferPeerInjection(taskID, m.ID, from, body.Text)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
 }
