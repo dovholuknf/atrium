@@ -135,3 +135,26 @@ The event sink makes this smaller either way: move the bulk (`output` and old au
 offsite, and the primary database plateaus low enough that shrinking it stops mattering.
 
 ------------
+
+## Per-card notification log
+
+**Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
+Not started.
+
+### The idea
+
+A card accumulates notifications over its life: a peer message held/deferred and re-warned on backoff (see the
+peer-message injection work), a permission asked, a going-down, an audit event. Today a notification fires once as
+a transient toast (and toasts have been vanishing too fast to read), so a human who was not looking never learns it
+happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
+and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
+answerable after the fact rather than only in the moment.
+
+### Why it might not be worth it
+
+The global bell history plus the new per-card held-message indicator may already cover the need. The event log
+(and the pluggable event sink above) already records `notified` events per card, so this could be a thin read view
+over data that exists rather than new storage. Decide whether a dedicated per-card log earns its place or whether
+filtering the existing history by card is enough. clint has not committed to building it.
+
+------------
