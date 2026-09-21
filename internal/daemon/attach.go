@@ -34,6 +34,9 @@ type attachIn struct {
 	Cols int    `json:"cols"`
 	Rows int    `json:"rows"`
 	S    string `json:"s"`
+	// On carries the wanted state of shared multi-pane input for an
+	// {"t":"echo"} frame. See the case in the reader and `runner.setEchoPeers`.
+	On bool `json:"on"`
 }
 
 // attachCaps is what the board cannot work out from the bytes, sent once as
@@ -248,6 +251,16 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	sized := make(chan struct{})
 	var sizedOnce sync.Once
 
+	// This attach's own output channel, so the keystroke fan-out can skip it:
+	// a pane already shows its own typing. Set once `subscribeSized` has run
+	// below, and read under a lock because the reader goroutine started here
+	// races that assignment. Nil until then, which `echoToPeers` treats as
+	// "exclude nobody" because this attach is not yet a watcher.
+	var (
+		selfMu sync.Mutex
+		self   chan []byte
+	)
+
 	// Reader: control frames from the browser.
 	go func() {
 		defer cancel()
@@ -274,6 +287,19 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				if err := run.Write([]byte(in.D)); err != nil {
 					return
 				}
+				// SHARED MULTI-PANE INPUT, off unless this runner was opted in.
+				// A DISPLAY echo to the OTHER panes, after the one Write above,
+				// so stdin is written exactly once. See `runner.echoToPeers`.
+				selfMu.Lock()
+				me := self
+				selfMu.Unlock()
+				run.echoToPeers([]byte(in.D), me)
+			case "echo":
+				// Turn shared multi-pane input on or off for the whole runner.
+				// The HUB board sends this from a per-terminal toggle. Ignored
+				// by a daemon that does not know the frame, which is what makes
+				// the board piece safe to ship ahead of this one.
+				run.setEchoPeers(in.On)
 			case "resize":
 				// THIS VIEWER'S SIZE, not the terminal's. Several browsers can
 				// be on one session, a pty has one size, and passing each
@@ -335,6 +361,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 
 	backlog, widths, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
+	// Now that this attach is a watcher, the fan-out can recognise its channel
+	// and skip it, so this pane is not echoed its own keystrokes.
+	selfMu.Lock()
+	self = updates
+	selfMu.Unlock()
 	if len(backlog) > 0 {
 		// WHY THE SCROLLBACK STOPS WHERE IT STOPS, said at the top where
 		// somebody who has scrolled all the way up is looking.
