@@ -1357,18 +1357,36 @@ async function main() {
       await skin.waitForFunction(() =>
         document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
 
-      // Back to ALL: the hub skin is what it was, and a room attaching does not
-      // change it. This is the borrow-race bug clint hit on a deploy.
+      // Back to ALL: the hub skin is what it was, and a room attaching or
+      // leaving does not change it. This is the bug clint hit on a deploy: a
+      // room connecting swapped his theme to its own skin and its leaving
+      // reverted it, though he never changed scope off ALL.
+      //
+      // To catch it, the answer a re-read WOULD give is moved out from under the
+      // settled skin: skinFor[""] is changed to a different skin, so any re-fetch
+      // of the ALL scope now returns `ember`. A room attaching or detaching must
+      // still leave the applied `vapor` alone, because the skin has settled and
+      // ALL is not the scope of the room that changed. The old code re-read the
+      // skin on every attached-set flip and would repaint to `ember` here.
       await scopeTo(null, "vapor");
+      const allWas = skinFor[""];
+      skinFor[""] = "ember";
+      // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
+      // its body rather than being coalesced away. Then a room leaves and one
+      // attaches: two changes to the attached set, neither of which is the ALL
+      // scope the operator is on, so the settled skin must not move.
+      await skin.waitForTimeout(2200);
       sggAttached = false;
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      await skin.waitForTimeout(2200);
       sggAttached = true;
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
       await skin.waitForTimeout(500);
       if ((await dataSkin()) !== "vapor") {
-        fail("a room attaching clobbered the ALL skin: it became " +
-          JSON.stringify(await dataSkin()) + ", wanted the hub's vapor.");
+        fail("a room attaching or leaving clobbered the settled ALL skin: it " +
+          "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
       }
+      skinFor[""] = allWas;
       if (skinErrors.length) {
         fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
       }

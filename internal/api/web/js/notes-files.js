@@ -1352,6 +1352,15 @@ function rememberSkin(name) {
 // Left alone while a preview is up: the skin lab paints an unsaved skin, and a
 // reconnect or a room attaching mid-preview must not yank it back to the saved
 // one under the operator's hand. See `previewSkin`.
+//
+// SETTLED ONCE A SETTINGS READ HAS ACTUALLY RESOLVED A SKIN. The heal exists for
+// the load that could not read settings yet (the 409 a hub still bringing its
+// rooms up gives), so the room-set-change path re-reads until it lands. But once
+// it HAS landed, a room merely attaching or leaving must not re-resolve the skin
+// under the operator: their applied skin is their SELECTED scope's, not whatever
+// the attached set now borrows. `loadHubRooms` reads this to gate its re-apply.
+let skinSettled = false;
+function skinHasSettled() { return skinSettled; }
 function applyResolvedSkin(s) {
   if (!s) return;
   const lab = document.getElementById("skinlab");
@@ -1365,6 +1374,8 @@ function applyResolvedSkin(s) {
     document.documentElement.removeAttribute("data-skin");
     rememberSkin("");
   }
+  // A skin resolved from a real answer. The room-set-change re-apply stops here.
+  skinSettled = true;
 }
 
 async function bootSkin() {
