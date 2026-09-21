@@ -59,45 +59,65 @@ function isDoer(t) {
 // each gets its own hide toggle. A SUBAGENT is an agent-launched doer (the
 // `origin:agent` tag, `isDoer`). An AGENT is everything else: a human's own
 // top-level terminal, the sessions clint starts himself. The two toggles are
-// independent, so an operator can hide the inactive subagents, the inactive
-// agents, both, or neither. They read as one segmented control (see
-// `termHideControlsHTML`) and behave as two switches.
+// independent, so an operator can hide the subagents, the inactive agents, both,
+// or neither. They read as one segmented control (see `termHideControlsHTML`)
+// and behave as two switches.
 //
-// TWO STATES EACH. `none` shows every session of that kind. `inactive` is a
-// SHOW-ONLY-ALIVE switch: it hides the DEAD ones (no live connection, the
-// session has exited or disconnected) and keeps the ALIVE ones. A session with a
-// live connection is NEVER hidden in either state, EVEN when it is idle or
-// waiting on you: connected and sitting at a prompt is still a session you can
-// go to, so a running agent that happens to be quiet stays. The attached one is
-// never hidden either (see `sessionHiddenBy`). Pinning is NOT an exemption: a
-// pinned session whose runner has gone (a cold row) hides like any other dead
-// one of its kind.
+// BOTH TOGGLES SAY "HIDE INACTIVE", BUT INACTIVE MEANS A DIFFERENT THING PER
+// KIND. Each toggle keeps the sessions of its kind still worth a glance and drops
+// the rest; what counts as inactive differs because the two kinds are watched
+// differently:
+//   - A SUBAGENT is inactive when it is NOT WORKING RIGHT NOW (`workingNow`):
+//     idle, waiting on input, OR exited. The subagents toggle keeps ONLY the ones
+//     actively computing, since a board fills with atrium's launched doers and
+//     the operator wants to see the ones doing something, not the idle husks.
+//   - An AGENT is inactive when it has EXITED - no live connection
+//     (`supervised`). The agents toggle keeps every live one, EVEN idle or
+//     waiting on you (connected at a prompt is still a session you can go to), and
+//     drops only the dead ones.
+// `none` shows every session of that kind. The attached one is never hidden by
+// either toggle (see `sessionHiddenBy`). Pinning is NOT an exemption: a pinned
+// row whose runner has gone (a cold row) hides with the rest of its kind.
 //
-// ALIVE IS `supervised`, the strip's own live-connection signal. It is what the
-// row already reads to draw itself cold when there is no runner (see `termRow`),
-// what the nav badge counts as an attachable terminal, and the board's
-// green/live state. Working-right-now (`workingNow`) is NOT the test: that hid a
-// connected-but-idle agent, which is the bug this fixes.
+// TWO SIGNALS. The agents rule reads `supervised`, the strip's own live-connection
+// signal (what the row reads to draw itself cold when there is no runner, see
+// `termRow`, what the nav badge counts as attachable, the board's green/live
+// state). The subagents rule reads `workingNow`, the same live-activity test the
+// board's activity chip makes. So an idle-but-connected session is INACTIVE to
+// the subagents toggle but ALIVE to the agents toggle - deliberately, because the
+// two kinds are triaged differently.
 //
 // DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
 // wall-mounted board and a laptop want different answers and neither should
 // write over the other. The subagents side DEFAULTS ON (a board fills with
 // atrium's launched doers and their dead husks, and hiding those by default
-// keeps the strip about the live ones); the agents side defaults off, so a
+// keeps the strip about the human sessions); the agents side defaults off, so a
 // human's own sessions are never hidden until asked.
-const HIDE_DOERS_KEY = "atrium.hidedoers";    // the subagents
-const HIDE_AGENTS_KEY = "atrium.hideagents";  // the human/top-level sessions
-const HIDE_MODES = ["none", "inactive"];
+const HIDE_SUBAGENTS_KEY = "atrium.hidesubagents"; // the atrium-launched doers
+const HIDE_AGENTS_KEY = "atrium.hideagents";       // the human/top-level sessions
+const HIDE_MODES = ["none", "on"];
+// A prior build stored the subagents toggle under `atrium.hidedoers`, with values
+// that meant a different thing (a liveness-gated hide, or an older tri-state).
+// The subagents toggle now hides on the `workingNow` signal and DEFAULTS ON, so a
+// stale value there would show a prior test click instead of the intended
+// default. Drop the legacy key (both device variants) once, so the new key's
+// default takes.
+(function clearLegacyHideKey() {
+  try {
+    localStorage.removeItem("atrium.hidedoers");
+    localStorage.removeItem("atrium.hidedoers.mobile");
+  } catch (e) {}
+})();
 function hideModeFrom(key, dflt) {
   try {
     const v = localStorage.getItem(termDeviceKey(key));
     if (HIDE_MODES.includes(v)) return v;
-    // Old stored values map to the nearest surviving state. The subagents key's
-    // binary "1" meant hide every doer, which is now `inactive` (the alive ones
-    // stay). The dropped tri-state `active` hid the working ones, the one thing
-    // this no longer offers, so it falls through to this kind's default rather
-    // than flip to hiding the opposite set behind the operator's back.
-    if (v === "1") return "inactive";
+    // Old stored values map to the surviving on-state. The subagents key's binary
+    // "1" and the agents key's "inactive" both meant "this toggle is engaged",
+    // which is now `on`. The dropped tri-state `active` hid the working ones, a
+    // thing neither toggle offers now, so it falls through to this kind's default
+    // rather than flip to hiding the opposite set behind the operator's back.
+    if (v === "1" || v === "inactive") return "on";
     return dflt;
   } catch (e) { return dflt; }
 }
@@ -107,15 +127,15 @@ function setHideMode(key, mode) {
   renderTermList();
 }
 // The subagents side defaults ON, the agents side OFF: see the note above.
-function hideDoersMode() { return hideModeFrom(HIDE_DOERS_KEY, "inactive"); }
+function hideSubagentsMode() { return hideModeFrom(HIDE_SUBAGENTS_KEY, "on"); }
 function hideAgentsMode() { return hideModeFrom(HIDE_AGENTS_KEY, "none"); }
-function setHideDoers(mode) { setHideMode(HIDE_DOERS_KEY, mode); }
+function setHideSubagents(mode) { setHideMode(HIDE_SUBAGENTS_KEY, mode); }
 function setHideAgents(mode) { setHideMode(HIDE_AGENTS_KEY, mode); }
-function toggleHideDoers() {
-  setHideDoers(hideDoersMode() === "none" ? "inactive" : "none");
+function toggleHideSubagents() {
+  setHideSubagents(hideSubagentsMode() === "none" ? "on" : "none");
 }
 function toggleHideAgents() {
-  setHideAgents(hideAgentsMode() === "none" ? "inactive" : "none");
+  setHideAgents(hideAgentsMode() === "none" ? "on" : "none");
 }
 
 // IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
@@ -140,16 +160,18 @@ function workingNow(t) {
 function hasLiveConnection(t) { return !!(t && t.supervised); }
 
 // Whether this session is hidden by its kind's toggle, honouring what is never
-// hidden (see `renderTermList`): an alive session and the attached one. A
-// subagent (`isDoer`) answers to the subagents toggle, everything else to the
-// agents toggle. Kept as one predicate so the count in the header and the rows
-// removed from the list are the same answer rather than two that can drift.
-// `inactive` hides the sessions of that kind with no live connection (exited,
-// disconnected), pinned or not; anything still connected stays, idle or working.
+// hidden (see `renderTermList`): the attached one, and whatever its kind's rule
+// keeps. A subagent (`isDoer`) answers to the subagents toggle, everything else
+// to the agents toggle. Kept as one predicate so the count in the header and the
+// rows removed from the list are the same answer rather than two that can drift.
+// The two toggles both mean "hide inactive", but read DIFFERENT signals: a
+// subagent is inactive unless it is working right now (`workingNow`), so an idle
+// or exited one hides; an agent is inactive when it has no live connection
+// (`hasLiveConnection`), so only a dead one hides, pinned or not.
 function sessionHiddenBy(t, keep) {
-  if (keep(t) || hasLiveConnection(t)) return false;
-  const mode = isDoer(t) ? hideDoersMode() : hideAgentsMode();
-  return mode === "inactive";
+  if (keep(t)) return false;
+  if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
+  return !hasLiveConnection(t) && hideAgentsMode() !== "none";
 }
 
 // THE HEADER CONTROL, a segmented pill drawn beside `sorted by activity`. It
@@ -162,9 +184,10 @@ function sessionHiddenBy(t, keep) {
 // A PRESSED SEGMENT is lit like agent|shell's selected side and carries the
 // count it is hiding right now in parentheses - `agents (3)` - so the pill says
 // how much is out of view. The `hide inactive` caption says what pressing a
-// segment does. Alive sessions (a live connection) and the attached one always
-// stay, whatever is pressed; a dead session (no live connection, exited or
-// disconnected) hides, pinned or not, and counts toward the number here.
+// segment does. INACTIVE MEANS A DIFFERENT THING PER SIDE (see the note above),
+// so the tooltips differ: an agent is inactive when it has EXITED (no live
+// connection), a subagent is inactive when it is NOT WORKING right now (idle,
+// waiting, or exited). The attached one always stays, whatever is pressed.
 //
 // DRAWN WHEN IT DOES SOMETHING: when either kind has an inactive session it
 // could hide, or when either toggle is already on (so it can be turned back
@@ -172,28 +195,37 @@ function sessionHiddenBy(t, keep) {
 // always reads as the same pair rather than growing and shrinking a side.
 function termHideControlsHTML(c) {
   const aOn = hideAgentsMode() !== "none";
-  const sOn = hideDoersMode() !== "none";
+  const sOn = hideSubagentsMode() !== "none";
   if (!aOn && !sOn && !c.agentHideable && !c.subHideable) return "";
-  const seg = (name, on, hidden, fn, extra) => {
+  const seg = (name, on, hidden, fn, title) => {
     const label = on && hidden ? `${name} (${hidden})` : name;
-    const base = on
-      ? `disconnected ${name} are hidden. click to show them. connected ${name} ` +
-        "and the attached one always stay, even idle or waiting"
-      : `hide the disconnected ${name} (exited, no live connection). connected ` +
-        `${name} and the attached one always stay, even idle or waiting`;
-    const title = extra ? `${base}. ${extra}` : base;
     return `<button class="${on ? "on" : ""}" onclick="${fn}"
         title="${esc(title)}">${esc(label)}</button>`;
   };
-  // The subagents segment names what a subagent IS, since the word is atrium's
-  // own: these are the sessions atrium launched (the `origin:agent` tag), not any
-  // session a human started.
+  // Agents: inactive = exited (no live connection). A live agent stays, even idle
+  // or waiting on you.
+  const agentTitle = aOn
+    ? "inactive agents are hidden (exited, no live connection). click to show " +
+      "them. connected agents and the attached one always stay, even idle or waiting"
+    : "hide the inactive agents (exited, no live connection). connected agents " +
+      "and the attached one always stay, even idle or waiting";
+  // Subagents: inactive = not working right now. Only the actively-computing ones
+  // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
+  // subagent IS, since the word is atrium's own: the sessions atrium launched
+  // (the `origin:agent` tag), not any a human started.
   const subNote = "subagents are the sessions atrium launched itself " +
     "(origin:agent), not ones you started";
+  const subTitle = (sOn
+    ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
+      "now). click to show them. only actively-working subagents and the attached " +
+      "one stay"
+    : "hide the inactive subagents (idle, waiting, or exited - not working right " +
+      "now). only actively-working subagents and the attached one stay") +
+    ". " + subNote;
   return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
-      seg("agents", aOn, c.agentHidden, "toggleHideAgents()")
+      seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
     }${
-      seg("subagents", sOn, c.subHidden, "toggleHideDoers()", subNote)
+      seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
     }</span>`;
 }
 
@@ -1311,30 +1343,32 @@ async function renderTermList() {
   // this one screen chose to read the strip.
   badge("c-term", tasks.filter(t => t.supervised).length);
 
-  // HIDE THE DEAD SESSIONS, per kind, when asked. Two independent toggles (see
-  // `termHideControlsHTML`): the subagents side drops the disconnected
-  // agent-launched doers, the agents side drops the disconnected human sessions,
-  // so neither kind buries the other. The ONLY sessions kept whatever the
-  // toggles say are an ALIVE one (a live connection, see `sessionHiddenBy`) and
-  // the ATTACHED one, since hiding must never yank the pane out from under
-  // whatever is open (the teardown below keys off this same list). Pinning is no
-  // longer an exemption: a pinned session whose runner has gone hides with the
-  // rest of the dead ones of its kind, in the pinned bucket and everywhere else
-  // the strip lists it. What is removed is counted per kind so the pill can say
-  // how many, and everything downstream draws `shown` rather than `tasks`.
+  // HIDE THE INACTIVE SESSIONS, per kind, when asked. Two independent toggles
+  // (see `termHideControlsHTML`), and each reads a DIFFERENT inactive signal: the
+  // subagents side drops the doers that are not working right now (idle, waiting,
+  // or exited), the agents side drops the human sessions with no live connection
+  // (dead), so neither kind buries the other. The ATTACHED one is kept whatever
+  // the toggles say, since hiding must never yank the pane out from under whatever
+  // is open (the teardown below keys off this same list); a live agent is kept by
+  // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
+  // Pinning is no longer an exemption: a pinned session that is inactive by its
+  // kind's rule hides with the rest, in the pinned bucket and everywhere else the
+  // strip lists it. What is removed is counted per kind so the pill can say how
+  // many, and everything downstream draws `shown` rather than `tasks`.
   const keep = t => !!(termTask && t.id === termTask.id);
   const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
   const shown = hideable.length
     ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
-  // What each segment could hide (a dead, un-kept session of its kind) and what
-  // it is hiding right now: the first decides whether a segment is worth
+  // What each segment could hide (an inactive, un-kept session of its kind) and
+  // what it is hiding right now: the first decides whether a segment is worth
   // offering while its toggle is off, the second is the count a lit segment
-  // shows. Same live-connection test the hide uses, so the offer and the act
-  // agree.
-  const deadKeepable = t => !keep(t) && !hasLiveConnection(t);
+  // shows. Each uses its own kind's inactive signal - agents on live connection,
+  // subagents on working-right-now - so the offer and the act agree.
+  const inactiveAgent = t => !keep(t) && !hasLiveConnection(t);
+  const inactiveSub = t => !keep(t) && !workingNow(t);
   const hideCounts = {
-    agentHideable: tasks.filter(t => !isDoer(t) && deadKeepable(t)).length,
-    subHideable: tasks.filter(t => isDoer(t) && deadKeepable(t)).length,
+    agentHideable: tasks.filter(t => !isDoer(t) && inactiveAgent(t)).length,
+    subHideable: tasks.filter(t => isDoer(t) && inactiveSub(t)).length,
     agentHidden: hideable.filter(t => !isDoer(t)).length,
     subHidden: hideable.filter(t => isDoer(t)).length
   };
