@@ -123,7 +123,7 @@
   /* Fixed and body-level, positioned by script from the chip. See the note on the element itself: the header
      is a stacking context, so a menu inside it cannot be lifted above the page. */
   .rooms-menu {
-    position: fixed; z-index: 90; min-width: 16rem;
+    position: fixed; z-index: 90; min-width: 19rem;
     display: flex; flex-direction: column; padding: var(--sp-2);
     border: 1px solid var(--stroke); border-radius: var(--r-md);
     /* --shell-0 and not --bg-1, which is the page. A popover wants the panel colour, and it is the same one
@@ -172,6 +172,17 @@
   }
   .rooms-menu button:hover .roomx { opacity: .7; }
   .rooms-menu button .roomx:hover { opacity: 1; color: var(--danger); background: var(--chip); }
+  /* The per-room settings cog on a live row. Sits at the right edge after the host meta, and unlike the reject
+     `x` it stays visible rather than waiting on hover: it is the quick way into one room's own settings, not a
+     rare destructive action. Dim at rest so the room name reads first, and it lifts on hover like a control. */
+  .rooms-menu button .roomcog {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: .55; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomcog { opacity: .85; }
+  .rooms-menu button .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
 
   /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.
      A runner, a fixture, a source, a recogniser and an action all belong to one machine, so looking at several
