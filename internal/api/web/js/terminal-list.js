@@ -55,25 +55,26 @@ function isDoer(t) {
 // every GROUP mode and on the phone: the doers are simply not in the list, and
 // a count in the header says how many.
 //
-// THREE STATES, NOT A TOGGLE. `none` shows every doer. `active` hides the ones
-// that are working right now, so a swarm grinding through builds stops burying
-// the sessions you are steering. `inactive` hides the ones that are idle, done
-// or waiting on you, so the finished clutter goes and the moving ones stay. One
-// button cycles none -> active -> inactive and the label says which is on and
-// how many went.
+// TWO STATES, A TOGGLE. `none` shows every doer. `inactive` hides the ones that
+// are idle, done or waiting on you, so the finished clutter goes and the moving
+// ones stay. A doer working right now is NEVER hidden in either state: an
+// operator always wants to see the sessions actually doing work. One button
+// flips between the two, and its label reads the state it is in.
 //
 // DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
 // wall-mounted board and a laptop want different answers and neither should
 // write over the other. Default `none`: nothing hides until asked.
 const HIDE_DOERS_KEY = "atrium.hidedoers";
-const DOER_MODES = ["none", "active", "inactive"];
+const DOER_MODES = ["none", "inactive"];
 function hideDoersMode() {
   try {
     const v = localStorage.getItem(termDeviceKey(HIDE_DOERS_KEY));
     if (DOER_MODES.includes(v)) return v;
-    // The old binary value. "1" meant hide EVERY doer, which the 3-way no
-    // longer has as one state, so it maps to the nearer intent: clear out the
-    // idle and finished ones and leave the working ones visible.
+    // Old stored values map to the nearest surviving state. The binary "1"
+    // meant hide every doer, which is now `inactive` (working ones stay). The
+    // dropped tri-state `active` hid the working ones, the one thing this no
+    // longer offers, so it falls back to `none` rather than flip to hiding the
+    // opposite set behind the operator's back.
     if (v === "1") return "inactive";
     return "none";
   } catch (e) { return "none"; }
@@ -83,15 +84,14 @@ function setHideDoers(mode) {
   try { localStorage.setItem(termDeviceKey(HIDE_DOERS_KEY), mode); } catch (e) {}
   renderTermList();
 }
-function cycleHideDoers() {
-  const at = DOER_MODES.indexOf(hideDoersMode());
-  setHideDoers(DOER_MODES[(at + 1) % DOER_MODES.length]);
+function toggleHideDoers() {
+  setHideDoers(hideDoersMode() === "none" ? "inactive" : "none");
 }
 
 // IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
-// strip reads from: the doer filter's `active`/`inactive` split, the runner
-// mark that animates, and the `by activity` sort all ask this and get the same
-// answer, rather than three copies that drift. It is the same test the board's
+// strip reads from: the doer filter's hide-inactive test, the runner mark that
+// animates, and the `by activity` sort all ask this and get the same answer,
+// rather than three copies that drift. It is the same test the board's
 // `activityChip` makes (board.js): a live `activity.what` that is not idle, on a
 // card that is not waiting on you, not shelved, and whose activity is not stale
 // (a done or dead card can still carry a `thinking` that outlived its status).
@@ -101,46 +101,37 @@ function workingNow(t) {
     !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
 }
 
-// Which doers a given mode hides, honouring the two that are never hidden (see
-// `renderTermList`): a pinned doer and the attached one. Kept as one predicate
-// so the count in the header and the rows removed from the list are the same
-// answer rather than two that can drift. `active` hides the ones working now;
-// `inactive` hides the rest (idle, done, or waiting on you).
+// Which doers the hide-inactive mode drops, honouring the two that are never
+// hidden (see `renderTermList`): a pinned doer and the attached one. Kept as one
+// predicate so the count in the header and the rows removed from the list are
+// the same answer rather than two that can drift. `inactive` hides the doers not
+// working right now (idle, done, or waiting on you); a working doer always stays.
 function doerHiddenBy(mode, t, keep) {
   if (mode === "none" || !isDoer(t) || keep(t)) return false;
-  return mode === "active" ? workingNow(t) : !workingNow(t);
+  return !workingNow(t);
 }
 
 // THE HEADER CONTROL, drawn beside `sorted by activity`. Rendered when it does
-// something: when there are doers it could hide, or when a hide is already on
-// (so it can be cycled back to `none`). `n` is how many the current mode hides,
-// so the label can say "3 active hidden" and nothing feels lost. `doerCount` is
-// how many doers are hideable at all, which is what decides whether an offer to
-// hide is worth showing while the mode is still `none`.
+// something: when there are doers it could hide, or when the hide is already on
+// (so it can be turned back off). `doerCount` is how many doers are hideable at
+// all, which is what decides whether an offer to hide is worth showing while the
+// mode is still `none`.
 //
-// PINNED AND ATTACHED DOERS ARE NOT COUNTED HERE because they are never hidden:
-// the number has to match what actually disappears or the header lies about it.
-function termDoersToggleHTML(n, doerCount) {
+// THE LABEL READS THE STATE, exactly: "subagents shown" when nothing is hidden,
+// "hide inactive subagents" when the inactive ones are dropped. Working doers,
+// pinned doers and the attached one always stay, in either state.
+function termDoersToggleHTML(doerCount) {
   const mode = hideDoersMode();
   if (mode === "none" && doerCount === 0) return "";
   const on = mode !== "none";
-  let label, title;
-  if (mode === "active") {
-    label = `${n} active hidden`;
-    title = "the working agent-launched sessions are hidden. click to hide the " +
-      "idle ones instead. your own terminals and any pinned doers always stay";
-  } else if (mode === "inactive") {
-    label = `${n} inactive hidden`;
-    title = "the idle, done and waiting agent-launched sessions are hidden. " +
-      "click to show them all. your own terminals and any pinned doers stay";
-  } else {
-    label = "hide doers";
-    title = "the agent-launched sessions are all showing. click to hide the " +
-      "working ones so your own terminals are not buried. click again for the " +
-      "idle ones. pinned ones and whatever is attached always stay";
-  }
+  const label = on ? "hide inactive subagents" : "subagents shown";
+  const title = on
+    ? "the inactive subagents (idle, done or waiting on you) are hidden. click " +
+      "to show them. working subagents, your own terminals and any pinned doers always stay"
+    : "every subagent is showing. click to hide the inactive ones (idle, done " +
+      "or waiting on you). working subagents, your own terminals and any pinned doers always stay";
   return `<button class="termsort termdoers${on ? " on" : ""}"
-      onclick="cycleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
+      onclick="toggleHideDoers()" title="${esc(title)}">${esc(label)}</button>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
@@ -1201,8 +1192,8 @@ async function renderTermList() {
 
   // HIDE THE DOERS, when asked. Agent-launched sessions are dropped from the
   // strip so a human's own terminals are not buried under a wave of them. The
-  // control is 3-way: `none` hides nothing, `active` drops the ones working
-  // right now, `inactive` drops the idle, done and waiting ones. Two doers are
+  // control is 2-way: `none` hides nothing, `inactive` drops the idle, done and
+  // waiting ones while the ones working right now always stay. Two doers are
   // kept whatever the mode: a PINNED one, since pinning is the operator saying
   // "this one is mine, keep it", and the ATTACHED one, since hiding must never
   // yank the pane out from under whatever is open (the teardown below keys off
@@ -1266,7 +1257,7 @@ async function renderTermList() {
   // under the `filters` button in the trigger; on a desktop they sit at the top
   // of the list as always.
   // WRAPPED IN `.termstick` AND PINNED. The control cluster (the sort chip, the
-  // doers control, the mode buttons, and the `group` row) stays put at the top
+  // doers control and the `group` row) stays put at the top
   // of the list while the cards scroll under it. The wrapper is `position:
   // sticky` and rides whichever box actually scrolls: `#term-list` on a desktop
   // and when nothing is attached, and the floating `.termbody` flyout on a phone
@@ -1278,7 +1269,7 @@ async function renderTermList() {
         <button class="termsort" onclick="toggleTermSort()"
           title="working sessions first, then anything waiting on you, then newest activity">
           ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
-        ${termDoersToggleHTML(hideable.length, doerCount)}
+        ${termDoersToggleHTML(doerCount)}
         <span class="grow"></span>
         ${termListButtons()}
       </div>

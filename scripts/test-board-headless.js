@@ -470,13 +470,14 @@ async function main() {
     }
     tasksMode = "first";
 
-    // ── the 3-way hide-doers control ────────────────────────────────────────
+    // ── the 2-state hide-doers control ──────────────────────────────────────
     // The strip carries an idle doer and a working doer (both `origin:agent`), a
-    // human's own terminal, and a pinned doer. `none` shows all four. `active`
-    // drops the working doer only. `inactive` drops the idle doer only. The
-    // human row and the pinned doer stay in every mode. Driven through the
-    // board's own functions so the device-scoped persistence, the mode split and
-    // the count are exercised, not faked.
+    // human's own terminal, and a pinned doer. `none` shows all four and the
+    // control reads "subagents shown". Toggled to `inactive` it drops the idle
+    // doer only: the working doer, the human row and the pinned doer all stay,
+    // and the control reads "hide inactive subagents". A working doer is never
+    // hideable. Driven through the board's own functions so the device-scoped
+    // persistence and the split are exercised, not faked.
     tasksMode = "doers";
     const doerState = () => page.evaluate(() => {
       const btn = document.querySelector("#term-list .termdoers");
@@ -505,28 +506,14 @@ async function main() {
       fail("the doers control was not in the unlit `none` state to begin with: " +
         JSON.stringify(dNone));
     }
-
-    // `active`: the working doer goes, everything else stays, header reads
-    // "1 active hidden" and the control lights up.
-    await page.evaluate(() => { setHideDoers("active"); renderTermList(); });
-    const dActive = await doerState();
-    if (dActive.working) {
-      fail("hide-doers `active` left the working agent-launched doer in the strip.");
-    }
-    if (!dActive.idle) {
-      fail("hide-doers `active` hid the IDLE doer: only the working ones must go.");
-    }
-    if (!dActive.human || !dActive.pinned) {
-      fail("hide-doers `active` hid the human's terminal or a PINNED doer: " +
-        JSON.stringify(dActive));
-    }
-    if (dActive.mode !== "active" || !dActive.lit || !/1 active hidden/.test(dActive.label)) {
-      fail("hide-doers `active` did not persist, light, and read '1 active hidden': " +
-        JSON.stringify(dActive));
+    if (!/^subagents shown$/.test(dNone.label)) {
+      fail("the doers control at `none` did not read exactly 'subagents shown': " +
+        JSON.stringify(dNone));
     }
 
-    // `inactive`: now the idle doer goes and the working one comes back, header
-    // reads "1 inactive hidden".
+    // `inactive`: the idle doer goes, the working doer stays (never hideable),
+    // and so do the human row and the pinned doer. The control lights up and
+    // reads exactly "hide inactive subagents".
     await page.evaluate(() => { setHideDoers("inactive"); renderTermList(); });
     const dInactive = await doerState();
     if (dInactive.idle) {
@@ -540,18 +527,19 @@ async function main() {
         JSON.stringify(dInactive));
     }
     if (dInactive.mode !== "inactive" || !dInactive.lit ||
-        !/1 inactive hidden/.test(dInactive.label)) {
-      fail("hide-doers `inactive` did not persist, light, and read '1 inactive hidden': " +
-        JSON.stringify(dInactive));
+        !/^hide inactive subagents$/.test(dInactive.label)) {
+      fail("hide-doers `inactive` did not persist, light, and read exactly " +
+        "'hide inactive subagents': " + JSON.stringify(dInactive));
     }
 
-    // Cycling once more returns to `none` and every row comes back, so hiding is
-    // a view, not a deletion.
-    await page.evaluate(() => { cycleHideDoers(); });
+    // Toggling once more returns to `none` and every row comes back, so hiding
+    // is a view, not a deletion.
+    await page.evaluate(() => { toggleHideDoers(); });
     const dBack = await doerState();
-    if (!dBack.idle || !dBack.working || dBack.mode !== "none") {
-      fail("cycling the doers control past `inactive` did not return to `none` " +
-        "with every row restored: " + JSON.stringify(dBack));
+    if (!dBack.idle || !dBack.working || dBack.mode !== "none" ||
+        !/^subagents shown$/.test(dBack.label)) {
+      fail("toggling the doers control off `inactive` did not return to `none` " +
+        "with every row restored and the label reset: " + JSON.stringify(dBack));
     }
 
     // The control cluster is a sticky header: it stays pinned to the top of the
