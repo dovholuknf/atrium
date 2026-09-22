@@ -340,7 +340,12 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no supervised terminal on this card.", http.StatusNotFound)
 		return
 	}
-	backlog, widths, rows, _ := run.buf.ReplaySized()
+	// Cut at each width, the same as an attach. See `screen.applyCuts`.
+	backlog, cuts, rows, _ := run.buf.ReplayCuts()
+	widths := make([]int, 0, len(cuts))
+	for _, c := range cuts {
+		widths = append(widths, c.cols)
+	}
 	if r.URL.Query().Get("collapse") == "0" {
 		backlog = run.buf.Snapshot()
 	}
@@ -348,7 +353,7 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	if mode == "" {
 		mode = replayMode(d.st)
 	}
-	out := Replay(backlog, mode, replayCols(widths, 0), rows)
+	out := replayCut(backlog, mode, cuts, rows)
 	if r.URL.Query().Get("ansi") != "1" {
 		out = stripSGR(out)
 	}

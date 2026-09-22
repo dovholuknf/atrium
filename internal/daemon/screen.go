@@ -461,45 +461,107 @@ func (s *screen) render() (body string, curLine, total int, ok bool) {
 
 // apply feeds bytes into the screen model. Skip unsupported sequences
 // without changing the grid.
-func (s *screen) apply(b []byte) {
+func (s *screen) apply(b []byte) { s.applyCuts(b, nil) }
+
+// widthCut is where replayed output changed width: from byte `at` on, it was
+// composed for a terminal `cols` wide.
+type widthCut struct{ at, cols int }
+
+// applyCuts is apply with the grid resized at each cut, the way the terminal
+// that produced the bytes was.
+//
+// ONE WIDTH FOR THE WHOLE RING IS WHAT DOUBLED THE LINES. After a room restart
+// a resumed session reprints its transcript at the width the card was saved
+// at, and the operator's pane is often a few columns narrower. Laid into a grid
+// at the newest width, every line padded to the full saved width ran past the
+// edge, the padding wrapped onto a row of its own, and the replay showed a
+// blank line under every full-width coloured diff line. Resizing at the mark
+// keeps each run on the grid it was drawn for, and the history it already
+// scrolled keeps the width it had.
+//
+// A cut that falls inside an escape sequence or a rune is taken at the next
+// boundary, so resizing never splits one.
+func (s *screen) applyCuts(b []byte, cuts []widthCut) {
 	for i := 0; i < len(b); {
-		c := b[i]
-		switch {
-		case c == 0x1b:
-			i = s.escape(b, i)
-		case c == '\n':
-			s.lineFeed()
-			i++
-		case c == '\r':
-			s.col = 0
-			s.wrapNext = false
-			i++
-		case c == '\b':
-			if s.col > 0 {
-				s.col--
+		for len(cuts) > 0 && cuts[0].at <= i {
+			s.resize(cuts[0].cols)
+			cuts = cuts[1:]
+		}
+		i = s.step(b, i)
+	}
+	for _, c := range cuts {
+		s.resize(c.cols)
+	}
+}
+
+// step applies the one character or sequence at b[i] and returns where the
+// next one starts.
+func (s *screen) step(b []byte, i int) int {
+	c := b[i]
+	switch {
+	case c == 0x1b:
+		return s.escape(b, i)
+	case c == '\n':
+		s.lineFeed()
+	case c == '\r':
+		s.col = 0
+		s.wrapNext = false
+	case c == '\b':
+		if s.col > 0 {
+			s.col--
+		}
+		s.wrapNext = false
+	case c == '\t':
+		next := (s.col/8 + 1) * 8
+		if next >= s.cols {
+			next = s.cols - 1
+		}
+		s.col = next
+		s.wrapNext = false
+	case c == 0x07:
+		// A bell rings, it does not draw.
+	case c < 0x20:
+		// Any other control character. Nothing on screen, nothing here.
+	default:
+		r, n := decodeRune(b[i:])
+		s.put(r)
+		return i + n
+	}
+	return i + 1
+}
+
+// resize changes the grid's width the way a terminal without reflow does: rows
+// on the grid are cut or padded, and rows already in history are left alone,
+// because they were composed at the width they have.
+func (s *screen) resize(cols int) {
+	if cols <= 0 || cols == s.cols {
+		return
+	}
+	fit := func(rows [][]cell) {
+		for i, r := range rows {
+			if len(r) > cols {
+				rows[i] = r[:cols:cols]
+				continue
 			}
-			s.wrapNext = false
-			i++
-		case c == '\t':
-			next := (s.col/8 + 1) * 8
-			if next >= s.cols {
-				next = s.cols - 1
+			for len(r) < cols {
+				r = append(r, blank)
 			}
-			s.col = next
-			s.wrapNext = false
-			i++
-		case c == 0x07:
-			// A bell rings, it does not draw.
-			i++
-		case c < 0x20:
-			// Any other control character. Nothing on screen, nothing here.
-			i++
-		default:
-			r, n := decodeRune(b[i:])
-			s.put(r)
-			i += n
+			rows[i] = r
 		}
 	}
+	fit(s.cells)
+	fit(s.altCells)
+	s.cols = cols
+	if s.col >= cols {
+		s.col = cols - 1
+	}
+	if s.altCol >= cols {
+		s.altCol = cols - 1
+	}
+	if s.savedCol >= cols {
+		s.savedCol = cols - 1
+	}
+	s.wrapNext = false
 }
 
 // decodeRune reads one UTF-8 character, tolerating a sequence cut in half by

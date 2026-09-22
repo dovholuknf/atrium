@@ -25,6 +25,13 @@ var ReplayModes = []string{"raw", "flat", "screen"}
 //
 // Zero for either takes the default, which is 80 columns and `screenRows`.
 func Replay(b []byte, mode string, cols, rows int) []byte {
+	return replayCut(b, mode, []widthCut{{0, cols}}, rows)
+}
+
+// replayCut is Replay for output composed at more than one width. The screen
+// starts at the first cut's width and is resized at each later one. See
+// `screen.applyCuts`.
+func replayCut(b []byte, mode string, cuts []widthCut, rows int) []byte {
 	switch mode {
 	case "raw":
 		// Nothing at all. What a terminal receiving this stream would be given.
@@ -37,8 +44,13 @@ func Replay(b []byte, mode string, cols, rows int) []byte {
 		// note on `collapseRedraws`.
 		return flatten(collapseRedraws(b))
 	default:
+		cols := 0
+		if len(cuts) > 0 {
+			cols = cuts[0].cols
+			cuts = cuts[1:]
+		}
 		sc := newScreenSized(cols, rows)
-		sc.apply(b)
+		sc.applyCuts(b, cuts)
 		return []byte(sc.textWithCursor())
 	}
 }

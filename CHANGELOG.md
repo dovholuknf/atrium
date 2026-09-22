@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A reattach after a room restart no longer draws a blank line under every full-width diff line.**
+
+  A resumed session reprints its transcript at the width the card was saved at. The replay laid that history into a
+  grid at the pane's newer, narrower width, so the padding on each full-width line wrapped onto a row of its own. The
+  replay now resizes its grid at each width mark, so every run stays at the width it was drawn at. A wind-down also
+  stops growing the pty to the widest viewer as viewers detach, which had saved the card wider than the pane reading
+  it. ROOM-SIDE.
+
 - **A peer message lands seconds after a terminal frees up, and asks and answers are typed too.**
 
   A message that met a busy terminal was retried on screen at one minute, then two, then five, so it could sit for

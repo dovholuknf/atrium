@@ -434,6 +434,47 @@ func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped 
 	return out, widths, r.marks[len(r.marks)-1].rows, start > 0
 }
 
+// ReplayCuts is ReplaySized with each width placed in the bytes: `cuts[0]` is
+// the width `out` starts at, and each later cut is where it changed.
+//
+// The same rule as the widths list: a mark at the write position describes
+// nothing yet and is left out.
+func (r *ringBuffer) ReplayCuts() (out []byte, cuts []widthCut, rows int, wrapped bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.replayCutsLocked()
+}
+
+func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []widthCut, rows int, wrapped bool) {
+	start := r.retainedStart()
+	out = r.from(start)
+	if len(out) == 0 {
+		return nil, nil, 0, false
+	}
+	// `from` can trim to a line start, so the bytes begin here and not at
+	// `start`.
+	base := r.written - int64(len(out))
+	cuts = []widthCut{{0, r.marks[0].cols}}
+	for _, m := range r.marks {
+		if m.at >= r.written {
+			break
+		}
+		at := 0
+		if m.at > base {
+			at = int(m.at - base)
+		}
+		last := &cuts[len(cuts)-1]
+		switch {
+		case last.cols == m.cols:
+		case last.at == at:
+			last.cols = m.cols
+		default:
+			cuts = append(cuts, widthCut{at, m.cols})
+		}
+	}
+	return out, cuts, r.marks[len(r.marks)-1].rows, start > 0
+}
+
 // collapseRedraws keeps the last frame of repeated in-place updates.
 //
 // ONLY EVER FOR THE FLATTENER, and running it anywhere else destroys output.
@@ -1111,6 +1152,16 @@ func (r *runner) dropViewport(id any) {
 	agreed := smallestViewport(r.views)
 	left := len(r.views)
 	r.mu.Unlock()
+	// NOT ONCE THE RUNNER HAS EXITED. A wind-down closes every viewer one at a
+	// time, and growing the pty to whichever is left resized a dead terminal
+	// and moved the width the card is saved at to the WIDEST viewer. The next
+	// room then reopened the session wider than the pane that reads it, and
+	// the reprinted transcript came back composed for a width nobody had.
+	select {
+	case <-r.done:
+		return
+	default:
+	}
 	// Nothing to grow back to when the last viewer leaves. Resizing to zero
 	// would be a resize to nothing, and the size a detached session keeps is
 	// the one it had, which is what a runner reading it expects.
@@ -1154,18 +1205,22 @@ func smallestViewport(all map[any]viewport) viewport {
 // Snapshot and subscription are taken together under the one lock, so a chunk
 // arriving between them can neither be lost nor sent twice.
 func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrapped bool, updates chan []byte) {
-	backlog, widths, _, wantCols, wrapped, updates = r.subscribeSized()
+	backlog, cuts, _, wantCols, wrapped, updates := r.subscribeSized()
+	for _, c := range cuts {
+		widths = append(widths, c.cols)
+	}
 	return backlog, widths, wantCols, wrapped, updates
 }
 
 // subscribeSized is subscribe, plus the height the buffer was drawn at, which
-// the replay needs to build a grid the right shape and nothing else wants.
-func (r *runner) subscribeSized() (backlog []byte, widths []int, rows, wantCols int, wrapped bool, updates chan []byte) {
+// the replay needs to build a grid the right shape and nothing else wants, and
+// the widths as cuts into the backlog, so each run replays at its own width.
+func (r *runner) subscribeSized() (backlog []byte, cuts []widthCut, rows, wantCols int, wrapped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cols := r.buf.CurrentWidth()
-	buf, widths, rows, wrapped := r.buf.ReplaySized()
+	buf, cuts, rows, wrapped := r.buf.ReplayCuts()
 	// THIS PROCESS ONLY. What the card held before the restart is on disk and
 	// is NOT joined on here any more.
 	//
@@ -1181,11 +1236,11 @@ func (r *runner) subscribeSized() (backlog []byte, widths []int, rows, wantCols 
 	select {
 	case <-r.done:
 		close(ch)
-		return buf, widths, rows, cols, wrapped, ch
+		return buf, cuts, rows, cols, wrapped, ch
 	default:
 	}
 	r.watchers[ch] = struct{}{}
-	return buf, widths, rows, cols, wrapped, ch
+	return buf, cuts, rows, cols, wrapped, ch
 }
 
 func (r *runner) unsubscribe(ch chan []byte) {
