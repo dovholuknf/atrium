@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Terminal input lag can be measured instead of described.**
+
+  Off by default. In the browser, **log terminal input lag** in settings (or `atrium.debug.inputlag` set to `1` in
+  localStorage) times each keystroke from the key to its echo on screen, splits it into send, wire, parse and
+  paint, and prints it to the console. It also warns when the page's own JavaScript blocks the main thread, and
+  notes how full the fetch queue was, so a refresh storm shows up beside the slow key it caused. On the hub and the
+  room, `ATRIUM_DEBUG_INPUTLAG=1` logs any hop over 20ms: the hub's round trip to the room, the room's frame to pty
+  write (with the input lock split out), pty read to fan-out, and frame to first output. See
+  `docs/input-lag-logging.md` for how to read the lines.
+
 - **The board header holds its shape from a phone to a wide monitor.**
 
   Between 900 and 1150 pixels the header used to run off the right edge and hand you a sideways scrollbar. Now the

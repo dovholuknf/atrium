@@ -14,6 +14,7 @@ import (
 
 	"github.com/aymanbagabas/go-pty"
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/inputlag"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1218,6 +1219,12 @@ func (r *runner) fanoutLocked(chunk []byte) {
 		select {
 		case ch <- cp:
 		default:
+			// Dropped output reads as lag too: the echo never arrives and the
+			// screen only catches up on the next repaint.
+			if inputlag.On() {
+				inputlag.Logf("room %s out: attacher %d chunks behind, %d bytes dropped",
+					r.taskID, len(ch), len(chunk))
+			}
 		}
 	}
 }
@@ -1231,10 +1238,12 @@ func (r *runner) deliverOutput(chunk []byte) {
 	if len(chunk) == 0 {
 		return
 	}
+	t0 := lagStart()
 	r.mu.Lock()
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)
 	r.mu.Unlock()
+	r.lagFanout(t0, len(chunk))
 }
 
 // SHARED MULTI-PANE INPUT, and it is OFF by default. See

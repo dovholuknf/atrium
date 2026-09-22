@@ -798,10 +798,10 @@ function connectTerm(taskID) {
     noteScrollAct("output");
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
-      if (!takeTermCaps(e.data)) term.write(e.data, followScroll);
+      if (!takeTermCaps(e.data)) term.write(e.data, lagOnOutput(followScroll));
       return;
     }
-    term.write(new Uint8Array(e.data), followScroll);
+    term.write(new Uint8Array(e.data), lagOnOutput(followScroll));
   };
   termSock.onclose = async ev => {
     if (!term) return;
@@ -1061,8 +1061,10 @@ function connectTerm(taskID) {
   //   character, so every focus change silently switched off path completion.
   termData = term.onData(d => {
     const report = isAutoReport(d);
+    const lagT = lagKeyDown(report);
     if (!report) noteTyped(d);
     sendInput(d, report);
+    lagKeySent(lagT, d.length);
   });
   // Resize is handled once, globally, by the observers near onTermResize.
   // Adding a listener here leaked one per connect.

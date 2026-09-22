@@ -93,8 +93,10 @@ if (!/followScroll/.test(html)) {
     "with the view short by however many lines it was.");
 } else {
   const onmsgAt = html.indexOf("termSock.onmessage");
-  const onmsg = html.slice(onmsgAt, onmsgAt + 600);
-  if (!/term\.write\([^)]*,\s*followScroll\)/.test(onmsg)) {
+  const onmsg = html.slice(onmsgAt, onmsgAt + 800);
+  // `lagOnOutput(followScroll)` is the same callback, wrapped only while
+  // input-lag logging times a keystroke. See js/inputlag.js.
+  if (!/term\.write\([^)]*,\s*(lagOnOutput\()?followScroll\)/.test(onmsg)) {
     fail("the follow-scroll is not passed as term.write's callback. Called after the " +
       "write instead, it runs before the bytes have been parsed and scrolls a buffer " +
       "that has not grown yet.");

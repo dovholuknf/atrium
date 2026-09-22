@@ -1280,6 +1280,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
+    <!-- Input-lag logging is a diagnostic, off by default. See js/inputlag.js. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-inputlag" onchange="toggleInputLag(this.checked)">
+        <span>log terminal input lag</span>
+      </label>
+      <span class="hintline">Times every keystroke from the key to its echo on screen and prints it
+        to this browser's console, with a summary every ten seconds and a warning whenever the page
+        itself froze. For finding out why typing lags. It stays on for this browser until you
+        switch it off.</span>
+    </div>
+
     <!-- Grouping. The rule is the operator's, because their worktree layout
          already has conventions atrium has no way to know. -->
     <div class="field">
@@ -2698,6 +2710,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/terminal-list.js"></script>
 <script src="/js/terminal-links.js"></script>
 <script src="/js/terminal-debug.js"></script>
+<script src="/js/inputlag.js"></script>
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
