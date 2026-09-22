@@ -26,6 +26,7 @@ const src = [
   lift("function cardsHTML(", "\n}"),
   lift("function seedGroups(", "\n}"),
   lift("function emptyGroupHint(", "\n}"),
+  lift("function byRank(", "\n}"),
 ].join("\n");
 
 const stubs = {
@@ -46,6 +47,7 @@ const set = new Set(groups);
 const at = new Map(groups.map((n, i) => [n, i]));
 const g = {
   many: true,
+  handOrdered: true,
   always: groups.slice(),
   of: t => {
     const mine = (t.tags || []).filter(x => set.has(x));
@@ -80,5 +82,21 @@ if (!untagged || !untagged.includes("<card loose>")) fail("a card in no group is
 const order = groups.concat("untagged").map(n => html.indexOf(`data-fold="proj:${n}"`));
 if (order.some((v, i) => i && v < order[i - 1])) fail("the groups are not in the order the list names them: " + order);
 
+// THE SORT DOES NOT REACH A GROUP YOU MADE. The cards arrive in the sort's
+// order, which here is the reverse of their ranks, and come out by rank.
+const ranked = cardsHTML([
+  { id: "r3", tags: ["one"], rank: 3 },
+  { id: "r1", tags: ["one"], rank: 1 },
+  { id: "r2", tags: ["one"], rank: 2 },
+  { id: "u2", tags: [], rank: 1 },
+  { id: "u1", tags: [], rank: 2 },
+], g, "col");
+const pos = id => ranked.indexOf(`<card ${id}>`);
+if (!(pos("r1") < pos("r2") && pos("r2") < pos("r3"))) {
+  fail("a custom group is not in rank order: " + ["r1", "r2", "r3"].map(pos));
+}
+// The cards in none of your groups are the board's own heap and keep the sort.
+if (!(pos("u2") < pos("u1"))) fail("untagged cards were reordered by rank, not left to the sort");
+
 if (bad) process.exit(1);
-console.log("custom groups: an empty one is drawn, and a card in two is drawn in both.");
+console.log("custom groups: an empty one is drawn, a card in two is drawn in both, and rank holds the order.");

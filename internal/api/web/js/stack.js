@@ -249,8 +249,10 @@ function paintStack() {
   if (stackDesc) list.reverse();
   // Pinned to the top, after the reverse so it stays there in either
   // direction. Sorted is what the pills asked for; pinned is what you asked
-  // for once and meant permanently.
-  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  // for once and meant permanently. Among the pins the order is the one set by
+  // hand, by rank, the same as the board's pinned bucket and the strip's.
+  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
+    (a.pinned && b.pinned ? byRank(a, b) : 0));
 
   if (!list.length) {
     // The offline group is still drawn under it. A board whose only work is on
@@ -324,6 +326,11 @@ function stackGroupsHTML(list, g) {
 
   return [...byName.keys()].sort(g.cmp).map(name => {
     const mine = byName.get(name);
+    // A group you made keeps the order you set, whatever the pills say. See
+    // `byRank`. Pins stay on top of it, as they do everywhere on the stack.
+    if (g.handOrdered && name !== UNTAGGED) {
+      mine.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || byRank(a, b));
+    }
     if (!name) {
       return `<div class="panel">` + stackRows(mine) + `</div>`;
     }

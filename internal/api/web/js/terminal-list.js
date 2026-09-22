@@ -1101,7 +1101,11 @@ function termFlatGroupsHTML(list, g, folded) {
     const head = termHeading(shown, at, by.get(name).length, off);
     if (off) return head;
     const rows = by.get(name);
-    return head + `<div class="tnest">${rows.length
+    // A group you made keeps the order you set, not the strip's sort. See
+    // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
+    const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
+    if (mine) rows.sort(byRank);
+    return head + `<div class="tnest"${mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
       ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
   }).join("");
 }
@@ -1551,6 +1555,9 @@ function termBucketHTML(pinned, folded) {
 // Where a drag started, held because `dataTransfer` cannot be read during
 // `dragover` and the drop indicator has to be drawn while the pointer moves.
 let termDragID = "";
+// And the row itself. A card in two of your groups is drawn twice with one id,
+// so the id alone cannot say which of the two is being moved.
+let termDragEl = null;
 
 // Dragging a row into the bucket, or around inside it.
 //
@@ -1572,6 +1579,7 @@ function wireTermDrag(host) {
     el.draggable = true;
     el.ondragstart = e => {
       termDragID = el.dataset.id;
+      termDragEl = el;
       e.dataTransfer.effectAllowed = "move";
       // Firefox refuses to start a drag with nothing set.
       e.dataTransfer.setData("text/plain", termDragID);
@@ -1579,6 +1587,7 @@ function wireTermDrag(host) {
     el.ondragend = () => {
       const aborted = !!termDragID;
       termDragID = "";
+      termDragEl = null;
       host.querySelectorAll(".dropover").forEach(x => x.classList.remove("dropover"));
       // AN ABANDONED DRAG PUTS THE STRIP BACK. `dragover` moves the row as the
       // pointer travels, so letting go outside the bucket leaves the list
@@ -1591,6 +1600,8 @@ function wireTermDrag(host) {
       if (aborted) renderTermList();
     };
   });
+
+  host.querySelectorAll(".tnest[data-group]").forEach(wireGroupDrop);
 
   const bucket = host.querySelector(".termbucket");
   if (!bucket) return;
@@ -1651,6 +1662,61 @@ function wireTermDrag(host) {
       toast("that order did not stick", err.message);
     }
     refresh();
+  };
+}
+
+// One of your groups as a drop target, under any sort.
+//
+// A row dropped inside its own group is being moved, and its new rank is the
+// midpoint of the rows either side of where it landed, so nothing else is
+// renumbered. A row dragged in from outside is being FILED as well: it gets the
+// group's tag, the same as `into group` on its menu, and lands where it was
+// dropped. It keeps any group it was already in, because a group is a tag and
+// a card can carry several.
+function wireGroupDrop(nest) {
+  const name = nest.dataset.group;
+  nest.ondragover = e => {
+    if (!termDragEl) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    nest.classList.add("dropover");
+    const over = e.target.closest(".card.tab");
+    if (!over || over === termDragEl || !nest.contains(over)) return;
+    const box = over.getBoundingClientRect();
+    const after = e.clientY > (box.top + box.height / 2);
+    nest.insertBefore(termDragEl, after ? over.nextSibling : over);
+  };
+  nest.ondragleave = e => {
+    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+  };
+  nest.ondrop = async e => {
+    e.preventDefault();
+    // The pinned bucket has a drop of its own and this one has already done it.
+    e.stopPropagation();
+    nest.classList.remove("dropover");
+    const el = termDragEl;
+    termDragEl = null;
+    termDragID = "";
+    if (!el) return;
+    if (!nest.contains(el)) nest.appendChild(el);
+    const id = el.dataset.id;
+    const t = lastTasks.find(x => x.id === id);
+    const rows = [...nest.querySelectorAll(".card.tab")];
+    const at = rows.indexOf(el);
+    const rankOf = row => {
+      const x = lastTasks.find(y => y.id === row.dataset.id);
+      return x ? (x.rank || 0) : 0;
+    };
+    const prev = rows[at - 1], next = rows[at + 1];
+    const rank = prev && next ? (rankOf(prev) + rankOf(next)) / 2
+      : prev ? rankOf(prev) + 1 : next ? rankOf(next) - 1 : (t && t.rank) || 0;
+    const tags = (t && t.tags) || [];
+    const body = {};
+    // A pinned card keeps its place among the pins. It is filed, not moved.
+    if (!(t && t.pinned)) body.rank = rank;
+    if (!tags.includes(name)) body.tags = tags.concat(name);
+    if (Object.keys(body).length) await patchTask(id, body);
+    renderTermList();
   };
 }
 
