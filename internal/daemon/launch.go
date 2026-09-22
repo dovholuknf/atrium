@@ -545,6 +545,16 @@ func (d *Daemon) startedOnto(taskID string) {
 // RestartRunner holds the same lock itself and calls launchLocked, so a restart
 // and a launch onto the same card serialize rather than braid.
 func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
+	// The store keys cards by their bare id. The aggregate board addresses a card
+	// as `room~id`, and the hub proxy rewrites that in the request PATH on the way
+	// here, but a task id carried in the request BODY is off that path, so a
+	// resume-onto can still arrive tagged and miss with `sql: no rows`. Strip the
+	// routing prefix here, once, so the lock key and the lookup both see the bare
+	// id. A card id is a ULID and carries no `~` of its own, so the first `~` is
+	// the tag join. This is a safety net under the board's own untagging.
+	if i := strings.IndexByte(req.TaskID, '~'); i > 0 {
+		req.TaskID = req.TaskID[i+1:]
+	}
 	unlock := d.launching.lock(launchKeys(req.TaskID, req.Resume)...)
 	defer unlock()
 	return d.launchLocked(req)
