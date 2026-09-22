@@ -140,8 +140,13 @@ var exportedSettings = []string{
 	api.SettingTerminal,
 	api.SettingPasteKeep,
 	api.SettingPastePreamble,
-	api.SettingWorktreeCommand,
-	api.SettingProjectDepth,
+	// `worktree_command` and `project_scan_depth` were here and are gone with
+	// the scan that read them. Note that they are NOT deleted from the setting
+	// table on an existing machine: a migration that ran DELETE would destroy a
+	// value a human typed, nothing reads the two rows, and somebody rolling
+	// back to an earlier binary finds their worktree command intact. So they
+	// stop being exported from this release, which is correct, because nothing
+	// on the other end would read them either.
 	SettingShellCommand,
 }
 
