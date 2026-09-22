@@ -5,6 +5,11 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Clearing the notifications panel closes it, and an empty panel is empty.**
+
+  **clear** now empties the list and shuts the panel in one click. Opening the panel with nothing in it shows the
+  header and its buttons with no placeholder text under them.
+
 - **The sort only reorders the groups the board makes. Yours keep the order you set.**
 
   The pinned bucket and every group you made under **by group** hold their hand-placed order on the board, the stack
