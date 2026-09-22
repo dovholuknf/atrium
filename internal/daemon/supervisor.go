@@ -1202,6 +1202,16 @@ func (r *runner) unsubscribe(ch chan []byte) {
 func (r *runner) fanout(chunk []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.fanoutLocked(chunk)
+}
+
+// fanoutLocked is fanout with r.mu already held by the caller. The pty reader
+// takes r.mu across the ring Write AND the fanout, so a subscribe cannot land
+// between the two: without that the snapshot includes a chunk that the fanout
+// then delivers on the new watcher's channel too, and the attach shows the
+// same bytes twice. That is the "banner appears eleven times" and the
+// "auto mode on" status line rendered twice one under the other.
+func (r *runner) fanoutLocked(chunk []byte) {
 	for ch := range r.watchers {
 		cp := make([]byte, len(chunk))
 		copy(cp, chunk)
@@ -1210,6 +1220,21 @@ func (r *runner) fanout(chunk []byte) {
 		default:
 		}
 	}
+}
+
+// deliverOutput is one chunk of pty output landing on the ring AND on every
+// attached watcher, as one indivisible step. The pty readers in supervisor.go
+// and shell.go both call this so neither drifts back to the two-lock pattern
+// that leaked chunks into both the backlog and the live channel. See
+// fanoutLocked.
+func (r *runner) deliverOutput(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	r.mu.Lock()
+	_, _ = r.buf.Write(chunk)
+	r.fanoutLocked(chunk)
+	r.mu.Unlock()
 }
 
 // SHARED MULTI-PANE INPUT, and it is OFF by default. See
@@ -1607,8 +1632,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 				if tap != nil {
 					_, _ = tap.Write(chunk[:n])
 				}
-				_, _ = r.buf.Write(chunk[:n])
-				r.fanout(chunk[:n])
+				r.deliverOutput(chunk[:n])
 			}
 			if err != nil {
 				if err != io.EOF {
