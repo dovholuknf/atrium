@@ -320,56 +320,27 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// It falls through to the queue, which is where every message goes for an
 	// unsupervised card anyway, so this is a delivery atrium already knows how
 	// to make rather than a refusal.
+	//
+	// EVERYTHING THROUGH THE GATE, THE OPERATOR'S CHANNEL INCLUDED. This used to
+	// type an operator message straight in with `Say`, on the reasoning that it
+	// was the operator's own line. It is not only the operator who posts here: a
+	// script, a session using the API, and `atrium_say` from something that is not
+	// a session all arrive with no `from`, and one of them typed a slash command
+	// into the middle of a line clint was writing. `typeThroughGate` types only into
+	// an empty, idle line under the input lock, and a closed gate falls to the
+	// queue below, which retries on screen until the line clears.
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		if from == "" {
-			// The operator's own channel, the board's message box. A message the
-			// operator sent belongs on the line they are looking at, typed
-			// straight in. This path is unchanged.
-			//
-			// Bracketed paste when the runner supports it, so a long multi-line
-			// message arrives as one block rather than each newline submitting a
-			// partial line and leaving only the tail. See SayPasted and B2-47.
-			say := run.Say
-			if d.bracketedPasteFor(taskID, false) {
-				say = run.SayPasted
-			}
-			if err := say(body.Text); err != nil {
-				writeJSONErr(w, http.StatusInternalServerError, err)
-				return
-			}
-			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-				"text": body.Text, "via": "terminal",
-			}); err != nil {
-				writeJSONErr(w, http.StatusInternalServerError, err)
-				return
-			}
-			d.askAnswered(taskID, "the operator")
-			d.publishTask(taskID)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
-			return
-		}
-
-		// A peer or relay message types in too, marked with the banner so it is
-		// unmistakably not the operator. But ONLY THROUGH THE GATE, the same guard
-		// as the peer bus: injectPeer types and submits only into an empty, idle
-		// line under the input lock, and writes nothing otherwise, so peer text
-		// never lands tangled into a line the operator is composing and never sits
-		// unsent in their prompt. A closed gate falls to the queue below. This is
-		// the same bug clint hit on the bus, closed on this path too.
-		payload := body.Text
-		if d.bracketedPasteFor(taskID, false) {
-			payload = "\x1b[200~" + body.Text + "\x1b[201~"
-		}
-		wrote, err := run.injectPeer(peerBanner(from), payload)
+		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if wrote {
-			if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-				"text": body.Text, "via": "terminal", "from_peer": from,
-			}); err != nil {
+			ev := map[string]any{"text": body.Text, "via": "terminal"}
+			if from != "" {
+				ev["from_peer"] = from
+			}
+			if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
 				writeJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
@@ -379,8 +350,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
 			return
 		}
-		// A part written line: injectPeer wrote nothing. Fall through to the
-		// queue, the same fallback every untyped peer message takes.
+		// A part written line or a keystroke in the last two seconds: nothing
+		// was written. Fall through to the queue.
 	}
 
 	// A peer message carries its sender so the delivery banner can attribute it
@@ -414,14 +385,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
 	d.publishTask(taskID)
-	// A queued peer or relay message keeps trying to type in on the same backoff
-	// as the bus, so the two paths behave alike. The operator's own queued
-	// messages are not retried this way: they are already on the line they are
-	// looking at when a terminal is free, and the gate is about peer text. See
+	// A queued message keeps trying to type in on the same backoff as the bus,
+	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
-	if from != "" {
-		d.deferPeerInjection(taskID, m.ID, from, body.Text)
-	}
+	d.deferPeerInjection(taskID, m.ID, from, body.Text)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
 }
@@ -449,19 +416,17 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	delivered := "queued"
-	// Queued rather than typed while a dialog is on that screen. Same reason
-	// as `handleMessage` above: `Say` ends with an Enter.
+	// Queued rather than typed while a dialog is on that screen, or while the
+	// operator's line is part written. Same gate as `handleMessage` above.
+	typed := false
 	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
-		// Bracketed paste when supported, so a multi-line note is not split at
-		// its newlines into separate submissions. Same reason as handleMessage.
-		say := run.Say
-		if d.bracketedPasteFor(taskID, false) {
-			say = run.SayPasted
-		}
-		if err := say(note); err != nil {
+		var err error
+		if typed, err = d.typeThroughGate(run, taskID, "", note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
+	}
+	if typed {
 		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
 			"text": note, "via": "terminal", "from": "note",
 		}); err != nil {
@@ -469,9 +434,13 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		delivered = "terminal"
-	} else if _, err := d.st.QueueMessage(taskID, note); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
-		return
+	} else {
+		m, err := d.st.QueueMessage(taskID, note)
+		if err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		d.deferPeerInjection(taskID, m.ID, "", note)
 	}
 
 	// The note reached the session, so a question it had outstanding has been
@@ -489,6 +458,26 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered})
+}
+
+// typeThroughGate types text into a runner's terminal and submits it, but only
+// when the operator's line is empty and the keyboard has been quiet for
+// `peerGateIdle`. It reports whether it wrote anything. A closed gate writes
+// nothing and the caller queues.
+//
+// ONE GATE FOR EVERY AUTOMATED WRITE. A peer's text carries its banner. The
+// operator's channel, a note and an action carry none, so a slash command still
+// reaches the runner as one.
+func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, error) {
+	payload := text
+	if d.bracketedPasteFor(taskID, false) {
+		payload = "\x1b[200~" + text + "\x1b[201~"
+	}
+	banner := ""
+	if from != "" {
+		banner = peerBanner(from)
+	}
+	return run.injectPeer(banner, payload)
 }
 
 func writeJSONErr(w http.ResponseWriter, code int, err error) {

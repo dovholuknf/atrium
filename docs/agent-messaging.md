@@ -51,19 +51,17 @@ Only possible for a **supervised** card, one whose runner lives in a pseudo term
 that joined with `atrium join` from its own terminal has no terminal atrium can write to, so it always takes
 path 2.
 
-**The operator's own message** (the board's message box, and a card's note) is typed straight in with `Say`,
-unless a dialog the runner drew is on screen. `Say` ends with Enter, and an Enter on a dialog would pick
-whatever option was highlighted.
-
-**A peer's message** goes through the gate in `runner.injectPeer` (`internal/daemon/supervisor.go`). It types
-and submits only when all of these hold:
+**Every automated write goes through one gate**, `runner.injectPeer` (`internal/daemon/supervisor.go`), reached
+through `typeThroughGate` in `messages.go`. That covers peer messages, the board's message box, a card's note,
+and an action. A peer's text carries a banner. The operator's does not, so a slash command still works. It
+types and submits only when all of these hold:
 
 | Check | Where | Why |
 | --- | --- | --- |
-| The card allows peer typing | `task.PeerTyping` | A lent card belongs to its guest. Other sessions stay out. |
+| The card allows peer typing (peers only) | `task.PeerTyping` | A lent card belongs to its guest. |
 | A runner exists | `sup.get` | No terminal, nothing to type into. |
 | No runner dialog is open | `act.dialogOpen` | The trailing Enter would answer it. |
-| The operator's line is empty | `runner.unsent == 0` | Never splice into a part written line. |
+| The operator's line is empty | `runner.unsent == 0` | Never splice into a part written line. Shift-enter, ctrl-enter and a paste's CRs count as text, not a send. |
 | No keystroke for 2 seconds | `peerGateIdle` | Land only in a real pause. |
 
 The typed text opens with a grey `[atrium] <sender> says:` banner that contains no carriage return, so the
@@ -149,8 +147,9 @@ tell arrives ──► gate open? ──yes──► typed + Enter, timeline eve
 
 | Sender | Endpoint | Tries typing? | On-screen retry? | Size cap | Rate limit |
 | --- | --- | --- | --- | --- | --- |
-| Board message box | `POST /v1/tasks/{id}/message`, no `from` | yes, via `Say` | no | none | none |
-| Card note | `POST /v1/tasks/{id}/note/send` | yes, via `Say` | no | none | none |
+| Board message box | `POST /v1/tasks/{id}/message`, no `from` | yes, gated | yes | none | none |
+| Card note | `POST /v1/tasks/{id}/note/send` | yes, gated | yes | none | none |
+| Card action | `POST /v1/tasks/{id}/actions/...` | yes, gated | yes | none | none |
 | `atrium tell` | agent listener `/tell` | yes, gated | yes | 8000 chars | 20/min/sender |
 | `atrium_say` (MCP) | via hub to `/v1/tasks/{id}/message`, `from` set | yes, gated | yes | 8000 chars | 20/min/sender |
 | `atrium ask --peer` | agent listener `/help` | yes, gated | yes | card copy cut at 500 | 20/min/sender |

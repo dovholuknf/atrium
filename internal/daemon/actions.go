@@ -76,15 +76,22 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 	if run != nil && d.act.dialogOpen(taskID) {
 		run = nil
 	}
+	// And through the gate, so an action never types into a line the operator
+	// is part way through. See typeThroughGate.
+	typed := false
 	if run != nil {
-		if err := run.Say(action.Prompt); err != nil {
+		if typed, err = d.typeThroughGate(run, taskID, "", action.Prompt); err != nil {
 			return nil, err
 		}
+	}
+	if typed {
 		out.Delivered = "terminal"
 	} else {
-		if _, err := d.st.QueueMessage(taskID, action.Prompt); err != nil {
+		m, err := d.st.QueueMessage(taskID, action.Prompt)
+		if err != nil {
 			return nil, err
 		}
+		d.deferPeerInjection(taskID, m.ID, "", action.Prompt)
 		out.Delivered = "queued"
 	}
 
@@ -103,6 +110,11 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 			// pressed and a session that stays up is the thing to notice.
 			out.Note = "atrium does not own this session's terminal, so it was asked to " +
 				"finish but cannot be made to quit. it will need closing where it runs."
+		case !typed:
+			// The gate held the prompt, so exiting now would end the session before
+			// it ever read what it was asked. The prompt lands when the line clears.
+			out.Note = "somebody is typing in that terminal, so the prompt is queued and the " +
+				"exit was skipped. run the action again once the line is clear."
 		default:
 			out.Exiting = true
 			// After a pause, in the background, so the response does not wait

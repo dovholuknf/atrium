@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Nothing atrium types lands in a line you are writing.**
+
+  Each terminal counts what you have typed and not sent, and atrium only types when that count is zero and the
+  keyboard has been quiet for two seconds. Two holes let it type over you. The board sends shift-enter as ESC CR and
+  ctrl-enter as a bare newline, and the count read both as sending the line, so a multi-line prompt counted as
+  empty after its first newline. And only peer messages checked the count: the operator channel, a card's note and
+  an action typed straight in, which is how a script's `/rename` landed mid-sentence. Newlines inside a prompt and
+  carriage returns inside a paste now add to the line, and every automated write goes through the one gate. A held
+  write is queued and retried on screen from two seconds out, and an action that ends in exit skips the exit when
+  its prompt was held. Room-side.
+
 - **A card in a directory with a dot in its name resumes its conversation after a restart.**
 
   Atrium found a directory's transcripts by turning its colon and slashes into dashes. Claude Code turns every

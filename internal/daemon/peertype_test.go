@@ -200,7 +200,6 @@ func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
 		key  []byte
 	}{
 		{"enter", []byte("\r")},
-		{"newline", []byte("\n")},
 		{"control-c", []byte{0x03}},
 		{"control-u", []byte{0x15}},
 	} {
