@@ -56,14 +56,23 @@
   .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }
   .tltimes { color: var(--dim); font-weight: 400; }
   /* Per-row copy, so a message that scrolled past a toast can be lifted out of
-     the log the same way the sharing rows and the fixtures paths already offer
-     it. Reuses `copyText`, which flips the button to `copied` or `could not
-     copy` and back. Stops propagation because the row is clickable and would
-     otherwise take the copy click as a navigation. */
+     the log. An icon that shows on the row under the pointer, or on the one
+     holding keyboard focus, because a button repeated on every row is a column
+     of noise beside the text you came to read. Hidden by opacity rather than
+     display, so it keeps its place in the tab order and the text does not
+     reflow when it appears. Stops propagation because the row is clickable and
+     would otherwise take the copy click as a navigation. */
   .tlrow .tlcopy {
-    flex: none; align-self: center; padding: 4px 10px;
-    font-size: var(--fs-xxs);
+    flex: none; align-self: center; padding: 2px;
+    opacity: 0; transition: opacity .12s;
   }
+  .tlrow:hover .tlcopy, .tlrow:focus-within .tlcopy { opacity: .65; }
+  .tlrow .tlcopy:hover, .tlrow .tlcopy:focus-visible { opacity: 1; color: var(--teal); }
+  .tlrow .tlcopy.copied { opacity: 1; color: var(--teal); }
+  .tlrow .tlcopy.failed { opacity: 1; color: var(--danger); }
+  /* A touch screen has no hover, so the icon would never show. There it stays
+     visible at the resting strength. */
+  @media (hover: none) { .tlrow .tlcopy { opacity: .65; } }
   /* The bell only carries a number when there is one to carry. A zero is a control reporting that it has
      nothing to report. */
   #toastlog-open { position: relative; }

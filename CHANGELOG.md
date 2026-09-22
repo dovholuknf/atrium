@@ -5,6 +5,12 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The notifications panel copies with an icon, not a button on every row.**
+
+  A small copy icon shows on the row under the pointer, or on the row holding keyboard focus. Clicking it copies
+  that row's title and body. It turns teal when the copy works and red when it does not. On a touch screen it stays
+  visible, since there is no hover to show it.
+
 - **A pinned order dragged on the terminals page stays put on the hub board.**
 
   The hub's board names every card `room~id`, and the strip posted those names as the new order. The hub strips

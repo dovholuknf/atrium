@@ -104,6 +104,25 @@ function paintToastLogBadge() {
   if (n) n.textContent = unseen > 99 ? "99+" : (unseen || "");
 }
 
+// The row's copy icon says it worked by changing colour, not by toasting. A
+// toast lands in this same log, so every copy would add a row to the list you
+// are copying out of. And not through `copyText`, which writes a word over the
+// button and would replace the icon with it.
+async function copyLogRow(btn, text) {
+  let ok = true;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    ok = false;
+  }
+  btn.classList.add(ok ? "copied" : "failed");
+  btn.title = ok ? "copied" : "could not copy";
+  setTimeout(() => {
+    btn.classList.remove("copied", "failed");
+    btn.title = "copy this entry";
+  }, 1400);
+}
+
 function openToastLog() {
   const list = toastLog().slice().reverse();
   const host = document.getElementById("toastlog-list");
@@ -126,8 +145,8 @@ function openToastLog() {
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
             ${t.body ? `<span>${esc(t.body)}</span>` : ""}
           </div>
-          <button class="tlcopy" title="copy this entry"
-            onclick='event.stopPropagation();copyText(this, ${arg})'>copy</button>
+          <button class="tlcopy copybit" title="copy this entry" aria-label="copy this entry"
+            onclick='event.stopPropagation();copyLogRow(this, ${arg})'>${copyIcon()}</button>
         </div>`;
       }).join("")
     : `<div class="empty">nothing yet. anything the board tells you turns up here.</div>`);
