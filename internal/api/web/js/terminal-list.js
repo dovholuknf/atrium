@@ -76,8 +76,8 @@ function isDoer(t) {
 //     waiting on you (connected at a prompt is still a session you can go to), and
 //     drops only the dead ones.
 // `none` shows every session of that kind. The attached one is never hidden by
-// either toggle (see `sessionHiddenBy`). Pinning is NOT an exemption: a pinned
-// row whose runner has gone (a cold row) hides with the rest of its kind.
+// either toggle (see `sessionHiddenBy`), and neither is a pinned one: a pinned
+// row whose runner has gone stays, drawn cold.
 //
 // TWO SIGNALS. The agents rule reads `supervised`, the strip's own live-connection
 // signal (what the row reads to draw itself cold when there is no runner, see
@@ -156,7 +156,7 @@ function workingNow(t) {
 // exits or disconnects, which is exactly the alive/dead line the show-only-alive
 // toggle draws. Idle and waiting sessions stay `supervised`, so this keeps them,
 // which is the point: a connected agent sitting at a prompt is not dead. A cold
-// pinned row (the runner gone, the row held by its pin) reads false and hides.
+// pinned row reads false here and is kept anyway, by its pin.
 function hasLiveConnection(t) { return !!(t && t.supervised); }
 
 // Whether this session is hidden by its kind's toggle, honouring what is never
@@ -167,7 +167,11 @@ function hasLiveConnection(t) { return !!(t && t.supervised); }
 // The two toggles both mean "hide inactive", but read DIFFERENT signals: a
 // subagent is inactive unless it is working right now (`workingNow`), so an idle
 // or exited one hides; an agent is inactive when it has no live connection
-// (`hasLiveConnection`), so only a dead one hides, pinned or not.
+// (`hasLiveConnection`), so only a dead one hides.
+//
+// A PINNED SESSION NEVER HIDES, and `keep` in `renderTermList` is what says so.
+// Pinning is how you say "keep this here", and a pinned row that vanished when
+// its session exited undid the one thing the pin was for.
 function sessionHiddenBy(t, keep) {
   if (keep(t)) return false;
   if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
@@ -206,9 +210,9 @@ function termHideControlsHTML(c) {
   // or waiting on you.
   const agentTitle = aOn
     ? "inactive agents are hidden (exited, no live connection). click to show " +
-      "them. connected agents and the attached one always stay, even idle or waiting"
-    : "hide the inactive agents (exited, no live connection). connected agents " +
-      "and the attached one always stay, even idle or waiting";
+      "them. connected agents, pinned ones and the attached one always stay"
+    : "hide the inactive agents (exited, no live connection). connected agents, " +
+      "pinned ones and the attached one always stay";
   // Subagents: inactive = not working right now. Only the actively-computing ones
   // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
   // subagent IS, since the word is atrium's own: the sessions atrium launched
@@ -217,10 +221,10 @@ function termHideControlsHTML(c) {
     "(origin:agent), not ones you started";
   const subTitle = (sOn
     ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
-      "now). click to show them. only actively-working subagents and the attached " +
-      "one stay"
+      "now). click to show them. only actively-working subagents, pinned ones and " +
+      "the attached one stay"
     : "hide the inactive subagents (idle, waiting, or exited - not working right " +
-      "now). only actively-working subagents and the attached one stay") +
+      "now). only actively-working subagents, pinned ones and the attached one stay") +
     ". " + subNote;
   return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
@@ -1384,11 +1388,10 @@ async function renderTermList() {
   // the toggles say, since hiding must never yank the pane out from under whatever
   // is open (the teardown below keys off this same list); a live agent is kept by
   // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
-  // Pinning is no longer an exemption: a pinned session that is inactive by its
-  // kind's rule hides with the rest, in the pinned bucket and everywhere else the
-  // strip lists it. What is removed is counted per kind so the pill can say how
-  // many, and everything downstream draws `shown` rather than `tasks`.
-  const keep = t => !!(termTask && t.id === termTask.id);
+  // A pinned session is kept too, whatever the toggles say, in the pinned bucket
+  // and in its groups. What is removed is counted per kind so the pill can say
+  // how many, and everything downstream draws `shown` rather than `tasks`.
+  const keep = t => !!(termTask && t.id === termTask.id) || !!t.pinned;
   const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
   const shown = hideable.length
     ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
