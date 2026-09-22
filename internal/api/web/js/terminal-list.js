@@ -1110,6 +1110,31 @@ function termFlatGroupsHTML(list, g, folded) {
   }).join("");
 }
 
+// IS THIS CARD FILED INTO ONE OF YOUR GROUPS. A pinned card is drawn in the
+// pinned bucket, and in custom mode also under every named group it carries.
+//
+// Leaving it out of the groups made `into group` on a pinned card do nothing
+// you could see: the tag landed, the group still said 0 and asked you to file
+// something. Filing is as deliberate as pinning, so both are honoured. A
+// pinned card in none of your groups stays out of `untagged`, which is the
+// board's heap and not somewhere you put it.
+function termFiled(t) {
+  const g = typeof grouper === "function" ? grouper() : null;
+  if (!g || !g.handOrdered) return false;
+  try { return g.of(t).some(n => n && n !== UNTAGGED); } catch (e) { return false; }
+}
+
+// A drag moves rows by hand while the pointer travels, so the DOM can disagree
+// with the markup the strip was last painted from. `setHTML` skips a paint
+// whose markup did not change, and filing a pinned card or abandoning a drag
+// can leave it unchanged. Forgetting the last paint makes the next one
+// reconcile the rows that were moved.
+function repaintTermList() {
+  const host = document.getElementById("term-list");
+  if (host) host.__paintedFrom = null;
+  renderTermList();
+}
+
 // WHICH GROUPS ARE FOLDED, kept in this browser and keyed by the path itself.
 //
 // Not on the card and not on the daemon: this is a property of how somebody is
@@ -1470,7 +1495,7 @@ async function renderTermList() {
   setHTML(host, tasks.length
     ? termDropHTML() + `<div class="termbody">` + head +
       termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(shown.filter(t => !t.pinned)) + `</div>`
+      termGroupsHTML(shown.filter(t => !t.pinned || termFiled(t))) + `</div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
@@ -1597,7 +1622,7 @@ function wireTermDrag(host) {
       //
       // Told apart from a completed drag by the id: `ondrop` runs first and
       // clears it, so anything still set here never reached a drop.
-      if (aborted) renderTermList();
+      if (aborted) repaintTermList();
     };
   });
 
@@ -1661,6 +1686,7 @@ function wireTermDrag(host) {
     } catch (err) {
       toast("that order did not stick", err.message);
     }
+    host.__paintedFrom = null;
     refresh();
   };
 }
@@ -1716,7 +1742,7 @@ function wireGroupDrop(nest) {
     if (!(t && t.pinned)) body.rank = rank;
     if (!tags.includes(name)) body.tags = tags.concat(name);
     if (Object.keys(body).length) await patchTask(id, body);
-    renderTermList();
+    repaintTermList();
   };
 }
 
