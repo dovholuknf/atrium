@@ -51,6 +51,43 @@ func TestMessageCarriesTheCaller(t *testing.T) {
 	}
 }
 
+// atrium_say reaches a session through this endpoint, so a message with a
+// sender gets the peer bus's bounds: the size cap and the per-sender rate.
+func TestAMessageFromASessionIsBoundedLikeTheBus(t *testing.T) {
+	d := testDaemon(t)
+	bob := peerCard(t, d, "bob")
+
+	long := string(bytes.Repeat([]byte("x"), maxPeerMessage+1))
+	if code := message(t, d, bob.ID, map[string]string{"text": long, "from": "alice"}); code !=
+		http.StatusRequestEntityTooLarge {
+		t.Fatalf("an oversized peer message answered %d, want 413", code)
+	}
+
+	for i := 0; i < peerSendsPerMinute; i++ {
+		if code := message(t, d, bob.ID, map[string]string{"text": "ping", "from": "alice"}); code !=
+			http.StatusOK {
+			t.Fatalf("send %d answered %d before the limit", i+1, code)
+		}
+	}
+	if code := message(t, d, bob.ID, map[string]string{"text": "ping", "from": "alice"}); code !=
+		http.StatusTooManyRequests {
+		t.Fatalf("a send past the limit answered %d, want 429", code)
+	}
+}
+
+// The operator is not a peer, so neither bound applies to a message with no
+// sender.
+func TestTheOperatorsMessagesAreNotRateLimited(t *testing.T) {
+	d := testDaemon(t)
+	bob := peerCard(t, d, "bob")
+
+	for i := 0; i <= peerSendsPerMinute; i++ {
+		if code := message(t, d, bob.ID, map[string]string{"text": "ping"}); code != http.StatusOK {
+			t.Fatalf("operator send %d answered %d", i+1, code)
+		}
+	}
+}
+
 func TestMessageWithNoCallerStaysTheOperator(t *testing.T) {
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
