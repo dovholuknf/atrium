@@ -149,7 +149,7 @@ function openToastLog() {
             onclick='event.stopPropagation();copyLogRow(this, ${arg})'>${copyIcon()}</button>
         </div>`;
       }).join("")
-    : `<div class="empty">nothing yet. anything the board tells you turns up here.</div>`);
+    : "");
 
   // A ROW GOES WHERE THE TOAST WOULD HAVE GONE, and that is the whole
   // requirement: this list exists because a toast went past before it could be
@@ -187,16 +187,18 @@ function openToastLog() {
   // Marked read on OPEN rather than on close, so the highlight says what was
   // new when you got here and does not clear under you while you read it.
   try { localStorage.setItem(TOASTLOG_KEY + ".seen", String(Date.now())); } catch (e) {}
-  // Already open means this is a repaint after clearing, and `showModal` on an
-  // open dialog throws.
+  // `showModal` on an open dialog throws.
   const dlg = document.getElementById("toastlog");
   if (!dlg.open) dlg.showModal();
   paintToastLogBadge();
 }
 
+// Clearing is the last thing you do with the tray, so it closes it too.
 function clearToastLog() {
   saveToastLog([]);
-  openToastLog();
+  setHTML(document.getElementById("toastlog-list"), "");
+  document.getElementById("toastlog").close();
+  paintToastLogBadge();
 }
 
 // A time somebody can read at a glance. Today is a clock, older is a date:
