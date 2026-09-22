@@ -751,6 +751,7 @@ function connectTerm(taskID) {
     // nothing is lost.
     const reattach = termReplayed;
     termReplayed = true;
+    traceCtl({ ev: reattach ? "sock-open-reset" : "sock-open" });
     if (reattach && term) {
       // No "reconnected" line here: the reset wipes it, and the replay's own
       // "everything above is history … live from here" boundary already marks
@@ -796,6 +797,7 @@ function connectTerm(taskID) {
     // on the next line scrolls a buffer that has not grown yet, which is the
     // same off-by-one-echo mistake `sendInput` was making on its own.
     noteScrollAct("output");
+    traceOut(e.data);
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
       if (!takeTermCaps(e.data)) term.write(e.data, lagOnOutput(followScroll));
@@ -818,6 +820,7 @@ function connectTerm(taskID) {
     // socket stops being the current one, including ways nobody has thought
     // of yet.
     if (termSock !== sock) return;
+    traceCtl({ ev: "sock-close", code: ev ? ev.code : 0, reason: ev ? ev.reason : "" });
 
     // The daemon's own word for what just happened, or an empty string when
     // the close did not come from it at all: a connection that dropped carries
@@ -1071,7 +1074,10 @@ function connectTerm(taskID) {
 }
 
 function send(msg) {
-  if (termSock && termSock.readyState === WebSocket.OPEN) termSock.send(JSON.stringify(msg));
+  if (!termSock || termSock.readyState !== WebSocket.OPEN) return;
+  const s = JSON.stringify(msg);
+  traceIn(s);
+  termSock.send(s);
 }
 
 // Input to the runner, whatever produced it: a keystroke, a paste, a path

@@ -344,6 +344,13 @@ async function termSettings(e) {
         "was killed. Not shown in the terminal because a terminal can only " +
         "add to the bottom.",
       act: () => openOlderScrollback(t.id) },
+    // For the garble that will not happen on demand: click it the moment the
+    // pane looks wrong. See js/termtrace.js.
+    { label: "save terminal trace", note: "downloads the last 64KB",
+      help: "Downloads the raw bytes this terminal sent and received most " +
+        "recently, with timestamps, plus what is on screen right now. Save it " +
+        "the moment the terminal draws something wrong and attach it to the bug.",
+      act: () => saveTermTrace() },
     // Only for a session atrium owns a terminal for. A window-mode session owns
     // itself and one joined by hand belongs to whoever started it, so there is
     // no terminal here to exit and relaunch. The daemon refuses either way, but
@@ -569,6 +576,8 @@ function openTerm(task) {
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
   term.open(screen);
+  // Before anything can write to it, so the trace starts at the first byte.
+  traceTerm(term);
   useWebgl(term);
   useSearch(term);
   // THESE TWO ARE IN THIS ORDER ON PURPOSE. Both linkify the terminal, and

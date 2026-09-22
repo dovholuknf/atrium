@@ -219,6 +219,14 @@ if ! node "$here/scripts/test-term-tabreturn.js"; then
   fail=1
 fi
 
+# The terminal trace ring, RUN against stubs. It is the evidence for a garble
+# nobody can reproduce on demand, so it must stay bounded on a busy terminal and
+# must save the exact bytes xterm was handed.
+if ! node "$here/scripts/test-term-trace.js"; then
+  echo "the terminal trace ring is unbounded or saves the wrong bytes. see above." >&2
+  fail=1
+fi
+
 # The refresh-storm guard, RUN against a simulated flap storm. A room that
 # attaches and detaches every few seconds used to make the board answer every
 # flip with a fresh fan-out of fetches, until the tab emptied its socket pool

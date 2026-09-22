@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A terminal that draws something wrong can hand over the bytes that drew it.**
+
+  Every board terminal keeps the last 64KB of its raw attach traffic in both directions, with timestamps: what the
+  daemon sent, every keystroke and resize the board sent, and each time xterm's own grid changed size. **save
+  terminal trace** in the terminal's cog downloads it as JSON, along with the screen and cursor at that moment.
+  Click it the moment a pane garbles. `node scripts/replay-term-trace.js <file>` replays it through the board's own
+  xterm.js, and `--frames` lists every frame with its escapes spelled out. Nothing is encoded until the save, so
+  an idle recorder costs a push per frame.
+
 - **Clearing the notifications panel closes it, and an empty panel is empty.**
 
   **clear** now empties the list and shuts the panel in one click. Opening the panel with nothing in it shows the
