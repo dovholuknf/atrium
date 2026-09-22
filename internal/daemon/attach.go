@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -262,6 +263,14 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		self   chan []byte
 	)
 
+	// The oldest keystroke this attach has not yet seen output for, in unix
+	// nanoseconds. Only touched when input-lag logging is on. See inputlag.go.
+	var lagIn atomic.Int64
+	lagLabel := taskID
+	if shell {
+		lagLabel += " (shell)"
+	}
+
 	// Reader: control frames from the browser.
 	go func() {
 		defer cancel()
@@ -270,6 +279,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			if err != nil {
 				return
 			}
+			got := lagStart()
 			if typ != websocket.MessageText {
 				continue
 			}
@@ -289,8 +299,15 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// paste in flight rather than interleaving with it. The
 				// bookkeeping above is not locked and stays instant. See
 				// runner.writeOperatorInput and injectPeer.
-				if err := run.writeOperatorInput([]byte(in.D)); err != nil {
-					return
+				if got.IsZero() {
+					if err := run.writeOperatorInput([]byte(in.D)); err != nil {
+						return
+					}
+				} else {
+					noteLagIn(&lagIn, got)
+					if err := run.writeOperatorInputTimed([]byte(in.D), got, lagLabel); err != nil {
+						return
+					}
 				}
 				// SHARED MULTI-PANE INPUT, off unless this runner was opted in.
 				// A DISPLAY echo to the OTHER panes, after the one Write above,
@@ -461,8 +478,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				c.Close(websocket.StatusNormalClosure, why)
 				return
 			}
+			sent := lagStart()
 			if err := c.Write(ctx, websocket.MessageBinary, chunk); err != nil {
 				return
+			}
+			if !sent.IsZero() {
+				noteLagOut(&lagIn, lagLabel, sent, time.Now(), len(updates), len(chunk))
 			}
 		case <-time.After(45 * time.Second):
 			// Keeps an idle attach alive through anything in the middle that

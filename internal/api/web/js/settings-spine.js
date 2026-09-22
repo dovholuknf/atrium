@@ -114,6 +114,7 @@ function paintSettings() {
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
+  document.getElementById("s-inputlag").checked = lagOn;
   // The two housekeeping timers. Held by the daemon rather than the browser,
   // because they are about the machine's data and not about this screen, so
   // they are read here rather than assumed.

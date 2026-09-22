@@ -167,7 +167,8 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 	if name == "" {
 		return nil, ErrNoRoom
 	}
-	return p.hub.Dial(ctx, name)
+	c, err := p.hub.Dial(ctx, name)
+	return lagWrap(c, name), err
 }
 
 // roomKey carries the chosen room from the rewrite into the dial.
