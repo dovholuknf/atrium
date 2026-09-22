@@ -788,6 +788,11 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	// One read up front so the ordering log lines below can say old→new. Kept
+	// nil-safe: an unknown id still lands in the store writes below, which
+	// return their own error.
+	before, _ := s.st.Get(id)
+	logOrderPatch(id, before, &body)
 	canceled := 0
 	// Whether unshelving started the runner again, and why not when it did not.
 	// Returned to the caller so the board can say so rather than leaving the
@@ -996,6 +1001,41 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 // Ids nobody recognises are the store's problem rather than this handler's,
 // and it ignores them. A card unpinned in another tab between the drag and the
 // drop is the ordinary case, not an error worth refusing a reorder over.
+// logOrderPatch prints one line for each ordering-relevant field a PATCH is
+// about to write, tagged so the operator can grep for the whole story of a
+// hand-placed order from the hub log. `before` may be nil when the id is
+// unknown; the log line still records what was asked for.
+func logOrderPatch(id string, before *store.Task, body *patchBody) {
+	if body.Rank != nil {
+		was := "?"
+		if before != nil {
+			was = fmt.Sprintf("%v", before.Rank)
+		}
+		log.Printf("[atrium api order] rank id=%s %s -> %v", id, was, *body.Rank)
+	}
+	if body.Pinned != nil {
+		was := "?"
+		if before != nil {
+			was = fmt.Sprintf("%t", before.Pinned)
+		}
+		log.Printf("[atrium api order] pinned id=%s %s -> %t", id, was, *body.Pinned)
+	}
+	if body.Tags != nil {
+		var was []string
+		if before != nil {
+			was = before.Tags
+		}
+		log.Printf("[atrium api order] tags id=%s %v -> %v", id, was, *body.Tags)
+	}
+	if body.Status != nil {
+		was := "?"
+		if before != nil {
+			was = before.Status
+		}
+		log.Printf("[atrium api order] status id=%s %s -> %s", id, was, *body.Status)
+	}
+}
+
 func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		IDs []string `json:"ids"`
@@ -1004,6 +1044,7 @@ func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[atrium api order] pin-order write ids=%v", body.IDs)
 	if err := s.st.SetPinOrder(body.IDs); err != nil {
 		s.fail(w, err)
 		return
