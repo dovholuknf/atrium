@@ -1024,7 +1024,7 @@ async function launchRunnerHere(harnessID, cwd, ontoTask, room) {
     task = await api("/v1/launch", {
       method: "POST",
       headers,
-      body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
+      body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: bareId(ontoTask || "") })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
   if (task && task.supervised) {
@@ -1329,7 +1329,14 @@ async function doLaunch() {
     task = await api("/v1/launch", {
       method: "POST", headers, body: JSON.stringify(body)
     });
-  } catch (e) { tellUser("could not start it", e.message); return; }
+  } catch (e) {
+    // Close the launch dialog BEFORE the error, so the failure is not a modal
+    // stacked on a modal. The launch did not happen, so the dialog has nothing
+    // left to offer.
+    document.getElementById("launch").close();
+    tellUser("could not start it", e.message);
+    return;
+  }
   document.getElementById("launch").close();
 
   // Straight to the terminal you just started. Landing on the board instead
