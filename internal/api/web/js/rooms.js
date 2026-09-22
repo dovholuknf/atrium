@@ -804,11 +804,20 @@ window.fetch = function (input, init) {
   // The room being looked at, or, for a CHANGE made while looking at all of
   // them, the room the open editor is for. See `chooseWriteRoom`.
   //
-  // Writes only, and that is what makes a stale `writeRoom` harmless: an
-  // editor sets it and nothing clears it, so if it reached reads too, closing
-  // a dialog would silently leave the whole board scoped to one machine.
+  // Writes only, and even then not every write. `writeRoom` outlives the
+  // editor that set it (nothing clears it on every exit, see forgetRoomCfg for
+  // the one path that does), so it is a board-global that a LATER write picks
+  // up by accident. A card action carries its own card in the path and must
+  // route by that, never by whatever editor was last open: otherwise a paste
+  // or a terminate on a local card inherits an offline room and the hub refuses
+  // it. So `writeRoom` reaches only the writes with no card of their own to
+  // route by (a launch, a per-machine editor save). A card-scoped write uses
+  // the explicit board scope or nothing, and the hub reads the card id.
   const how = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
-  const room = roomNow() || (how === "GET" || how === "HEAD" ? "" : writeRoom);
+  const url = (input && input.url) ? input.url : String(input);
+  const cardScoped = /\/v1\/tasks\/[^/?]+\/[^/?]+/.test(url);
+  const write = how !== "GET" && how !== "HEAD";
+  const room = roomNow() || (write && !cardScoped ? writeRoom : "");
   if (!room) return plainFetch(input, init);
   // A Request object carries its own headers, so it is rebuilt rather than
   // having an init merged onto it, which fetch ignores for most fields.
