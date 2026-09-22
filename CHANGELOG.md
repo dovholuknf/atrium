@@ -23,6 +23,15 @@ section heading is just "what landed in this iteration."
   Click it the moment a pane garbles. `node scripts/replay-term-trace.js <file>` replays it through the board's own
   xterm.js, and `--frames` lists every frame with its escapes spelled out. Nothing is encoded until the save, so
   an idle recorder costs a push per frame.
+- **Typing through the hub stops stuttering when the machine is busy.**
+
+  On Windows the hub and the room now run at above-normal priority. A keystroke crosses both of them, and on a
+  machine full of agents and browsers Windows left a normal-priority process waiting 15 to 200ms in bursts before
+  it ran again. That wait is what made echo spiky while typing fast, and it looked like the hub because the hub is
+  the process in the middle. The link itself was never the delay: a keystroke through the hub and the TLS link
+  takes half a millisecond, the same as going to the room directly. Measured side by side under the same load, keys
+  slower than 20ms fell from 50 in 2500 to 3. The agents the room starts stay at normal priority.
+  `ATRIUM_PRIORITY=normal` turns the raise off.
 
 - **Clearing the notifications panel closes it, and an empty panel is empty.**
 

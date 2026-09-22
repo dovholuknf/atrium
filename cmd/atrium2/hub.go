@@ -71,6 +71,7 @@ func hubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			raisePriority()
 			keys := link.Keys{Dir: orDefault(dir, hubDir())}
 
 			// THE HUB'S OWN STORE, and opening it is the first thing that can

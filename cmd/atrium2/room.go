@@ -232,6 +232,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			restartLog(keys.Dir, "%s still held after %s, starting anyway", human, roomStopGrace)
 		}
 	}
+	raisePriority()
 
 	saved, err := keys.Joined()
 	if err != nil {
