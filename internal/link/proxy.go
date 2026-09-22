@@ -441,9 +441,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The input-lag switch, read off a settings write in every scope so the hub
+	// times its own hop whichever view the checkbox was pressed in. See
+	// inputlagsetting.go.
+	lagOn, lagNamed := p.noteInputLag(r)
+
 	room, named := p.roomFor(r)
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
+		if lagNamed {
+			p.fanInputLag(w, r, lagOn)
+			return
+		}
 		if r.URL.Path == "/v1/health" {
 			p.health(w, r)
 			return

@@ -145,6 +145,7 @@ func globalAutoView(s *Server) map[string]any {
 	}
 	out["replay_mode"] = mode
 	out["replay_modes"] = []string{"raw", "screen", "flat"}
+	inputLagView(out)
 	return out
 }
 
@@ -224,6 +225,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// changing it here takes effect on the next attach rather than on a
 		// restart, which is the entire point of it being a setting.
 		ReplayMode *string `json:"replay_mode"`
+		// Whether this room logs terminal input lag. Applied at once, with no
+		// restart. See inputlag.go.
+		InputLag *bool `json:"input_lag_log"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -487,6 +491,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingReplayMode, mode); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.InputLag != nil {
+		if err := setInputLag(s.st, *body.InputLag); err != nil {
 			s.fail(w, err)
 			return
 		}

@@ -7,9 +7,10 @@ import (
 	"github.com/dovholuknf/atrium/internal/inputlag"
 )
 
-// Input-lag timing for the room's two hops, off unless ATRIUM_DEBUG_INPUTLAG is
-// set. See internal/inputlag. Every helper here is a no-op when it is off, so
-// the call sites stay one line and the default path is unchanged.
+// Input-lag timing for the room's two hops, off unless the gear or
+// ATRIUM_DEBUG_INPUTLAG turns it on. See internal/inputlag. Every helper here
+// asks on each call, so a switch from the gear takes effect on the next
+// keystroke, and is a no-op when it is off, so the default path is unchanged.
 //
 // The room sees two hops of a keystroke:
 //

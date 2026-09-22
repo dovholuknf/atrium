@@ -191,6 +191,9 @@ func New(opts Options) (*Daemon, error) {
 		launching: newKeyedMutex(),
 	}
 	d.pending = newPendingInjector(d)
+	// Input-lag logging as the gear last left it, so a room that restarts keeps
+	// timing if it was timing. The variable still wins. See internal/inputlag.
+	api.ApplyInputLag(st)
 	// Card icons live beside the database, which is the one directory atrium
 	// already owns and already backs up with the rest of its state.
 	api.IconDir = filepath.Join(filepath.Dir(opts.DBPath), "icons")

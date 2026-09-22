@@ -1073,13 +1073,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- Input-lag logging is a diagnostic, off by default. See js/inputlag.js. -->
     <div class="field">
       <label class="check">
-        <input type="checkbox" id="s-inputlag" onchange="toggleInputLag(this.checked)">
+        <input type="checkbox" id="s-inputlag" onchange="saveInputLag(this.checked)">
         <span>log terminal input lag</span>
       </label>
       <span class="hintline">Times every keystroke from the key to its echo on screen and prints it
         to this browser's console, with a summary every ten seconds and a warning whenever the page
-        itself froze. For finding out why typing lags. It stays on for this browser until you
-        switch it off.</span>
+        itself froze. The hub and the room log their own hops to their logs at the same time, from
+        the moment you tick it, with no restart. For finding out why typing lags. It stays on until
+        you switch it off.</span>
+      <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on the
+        machine, so the hub and the room log as that says and this box reaches this browser
+        only.</span>
     </div>
 
     <!-- Grouping. The rule is the operator's, because their worktree layout

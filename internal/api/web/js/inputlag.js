@@ -178,11 +178,50 @@ function lagStop() {
   lagStalls = [];
 }
 
+// Switches this browser's timing only. `saveInputLag` is the checkbox, which
+// also switches the hub and the room.
 function toggleInputLag(on) {
   if (!!on === lagOn) return;
   lagOn = !!on;
   try { localStorage.setItem(LAG_KEY, lagOn ? "1" : "0"); } catch (e) {}
   if (lagOn) lagStart(); else { lagStop(); console.info("[inputlag] off"); }
+}
+
+// ONE CHECKBOX, EVERY HOP. The browser switches here, and the hub and the room
+// switch from the setting with no restart. In the ALL view the hub passes the
+// write to every room. Scoped to a room, `writeRoom` sends it to that room and
+// the hub reads it on the way past.
+async function saveInputLag(on) {
+  toggleInputLag(on);
+  try {
+    const s = await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input_lag_log: !!on })
+    });
+    paintInputLagPinned(s);
+  } catch (e) {
+    toast("the hub and room did not take it", e.message + ". this browser is still " +
+      (on ? "timing" : "not timing"));
+  }
+}
+
+// When the gear opens, the machine's answer wins over this browser's, so a
+// checkbox pressed in another tab or on another machine shows here as pressed
+// and times here too. Only when the answer is a real one: an old room that has
+// never heard of the setting sends nothing, and that is not an "off".
+function syncInputLag(s) {
+  if (!s || typeof s.input_lag_log !== "boolean") return;
+  if (!s.input_lag_pinned) toggleInputLag(s.input_lag_log);
+  const box = document.getElementById("s-inputlag");
+  if (box) box.checked = lagOn;
+  paintInputLagPinned(s);
+}
+
+// Says so beside the checkbox when ATRIUM_DEBUG_INPUTLAG decides on the machine,
+// because then the checkbox only reaches this browser.
+function paintInputLagPinned(s) {
+  const el = document.getElementById("s-inputlag-pinned");
+  if (el) el.hidden = !(s && s.input_lag_pinned);
 }
 
 if (lagOn) lagStart();

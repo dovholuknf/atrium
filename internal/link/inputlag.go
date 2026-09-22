@@ -9,8 +9,14 @@ import (
 	"github.com/dovholuknf/atrium/internal/inputlag"
 )
 
-// lagConn times the hub's hop of a terminal attach, and is only ever built
-// when ATRIUM_DEBUG_INPUTLAG is set. See internal/inputlag.
+// lagConn times the hub's hop of a terminal attach when input-lag logging is on.
+// See internal/inputlag.
+//
+// BUILT FOR EVERY ROOM CONNECTION, on or off. The logging is switched live from
+// the gear, and an attach dialled while it was off would otherwise stay untimed
+// until somebody reattached, which is the terminal they were typing into when
+// they asked. Off, a frame costs one atomic load. The 101 is still watched for
+// while off, so a switch mid-attach times that attach from the next keystroke.
 //
 // THE PROXY NEVER SEES A FRAME. An attach is an upgrade, and after the 101
 // `httputil.ReverseProxy` copies raw bytes both ways between two hijacked
@@ -35,17 +41,19 @@ type lagConn struct {
 
 var switching = []byte("HTTP/1.1 101")
 
-// lagWrap wraps a dialled room connection when the logging is on, and returns
-// it untouched when it is not.
+// lagWrap wraps a dialled room connection.
 func lagWrap(c net.Conn, room string) net.Conn {
-	if !inputlag.On() || c == nil {
+	if c == nil {
 		return c
 	}
 	return &lagConn{Conn: c, room: room}
 }
 
 func (c *lagConn) Write(b []byte) (int, error) {
-	if !c.ws.Load() {
+	if !c.ws.Load() || !inputlag.On() {
+		// Dropped rather than left, so an echo clock started before a switch
+		// off does not close as one enormous hop after the switch back on.
+		c.up.Store(0)
 		return c.Conn.Write(b)
 	}
 	t0 := time.Now()
@@ -67,6 +75,9 @@ func (c *lagConn) Read(b []byte) (int, error) {
 		if bytes.HasPrefix(b[:n], switching) {
 			c.ws.Store(true)
 		}
+		return n, err
+	}
+	if !inputlag.On() {
 		return n, err
 	}
 	if at := c.up.Swap(0); at != 0 {

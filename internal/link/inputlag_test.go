@@ -3,21 +3,41 @@ package link
 import (
 	"net"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/inputlag"
 )
 
-// Off is the default, and off must hand back the very connection it was given.
-func TestLagWrapIsIdentityWhenOff(t *testing.T) {
+// lagOnFor switches the logging on for one test, as the gear does.
+func lagOnFor(t *testing.T) {
+	t.Helper()
+	if !inputlag.SetLive(true) {
+		t.Skip(inputlag.Env + " is set, so the setting cannot switch the logging")
+	}
+	t.Cleanup(func() { inputlag.SetLive(false) })
+}
+
+// Off, an upgraded connection starts no clock, so nothing is timed and nothing
+// is left behind to close as a stale hop once the logging comes on.
+func TestLagConnTimesNothingWhenOff(t *testing.T) {
+	inputlag.SetLive(false)
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
-	if got := lagWrap(a, "alpha"); got != a {
-		t.Fatalf("wrapped a connection with the logging off: %T", got)
+	c := lagWrap(a, "alpha").(*lagConn)
+	c.ws.Store(true)
+	go func() { _, _ = b.Read(make([]byte, 8)) }()
+	if _, err := c.Write([]byte("k")); err != nil {
+		t.Fatal(err)
+	}
+	if c.up.Load() != 0 {
+		t.Fatal("a write with the logging off started the echo clock")
 	}
 }
 
 // Only an upgraded connection is timed, so a plain response must not arm it
 // and a 101 must.
 func TestLagConnArmsOnlyOnUpgrade(t *testing.T) {
+	lagOnFor(t)
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
