@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -302,6 +303,24 @@ func TestEventsReturnsTheNewestWindowInTimeOrder(t *testing.T) {
 			t.Fatalf("event %d is older than the one before it: %s then %s",
 				i, events[i-1].At, events[i].At)
 		}
+	}
+}
+
+// A call that reaches the store after Close is late, not a broken database. A
+// clean stop used to end in `HALTED: sql: database is closed` because the
+// shutdown path read a setting after releasing the store.
+func TestCallAfterCloseDoesNotHalt(t *testing.T) {
+	s := open(t)
+	halts := 0
+	s.OnHalt = func(error) { halts++ }
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Setting("shared_location"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("a read after Close answered %v, want ErrClosed", err)
+	}
+	if halted, cause := s.Halted(); halted || halts != 0 {
+		t.Fatalf("a read after Close halted the store: %v", cause)
 	}
 }
 

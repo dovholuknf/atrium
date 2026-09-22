@@ -374,7 +374,17 @@ func (d *Daemon) handleHooksChanged(w http.ResponseWriter, r *http.Request) {
 
 // clearLocation removes the file on the way out, so the next hook to run does
 // not aim at a daemon that has stopped.
+//
+// ONCE, AND WHILE THE STORE IS STILL OPEN. The shared path is a setting, so
+// finding it reads the store. The shutdown path calls this just before it
+// closes the store, and Run's deferred call afterwards is then a no-op. Reading
+// a closed store is a failure the store halts on, which is how a clean stop used
+// to end in `HALTED: sql: database is closed`.
 func (d *Daemon) clearLocation() {
+	d.clearOnce.Do(d.removeLocation)
+}
+
+func (d *Daemon) removeLocation() {
 	path, err := d.locationPath()
 	if err != nil {
 		return
