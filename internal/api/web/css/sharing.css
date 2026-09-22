@@ -483,5 +483,5 @@
   /* How much a fold is hiding. It inherits the heading's own font and colour rather than being styled: as a
      nine pixel pill in the chip colours it was the quietest thing on the row, and a count nobody can read is a
      count that is not there. */
-  .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; }
+  .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; margin-left: 6px; }
   .tgroup:hover .tgcount { opacity: 1; }

@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A group heading says how many it is showing out of how many, and the agents hide toggle is gone.**
+
+  When `hide inactive` takes rows out of a group, its heading reads `7/15` rather than `7`, and its tooltip says
+  how many are hidden. A group with nothing hidden reads its plain count. The count sits a little further from the
+  name. The `agents` half of `hide inactive` is removed: a pinned row no longer hides, and the only exited agent
+  the list ever holds is a pinned one, so that toggle hid nothing and only looked like a switch left on. A stored
+  `on` from before is ignored. HUB-SIDE.
+
 - **Nothing atrium types lands in a line you are writing.**
 
   Each terminal counts what you have typed and not sent, and atrium only types when that count is zero and the
