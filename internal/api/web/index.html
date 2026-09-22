@@ -956,216 +956,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          somebody arrives with. It also has to pair with `share this session`
          on a card, since there are two kinds of exposing now and the two names
          have to tell them apart. -->
-    <h3 class="s-section">expose the board</h3>
-    <div class="field">
-      <div id="overlays"></div>
-      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
-        publish it through something that already knows who is allowed to see it. To hand one
-        session to one person instead of the whole board, use <b>share this session</b> on that
-        card.</span>
-    </div>
-
-    <!-- A SUB-HEADING, not a section, so it stays in this pane.
-         The login only ever applies to the published board, so somebody asking
-         about it is already here looking at what publishes it. As its own
-         entry in the nav it read as an unrelated setting, and the zrok panel
-         above says the board has no login while this says it does. -->
-    <h4 class="s-sub">who may open it</h4>
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="auth-on" onchange="saveAuth()">
-        <span>the published board asks people to sign in</span>
-      </label>
-      <span class="hintline">Only the PUBLISHED board. This machine's own
-        <code>localhost:7778</code> is untouched, and so are the hooks, the CLI and a session you
-        have lent to somebody: a lent link is the credential by design, and making a guest sign in
-        would defeat it.</span>
-    </div>
-
-    <!-- A NAME AND A PASSWORD, for a board with no provider in front of it.
-         The flow below is the better answer and it needs a provider, a client
-         registered with it, and a redirect matching the published address
-         exactly. Somebody sharing a board for an afternoon has none of those,
-         and what they do instead is publish it with no login at all. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="auth-basic" onchange="saveAuth()">
-        <span>a name and a password</span>
-      </label>
-      <span class="hintline">The simple one, and enough on its own: with this set you can leave
-        everything below empty. The browser asks once and remembers for the rest of the day.
-        Checked before the provider, so a board with both still opens when the provider is
-        down.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-user">name</label>
-      <input type="text" id="auth-user" spellcheck="false" autocomplete="off"
-        onchange="saveAuth()" placeholder="who types the password">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-pass">password</label>
-      <input type="password" id="auth-pass" autocomplete="new-password" onchange="saveAuth()"
-        placeholder="typing here sets it">
-      <span class="hintline" id="auth-pass-said"></span>
-      <span class="hintline">Stored salted and hashed, never in plain, and never sent back to this
-        page. Atrium cannot tell you what it is, only that there is one.</span>
-    </div>
-
-    <div class="field">
-      <label class="eyebrow" for="auth-issuer">provider</label>
-      <input type="text" id="auth-issuer" spellcheck="false" onchange="saveAuth()"
-        placeholder="https://keycloak.example/realms/yours">
-      <span class="hintline">The realm URL, not the admin console. Everything else is read from
-        its <code>/.well-known/openid-configuration</code>.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-client">client id</label>
-      <input type="text" id="auth-client" spellcheck="false" onchange="saveAuth()"
-        placeholder="atrium">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-secret">client secret</label>
-      <input type="password" id="auth-secret" spellcheck="false" autocomplete="off"
-        onchange="saveAuth()" placeholder="leave empty to keep the one already set">
-      <span class="hintline" id="auth-secret-said"></span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-redirect">where the provider sends people back</label>
-      <input type="text" id="auth-redirect" spellcheck="false" onchange="saveAuth()"
-        placeholder="https://your-board-address/auth/callback">
-      <span class="hintline">The PUBLISHED address with <code>/auth/callback</code> on the end,
-        and it has to match what the provider was registered with exactly.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-allow">who may in</label>
-      <input type="text" id="auth-allow" spellcheck="false" onchange="saveAuth()"
-        placeholder="you@example.com, someone-else@example.com">
-      <span class="hintline">Email addresses or subjects, comma separated. <b>Empty means
-        nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
-        with open registration, the whole internet with an extra step.</span>
-      <span class="hintline" id="auth-said"></span>
-    </div>
-
-    <h3 class="s-section">alerts</h3>
-    <div class="field">
-      <label class="eyebrow">volume</label>
-      <input type="range" id="s-vol" min="0" max="100" step="5">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-input">a task needs your input</label>
-      <div class="picker"><select id="s-input"></select>
-        <button onclick="previewFor('input')">test</button></div>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-perm">a permission is waiting</label>
-      <div class="picker"><select id="s-perm"></select>
-        <button onclick="previewFor('perm')">test</button></div>
-    </div>
-    <div class="field">
-      <label class="eyebrow">desktop notifications</label>
-      <div class="picker">
-        <span id="s-notify-state" class="chip"></span>
-        <button id="s-notify-ask" onclick="askNotify()">enable</button>
-        <button id="s-notify-toggle" onclick="toggleDesktop()"></button>
-        <button onclick="testNotify()">send a test</button>
-      </div>
-      <span class="hintline" id="s-notify-hint"></span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-expiry">notifications disappear after</label>
-      <div class="picker">
-        <select id="s-expiry">
-          <option value="10">10 seconds</option>
-          <option value="30">30 seconds</option>
-          <option value="60">1 minute</option>
-          <option value="300">5 minutes</option>
-          <option value="0">never, until answered</option>
-        </select>
-      </div>
-      <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-debounce">wait before alerting</label>
-      <div class="picker">
-        <select id="s-debounce">
-          <option value="0">do not wait, alert immediately</option>
-          <option value="2">2 seconds</option>
-          <option value="5">5 seconds</option>
-          <option value="10">10 seconds</option>
-        </select>
-      </div>
-      <span class="hintline">Anything that happens inside the wait is one alert instead of several. A later
-        arrival extends the wait rather than starting a second one, up to three times the setting, so a steady
-        trickle still gets announced.</span>
-    </div>
-
-    <div class="field" id="s-skipped-field" hidden>
-      <label class="eyebrow">questions you turned off</label>
-      <div class="picker">
-        <span class="chip" id="s-skipped"></span>
-        <button onclick="resetConfirms()">ask me again</button>
-      </div>
-      <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
-    </div>
-
-    <!-- Housekeeping. Two timers that are easy to confuse and must not be:
-         one takes a card off a screen and keeps every word of its history, the
-         other destroys that history. They sit next to each other so the
-         difference is read rather than assumed. -->
-    <h3 class="s-section">back it up</h3>
-    <div class="field">
-      <p class="pane-lead">Atrium's configuration as one file a repository can hold: harnesses, fixtures,
-        sources, actions, rules, the skin, any terminal themes you brought, the timers and the sharing
-        options. Enough to rebuild this machine from a checkout.</p>
-      <div class="toolbar">
-        <button class="go" onclick="exportConfig()">save the configuration</button>
-        <button onclick="document.getElementById('import-file').click()">read one back…</button>
-        <input type="file" id="import-file" accept="application/json,.json" hidden
-          onchange="importConfig(this)">
-      </div>
-      <span class="hintline"><b>No credentials are in it</b>, and that is not a best effort: the export
-        REFUSES rather than redacting if anything in your configuration looks like one, and says where.
-        So a restored machine still has to be enabled against zrok and still has to enroll a ziti
-        identity.</span>
-      <span class="hintline">Reading one back tells you what it WOULD change before it changes anything,
-        and never overwrites something already set here unless you say so.</span>
-      <span class="hintline" id="config-said"></span>
-    </div>
-
-    <h3 class="s-section">housekeeping</h3>
-    <div class="field">
-      <label class="eyebrow" for="s-sweep">take dead cards off the board</label>
-      <div class="picker">
-        <select id="s-sweep">
-          <option value="off">never, leave them there</option>
-          <option value="60">after a minute</option>
-          <option value="900">after fifteen minutes</option>
-          <option value="3600">after an hour</option>
-          <option value="86400">after a day</option>
-        </select>
-      </div>
-      <span class="hintline">Archived, not deleted. The card and its whole audit log stay, which is
-        what answers &ldquo;what have I had running this week&rdquo;. Dead only: done is you saying
-        the work is finished, and a board that filed away what you just filed would make filing
-        pointless.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-prune">delete finished cards for good</label>
-      <div class="picker">
-        <select id="s-prune">
-          <option value="off">never</option>
-          <option value="604800">after a week</option>
-          <option value="2592000">after a month</option>
-          <option value="7776000">after three months</option>
-          <option value="31536000">after a year</option>
-        </select>
-      </div>
-      <span class="hintline"><b>This destroys the record.</b> A card's audit log is the only account
-        of what that session ran and what it was allowed to do. Off unless you turn it on, and worth
-        answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that
-        seems large. Never touches shelved cards or the inbox.</span>
-    </div>
-
     <!-- FIRST, because it is the one everybody opens this dialog for: how the
          board looks, how big it is, how it groups. Named `board` rather than
          `the board` so the nav reads as a column of nouns beside `this
@@ -1320,6 +1110,289 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">The body of a comparator over two group names. Broken code falls back
         to the default and says so rather than blanking the board.</span>
     </div>
+    <h3 class="s-section">expose the board</h3>
+    <div class="field">
+      <div id="overlays"></div>
+      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
+        publish it through something that already knows who is allowed to see it. To hand one
+        session to one person instead of the whole board, use <b>share this session</b> on that
+        card.</span>
+    </div>
+
+    <!-- THE PUBLIC ZROK SHARE'S LOGIN, enforced at the zrok edge, not by this
+         hub. A public zrok share is a URL anyone can open, so it must carry a
+         login: either a name and password (zrok updb) or an OIDC provider, the
+         operator's choice. Held hub-side the same way the skin is, and sent to
+         zrok when the share is created. zrok PRIVATE and OpenZiti need none:
+         the overlay is already the gate. See docs/ziti-zrok-flow-design.md. -->
+    <h4 class="s-sub">public share login (zrok)</h4>
+    <div class="field">
+      <label class="eyebrow" for="s-share-auth">how a public zrok share asks people in</label>
+      <div class="picker">
+        <select id="s-share-auth" onchange="shareAuthChanged()">
+          <option value="">no login (a public share is refused)</option>
+          <option value="updb">a name and a password</option>
+          <option value="oidc">an OIDC provider</option>
+        </select>
+      </div>
+      <span class="hintline">Only the PUBLIC zrok share uses this, and zrok enforces it at the
+        edge. A private zrok share or an OpenZiti service needs nothing here: the overlay already
+        decides who may reach the board. With no login set, a public share is refused rather than
+        opened to everyone.</span>
+    </div>
+    <div class="field" id="s-share-updb">
+      <label class="eyebrow" for="s-share-user">name</label>
+      <input type="text" id="s-share-user" spellcheck="false" autocomplete="off"
+        onchange="saveShareAuth()" placeholder="who types the password">
+      <label class="eyebrow" for="s-share-pass">password</label>
+      <input type="password" id="s-share-pass" autocomplete="new-password"
+        onchange="saveShareAuth()" placeholder="typing here sets it">
+      <span class="hintline" id="s-share-pass-said"></span>
+      <span class="hintline">Sent to zrok to guard the public share, and never sent back to this
+        page. Atrium cannot tell you what it is, only that there is one. Leave the box empty to keep
+        the password already set.</span>
+    </div>
+    <div class="field" id="s-share-oidc-wrap">
+      <label class="eyebrow" for="s-share-oidc">OIDC provider</label>
+      <input type="text" id="s-share-oidc" spellcheck="false" onchange="saveShareAuth()"
+        placeholder="the provider name your zrok account is configured with">
+      <span class="hintline">The provider must already be configured on your zrok account. This
+        only names which one to put in front of the share.</span>
+    </div>
+
+    <!-- A SUB-HEADING, not a section, so it stays in this pane.
+         The login only ever applies to the published board, so somebody asking
+         about it is already here looking at what publishes it. As its own
+         entry in the nav it read as an unrelated setting, and the zrok panel
+         above says the board has no login while this says it does. -->
+    <h4 class="s-sub">who may open it</h4>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="auth-on" onchange="saveAuth()">
+        <span>the published board asks people to sign in</span>
+      </label>
+      <span class="hintline">Only the PUBLISHED board. This machine's own
+        <code>localhost:7778</code> is untouched, and so are the hooks, the CLI and a session you
+        have lent to somebody: a lent link is the credential by design, and making a guest sign in
+        would defeat it.</span>
+    </div>
+
+    <!-- A NAME AND A PASSWORD, for a board with no provider in front of it.
+         The flow below is the better answer and it needs a provider, a client
+         registered with it, and a redirect matching the published address
+         exactly. Somebody sharing a board for an afternoon has none of those,
+         and what they do instead is publish it with no login at all. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="auth-basic" onchange="saveAuth()">
+        <span>a name and a password</span>
+      </label>
+      <span class="hintline">The simple one, and enough on its own: with this set you can leave
+        everything below empty. The browser asks once and remembers for the rest of the day.
+        Checked before the provider, so a board with both still opens when the provider is
+        down.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-user">name</label>
+      <input type="text" id="auth-user" spellcheck="false" autocomplete="off"
+        onchange="saveAuth()" placeholder="who types the password">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-pass">password</label>
+      <input type="password" id="auth-pass" autocomplete="new-password" onchange="saveAuth()"
+        placeholder="typing here sets it">
+      <span class="hintline" id="auth-pass-said"></span>
+      <span class="hintline">Stored salted and hashed, never in plain, and never sent back to this
+        page. Atrium cannot tell you what it is, only that there is one.</span>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="auth-issuer">provider</label>
+      <input type="text" id="auth-issuer" spellcheck="false" onchange="saveAuth()"
+        placeholder="https://keycloak.example/realms/yours">
+      <span class="hintline">The realm URL, not the admin console. Everything else is read from
+        its <code>/.well-known/openid-configuration</code>.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-client">client id</label>
+      <input type="text" id="auth-client" spellcheck="false" onchange="saveAuth()"
+        placeholder="atrium">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-secret">client secret</label>
+      <input type="password" id="auth-secret" spellcheck="false" autocomplete="off"
+        onchange="saveAuth()" placeholder="leave empty to keep the one already set">
+      <span class="hintline" id="auth-secret-said"></span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-redirect">where the provider sends people back</label>
+      <input type="text" id="auth-redirect" spellcheck="false" onchange="saveAuth()"
+        placeholder="https://your-board-address/auth/callback">
+      <span class="hintline">The PUBLISHED address with <code>/auth/callback</code> on the end,
+        and it has to match what the provider was registered with exactly.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="auth-allow">who may in</label>
+      <input type="text" id="auth-allow" spellcheck="false" onchange="saveAuth()"
+        placeholder="you@example.com, someone-else@example.com">
+      <span class="hintline">Email addresses or subjects, comma separated. <b>Empty means
+        nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
+        with open registration, the whole internet with an extra step.</span>
+      <span class="hintline" id="auth-said"></span>
+    </div>
+
+    <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
+         Its own section so the settings spine gives it its own nav entry, and
+         so the whole thing can be deleted in one pass if it loses. Everything
+         in it is drawn by js/expose2.js into the one container below. See
+         docs/interview-log.md for the shape and why. -->
+    <h3 class="s-section">expose the board 2</h3>
+    <div class="field">
+      <p class="xb-lead">The same three ways out as above, redrawn: one quiet row each, collapsed
+        until you open it, so an untouched panel is a short list and the common case is one press.
+        Board authentication is shared across every transport and only zrok public is refused
+        without it.</p>
+      <div id="expose2"></div>
+    </div>
+
+    <!-- THE SECOND REDO, a different bet from `expose the board 2`. It hides
+         the transports and asks who needs to reach the board, turning the
+         answer into the right one. Own section, own nav entry, drawn by
+         js/expose3.js into the container below. Deletable in one pass. -->
+    <h3 class="s-section">expose the board 3</h3>
+    <div class="field">
+      <p class="x3-lead">A different take on the same three ways out: pick who needs to reach the
+        board and atrium picks the transport, so you never choose zrok or ziti by hand. One path is
+        on screen at a time.</p>
+      <div id="expose3"></div>
+    </div>
+
+    <!-- `notifications`, not `alerts`. Everything under it is a notification:
+         the desktop one the operating system draws, the toast, the sound. An
+         alert is what the board calls its own red banner, and two names for
+         one idea sent people to the wrong pane looking for the sound. -->
+    <h3 class="s-section">notifications</h3>
+    <div class="field">
+      <label class="eyebrow">volume</label>
+      <input type="range" id="s-vol" min="0" max="100" step="5">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-input">a task needs your input</label>
+      <div class="picker"><select id="s-input"></select>
+        <button onclick="previewFor('input')">test</button></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-perm">a permission is waiting</label>
+      <div class="picker"><select id="s-perm"></select>
+        <button onclick="previewFor('perm')">test</button></div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">desktop notifications</label>
+      <div class="picker">
+        <span id="s-notify-state" class="chip"></span>
+        <button id="s-notify-ask" onclick="askNotify()">enable</button>
+        <button id="s-notify-toggle" onclick="toggleDesktop()"></button>
+        <button onclick="testNotify()">send a test</button>
+      </div>
+      <span class="hintline" id="s-notify-hint"></span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-expiry">notifications disappear after</label>
+      <div class="picker">
+        <select id="s-expiry">
+          <option value="10">10 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="300">5 minutes</option>
+          <option value="0">never, until answered</option>
+        </select>
+      </div>
+      <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-debounce">wait before alerting</label>
+      <div class="picker">
+        <select id="s-debounce">
+          <option value="0">do not wait, alert immediately</option>
+          <option value="2">2 seconds</option>
+          <option value="5">5 seconds</option>
+          <option value="10">10 seconds</option>
+        </select>
+      </div>
+      <span class="hintline">Anything that happens inside the wait is one alert instead of several. A later
+        arrival extends the wait rather than starting a second one, up to three times the setting, so a steady
+        trickle still gets announced.</span>
+    </div>
+
+    <div class="field" id="s-skipped-field" hidden>
+      <label class="eyebrow">questions you turned off</label>
+      <div class="picker">
+        <span class="chip" id="s-skipped"></span>
+        <button onclick="resetConfirms()">ask me again</button>
+      </div>
+      <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
+    </div>
+
+    <!-- Housekeeping. Two timers that are easy to confuse and must not be:
+         one takes a card off a screen and keeps every word of its history, the
+         other destroys that history. They sit next to each other so the
+         difference is read rather than assumed. -->
+    <h3 class="s-section">back it up</h3>
+    <div class="field">
+      <p class="pane-lead">Atrium's configuration as one file a repository can hold: harnesses, fixtures,
+        sources, actions, rules, the skin, any terminal themes you brought, the timers and the sharing
+        options. Enough to rebuild this machine from a checkout.</p>
+      <div class="toolbar">
+        <button class="go" onclick="exportConfig()">save the configuration</button>
+        <button onclick="document.getElementById('import-file').click()">read one back…</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden
+          onchange="importConfig(this)">
+      </div>
+      <span class="hintline"><b>No credentials are in it</b>, and that is not a best effort: the export
+        REFUSES rather than redacting if anything in your configuration looks like one, and says where.
+        So a restored machine still has to be enabled against zrok and still has to enroll a ziti
+        identity.</span>
+      <span class="hintline">Reading one back tells you what it WOULD change before it changes anything,
+        and never overwrites something already set here unless you say so.</span>
+      <span class="hintline" id="config-said"></span>
+    </div>
+
+    <h3 class="s-section">housekeeping</h3>
+    <div class="field">
+      <label class="eyebrow" for="s-sweep">take dead cards off the board</label>
+      <div class="picker">
+        <select id="s-sweep">
+          <option value="off">never, leave them there</option>
+          <option value="60">after a minute</option>
+          <option value="900">after fifteen minutes</option>
+          <option value="3600">after an hour</option>
+          <option value="86400">after a day</option>
+        </select>
+      </div>
+      <span class="hintline">Archived, not deleted. The card and its whole audit log stay, which is
+        what answers &ldquo;what have I had running this week&rdquo;. Dead only: done is you saying
+        the work is finished, and a board that filed away what you just filed would make filing
+        pointless.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-prune">delete finished cards for good</label>
+      <div class="picker">
+        <select id="s-prune">
+          <option value="off">never</option>
+          <option value="604800">after a week</option>
+          <option value="2592000">after a month</option>
+          <option value="7776000">after three months</option>
+          <option value="31536000">after a year</option>
+        </select>
+      </div>
+      <span class="hintline"><b>This destroys the record.</b> A card's audit log is the only account
+        of what that session ran and what it was allowed to do. Off unless you turn it on, and worth
+        answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that
+        seems large. Never touches shelved cards or the inbox.</span>
+    </div>
+
+
+
 
 
 
@@ -1413,6 +1486,34 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         every directory a card already uses, which is where work already is. Anything outside is refused
         whether or not it exists, so the refusal cannot be used to find out what is on the machine.
         <b id="s-browseroots-now"></b></span>
+    </div>
+
+    <!-- Configure the external command that creates worktrees and controls their layout. -->
+    <div class="field">
+      <label class="eyebrow" for="s-worktreecmd">worktree command</label>
+      <div class="picker">
+        <input id="s-worktreecmd" spellcheck="false" data-saves="saveWorktreeCommand"
+          placeholder="empty means gwt new {branch} -y">
+      </div>
+      <span class="hintline">Run in the repository, on <b>the machine atrium is on</b>, through a
+        shell, because the tool that does this is often a shell function rather than a program.
+        <code>{branch}</code> is the branch and <code>{repo}</code> is the repository's directory.
+        The branch may hold letters, digits and <code>. _ - /</code> and nothing else, which is what
+        keeps a name off the command line as anything but a name. Answer any prompt in the command
+        itself: there is no keyboard attached to it. Type <code>off</code> to have no make button at
+        all. <b id="s-worktreecmd-now"></b></span>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-projdepth">how deep to look for repositories</label>
+      <div class="picker">
+        <input id="s-projdepth" spellcheck="false" inputmode="numeric" data-saves="saveProjectDepth"
+          placeholder="empty means 2 levels under each of those places">
+      </div>
+      <span class="hintline">Levels under each place above. Two matches
+        <code>&lt;root&gt;/&lt;org&gt;/&lt;repo&gt;</code>, which is the usual arrangement. A
+        directory holding a <code>.git</code> is a repository and is not descended into, so going
+        deeper only costs somebody whose checkouts are further down. <b id="s-projdepth-now"></b></span>
     </div>
 
     <!-- Where to leave the address for somebody else.
@@ -2250,6 +2351,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
         <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
+        <button onclick="openProjects('l-cwd')">projects</button>
         <button onclick="openBrowse()">browse</button>
       </div>
     </div>
@@ -2491,6 +2593,27 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+
+<!-- List repositories and worktrees. Creation runs the configured command,
+     then reads the resulting path from git. See internal/api/projects.go. -->
+<dialog id="projects">
+  <div class="dlg-head">
+    <div class="grow">
+      <h2>pick a project</h2>
+      <div class="crumb" id="p-where"></div>
+    </div>
+    <button onclick="document.getElementById('projects').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="toolbar">
+      <input id="p-filter" spellcheck="false" placeholder="filter by org, repo or branch"
+        oninput="drawProjects()">
+      <button onclick="loadProjects()">rescan</button>
+    </div>
+    <div class="dirlist projlist" id="p-list"></div>
+  </div>
+</dialog>
+
 <!-- Wide: the history in here is commands, and a command that wraps three
      times is not one you can scan down. -->
 <dialog id="detail" class="wide">
@@ -2715,6 +2838,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
+<script src="/js/projects.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
