@@ -29,9 +29,13 @@
   .term-list {
     flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column;
     min-height: 0; overflow-y: auto; overflow-x: hidden;
-    /* Room for the lift on hover and for a focus ring, or the top card's border is clipped by the scroll
-       container. */
-    padding: 3px 3px 6px;
+    /* No `padding-top`. It sat inside the scroll port above `top: 0` on
+       `.termstick`, so the sticky pinned 3px inside the box and cards scrolled
+       through the seam above it. The sticky wrapper carries the top padding
+       itself now, so the header covers the top edge and there is no strip a
+       card can render into. Side and bottom padding stay: they still keep the
+       card's lift and focus ring from being clipped by the scroll container. */
+    padding: 0 3px 6px;
     /* Its own surface, so the page's grid does not show through. `body::before` lays a 60px grid over the
        whole page at a third opacity, which is texture behind the board and a defect behind a list: it draws
        bands across the strip that line up with nothing in it. Wall to wall cards hid it. Group headings leave
@@ -57,7 +61,7 @@
      so a card cannot peek above it at the seam. */
   .termstick {
     position: sticky; top: 0; z-index: 5; flex: none;
-    background: var(--shell-0); padding-top: 2px;
+    background: var(--shell-0); padding-top: 5px;
   }
 
   /* The phone switcher and its wrapper. On a desktop neither exists as far as
