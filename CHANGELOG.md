@@ -5,6 +5,12 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A custom group you just made shows up before it has any cards.**
+
+  Adding a group under **by group** used to draw nothing until a card carried its tag, so there was no sign the add
+  had worked. Every custom group is now drawn on the board, the stack and the terminals strip. An empty one says how
+  to file a card into it: **into group** on the card's menu.
+
 - **One checkbox times the whole keystroke path, with no restart.**
 
   **log terminal input lag** in settings now switches the hub and the room as well as the browser, from the moment

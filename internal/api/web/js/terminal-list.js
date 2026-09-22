@@ -1087,6 +1087,7 @@ function termFlatGroupsHTML(list, g, folded) {
       by.get(key).push(t);
     }
   }
+  if (typeof seedGroups === "function") seedGroups(by, g);
   const names = [...by.keys()].sort((a, b) => {
     try { return g.cmp(a, b); } catch (e) { return a.localeCompare(b); }
   });
@@ -1099,8 +1100,9 @@ function termFlatGroupsHTML(list, g, folded) {
     const off = folded.has(at);
     const head = termHeading(shown, at, by.get(name).length, off);
     if (off) return head;
-    return head + `<div class="tnest">${
-      by.get(name).map(t => termRow(t, false)).join("")}</div>`;
+    const rows = by.get(name);
+    return head + `<div class="tnest">${rows.length
+      ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
   }).join("");
 }
 

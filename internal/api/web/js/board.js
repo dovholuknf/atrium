@@ -1138,6 +1138,11 @@ function grouper() {
     const at = new Map(groups.map((n, i) => [n, i]));
     return {
       many: true,
+      // DRAWN EVEN WHEN EMPTY. A group you just made has no cards yet, and a
+      // view that only draws groups with cards in them never showed it, so
+      // there was nothing to look at to know the add had worked. Every view
+      // that groups seeds its buckets from this list. See `emptyGroupHint`.
+      always: groups.slice(),
       of: t => {
         const mine = (t.tags || []).filter(x => set.has(x));
         return mine.length ? mine : [UNTAGGED];
@@ -1373,6 +1378,7 @@ function cardsHTML(cards, g, keyPrefix) {
       byName.get(name).push(t);
     }
   }
+  seedGroups(byName, g);
   // One group holding everything is not a grouping, so it is not drawn as one.
   if (byName.size < 2 && byName.has("")) return head + rest.map(cardHTML).join("");
 
@@ -1406,9 +1412,23 @@ function cardsHTML(cards, g, keyPrefix) {
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      ${mine.map(cardHTML).join("")}
+      ${mine.length ? mine.map(cardHTML).join("") : emptyGroupHint()}
     </details>`;
   }).join("");
+}
+
+// Adds the groups a grouper wants drawn whether or not a card is in them.
+function seedGroups(byName, g) {
+  for (const name of (g && g.always) || []) {
+    if (!byName.has(name)) byName.set(name, []);
+  }
+}
+
+// What an empty group says. There is no dragging onto a group, by design (see
+// "moving a card by hand"), so it names the menu entry that files a card.
+function emptyGroupHint() {
+  return `<div class="empty groupempty">nothing in it yet. file a card here with
+    <b>into group</b> on the card's menu</div>`;
 }
 
 // Is this group shut?
