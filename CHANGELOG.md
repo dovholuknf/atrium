@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One checkbox times the whole keystroke path, with no restart.**
+
+  **log terminal input lag** in settings now switches the hub and the room as well as the browser, from the moment
+  it is ticked. In the all-rooms view the hub passes it to every attached room, and a room that attaches later is
+  told when it arrives. The hub and the room keep the setting across a restart. `ATRIUM_DEBUG_INPUTLAG` still works
+  and wins over the checkbox for the life of the process, and settings says so when it is set. See
+  `docs/input-lag-logging.md`.
+
 - **The notifications panel copies with an icon, not a button on every row.**
 
   A small copy icon shows on the row under the pointer, or on the row holding keyboard focus. Clicking it copies

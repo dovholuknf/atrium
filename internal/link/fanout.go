@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/inputlag"
 )
 
 // The aggregate view: every room, one board.
@@ -790,6 +792,10 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	// And the public-share login, which is the hub's the same way. See
 	// applyShareAuth.
 	p.applyShareAuth(body, stock)
+	// And the input-lag switch, which in the ALL view is the hub's own answer
+	// rather than the borrowed room's. See inputlagsetting.go.
+	body["input_lag_log"] = inputlag.On()
+	body["input_lag_pinned"] = inputlag.Pinned()
 	return body, true
 }
 

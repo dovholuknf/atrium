@@ -160,6 +160,11 @@ func (i inventory) SetBoardAuto(on bool, until *time.Time) error {
 	return i.store.SetBoardAuto(on, until)
 }
 
+// HubSetting and SetHubSetting are the hub's settings table by name, for the
+// ones internal/link keeps itself, such as the input-lag switch.
+func (i inventory) HubSetting(name string) (string, error) { return i.store.HubSetting(name) }
+func (i inventory) SetHubSetting(name, value string) error { return i.store.SetHubSetting(name, value) }
+
 // ShareAuth, SetShareAuth and SetSharePass are the login a PUBLIC zrok board
 // share is created behind, held by the hub the same as the skin. This adapts
 // between the store's ShareAuth and the link package's identical copy, so

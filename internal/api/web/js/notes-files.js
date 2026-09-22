@@ -837,6 +837,7 @@ async function loadHousekeeping() {
   pastePrefs = s;
   fillSkins(s);
   fillShareAuth(s);
+  syncInputLag(s);
 }
 
 // fillShareAuth writes the PUBLIC zrok share's login into the gear dialog.

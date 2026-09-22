@@ -6,8 +6,13 @@ delay. All of it is off by default and costs one boolean test per keystroke when
 
 ## Turning it on
 
-**Browser.** Open settings and tick **log terminal input lag**. It takes effect at once and stays on for that
-browser until you untick it. Without the settings dialog, run this in the console:
+**One checkbox for all of it.** Open settings and tick **log terminal input lag**. It takes effect at once, with no
+restart, in the browser, the hub and the room. In the all-rooms view the hub passes it to every attached room, and a
+room that attaches later is told when it arrives. Scoped to one room, it switches that room and the hub. The hub and
+the room keep it across a restart. Opening settings in another browser shows the box ticked and starts timing
+there too.
+
+**Browser only.** Without the settings dialog, run this in the console:
 
 ```js
 localStorage.setItem("atrium.debug.inputlag", "1")   // then reload
@@ -16,15 +21,18 @@ localStorage.setItem("atrium.debug.inputlag", "1")   // then reload
 Output goes to the browser's console. Chrome hides `console.debug` lines by default, so set the level filter to
 include **Verbose** to see every keystroke. Slow keys, stalls and the summary show without it.
 
-**Hub and room.** Set an environment variable before starting atrium, on each machine you want timed:
+**Hub and room, pinned at start.** An environment variable set before starting atrium overrides the checkbox for
+the life of that process. Use it to pick a threshold other than 20ms, or to keep a machine timing whatever the
+checkbox says:
 
 ```powershell
 $env:ATRIUM_DEBUG_INPUTLAG = "1"     # log any hop over 20ms
 $env:ATRIUM_DEBUG_INPUTLAG = "5"     # or pick the threshold in ms
 ```
 
-It is read once at start, so it needs a restart to take effect. Only a hop over the threshold is logged, so a
-healthy session stays quiet. Every line starts with `[inputlag]` and a clock to the millisecond:
+While it is set, settings says so under the checkbox, and the box reaches only the browser. Only a hop over the
+threshold is logged, so a healthy session stays quiet. Switching from the checkbox writes one `[inputlag] on from
+settings` or `off from settings` line. Every timing line starts with `[inputlag]` and a clock to the millisecond:
 
 ```powershell
 Select-String '\[inputlag\]' <daemon log>

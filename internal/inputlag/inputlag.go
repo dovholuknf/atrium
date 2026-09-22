@@ -2,12 +2,17 @@
 // the room.
 //
 // OFF UNLESS ASKED FOR. The keystroke path is the hottest one in atrium and the
-// point of this is to find what slows it, so the default costs one integer
-// compare and logs nothing. Turned on with an environment variable, read once
-// at start:
+// point of this is to find what slows it, so the default costs one atomic load
+// and logs nothing. Turned on from the gear ("log terminal input lag"), which
+// reaches the hub and the room as a setting and takes effect at once, or with
+// an environment variable, read once at start:
 //
 //	ATRIUM_DEBUG_INPUTLAG=1     log any hop slower than 20ms
 //	ATRIUM_DEBUG_INPUTLAG=5     log any hop slower than 5ms
+//
+// THE VARIABLE WINS. Set to anything, it pins the logging for the life of the
+// process and the setting is ignored, so a process started with a 5ms threshold
+// to chase one hop is not reset by somebody clicking a checkbox.
 //
 // Only a hop OVER the threshold is logged, so a healthy session stays quiet
 // and a slow one names the hop that added the delay. See
@@ -19,6 +24,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,7 +36,15 @@ const Env = "ATRIUM_DEBUG_INPUTLAG"
 // is eating the budget before it adds up.
 const defaultThreshold = 20 * time.Millisecond
 
-var threshold = parse(os.Getenv(Env))
+// threshold is read on every keystroke hop and written by a settings save on
+// another goroutine, so it is atomic. Nanoseconds, zero meaning off.
+var threshold atomic.Int64
+
+// pinned is whether the variable was set at start, which is what makes it an
+// override rather than a default.
+var pinned = strings.TrimSpace(os.Getenv(Env)) != ""
+
+func init() { threshold.Store(int64(parse(os.Getenv(Env)))) }
 
 // parse turns the variable into a threshold, zero meaning off.
 //
@@ -53,10 +67,38 @@ func parse(v string) time.Duration {
 }
 
 // On reports whether the logging is switched on.
-func On() bool { return threshold > 0 }
+func On() bool { return threshold.Load() > 0 }
 
 // Over reports whether a hop took long enough to log. Always false when off.
-func Over(d time.Duration) bool { return threshold > 0 && d >= threshold }
+func Over(d time.Duration) bool {
+	t := threshold.Load()
+	return t > 0 && int64(d) >= t
+}
+
+// Pinned reports whether the environment variable decides, so a settings
+// screen can say why its checkbox changes nothing.
+func Pinned() bool { return pinned }
+
+// SetLive switches the logging from a setting, at the default threshold. It
+// does nothing when the variable is set, and reports whether it took. A change
+// is written to the log, so the lines that follow it have a start.
+func SetLive(on bool) bool {
+	if pinned {
+		return false
+	}
+	var t int64
+	if on {
+		t = int64(defaultThreshold)
+	}
+	if threshold.Swap(t) != t {
+		if on {
+			log.Printf("[inputlag] on from settings, logging any hop over %s", Ms(defaultThreshold))
+		} else {
+			log.Printf("[inputlag] off from settings")
+		}
+	}
+	return true
+}
 
 // Logf writes one line under a fixed prefix, so the lines grep out of a busy
 // log in one pass. The clock is to the millisecond because the log's own is to

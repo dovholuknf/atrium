@@ -219,6 +219,8 @@ func hubCmd() *cobra.Command {
 			// THE DURABLE LIST, which is a different question from what is
 			// attached and gets a different endpoint for exactly that reason.
 			proxy.SetInventory(inventory{store: store, hub: h})
+			// Input-lag logging as the gear last left it. The variable still wins.
+			proxy.ApplyInputLag()
 			// THE OPERATIONAL AUDIT LOG, over the hub's own store. Wired before
 			// SetControl and the attach/detach callbacks below, all of which
 			// record through the proxy so the line is persisted AND nudges any
@@ -233,6 +235,9 @@ func hubCmd() *cobra.Command {
 			// the store's Log is fail-open and never blocks the link.
 			h.OnAttach = func(name, host, ver string) {
 				proxy.RecordAudit(name, "room-attached", host+" running "+ver)
+				// Off the attach path, because it is a request to the room that
+				// just arrived and the attach should not wait on it.
+				go proxy.PushInputLag(name)
 			}
 			h.OnDetach = func(name, why string) {
 				proxy.RecordAudit(name, "room-detached", why)
