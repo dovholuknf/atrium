@@ -57,17 +57,31 @@ type sessionView struct {
 
 // projectDirFor is where Claude Code keeps a directory's transcripts.
 //
-// The encoding is its own: the drive colon and every separator become a dash,
-// so `D:\git\github\dovholuknf\atrium` is `D--git-github-dovholuknf-atrium`.
+// The encoding is its own: every character that is not a letter or a digit
+// becomes a dash, so `D:\git\github\dovholuknf\atrium` is
+// `D--git-github-dovholuknf-atrium` and `build.claude` is `build-claude`.
 // Read off the directory rather than documented anywhere, so it is checked by
 // existing rather than trusted.
+//
+// NOT ONLY SEPARATORS. This replaced the colon and the slashes and nothing
+// else, so a card in a directory with a dot in it looked for a folder that was
+// never written and every restart started it fresh.
 func projectDirFor(cwd string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	enc := strings.NewReplacer(`:`, `-`, `\`, `-`, `/`, `-`).Replace(strings.TrimSpace(cwd))
-	return filepath.Join(home, ".claude", "projects", enc), nil
+	return filepath.Join(home, ".claude", "projects", encodeProjectDir(cwd)), nil
+}
+
+// encodeProjectDir is Claude Code's name for a directory's transcript folder.
+func encodeProjectDir(cwd string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, strings.TrimSpace(cwd))
 }
 
 // LatestSession is the most recently written conversation in a directory, or

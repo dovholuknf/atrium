@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card in a directory with a dot in its name resumes its conversation after a restart.**
+
+  Atrium found a directory's transcripts by turning its colon and slashes into dashes. Claude Code turns every
+  character that is not a letter or a digit into a dash, so `build.claude` is `build-claude` on disk, and atrium
+  looked for a folder that was never written. Every restart logged "which is gone. starting fresh". The session
+  list, resume, export and throwaway promotion all read the same lookup. Room-side.
+
 - **A reattach after a room restart no longer draws a blank line under every full-width diff line.**
 
   A resumed session reprints its transcript at the width the card was saved at. The replay laid that history into a
