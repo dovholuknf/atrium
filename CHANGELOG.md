@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Attaching to a claude session no longer draws the typed input over the banner.**
+
+  Claude turns the kitty keyboard protocol on and off (`CSI > 5 u`, `CSI < u`) and sets xterm's modifyOtherKeys
+  (`CSI > 4 ; 2 m`), at startup and again after a key like ctrl-delete. The room's replay only knew `?` as a private
+  marker, so it read those as a plain cursor restore and a dim underline. The next redraw of the input row landed
+  wherever the cursor was last saved, which is the top-left unless something saved it, and every attach replayed
+  it there: `load this prlandeinspect2it.280` over `Claude Code v2.1.280`, or the typed line over the rule above the
+  prompt after a tab return re-attached. The replay now ignores CSI sequences with a `<`, `=` or `>` marker, the way
+  a terminal does. Room-side.
+
 - **A terminal that draws something wrong can hand over the bytes that drew it.**
 
   Every board terminal keeps the last 64KB of its raw attach traffic in both directions, with timestamps: what the
