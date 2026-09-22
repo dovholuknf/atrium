@@ -84,6 +84,15 @@ const PIN = {
 };
 function resetPin() { PIN.pinned = true; }
 
+// A pinned, live card filed into the operator's `active` group, the shape of the
+// screenshot where the group said 0 and asked for a card to be filed into it.
+const FILED = Object.assign({}, PIN, {
+  id: "filed1", display_title: "filed card", status: "running", supervised: true,
+  tags: ["active"], worktree: "/tmp/filed"
+});
+// A live, unpinned, ungrouped row beside it, for the drag case.
+const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card", supervised: true });
+
 // The hide-strip, exercising the two independent "hide inactive" toggles. The
 // two kinds read DIFFERENT inactive signals: an AGENT is inactive when it has no
 // live connection (`supervised`), so a connected agent stays whether it is
@@ -250,6 +259,7 @@ const server = http.createServer((req, res) => {
     // The pinned-cold strip: the terminated card while its pin holds it, and an
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
+    if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
     // The hide strip: an alive idle subagent, an alive working subagent, a dead
     // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
     if (tasksMode === "doers") {
@@ -484,6 +494,51 @@ async function main() {
           "drop it from the strip for good, not hide it once.");
       }
     }
+    tasksMode = "first";
+
+    // ── a pinned card filed into one of your groups is drawn in it ───────────
+    // Custom grouping with one group, `active`, and a pinned card carrying that
+    // tag. The group must count it and draw it, not say 0 over an empty-state
+    // hint. Then the drag case: a row moved by hand into the group's nest, and a
+    // repaint whose markup did not change, must still put the rows back where the
+    // markup says, since that stale DOM is what drew the card under `active 0`.
+    tasksMode = "filed";
+    await page.evaluate(() => {
+      localStorage.setItem("atrium.grouping",
+        JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+      renderTermList();
+    });
+    await page.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
+      { state: "attached", timeout: 15000 }).catch(() => {});
+    const filedState = () => page.evaluate(() => {
+      const nest = document.querySelector('#term-list .tnest[data-group="active"]');
+      const head = nest && nest.previousElementSibling;
+      const bucket = document.querySelector("#term-list .termbucket");
+      return {
+        inGroup: !!(nest && nest.querySelector('.card.tab[data-id="filed1"]')),
+        count: head ? head.querySelector(".tgcount").textContent.trim() : "",
+        hint: !!(nest && nest.querySelector(".groupempty")),
+        inBucket: !!(bucket && bucket.querySelector('.card.tab[data-id="filed1"]')),
+        strays: nest ? nest.querySelectorAll('.card.tab[data-id="loose1"]').length : -1
+      };
+    });
+    let fs1 = await filedState();
+    if (!fs1.inGroup || fs1.count !== "1" || fs1.hint) {
+      fail("a pinned card filed into a custom group is not drawn in it: " + JSON.stringify(fs1));
+    }
+    if (!fs1.inBucket) fail("a pinned card filed into a group left the pinned bucket.");
+    await page.evaluate(() => {
+      const nest = document.querySelector('#term-list .tnest[data-group="active"]');
+      const stray = document.querySelector('#term-list .card.tab[data-id="loose1"]');
+      if (nest && stray) nest.appendChild(stray);
+      repaintTermList();
+    });
+    await page.waitForTimeout(300);
+    fs1 = await filedState();
+    if (fs1.strays !== 0) {
+      fail("a row dragged into a group stayed there after a repaint with unchanged markup.");
+    }
+    await page.evaluate(() => localStorage.removeItem("atrium.grouping"));
     tasksMode = "first";
 
     // ── the two independent "hide inactive" toggles (agents and subagents) ────

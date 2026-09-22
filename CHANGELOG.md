@@ -16,6 +16,14 @@ section heading is just "what landed in this iteration."
   write is queued and retried on screen from two seconds out, and an action that ends in exit skips the exit when
   its prompt was held. Room-side.
 
+- **A pinned terminal filed into one of your groups shows up in that group.**
+
+  The terminals list took every pinned card out of the groups and drew it only in the pinned bucket. Filing a
+  pinned card with `into group` added the tag, and the group still said 0 and asked for a card to be filed. A drag
+  onto the group was worse: the row moved on screen as the pointer travelled, the repaint saw the same markup as
+  before and skipped, and the card sat under a group that counted 0. A pinned card now draws in the pinned bucket
+  and under every custom group it carries, and a finished or abandoned drag always repaints the list. HUB-SIDE.
+
 - **A card in a directory with a dot in its name resumes its conversation after a restart.**
 
   Atrium found a directory's transcripts by turning its colon and slashes into dashes. Claude Code turns every
