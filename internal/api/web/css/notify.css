@@ -48,10 +48,22 @@
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
     font: var(--fs-xxs)/1.7 var(--mono);
   }
-  .tlwhat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tlwhat {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    flex: 1 1 auto;
+  }
   .tlwhat b { color: var(--head); font-size: var(--fs-sm); font-weight: 600; }
   .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }
   .tltimes { color: var(--dim); font-weight: 400; }
+  /* Per-row copy, so a message that scrolled past a toast can be lifted out of
+     the log the same way the sharing rows and the fixtures paths already offer
+     it. Reuses `copyText`, which flips the button to `copied` or `could not
+     copy` and back. Stops propagation because the row is clickable and would
+     otherwise take the copy click as a navigation. */
+  .tlrow .tlcopy {
+    flex: none; align-self: center; padding: 4px 10px;
+    font-size: var(--fs-xxs);
+  }
   /* The bell only carries a number when there is one to carry. A zero is a control reporting that it has
      nothing to report. */
   #toastlog-open { position: relative; }

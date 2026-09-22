@@ -110,16 +110,26 @@ function openToastLog() {
   if (!host) return;
   const seen = toastLogSeen();
   setHTML(host, list.length
-    ? list.map(t => `<div class="tlrow${t.at > seen ? " fresh" : ""}"${
-        t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
-        t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
-        t.key ? ` data-key="${esc(t.key)}"` : ""}>
-        <div class="tlwhen">${esc(shortWhen(t.at))}</div>
-        <div class="tlwhat">
-          <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
-          ${t.body ? `<span>${esc(t.body)}</span>` : ""}
-        </div>
-      </div>`).join("")
+    ? list.map(t => {
+        // What the copy button hands to the clipboard: the title, then the body
+        // on a second line when there is one. The same shape that arrived as a
+        // toast, so pasting into a bug report or a chat message reads as the
+        // alert did rather than as two disconnected strings.
+        const clip = t.title + (t.body ? "\n" + t.body : "");
+        const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
+        return `<div class="tlrow${t.at > seen ? " fresh" : ""}"${
+          t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
+          t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
+          t.key ? ` data-key="${esc(t.key)}"` : ""}>
+          <div class="tlwhen">${esc(shortWhen(t.at))}</div>
+          <div class="tlwhat">
+            <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
+            ${t.body ? `<span>${esc(t.body)}</span>` : ""}
+          </div>
+          <button class="tlcopy" title="copy this entry"
+            onclick='event.stopPropagation();copyText(this, ${arg})'>copy</button>
+        </div>`;
+      }).join("")
     : `<div class="empty">nothing yet. anything the board tells you turns up here.</div>`);
 
   // A ROW GOES WHERE THE TOAST WOULD HAVE GONE, and that is the whole
