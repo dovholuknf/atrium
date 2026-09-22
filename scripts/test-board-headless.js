@@ -103,11 +103,11 @@ const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card",
 // SUBAGENTS carry the `origin:agent` tag the launch cap counts; AGENTS do not (a
 // human's own session). A dead UNPINNED session is not in the strip at all
 // (nothing to switch to), so the dead rows are PINNED, drawn cold, which also
-// proves pinning no longer exempts a session from hiding. The subagent side has
+// proves a pinned session stays whatever the toggles say. The subagent side has
 // three rows to separate its rule from the agents' rule: WORKING (stays), IDLE
 // (supervised but not computing, hides - the difference from the agents rule) and
-// DEAD (hides). The agent side has an IDLE-BUT-LIVE row (stays) and a DEAD row
-// (hides).
+// DEAD (pinned, stays). The agent side has an IDLE-BUT-LIVE row (stays) and a
+// DEAD row (pinned, stays).
 const SUBLIVE = {
   id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
   rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
@@ -117,8 +117,8 @@ const SUBLIVE = {
 const SUBWORK = Object.assign({}, SUBLIVE, {
   id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
 });
-// Runner gone, held by its pin, drawn cold: not working (and exited), so it hides
-// under the subagents toggle and counts.
+// Runner gone, held by its pin, drawn cold: not working (and exited), and kept
+// under the subagents toggle by its pin.
 const SUBDEAD = Object.assign({}, SUBLIVE, {
   id: "subdead", display_title: "dead subagent", status: "dead",
   supervised: false, pinned: true, pid: 0
@@ -126,7 +126,7 @@ const SUBDEAD = Object.assign({}, SUBLIVE, {
 const AGLIVE = Object.assign({}, SUBLIVE, {
   id: "aglive", display_title: "my terminal", tags: []
 });
-// A dead agent (no tag), pinned cold: hides under the agents toggle and counts.
+// A dead agent (no tag), pinned cold: kept under the agents toggle by its pin.
 const AGDEAD = Object.assign({}, SUBLIVE, {
   id: "agdead", display_title: "my dead terminal", tags: [],
   status: "dead", supervised: false, pinned: true, pid: 0
@@ -577,9 +577,9 @@ async function main() {
     });
 
     // DEFAULT, with neither key ever set: the subagents side is ON and the agents
-    // side OFF. So the idle AND the dead subagent are hidden out of the box (count
-    // 2), the working subagent stays, and both agent rows stay (the idle-but-live
-    // one and the dead one). This is the "subagents default on, agents default
+    // side OFF. So the idle subagent is hidden out of the box (count 1), the
+    // working one stays, the dead one stays because it is pinned, and both agent
+    // rows stay (the idle-but-live one and the dead one). This is the "subagents default on, agents default
     // off" contract. A stale value is written under the legacy `atrium.hidedoers`
     // key to prove it does NOT override the new default: the toggle now reads the
     // renamed `atrium.hidesubagents` key, so a prior test click under the old name
@@ -599,17 +599,17 @@ async function main() {
       fail("the hide defaults are not subagents-on / agents-off when unset: " +
         JSON.stringify(hDef));
     }
-    if (hDef.idleSub || hDef.deadSub) {
-      fail("the subagents side did not default on: an idle or dead subagent was " +
-        "still shown: " + JSON.stringify(hDef));
+    if (hDef.idleSub) {
+      fail("the subagents side did not default on: an idle subagent was still " +
+        "shown: " + JSON.stringify(hDef));
     }
-    if (!hDef.workingSub || !hDef.liveAgent || !hDef.deadAgent) {
+    if (!hDef.workingSub || !hDef.deadSub || !hDef.liveAgent || !hDef.deadAgent) {
       fail("the default state hid a row it should not have (the working subagent, " +
-        "or an agent): " + JSON.stringify(hDef));
+        "a pinned one, or an agent): " + JSON.stringify(hDef));
     }
-    if (!hDef.subLit || hDef.agentLit || !/^subagents \(2\)$/.test(hDef.subLabel)) {
+    if (!hDef.subLit || hDef.agentLit || !/^subagents \(1\)$/.test(hDef.subLabel)) {
       fail("the default did not light the subagents segment alone with a count of " +
-        "2 (idle + dead): " + JSON.stringify(hDef));
+        "1 (idle): " + JSON.stringify(hDef));
     }
     // The subagents segment says, in its tooltip, that a subagent is an
     // atrium-launched session, so the word is not left to guess at.
@@ -644,17 +644,21 @@ async function main() {
         JSON.stringify(hNone));
     }
 
-    // SUBAGENTS on, agents off: the idle AND the dead subagent go (not working
-    // right now), and pinning is no exemption for the dead one. ONLY the working
-    // subagent stays. Both agent rows stay (the agents toggle is off), the dead
-    // one among them. The subagents segment lights with its hidden count of 2; the
-    // agents segment stays unlit. Independence on one side, plus the
+    // SUBAGENTS on, agents off: the idle subagent goes (not working right now).
+    // The working one stays, and so does the dead one, because it is pinned: a
+    // pinned session never hides. Both agent rows stay (the agents toggle is off).
+    // The subagents segment lights with its hidden count of 1; the agents segment
+    // stays unlit. Independence on one side, plus the
     // idle-subagent-hides-but-idle-agent-stays proof.
     await page.evaluate(async () => { setHideSubagents("on"); await renderTermList(); });
     const hSub = await hideState();
-    if (hSub.idleSub || hSub.deadSub) {
-      fail("the subagents toggle left an inactive subagent in the strip: an idle " +
-        "or exited subagent (not working right now) must hide, pinned or not.");
+    if (hSub.idleSub) {
+      fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
+        "subagent that is not working right now must hide.");
+    }
+    if (!hSub.deadSub) {
+      fail("the subagents toggle hid a PINNED subagent after it exited: a pinned " +
+        "session must stay in the strip whatever the toggles say.");
     }
     if (!hSub.workingSub) {
       fail("the subagents toggle hid the WORKING subagent: an actively-computing " +
@@ -669,19 +673,22 @@ async function main() {
       fail("the subagents toggle did not light its own segment alone: " +
         JSON.stringify(hSub));
     }
-    if (!/^subagents \(2\)$/.test(hSub.subLabel)) {
-      fail("the lit subagents segment did not show its hidden count of 2 (idle + " +
-        "dead) in parens: " + JSON.stringify(hSub));
+    if (!/^subagents \(1\)$/.test(hSub.subLabel)) {
+      fail("the lit subagents segment did not show its hidden count of 1 (idle) " +
+        "in parens: " + JSON.stringify(hSub));
     }
 
-    // AGENTS on too: now BOTH are on. The dead agent goes as well, the idle-but-
-    // live agent stays (its own rule is liveness, not working-now), the working
-    // subagent still stays, and the idle and dead subagents stay hidden. Both
+    // AGENTS on too: now BOTH are on. The dead agent is pinned, so it stays, the
+    // idle-but-live agent stays (its own rule is liveness, not working-now), the
+    // working subagent still stays, and the idle subagent stays hidden. Both
     // segments are lit at once, which agent|shell (one-of-two) cannot do.
     await page.evaluate(async () => { setHideAgents("on"); await renderTermList(); });
     const hBoth = await hideState();
-    if (hBoth.idleSub || hBoth.deadSub || hBoth.deadAgent) {
-      fail("with both toggles on an inactive row survived: " +
+    if (hBoth.idleSub) {
+      fail("with both toggles on the idle subagent survived: " + JSON.stringify(hBoth));
+    }
+    if (!hBoth.deadSub || !hBoth.deadAgent) {
+      fail("with both toggles on a pinned session that exited was hidden: " +
         JSON.stringify(hBoth));
     }
     if (!hBoth.workingSub || !hBoth.liveAgent) {
@@ -692,25 +699,24 @@ async function main() {
         hBoth.agentMode !== "on" || hBoth.subMode !== "on") {
       fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
     }
-    if (!/^agents \(1\)$/.test(hBoth.agentLabel) || !/^subagents \(2\)$/.test(hBoth.subLabel)) {
-      fail("the two lit segments did not show hidden counts of 1 (dead agent) and " +
-        "2 (idle + dead subagent) in parens: " + JSON.stringify(hBoth));
+    if (!/^agents$/.test(hBoth.agentLabel) || !/^subagents \(1\)$/.test(hBoth.subLabel)) {
+      fail("the two lit segments did not show hidden counts of none (the dead agent " +
+        "is pinned) and 1 (idle subagent): " + JSON.stringify(hBoth));
     }
 
     // AGENTS on, subagents off: the other independence check. Turning the
-    // subagents side back off restores all three subagent rows (working, idle and
-    // dead) while the dead agent stays hidden. So the agents toggle held its state
-    // across the subagents toggle flipping, which is the two-keys-persist-
-    // independently proof.
+    // subagents side back off restores the idle subagent while the agents toggle
+    // stays lit. So the agents toggle held its state across the subagents toggle
+    // flipping, which is the two-keys-persist-independently proof.
     await page.evaluate(async () => { toggleHideSubagents(); await renderTermList(); });
     const hAgent = await hideState();
     if (!hAgent.idleSub || !hAgent.workingSub || !hAgent.deadSub) {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
         JSON.stringify(hAgent));
     }
-    if (hAgent.deadAgent) {
-      fail("the agents toggle did not hold on across the subagents toggle flipping: " +
-        "the dead agent came back: " + JSON.stringify(hAgent));
+    if (!hAgent.deadAgent) {
+      fail("the agents toggle hid a PINNED agent after it exited: " +
+        JSON.stringify(hAgent));
     }
     if (!hAgent.liveAgent) {
       fail("the agents-only state hid the alive agent: " + JSON.stringify(hAgent));

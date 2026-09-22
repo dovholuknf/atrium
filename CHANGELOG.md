@@ -16,6 +16,13 @@ section heading is just "what landed in this iteration."
   write is queued and retried on screen from two seconds out, and an action that ends in exit skips the exit when
   its prompt was held. Room-side.
 
+- **A pinned terminal stays in the list after its session exits, whatever "hide inactive" says.**
+
+  The hide-inactive toggles treated a pinned session like any other, so a pinned session that exited left the
+  pinned bucket and its groups. Pinning means "keep this here", so a pinned row now always shows, drawn cold, and
+  a click still starts it again. This broke in 02fe769, when the pinned bucket started reading the filtered list.
+  HUB-SIDE.
+
 - **A pinned terminal filed into one of your groups shows up in that group.**
 
   The terminals list took every pinned card out of the groups and drew it only in the pinned bucket. Filing a
