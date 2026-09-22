@@ -34,18 +34,27 @@ import (
 // docs/activity-design.md says is never written down.
 
 // backoffSteps is how long to wait before each retry, widening so the warnings
-// that ride them thin out. Past the last it holds at a day, so a message is
+// that ride them thin out. Past the last it holds at four hours, so a message is
 // never abandoned, only asked about less and less often.
+//
+// THE FRONT IS SECONDS, NOT MINUTES. The gate opens after `peerGateIdle` of
+// quiet on an empty line, so a first retry a minute out left a message sitting
+// for most of that minute on a terminal that was already free. A keystroke
+// resets to the front, so the first retry after the operator stops typing lands
+// just past the gate's own idle window.
 var backoffSteps = []time.Duration{
+	2 * time.Second,
+	5 * time.Second,
+	10 * time.Second,
+	30 * time.Second,
 	1 * time.Minute,
 	2 * time.Minute,
 	5 * time.Minute,
 	10 * time.Minute,
 	30 * time.Minute,
 	1 * time.Hour,
+	2 * time.Hour,
 	4 * time.Hour,
-	8 * time.Hour,
-	24 * time.Hour,
 }
 
 // pendingMsg is one deferred peer message: the store row that is the source of
@@ -257,7 +266,11 @@ func (pi *pendingInjector) attempt(taskID string) {
 	}
 	pi.mu.Unlock()
 
-	pi.warn(taskID, from, waited, final)
+	// Not in the first minute. The front of the backoff is seconds apart, and a
+	// message held that briefly is the gate working, not something to announce.
+	if waited >= time.Minute {
+		pi.warn(taskID, from, waited, final)
+	}
 }
 
 // reset re-arms the backoff to the front, because a keystroke means the

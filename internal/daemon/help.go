@@ -35,10 +35,10 @@ import (
 //
 // WHO THE ASK REACHES. By default a human, on the card. With `peer` it is
 // routed to another session instead, over the same bus `atrium tell` uses, and
-// that session answers with `atrium answer`. Both directions are QUEUED and
-// delivered by a hook. Nothing here types into anybody's terminal, and the
-// reason is spelled out at the top of `peers.go`: atrium owns a terminal a
-// person may be mid-command in, and a peer is not that person.
+// that session answers with `atrium answer`. Both directions go through
+// `deliverPeer`, exactly like `tell`: typed when the target's terminal is free,
+// queued for the hooks and retried on screen when it is not. `peers.go` has the
+// gate and why it is safe to type at all.
 
 // MaxAsk bounds what a session may say it needs.
 //
@@ -114,6 +114,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// nothing on the card and no status moved, and the session is free to try
 	// a real handle or to ask a human instead.
 	peer := strings.TrimSpace(in.Peer)
+	typed := false
 	if peer != "" {
 		from := d.st.Qualify(strings.TrimSpace(in.Agent))
 		if from == "" {
@@ -124,11 +125,12 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 		if target == nil {
 			return
 		}
-		if _, err := d.st.QueueFromPeer(target.ID, askEnvelope(from, ask, in.Blocked), from); err != nil {
+		var err error
+		typed, err = d.deliverPeer(target, from, askEnvelope(from, ask, in.Blocked))
+		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		d.publishTask(target.ID)
 		peer = to
 		log.Printf("[atrium] %s asked %s: %s", from, to, ask)
 	}
@@ -195,7 +197,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok": true, "recorded": true, "task_id": task.ID, "waiting": moved,
-		"peer": peer,
+		"peer": peer, "typed": typed,
 	})
 }
 
@@ -270,7 +272,11 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	if asked != "" {
 		body = "You asked: " + asked + "\n\n" + text
 	}
-	if _, err := d.st.QueueFromPeer(target.ID, body, from); err != nil {
+	// Typed when the asker's terminal is free. A blocked asker is idle at its
+	// prompt and makes no tool call, so on a card without the Stop hook a queued
+	// answer would never arrive.
+	typed, err := d.deliverPeer(target, from, body)
+	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -292,15 +298,18 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[atrium] %s answered %s (%d chars)", from, to, len(text))
 
 	note := queuedNote
+	if typed {
+		note = typedNote
+	}
 	if !answered {
 		// Said rather than refused. Answering something asked in a terminal,
 		// or twice over, is not a mistake worth failing, but a session that
 		// thinks it settled a card should not be left believing it.
-		note = queuedNote + " " + to + " had no question outstanding, so nothing was cleared."
+		note += " " + to + " had no question outstanding, so nothing was cleared."
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queued": true, "to": to, "answered": answered, "note": note,
+		"queued": !typed, "typed": typed, "to": to, "answered": answered, "note": note,
 	})
 }
 

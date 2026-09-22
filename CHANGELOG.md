@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A peer message lands seconds after a terminal frees up, and asks and answers are typed too.**
+
+  A message that met a busy terminal was retried on screen at one minute, then two, then five, so it could sit for
+  most of a minute on a terminal that was already free. The retry now starts at two seconds and widens to four
+  hours (2s, 5s, 10s, 30s, 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h), and a keystroke still resets it to the front. No
+  warning goes to the board in the first minute. `atrium ask --peer` and `atrium answer` were queue only, so an
+  answer to a blocked asker with no Stop hook never arrived. They now deliver the way `atrium tell` does: typed
+  when the terminal is free, queued and retried when it is not. A message from a session through
+  `/v1/tasks/{id}/message`, which is how `atrium_say` arrives, now gets the peer bus's 8000 character cap and 20
+  per minute limit. The operator's own messages stay unbounded. Room-side. See `docs/agent-messaging.md`, which
+  is new, as is `docs/how-atrium-works.md`.
+
 - **Attaching to a claude session no longer draws the typed input over the banner.**
 
   Claude turns the kitty keyboard protocol on and off (`CSI > 5 u`, `CSI < u`) and sets xterm's modifyOtherKeys

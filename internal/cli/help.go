@@ -50,8 +50,7 @@ func newAsk() *cobra.Command {
 			"--continue if you are carrying on and would like an answer when somebody has one: " +
 			"a session still working does not belong in a bucket of things needing attention.\n\n" +
 			"Pass --peer <handle> to ask ANOTHER SESSION rather than a human. The question is " +
-			"queued for it and arrives on its next tool call or at the end of its turn, and it " +
-			"answers with `atrium answer`. Run `atrium peers` for the handles. Your card still " +
+			"delivered the way `atrium tell` is, and it answers with `atrium answer`. Run `atrium peers` for the handles. Your card still " +
 			"shows the question and says who you asked, so a peer that never answers is " +
 			"visible rather than a session quietly stuck forever.\n\n" +
 			"Which session this is comes from $ATRIUM_AGENT_NAME, or the current directory's " +
@@ -147,6 +146,7 @@ func reportStuck(out io.Writer, hubURL, name, ask, peer string, blocked bool) er
 		Recorded bool      `json:"recorded"`
 		Waiting  bool      `json:"waiting"`
 		Peer     string    `json:"peer"`
+		Typed    bool      `json:"typed"`
 		Error    string    `json:"error"`
 		Peers    []peerRow `json:"peers"`
 	}
@@ -178,8 +178,14 @@ func reportStuck(out io.Writer, hubURL, name, ask, peer string, blocked bool) er
 		// What the asker needs to know next, and the part a model gets wrong
 		// on its own: nobody has been interrupted and no answer is coming back
 		// in this turn.
-		fmt.Fprintf(out, "asked %s. it arrives on that session's next tool call or at "+
-			"the end of its turn, and the answer comes back the same way.\n", answer.Peer)
+		if answer.Typed {
+			fmt.Fprintf(out, "asked %s. it was typed into that session's terminal, and the "+
+				"answer comes back the same way when it has one.\n", answer.Peer)
+		} else {
+			fmt.Fprintf(out, "asked %s. it is queued, and lands when that session's terminal "+
+				"is free, or on its next tool call or at the end of its turn. the answer comes "+
+				"back the same way.\n", answer.Peer)
+		}
 		if answer.Waiting {
 			fmt.Fprintf(out, "  your card says you are waiting on %s, so it is visible "+
 				"if no answer comes.\n", answer.Peer)

@@ -282,9 +282,10 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 	return target
 }
 
-// queuedNote is what a sender needs to know next: this arrives when the target
-// makes its next tool call or ends its turn, and not now.
-const queuedNote = "queued. it arrives on that session's next tool call or at the end of its turn."
+// queuedNote is what a sender needs to know next: this did not land now, and
+// the first of three things to happen delivers it.
+const queuedNote = "queued. it is typed in when that session's terminal is free, or arrives on its " +
+	"next tool call or at the end of its turn, whichever comes first."
 
 // handleTell delivers a message from one session to another.
 func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
@@ -335,33 +336,46 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// THE QUEUE STAYS. It is the fallback for everything not typed, and a
 	// message that is typed is written to the timeline instead so the traffic
 	// is still auditable. Both, and the agent would receive it twice.
-	if typed, how := d.tellByTyping(target, from, text); typed {
-		log.Printf("[atrium] %s typed into %s (%d chars, %s)", from, to, len(text), how)
-		d.publishTask(target.ID)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"typed": true, "to": to, "note": how,
-		})
-		return
-	}
-
-	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	typed, err := d.deliverPeer(target, from, text)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	d.publishTask(target.ID)
-	// The queue is the durable copy and the hooks will drain it. On top of that,
-	// keep trying to type it in when the operator's line clears, on a widening
-	// backoff, so a message does not have to wait for the target's next tool call
-	// to appear on screen. See pendinginject.go.
-	d.deferPeerInjection(target.ID, m.ID, from, text)
-	log.Printf("[atrium] %s told %s something (%d chars)", from, to, len(text))
+	log.Printf("[atrium] %s told %s something (%d chars, typed %v)", from, to, len(text), typed)
 
 	w.Header().Set("Content-Type", "application/json")
+	if typed {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"typed": true, "to": to, "note": typedNote,
+		})
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"queued": true, "to": to, "note": queuedNote,
 	})
+}
+
+// typedNote is what a sender is told when its words went straight in.
+const typedNote = "typed into the terminal and sent."
+
+// deliverPeer is the one way a peer's words reach another session, shared by
+// `tell`, a routed `ask`, and `answer` so the three cannot drift apart.
+//
+// Typed when the terminal's gate is open. Otherwise queued for the hooks AND
+// held for the on-screen retry, so it lands the moment the operator's line
+// clears rather than waiting for the target's next tool call.
+func (d *Daemon) deliverPeer(target *store.Task, from, text string) (bool, error) {
+	if typed, _ := d.tellByTyping(target, from, text); typed {
+		d.publishTask(target.ID)
+		return true, nil
+	}
+	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	if err != nil {
+		return false, err
+	}
+	d.publishTask(target.ID)
+	d.deferPeerInjection(target.ID, m.ID, from, text)
+	return false, nil
 }
 
 // peerBanner marks a typed message as coming from another session.
@@ -435,7 +449,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 		return false, ""
 	}
 	d.notePeerTyped(target.ID, from, text, "typed and sent")
-	return true, "typed into the terminal and sent"
+	return true, typedNote
 }
 
 // notePeerTyped records a typed message on the timeline.

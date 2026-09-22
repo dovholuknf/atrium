@@ -289,6 +289,22 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	from := strings.TrimSpace(body.From)
 
+	// A message from a session is peer traffic whichever door it came in by, so
+	// it gets the peer bus's bounds. `atrium_say` arrives here rather than at
+	// `/tell`, and without this a looping session could fill a queue through it.
+	// The operator's own messages carry no `from` and stay unbounded.
+	if from != "" {
+		if !checkPeerText(w, strings.TrimSpace(body.Text), "a message needs some text") {
+			return
+		}
+		if !d.peerLimit.allow(from) {
+			writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+				"%s has sent %d messages in the last minute, which is the limit",
+				from, peerSendsPerMinute))
+			return
+		}
+	}
+
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
 	//

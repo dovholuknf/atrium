@@ -68,9 +68,10 @@ func newTell() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "tell <handle> <message>",
 		Short: "Say something to another session.",
-		Long: "Queues a message for another session. It arrives on that session's next tool " +
-			"call or at the end of its turn, so this is not a conversation and there is no " +
-			"reply to wait for.\n\n" +
+		Long: "Says something to another session. It is typed into that session's terminal when " +
+			"the terminal is free, and otherwise queued: it then lands as soon as the terminal " +
+			"frees up, or on that session's next tool call or at the end of its turn. This is not " +
+			"a conversation and there is no reply to wait for.\n\n" +
 			"The message is labeled with who sent it, and the receiving session is told it " +
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
 			"not know the handle.",
@@ -94,12 +95,11 @@ func newAnswer() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "answer <handle> <answer>",
 		Short: "Answer a question another session asked you.",
-		Long: "The return leg of `atrium ask --peer`. Queues your answer for the session that " +
+		Long: "The return leg of `atrium ask --peer`. Sends your answer to the session that " +
 			"asked, and takes the question off its card, which is the only thing telling " +
 			"anybody the ask is settled.\n\n" +
-			"It arrives on that session's next tool call or at the end of its turn, with the " +
-			"question quoted back to it: a session that asked an hour ago may not remember " +
-			"asking.\n\n" +
+			"It is delivered the way `atrium tell` is, with the question quoted back: a " +
+			"session that asked an hour ago may not remember asking.\n\n" +
 			"Use this even when the answer is that you cannot help. A question left on a card " +
 			"reads as one nobody has looked at, and the session that asked is waiting.",
 		Args: cobra.MinimumNArgs(1),

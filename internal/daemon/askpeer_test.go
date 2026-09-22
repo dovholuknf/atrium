@@ -13,11 +13,9 @@ import (
 
 // An ask that reaches another session, and the answer that comes back.
 //
-// The load-bearing test in here is the first one: a routed question is QUEUED
-// for the peer, never typed into its terminal, even when atrium owns one and
-// could. `peers_test.go` pins the same refusal for `tell`. It is restated here
-// because `ask --peer` is a second door onto the same room, and the tempting
-// simplification is available at both.
+// Both legs are delivered the way `tell` is, through `deliverPeer`: typed when
+// the terminal is free, queued when the operator is part way through a line.
+// `peertype_test.go` pins the gate itself.
 
 func answerOf(t *testing.T, d *Daemon, from, to, text string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
@@ -32,29 +30,27 @@ func answerOf(t *testing.T, d *Daemon, from, to, text string) (*httptest.Respons
 	return rec, out
 }
 
-func TestAnAskToAPeerIsQueuedAndNeverTyped(t *testing.T) {
+// A peer whose operator is part way through a line gets the question queued,
+// and the line is left alone.
+func TestAnAskToAPeerMidLineIsQueuedAndNotTyped(t *testing.T) {
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
-	helper := peerCard(t, d, "helper")
-
-	// Supervised, so the terminal branch exists and anything reusing the human
-	// message path would take it.
-	d.sup.mu.Lock()
-	d.sup.runners[helper.ID] = &runner{}
-	d.sup.mu.Unlock()
-	if d.sup.get(helper.ID) == nil {
-		t.Fatal("this test is not exercising a supervised peer")
-	}
+	helper, r, f := peerPair(t, d) // wire name "listener"
+	t.Cleanup(func() { d.pending.stopAll() })
+	r.noteOperatorTyped([]byte("git comm"))
 
 	rec, out := askOf(t, d, HelpRequest{
-		Agent: "asker", Blocked: true, Peer: "helper",
+		Agent: "asker", Blocked: true, Peer: "listener",
 		Ask: "which of these two schemas is authoritative",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("asking a peer answered %d: %s", rec.Code, rec.Body)
 	}
-	if out["peer"] != d.st.Qualify("helper") {
+	if out["peer"] != d.st.Qualify("listener") {
 		t.Fatalf("the answer does not say who was asked: %v", out)
+	}
+	if f.written() != "" {
+		t.Fatalf("typed into a part written line: %q", f.written())
 	}
 
 	pending, err := d.st.PendingMessages(helper.ID)
@@ -62,8 +58,7 @@ func TestAnAskToAPeerIsQueuedAndNeverTyped(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(pending) != 1 {
-		t.Fatalf("an ask to a supervised peer queued %d messages, which means it "+
-			"was typed instead", len(pending))
+		t.Fatalf("an ask to a busy peer queued %d messages", len(pending))
 	}
 	if pending[0].FromHuman() {
 		t.Fatal("a routed ask is attributed to the human")
@@ -76,6 +71,59 @@ func TestAnAskToAPeerIsQueuedAndNeverTyped(t *testing.T) {
 	// the loop this exists to close stays open.
 	if !strings.Contains(pending[0].Text, "atrium answer") {
 		t.Fatalf("the peer was not told how to answer: %q", pending[0].Text)
+	}
+}
+
+// A peer whose terminal is free gets the question typed and sent, and not
+// queued as well, which would deliver it twice.
+func TestAnAskToAFreePeerIsTypedAndSent(t *testing.T) {
+	d := testDaemon(t)
+	peerCard(t, d, "asker")
+	helper, _, f := peerPair(t, d)
+
+	rec, out := askOf(t, d, HelpRequest{
+		Agent: "asker", Blocked: true, Peer: "listener", Ask: "which branch",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("asking a peer answered %d: %s", rec.Code, rec.Body)
+	}
+	if out["typed"] != true {
+		t.Fatalf("the answer does not say it was typed: %v", out)
+	}
+	got := f.written()
+	if !strings.Contains(got, "which branch") || !strings.Contains(got, "atrium answer") {
+		t.Fatalf("the question never reached the terminal: %q", got)
+	}
+	if !strings.HasSuffix(got, "\r") {
+		t.Fatalf("the question was typed but not sent: %q", got)
+	}
+	if pending, _ := d.st.PendingMessages(helper.ID); len(pending) != 0 {
+		t.Fatalf("a typed ask was queued as well: %d pending", len(pending))
+	}
+}
+
+// A blocked asker sits idle at its prompt and makes no tool call, so a queued
+// answer waited on a Stop hook that may not be installed. Typed, it lands now.
+func TestAnAnswerToAFreeAskerIsTypedAndSettlesTheCard(t *testing.T) {
+	d := testDaemon(t)
+	peerCard(t, d, "helper")
+	asker, _, f := peerPair(t, d) // the asker is "listener", with a terminal
+
+	askOf(t, d, HelpRequest{Agent: "listener", Blocked: true, Peer: "helper", Ask: "which branch"})
+
+	rec, out := answerOf(t, d, "helper", "listener", "claude/main")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answering answered %d: %s", rec.Code, rec.Body)
+	}
+	if out["typed"] != true || out["answered"] != true {
+		t.Fatalf("the answer was not typed or did not settle the ask: %v", out)
+	}
+	got := f.written()
+	if !strings.Contains(got, "claude/main") || !strings.Contains(got, "You asked: which branch") {
+		t.Fatalf("the answer never reached the asker's terminal: %q", got)
+	}
+	if pending, _ := d.st.PendingMessages(asker.ID); len(pending) != 0 {
+		t.Fatalf("a typed answer was queued as well: %d pending", len(pending))
 	}
 }
 
