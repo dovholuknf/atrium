@@ -1488,34 +1488,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-browseroots-now"></b></span>
     </div>
 
-    <!-- Configure the external command that creates worktrees and controls their layout. -->
-    <div class="field">
-      <label class="eyebrow" for="s-worktreecmd">worktree command</label>
-      <div class="picker">
-        <input id="s-worktreecmd" spellcheck="false" data-saves="saveWorktreeCommand"
-          placeholder="empty means gwt new {branch} -y">
-      </div>
-      <span class="hintline">Run in the repository, on <b>the machine atrium is on</b>, through a
-        shell, because the tool that does this is often a shell function rather than a program.
-        <code>{branch}</code> is the branch and <code>{repo}</code> is the repository's directory.
-        The branch may hold letters, digits and <code>. _ - /</code> and nothing else, which is what
-        keeps a name off the command line as anything but a name. Answer any prompt in the command
-        itself: there is no keyboard attached to it. Type <code>off</code> to have no make button at
-        all. <b id="s-worktreecmd-now"></b></span>
-    </div>
-
-    <div class="field">
-      <label class="eyebrow" for="s-projdepth">how deep to look for repositories</label>
-      <div class="picker">
-        <input id="s-projdepth" spellcheck="false" inputmode="numeric" data-saves="saveProjectDepth"
-          placeholder="empty means 2 levels under each of those places">
-      </div>
-      <span class="hintline">Levels under each place above. Two matches
-        <code>&lt;root&gt;/&lt;org&gt;/&lt;repo&gt;</code>, which is the usual arrangement. A
-        directory holding a <code>.git</code> is a repository and is not descended into, so going
-        deeper only costs somebody whose checkouts are further down. <b id="s-projdepth-now"></b></span>
-    </div>
-
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
          own state directory, which is the right place and unreadable to
@@ -2351,7 +2323,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
         <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
-        <button onclick="openProjects('l-cwd')">projects</button>
         <button onclick="openBrowse()">browse</button>
       </div>
     </div>
@@ -2593,27 +2564,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
-
-<!-- List repositories and worktrees. Creation runs the configured command,
-     then reads the resulting path from git. See internal/api/projects.go. -->
-<dialog id="projects">
-  <div class="dlg-head">
-    <div class="grow">
-      <h2>pick a project</h2>
-      <div class="crumb" id="p-where"></div>
-    </div>
-    <button onclick="document.getElementById('projects').close()">close</button>
-  </div>
-  <div class="dlg-body">
-    <div class="toolbar">
-      <input id="p-filter" spellcheck="false" placeholder="filter by org, repo or branch"
-        oninput="drawProjects()">
-      <button onclick="loadProjects()">rescan</button>
-    </div>
-    <div class="dirlist projlist" id="p-list"></div>
-  </div>
-</dialog>
-
 <!-- Wide: the history in here is commands, and a command that wraps three
      times is not one you can scan down. -->
 <dialog id="detail" class="wide">
@@ -2838,7 +2788,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
-<script src="/js/projects.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
