@@ -1273,6 +1273,13 @@ async function doLaunch() {
     document.getElementById("l-throwaway-on").checked;
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
+    // BARE, never the aggregate `room~id`. The card this starts onto is looked
+    // up in the room's own store, which keys by the plain id. The tag is a
+    // routing artifact of the ALL view and the room header already carries the
+    // routing, so a tagged id here only misses (`sql: no rows`). Same class as
+    // the writeRoom leak in js/rooms.js: an aggregate tag reaching an operation
+    // that wants bare.
+    task_id: bareId(launchTarget.task_id || ""),
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
     throwaway,
