@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -727,6 +728,9 @@ type runner struct {
 	midLine   bool
 	lastTyped time.Time
 	unsent    int
+	// inPaste is inside a bracketed paste, where a carriage return is text
+	// being pasted and not the operator pressing Enter.
+	inPaste bool
 	// onKey is called after every operator keystroke is recorded, outside
 	// typeMu. It is how a deferred peer message learns the operator is back at
 	// the keyboard and re-arms its retry to the front of the backoff. Nil when
@@ -872,6 +876,12 @@ func (r *runner) Write(p []byte) error {
 	return nil
 }
 
+// The bracketed paste markers the board wraps a paste in.
+var (
+	pasteStart = []byte("\x1b[200~")
+	pasteEnd   = []byte("\x1b[201~")
+)
+
 // noteOperatorTyped records that the PERSON sent these bytes.
 //
 // Called from the attach socket and from nowhere else, which is what makes it
@@ -879,13 +889,24 @@ func (r *runner) Write(p []byte) error {
 // bytes here would have atrium deciding the operator was busy because atrium
 // had just typed something.
 //
-// What ends a line: a carriage return or a newline submits it, and the two
-// ways a line is thrown away are control-c and control-u. Both reset the count
-// to zero. A backspace takes one character off, so a line edited all the way
-// back to nothing counts as empty rather than as something still being worked
-// on, which is the whole reason the count exists beside `midLine`. A printable
-// key adds one. Anything else, an arrow or a bare escape, is activity that
-// moves `lastTyped` without adding to the line.
+// What ends a line: a bare carriage return submits it, and the two ways a line
+// is thrown away are control-c and control-u. All three reset the count to
+// zero. A backspace takes one character off, so a line edited all the way back
+// to nothing counts as empty rather than as something still being worked on,
+// which is the whole reason the count exists beside `midLine`. A printable key
+// adds one.
+//
+// NOT EVERY CARRIAGE RETURN IS ENTER. The board sends shift-enter as ESC CR and
+// ctrl-enter as a bare newline, and both put a newline INTO a multi-line prompt
+// without sending it. Reading either as a submit zeroed the count on every
+// multi-line prompt, so the gate opened on a half-written message and atrium
+// typed into it. Both now add to the line, as does a carriage return inside a
+// bracketed paste. A shell that submits on ctrl-enter is read as still busy
+// until its next plain Enter, which errs toward holding a message, never
+// toward typing over somebody.
+//
+// Other escape sequences count their bytes. An up arrow on an empty prompt
+// recalls a line, so treating it as text is closer to the truth than not.
 //
 // A UTF-8 lead or continuation byte counts as one each, so a multi-byte glyph
 // over-counts and a backspace after it clears only the last byte. The count
@@ -900,10 +921,34 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	// peer injection or output fanout. See the runner struct's typeMu note.
 	r.typeMu.Lock()
 	r.lastTyped = time.Now()
-	for _, b := range p {
+	for i := 0; i < len(p); i++ {
+		b := p[i]
+		if b == 0x1b {
+			rest := p[i:]
+			switch {
+			case bytes.HasPrefix(rest, pasteStart):
+				r.inPaste = true
+				r.unsent++
+				i += len(pasteStart) - 1
+				continue
+			case bytes.HasPrefix(rest, pasteEnd):
+				r.inPaste = false
+				i += len(pasteEnd) - 1
+				continue
+			case len(rest) > 1 && rest[1] == '\r': // shift-enter: a newline, not a send
+				r.unsent++
+				i++
+				continue
+			}
+		}
 		switch {
-		case b == '\r' || b == '\n' || b == 0x03 || b == 0x15:
+		case b == '\r' && !r.inPaste:
 			r.unsent = 0
+		case b == '\r' || b == '\n': // a newline inside the prompt
+			r.unsent++
+		case b == 0x03 || b == 0x15: // control-c, control-u
+			r.unsent = 0
+			r.inPaste = false
 		case b == 0x7f || b == 0x08: // delete, backspace
 			if r.unsent > 0 {
 				r.unsent--

@@ -94,21 +94,28 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string) {
 	if d.pending == nil {
 		return
 	}
-	// A card that refuses peer typing is never going to take this on screen, so
-	// there is nothing to retry. The queue and the hooks still deliver it. Same
-	// refusal tellByTyping makes before it tries the first time.
-	if t, err := d.st.Get(taskID); err != nil || !t.PeerTyping {
-		return
+	// A card that refuses peer typing is never going to take a PEER'S text on
+	// screen, so there is nothing to retry. The queue and the hooks still deliver
+	// it. Same refusal tellByTyping makes before it tries the first time. The
+	// operator's own text (empty from) is not a peer's and is always retried.
+	if from != "" {
+		if t, err := d.st.Get(taskID); err != nil || !t.PeerTyping {
+			return
+		}
 	}
 	body := text
 	if d.bracketedPasteFor(taskID, false) {
 		body = "\x1b[200~" + text + "\x1b[201~"
 	}
+	banner := ""
+	if from != "" {
+		banner = peerBanner(from)
+	}
 	d.pending.hold(taskID, pendingMsg{
 		msgID:  msgID,
 		from:   from,
 		text:   text,
-		banner: peerBanner(from),
+		banner: banner,
 		body:   body,
 	})
 }
@@ -142,7 +149,11 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 	pi.mu.Unlock()
 	// The live board signal: this card is holding a message. Named by the first
 	// sender, aged from when the first message was held. See activityTracker.
-	pi.d.act.setHeld(taskID, m.from)
+	who := m.from
+	if who == "" {
+		who = "you"
+	}
+	pi.d.act.setHeld(taskID, who)
 	pi.d.publishTask(taskID)
 }
 
@@ -192,11 +203,26 @@ func (pi *pendingInjector) attempt(taskID string) {
 	step := ht.step
 	pi.mu.Unlock()
 
-	// A card that has since refused peer typing gives up the retry. The queue
-	// and the hooks still deliver it.
-	if t, err := pi.d.st.Get(taskID); err != nil || !t.PeerTyping {
+	// A card that has since refused peer typing gives up the retry for PEER text.
+	// The queue and the hooks still deliver it. The operator's own text keeps
+	// retrying.
+	t, err := pi.d.st.Get(taskID)
+	if err != nil {
 		pi.drop(taskID)
 		return
+	}
+	if !t.PeerTyping {
+		kept := entries[:0]
+		for _, e := range entries {
+			if e.from == "" {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+		if len(entries) == 0 {
+			pi.drop(taskID)
+			return
+		}
 	}
 	// A dialog the runner put up itself must not be answered by a peer message's
 	// Enter, exactly as tellByTyping refuses one. This is not the operator's line

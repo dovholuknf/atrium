@@ -32,8 +32,9 @@ func TestUnsentCountTracksTheOperatorsLine(t *testing.T) {
 	r.noteOperatorTyped([]byte{0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f})
 	check(0)
 
-	// Each line-ender resets a dirty line to empty.
-	for _, end := range [][]byte{{'\r'}, {'\n'}, {0x03}, {0x15}} {
+	// Each line-ender resets a dirty line to empty. A bare newline is not one:
+	// the board sends it for ctrl-enter, which adds a line to the prompt.
+	for _, end := range [][]byte{{'\r'}, {0x03}, {0x15}} {
 		r.noteOperatorTyped([]byte("dirty"))
 		check(5)
 		r.noteOperatorTyped(end)
