@@ -617,6 +617,17 @@ func (s *screen) csi(b []byte, start, i int) int {
 		s.privateMode(strings.TrimPrefix(params, "?"), final)
 		return i
 	}
+	// THE OTHER PRIVATE MARKERS DRAW NOTHING, and reading them as the standard
+	// sequence moves the cursor. Claude pushes and pops the kitty keyboard
+	// protocol (`CSI > 5 u`, `CSI < u`) and sets xterm's modifyOtherKeys
+	// (`CSI > 4 ; 2 m`) at startup and after a key like ctrl-delete. Taken as
+	// plain `u` and `m` they became a cursor restore and dim underline, so the
+	// next input redraw landed on whatever row was last saved, the banner by
+	// default, and the replay drew the typed text over it. A terminal ignores
+	// them, and so does this.
+	if params != "" && (params[0] == '<' || params[0] == '=' || params[0] == '>') {
+		return i
+	}
 
 	n := csiNums(params)
 	arg := func(k, def int) int {
