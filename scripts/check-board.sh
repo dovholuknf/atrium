@@ -179,6 +179,13 @@ if ! node "$here/scripts/test-sort-order.js"; then
   fail=1
 fi
 
+# Custom groups: one with no cards is still drawn, and a card tagged for two is
+# drawn in both.
+if ! node "$here/scripts/test-custom-groups.js"; then
+  echo "the board's custom groups are drawn wrong. see above." >&2
+  fail=1
+fi
+
 # The reconnect-flood guard, RUN against re-tagged card sets. A single room
 # dropping flips every card id between `room~id` and bare when the count crosses
 # 1<->2, and the alert diff used to read that as the whole board arriving. This

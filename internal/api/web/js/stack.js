@@ -317,6 +317,7 @@ function stackGroupsHTML(list, g) {
       byName.get(name).push(t);
     }
   }
+  seedGroups(byName, g);
   if (byName.size < 2 && byName.has("")) {
     return `<div class="panel">` + stackRows(list) + `</div>`;
   }
@@ -339,7 +340,7 @@ function stackGroupsHTML(list, g) {
         <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      <div class="panel">${stackRows(mine)}</div>
+      <div class="panel">${mine.length ? stackRows(mine) : emptyGroupHint()}</div>
     </details>`;
   }).join("");
 }
