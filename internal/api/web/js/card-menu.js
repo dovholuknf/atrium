@@ -442,6 +442,37 @@ function isShellRunner(h) {
     ["pwsh", "powershell", "cmd", "bash", "sh", "zsh", "fish"].includes(cmd);
 }
 
+// File this card into one of the operator's `custom` groups. Only shown
+// when custom mode is on AND there is a group to file it into: an entry
+// with an empty flyout is a menu describing itself.
+//
+// A group is a TAG under the hood, so filing means adding the tag and
+// unfiling means removing it. The write is the same shape as any other tag
+// edit, which is why the toggle reads from `t.tags` and patches the whole
+// set.
+function groupItem(id, t) {
+  if (typeof groupingPrefs !== "function") return null;
+  const p = groupingPrefs();
+  if (p.mode !== "custom") return null;
+  const groups = Array.isArray(p.groups) ? p.groups : [];
+  if (!groups.length) return null;
+  const mine = new Set(t.tags || []);
+  return {
+    label: "into group",
+    help: "Files this card into one of your named buckets. It is the same as " +
+      "putting the group's tag on the card.",
+    sub: groups.map(name => ({
+      label: name,
+      on: mine.has(name),
+      act: () => {
+        const next = new Set(mine);
+        if (next.has(name)) next.delete(name); else next.add(name);
+        patchTask(id, { tags: [...next] }).then(refresh);
+      }
+    }))
+  };
+}
+
 async function cardMenu(e, id) {
   // WITH TEXT SELECTED, THIS MENU STANDS ASIDE. Both buttons.
   //
@@ -663,6 +694,7 @@ async function cardMenu(e, id) {
     // you decide a card belongs in another one.
     moveItem(id, t),
     nudgeItems(id),
+    groupItem(id, t),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case

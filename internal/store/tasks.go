@@ -1003,8 +1003,18 @@ func (s *Store) SetPinOrder(ids []string) error {
 			return err
 		}
 		defer tx.Rollback()
+		// Writes RANK as well as pin_order, because rank is now the field every
+		// view sorts the pinned bucket by. The board's pinned bucket reads rank
+		// directly (see the pinned-order-fix, commit b7b6a8b), the strip used
+		// to read pin_order, and both used to fight: a drag in one view wrote
+		// one field and the other view sorted by the other. Writing both here
+		// makes this endpoint the single point where the pinned order changes,
+		// whichever view the drag started in. `pin_order` stays for the
+		// migration window; nothing reads it any more.
 		for i, id := range ids {
-			if _, err := tx.Exec(`UPDATE task SET pin_order = ? WHERE id = ?`, i, id); err != nil {
+			if _, err := tx.Exec(
+				`UPDATE task SET pin_order = ?, rank = ? WHERE id = ?`,
+				i, float64(i), id); err != nil {
 				return err
 			}
 		}

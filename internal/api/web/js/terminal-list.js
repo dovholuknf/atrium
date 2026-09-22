@@ -1288,11 +1288,13 @@ function termOrder(tasks) {
   // sort above gets a say. That is the difference between a bucket and a
   // filter: activity and name both move on their own, so a set arranged by
   // hand and then sorted by either is a set that rearranges itself while you
-  // are not looking. `pin_order` is zero on every card until the first drag,
-  // which leaves them tied and falling through to the sort underneath, so an
-  // untouched board looks exactly as it did.
+  // are not looking. `rank` is what every view now uses to order the pinned
+  // bucket (see the pinned-order-fix on the board, and `SetPinOrder` in the
+  // store: the drop writes both fields and every view reads rank). Two pins
+  // still at their creation rank stay tied and fall through to the sort
+  // underneath, so an untouched board looks exactly as it did.
   tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
-    (a.pinned && b.pinned ? (a.pin_order || 0) - (b.pin_order || 0) : 0));
+    (a.pinned && b.pinned ? (a.rank || 0) - (b.rank || 0) : 0));
   return tasks;
 }
 

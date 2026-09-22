@@ -939,7 +939,7 @@ return a.localeCompare(b);`;
 // `mode` is what a group IS: a project read out of the path, or a tag you
 // applied. `by` and `order` stay the escape hatch for anyone who wants
 // something neither of those describes.
-const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", hues: {} };
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", hues: {}, groups: [] };
 
 // A card with no tags still has to land somewhere when grouping by tag, and
 // "" would sort it in with a group whose name is empty.
@@ -1123,6 +1123,33 @@ function grouper() {
     };
   }
 
+  // The operator's own buckets, kept as an ORDERED list of tag names in
+  // localStorage. Membership is a tag on the card, so the state is durable and
+  // shared across browsers; the order and the choice of which tags are groups
+  // are local to this browser, the way every other view preference is.
+  //
+  // A card lands in every group it is tagged for, so a card carrying two of
+  // them appears in each, the same as `tag` mode. `UNTAGGED` catches cards
+  // with none of the named tags: the list is a curated view, so a tag that
+  // is not on the list draws no bucket of its own.
+  if (p.mode === "custom" && !String(p.by || "").trim()) {
+    const groups = Array.isArray(p.groups) ? p.groups : [];
+    const set = new Set(groups);
+    const at = new Map(groups.map((n, i) => [n, i]));
+    return {
+      many: true,
+      of: t => {
+        const mine = (t.tags || []).filter(x => set.has(x));
+        return mine.length ? mine : [UNTAGGED];
+      },
+      cmp: (a, b) => {
+        if (a === UNTAGGED) return 1;
+        if (b === UNTAGGED) return -1;
+        return (at.get(a) ?? 1e9) - (at.get(b) ?? 1e9);
+      }
+    };
+  }
+
   const by = compiled(p.by, DEFAULT_GROUP_BY, "task");
   const order = compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b");
   if (!by) return null;
@@ -1165,19 +1192,93 @@ function groupHue(name) {
 // are always tellable apart, which is the whole job of the color.
 const GROUP_HUES = [0, 25, 45, 65, 95, 140, 170, 195, 215, 250, 285, 320];
 
-// Right click a group heading to recolor it.
+// Right click a group heading to recolor it, and in `custom` mode to reorder,
+// rename, or remove the group from the view.
 function groupMenu(e, name) {
   e.preventDefault();
   e.stopPropagation();
-  const set = groupingPrefs().hues || {};
+  const p = groupingPrefs();
+  const set = p.hues || {};
+  const custom = p.mode === "custom";
+  const groups = Array.isArray(p.groups) ? p.groups : [];
+  const at = groups.indexOf(name);
+  const inView = custom && at >= 0;
   showMenu(e, [
     { label: name, act: () => {} },
     { sep: true },
+    inView && at > 0
+      ? { label: "move up", act: () => moveCustomGroup(name, -1) } : null,
+    inView && at < groups.length - 1
+      ? { label: "move down", act: () => moveCustomGroup(name, 1) } : null,
+    inView ? { label: "rename…", act: () => renameCustomGroup(name) } : null,
+    inView ? {
+      label: "remove from the view",
+      note: "does not untag any card",
+      help: "Removes this group from the list. The tag stays on every card " +
+        "and files them into this bucket again if you add the group back.",
+      act: () => removeCustomGroup(name)
+    } : null,
+    inView ? { sep: true } : null,
     { label: "recolor…", act: () => pickGroupHue(name) },
     set[name] !== undefined
       ? { label: "back to the automatic color", act: () => setGroupHue(name, null) }
       : null
   ]);
+}
+
+// Add a new group to the `custom` view.
+//
+// The name is a TAG under the hood, so `NormalizeTags` will lower case and
+// trim it; a bare `askText` accepts what the operator typed and the tag path
+// does the canonicalisation. A duplicate is a no-op with a toast, because
+// silently ignoring is how "two spellings of the same thing" happens.
+async function addCustomGroup() {
+  const raw = await askText("name this group",
+    "It is a tag under the hood, so a card is filed into it by carrying that " +
+    "tag. Anything already carrying the tag lands in it right away.",
+    "", "e.g. discourse");
+  if (raw === null) return;
+  const name = String(raw).trim().toLowerCase();
+  if (!name) return;
+  const p = groupingPrefs();
+  const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
+  if (groups.includes(name)) {
+    toast("already a group", "the view already has one called " + name);
+    return;
+  }
+  groups.push(name);
+  setGrouping({ groups });
+}
+
+function removeCustomGroup(name) {
+  const p = groupingPrefs();
+  const groups = (p.groups || []).filter(x => x !== name);
+  setGrouping({ groups });
+}
+
+function moveCustomGroup(name, delta) {
+  const p = groupingPrefs();
+  const groups = (p.groups || []).slice();
+  const at = groups.indexOf(name);
+  const to = at + delta;
+  if (at < 0 || to < 0 || to >= groups.length) return;
+  groups.splice(at, 1);
+  groups.splice(to, 0, name);
+  setGrouping({ groups });
+}
+
+async function renameCustomGroup(name) {
+  const raw = await askText("rename " + name,
+    "The old tag stays on every card. This changes the group's name in the " +
+    "view and cards under it will move as their tags update. Retag the cards " +
+    "if you want the tag renamed too.",
+    name, "new name");
+  if (raw === null) return;
+  const next = String(raw).trim().toLowerCase();
+  if (!next || next === name) return;
+  const p = groupingPrefs();
+  const groups = (p.groups || []).map(x => x === name ? next : x);
+  setGrouping({ groups });
 }
 
 function setGroupHue(name, hue) {
@@ -1275,7 +1376,13 @@ function cardsHTML(cards, g, keyPrefix) {
     // and then watching one of its cards block read as the board deciding to
     // pop the group back open, which is exactly what it looked like.
     const fold = "proj:" + name;
-    const shut = isFolded(fold) ? "" : " open";
+    // UNTAGGED IN `custom` MODE STARTS SHUT, the way the offline group does.
+    // The point of a curated view is to see the buckets you built, not a heap
+    // of every card that lands in none of them. The fold list records what
+    // was CHANGED from the default, so an entry there re-opens it and the
+    // shape reads the same as every other fold.
+    const shutByDefault = name === UNTAGGED && groupingPrefs().mode === "custom";
+    const shut = (isFolded(fold) === shutByDefault) ? " open" : "";
     // Work you started and left. Drawn back rather than hidden: the point of
     // the bucket is that it is findable, and the point of greying it is that
     // it does not compete with what you are doing now.

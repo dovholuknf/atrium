@@ -184,6 +184,10 @@ function paintGroupSegs() {
       "cut the cards the way whatever launched them said to: pull requests, tangents, " +
       "support threads. a card that was not told falls back to its project"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
+    ["custom", "by group",
+      "your own named buckets. the + button adds one, and a card's menu files " +
+      "it into one. every group is a tag under the hood, so the choices stick " +
+      "across browsers"],
     // `by age`, not `by when`. There is a SORT control beside this one, and
     // `by when` reads as an answer to that: it sounds like an ordering, so
     // pressing it and getting five headings looks like sorting that did not
@@ -195,11 +199,19 @@ function paintGroupSegs() {
   const html = opts.map(([v, label, title]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
        title="${esc(title)}">${esc(label)}</button>`).join("");
+  // A `+ new group` button rides beside the picker when `custom` is on.
+  // Drawn in the same host as the picker so it sits alongside the mode
+  // buttons and disappears the moment another mode is chosen: an add
+  // button for a mode that is off does nothing anybody expects.
+  const plus = mode === "custom"
+    ? `<button class="groupplus" onclick="addCustomGroup()"
+         title="add a group. it is a tag under the hood: files a card into this bucket by tagging it">+ new group</button>`
+    : "";
   // The strip is the third. It is rebuilt wholesale on every render, so it
   // calls this afterwards rather than relying on having been painted once.
   ["stack-group", "board-group", "term-group"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) setHTML(el, html);
+    if (el) setHTML(el, html + plus);
   });
 }
 
