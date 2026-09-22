@@ -1192,6 +1192,34 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // remember to turn back, which is what this is not.
   setLaunchModel(h);
 
+  // The card-actions footer: terminate and remove, wired only when the dialog
+  // is aimed at an existing card. Closes the dialog BEFORE running the action,
+  // matching the pattern in `doLaunch` when its own launch fails: an error or a
+  // confirmation is not a modal stacked on the modal that raised it. The card
+  // is fetched fresh, because `deleteCard` reads the runner state and the
+  // resume id, and the caller only handed us an id.
+  const termBtn = document.getElementById("l-terminate");
+  const forgetBtn = document.getElementById("l-forget");
+  if (termBtn && forgetBtn) {
+    termBtn.hidden = !ontoTask;
+    forgetBtn.hidden = !ontoTask;
+    termBtn.onclick = null;
+    forgetBtn.onclick = null;
+    if (ontoTask) {
+      termBtn.onclick = async () => {
+        document.getElementById("launch").close();
+        await killById(ontoTask);
+      };
+      forgetBtn.onclick = async () => {
+        document.getElementById("launch").close();
+        let t;
+        try { t = await api(`/v1/tasks/${ontoTask}`); }
+        catch (e) { toast("could not load the card", e.message); return; }
+        await deleteCard(ontoTask, t);
+      };
+    }
+  }
+
   syncMore();
   document.getElementById("launch").showModal();
   document.getElementById("l-cwd").focus();

@@ -2367,6 +2367,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
        already decided not to answer. -->
   <div class="dlg-foot">
     <button onclick="document.getElementById('launch').close()">close</button>
+    <!-- The two destructive card actions the right-click menu carries, offered
+         here because a resume dialog opens on the card you were about to pick
+         up and sometimes you already know you would rather stop it or drop it
+         instead. Shown only when the dialog is aimed at an existing card
+         (`ontoTask` set), hidden for a fresh launch. `killById` and
+         `deleteCard` ask their own confirmations, so the guard mirrors the
+         card menu without a second dialog stacked on this one. -->
+    <button class="no" id="l-terminate" hidden>terminate</button>
+    <button class="no" id="l-forget" hidden>remove</button>
     <span class="grow"></span>
     <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
