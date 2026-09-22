@@ -253,7 +253,9 @@ async function resumeNow(id, t, where, pick) {
       harness: t.runner || "claude",
       cwd: t.worktree || "",
       resume: withResume,
-      task_id: id,
+      // BARE, never the aggregate `room~id`: the room store keys by the plain
+      // id. See js/rooms.js and the launch.go safety net.
+      task_id: bareId(id),
       // Onto the same card, so the title and everything else on it stay put.
       // Sending them again would let a stale copy of the row overwrite what
       // the card says now.
