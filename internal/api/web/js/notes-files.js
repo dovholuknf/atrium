@@ -960,6 +960,22 @@ function fillMachineFields(s) {
   // is not something the person reading the box could work out from here.
   const shellNow = document.getElementById("s-shell-now");
   if (shellNow) shellNow.textContent = s.shell_command_now || "";
+  const wtcmd = document.getElementById("s-worktreecmd");
+  if (wtcmd) wtcmd.value = s.worktree_command || "";
+  const wtnow = document.getElementById("s-worktreecmd-now");
+  if (wtnow) {
+    // What would actually run. This is the one template with a default, so an
+    // empty box is the case where the box does not say what happens.
+    wtnow.textContent = s.worktree_command_now
+      ? "Right now: " + s.worktree_command_now
+      : "Right now: nothing, so the projects list only offers worktrees that exist.";
+  }
+  const depth = document.getElementById("s-projdepth");
+  if (depth) depth.value = s.project_scan_depth || "";
+  const depthNow = document.getElementById("s-projdepth-now");
+  if (depthNow) {
+    depthNow.textContent = "Right now: " + (s.project_scan_depth_now || 2) + " level(s).";
+  }
   const now = document.getElementById("s-browseroots-now");
   if (now) {
     const list = s.browse_roots_now || [];
@@ -1580,6 +1596,34 @@ async function saveEditorCommand() {
     ed.value.trim() || "the open button will say it is not configured");
 }
 
+// The same button rather than keystroke reasoning as the editor: a half-typed
+// template is a command that does not exist, and the failure would arrive
+// later, from a button somewhere else.
+async function saveWorktreeCommand() {
+  const el = document.getElementById("s-worktreecmd");
+  if (!el) return;
+  await saveHousekeeping("worktree_command", el.value.trim());
+  afterMachineSave();
+  toast("saved", el.value.trim().toLowerCase() === "off"
+    ? "the projects list will only offer worktrees that already exist"
+    : (el.value.trim() || "back to the default"));
+}
+
+async function saveProjectDepth() {
+  const el = document.getElementById("s-projdepth");
+  if (!el) return;
+  try {
+    await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ project_scan_depth: el.value.trim() })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", "the next scan goes " + (el.value.trim() || "2") + " level(s) down");
+}
 
 function setTimerValue(id, value, fallback) {
   const sel = document.getElementById(id);

@@ -579,6 +579,22 @@
      directory is what happens to be plugged in, so it keeps every button it had. */
   .pvrepo.gone .nm { color: var(--dim); font-weight: 500; }
   .pvrepo.hid { opacity: .6; }
+  /* Nest worktrees under the expanded repository. Reuse picker row styling. */
+  .projlist .proj.open { background: var(--hairline); border-radius: var(--r-sm); }
+  .projlist .proj-count { margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs); }
+  .projlist .proj-body {
+    display: flex; flex-direction: column; gap: var(--vs-1);
+    padding: 0 10px var(--vs-2) 22px;
+  }
+  .projlist .proj-path {
+    margin-left: auto; font: var(--fs-xs) var(--mono); color: var(--dimmest);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+  }
+  .projlist .proj-new { display: flex; gap: var(--sp-3); margin-top: var(--vs-2); }
+  .projlist .proj-new input { flex: 1; min-width: 0; }
+  .projlist .proj-cmd {
+    font: var(--fs-xs)/1.5 var(--sans); color: var(--dim); margin-top: var(--vs-1);
+  }
   /* Explain the folder and checkout icons beside the list. */
   .dirlegend {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4);

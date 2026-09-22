@@ -417,6 +417,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/providers/{name}/repos", s.saveProviderRepo)
 	mux.HandleFunc("DELETE /v1/providers/{name}/repos", s.forgetProviderRepo)
 	mux.HandleFunc("GET /v1/browse", s.browse)
+	// The repositories on this machine, and what already exists for each. The
+	// make is a command template run in a shell, never a worktree atrium lays
+	// out itself: see `projects.go`.
+	mux.HandleFunc("GET /v1/projects", s.listProjects)
+	mux.HandleFunc("POST /v1/projects/worktree", s.makeWorktree)
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
 	}

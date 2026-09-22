@@ -63,6 +63,14 @@ section heading is just "what landed in this iteration."
   `docs/providers-design.md`, `docs/test-plan-z-providers.md`, and a recorded walkthrough at
   `scripts/walkthrough/providers.spec.js`.
 
+- **Pinned cards hold their hand-set order again, whatever the board sort says.**
+
+  The board sort pill sorts each column by activity or name. That sort was reaching into the pinned bucket, so a
+  pinned card you had placed by hand snapped back to wherever activity order put it. Pins are now ordered by rank
+  always, the same field the card menu's move up and move down write and the only order a person sets by hand, so
+  the sort pill governs the rest of the column and leaves the pinned bucket where you left it. Move up and move
+  down still work on a pinned card.
+
 - **The board and the room link are separate, independently-bound surfaces.**
 
   The hub serves two things: the board you open, and the socket rooms dial in to. They are now cleanly split. The
