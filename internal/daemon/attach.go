@@ -382,7 +382,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	// that it does nothing.
 	run.buf.Grow(api.ScrollbackBytes(d.st))
 
-	backlog, widths, bufRows, wantCols, wrapped, updates := run.subscribeSized()
+	backlog, cuts, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
 	// Now that this attach is a watcher, the fan-out can recognise its channel
 	// and skip it, so this pane is not echoed its own keystrokes.
@@ -441,13 +441,18 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			// belongs to nothing else. See `collapseRedraws`.
 			body = flatten(collapseRedraws(backlog))
 		default:
-			sc := newScreenSized(replayCols(widths, wantCols), bufRows)
-			sc.apply(backlog)
+			// EACH RUN AT THE WIDTH IT WAS DRAWN AT, with the grid resized at
+			// every mark. See `screen.applyCuts` for the doubled lines one width
+			// for everything produced after a room restart.
+			//
 			// WITH THE CURSOR RESTORED. The grid knows where the session parked
 			// its cursor; the attaching terminal would otherwise leave it at the
 			// end of the last line, so the operator's first keystroke echoes in
 			// the wrong column. See `screen.textWithCursor`.
-			body = []byte(sc.textWithCursor())
+			if len(cuts) == 0 {
+				cuts = []widthCut{{0, wantCols}}
+			}
+			body = replayCut(backlog, "screen", cuts, bufRows)
 		}
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return
