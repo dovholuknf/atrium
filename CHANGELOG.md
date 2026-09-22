@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The sort only reorders the groups the board makes. Yours keep the order you set.**
+
+  The pinned bucket and every group you made under **by group** hold their hand-placed order on the board, the stack
+  and the terminals strip, whatever the sort pill says. **move it up or down** on a card's menu now works in those
+  lists under any sort, and on the stack and the strip as well as the board. It used to appear only when the board
+  sort was manual. On the terminals strip you can drag a row within one of your groups to reorder it. Drag a row in
+  from elsewhere and it joins that group too. A card in two of your groups still shows in both.
+
 - **A custom group you just made shows up before it has any cards.**
 
   Adding a group under **by group** used to draw nothing until a card carried its tag, so there was no sign the add

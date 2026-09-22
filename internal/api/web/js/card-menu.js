@@ -693,7 +693,7 @@ async function cardMenu(e, id) {
     // a bucket of attention and this menu is what you already have open when
     // you decide a card belongs in another one.
     moveItem(id, t),
-    nudgeItems(id),
+    nudgeItems(id, t),
     groupItem(id, t),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather

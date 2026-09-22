@@ -1143,6 +1143,10 @@ function grouper() {
       // there was nothing to look at to know the add had worked. Every view
       // that groups seeds its buckets from this list. See `emptyGroupHint`.
       always: groups.slice(),
+      // HELD TO RANK, not to the sort pill. A group you made is an order you
+      // set, the same as the pinned bucket, so the sort only reorders the
+      // groups the board makes for itself. See `byRank`.
+      handOrdered: true,
       of: t => {
         const mine = (t.tags || []).filter(x => set.has(x));
         return mine.length ? mine : [UNTAGGED];
@@ -1362,8 +1366,7 @@ function cardsHTML(cards, g, keyPrefix) {
   // card going quiet. Sorting here rather than trusting the API order restores
   // it after `columnOrder` disturbed it. `cardTieBreak` keeps two equal ranks
   // from swapping between polls.
-  const pins = cards.filter(t => t.pinned)
-    .sort((a, b) => (a.rank || 0) - (b.rank || 0) || cardTieBreak(a, b));
+  const pins = cards.filter(t => t.pinned).sort(byRank);
   const rest = cards.filter(t => !t.pinned);
   const head = pinnedGroupHTML(pins, keyPrefix);
 
@@ -1384,6 +1387,9 @@ function cardsHTML(cards, g, keyPrefix) {
 
   return head + [...byName.keys()].sort(g.cmp).map(name => {
     const mine = byName.get(name);
+    // Cards in none of the operator's groups are the board's own heap, so they
+    // keep the sort. Every named group is theirs and keeps its rank.
+    if (g.handOrdered && name !== UNTAGGED) mine.sort(byRank);
     if (!name) return mine.map(cardHTML).join("");
     const key = keyPrefix + ":" + name;
     // FOLDED BY NAME, BOARD WIDE, and not by name-within-column. A card that
@@ -1415,6 +1421,14 @@ function cardsHTML(cards, g, keyPrefix) {
       ${mine.length ? mine.map(cardHTML).join("") : emptyGroupHint()}
     </details>`;
   }).join("");
+}
+
+// The order of a list somebody arranged by hand: the pinned bucket and every
+// custom group, in every view and under every sort. Rank is what move up, move
+// down and the strip's drag write. `cardTieBreak` keeps two equal ranks from
+// swapping between polls.
+function byRank(a, b) {
+  return (a.rank || 0) - (b.rank || 0) || cardTieBreak(a, b);
 }
 
 // Adds the groups a grouper wants drawn whether or not a card is in them.
@@ -1909,17 +1923,18 @@ function moveItem(id, t) {
 // does nothing, which is what the end of a list is, and hiding the entry would
 // move every row under the pointer between one card and the next.
 //
-// Hidden when the board is not sorted by hand, which is a different case and
-// the opposite answer. Rank is still written, and then the sort throws it away
-// on the next paint, so the entry would be a control that visibly does nothing.
-// That is worse than one that does nothing at the end of a list, because there
-// is no end of a list to blame it on.
-function nudgeItems(id) {
-  if (boardSortMode() !== "manual") return null;
+// OFFERED WHEREVER THE ORDER IS HELD TO RANK: the pinned bucket and every
+// custom group, in any view and under any sort, because the sort pill only
+// reorders the groups the board makes for itself. Anywhere else it is hidden
+// unless the board sort is manual. There the sort would throw the new rank away
+// on the next paint, and a control that visibly does nothing is worse than one
+// that does nothing at the end of a list, which at least has an end to blame.
+function nudgeItems(id, t) {
+  if (!handList(t) && boardSortMode() !== "manual") return null;
   return {
     label: "move it up or down",
-    help: "Its place in this column, which is yours to set: nothing else " +
-      "writes it. Pin it instead when what you want is the top.",
+    help: "Its place in the pinned bucket or in your group, which is yours " +
+      "to set: nothing else writes it, and no sort moves it.",
     sub: [
       { label: "up", act: () => nudgeCard(id, -1) },
       { label: "down", act: () => nudgeCard(id, 1) }
@@ -1938,30 +1953,54 @@ function nudgeItems(id) {
 // the far side of that, which is the arithmetic the drop used and the reason
 // the column is ordered by a float: a move renumbers nothing else.
 async function nudgeCard(id, delta) {
-  const card = document.querySelector('#board .card[data-id="' + id + '"]');
-  // The board is not the only place this menu opens. From the stack or a
-  // terminal there is no card on screen to count neighbours against, and a
-  // rank computed from an empty list would file the card at one end.
-  if (!card) {
-    toast("cannot move it", "its column is not on screen. this works on the board");
-    return;
+  const board = document.getElementById("board");
+  const card = board && !board.hidden
+    ? board.querySelector('.card[data-id="' + id + '"]') : null;
+  let ranks;
+  if (card) {
+    const scope = card.closest(".cardgroup") || card.closest(".col");
+    const cards = [...scope.querySelectorAll(".card")];
+    ranks = { at: cards.indexOf(card), of: cards.map(el => Number(el.dataset.rank)) };
+  } else {
+    // THE STACK AND THE STRIP draw no ranks to count, so the list comes from
+    // the cards themselves: the pinned bucket, or the first of your groups the
+    // card is in. It is the same list those views draw, in the same order.
+    const t = lastTasks.find(x => x.id === id);
+    const hand = t && handList(t);
+    if (!hand) {
+      toast("cannot move it", "it is not in the pinned bucket or one of your groups");
+      return;
+    }
+    ranks = { at: hand.indexOf(t), of: hand.map(x => x.rank || 0) };
   }
-  const scope = card.closest(".cardgroup") || card.closest(".col");
-  const cards = [...scope.querySelectorAll(".card")];
-  const at = cards.indexOf(card);
-  const to = at + delta;
-  if (at < 0 || to < 0 || to >= cards.length) return;
+  const to = ranks.at + delta;
+  if (ranks.at < 0 || to < 0 || to >= ranks.of.length) return;
 
-  const rankOf = el => Number(el.dataset.rank);
-  const past = rankOf(cards[to]);
+  const past = ranks.of[to];
   // What is on the far side of the card being passed, or nothing when that
   // card is the end of the list. Ranks ascend down the column, so a step off
   // either end is one whole rank past it rather than a midpoint.
-  const beyond = cards[to + delta] ? rankOf(cards[to + delta]) : null;
+  const beyond = to + delta >= 0 && to + delta < ranks.of.length ? ranks.of[to + delta] : null;
   const rank = beyond === null ? past + delta : (past + beyond) / 2;
 
   await patchTask(id, { rank });
   refresh();
+}
+
+// The hand-ordered list a card is in, in rank order, or null when it is in none.
+// Pinned wins, because a pinned card is drawn in the pinned bucket and nowhere
+// else. A card in several of your groups moves in the first of them, in the
+// order the groups are listed. Its rank is one number, so it moves in the others
+// too.
+function handList(t) {
+  if (!t) return null;
+  if (t.pinned) return lastTasks.filter(x => x.pinned).sort(byRank);
+  const p = groupingPrefs();
+  if (!p.on || p.mode !== "custom") return null;
+  const tags = new Set(t.tags || []);
+  const name = (Array.isArray(p.groups) ? p.groups : []).find(n => tags.has(n));
+  if (!name) return null;
+  return lastTasks.filter(x => !x.pinned && (x.tags || []).includes(name)).sort(byRank);
 }
 
 async function patchTask(id, body) {
