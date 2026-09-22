@@ -87,3 +87,29 @@ Match lines by clock. For one slow keystroke:
 - **room echo** with a fast **room in** is the runner itself taking that long to draw.
 - A large **input lock** is a keystroke waiting behind a peer message being typed in.
 - A large **main thread blocked** on the browser line means none of the above. Look at what the board was doing.
+
+## When the numbers do not add up
+
+The room starts its clock when its attach reader takes a frame off the socket. A frame that waits in the socket
+before that is counted by the hub and missed by the room. So a slow **hub echo** with no **room echo** line does
+not prove the link is slow. It can also mean the room process was not running at that moment.
+
+On Windows that is the usual cause. A busy machine can leave a normal-priority process unscheduled for 15 to
+200ms in bursts, and it does not matter what the process is doing. The hub and the room raise themselves to above
+normal at start for this reason. `ATRIUM_PRIORITY=normal` turns that off, for comparing.
+
+To tell a slow program from a machine that is not scheduling it, run the hiccup probe at two priorities at the
+same time. It only sleeps 1ms in a loop and logs each sleep that overslept by 15ms or more:
+
+```powershell
+go test -c -o build.claude/link.probe.exe ./internal/link/
+$env:HICCUP = '120'
+$p = Start-Process build.claude/link.probe.exe '"-test.run=TestProbeSchedulingHiccups"', '"-test.v"' `
+  -WindowStyle Hidden -RedirectStandardOutput hic-normal.out -PassThru
+```
+
+Start a second copy with `$p.PriorityClass = 'AboveNormal'` and a different output file. When the normal copy logs
+hiccups and the raised one logs none, the stalls are the machine.
+
+`TestProbeTwoPairsSideBySide` in `internal/link/latency_test.go` compares two running hub and room pairs. It
+alternates keystrokes between them, so both see the same load at the same moment.
