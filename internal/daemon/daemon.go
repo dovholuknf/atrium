@@ -147,6 +147,10 @@ type Daemon struct {
 	// closeOnce guards releasing the store, so the shutdown path and a caller's
 	// deferred Close cannot both close the database. See closeDB.
 	closeOnce sync.Once
+	// clearOnce guards removing the address file, which the shutdown path does
+	// before it closes the store and Run's deferred call would do again after.
+	// See clearLocation.
+	clearOnce sync.Once
 
 	mu          sync.Mutex
 	agentServer *http.Server
@@ -1108,6 +1112,10 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// releases the handle. Closing it here makes it a thing the code does rather
 	// than a thing the OS happens to do. See cmd/atrium2/restart.go's
 	// waitForRoomRestart. Idempotent, so a caller's deferred Close is still safe.
+	//
+	// The address file goes first, because finding the shared copy reads the
+	// store. See clearLocation.
+	d.clearLocation()
 	if err := d.closeDB(); err != nil {
 		log.Printf("[atrium] closing the database: %v", err)
 	}

@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -33,8 +34,13 @@ const (
 	// anything, long enough for this process to begin winding down.
 	roomRestartDelay = 4 * time.Second
 	// roomStopGrace bounds how long the restarter waits for this room's ports to
-	// come free before it starts the new one.
-	roomStopGrace = 20 * time.Second
+	// come free before it starts the new one. A wind-down gives every runner ten
+	// seconds, a stuck one two more to die, and the listeners five, so a busy
+	// room takes most of twenty seconds on its own. A minute leaves room for that.
+	roomStopGrace = 60 * time.Second
+	// restartLogName is the restarter's own record, kept beside the room's keys.
+	// See restartLog.
+	restartLogName = "restart.log"
 	// roomParkWait is how long a busy agent gets to reach a stopping point.
 	roomParkWait = 90 * time.Second
 	// roomParkPoll is how often to ask whether they have settled.
@@ -44,8 +50,54 @@ const (
 	roomParkIdleAfter = 120
 )
 
+// roomLaunch is everything that decides WHICH room `atrium2 room` becomes. The
+// restarter has to pass all of it on. Leaving one out starts a different room:
+// without --dir it reads the default key directory, which on a machine joined
+// more than once holds some other room's name and hub.
+type roomLaunch struct {
+	dir, db, human, agent string
+	isolated, upgrades    bool
+}
+
+// restartArgs is the command line the detached restarter runs.
+func (l roomLaunch) restartArgs() []string {
+	args := []string{"room",
+		"--restart-after", roomRestartDelay.String(),
+		"--dir", l.dir,
+		"--http", l.human, "--agent", l.agent}
+	if strings.TrimSpace(l.db) != "" {
+		args = append(args, "--db", l.db)
+	}
+	if l.isolated {
+		args = append(args, "--isolated")
+	}
+	if l.upgrades {
+		args = append(args, "--accept-upgrades")
+	}
+	return args
+}
+
+// restartLog appends one line to restart.log in the room's key directory, and
+// says it on the log as well.
+//
+// THE RESTARTER IS OTHERWISE SILENT. It is detached, so nobody is reading its
+// output, and the process that spawned it is gone by the time it matters. A
+// restart that dies on the way back leaves nothing behind unless it writes it
+// somewhere itself, and this file is that somewhere. Best effort: failing to
+// write it never stops a restart.
+func restartLog(dir, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Printf("[atrium] %s", msg)
+	f, err := os.OpenFile(filepath.Join(dir, restartLogName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s  pid %d  %s\n", time.Now().Format(time.RFC3339), os.Getpid(), msg)
+}
+
 // onHubRestart is the room's OnRestart handler: park, schedule, wind down.
-func onHubRestart(boardURL, human, agent, db string, stop func()) func(link.RestartAsk) {
+func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartAsk) {
 	return func(ask link.RestartAsk) {
 		why := strings.TrimSpace(ask.Why)
 		if why != "" {
@@ -60,13 +112,13 @@ func onHubRestart(boardURL, human, agent, db string, stop func()) func(link.Rest
 		}
 		busy := parkRoomAgents(boardURL, why, wait)
 		if len(busy) > 0 && !ask.Force {
-			log.Printf("[atrium] NOT restarting: still working: %s. pass force to interrupt them",
+			restartLog(l.dir, "NOT restarting: still working: %s. pass force to interrupt them",
 				strings.Join(busy, ", "))
 			return
 		}
 
-		if err := spawnRoomRestart(human, agent, db); err != nil {
-			log.Printf("[atrium] could not schedule the restart: %v", err)
+		if err := spawnRoomRestart(l); err != nil {
+			restartLog(l.dir, "could not schedule the restart: %v", err)
 			return
 		}
 		log.Printf("[atrium] restart scheduled in %s, winding this room down", roomRestartDelay)
@@ -77,33 +129,45 @@ func onHubRestart(boardURL, human, agent, db string, stop func()) func(link.Rest
 // spawnRoomRestart starts a detached copy of this binary that waits for the
 // ports to free and then runs `atrium2 room` again.
 //
-// Detached and released, so it survives this process winding down. Same
-// database, address and agent listener, so the room that comes back is the one
-// that went away rather than a default it happened to pick.
-func spawnRoomRestart(human, agent, db string) error {
+// Detached and released, so it survives this process winding down. The same
+// launch in full, so the room that comes back is the one that went away rather
+// than a default it happened to pick.
+//
+// ITS OUTPUT GOES SOMEWHERE. A room whose stderr is a file, which is how a
+// script starts one, hands that file on and the restarted room keeps writing
+// the same log. Anything else, a console or a pipe somebody is reading, gets
+// restart.log instead: a console is gone with this process, and a pipe held open
+// by the child keeps its reader waiting for an end that never comes.
+func spawnRoomRestart(l roomLaunch) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	args := []string{"room",
-		"--restart-after", roomRestartDelay.String(),
-		"--http", human, "--agent", agent}
-	if strings.TrimSpace(db) != "" {
-		args = append(args, "--db", db)
+	args := l.restartArgs()
+	out := os.Stderr
+	if fi, err := out.Stat(); err != nil || !fi.Mode().IsRegular() {
+		f, err := os.OpenFile(filepath.Join(l.dir, restartLogName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			f = nil
+		}
+		out = f
 	}
-	cmd := exec.Command(self, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
-	detach(cmd)
-	if err := cmd.Start(); err != nil {
+	p, err := startDetached(self, args, out)
+	if out != nil && out != os.Stderr {
+		_ = out.Close()
+	}
+	if err != nil {
 		return err
 	}
+	restartLog(l.dir, "spawned restarter pid %d: %s %s", p.Pid, self, strings.Join(args, " "))
 	// Released rather than waited on: tying its lifetime to this process is the
 	// opposite of what detached means.
-	return cmd.Process.Release()
+	return p.Release()
 }
 
 // waitForRoomRestart is what `--restart-after` does: give the old room time to
-// let go of its address, then return so startup can bind it.
+// let go of its address, then return so startup can bind it. It reports whether
+// the address came free inside the grace.
 //
 // A LISTEN, NOT A CONNECT. The question is whether this process can take the
 // port, and the only honest test of that is trying to. Starting while the old
@@ -115,17 +179,18 @@ func spawnRoomRestart(human, agent, db string) error {
 // daemon's shutdown before Run returns, and only then does the process exit and
 // free this port. See internal/daemon/daemon.go shutdown, which closes the store
 // explicitly so this is a guarantee rather than a side effect of process exit.
-func waitForRoomRestart(after time.Duration, human string) {
+func waitForRoomRestart(after time.Duration, human string) bool {
 	time.Sleep(after)
 	deadline := time.Now().Add(roomStopGrace)
 	for time.Now().Before(deadline) {
 		ln, err := net.Listen("tcp", human)
 		if err == nil {
 			_ = ln.Close()
-			return
+			return true
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+	return false
 }
 
 // ── parking the other agents ──────────────────────────────

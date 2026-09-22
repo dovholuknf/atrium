@@ -178,7 +178,14 @@ func roomCmd() *cobra.Command {
 			"working atrium at its own address and your agents never noticed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRoom(link.Keys{Dir: orDefault(dir, roomDir())}, db, human, agent, restartAfter, isolated)
+			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			err := runRoom(keys, db, human, agent, restartAfter, isolated)
+			// A restarted room that fails to come back has nobody reading its
+			// output, so the reason goes in restart.log too. See restartLog.
+			if err != nil && restartAfter > 0 {
+				restartLog(keys.Dir, "the restarted room failed: %v", err)
+			}
+			return err
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -218,8 +225,12 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.
 	if restartAfter > 0 {
-		log.Printf("[atrium] restarting: waiting for the previous room to release %s", human)
-		waitForRoomRestart(restartAfter, human)
+		restartLog(keys.Dir, "restarter up: waiting for the previous room to release %s", human)
+		if waitForRoomRestart(restartAfter, human) {
+			restartLog(keys.Dir, "%s is free, starting the room", human)
+		} else {
+			restartLog(keys.Dir, "%s still held after %s, starting anyway", human, roomStopGrace)
+		}
 	}
 
 	saved, err := keys.Joined()
@@ -305,7 +316,10 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// WHAT THIS ROOM DOES WHEN ITS HUB ASKS IT TO RESTART. Park the other
 		// agents, spawn a detached restarter that outlives this process, and wind
 		// down. The hub only forwards the ask. See restart.go.
-		OnRestart: onHubRestart("http://"+human, human, agent, db, stop),
+		OnRestart: onHubRestart("http://"+human, roomLaunch{
+			dir: keys.Dir, db: db, human: human, agent: agent,
+			isolated: isolated, upgrades: acceptUpgrades,
+		}, stop),
 	}
 	go func() {
 		if err := room.Run(ctx); err != nil {

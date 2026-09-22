@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -95,6 +96,11 @@ const (
 
 // ErrHalted is returned by every store call once the store has halted.
 var ErrHalted = errors.New("store is halted")
+
+// ErrClosed is returned by every store call after Close. A call that arrives
+// once the daemon has released the store on its way down is late, not a
+// failure, and halting over it would report a clean stop as a broken database.
+var ErrClosed = errors.New("store is closed")
 
 // Task is one card on the board.
 type Task struct {
@@ -485,6 +491,8 @@ type Store struct {
 
 	mu        sync.RWMutex
 	haltCause error
+	// closed is set by Close. See ErrClosed.
+	closed atomic.Bool
 
 	// OnHalt is called once, from the goroutine that hit the failure. The
 	// daemon uses it to close the agent-facing listener and stop supervised
@@ -597,6 +605,7 @@ func Open(path string) (*Store, error) {
 // Close releases the database, after flushing and closing any cold sinks so a
 // buffered file sink writes what it is holding before the process exits.
 func (s *Store) Close() error {
+	s.closed.Store(true)
 	for _, c := range s.cold {
 		if cl, ok := c.(io.Closer); ok {
 			if err := cl.Close(); err != nil {
@@ -653,6 +662,9 @@ const (
 // guard runs a database operation, retrying contention and halting on anything
 // else. Every store method goes through it.
 func (s *Store) guard(op func() error) error {
+	if s.closed.Load() {
+		return ErrClosed
+	}
 	if halted, cause := s.Halted(); halted {
 		return fmt.Errorf("%w: %v", ErrHalted, cause)
 	}
@@ -665,6 +677,10 @@ func (s *Store) guard(op func() error) error {
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		// Closed while this call was in flight. Late, not broken. See ErrClosed.
+		if s.closed.Load() {
+			return ErrClosed
 		}
 		if !transient(err) {
 			s.halt(err)

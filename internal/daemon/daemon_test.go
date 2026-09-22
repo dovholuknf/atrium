@@ -124,6 +124,11 @@ func TestShutdownIsNarrated(t *testing.T) {
 			t.Errorf("shutdown log missing %q. full output:\n%s", want, out)
 		}
 	}
+	// A clean stop is not a store failure. The address file used to be removed
+	// after the store closed, and reading its setting then halted the store.
+	if strings.Contains(out, "HALTED") {
+		t.Errorf("a clean shutdown halted the store. full output:\n%s", out)
+	}
 	_ = d
 }
 

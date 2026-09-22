@@ -18,6 +18,18 @@ section heading is just "what landed in this iteration."
   A small copy icon shows on the row under the pointer, or on the row holding keyboard focus. Clicking it copies
   that row's title and body. It turns teal when the copy works and red when it does not. On a touch screen it stays
   visible, since there is no hover to show it.
+- **`restart_atrium` brings the room back as the same room, and says what it did.**
+
+  The detached restarter a room spawns was passing only its ports and database. It dropped `--dir`, so it read the
+  default key directory, which on a machine joined more than once holds an old room's name and hub. It came up as
+  that room, or not at all, and never reattached. It now passes the whole launch: `--dir`, `--isolated` and
+  `--accept-upgrades` too. Every step lands in `restart.log` beside the room's keys, and the restarted room keeps
+  writing to the log file the old one wrote to. On Windows it also leaves any job object it can, so a job that
+  kills its members on close cannot take it down.
+
+  A clean stop no longer ends in `HALTED: sql: database is closed`. The address file was removed after the store
+  closed, and finding its shared path read a setting from the closed store. It is now removed first, and a store
+  call that arrives after `Close` gets `ErrClosed` rather than halting.
 
 - **A pinned order dragged on the terminals page stays put on the hub board.**
 
