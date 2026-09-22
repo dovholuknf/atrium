@@ -215,8 +215,7 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 		for {
 			n, err := p.Read(chunk)
 			if n > 0 {
-				_, _ = r.buf.Write(chunk[:n])
-				r.fanout(chunk[:n])
+				r.deliverOutput(chunk[:n])
 			}
 			if err != nil {
 				if err != io.EOF {
