@@ -1631,6 +1631,9 @@ function wireTermDrag(host) {
     const ids = bucket.classList.contains("folded")
       ? pinnedNow.filter(x => x !== id).concat(id)
       : [...bucket.querySelectorAll(".card.tab")].map(x => x.dataset.id);
+    // Bare, because the ids go in the BODY and the hub only untags the path.
+    // A tagged id matches no row in the room's store and the order is lost.
+    const bare = ids.map(bareId);
     try {
       // Pinned FIRST, and only then ordered. A card that was dragged in from
       // below is not in the bucket as far as the daemon is concerned, so an
@@ -1640,7 +1643,7 @@ function wireTermDrag(host) {
       await api("/v1/tasks/pin-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids: bare })
       });
     } catch (err) {
       toast("that order did not stick", err.message);

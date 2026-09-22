@@ -1044,6 +1044,16 @@ func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
+	// The aggregate board addresses a card as `room~id`. The hub proxy rewrites
+	// that in the request PATH, but these ids ride in the BODY, so they arrived
+	// tagged, matched no row, and the drag wrote nothing. A card id is a uuid and
+	// has no `~` of its own, so the first `~` is the tag join. This is a safety
+	// net under the board's own untagging, the same one Launch carries.
+	for i, id := range body.IDs {
+		if j := strings.IndexByte(id, '~'); j > 0 {
+			body.IDs[i] = id[j+1:]
+		}
+	}
 	log.Printf("[atrium api order] pin-order write ids=%v", body.IDs)
 	if err := s.st.SetPinOrder(body.IDs); err != nil {
 		s.fail(w, err)

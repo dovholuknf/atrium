@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A pinned order dragged on the terminals page stays put on the hub board.**
+
+  The hub's board names every card `room~id`, and the strip posted those names as the new order. The hub strips
+  the room from a request's path but not from its body, so the room looked up ids it has no row for, wrote no rank,
+  and the next refresh drew the old order again. The strip now sends bare ids, and the room strips a stray room tag
+  from a pin order itself, the same safety net a launch onto a card already has.
+
 - **Terminal input lag can be measured instead of described.**
 
   Off by default. In the browser, **log terminal input lag** in settings (or `atrium.debug.inputlag` set to `1` in
