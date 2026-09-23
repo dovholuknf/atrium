@@ -440,8 +440,10 @@ function stackRows(list) {
 function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
+  const wear = cardWear(t);
   return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
-      t.pinned ? " pinned" : ""}"
+      t.pinned ? " pinned" : ""}${wear ? wear.cls : ""}"${
+      wear ? ` style="${wear.style}"` : ""}
     data-id="${t.id}"
     onclick="cardMenu(event, '${t.id}')"
     oncontextmenu="cardMenu(event, '${t.id}')">

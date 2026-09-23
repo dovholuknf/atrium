@@ -82,6 +82,14 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   The build id hashes the whole `web/` tree, and a page reloads when it sees a new one on `/v1/health`. Docs:
   `docs/reload-design.md`. Landed 2026-09-04 (`a874f91`).
 
+- **You can draw every card in its own terminal's colours, to find a session by colour.**
+  `cards wear their terminal colours` in the gear's board pane, off by default. On, each card in the terminals
+  list, the stack and the board columns takes its terminal theme's background, foreground and accent, and its
+  chips take the theme's ANSI colours. Every title, path and chip is held to 4.5:1 against its card, so a theme
+  whose accent reads worse is nudged toward white or black until it passes. The attached card keeps a two-pixel
+  frame, open toward the pane. Kept in this browser, like text size. Docs: `CHANGELOG.md`. Landed 2026-09-23 on
+  `claude/card-colors`, not yet on `claude/main`.
+
 ### The board: removed, and why
 
 - **Dragging cards on the board.** Removed 2026-09-06 (`c67b345`). A draggable card takes the pointer, so a sweep

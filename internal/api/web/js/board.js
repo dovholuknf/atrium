@@ -707,6 +707,7 @@ const isOutOfContact = (t) =>
 function cardHTML(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
+  const wear = cardWear(t);
   // Clickable for the actions done most, because the alternative was opening
   // the detail dialog for every shelve and every attach.
   //
@@ -715,7 +716,8 @@ function cardHTML(t) {
   // selection never starts. `data-rank` stays because the menu's up and down
   // are computed from the ranks on screen.
   return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
-      t.auto_approve ? " autoon" : ""}"
+      t.auto_approve ? " autoon" : ""}${wear ? wear.cls : ""}"${
+      wear ? ` style="${wear.style}"` : ""}
     onclick="cardMenu(event, '${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}"
     oncontextmenu="cardMenu(event, '${t.id}')">

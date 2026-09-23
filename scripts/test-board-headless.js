@@ -151,7 +151,10 @@ const AGDEAD = Object.assign({}, SUBLIVE, {
   status: "dead", supervised: false, pinned: true, pid: 0
 });
 
-let tasksMode = "first";   // first | hang | second | pinned | loop
+let tasksMode = "first";   // first | hang | second | pinned | loop | worn
+// One card per shipped terminal theme, filled in from the page's own table by
+// the card-colours section, plus one with no theme that takes the repo default.
+let wornTasks = [];
 // Whether the cached list agrees the loop card is attachable. Off during the
 // loop repro (the list lags the live card), on once it has recovered.
 let loopListSupervised = false;
@@ -343,6 +346,7 @@ const server = http.createServer((req, res) => {
     // state, where the list agrees the card is attachable and nothing tears it
     // down. Pinned so the row is present either way, the way a real lagging
     // list keeps the row while dropping the live flag.
+    if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -479,6 +483,231 @@ const server = http.createServer((req, res) => {
 
 let bad = 0;
 function fail(msg) { console.error("FAIL: " + msg); bad++; }
+
+// Every worn card on the page, scored in the page. For each one: its computed
+// background, and the contrast of its title, its path and every chip against
+// what each sits on, with a chip's own wash composited over the card first.
+// A room chip only appears with two rooms attached, so one is put on each
+// card for the measurement and taken off again.
+function measureWorn() {
+  const parse = s => {
+    let m = /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/.exec(s);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+    m = /^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.]+))?\)$/.exec(s);
+    if (m) return { r: m[1] * 255, g: m[2] * 255, b: m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+    return null;
+  };
+  const over = (top, under) => ({
+    r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a),
+    b: top.b * top.a + under.b * (1 - top.a), a: 1
+  });
+  const lum = c => [c.r, c.g, c.b].map(v => v / 255)
+    .map(s => s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4))
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (a, b) => {
+    const la = lum(a), lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const where = el => el.closest("#term-list") ? "terminals list"
+    : el.closest("#stack-list") ? "stack" : "board";
+  const out = [];
+  for (const card of document.querySelectorAll(".worn[data-id]")) {
+    const cs = getComputedStyle(card);
+    const bg = parse(cs.backgroundColor);
+    const row = { id: card.dataset.id, where: where(card), bg: cs.backgroundColor, on: card.classList.contains("on"),
+      shadow: cs.boxShadow, scores: [] };
+    out.push(row);
+    if (!bg || bg.a < 1) { row.scores.push({ what: "background", ratio: 0 }); continue; }
+    const score = (what, el, floor) => {
+      if (!el) return;
+      const s = getComputedStyle(el);
+      let under = bg;
+      const wash = parse(s.backgroundColor);
+      if (wash && wash.a > 0) under = over(wash, bg);
+      const fg = parse(s.color);
+      row.scores.push({ what, floor, ratio: fg ? ratio(over(fg, under), under) : 0, color: s.color });
+    };
+    const titleEl = card.querySelector(".tname") || card.querySelector(".who > b") || card.querySelector(".title");
+    score("title", titleEl, 4.5);
+    score("path", card.querySelector(".tpath") || card.querySelector(".who > span"), 4.5);
+    card.querySelectorAll(".chip").forEach(c => score("chip " + c.className.replace(/\s+/g, "."), c, 4.5));
+    score("star", card.querySelector(".pin.on"), 3);
+    const chips = card.querySelector(".chips") || card;
+    const room = document.createElement("span");
+    room.className = "chip room";
+    room.style.setProperty("--rhue", "205");
+    room.textContent = "sg4";
+    chips.appendChild(room);
+    score("room chip", room, 4.5);
+    room.remove();
+  }
+  return out;
+}
+
+async function wornSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const was = tasksMode;
+  try {
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+
+    // The setting sits in the gear's board pane, beside the other view settings.
+    const inBoardPane = await wp.evaluate(() => {
+      let el = document.getElementById("s-cardcolors");
+      if (!el) return "missing";
+      el = el.closest(".field");
+      while (el && !(el.matches && el.matches("h3.s-section"))) el = el.previousElementSibling;
+      return el ? el.textContent.trim() : "no heading";
+    });
+    if (inBoardPane !== "board") {
+      fail("the card-colours checkbox is not in the gear's board pane (found under: " + inBoardPane + ").");
+    }
+
+    // A card per shipped theme, all waiting on you so they land in the stack's
+    // default filter, half of them pinned so the star is on some. One more with
+    // no theme and a repo, which takes the repo default.
+    const names = await wp.evaluate(() => Object.keys(TERM_THEMES));
+    wornTasks = names.map((n, i) => Object.assign({}, T1, {
+      id: "w-" + n, display_title: "themed " + n, theme: n, supervised: true,
+      worktree: "/tmp/worn/" + n, pinned: i % 2 === 0
+    }));
+    wornTasks.push(Object.assign({}, T1, {
+      id: "w-default", display_title: "repo default", supervised: true,
+      repo: "dovholuknf/atrium", worktree: "/tmp/worn/atrium"
+    }));
+    tasksMode = "worn";
+    const expect = await wp.evaluate(() => {
+      const out = {};
+      for (const [n, th] of Object.entries(TERM_THEMES)) out["w-" + n] = th.background;
+      out["w-default"] = TERM_THEMES["active-light"].background;
+      return out;
+    });
+    const paintAll = async () => {
+      await wp.evaluate(async () => { runRefresh(); await renderTermList(); });
+      await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
+        document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
+        wornTasks.length, { timeout: 15000 });
+      await wp.click('.tab[data-view="board"]');
+      await wp.waitForFunction(n =>
+        document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n, wornTasks.length, { timeout: 15000 });
+      await wp.click('.tab[data-view="stack"]');
+    };
+
+    // OFF: the current look. No card is worn, and two cards in different
+    // themes are painted the same.
+    await paintAll();
+    const off = await wp.evaluate(() => {
+      const worn = document.querySelectorAll(".worn").length;
+      const look = sel => [...document.querySelectorAll(sel)].map(el => {
+        const s = getComputedStyle(el);
+        return s.backgroundColor + "|" + s.backgroundImage;
+      });
+      const uniq = a => new Set(a).size;
+      return {
+        worn,
+        // The board's own palette on a card is not the theme's. A board card
+        // in a project group carries that group's hue, so the board is checked
+        // for the rewrite rather than for one look.
+        rewritten: document.querySelectorAll('[data-id^="w-"][style*="--card-0"]').length,
+        stack: uniq(look('#stack-list .stackrow[data-id^="w-"]')),
+        term: uniq(look('#term-list .card.tab[data-id^="w-"]:not(.on)'))
+      };
+    });
+    if (off.worn || off.rewritten) {
+      fail("with the setting off, " + off.worn + " cards are drawn worn and " + off.rewritten +
+        " carry a rewritten palette.");
+    }
+    if (off.stack !== 1 || off.term !== 1) {
+      fail("with the setting off, cards in different themes are painted differently " +
+        "(distinct looks: stack " + off.stack + ", terminals " + off.term + ").");
+    }
+
+    // ON.
+    await wp.evaluate(() => toggleCardColors(true));
+    const stored = await wp.evaluate(() => localStorage.getItem("atrium.cardColors"));
+    if (stored !== "1") fail("turning card colours on did not store it in this browser (got " + stored + ").");
+    await paintAll();
+    // Attach one, so the list has an `.on` card to tell apart.
+    await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await renderTermList(); });
+    const rows = await wp.evaluate(measureWorn);
+    await wp.evaluate(async () => { termTask = null; await renderTermList(); });
+
+    const seen = { "terminals list": new Set(), stack: new Set(), board: new Set() };
+    const low = [];
+    const hex = s => {
+      const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(s || "");
+      return m ? "#" + m.slice(1).map(v => (+v).toString(16).padStart(2, "0")).join("") : s;
+    };
+    for (const r of rows) {
+      seen[r.where].add(r.id);
+      const want = (expect[r.id] || "").toLowerCase();
+      if (hex(r.bg) !== want) {
+        fail(r.where + " card " + r.id + " is painted " + r.bg + ", not its theme's background " + want + ".");
+      }
+      for (const s of r.scores) {
+        if (s.ratio < (s.floor || 4.5)) {
+          low.push(r.where + " " + r.id + " " + s.what + " " + s.ratio.toFixed(2) + " (" + s.color + ")");
+        }
+      }
+    }
+    for (const [where, ids] of Object.entries(seen)) {
+      if (ids.size !== wornTasks.length) {
+        fail("with the setting on, the " + where + " drew " + ids.size + " worn cards of " + wornTasks.length + ".");
+      }
+    }
+    if (low.length) {
+      fail(low.length + " text colours on worn cards read under their floor:\n  " + low.slice(0, 30).join("\n  "));
+    }
+    const term = rows.filter(r => r.where === "terminals list");
+    const on = term.filter(r => r.on);
+    const framed = r => /inset/.test(r.shadow || "");
+    if (on.length !== 1 || !framed(on[0])) {
+      fail("the attached card does not carry its frame when every card is coloured (" +
+        on.length + " attached, shadow " + (on[0] && on[0].shadow) + ").");
+    }
+    if (term.some(r => !r.on && framed(r))) fail("a card that is not attached carries the attached card's frame.");
+
+    // Phone width: the same list, still worn.
+    await wp.setViewportSize({ width: 390, height: 780 });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(() => renderTermList());
+    const phone = await wp.evaluate(() => {
+      const cards = [...document.querySelectorAll('#term-list .card.tab.worn[data-id^="w-"]')];
+      const vis = cards.filter(c => c.getBoundingClientRect().width > 0);
+      return { worn: cards.length, visible: vis.length,
+        bg: vis[0] ? getComputedStyle(vis[0]).backgroundColor : "", id: vis[0] ? vis[0].dataset.id : "" };
+    });
+    if (!phone.visible || hex(phone.bg) !== (expect[phone.id] || "").toLowerCase()) {
+      fail("at phone width the terminals list does not draw worn cards (" + JSON.stringify(phone) + ").");
+    }
+
+    // OFF again puts the current look back.
+    // A view repaints when it is shown, so walk the three.
+    await wp.setViewportSize({ width: 1400, height: 900 });
+    await wp.evaluate(() => toggleCardColors(false));
+    for (const v of ["board", "stack", "terms"]) {
+      await wp.click('.tab[data-view="' + v + '"]');
+      await wp.waitForTimeout(300);
+    }
+    await wp.waitForFunction(() => !document.querySelector(".worn"), null, { timeout: 15000 }).catch(async () => {
+      const left = await wp.evaluate(() => document.querySelectorAll(".worn").length);
+      fail("turning card colours back off left " + left + " cards worn.");
+    });
+    if (errors.length) fail("the card-colours page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
 
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
@@ -2481,6 +2710,16 @@ async function main() {
       await swCtx.close();
       resetSwitches();
     }
+
+    // ── cards wear their terminal colours ───────────────────────────────────
+    // The board setting that draws every card in its own terminal theme. Off,
+    // nothing changes. On, every card in the terminals list, the stack and the
+    // board columns takes its theme's background, the attached card keeps a
+    // frame the others do not have, and every title, path and chip reads at
+    // WCAG AA (4.5:1) against the surface it is on, on every shipped theme.
+    // Measured off computed styles, so what is scored is what the browser
+    // painted, not what the code meant to paint.
+    await wornSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

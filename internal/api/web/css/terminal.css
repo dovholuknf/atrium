@@ -624,3 +624,35 @@
     display: block; margin-top: 5px; font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: break-all;
   }
+
+  /* ── cards in their terminal's colours ──────────────────
+     The board setting "cards wear their terminal colours". `cardWear` in js/themes.js puts `.worn` on a card
+     and rewrites the skin's palette on it inline: `--card-0` is the terminal's background, `--head` its
+     accent, `--body` its foreground, and warn, live, path and danger come off its ANSI colours. So the chips,
+     the star, the wait timer and the waiting edge follow with no rule here. What is here is the few places
+     that paint a surface of their own instead of reading the palette.
+     Here rather than in cards.css because it has to beat rules in rows.css and in this file, which load
+     after cards.css. */
+  .card.worn, .cardgroup.project .card.worn {
+    background: var(--card-0); border-color: var(--stroke);
+  }
+  .stackrow.worn { background: var(--card-0); }
+  /* The room chip mixes a hue per room into its text and its wash, and on a terminal's background the text fell
+     to 1.5:1 on the light themes and the wash alone cost up to half a point on the rest. Worn, the text is the
+     card's title colour on the card itself, and the room's hue moves to a border strong enough to carry it. */
+  .worn .chip.room {
+    color: var(--head); background: transparent;
+    border-color: color-mix(in srgb, var(--room-ink) 75%, transparent);
+  }
+  .stackrow.worn:hover { background: linear-gradient(var(--lift), var(--lift)), var(--card-0); }
+  /* The attached card. Off, it is the one card in its terminal's colours. On, every card is, so the colour
+     stops saying which one you are on. A frame says it instead: two pixels in the card's title colour, open on
+     the side facing the pane like the tab it is. Every other card keeps a hairline. */
+  .term-list .card.worn.on, .term-list .card.worn.on:hover {
+    border-color: var(--head); border-right-color: transparent;
+    box-shadow: inset 0 2px 0 var(--head), inset 0 -2px 0 var(--head), inset 2px 0 0 var(--head);
+  }
+  /* `.on` paints the name in the raw cursor colour, which is fine alone on its background and under 3:1 on
+     some themes. Worn, the name takes `--head`, which is that colour moved until it reads. */
+  .term-list .card.worn.on .title, .term-list .card.worn.on .title .tname { color: var(--head); }
+  .term-list .card.worn.on .title .tpath { color: var(--dim); opacity: 1; }

@@ -28,6 +28,20 @@ section heading is just "what landed in this iteration."
   to the top again. Nothing reached the audit pane on a board event, which logged `no renderer for the audit
   view` on every refresh; that is gone. HUB-SIDE.
 
+- **Cards can wear their terminal colours.**
+
+  Only the attached card in the terminals list was drawn in its terminal theme. Every other card showed its theme
+  as a stripe, so finding a session by colour meant attaching to it first. A new board setting, `cards wear their
+  terminal colours`, draws every card in its own theme: the terminals list, the stack and the board columns, and
+  the terminals list at phone width. Off by default, and off is the look it was. The card's palette is rewritten
+  on the card itself, so its chips, star, wait timer and waiting edge take the theme's ANSI colours with no rule
+  of their own. Every title, path and chip is held to 4.5:1 against the surface it sits on. Six themes' accents
+  were under that as title text (`deep-amethyst`, `monokai`, `orange-coral`, `orange-marigold`, `orange-tangerine`,
+  `wrought-iron`), and several ANSI yellows, cyans, blues and reds were too, most on `mint` and
+  `orange-marigold`. Those are moved toward white or black until they pass. A room chip on a coloured card carries
+  its room's hue in its border rather than in its text. The attached card keeps a two-pixel frame, open toward
+  the pane. The setting is per browser. HUB-SIDE.
+
 - **A session launched by another session that stops without a word is reported, not left sitting.**
 
   An agent-launched worker (`atrium_launch`) now owes its launcher a report every turn: `atrium_report` on the
