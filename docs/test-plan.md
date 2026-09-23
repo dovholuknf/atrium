@@ -2455,3 +2455,104 @@ report.
 1. On a hub with two rooms, each with a gemini row, press `trust it` on the second room's row.
 
 **Expected:** the trust file changes on the second room's machine only.
+
+## AB. Agent-to-agent reliability, stage 1
+
+A session launched by another session (`atrium_launch`, the `origin:agent` tag) owes its launcher a report every
+turn. A turn that ends without one is a silent stop: the launcher is told, then the board on a backoff. Atrium
+never forces a turn. See `docs/a2a-reliability-design.md`.
+
+Run these in a throwaway hub and room, never against the live board. Start one session in the throwaway room as
+the launcher, and launch workers from it with `atrium_launch`. Shorten the thresholds for the test with
+`ATRIUM_A2A_SILENT_STOP=30s` and `ATRIUM_A2A_LONG_TOOL=1m` in the room daemon's environment.
+
+### AB1. A worker that stops without reporting is reported, and never pushed
+
+1. From the launcher, `atrium_launch` a worker with the prompt `print the date, then stop. do not call any atrium
+   tool.`
+2. Watch the launcher's terminal and the worker's card.
+
+**Expected:** the worker ends its turn and stays in needs-input. It does not start another turn. Within seconds
+the launcher receives `<worker> ended its turn without reporting ... card <id>`, from the worker's handle. On the
+board, a minute after the stop, a notification reads `<worker> is STUCK: it stopped without reporting, 1
+minutes`, with `launched by <launcher>` as the body, and the card shows a `stuck` chip.
+
+**Common failure:** the worker's session was started without atrium hooks, so no Stop fires. The launcher then
+hears at `ATRIUM_A2A_SILENT_STOP` from the watchdog instead of at once. That is the fallback working, not a bug.
+
+### AB2. One notice per prompt, and a report or a message pays the turn
+
+1. Let AA1's worker stop silently a second time without prompting it again (for example, run the room's Stop hook
+   by hand for it). Then prompt it once more and let it stop silently.
+2. Launch a new worker with `do nothing, then call atrium_report with status done and no_commit "test"`.
+3. Launch another with `do nothing, then atrium_say your launcher "done"`.
+
+**Expected:** step 1 gives exactly one more notice, for the new prompt, not one per Stop. The worker from step 2
+gives the launcher one `report from <worker>: done` message and no silent-stop notice. The worker from step 3
+gives the launcher only its own `done`.
+
+### AB3. A human's card is untouched
+
+1. Start a session by hand in the throwaway room, with the Stop hook installed. End a turn.
+
+**Expected:** no notice to anybody, no escalation, and the Stop hook answers exactly as it did before.
+
+### AB4. An incomplete report is refused in the same turn, and an unverified sha is flagged
+
+1. From a worker, call `atrium_report` with `status: done` and no sha.
+2. Call it again with `sha: 0000000` (a commit that does not exist).
+3. From another worker, call it with `status: blocked` and no `ask`.
+
+**Expected:** step 1 is refused naming `sha` or `no_commit`, and the card does not move. Step 2 is accepted, the
+card goes to done with a `sha unverified` chip, and the launcher's report says `unverified`. Step 3 is refused
+naming `ask`. `atrium finish` from a hand-started session with no sha still works as before.
+
+### AB5. A stuck permission rings on the backoff
+
+1. Turn auto mode off. Launch a worker whose first step is a gated command. Do not answer.
+
+**Expected:** board notifications titled `<worker> is STUCK on a permission, n minutes` at 1, 2, 5 and 10
+minutes. The launcher is not asked to answer it. Answering it stops the nag. With auto mode on, the same launch
+raises no prompt and nothing rings.
+
+### AB6. A stuck tool is reported, not killed
+
+1. Launch a worker that runs `Start-Sleep 600`, with `ATRIUM_A2A_LONG_TOOL=1m`.
+
+**Expected:** at a minute the launcher gets one `has been in one Bash call for 1 minutes` notice. The board rings
+at 1 and 2 minutes after that. The sleep keeps running. When it ends and the worker moves on, the `stuck` chip
+goes and the next stuck episode starts from 1 minute again.
+
+### AB7. A message nothing will deliver says so at send time
+
+1. Start a gemini session by hand in the throwaway room, so atrium does not own its terminal. `atrium_say` to it
+   from another session.
+2. Start a claude session from a shell whose settings have no atrium hooks, and `atrium_say` to it.
+
+**Expected:** the gemini send answers `undeliverable` with a note naming the runner and the alternatives
+(relaunch under atrium, or ask the human to relay it). The claude send answers `queued-unconfirmed` with a note.
+Both messages are still in the card's queue.
+
+### AB8. The Stop hook rides along on an agent launch only
+
+1. On a machine with no Stop hook in `~/.claude/settings.json` but the other atrium hooks installed, launch a
+   worker with `atrium_launch`. Read the `launched` event on its card, then check its process command line.
+2. Start a session from the board's dialog.
+3. Install the Stop hook from the hooks pane and launch another worker.
+
+**Expected:** the worker's claude command line starts with `--settings` holding one Stop hook,
+`<atrium> turn --event end`, where `<atrium>` is the binary the other hooks use. The board's session has no
+`--settings`. With the Stop hook installed, no `--settings` is added, since Claude Code already runs it.
+
+### AB9. Lineage is recorded
+
+1. Launch a worker from the launcher, and a session from the board's dialog.
+
+**Expected:** `GET /v1/tasks/<worker>` shows `spawned_by` as the launcher's handle and `spawned_by_id` as its card.
+The dialog's card shows `spawned_by: "@human"`. Reopening the worker's card does not change either.
+
+### AB10. The Stop hook survives an unreachable daemon
+
+1. Stop the throwaway room daemon. End a turn in a launched worker.
+
+**Expected:** the turn ends normally. No hang, no error shown to the model.
