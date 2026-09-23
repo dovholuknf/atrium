@@ -720,10 +720,11 @@ function connectTerm(taskID) {
   // be the previous session's answer applied to this one, and switching from
   // an agent to a card's shell would bracket a paste the shell never asked for.
   termCaps = {};
-  // The same for the pty's width. The new socket's `{"t":"size"}` sets it again
-  // before the replay, and a room too old to send one gets this window's width.
+  // The same for the pty's size. The new socket's `{"t":"size"}` sets it again
+  // before the replay, and a room too old to send one gets this window's size.
   termPtyCols = 0;
-  applyPtyWidth();
+  termPtyRows = 0;
+  applyPtySize();
   // The width floor is the daemon's number. Asked once per window, and a pane
   // built on the default is re-sized when it arrives.
   if (!pastePrefs) pasteSettings().then(() => fitTerm());
@@ -1471,7 +1472,7 @@ function sendResize() {
   clearTimeout(resizeSettleTimer);
   resizeSettleTimer = 0;
   if (!term) return;
-  send({ t: "resize", cols: Math.max(termFitCols || term.cols, termMinCols()), rows: term.rows });
+  send({ t: "resize", cols: Math.max(termFitCols || term.cols, termMinCols()), rows: termFitRows || term.rows });
 }
 
 // THE WIDTH FLOOR. A runner's terminal never goes under this many columns.
@@ -1529,34 +1530,45 @@ function openFloorSetting() {
   if (box) box.focus();
 }
 
-// fitTerm is `termFit.fit()`, drawing at the pty's width when that is wider.
+// fitTerm is `termFit.fit()`, drawing at the pty's size where that differs.
 //
 // The fit addon only knows this window's box. It proposes what fits, and xterm
-// is sized to the larger of that and the pty's width. See `termPtyCols`.
+// is sized to the larger of that and the pty's width, and the smaller of that
+// and the pty's height. See `termPtyCols` and `termPtyRows`.
 function fitTerm() {
   if (!term || !termFit) return;
   const dims = termFit.proposeDimensions();
   if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
   termFitCols = dims.cols;
+  termFitRows = dims.rows;
   const floor = termMinCols();
   const cols = Math.max(dims.cols, termPtyCols, floor);
+  const rows = ptyRowsFor(dims.rows);
   if (dims.cols < floor) noteUnderFloor();
-  if (cols !== term.cols || dims.rows !== term.rows) {
+  if (cols !== term.cols || rows !== term.rows) {
     // What the addon's own fit does first, so a resize does not leave stale
     // glyphs from the old grid.
     try { term._core._renderService.clear(); } catch (e) {}
-    term.resize(cols, dims.rows);
+    term.resize(cols, rows);
   }
   markWide();
 }
 
-// applyPtyWidth re-sizes the grid after the daemon said the pty's width moved.
-function applyPtyWidth() {
+// The rows to draw for a fit of `fit` rows: the pty's when it is shorter.
+function ptyRowsFor(fit) {
+  return termPtyRows > 0 ? Math.min(fit, termPtyRows) : fit;
+}
+
+// applyPtySize re-sizes the grid after the daemon said the pty's size moved.
+function applyPtySize() {
   if (!term) return;
   const fit = termFitCols || term.cols;
   const cols = Math.max(fit, termPtyCols, termMinCols());
-  if (cols !== term.cols) term.resize(cols, term.rows);
+  const rows = ptyRowsFor(termFitRows || term.rows);
+  if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
   markWide();
+  // A row change moves the grid's height, and the host is sized to it.
+  sizeTermHost();
 }
 
 // A GRID WIDER THAN THE PANE SCROLLS SIDEWAYS.
@@ -1779,7 +1791,7 @@ function onTermResize() {
   const before = term.buffer.active;
   const wasAtBottom = before.viewportY >= before.baseY;
   const fromBottom = before.baseY - before.viewportY;
-  const wasCols = term.cols, wasRows = term.rows, wasFit = termFitCols;
+  const wasCols = term.cols, wasRows = term.rows, wasFit = termFitCols, wasFitRows = termFitRows;
 
   fitTerm();
   // After the fit, whatever it decided: the grid may have changed rows, or the
@@ -1797,8 +1809,8 @@ function onTermResize() {
       viewportY: before.viewportY, baseY: before.baseY
     });
   }
-  // A resize even when a wider pty kept the grid still. See `termFitCols`.
-  if (termFitCols !== wasFit || term.rows !== wasRows) sendResizeSettled();
+  // A resize even when the pty's size kept the grid still. See `termFitCols`.
+  if (termFitCols !== wasFit || termFitRows !== wasFitRows) sendResizeSettled();
   if (!changed) return;
   if (wasAtBottom) return;
   holdScrollAt(fromBottom);
