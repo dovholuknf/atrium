@@ -199,10 +199,9 @@ const FON = { id: "fon", label: "notes", harness: "claude", cwd: "/tmp/notes", e
 const FOFF = Object.assign({}, FON, { id: "foff", label: "scratch", enabled: false, sort: 1 });
 let switchFail = false;
 let switchWrites = [];
-let alphaMarked = false;
 function resetSwitches() {
   HON.enabled = true; HOFF.enabled = false; FON.enabled = true; FOFF.enabled = false;
-  switchFail = false; switchWrites = []; alphaMarked = false;
+  switchFail = false; switchWrites = [];
 }
 // A PUT onto one of the rows above. The row takes the new state unless the test
 // armed a refusal, which is answered the way the daemon answers a bad save.
@@ -414,27 +413,7 @@ const server = http.createServer((req, res) => {
     // picker only lists an ever-connected room, never one that is only inventory.
     const sgg = Object.assign({ transport: "direct", attached: sggAttached,
       first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T11:00:00Z" }, SGG);
-    if (alphaMarked) alpha.state = "marked-for-deletion";
     sendJSON(res, { rooms: [alpha, sgg] });
-    return;
-  }
-  // The room switch writes the deletion mark. Refused the same way as the rows.
-  if (url === "/_hub/inventory/mark" && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      let body = {};
-      try { body = JSON.parse(raw || "{}"); } catch (e) {}
-      switchWrites.push("POST " + url + " " + body.name + " " + body.marked);
-      if (switchFail) {
-        switchFail = false;
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "the hub refused the mark" }));
-        return;
-      }
-      if (body.name === "alpha") alphaMarked = !!body.marked;
-      sendJSON(res, { ok: true });
-    });
     return;
   }
   if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
@@ -2142,7 +2121,7 @@ async function main() {
       resetSkins();
     }
 
-    // ── the on/off switch: runners, fixtures, rooms ──────────────────────────
+    // ── the on/off switch: runners and fixtures ──────────────────────────────
     // Every enable/disable on the runners page is the row's own on/off pill. No
     // separate enable button; a click writes the row with `enabled` flipped; a
     // refusal puts the pill back and says why; the pill is one box on an on row
@@ -2268,54 +2247,6 @@ async function main() {
       await swCtx.close();
       resetSwitches();
     }
-
-    // Rooms: the deletion mark is the room's switch, on the rooms pane.
-    hubMode = true;
-    sggAttached = true;
-    const rmCtx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-    const rm = await rmCtx.newPage();
-    const rmErrors = [];
-    rm.on("pageerror", e => rmErrors.push(String(e)));
-    try {
-      await rm.goto(base, { waitUntil: "domcontentloaded" });
-      await rm.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
-      await rm.evaluate(() => goRunners("rooms"));
-      await rm.waitForSelector('#room-list .chip.toggle[data-id="sgg"]', { timeout: 15000 });
-      const mark = rm.waitForResponse(r => r.url().endsWith("/_hub/inventory/mark"), { timeout: 15000 });
-      await rm.click('#room-list .chip.toggle[data-id="alpha"]');
-      const asked = JSON.parse((await mark).request().postData() || "{}");
-      if (asked.name !== "alpha" || asked.marked !== true) {
-        fail("switching a room off sent " + JSON.stringify(asked) + ", not a mark on alpha.");
-      }
-      await rm.waitForFunction(() => {
-        const b = document.querySelector('#room-list .chip.toggle[data-id="alpha"]');
-        return b && b.getAttribute("aria-checked") === "false";
-      }, { timeout: 15000 }).catch(() => fail("a room switched off did not stay off."));
-      const box = id => rm.evaluate(i => {
-        const b = document.querySelector(`#room-list .chip.toggle[data-id="${i}"]`);
-        const r = b.getBoundingClientRect();
-        return { w: r.width, next: b.nextElementSibling.getBoundingClientRect().left - r.left };
-      }, id);
-      const a = await box("alpha"), s = await box("sgg");
-      if (Math.abs(a.w - s.w) > 0.5 || Math.abs(a.next - s.next) > 0.5) {
-        fail("the room switch is not one box on and off: " + JSON.stringify({ off: a, on: s }));
-      }
-      switchFail = true;
-      await rm.click('#room-list .chip.toggle[data-id="sgg"]');
-      await rm.waitForSelector("#ask[open]", { timeout: 15000 });
-      const said = await rm.evaluate(() => document.getElementById("ask").textContent);
-      if (!said.includes("the hub refused the mark")) fail("a refused room mark was not shown: " + said.trim());
-      const sggNow = await rm.evaluate(() =>
-        document.querySelector('#room-list .chip.toggle[data-id="sgg"]').getAttribute("aria-checked"));
-      if (sggNow !== "true") fail("a refused room mark did not put the switch back on.");
-      if (rmErrors.length) fail("the rooms switch page threw uncaught errors: " + rmErrors.join(" | "));
-    } finally {
-      await rm.close();
-      await rmCtx.close();
-      hubMode = false;
-      sggAttached = false;
-      resetSwitches();
-    }
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -2362,7 +2293,7 @@ async function main() {
     "attaching leaves the ALL skin alone), a persisted skin heals when a " +
     "room attaches after a load that could not read settings, with no reload, " +
     "a desktop notification fired while no window has focus is recorded in " +
-    "the toast log without also drawing a toast, and the runner, fixture and room " +
+    "the toast log without also drawing a toast, and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width).");
 }

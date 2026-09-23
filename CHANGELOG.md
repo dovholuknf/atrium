@@ -41,14 +41,14 @@ section heading is just "what landed in this iteration."
   grey styling and the toggle now read one test, `termCold`, and a pin no longer exempts a row from either toggle.
   With both toggles off a pinned row still stays after its session exits, drawn cold. HUB-SIDE.
 
-- **Every on/off row on the rooms page switches from its own pill. The separate enable button is gone.**
+- **Every on/off row on the runners page switches from its own pill. The separate enable button is gone.**
 
-  Runners, fixtures, sources, providers, recognisers, actions and rooms all draw the fixtures' `on`/`off` pill,
-  and a click flips the row. It is a button with `role=switch`, so tab, space and enter reach it, and its title
-  says what a click does. The pill changes at once. If the save is refused, it goes back and the reason shows the
-  way every other error on the page does. It is one width on and off, so the columns after it line up, and 40px
-  tall at phone width. A room's switch is its deletion mark: off means marked, so nothing new starts there. A
-  runner whose command is not on PATH can still be switched off but not on. HUB-SIDE.
+  Runners, fixtures, sources, providers, recognisers and actions all draw the fixtures' `on`/`off` pill, and a
+  click flips the row. It is a button with `role=switch`, so tab, space and enter reach it, and its title says
+  what a click does. The pill changes at once. If the save is refused, it goes back and the reason shows the way
+  every other error on the page does. It is one width on and off, so the columns after it line up, and 40px tall
+  at phone width. A runner whose command is not on PATH can still be switched off but not on. Rooms keep their
+  `marked for deletion` chip and the mark button in the room's cog. HUB-SIDE.
 
 - **Typed text stays in claude's input box after attaching to a session that is already running.**
 
