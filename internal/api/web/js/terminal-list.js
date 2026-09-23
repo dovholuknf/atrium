@@ -180,29 +180,24 @@ function sessionHiddenBy(t, keep) {
   return termCold(t) && hideAgentsMode() !== "none";
 }
 
-// THE HEADER CONTROL, a segmented pill drawn beside `sorted by activity`. It
-// reads as one control - `agents | subagents` in a single rounded container,
-// styled like the card's agent|shell pair (it borrows `.termkind`) - but each
-// segment is an INDEPENDENT on/off toggle. agent|shell is one-of-two; this is
-// two switches: hide the inactive agents, the inactive subagents, both, or
-// neither, so both segments can be lit at once.
+// THE HIDE CONTROL, a pair of pills in the tray's `hide inactive` row, drawn
+// like the sort pair above it, but each pill is an INDEPENDENT on/off toggle:
+// hide the inactive agents, the inactive subagents, both, or neither, so both
+// can be lit at once.
 //
-// A PRESSED SEGMENT is lit like agent|shell's selected side and carries the
+// A PRESSED SEGMENT is lit and carries the
 // count it is hiding right now in parentheses - `agents (3)` - so the pill says
-// how much is out of view. The `hide inactive` caption says what pressing a
-// segment does. INACTIVE MEANS A DIFFERENT THING PER SIDE (see the note above),
+// how much is out of view. INACTIVE MEANS A DIFFERENT THING PER SIDE (see the note above),
 // so the tooltips differ: an agent is inactive when it has EXITED (no live
 // connection), a subagent is inactive when it is NOT WORKING right now (idle,
 // waiting, or exited). The attached one always stays, whatever is pressed.
 //
-// DRAWN WHEN IT DOES SOMETHING: when either kind has an inactive session it
-// could hide, or when either toggle is already on (so it can be turned back
-// off). Both segments are drawn together whenever the control shows, so it
-// always reads as the same pair rather than growing and shrinking a side.
+// ALWAYS DRAWN. It lives in the controls tray (see `termTrayHTML`), where a row
+// that came and went with the data would shift every row under it. Its caption
+// is the tray row's label.
 function termHideControlsHTML(c) {
   const aOn = hideAgentsMode() !== "none";
   const sOn = hideSubagentsMode() !== "none";
-  if (!aOn && !sOn && !c.agentHideable && !c.subHideable) return "";
   const seg = (name, on, hidden, fn, title) => {
     const label = on && hidden ? `${name} (${hidden})` : name;
     return `<button class="${on ? "on" : ""}" onclick="${fn}"
@@ -228,11 +223,91 @@ function termHideControlsHTML(c) {
     : "hide the inactive subagents (idle, waiting, or exited - not working right " +
       "now). only actively-working subagents and the attached one stay") +
     ". " + subNote;
-  return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
+  return `<div class="seg trayseg termhide">${
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
     }${
       seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
-    }</span>`;
+    }</div>`;
+}
+
+// ── the controls tray ───────────────────────────────────────────────────────
+//
+// THE CONTROLS ARE A PANEL ABOVE THE LIST, NOT A HEADER OVER IT. The sort, hide
+// and group controls sat in a sticky header inside the list's scroll box, and
+// the cards scrolled under it. Now the tray is its own box in normal flow and
+// the cards scroll in `.termscroll` beneath it, so nothing passes under it.
+//
+// IT ROLLS UP. Folded, it is one line saying what the controls are set to, so
+// the state is readable without spending three rows on it. Open, it shows the
+// controls. Which of the two is remembered per device, like the strip's other
+// view prefs (see `termDeviceKey`), and defaults to folded.
+const TERM_TRAY_KEY = "atrium.termtray";
+function termTrayOpen() {
+  try { return localStorage.getItem(termDeviceKey(TERM_TRAY_KEY)) === "open"; }
+  catch (e) { return false; }
+}
+function toggleTermTray() {
+  try {
+    localStorage.setItem(termDeviceKey(TERM_TRAY_KEY), termTrayOpen() ? "closed" : "open");
+  } catch (e) {}
+  renderTermList();
+}
+
+// The sort as a pair rather than a chip that names its own state, so it reads
+// like the two rows under it.
+function setTermSort(byActivity) {
+  if (sortByActivity !== !!byActivity) toggleTermSort();
+}
+
+// What the folded tray says: the sort, the grouping, and what is being hidden,
+// in the words the controls use. The grouping is `by project`, the pill's own
+// label, rather than `grouped by project`, which pushed the line to three at
+// the default width.
+const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age" };
+function termTraySummary(c) {
+  const p = typeof groupingPrefs === "function" ? groupingPrefs() : { on: false };
+  const mode = p.on ? (p.mode || "project") : "off";
+  const hid = [];
+  if (hideAgentsMode() !== "none") hid.push("agents");
+  if (hideSubagentsMode() !== "none") hid.push("subagents");
+  const n = c.agentHidden + c.subHidden;
+  return [
+    sortByActivity ? "sorted by activity" : "sorted by name",
+    mode === "off" ? "ungrouped" : "by " + (TRAY_GROUP_WORDS[mode] || mode),
+    hid.length ? `hiding inactive ${hid.join(", ")}${n ? ` (${n})` : ""}` : "hiding nothing"
+  ].join(" · ");
+}
+
+// The tray. The bar is the summary, which is the fold toggle, and the list's
+// width buttons at its end, drawn in both states since they are about the list
+// and not about the controls. The body is `inert` while folded so its buttons
+// are out of the tab order as well as out of sight.
+function termTrayHTML(c) {
+  const open = termTrayOpen();
+  const sortSeg = `<div class="seg trayseg">
+      <button class="${sortByActivity ? "" : "on"}" onclick="setTermSort(false)"
+        title="alphabetical by name">name</button>
+      <button class="${sortByActivity ? "on" : ""}" onclick="setTermSort(true)"
+        title="working sessions first, then anything waiting on you, then newest activity"
+        >activity</button></div>`;
+  return `<div class="termtray${open ? " open" : ""}">
+      <div class="traybar">
+        <button class="traytoggle" onclick="toggleTermTray()" aria-expanded="${open}"
+          title="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
+          ><span class="traychev">&#9656;</span
+          ><span class="traysum">${esc(termTraySummary(c))}</span></button>
+        ${termListButtons()}
+      </div>
+      <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
+        <div class="trayrow"><span class="barlabel">sort</span>${sortSeg}</div>
+        <div class="trayrow"><span class="barlabel">hide inactive</span>${termHideControlsHTML(c)}</div>
+        <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
+             \`paintGroupSegs\` from the same list, so there is one setting behind
+             all three. -->
+        <div class="trayrow termgroups"><span class="barlabel">group</span
+          ><div class="seg trayseg groupseg" id="term-group"></div></div>
+      </div></div></div>
+    </div>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
@@ -242,28 +317,25 @@ function termHideControlsHTML(c) {
 // heading) pushed the sessions off the bottom before a single card was drawn.
 // So with a terminal attached the list COLLAPSES to one row naming the attached
 // session, and a tap opens the full list back up. The sort and grouping
-// controls fold under a `filters` button in the same spirit: shown when asked
-// for, out of the way otherwise.
+// controls are the tray at the top of it, folded to one line until asked for
+// (see `termTrayHTML`).
 //
 // Only on a phone, and only with a terminal attached. A desktop has the width
 // for the list beside the terminal, and a phone with nothing attached is
 // already showing the list as its whole view, so there is nothing to collapse.
-// The trigger and the filters button are hidden by CSS in both of those.
+// The trigger is hidden by CSS in both of those.
 //
 // `open` is not persisted: attaching collapses it (see `openTerm`) and it opens
-// on a tap, so a stored value would only ever fight one of those. `filters` is
-// persisted, since it is a preference about how much chrome you want, not a
-// per-attach state.
+// on a tap, so a stored value would only ever fight one of those.
 let termListOpen = false;
-let termFiltersOpen = false;
-try { termFiltersOpen = localStorage.getItem("atrium.termfilters") === "1"; } catch (e) {}
+// The `filters` button this replaced kept its own key. The tray has its own.
+try { localStorage.removeItem("atrium.termfilters"); } catch (e) {}
 
-// The classes the phone stylesheet reads, set from state rather than toggled in
+// The class the phone stylesheet reads, set from state rather than toggled in
 // place so a poll's re-render keeps whatever the taps left. Called from
 // `applyTermList`, which runs on every render.
 function applyTermDrop(lay) {
   lay.classList.toggle("tl-open", termListOpen);
-  lay.classList.toggle("tf-open", termFiltersOpen);
 }
 
 function setTermListOpen(open) {
@@ -277,16 +349,9 @@ function setTermListOpen(open) {
 }
 function toggleTermListOpen() { setTermListOpen(!termListOpen); }
 
-function toggleTermFilters() {
-  termFiltersOpen = !termFiltersOpen;
-  try { localStorage.setItem("atrium.termfilters", termFiltersOpen ? "1" : "0"); } catch (e) {}
-  const lay = document.getElementById("term-layout");
-  if (lay) lay.classList.toggle("tf-open", termFiltersOpen);
-}
-
 // The collapsed trigger: the attached session's name and a caret that opens the
-// list, plus the filters button. Hidden by CSS everywhere except a phone with a
-// terminal attached, so it is always rendered and never in the way.
+// list. Hidden by CSS everywhere except a phone with a terminal attached, so it
+// is always rendered and never in the way.
 function termDropHTML() {
   const t = termTask;
   const label = t
@@ -296,8 +361,6 @@ function termDropHTML() {
       <button class="termdrop-cur" onclick="toggleTermListOpen()"
         title="switch session"><span class="tname">${esc(label)}</span
         ><span class="caret">&#9662;</span></button>
-      <button class="termfilters-btn" onclick="toggleTermFilters()"
-        title="sort and grouping">filters</button>
     </div>`;
 }
 
@@ -338,7 +401,9 @@ function placeTabBridge() {
   const l = lay.getBoundingClientRect();
   const c = card.getBoundingClientRect();
   const list = document.getElementById("term-list");
-  const lr = list.getBoundingClientRect();
+  // Clipped by the box the rows scroll in, not the whole list, so a card
+  // scrolled up to the tray's edge loses its bridge there.
+  const lr = (list.querySelector(".termscroll") || list).getBoundingClientRect();
 
   // NOTHING TO MEASURE IS NOT THE SAME AS NOTHING TO DRAW.
   //
@@ -1502,52 +1567,23 @@ async function renderTermList() {
   // The phone's collapsed switcher, hidden by CSS on a desktop and while nothing
   // is attached. It names the attached session and opens the list over the
   // terminal. See `termDropHTML`.
-  // The head is the sort chip and the grouping control. On a phone both fold
-  // under the `filters` button in the trigger; on a desktop they sit at the top
-  // of the list as always.
-  // WRAPPED IN `.termstick` AND PINNED. The control cluster (the sort chip, the
-  // hide pill and the `group` row) stays put at the top
-  // of the list while the cards scroll under it. The wrapper is `position:
-  // sticky` and rides whichever box actually scrolls: `#term-list` on a desktop
-  // and when nothing is attached, and the floating `.termbody` flyout on a phone
-  // with a session open (see terminal.css and phone.css). Both control rows go
-  // inside it so they stick as one header rather than one pinning and the other
-  // scrolling out from under it.
-  const head = `<div class="termstick">
-      <div class="termhead">
-        <button class="termsort" onclick="toggleTermSort()"
-          title="working sessions first, then anything waiting on you, then newest activity">
-          ${sortByActivity ? "sorted by activity" : "sorted by name"}</button>
-        ${termHideControlsHTML(hideCounts)}
-        <span class="grow"></span>
-        ${termListButtons()}
-      </div>
-      <!-- THE SAME CONTROL THE BOARD AND THE STACK HAVE, filled in by
-           \`paintGroupSegs\` from the same list. Grouping is a way of reading the
-           same sessions rather than a property of one screen, so the control
-           belongs wherever you are when you decide you want it, and there is one
-           setting behind all three.
-           Its own row, because five buttons do not fit beside the sort toggle in
-           a strip this narrow. Hidden in \`mini\`, where there is no room for any
-           of it. -->
-      <div class="termhead termgroups">
-        <span class="barlabel">group</span>
-        <div class="seg groupseg" id="term-group"></div>
-      </div>
-    </div>`;
-
+  // THE TRAY, THEN THE ROWS IN A BOX OF THEIR OWN. The controls tray (see
+  // `termTrayHTML`) sits in flow at the top and `.termscroll` under it is the
+  // box that scrolls, so no card ever passes under the controls.
+  //
   // THE TRIGGER STAYS IN FLOW; THE BODY CAN FLOAT. On a phone the trigger is the
   // one row you always see and `.termbody` is what the caret opens OVER the
   // terminal, so opening the switcher never resizes the terminal under it. On a
-  // desktop `.termbody` is `display: contents` and the head and cards sit in the
-  // list exactly as before. The board card, its shape and class, is unchanged:
+  // desktop `.termbody` is `display: contents` and the tray and the rows sit in
+  // the list directly. The board card, its shape and class, is unchanged:
   // this list is a switcher, and what it drops (the status chip, the duration)
   // it drops because the board says those better.
   setHTML(host, tasks.length
-    ? termDropHTML() + `<div class="termbody">` + head +
+    ? termDropHTML() + `<div class="termbody">` + termTrayHTML(hideCounts) +
+      `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
         termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(shown.filter(t => !t.pinned || termFiled(t))) + `</div>`
+      termGroupsHTML(shown.filter(t => !t.pinned || termFiled(t))) + `</div></div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
@@ -1556,13 +1592,15 @@ async function renderTermList() {
   // later, so the measurement happens on the layout that was just written
   // rather than on the one being replaced.
   requestAnimationFrame(placeTabBridge);
-  // Scrolling the list moves the attached card under a bridge that is not
-  // moving with it. Wired here rather than at boot because the host is
-  // replaced wholesale, and guarded so a refresh does not stack listeners the
-  // way the terminal's paste handler did.
+  // Scrolling the rows moves the attached card under a bridge that is not
+  // moving with it, and so does the tray rolling up or down. A capturing
+  // listener on the host hears the scroll of `.termscroll` inside it, and
+  // `transitionend` bubbles up from the tray. Guarded so a refresh does not
+  // stack listeners the way the terminal's paste handler did.
   if (!host.dataset.bridged) {
     host.dataset.bridged = "1";
-    host.addEventListener("scroll", placeTabBridge, { passive: true });
+    host.addEventListener("scroll", placeTabBridge, { passive: true, capture: true });
+    host.addEventListener("transitionend", placeTabBridge);
   }
   wireTermDrag(host);
   // After the host is replaced, since `setHTML` above threw away the div these

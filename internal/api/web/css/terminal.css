@@ -26,42 +26,77 @@
   /* No `gap`. It spaced every child of the strip equally, which is the wrong unit: the distance between a
      heading and its own first row is not the distance between two unrelated repos. `.tnest` carries a
      `padding-bottom` instead, so the space falls where a group ends. */
+  /* A column of two boxes: the controls tray on top, in flow, and `.termscroll` under it, which is the one
+     that scrolls. The list itself does not scroll, so nothing can pass under the tray. */
   .term-list {
     flex: 0 0 var(--termw, 260px); display: flex; flex-direction: column;
-    min-height: 0; overflow-y: auto; overflow-x: hidden;
-    /* No `padding-top`. It sat inside the scroll port above `top: 0` on
-       `.termstick`, so the sticky pinned 3px inside the box and cards scrolled
-       through the seam above it. The sticky wrapper carries the top padding
-       itself now, so the header covers the top edge and there is no strip a
-       card can render into. Side and bottom padding stay: they still keep the
-       card's lift and focus ring from being clipped by the scroll container. */
-    padding: 0 3px 6px;
+    min-height: 0; overflow: hidden; padding-top: 5px;
     /* Its own surface, so the page's grid does not show through. `body::before` lays a 60px grid over the
        whole page at a third opacity, which is texture behind the board and a defect behind a list: it draws
        bands across the strip that line up with nothing in it. Wall to wall cards hid it. Group headings leave
        gaps, and gaps are where it came through. */
     background: var(--shell-0); border-radius: var(--r-md);
   }
-  /* The list's own controls, above the entries and scrolling with them. Same height as the terminal's bar, so
-     the two headers read as one line across the view instead of one sitting a few pixels above the other. */
-  .termhead {
-    display: flex; align-items: center; gap: var(--sp-2);
-    min-height: var(--barh); box-sizing: border-box; flex: none;
+  /* The rows. Side and bottom padding keep a card's focus ring from being clipped by this scroll box. */
+  .termscroll {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    overflow-y: auto; overflow-x: hidden; padding: 0 3px 6px;
   }
 
-  /* The control cluster stays pinned while the cards scroll under it. Sticky
-     rather than fixed, so it rides whichever box is actually scrolling: on a
-     desktop and when nothing is attached that is `#term-list`; on a phone with a
-     session open it is the floating `.termbody` flyout (see phone.css). Both
-     control rows live in here so they pin as one header instead of the sort row
-     sticking and the group row scrolling out from under it.
-     The list's own background so the cards passing behind it do not show
-     through, and it sits above them. `flex: none` keeps it from being squeezed
-     by the scrolling rows below. A hair of top padding matches the list's own,
-     so a card cannot peek above it at the seam. */
-  .termstick {
-    position: sticky; top: 0; z-index: 5; flex: none;
-    background: var(--shell-0); padding-top: 5px;
+  /* The controls tray. A panel of its own above the rows. The bar is always drawn: the summary, which folds
+     the tray, and the list's width buttons at its end. Same height as the terminal's bar, so the two read as
+     one line across the view. */
+  .termtray {
+    flex: none; margin: 0 3px 6px;
+    background: var(--shell-1); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+  }
+  .traybar {
+    display: flex; align-items: center; gap: var(--sp-1);
+    min-height: var(--barh); box-sizing: border-box; padding-right: 4px;
+  }
+  button.traytoggle {
+    flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px;
+    background: transparent; border: 0; padding: 6px 4px 6px 8px; text-align: left;
+    color: var(--dim); font-size: var(--fs-xs);
+  }
+  button.traytoggle:hover { color: var(--head); transform: none; background: transparent; }
+  .traychev { flex: none; color: var(--dimmest); transition: transform .2s ease; }
+  .termtray.open .traychev { transform: rotate(90deg); }
+  /* Wraps rather than truncates. At the default 260px the whole summary is a line and a half, and cut short
+     it drops the part that says what is hidden, which is the part worth reading. */
+  .traysum { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
+  .traychev { align-self: flex-start; line-height: 1.35; }
+  /* The roll. A grid row animating from `0fr` to `1fr` is a height transition to the content's own height,
+     which `height: auto` cannot be. The track's one item has no padding or border of its own, since a
+     grid track cannot shrink below those; they are on `.trayrows` inside it, which the item clips. */
+  .traybody {
+    display: grid; grid-template-rows: 0fr;
+    transition: grid-template-rows .2s ease;
+  }
+  .termtray.open .traybody { grid-template-rows: 1fr; }
+  .trayinner { min-height: 0; overflow: hidden; }
+  .trayrows {
+    display: flex; flex-direction: column; gap: var(--sp-3);
+    padding: 10px 8px; border-top: 1px solid var(--stroke-dim);
+  }
+  /* A label over its control, every row the same. The strip is too narrow to put them side by side and
+     leave the pills room. */
+  .trayrow { display: flex; flex-direction: column; gap: 5px; }
+  .trayrow .barlabel { font-size: var(--fs-xxs); min-width: 0; }
+  /* Every pill in the tray the same size: a grid of equal cells rather than pills as wide as their words. The
+     sort and hide pairs are two cells, the grouping three, so its six modes are two even rows. */
+  .seg.trayseg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .seg.trayseg.groupseg { grid-template-columns: repeat(3, 1fr); }
+  .seg.trayseg button {
+    padding: 5px 6px; font-size: var(--fs-xs); text-align: center; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* `+ new group` is an action, not a mode, so it takes a row of its own under the modes, full width and
+     dashed, rather than wrapping in after them as a seventh pill. */
+  .seg.trayseg .groupplus { grid-column: 1 / -1; border-style: dashed; }
+  /* Motion is decoration here. */
+  @media (prefers-reduced-motion: reduce) {
+    .traybody, .traychev { transition: none; }
   }
 
   /* The phone switcher and its wrapper. On a desktop neither exists as far as
@@ -136,19 +171,13 @@
     margin: 0; width: 18px; height: 18px;
   }
   .tl-mini .term-list .card .title .rmark svg { width: 12px; height: 12px; }
-  /* The sort goes, the collapse button stays. Hiding both took away the only way back to the full list: `off`
-     has the rail to hover and `mini` had nothing, so shrinking the list was a one-way trip until you found
-     the localStorage key. */
-  .tl-mini .termsort:not(.tlcycle) { display: none; }
-  .tl-mini .termhead { justify-content: center; }
-  .tl-mini .termhead .grow { display: none; }
-  /* The group buttons wrap onto as many lines as they need, which in a strip this narrow is two or three.
-     They are five short words and reading them is the whole control. */
-  .termgroups { flex-wrap: wrap; gap: 4px; }
-  .termgroups .barlabel { font-size: var(--fs-xxs); }
-  .termgroups .seg { flex-wrap: wrap; }
-  /* Nothing of it survives `mini`, which is eight characters and a mark. */
-  .tl-mini .termgroups, .tl-off .termgroups { display: none; }
+  /* The tray folds down to the width buttons, which stay. Hiding them too took away the only way back to the
+     full list: `off` has the rail to hover and `mini` had nothing, so shrinking the list was a one-way trip
+     until you found the localStorage key. Nothing else of the tray survives `mini`, which is eight
+     characters and a mark. */
+  .tl-mini .traytoggle, .tl-mini .traybody { display: none; }
+  .tl-mini .termtray { background: none; border-color: transparent; }
+  .tl-mini .traybar { justify-content: center; padding-right: 0; }
   /* Which of the two names shows is a CSS question, so both are rendered and neither has to be recomputed
      when the mode changes. */
   .tshort { display: none; }
@@ -307,18 +336,6 @@
     background: transparent; border-color: var(--stroke-dim); color: var(--dimmest);
   }
   button.termsort:hover { color: var(--head); border-color: var(--blue); }
-  /* The hide control: a segmented pill that looks like the card's agent|shell
-     pair (it borrows `.termkind` for the shape and the lit-segment fill), but
-     each segment is an INDEPENDENT toggle, so both sides can be lit at once. The
-     caption sits quietly before it, and both ride the sort chip's baseline
-     rather than the `flex-start` the bare chip uses. Folded away in `mini`,
-     where the strip is too narrow for any of it, the same as the sort chip. */
-  .termhead .termhide { align-self: center; }
-  .termhidelab {
-    align-self: center; font-size: var(--fs-sm); color: var(--dimmest);
-    white-space: nowrap;
-  }
-  .tl-mini .termhide, .tl-mini .termhidelab { display: none; }
   /* The pair sits together, so they read as one control with two directions rather than two adjacent
      buttons. `align-self: center` undoes the `flex-start` above: the sort button beside them is a pill of
      text and these are single glyphs, so anchoring all three to the top left the chevrons riding high. */

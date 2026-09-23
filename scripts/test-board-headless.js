@@ -801,29 +801,172 @@ async function main() {
         "segments: " + JSON.stringify(hBack));
     }
 
-    // The control cluster is a sticky header: it stays pinned to the top of the
-    // list rather than scrolling away with the cards. Asserted structurally,
-    // since a headless run has no tall list to scroll: the two control rows live
-    // inside one `.termstick`, and it is `position: sticky` pinned to `top: 0`.
+    // ── the controls tray ────────────────────────────────────────────────────
+    // The sort/hide/group controls are a panel of their own at the top of the
+    // list, in flow, and the rows scroll in `.termscroll` beneath it, so no card
+    // passes under the controls. It rolls up to one summary line (the default)
+    // and down to the controls, and the choice is kept per device.
+    // On the terminals view, so the geometry below is measured on a laid-out
+    // list, and with the hide toggles back at their defaults.
+    await page.click('.tab[data-view="terms"]');
     await page.evaluate(async () => {
-      setHideSubagents("none"); setHideAgents("none"); await renderTermList();
+      localStorage.removeItem(termDeviceKey("atrium.termtray"));
+      localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
+      localStorage.removeItem(termDeviceKey("atrium.hideagents"));
+      await renderTermList();
     });
-    const sticky = await page.evaluate(() => {
-      const st = document.querySelector("#term-list .termstick");
-      if (!st) return { ok: false, why: "no .termstick wrapper" };
-      const cs = getComputedStyle(st);
-      const rows = st.querySelectorAll(".termhead").length;
-      const group = !!st.querySelector("#term-group");
-      return { ok: true, position: cs.position, top: cs.top, rows, group };
+    const trayShut = await page.evaluate(() => {
+      const tray = document.querySelector("#term-list .termtray");
+      const scroll = document.querySelector("#term-list .termscroll");
+      const body = tray && tray.querySelector(".traybody");
+      return {
+        tray: !!tray, scroll: !!scroll,
+        trayInScroll: !!(tray && scroll && scroll.contains(tray)),
+        trayFirst: !!(tray && scroll && (tray.compareDocumentPosition(scroll) &
+          Node.DOCUMENT_POSITION_FOLLOWING)),
+        trayPos: tray ? getComputedStyle(tray).position : "",
+        listOverflow: getComputedStyle(document.getElementById("term-list")).overflowY,
+        scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
+        open: !!(tray && tray.classList.contains("open")),
+        inert: !!(body && body.inert),
+        bodyH: body ? body.getBoundingClientRect().height : -1,
+        summary: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
+        widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0
+      };
     });
-    if (!sticky.ok) {
-      fail("the terminals control cluster is not wrapped for pinning: " + sticky.why);
-    } else if (sticky.position !== "sticky" || sticky.top !== "0px") {
-      fail("the terminals control cluster is not a sticky header pinned to the top: " +
-        JSON.stringify(sticky));
-    } else if (sticky.rows < 2 || !sticky.group) {
-      fail("the sticky header is missing a control row (sort/hide or the group row): " +
-        JSON.stringify(sticky));
+    if (!trayShut.tray || !trayShut.scroll || trayShut.trayInScroll || !trayShut.trayFirst) {
+      fail("the controls are not a tray above a separate scrolling box of rows: " +
+        JSON.stringify(trayShut));
+    }
+    if (trayShut.trayPos === "sticky" || trayShut.listOverflow !== "hidden" ||
+        trayShut.scrollOverflow !== "auto") {
+      fail("the list still scrolls under its controls (sticky, or the list itself " +
+        "scrolls): " + JSON.stringify(trayShut));
+    }
+    if (trayShut.open || !trayShut.inert || trayShut.bodyH > 1) {
+      fail("the tray is not folded by default (open, not inert, or its body has " +
+        "height): " + JSON.stringify(trayShut));
+    }
+    // The subagents toggle defaults on and hides the idle and the dead subagent.
+    if (!/^sorted by (name|activity) · (by \w+|ungrouped) · hiding inactive subagents \(2\)$/
+        .test(trayShut.summary)) {
+      fail("the folded tray does not summarise sort, grouping and hiding in one " +
+        "line: " + JSON.stringify(trayShut.summary));
+    }
+    if (trayShut.widthBtns < 1) {
+      fail("the list's width buttons are not on the folded tray's bar: " +
+        JSON.stringify(trayShut));
+    }
+
+    // Open it: the key is written for this device, the body is live and has
+    // height once the roll has run, and the three rows are there, labelled.
+    await page.evaluate(() => toggleTermTray());
+    await page.waitForTimeout(450);
+    const trayOpen = await page.evaluate(() => {
+      const tray = document.querySelector("#term-list .termtray");
+      const body = tray.querySelector(".traybody");
+      const pills = [...tray.querySelectorAll(".trayseg button")];
+      return {
+        key: localStorage.getItem(termDeviceKey("atrium.termtray")),
+        open: tray.classList.contains("open"), inert: body.inert,
+        bodyH: body.getBoundingClientRect().height,
+        labels: [...tray.querySelectorAll(".trayrow > .barlabel")].map(l => l.textContent.trim()),
+        sortOn: [...tray.querySelectorAll(".trayrow:first-child .trayseg button.on")]
+          .map(b => b.textContent.trim()),
+        heights: [...new Set(pills.map(b => Math.round(b.getBoundingClientRect().height)))],
+        groupPills: tray.querySelectorAll("#term-group button").length
+      };
+    });
+    if (trayOpen.key !== "open" || !trayOpen.open || trayOpen.inert || trayOpen.bodyH < 60) {
+      fail("opening the tray did not roll it down and remember it: " + JSON.stringify(trayOpen));
+    }
+    if (trayOpen.labels.join("|") !== "sort|hide inactive|group") {
+      fail("the open tray's rows are not sort, hide inactive and group: " +
+        JSON.stringify(trayOpen.labels));
+    }
+    if (trayOpen.sortOn.length !== 1) {
+      fail("the sort row does not light exactly one of name|activity: " +
+        JSON.stringify(trayOpen));
+    }
+    if (trayOpen.heights.length !== 1 || trayOpen.groupPills < 6) {
+      fail("the tray's pills are not one consistent size, or the six group modes " +
+        "are missing: " + JSON.stringify(trayOpen));
+    }
+
+    // Remembered: a fresh paint of the list (what a reload does) reads the key
+    // and comes up open.
+    const trayKept = await page.evaluate(async () => {
+      const host = document.getElementById("term-list");
+      host.innerHTML = ""; host.__paintedFrom = null;
+      await renderTermList();
+      return document.querySelector("#term-list .termtray").classList.contains("open");
+    });
+    if (!trayKept) fail("the tray did not come back open from its stored state.");
+
+    // `+ new group` is not an orphan: in `by group` mode it spans the whole row
+    // under the six modes rather than wrapping in as a seventh pill.
+    const plus = await page.evaluate(async () => {
+      const prev = localStorage.getItem(GROUPING_KEY);
+      localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "custom", by: "" }));
+      await renderTermList();
+      const seg = document.getElementById("term-group");
+      const btn = seg && seg.querySelector(".groupplus");
+      const out = btn ? {
+        found: true,
+        full: Math.abs(btn.getBoundingClientRect().width - seg.getBoundingClientRect().width) <= 2,
+        summary: document.querySelector("#term-list .traysum").textContent
+      } : { found: false };
+      if (prev === null) localStorage.removeItem(GROUPING_KEY);
+      else localStorage.setItem(GROUPING_KEY, prev);
+      await renderTermList();
+      return out;
+    });
+    if (!plus.found || !plus.full) {
+      fail("`+ new group` is missing or does not span the group row: " + JSON.stringify(plus));
+    }
+    if (plus.found && !/ · by group · /.test(plus.summary)) {
+      fail("the tray summary does not name `by group` grouping: " + JSON.stringify(plus));
+    }
+
+    // NOTHING PASSES UNDER IT. Squeeze the list so the rows overflow, scroll the
+    // row box to the bottom, and every row's visible part is below the tray: the
+    // scroll box starts where the tray ends, and it is the scroll box that clips.
+    const under = await page.evaluate(async () => {
+      const host = document.getElementById("term-list");
+      host.style.maxHeight = "220px";
+      await renderTermList();
+      const scroll = host.querySelector(".termscroll");
+      scroll.scrollTop = scroll.scrollHeight;
+      const tray = host.querySelector(".termtray").getBoundingClientRect();
+      const sr = scroll.getBoundingClientRect();
+      const out = {
+        scrolled: scroll.scrollTop > 0,
+        scrollBelowTray: sr.top >= tray.bottom - 0.5
+      };
+      host.style.maxHeight = "";
+      return out;
+    });
+    if (!under.scrolled || !under.scrollBelowTray) {
+      fail("the rows do not scroll in their own box below the tray: " + JSON.stringify(under));
+    }
+
+    // In `mini` the tray keeps only the width buttons, so the way back is there.
+    const mini = await page.evaluate(async () => {
+      setTermListMode("mini");
+      const tray = document.querySelector("#term-list .termtray");
+      const vis = el => !!el && getComputedStyle(el).display !== "none";
+      const out = {
+        toggle: vis(tray.querySelector(".traytoggle")),
+        body: vis(tray.querySelector(".traybody")),
+        widen: [...tray.querySelectorAll(".tlcycle")].some(vis)
+      };
+      setTermListMode("full");
+      localStorage.removeItem(termDeviceKey("atrium.termtray"));
+      await renderTermList();
+      return out;
+    });
+    if (mini.toggle || mini.body || !mini.widen) {
+      fail("in mini the tray is not reduced to the width buttons: " + JSON.stringify(mini));
     }
 
     await page.evaluate(() => {
@@ -857,7 +1000,7 @@ async function main() {
       const vw = window.innerWidth;
       const list = document.getElementById("term-list");
       const lr = list.getBoundingClientRect();
-      const groups = document.querySelector("#term-list .termgroups");
+      const groups = document.querySelector("#term-list .termtray");
       const gr = groups ? groups.getBoundingClientRect() : null;
       const cards = [...document.querySelectorAll("#term-list .card.tab")]
         .map(c => c.getBoundingClientRect());
@@ -869,7 +1012,7 @@ async function main() {
         // the side the way the horizontal strip pushed all of them.
         cardsOnScreen: cards.length > 0 &&
           cards.every(r => r.left >= -1 && r.right <= vw + 1),
-        // The group toolbar is above the first card, at the top of the list,
+        // The controls tray is above the first card, at the top of the list,
         // rather than stranded in the blank space the missing cards left.
         groupsAboveCards: !!(gr && first && gr.top <= first.top + 1),
         // The document itself does not scroll sideways.
@@ -882,7 +1025,7 @@ async function main() {
         "blank-tab bug.");
     }
     if (!phoneTerm.groupsAboveCards) {
-      fail("the group toolbar is not at the top of the terminals list at 390px: " +
+      fail("the controls tray is not at the top of the terminals list at 390px: " +
         "it is stranded in the blank space the off-screen cards left behind.");
     }
     if (phoneTerm.listFills < 200) {
@@ -899,11 +1042,14 @@ async function main() {
     // terminal: the sessions float OVER it (position: absolute), the way the
     // desktop `off` flyout floats the list over the pane, so the terminal is a
     // stable surface with no shared split to drag. `paintPaneBg` with a theme is
-    // what a real attach runs, and it is what sets `has-term`. The filters
-    // button folds the sort and grouping controls away until asked for.
+    // what a real attach runs, and it is what sets `has-term`. Inside the open
+    // flyout the controls tray is folded to its one line until tapped, and the
+    // rows scroll in their own box below it.
     await page.evaluate(() =>
       paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }));
-    const decoupled = await page.evaluate(() => {
+    const decoupled = await page.evaluate(async () => {
+      localStorage.removeItem(termDeviceKey("atrium.termtray"));
+      await renderTermList();
       const layout = document.getElementById("term-layout");
       const paneH = () => document.getElementById("term-pane").getBoundingClientRect().height;
       const drop = document.querySelector("#term-list .termdrop");
@@ -916,9 +1062,9 @@ async function main() {
         const b = document.querySelector("#term-list .termbody");
         return b ? getComputedStyle(b).position : "missing";
       };
-      const headShown = () => {
-        const h = document.querySelector("#term-list .termbody .termhead");
-        return h ? getComputedStyle(h).display !== "none" : false;
+      const trayBodyH = () => {
+        const b = document.querySelector("#term-list .termbody .termtray .traybody");
+        return b ? b.getBoundingClientRect().height : -1;
       };
       // Collapsed to begin with: the body hidden, the terminal at full height.
       setTermListOpen(false);
@@ -930,15 +1076,24 @@ async function main() {
       const openBody = bodyDisp();
       const openPos = bodyPos();
       const paneOpen = paneH();
-      // Filters fold away until the button is on.
-      const headBefore = headShown();
-      toggleTermFilters();
-      const headAfter = headShown();
-      toggleTermFilters();
+      // The tray is on the flyout, folded, above a scroll box of its own; a tap
+      // rolls it down.
+      const tray = document.querySelector("#term-list .termbody .termtray");
+      const trayShown = !!tray && getComputedStyle(tray).display !== "none";
+      const scroll = document.querySelector("#term-list .termbody .termscroll");
+      const scrollBelow = !!(tray && scroll &&
+        scroll.getBoundingClientRect().top >= tray.getBoundingClientRect().bottom - 0.5);
+      const headBefore = trayBodyH();
+      toggleTermTray();
+      await new Promise(r => setTimeout(r, 450));
+      const headAfter = trayBodyH();
+      toggleTermTray();
       return {
         dropShown, collapsedBody, openBody, openPos,
         paneStable: Math.abs(paneOpen - paneCollapsed) <= 2,
-        headHiddenByDefault: !headBefore, headShownAfterToggle: headAfter,
+        trayShown, scrollBelow,
+        headHiddenByDefault: headBefore >= 0 && headBefore <= 1,
+        headShownAfterToggle: headAfter > 60,
         gripHidden: getComputedStyle(document.getElementById("term-grip")).display === "none"
       };
     });
@@ -960,12 +1115,19 @@ async function main() {
     if (!decoupled.gripHidden) {
       fail("the width grip is shown on a phone: there is no tied split to drag there.");
     }
+    if (!decoupled.trayShown || !decoupled.scrollBelow) {
+      fail("the phone flyout does not show the tray above its own scrolling rows: " +
+        JSON.stringify(decoupled));
+    }
     if (!decoupled.headHiddenByDefault || !decoupled.headShownAfterToggle) {
-      fail("the filters toggle does not fold the sort/grouping controls on a phone " +
+      fail("the tray does not fold the controls on a phone " +
         "(hidden-by-default " + decoupled.headHiddenByDefault + ", shown-after-toggle " +
         decoupled.headShownAfterToggle + ").");
     }
-    await page.evaluate(() => { setTermListOpen(false); paintPaneBg(null); });
+    await page.evaluate(() => {
+      setTermListOpen(false); paintPaneBg(null);
+      localStorage.removeItem(termDeviceKey("atrium.termtray"));
+    });
 
     // Put the width, the view and the data back for the sections below.
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1938,7 +2100,8 @@ async function main() {
     "hides like any other, the agents toggle hides exactly the grey rows, the pinned and " +
     "group headings read shown/total while rows are hidden, counting each " +
     "kind's hidden rows in parens, " +
-    "the control cluster is a sticky header pinned to the top of the list, " +
+    "the controls are a tray above the rows' own scroll box that folds to a one-line " +
+    "summary, remembers its state, keeps even pills and a full-width `+ new group`, " +
     "the board paints its lists, a hung fetch does not blank it, the " +
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
