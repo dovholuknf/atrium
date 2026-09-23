@@ -2389,3 +2389,69 @@ Dispatch the work to the room instead (section U) and the second account's daemo
 **Expected:** the second daemon's address is in it, and you can reach `http://localhost:7878` from a script that
 had no way to read that account's per-user address file. Clear the setting and only the per-user file is
 written, which is right for a machine where the daemon and its callers are the same person.
+
+## AA. Runner setup
+
+What stops a runner working in the folders atrium launches it in, and the fixes. See
+`docs/runner-setup-design.md`. Run these against a throwaway room whose account has its own home, or with
+`GEMINI_CLI_HOME` set on the gemini row to a scratch directory, never against a `~/.gemini` somebody uses.
+
+### AA0. Set up, once
+
+1. Install gemini (`npm install -g @google/gemini-cli`) and add a runner row whose command is `gemini`.
+2. Add a provider under runners, providers, with a root, and turn worktrees on with a worktree root.
+
+### AA1. The chip counts what is wrong
+
+1. Open runners, runners.
+
+**Expected:** the gemini row carries `setup: N to fix` in the attention color. The claude row carries `setup ok`
+or its own count. A row whose command is `ollama` carries no setup chip at all.
+
+### AA2. Trusting a root once
+
+1. Press the gemini row's setup chip. The `trusts the workspace` line reads `fail` and lists both roots, each
+   with a `trust it` button.
+2. Press `trust it` beside the worktree root and confirm.
+
+**Expected:** a toast names the backup file. `trustedFolders.json` gains one `TRUST_FOLDER` line for that root
+and every line that was there before is unchanged. `trustedFolders.json.atrium-original.bak` and
+`.atrium-last.bak` sit beside it. The line now lists only the other root.
+
+### AA3. A new worktree is trusted at launch
+
+1. With the worktree root NOT trusted (restore the original backup), launch a gemini card in a new worktree under
+   it.
+
+**Expected:** gemini starts without its trust prompt. The room log says `trusted <folder> for gemini`. The file
+gains exactly one line, for that worktree, and launching there again writes nothing.
+
+### AA4. Outside every root, and a no, are left alone
+
+1. Launch a gemini card in a directory outside every provider root.
+2. Add `"<a worktree>": "DO_NOT_TRUST"` to the file by hand and launch a card in that worktree.
+
+**Expected:** gemini asks its own trust question both times and the file is not touched. The setup dialog
+explains a `DO_NOT_TRUST` root with no fix button.
+
+### AA5. Sign-in is explained, never applied
+
+1. With `selectedType` unset in gemini's `settings.json`, open the setup dialog.
+2. Put `GEMINI_API_KEY` in the gemini row's env and reopen it.
+
+**Expected:** step 1 reads `fail` with `gemini` and a copy button, and no fix button. Step 2 reads `warn` and says
+atrium does not hold credentials, and the key's value appears nowhere on the board.
+
+### AA6. Claude hooks through the same dialog
+
+1. Remove one atrium hook from `~/.claude/settings.json` in the throwaway room's home.
+2. Open the claude row's setup chip and press `wire them`.
+
+**Expected:** the hooks line goes from `fail` to `ok`, and the hooks dialog agrees, since both read the same
+report.
+
+### AA7. A room's fix lands on that room
+
+1. On a hub with two rooms, each with a gemini row, press `trust it` on the second room's row.
+
+**Expected:** the trust file changes on the second room's machine only.
