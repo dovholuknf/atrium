@@ -17,6 +17,13 @@ section heading is just "what landed in this iteration."
   sign-in and hooks. `docs/runner-setup-design.md` has the design and the checklist for the next runner.
   ROOM-SIDE and HUB-SIDE.
 
+- **`hide inactive: agents` hides the greyed-out rows.**
+
+  The toggle hid agents with no live connection but exempted every pinned one, and in the terminals list only a
+  pinned row can be cold. So the rows it drew grey were exactly the rows it would not hide, and it hid nothing. The
+  grey styling and the toggle now read one test, `termCold`, and a pin no longer exempts a row from either toggle.
+  With both toggles off a pinned row still stays after its session exits, drawn cold. HUB-SIDE.
+
 - **The agents half of `hide inactive` is back.**
 
   It was removed along with the shown/total group counts, and that removal was a mistake. The `agents` segment

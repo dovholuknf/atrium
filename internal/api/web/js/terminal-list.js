@@ -76,13 +76,11 @@ function isDoer(t) {
 //     waiting on you (connected at a prompt is still a session you can go to), and
 //     drops only the dead ones.
 // `none` shows every session of that kind. The attached one is never hidden by
-// either toggle (see `sessionHiddenBy`), and neither is a pinned one: a pinned
-// row whose runner has gone stays, drawn cold.
+// either toggle (see `sessionHiddenBy`). A pinned one is: with a toggle on, a
+// pinned row whose runner has gone hides like any other inactive row.
 //
-// TWO SIGNALS. The agents rule reads `supervised`, the strip's own live-connection
-// signal (what the row reads to draw itself cold when there is no runner, see
-// `termRow`, what the nav badge counts as attachable, the board's green/live
-// state). The subagents rule reads `workingNow`, the same live-activity test the
+// TWO SIGNALS. The agents rule reads `termCold`, the same test the row reads to
+// draw itself grey (see `termRow`), so the toggle hides exactly the grey agents. The subagents rule reads `workingNow`, the same live-activity test the
 // board's activity chip makes. So an idle-but-connected session is INACTIVE to
 // the subagents toggle but ALIVE to the agents toggle - deliberately, because the
 // two kinds are triaged differently.
@@ -151,13 +149,17 @@ function workingNow(t) {
     !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
 }
 
-// HAS A LIVE CONNECTION, the one aliveness test the hide filter reads. `supervised`
-// is set while atrium holds a runner for the card and drops when that runner
-// exits or disconnects, which is exactly the alive/dead line the show-only-alive
-// toggle draws. Idle and waiting sessions stay `supervised`, so this keeps them,
-// which is the point: a connected agent sitting at a prompt is not dead. A cold
-// pinned row reads false here and is kept anyway, by its pin.
-function hasLiveConnection(t) { return !!(t && t.supervised); }
+// IS THIS ROW COLD: no live connection. `supervised` is set while atrium holds a
+// runner for the card and drops when that runner exits or disconnects. Idle and
+// waiting sessions stay `supervised`, so they are not cold: a connected agent
+// sitting at a prompt is not dead.
+//
+// ONE PREDICATE FOR THE GREY AND THE HIDE. `termRow` greys a row on this, and the
+// agents toggle hides on this, so a row drawn inactive is exactly a row the
+// toggle takes out. Two copies of the test let them drift: the toggle hid on
+// "not supervised" while exempting every pinned row, and since only a pinned row
+// can be cold in the strip, it hid nothing the operator could see was grey.
+function termCold(t) { return !(t && t.supervised); }
 
 // Whether this session is hidden by its kind's toggle, honouring what is never
 // hidden (see `renderTermList`): the attached one, and whatever its kind's rule
@@ -166,16 +168,16 @@ function hasLiveConnection(t) { return !!(t && t.supervised); }
 // rows removed from the list are the same answer rather than two that can drift.
 // The two toggles both mean "hide inactive", but read DIFFERENT signals: a
 // subagent is inactive unless it is working right now (`workingNow`), so an idle
-// or exited one hides; an agent is inactive when it has no live connection
-// (`hasLiveConnection`), so only a dead one hides.
+// or exited one hides; an agent is inactive when it is cold (`termCold`), so only
+// a dead one hides.
 //
-// A PINNED SESSION NEVER HIDES, and `keep` in `renderTermList` is what says so.
-// Pinning is how you say "keep this here", and a pinned row that vanished when
-// its session exited undid the one thing the pin was for.
+// A PINNED SESSION HIDES LIKE ANY OTHER when its toggle is on. With the toggles
+// off a pinned row still outlives its runner, drawn cold; turning a toggle on is
+// the operator asking for the inactive ones to go, pinned or not.
 function sessionHiddenBy(t, keep) {
   if (keep(t)) return false;
   if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
-  return !hasLiveConnection(t) && hideAgentsMode() !== "none";
+  return termCold(t) && hideAgentsMode() !== "none";
 }
 
 // THE HEADER CONTROL, a segmented pill drawn beside `sorted by activity`. It
@@ -210,9 +212,9 @@ function termHideControlsHTML(c) {
   // or waiting on you.
   const agentTitle = aOn
     ? "inactive agents are hidden (exited, no live connection). click to show " +
-      "them. connected agents, pinned ones and the attached one always stay"
-    : "hide the inactive agents (exited, no live connection). connected agents, " +
-      "pinned ones and the attached one always stay";
+      "them. connected agents and the attached one always stay"
+    : "hide the inactive agents (exited, no live connection). connected agents " +
+      "and the attached one always stay";
   // Subagents: inactive = not working right now. Only the actively-computing ones
   // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
   // subagent IS, since the word is atrium's own: the sessions atrium launched
@@ -221,10 +223,10 @@ function termHideControlsHTML(c) {
     "(origin:agent), not ones you started";
   const subTitle = (sOn
     ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
-      "now). click to show them. only actively-working subagents, pinned ones and " +
-      "the attached one stay"
+      "now). click to show them. only actively-working subagents and the attached " +
+      "one stay"
     : "hide the inactive subagents (idle, waiting, or exited - not working right " +
-      "now). only actively-working subagents, pinned ones and the attached one stay") +
+      "now). only actively-working subagents and the attached one stay") +
     ". " + subNote;
   return `<span class="termhidelab">hide inactive</span><span class="termhide termkind">${
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
@@ -919,13 +921,13 @@ function termRow(t, deep) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           t.supervised ? "" : " cold"}"
+           termCold(t) ? " cold" : ""}"
          data-id="${t.id}"
-         title="${t.supervised ? "" : "this one has exited. click to start it again here"}"
+         title="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
          style="${style}"
-         onclick="${t.supervised
-           ? `attachTask('${t.id}')`
-           : `resumePinned('${t.id}')`}"
+         onclick="${termCold(t)
+           ? `resumePinned('${t.id}')`
+           : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       <div class="card-line">
         <div class="title">
@@ -1432,19 +1434,19 @@ async function renderTermList() {
   // the toggles say, since hiding must never yank the pane out from under whatever
   // is open (the teardown below keys off this same list); a live agent is kept by
   // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
-  // A pinned session is kept too, whatever the toggles say, in the pinned bucket
-  // and in its groups. What is removed is counted per kind so the pill can say
+  // A pinned session is NOT kept: with a toggle on it hides like any other (see
+  // `sessionHiddenBy`). What is removed is counted per kind so the pill can say
   // how many, and everything downstream draws `shown` rather than `tasks`.
-  const keep = t => !!(termTask && t.id === termTask.id) || !!t.pinned;
+  const keep = t => !!(termTask && t.id === termTask.id);
   const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
   const shown = hideable.length
     ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
   // What each segment could hide (an inactive, un-kept session of its kind) and
   // what it is hiding right now: the first decides whether a segment is worth
   // offering while its toggle is off, the second is the count a lit segment
-  // shows. Each uses its own kind's inactive signal - agents on live connection,
+  // shows. Each uses its own kind's inactive signal - agents on `termCold`,
   // subagents on working-right-now - so the offer and the act agree.
-  const inactiveAgent = t => !keep(t) && !hasLiveConnection(t);
+  const inactiveAgent = t => !keep(t) && termCold(t);
   const inactiveSub = t => !keep(t) && !workingNow(t);
   const hideCounts = {
     agentHideable: tasks.filter(t => !isDoer(t) && inactiveAgent(t)).length,
