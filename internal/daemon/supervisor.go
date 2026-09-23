@@ -1311,18 +1311,9 @@ func (r *runner) subscribeSized() (backlog []byte, cuts []widthCut, rows, wantCo
 	defer r.mu.Unlock()
 	cols := r.buf.CurrentWidth()
 	buf, cuts, rows, wrapped := r.buf.ReplayCuts()
-	// THIS PROCESS ONLY. What the card held before the restart is on disk and
-	// is NOT joined on here any more.
-	//
-	// It was, for an afternoon, and the result was confusing in a way that
-	// took a while to name: a resumed session REPRINTS its own recent history,
-	// so the carried bytes ended mid-conversation and then the same
-	// conversation started again below the divider. Two copies of the last
-	// hour with nothing on screen to say why.
-	//
-	// A terminal running claude shows one session's output. Atrium now matches
-	// that, and the older bytes are fetched deliberately rather than pushed at
-	// somebody who did not ask. See `carryover.go` and `handleOlderScrollback`.
+	// THIS PROCESS ONLY. What the card held before the restart is joined on by
+	// the attach, not here, cut where the resumed runner's reprint picks it up
+	// so the recent part is not shown twice. See `runner.withCarried`.
 	select {
 	case <-r.done:
 		close(ch)

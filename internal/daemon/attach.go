@@ -393,6 +393,21 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 
 	backlog, cuts, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
+	// WITH WHAT THE CARD HELD BEFORE THE RESTART in front, cut where the
+	// resumed runner's reprint picks it up. See `withCarried`.
+	if !shell {
+		var trimmed bool
+		var joined bool
+		before := len(backlog)
+		backlog, cuts, trimmed = run.withCarried(backlog, cuts, wantCols, api.ScrollbackBytes(d.st))
+		joined = len(backlog) != before
+		if joined {
+			// The ring's own "overwritten" answer was about the ring, and the
+			// ring is no longer the oldest thing replayed. The saved file says
+			// so inside itself when it was cut, and a trim here is the new cut.
+			wrapped = trimmed
+		}
+	}
 	// Now that this attach is a watcher, the fan-out can recognise its channel
 	// and skip it, so this pane is not echoed its own keystrokes.
 	selfMu.Lock()

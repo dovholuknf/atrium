@@ -460,6 +460,184 @@ func (d *Daemon) adoptCarryover(r *runner) {
 		r.taskID, len(c.bytes))
 }
 
+// withCarried puts what the card held before the restart in front of an
+// attach's replay, so the terminal's scrollback reaches back past the restart.
+//
+// IT WAS LEFT OUT FOR A REASON, AND THIS ANSWERS THE REASON. Joining the two
+// whole gave two copies of the last hour: a resumed claude reprints its recent
+// conversation, so the saved bytes ended mid-conversation and the same
+// conversation started again below. Leaving them out entirely was worse, since
+// claude reprints only the RECENT part, so everything older vanished from the
+// terminal after every restart and lived only in the text view.
+//
+// So the saved bytes are cut where the reprint picks them up. `reprintCut`
+// finds the first conversation line of the live ring in the saved text and cuts
+// at its LAST occurrence there. Past that point everything is in the reprint.
+// A missed match keeps the saved bytes whole: a duplicate is recoverable by
+// reading, a gap is not.
+//
+// Bounded by `max`, the size one ring holds, trimmed from the old end.
+func (r *runner) withCarried(live []byte, cuts []widthCut, wantCols, max int) ([]byte, []widthCut, bool) {
+	r.mu.Lock()
+	c := r.carried
+	r.mu.Unlock()
+	if c == nil || len(c.bytes) == 0 || max <= 0 {
+		return live, cuts, false
+	}
+	old := c.bytes[:reprintCut(c.bytes, live)]
+	if len(old) == 0 {
+		return live, cuts, false
+	}
+	prefix := make([]byte, 0, len(old)+len(carryDivider))
+	prefix = append(prefix, old...)
+	prefix = append(prefix, carryDivider...)
+	trimmed := false
+	if budget := max - len(live); len(prefix) > budget {
+		if budget <= len(carryDivider) {
+			return live, cuts, false
+		}
+		prefix = fromLineStart(prefix[len(prefix)-budget:])
+		trimmed = true
+	}
+	out := make([]byte, 0, len(prefix)+len(live))
+	out = append(out, prefix...)
+	out = append(out, live...)
+
+	// The saved run at its own width, then the live ring's cuts moved past it.
+	// A live ring with no mark at its start gets one at the width it is drawn at.
+	joined := []widthCut{{0, c.cols}}
+	if len(cuts) == 0 || cuts[0].at > 0 {
+		joined = append(joined, widthCut{len(prefix), wantCols})
+	}
+	for _, cut := range cuts {
+		joined = append(joined, widthCut{cut.at + len(prefix), cut.cols})
+	}
+	return out, joined, trimmed
+}
+
+// reprintCut is where the saved bytes stop being new: the offset in `old` of
+// the last copy of the first conversation line `live` reprints, or len(old)
+// when no line matches.
+//
+// Matched on text, not bytes. The reprint is drawn at a different width and
+// through a different pseudo console, so the escapes, the padding and the wrap
+// points all differ. Text is compared with every escape removed, a cursor
+// forward read as a space, and every run of whitespace, line breaks included,
+// read as one space.
+func reprintCut(old, live []byte) int {
+	oldText, oldAt := folded(plainText(old))
+	liveText, _ := plainText(live)
+	started := false
+	seen := 0
+	for _, line := range strings.Split(liveText, "\n") {
+		line = strings.TrimSpace(line)
+		// Past the banner: the conversation starts at claude's first bullet.
+		if !started {
+			if !strings.HasPrefix(line, "●") {
+				continue
+			}
+			started = true
+		}
+		if seen++; seen > 400 {
+			break
+		}
+		if len(line) < 24 || strings.Count(line, "─") > 4 {
+			continue
+		}
+		anchor := normSpace(line)
+		if len(anchor) > 48 {
+			anchor = anchor[:48]
+		}
+		if i := strings.LastIndex(oldText, anchor); i >= 0 {
+			return oldAt[i]
+		}
+	}
+	return len(old)
+}
+
+// plainText is terminal bytes as text a person would read, with each byte of
+// the result mapped to the offset in `b` it came from. Line breaks are kept as
+// "\n" so a caller can walk lines. See `folded` for the searchable form.
+func plainText(b []byte) (string, []int) {
+	var sb strings.Builder
+	at := make([]int, 0, len(b))
+	put := func(c byte, i int) {
+		sb.WriteByte(c)
+		at = append(at, i)
+	}
+	for i := 0; i < len(b); {
+		c := b[i]
+		switch {
+		case c == 0x1b && i+1 < len(b) && b[i+1] == '[':
+			j := i + 2
+			for j < len(b) && b[j] >= 0x30 && b[j] <= 0x3f {
+				j++
+			}
+			for j < len(b) && b[j] >= 0x20 && b[j] <= 0x2f {
+				j++
+			}
+			if j < len(b) && b[j] == 'C' { // cursor forward is a gap in the line
+				put(' ', i)
+			}
+			i = j + 1
+		case c == 0x1b && i+1 < len(b) && b[i+1] == ']':
+			// An OSC runs to BEL or ST. Its text is a title or a link target.
+			j := i + 2
+			for j < len(b) && b[j] != 0x07 && !(b[j] == 0x1b && j+1 < len(b) && b[j+1] == '\\') {
+				j++
+			}
+			if j < len(b) && b[j] == 0x1b {
+				j++
+			}
+			i = j + 1
+		case c == 0x1b:
+			i += 2
+		case c == '\n':
+			put('\n', i)
+			i++
+		case c == '\r' || c == '\t':
+			put(' ', i)
+			i++
+		case c < 0x20 || c == 0x7f:
+			i++
+		default:
+			put(c, i)
+			i++
+		}
+	}
+	return sb.String(), at
+}
+
+// folded is `plainText` with every run of whitespace, line breaks included,
+// read as one space, which is the form an anchor is searched for in. Offsets
+// travel with it.
+func folded(text string, at []int) (string, []int) {
+	var out strings.Builder
+	outAt := make([]int, 0, len(at))
+	space := false
+	for k := 0; k < len(text); k++ {
+		ch := text[k]
+		if ch == ' ' || ch == '\n' {
+			if !space {
+				out.WriteByte(' ')
+				outAt = append(outAt, at[k])
+			}
+			space = true
+			continue
+		}
+		space = false
+		out.WriteByte(ch)
+		outAt = append(outAt, at[k])
+	}
+	return out.String(), outAt
+}
+
+// normSpace folds line breaks and runs of whitespace to single spaces, which is
+// the form both sides of a `reprintCut` comparison are searched in.
+func normSpace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // carryFrom is what this runner would have written out right now.
 //
 // The carried buffer is folded back in when the width still agrees, so
