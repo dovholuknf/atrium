@@ -46,6 +46,9 @@ Verify before any deploy: `bash scripts/check-board.sh`, `bash scripts/check-ski
 `TestLagConnTimesNothingWhenOff`). `TestRealSessionsKeepTheirText` is known noise. `internal/link` has flaked
 under load; rerun once before believing it.
 
+Landing on `origin/main` is clint's: he re-signs `origin/main..claude/main` with his own key, then pushes. I never
+sign and never add a trailer. See memory `commit-no-coauthor-no-sign` for the exact re-sign block.
+
 Workers do not notify me when they stop unless they `atrium_say`, so every brief ends with the reporting rule.
 A worker's `atrium_say` arrives typed into my terminal.
 
@@ -61,7 +64,8 @@ go build -o build.claude\atrium2.exe ./cmd/atrium2
 ```
 
 - Hub only: `pwsh -File C:\Users\claude\.atrium2\scripts\deploy-hub-only.ps1`. Safe while workers run, the room is
-  never touched. Set `$env:ATRIUM_DEBUG_INPUTLAG='1'` first to keep hub lag logging on.
+  never touched. Set `$env:ATRIUM_DEBUG_INPUTLAG='1'` first to keep hub lag logging on. It can outlive a 180s tool
+  timeout, so run it in the background and confirm with `/_hub/health`.
 - Hub and room together, for any ROOM-SIDE change: `C:\Users\claude\.atrium2\scripts\deploy-batch.ps1`, run
   DETACHED because stopping the room ends my terminal:
   `Start-Process pwsh -ArgumentList '-NoProfile','-File','C:\Users\claude\.atrium2\scripts\deploy-batch.ps1' -WindowStyle Hidden`.
