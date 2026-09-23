@@ -1,4 +1,7 @@
-build.claude/
+# Everything in build.claude/ except its go.mod, which fences it off from
+# `go vet ./...`. See the comment in that file.
+/build.claude/*
+!/build.claude/go.mod
 *.exe
 
 # mercurius design-review rounds. Generated per review, and the decisions that
