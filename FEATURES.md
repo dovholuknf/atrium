@@ -523,6 +523,14 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   Runners, fixtures, sources, providers, recognisers, actions and rooms all use one `role=switch` pill. Docs:
   `CHANGELOG.md`. Landed 2026-09-23 (`04ac808`). **claude/main only**.
 
+- **You review a card's branch with one of your personas, and review what they learned.**
+  The runners page lists the persona pack named by `persona_pack_path`. `review with…` on a card starts a fresh
+  claude session as that persona (`claude --agent`) in a run directory of its own, with a `TARGET.md` naming the
+  diff range and the repo's knowledge and memory. It reports back to the card. The `lessons` view shows memory
+  changed since the last `Lessons-reviewed: <id>` commit, and its promote, keep and delete buttons edit the
+  dotagents working tree only. The commit is yours. Docs: `docs/personas-design.md`. Landed 2026-09-23
+  (`f34dd0c`, `7d93f3b`). **claude/persona-atrium only**.
+
 ### Runners and runner setup: removed, and why
 
 - **`scripts/sources/runner-updates.ps1`.** It started each runner binary on a ten-minute timer to read its

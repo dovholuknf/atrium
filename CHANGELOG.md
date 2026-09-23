@@ -5,6 +5,24 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Personas on the board: a catalog, a review launched at a card, and the lessons view.**
+
+  Stage 6 of `docs/personas-design.md`. The pack path is the room setting `persona_pack_path`, the personas folder
+  in dotagents. Empty turns the feature off. The runners page gains a `personas` pane that lists each persona with
+  its description, the paths and surfaces it reviews, the runners it declares, and which of those have a rendered
+  file. A card with a worktree gains `review with…` in its menu. It makes
+  `<atrium data>/persona-runs/<id>/<run>/` with a `TARGET.md` naming the worktree, the branch against its
+  merge-base with the default branch, the repo key, the knowledge and memory files for that repo, the rejections
+  scoped to it, and the review panel's finding schema. It copies the persona's render to `.claude/agents/`
+  there and starts a fresh claude session in that directory with `--agent <name>`, tagged `origin:agent` and
+  `persona:<id>`, with the reviewed card's session as its launcher so the report comes back to that card. Each
+  persona's `lessons` button opens the memory diff since the last commit carrying `Lessons-reviewed: <id>`, plus
+  anything uncommitted or untracked, and the `rejected.md` lines that commit did not have. Promote, keep and
+  delete edit the dotagents working tree as the lessons-review skill describes. Every edit goes through
+  `internal/safepath` and refuses any link or junction on the way. Git is only read, and the view ends with the
+  commit, trailer included, for you to run. Only claude is launched: codex and gemini are not measured yet.
+  ROOM-SIDE and HUB-SIDE.
+
 - **The header says when the persona pack is not committed or not pushed.**
 
   Reviews change the persona pack's memory files, and nothing backs them up but the operator. A new setting,
