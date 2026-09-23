@@ -73,7 +73,8 @@ dotagents/personas/<id>/
 - **`knowledge/` is keyed by `<host>/<org>/<repo>`,** the layout dotagents already uses for per-repo `CLAUDE.md`. A
   review of an openziti/ziti diff loads `_general.md` and `github/openziti/ziti.md` and nothing else. A persona that
   has reviewed forty repos does not carry forty repos into every review.
-- **Every `memory/` file names its repo** with a `repo:` line in its frontmatter, or `repo: general`. A review loads
+- **Every `memory/` file names its repo and its reason:** a `repo:` line in its frontmatter (or `repo: general`),
+  and a one-line `Why:` in its body saying what taught it. A review loads
   the general ones and the target repo's, the same way it loads knowledge. It also lets the person committing see
   which repositories a change quotes.
 - **`memory/rejected.md`** records findings that were wrong, so the same persona stops raising them. See "What a
@@ -115,7 +116,7 @@ instruction.
 
 - **Native (claude).** The symlink makes the native directory BE `memory/`. Nothing is copied, so nothing drifts.
 - **Instructed (codex, gemini).** The rendered instructions say: read `memory/MEMORY.md` at start. To record a
-  lesson, write one file to `memory/inbox/` in the same format, with a `repo:` line. The lessons review merges the
+  lesson, write one file to `memory/inbox/` in the same format, with a `repo:` line and a one-line `Why:`. The lessons review merges the
   inbox, so an unfamiliar runner never rewrites the index on its own.
 - **Read only (ollama).** It reads what it is handed and writes nothing. What it gets wrong still reaches
   `rejected.md`, because the conductor writes that file, not the reviewer.
@@ -149,7 +150,8 @@ Three changes to the skill. None changes how a review reads to clint.
      surfaces: [http, crypto, concurrency, input-validation]
      skip_when: "docs-only or generated-only diff"
    ```
-   The skill's mapping table becomes the fallback. Adding a persona adds a reviewer with no edit to the skill.
+   `paths` and `surfaces` are matched mechanically. `skip_when` is free text the conductor reads and applies with
+   judgment, the way the skill's selection rule already works. The skill's mapping table becomes the fallback. Adding a persona adds a reviewer with no edit to the skill.
 2. **Each reviewer gets only what applies.** The dispatch prompt names the persona's `knowledge/_general.md`, the
    target repo's knowledge file, the general and target-repo memory files, `memory/rejected.md`, and the checklists
    the yaml maps to the surfaces in this diff.
@@ -165,15 +167,20 @@ The step that keeps the pack honest. On demand, because it needs clint.
 
 For each persona with anything new since its last review:
 
-1. **Memory diff.** What `git diff` shows in `memory/` and `memory/inbox/`, with the session that wrote each file.
-   Claude memory files already carry `originSessionId`. For each: promote to `knowledge/`, keep as memory, or
-   delete.
+1. **Memory diff.** What `git diff` shows in `memory/` and `memory/inbox/`. For each lesson: promote to
+   `knowledge/`, keep as memory, or delete. The lesson's own `Why:` line says what taught it. No session id or run
+   id is recorded: the reason is what matters, and it lives in the lesson.
 2. **Rejections.** New lines in `rejected.md`. A cluster of the same mistake becomes one line in the persona's
    `persona.md` or a checklist, and the individual lines go.
 3. **Evals.** If the persona's prompt, checklists or knowledge changed, run its evals and show the result beside
    the last one.
 
-The output is a commit in dotagents whose message says what was promoted, deleted and changed.
+The output is a commit in dotagents whose message says what was promoted, deleted and changed, and ends with one
+trailer line per persona reviewed: `Lessons-reviewed: <persona-id>`.
+
+**What "new" means is a git fact.** A review of a persona covers every change under its folder since the most recent
+commit carrying `Lessons-reviewed: <persona-id>`, plus anything uncommitted. A persona that has never been reviewed
+covers its whole history. There is no marker file and no state outside git.
 
 ## Backup: commit and push are clint's
 
@@ -205,7 +212,7 @@ Atrium drives a tool and does not become one. It holds no credentials and pushes
   starts a fresh session in a run directory for that persona, on the chosen runner, with the card's worktree and
   diff range in the prompt. The review shows up as a card and reports back through a2a.
 - **The lessons view.** The lessons review, drawn on the board: per persona, the memory diff since the last
-  review with the session that wrote each lesson, new rejections, and promote, keep and delete buttons. The buttons
+  review, new rejections, and promote, keep and delete buttons. The buttons
   edit files in the dotagents working tree and nothing else. The commit is clint's.
 
 **Atrium does not:** run a git command that writes, push, hold a token for any remote, decide what is proprietary,
@@ -252,3 +259,7 @@ Stages 1 to 3 are worth doing even if nothing after them is built.
   at push time. Q2, whether calibration records clint's rejections: calibration as a separate log was dropped.
   History is git, and wrong findings go to `rejected.md` or the repo's dotagents file. A1: `render-personas.ps1
   -Check` is named as the one check.
+- Round 2 (Mercurius, codex gpt-5.5, needs changes). C1: no defined baseline for "new since the last lessons
+  review". Fixed with a `Lessons-reviewed: <persona-id>` commit trailer. C2: non-Claude lessons carried no session
+  id for attribution. clint rejected session ids as noise: every lesson carries a one-line `Why:` instead, and the
+  lessons view shows no session. A1: `skip_when` is free text the conductor reads.
