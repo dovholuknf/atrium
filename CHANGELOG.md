@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The agents half of `hide inactive` is back.**
+
+  It was removed along with the shown/total group counts, and that removal was a mistake. The `agents` segment
+  again hides agents with no live connection, and the `subagents` segment hides subagents that are not working
+  right now, each on its own. A pinned session still stays whatever either says, and group headings still read
+  `7/15` when rows are hidden. HUB-SIDE.
+
 - **A claude terminal never goes narrower than 120 columns. A narrower window scrolls sideways.**
 
   Claude reprints its whole conversation at every width it passes through and keeps each copy in the scrollback,
