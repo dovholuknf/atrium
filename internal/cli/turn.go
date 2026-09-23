@@ -75,6 +75,10 @@ type turnInput struct {
 	// Empty is treated as a turn ending, because a runner that does not send
 	// the field is every runner this was written for.
 	HookEventName string `json:"hook_event_name"`
+	// LastAssistantMessage is the text of the turn's last message, which recent
+	// Claude Code puts in the Stop payload. Read for its Open Questions block
+	// and nothing else. See turnquestions.go.
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 // keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
@@ -168,11 +172,16 @@ func turnEnded(hubURL, event, name string) string {
 		return keepGoing
 	}
 
+	// Only the questions leave this process, never the message they came from.
+	questions, block, known := turnQuestions(in)
 	body, err := json.Marshal(map[string]any{
-		"agent":     agent,
-		"cwd":       filepath.ToSlash(cwd),
-		"resume":    in.SessionID,
-		"resumable": hasTranscript(in.TranscriptPath),
+		"agent":           agent,
+		"cwd":             filepath.ToSlash(cwd),
+		"resume":          in.SessionID,
+		"resumable":       hasTranscript(in.TranscriptPath),
+		"questions":       questions,
+		"questions_block": block,
+		"questions_known": known,
 	})
 	if err != nil {
 		return keepGoing
