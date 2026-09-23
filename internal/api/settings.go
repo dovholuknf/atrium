@@ -83,6 +83,8 @@ func globalAutoView(s *Server) map[string]any {
 		SettingShellCommand: "shell_command",
 		// The narrowest a runner's terminal goes. Empty means the default.
 		SettingTerminalMinCols: "terminal_min_cols",
+		// The persona pack directory. Empty means the nag is off.
+		store.SettingPersonaPackPath: "persona_pack_path",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -154,6 +156,13 @@ func globalAutoView(s *Server) map[string]any {
 	out["replay_mode"] = mode
 	out["replay_modes"] = []string{"raw", "screen", "flat"}
 	inputLagView(out)
+	// What the pack nag last found, read from memory. The git calls behind it
+	// run on the daemon's timer, never on this request.
+	if s.PersonaPack != nil {
+		if v := s.PersonaPack(); v != nil {
+			out["persona_pack"] = v
+		}
+	}
 	return out
 }
 
@@ -239,6 +248,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The narrowest a runner's terminal goes, in columns. A string like the
 		// scrollback boxes, because empty is a value and means the default.
 		TerminalMinCols *string `json:"terminal_min_cols"`
+		// The persona pack directory. A pointer, because clearing it is how the
+		// nag is turned off.
+		PersonaPackPath *string `json:"persona_pack_path"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -516,6 +528,20 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.SetSetting(SettingTerminalMinCols, v); err != nil {
 			s.fail(w, err)
 			return
+		}
+	}
+
+	if body.PersonaPackPath != nil {
+		// Stored as typed, minus the surrounding space, and not checked against
+		// the disk. A path that is wrong shows on the board as the reason the
+		// pack cannot be read, on the next look, which is asked for at once.
+		if err := s.st.SetSetting(store.SettingPersonaPackPath,
+			strings.TrimSpace(*body.PersonaPackPath)); err != nil {
+			s.fail(w, err)
+			return
+		}
+		if s.PersonaPackChanged != nil {
+			s.PersonaPackChanged()
 		}
 	}
 

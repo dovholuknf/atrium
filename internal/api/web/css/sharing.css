@@ -85,6 +85,20 @@
   button.working[hidden] { display: none; }
   button.working::before { content: "\25CF"; font-size: .8em; line-height: 1; }
   button.working:hover { border-color: var(--teal); background: rgba(var(--teal-rgb),.22); }
+  /* The persona pack nag: files not committed, commits not pushed. The share chip's shape and warn rather than
+     danger, because nothing is exposed, it is only not backed up yet. `unread` is the pack it cannot read, which
+     is a fact and not a nag, so it is muted. */
+  .packnag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    text-transform: uppercase; padding: 7px 12px; white-space: nowrap;
+    color: var(--warn); border-color: var(--warn-stroke);
+    background: var(--warn-bg);
+  }
+  .packnag[hidden] { display: none; }
+  .packnag:hover { border-color: var(--warn); }
+  .packnag.unread { color: var(--dim); border-color: var(--stroke-dim); background: none; }
+  .packnag.snoozed { opacity: .6; }
   /* An address beside the button that copies it. */
   .copyrow { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; }
   .copyrow input {

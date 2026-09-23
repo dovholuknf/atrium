@@ -103,6 +103,14 @@ const SettingEventSink = "event_sink"
 // rather than pretend the window is the whole story. See HistoryRolledOff.
 const SettingEventWindowBytes = "event_window_bytes"
 
+// SettingPersonaPackPath is the persona pack directory, `dotagents/personas`,
+// inside a git checkout the operator owns. Empty, the default, means off.
+//
+// Two readers: the nag that says what in the pack is not committed or not
+// pushed (internal/daemon/personapack.go), and the persona catalog. Both only
+// read. See docs/personas-design.md.
+const SettingPersonaPackPath = "persona_pack_path"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {

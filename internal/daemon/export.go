@@ -149,6 +149,7 @@ var exportedSettings = []string{
 	// stop being exported from this release, which is correct, because nothing
 	// on the other end would read them either.
 	SettingShellCommand,
+	store.SettingPersonaPackPath,
 }
 
 // neverExported names the settings keys that must not leave, so the test that

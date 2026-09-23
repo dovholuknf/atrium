@@ -958,6 +958,8 @@ function fillMachineFields(s) {
   if (shared) shared.value = s.shared_location || "";
   const shell = document.getElementById("s-shell");
   if (shell) shell.value = s.shell_command || "";
+  const pack = document.getElementById("s-personapack");
+  if (pack) pack.value = s.persona_pack_path || "";
   // What an empty box comes out as. A search of the daemon's own PATH, so it
   // is not something the person reading the box could work out from here.
   const shellNow = document.getElementById("s-shell-now");
@@ -1431,6 +1433,24 @@ async function saveShellCommand() {
   toast("saved", el.value.trim()
     ? "the next shell you open runs " + el.value.trim()
     : "back to whatever this machine has: " + (pastePrefs.shell_command_now || ""));
+}
+
+// Where the persona pack is. Empty turns the nag off. The room reads it at once,
+// and the chip follows on its `persona-pack` event.
+async function savePersonaPack() {
+  const el = document.getElementById("s-personapack");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ persona_pack_path: String(el.value || "").trim() })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.value.trim() ? "watching " + el.value.trim() : "the persona pack nag is off");
 }
 
 // Both halves together, since they are one decision in two units.
