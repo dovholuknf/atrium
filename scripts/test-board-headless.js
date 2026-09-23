@@ -54,6 +54,14 @@ const T1 = {
   tags: [], supervised: false, offline: false, pinned: false, auto_approve: false
 };
 const T2 = Object.assign({}, T1, { id: "t2", display_title: "second card" });
+// A card whose last turn nobody has seen, ending on two questions nobody has
+// answered. Its own card so the rest of this file's cards stay unmarked. See
+// docs/seen-design.md.
+const SEEN = Object.assign({}, T1, {
+  id: "seen1", display_title: "unread card",
+  seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false,
+    open_questions: ["land sa21 first?", "build the tray?"] }
+});
 // The card a popped-out (solo) window is opened onto. Supervised, so it reads
 // like a real live session rather than a dead one.
 const SOLO = Object.assign({}, T1, {
@@ -322,6 +330,7 @@ const server = http.createServer((req, res) => {
     // empty list once dismiss has unpinned it.
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
+    if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
     // The hide strip: an alive idle subagent, an alive working subagent, a dead
     // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
     if (tasksMode === "doers") {
@@ -514,6 +523,33 @@ async function main() {
     const guest = await page.evaluate(() =>
       document.body.classList.contains("guestonly"));
     if (guest) fail("the board fell into guest mode against a 200 /v1/tasks.");
+
+    // ── an unread turn and its open questions are marked ──────────────────
+    // A dot on the card whose last turn nobody saw, `? 2` for its two open
+    // questions, and neither on the card with no seen state. On the stack and
+    // on the terminal strip, which is where the operator is while workers run.
+    tasksMode = "seen";
+    await page.evaluate(() => runRefresh());
+    await page.waitForSelector('#stack-list .stackrow[data-id="seen1"] .chip.unseen',
+      { state: "attached", timeout: 15000 });
+    const seenMarks = await page.evaluate(async () => {
+      await renderTermList();
+      const row = document.querySelector('#stack-list .stackrow[data-id="seen1"]');
+      const plain = document.querySelector('#stack-list .stackrow[data-id="t1"]');
+      const tab = document.querySelector('#term-list .card.tab[data-id="seen1"]');
+      return {
+        q: row && (row.querySelector(".chip.questions") || {}).textContent,
+        plain: plain ? plain.querySelectorAll(".chip.unseen, .chip.questions").length : -1,
+        tab: tab ? !!tab.querySelector(".chip.unseen") : null,
+      };
+    });
+    if (!seenMarks.q || seenMarks.q.replace(/\s+/g, " ").trim() !== "? 2") {
+      fail("the card with two open questions did not draw `? 2`: " + JSON.stringify(seenMarks));
+    }
+    if (seenMarks.plain !== 0) fail("a card with no seen state drew a seen mark");
+    if (seenMarks.tab === false) fail("the terminal strip row did not draw the unread dot");
+    tasksMode = "first";
+    await page.evaluate(() => runRefresh());
 
     // ── the history view paints rows ──────────────────────────────────────
     await page.click('.tab[data-view="history"]');
@@ -2497,7 +2533,8 @@ async function main() {
     "a desktop notification fired while no window has focus is recorded in " +
     "the toast log without also drawing a toast, and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
-    "a refusal puts it back, one box on and off, 40px tall at phone width).");
+    "a refusal puts it back, one box on and off, 40px tall at phone width), " +
+    "and a card whose last turn is unread wears a dot and its open questions `? N`.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

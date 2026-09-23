@@ -293,6 +293,10 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* A turn nobody has seen, and questions nobody has answered. See js/seen.js. The dot is the teal the live
+     badge wears, because it is the same kind of fact: about the card, never a column. */
+  .chip.unseen { background: rgba(var(--teal-rgb),.10); color: var(--teal); padding-left: 6px; padding-right: 6px; }
+  .chip.questions { font-weight: 600; }
   /* Which room a card runs in, shown only while more than one is attached (the id carries a `room~` tag
      exactly then). A STABLE colour PER ROOM, so sg4 and sgg read apart at a glance rather than letter by
      letter, the whole reason the badge exists. The hue is hashed from the room name in `roomHue` and handed

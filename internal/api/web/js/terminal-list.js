@@ -1028,7 +1028,9 @@ function termRowChips(t) {
          title="this session is showing in a window of its own. click to raise it"
          >&#8599;</span>`
     : "";
-  const inner = held + room + popped;
+  // Unread and unanswered, which is where the operator is looking while workers
+  // run. See js/seen.js.
+  const inner = seenChips(t) + held + room + popped;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

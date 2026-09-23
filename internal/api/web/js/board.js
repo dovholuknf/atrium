@@ -731,6 +731,7 @@ function cardHTML(t) {
       ${recapChip(t)}
       ${activityChip(t)}
       ${contextChip(t)}
+      ${seenChips(t)}
       ${dark ? `<span class="chip nocontact"
         title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
