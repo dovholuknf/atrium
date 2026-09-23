@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Every test here builds its own pack in a temp dir. None of them reads or
@@ -139,7 +140,7 @@ func TestCatalogSaysWhenTheIDDisagreesWithTheFolder(t *testing.T) {
 }
 
 func TestCatalogRefusesAnEmptyPackPath(t *testing.T) {
-	if _, err := Catalog("", ""); err == nil || !strings.Contains(err.Error(), PackPathSetting) {
+	if _, err := Catalog("", ""); err == nil || !strings.Contains(err.Error(), store.SettingPersonaPackPath) {
 		t.Fatalf("want the setting named, got %v", err)
 	}
 }

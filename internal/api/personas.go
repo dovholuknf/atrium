@@ -20,7 +20,7 @@ var PersonaRunsDir string
 
 // personaPack is the configured pack path, empty when the feature is off.
 func (s *Server) personaPack() (string, error) {
-	v, err := s.st.Setting(persona.PackPathSetting)
+	v, err := s.st.Setting(store.SettingPersonaPackPath)
 	return strings.TrimSpace(v), err
 }
 
@@ -33,19 +33,19 @@ func (s *Server) listPersonas(w http.ResponseWriter, r *http.Request) {
 	// OFF IS AN ANSWER, not an error. The pane says how to turn it on.
 	if pack == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"pack": "", "personas": []any{}, "setting": persona.PackPathSetting,
+			"pack": "", "personas": []any{}, "setting": store.SettingPersonaPackPath,
 		})
 		return
 	}
 	list, err := persona.Catalog(pack, PersonaRunsDir)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"pack": pack, "personas": []any{}, "setting": persona.PackPathSetting, "error": err.Error(),
+			"pack": pack, "personas": []any{}, "setting": store.SettingPersonaPackPath, "error": err.Error(),
 		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"pack": pack, "personas": list, "setting": persona.PackPathSetting,
+		"pack": pack, "personas": list, "setting": store.SettingPersonaPackPath,
 	})
 }
 
@@ -56,7 +56,7 @@ func (s *Server) personaLessons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pack == "" {
-		writeErr(w, http.StatusConflict, errors.New("no persona pack is configured. set "+persona.PackPathSetting))
+		writeErr(w, http.StatusConflict, errors.New("no persona pack is configured. set "+store.SettingPersonaPackPath))
 		return
 	}
 	rev, err := s.lessons.Read(pack, r.PathValue("id"))
@@ -76,7 +76,7 @@ func (s *Server) decideLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pack == "" {
-		writeErr(w, http.StatusConflict, errors.New("no persona pack is configured. set "+persona.PackPathSetting))
+		writeErr(w, http.StatusConflict, errors.New("no persona pack is configured. set "+store.SettingPersonaPackPath))
 		return
 	}
 	var d persona.Decision

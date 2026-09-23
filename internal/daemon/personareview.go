@@ -43,13 +43,13 @@ func (d *Daemon) PersonaReview(taskID, personaID, runner string) (*store.Task, e
 	if i := strings.IndexByte(taskID, '~'); i > 0 {
 		taskID = taskID[i+1:]
 	}
-	pack, err := d.st.Setting(persona.PackPathSetting)
+	pack, err := d.st.Setting(store.SettingPersonaPackPath)
 	if err != nil {
 		return nil, err
 	}
 	pack = strings.TrimSpace(pack)
 	if pack == "" {
-		return nil, errors.New("no persona pack is configured. set " + persona.PackPathSetting)
+		return nil, errors.New("no persona pack is configured. set " + store.SettingPersonaPackPath)
 	}
 	card, err := d.st.Get(taskID)
 	if err != nil {
