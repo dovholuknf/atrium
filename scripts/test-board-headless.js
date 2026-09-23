@@ -402,6 +402,14 @@ async function main() {
   // Shorten the watchdog so the unwedge is provable in seconds, not the 30 a
   // real board waits. A plain board never sets this.
   await page.addInitScript(() => { window.__atriumRunTimeout = 2000; });
+  // The width-floor notice is a modal, and a narrow terminal pane in this run
+  // would raise it over every later click. It is tested on its own below.
+  await page.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
 
   try {
     await page.goto(base, { waitUntil: "domcontentloaded" });
@@ -1056,6 +1064,95 @@ async function main() {
       }
     } finally {
       await fillPage.close();
+    }
+
+    // ── a pane under the width floor says so once, and links to the setting ──
+    // A narrow window opens a runner terminal. It draws the floor's 120 columns
+    // in a sideways scroll, and the first time it raises a modal whose link opens
+    // the settings cog on the board pane with the floor field highlighted. Once
+    // "do not show this again" is ticked, it stays quiet in this browser.
+    const floorPage = await browser.newPage();
+    const floorErrors = [];
+    floorPage.on("pageerror", e => floorErrors.push(String(e)));
+    await floorPage.addInitScript(() => {
+      window.__realWS = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (/\/attach(\?|$)/.test(url)) {
+          const s = { url, readyState: 0, binaryType: "arraybuffer",
+            onopen: null, onclose: null, onmessage: null, onerror: null,
+            send() {}, close() { this.readyState = 3; } };
+          setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+          return s;
+        }
+        return new window.__realWS(url, protocols);
+      };
+    });
+    try {
+      await floorPage.setViewportSize({ width: 700, height: 800 });
+      await floorPage.goto(base, { waitUntil: "domcontentloaded" });
+      await floorPage.waitForTimeout(900);
+      await floorPage.click('.tab[data-view="terms"]');
+      await floorPage.evaluate(async () => {
+        const t = await api("/v1/tasks/t1");
+        try { closeTerm = () => {}; } catch (e) {}
+        try { clearTermPane = () => {}; } catch (e) {}
+        openTerm(t);
+      });
+      await floorPage.waitForSelector("#ask[open]", { timeout: 5000 }).catch(() => {});
+      const seen = await floorPage.evaluate(() => ({
+        open: document.getElementById("ask").open,
+        body: document.getElementById("ask-body").textContent,
+        remember: document.querySelector("#ask-remember span").textContent,
+        cols: term && term.cols,
+        fit: termFitCols,
+        wide: document.getElementById("t-screen").classList.contains("wide"),
+      }));
+      if (!seen.open || !/120 columns/.test(seen.body) || !/scrolls sideways/.test(seen.body)) {
+        fail("a pane under the width floor did not raise the notice: " + JSON.stringify(seen));
+      }
+      if (seen.remember !== "do not show this again") {
+        fail("the width-floor notice's checkbox reads " + JSON.stringify(seen.remember) + ".");
+      }
+      if (seen.cols !== 120 || !(seen.fit < 120) || !seen.wide) {
+        fail("a pane under the floor did not draw 120 columns in a sideways scroll: " + JSON.stringify(seen));
+      }
+      await floorPage.click("#ask-body a");
+      await floorPage.waitForTimeout(300);
+      const cog = await floorPage.evaluate(() => {
+        const pane = document.querySelector('#settings .pane[data-name="board"]');
+        const field = document.getElementById("s-mincols-field");
+        return {
+          settings: document.getElementById("settings").open,
+          ask: document.getElementById("ask").open,
+          board: !!pane && !pane.hidden && pane.contains(field),
+          flash: field.classList.contains("flash"),
+          reset: document.getElementById("s-mincols-reset").hidden,
+        };
+      });
+      if (!cog.settings || cog.ask || !cog.board || !cog.flash) {
+        fail("the notice's link did not open the settings cog on the board pane with the floor " +
+          "highlighted: " + JSON.stringify(cog));
+      }
+      if (!cog.reset) fail("the reset link shows while the floor is the default.");
+      // Tick "do not show this again", and it stays quiet in this browser.
+      await floorPage.evaluate(() => {
+        document.getElementById("settings").close();
+        floorNoticed = false;
+        noteUnderFloor();
+      });
+      await floorPage.check("#ask-remember-on");
+      await floorPage.click("#ask-actions button");
+      const quiet = await floorPage.evaluate(() => {
+        floorNoticed = false;
+        noteUnderFloor();
+        return { skipped: !!skippedConfirms()["width-floor"], open: document.getElementById("ask").open };
+      });
+      if (!quiet.skipped || quiet.open) {
+        fail("\"do not show this again\" did not keep the width-floor notice away: " + JSON.stringify(quiet));
+      }
+      if (floorErrors.length) fail("the width-floor page threw: " + floorErrors.join(" | "));
+    } finally {
+      await floorPage.close();
     }
 
     // ── a live popped-out window is re-heard on the board's roll call ───────

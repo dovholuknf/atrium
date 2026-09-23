@@ -838,6 +838,7 @@ async function loadHousekeeping() {
   fillSkins(s);
   fillShareAuth(s);
   syncInputLag(s);
+  fillMinCols(s);
 }
 
 // fillShareAuth writes the PUBLIC zrok share's login into the gear dialog.
@@ -1458,6 +1459,49 @@ async function saveScrollback() {
     `${pastePrefs.scrollback_lines_now} lines here, now. ` +
     `${pastePrefs.scrollback_mb_now}MB in the daemon, for sessions started from here on.`);
 }
+
+// The width floor's box. Empty shows as empty with the default as its
+// placeholder, and the reset link shows only when the floor is not the default.
+function fillMinCols(s) {
+  const box = document.getElementById("s-mincols");
+  const reset = document.getElementById("s-mincols-reset");
+  if (!box || !s) return;
+  const def = Number(s.terminal_min_cols_default) || 120;
+  box.value = s.terminal_min_cols || "";
+  box.placeholder = def;
+  if (s.terminal_min_cols_min) box.min = s.terminal_min_cols_min;
+  if (s.terminal_min_cols_max) box.max = s.terminal_min_cols_max;
+  if (reset) {
+    reset.textContent = `reset to default (${def})`;
+    reset.hidden = (Number(s.terminal_min_cols_now) || def) === def;
+  }
+}
+
+// Saved with no room in the ALL view, so the hub passes it to every room. It is
+// one rule for the whole board even though each room enforces it.
+async function saveMinCols(value) {
+  const box = document.getElementById("s-mincols");
+  if (!box) return;
+  const want = value !== undefined ? value : String(box.value || "").trim();
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ terminal_min_cols: want })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    fillMinCols(pastePrefs || {});
+    return;
+  }
+  fillMinCols(pastePrefs);
+  flashSaved(box);
+  if (typeof applyPtyWidth === "function") applyPtyWidth();
+  toast("width floor saved",
+    `a runner's terminal goes no narrower than ${pastePrefs.terminal_min_cols_now} columns`);
+}
+
+function resetMinCols() { saveMinCols(""); }
 
 // pastePrefs is the last answer from the daemon, kept so that a paste does not
 // have to ask first. Null until something has looked, which pasteSettings does

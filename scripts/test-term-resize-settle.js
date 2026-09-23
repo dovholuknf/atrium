@@ -57,6 +57,7 @@ const harness = new Function(`
   function send(m) { sent.push(m); }
   let term = null;
   let termFitCols = 0;
+  function termMinCols() { return 0; }
   ${src}
   return {
     sendResize, sendResizeSettled, advance, sent,
@@ -116,6 +117,9 @@ const wideSrc = lift("function fitTerm(", "\n}") + "\n" +
   lift("function sendResize(", "\n}");
 const wide = new Function(`
   let termFitCols = 0, termPtyCols = 0, resizeSettleTimer = 0;
+  let floor = 0, noted = 0;
+  function termMinCols() { return floor; }
+  function noteUnderFloor() { noted++; }
   function clearTimeout() {}
   const sent = [];
   function send(m) { sent.push(m); }
@@ -139,6 +143,8 @@ const wide = new Function(`
     wide: () => classes.has("wide"),
     setPty: c => { termPtyCols = c; },
     propose: (c, r) => { proposed = { cols: c, rows: r }; },
+    setFloor: n => { floor = n; },
+    noted: () => noted,
   };
 `)();
 
@@ -164,6 +170,36 @@ if (wide.term.cols !== 200 || wide.wide() || wide.xtermEl.style.width !== "") {
   fail("a window wider than the pty kept the sideways scroll. cols " + wide.term.cols + ".");
 }
 
+// ── a pane under the width floor sends the floor and scrolls sideways ───────
+//
+// A runner's terminal never goes under the floor. A pane that fits 80 columns
+// under a 120 floor draws 120, scrolls sideways, tells the room 120, and raises
+// the first-time notice.
+wide.sent.length = 0;
+wide.setPty(0);
+wide.setFloor(120);
+wide.propose(80, 24);
+wide.fitTerm();
+if (wide.term.cols !== 120 || !wide.wide()) {
+  fail("a pane under the floor did not draw the floor's width in a sideways scroll. cols " +
+    wide.term.cols + ", wide " + wide.wide() + ".");
+}
+if (wide.noted() !== 1) {
+  fail("a pane under the floor did not raise the notice. raised " + wide.noted() + " times.");
+}
+wide.sendResize();
+if (wide.sent[0].cols !== 120) {
+  fail("a pane under the floor sent its fit, not the floor. sent " + JSON.stringify(wide.sent) + ".");
+}
+// A shell has no floor, so the same pane draws and sends its own width.
+wide.sent.length = 0;
+wide.setFloor(0);
+wide.fitTerm();
+wide.sendResize();
+if (wide.term.cols !== 80 || wide.wide() || wide.sent[0].cols !== 80) {
+  fail("a shell was held to the floor. cols " + wide.term.cols + ", sent " + JSON.stringify(wide.sent) + ".");
+}
+
 if (bad) process.exit(1);
 console.log("a window drag tells the runner its size once, after it settles, " +
-  "and a window narrower than the pty scrolls sideways.");
+  "a window narrower than the pty scrolls sideways, and a runner pane holds the width floor.");

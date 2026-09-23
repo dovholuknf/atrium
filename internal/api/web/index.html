@@ -1009,6 +1009,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
         size in the page comes off one scale, so none of it is left behind.</span>
     </div>
+    <!-- The width floor. A room setting, enforced by the room on every runner
+         terminal, so it lives on the daemon rather than in this browser. -->
+    <div class="field" id="s-mincols-field">
+      <label class="eyebrow" for="s-mincols">narrowest a terminal goes, in columns</label>
+      <div class="picker">
+        <input id="s-mincols" type="number" min="40" max="400" placeholder="120"
+          onchange="saveMinCols()" style="max-width:110px">
+        <span class="unit">columns</span>
+        <a href="#" id="s-mincols-reset" hidden onclick="resetMinCols(); return false"
+          >reset to default (120)</a>
+      </div>
+      <span class="hintline">A runner's terminal never goes narrower than this. A narrower window scrolls
+        sideways instead. Claude reprints its conversation at every width it passes through and keeps the
+        old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held
+        to this. From 40 to 400.</span>
+    </div>
     <!-- Separate from text size on purpose. Shrinking the type to fit more
          rows on screen makes the rows harder to read, which is the wrong
          trade: the names should stay legible and the room between them should

@@ -1691,7 +1691,10 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// first screen for the window it is about to appear in. See
 	// `launchWidthFor`: a fixed width here put a stretch of narrow output into
 	// the scrollback on every single restart.
-	cols := d.launchWidthFor(taskID)
+	//
+	// Never under the floor, so a card last looked at on a phone does not
+	// reopen narrow. See `api.SettingTerminalMinCols`.
+	cols := max(d.launchWidthFor(taskID), api.TerminalMinCols(d.st))
 	sizeAtLaunch(p, cols)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd

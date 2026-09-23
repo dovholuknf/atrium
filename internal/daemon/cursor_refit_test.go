@@ -96,13 +96,13 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/tasks/refit/attach"
 
-	// The small viewer binds the pty at 40x20.
-	small := attachKeptOpen(t, wsURL, 40, 20)
+	// The small viewer binds the pty at 140x20.
+	small := attachKeptOpen(t, wsURL, 140, 20)
 	time.Sleep(300 * time.Millisecond)
 
 	// The large viewer attaches. Its initial replay restores the cursor, which is
 	// the attach fix working: this is the baseline the re-fit is measured against.
-	large := attachKeptOpen(t, wsURL, 100, 30)
+	large := attachKeptOpen(t, wsURL, 200, 30)
 	time.Sleep(500 * time.Millisecond)
 	if !hasCursorMove(large.seen()) {
 		t.Fatalf("the initial attach did not restore the cursor: %q", large.seen())
@@ -110,10 +110,10 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	before := len(small.seen())
 	ptyMovesBefore := len(f.resized())
 
-	// NON-BINDING RE-FIT: the small viewer re-fits, but 100 is still the widest
+	// NON-BINDING RE-FIT: the small viewer re-fits, but 200 is still the widest
 	// and 20 still the shortest, so the pty does not move. No SIGWINCH, no
 	// repaint, nothing sent. The board re-attaches to cover exactly this.
-	small.resize(t, 36, 20)
+	small.resize(t, 130, 20)
 	time.Sleep(500 * time.Millisecond)
 	if delta := small.seen()[before:]; delta != "" {
 		t.Fatalf("a non-binding re-fit sent bytes it should not have: %q", delta)
@@ -125,14 +125,14 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	// BINDING RE-FIT: the large viewer re-fits narrower, and it IS the widest,
 	// so the pty moves. A real runner would get SIGWINCH here and repaint, which
 	// is how a binding viewer's cursor is carried without a re-attach.
-	large.resize(t, 90, 28)
+	large.resize(t, 180, 28)
 	time.Sleep(400 * time.Millisecond)
 	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{90, 20}) {
+	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{180, 20}) {
 		t.Fatalf("a binding re-fit did not move the pty: %+v", sizes)
 	}
 	// And every viewer is told, so the narrower one draws the new width.
-	if !strings.Contains(small.seen(), `{"t":"size","cols":90,"rows":20}`) {
+	if !strings.Contains(small.seen(), `{"t":"size","cols":180,"rows":20}`) {
 		t.Fatalf("the narrower viewer was not told the pty's new size: %q", small.seen()[before:])
 	}
 }

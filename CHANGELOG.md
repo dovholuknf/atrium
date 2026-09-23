@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A claude terminal never goes narrower than 120 columns. A narrower window scrolls sideways.**
+
+  Claude reprints its whole conversation at every width it passes through and keeps each copy in the scrollback,
+  so a narrow width left a narrow copy nobody could read. A new `terminal_min_cols` setting (default 120, from 40
+  to 400, out-of-range values refused) sets a floor. The room holds every runner terminal at or above it whatever a
+  viewer reports, and the board sends the floor and draws its width with a horizontal scrollbar, phones included.
+  A shell is exempt, since it does not reprint. The first time a pane goes under the floor, a notice says so, with
+  a "do not show this again" box and a link to the field in the settings cog's board pane. Saved from the ALL view,
+  the hub passes it to every room. After deploy, any session narrower than 120 grows to 120 once, on its next
+  attach. ROOM-SIDE and HUB-SIDE.
+
 - **A terminal's scrollback reaches back past a room restart again.**
 
   After a restart a claude terminal showed only what claude reprints on resume, which is its recent conversation,

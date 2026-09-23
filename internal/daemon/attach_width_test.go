@@ -114,13 +114,19 @@ func narrowSession(t *testing.T, d *Daemon, taskID string, output string) *fakeP
 // this viewer is, and returns everything written back within a moment.
 func attachAs(t *testing.T, d *Daemon, taskID string, cols, rows int) string {
 	t.Helper()
+	return attachPath(t, d, "/v1/tasks/"+taskID+"/attach", cols, rows)
+}
+
+// attachPath is attachAs for any attach URL, so a shell can be reached too.
+func attachPath(t *testing.T, d *Daemon, path string, cols, rows int) string {
+	t.Helper()
 	srv := httptest.NewServer(d.ap.Handler())
 	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	url := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/tasks/" + taskID + "/attach"
+	url := "ws" + strings.TrimPrefix(srv.URL, "http") + path
 	c, _, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
 		t.Fatalf("could not attach: %v", err)
@@ -196,17 +202,18 @@ func TestASecondNarrowerViewerStillGetsTheHistory(t *testing.T) {
 	f := narrowSession(t, d, "two-viewers", "drawn at eighty columns\n")
 
 	// The wide one attaches first and gets everything.
-	if got := attachAs(t, d, "two-viewers", 80, 24); !strings.Contains(got, "eighty columns") {
+	if got := attachAs(t, d, "two-viewers", 200, 24); !strings.Contains(got, "eighty columns") {
 		t.Fatalf("the first viewer lost its scrollback: %q", got)
 	}
 	// It stays attached in no meaningful sense here: `attachAs` returns after
 	// its socket closes, and dropping a viewport gives the size back. What
-	// matters is that the terminal now moves to forty columns for the second,
-	// and that viewer still receives the scrollback.
-	if got := attachAs(t, d, "two-viewers", 40, 20); !strings.Contains(got, "eighty columns") {
+	// matters is that the terminal now moves to 140 columns for the second,
+	// which is above the width floor, and that viewer still receives the
+	// scrollback.
+	if got := attachAs(t, d, "two-viewers", 140, 20); !strings.Contains(got, "eighty columns") {
 		t.Fatalf("the narrow viewer lost its scrollback: %q", got)
 	}
-	if sizes := f.resized(); len(sizes) == 0 || sizes[len(sizes)-1].cols != 40 {
+	if sizes := f.resized(); len(sizes) == 0 || sizes[len(sizes)-1].cols != 140 {
 		t.Fatalf("the terminal did not follow the narrow viewer: %+v", sizes)
 	}
 }

@@ -250,6 +250,9 @@ function askUser(opts) {
     const rememberOn = document.getElementById("ask-remember-on");
     remember.hidden = !opts.rememberKey;
     rememberOn.checked = false;
+    // A notice is not a question, so it can say "show" rather than "ask".
+    const rememberSaid = rememberOn.nextElementSibling;
+    if (rememberSaid) rememberSaid.textContent = opts.rememberLabel || "do not ask me again";
 
     const actions = document.getElementById("ask-actions");
     actions.innerHTML = "";
@@ -321,7 +324,8 @@ const SKIP_LABELS = {
   "exit-terminal": "ask a runner to exit",
   "kill-runner": "terminate a runner",
   "move-while-pending": "move a card an agent is waiting on",
-  "hooks-nag": "tell me when claude hooks are not wired"
+  "hooks-nag": "tell me when claude hooks are not wired",
+  "width-floor": "tell me a terminal will not go narrower"
 };
 
 // The turned-off list, and the button that empties it.

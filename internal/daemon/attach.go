@@ -336,7 +336,16 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// be on one session, a pty has one size, and passing each
 				// resize straight through meant the last window dragged set
 				// the width for everybody. See `runner.setViewport`.
-				if err := run.setViewport(c, in.Cols, in.Rows); err != nil {
+				//
+				// NEVER UNDER THE FLOOR, for a runner. Whatever the viewer
+				// reports, so a script, an old tab or a phone cannot shrink
+				// it. A shell does not reprint, so it takes what it is given.
+				// See `api.SettingTerminalMinCols`.
+				cols := in.Cols
+				if !shell && cols > 0 {
+					cols = max(cols, api.TerminalMinCols(d.st))
+				}
+				if err := run.setViewport(c, cols, in.Rows); err != nil {
 					log.Printf("[atrium] resize %s: %v", taskID, err)
 				}
 				sizedOnce.Do(func() { close(sized) })
