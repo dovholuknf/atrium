@@ -131,6 +131,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
+		d.peerSaid(from, target)
 		peer = to
 		log.Printf("[atrium] %s asked %s: %s", from, to, ask)
 	}
@@ -280,6 +281,7 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	d.peerSaid(from, target)
 
 	// ONLY THE QUESTIONS THIS PEER WAS ASKED. `ask_peer` is per question, so a
 	// peer can only have settled the ones addressed to it. Clearing the card

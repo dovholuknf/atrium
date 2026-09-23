@@ -39,6 +39,7 @@ const finishTimeout = 5 * time.Second
 func newFinish() *cobra.Command {
 	var (
 		recap, name, hubURL, status string
+		sha, noCommit, ask          string
 		handBack                    bool
 	)
 	c := &cobra.Command{
@@ -52,7 +53,11 @@ func newFinish() *cobra.Command {
 			"transcript, and not a summary of how you got there. It can be the first argument, " +
 			"the --recap flag, or piped in on stdin.\n\n" +
 			"Which session this is comes from $ATRIUM_AGENT_NAME, or the current directory's " +
-			"name, exactly like the hooks.",
+			"name, exactly like the hooks.\n\n" +
+			"A session another session launched reports with this too, and its launcher is told. " +
+			"--status done needs --sha (or --no-commit saying why there is none). --status " +
+			"blocked and --status question need --ask. --status progress says you are stopping " +
+			"on purpose while something runs. The same report as the atrium_report tool.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if recap == "" && len(args) > 0 {
@@ -64,9 +69,16 @@ func newFinish() *cobra.Command {
 			if handBack {
 				status = "needs-input"
 			}
-			return reportFinished(cmd.OutOrStdout(), hubURL, name, recap, status)
+			return reportFinished(cmd.OutOrStdout(), hubURL, name, finishReport{
+				Recap: recap, Status: status, SHA: sha, NoCommit: noCommit, Ask: ask,
+			})
 		},
 	}
+	c.Flags().StringVar(&status, "status", "",
+		"done (the default), blocked, question or progress")
+	c.Flags().StringVar(&sha, "sha", "", "for done: the commit the work landed as")
+	c.Flags().StringVar(&noCommit, "no-commit", "", "for done with no commit: why there is none")
+	c.Flags().StringVar(&ask, "ask", "", "for blocked or question: what you need, and from whom")
 	c.Flags().StringVar(&recap, "recap", "",
 		"what this session did, in two or three sentences")
 	c.Flags().BoolVar(&handBack, "hand-back", false,
@@ -95,7 +107,12 @@ func pipedRecap() string {
 	return strings.TrimSpace(string(raw))
 }
 
-func reportFinished(out io.Writer, hubURL, name, recap, status string) error {
+// finishReport is what `atrium finish` sends beside which session it is.
+type finishReport struct {
+	Recap, Status, SHA, NoCommit, Ask string
+}
+
+func reportFinished(out io.Writer, hubURL, name string, rep finishReport) error {
 	agent := name
 	if agent == "" {
 		agent = os.Getenv("ATRIUM_AGENT_NAME")
@@ -110,10 +127,13 @@ func reportFinished(out io.Writer, hubURL, name, recap, status string) error {
 	}
 
 	body, err := json.Marshal(map[string]any{
-		"agent":   agent,
-		"task_id": os.Getenv("ATRIUM_TASK_ID"),
-		"recap":   recap,
-		"status":  status,
+		"agent":     agent,
+		"task_id":   os.Getenv("ATRIUM_TASK_ID"),
+		"recap":     rep.Recap,
+		"status":    rep.Status,
+		"sha":       rep.SHA,
+		"no_commit": rep.NoCommit,
+		"ask":       rep.Ask,
 	})
 	if err != nil {
 		return err
@@ -136,6 +156,9 @@ func reportFinished(out io.Writer, hubURL, name, recap, status string) error {
 		Recorded bool   `json:"recorded"`
 		TaskID   string `json:"task_id"`
 		Status   string `json:"status"`
+		// A worker's report, checked and passed on. See daemon/finish.go.
+		Unverified   bool `json:"unverified"`
+		LauncherTold bool `json:"launcher_told"`
 	}
 	_ = json.Unmarshal(raw, &answer)
 
@@ -147,7 +170,13 @@ func reportFinished(out io.Writer, hubURL, name, recap, status string) error {
 		return nil
 	}
 	fmt.Fprintf(out, "%s is %s\n", agent, orDefaultWord(answer.Status, "done"))
-	if recap == "" {
+	if answer.Unverified {
+		fmt.Fprintln(out, "  that commit is not in this worktree, so the card is flagged.")
+	}
+	if answer.LauncherTold {
+		fmt.Fprintln(out, "  your launcher has been told.")
+	}
+	if rep.Recap == "" {
 		fmt.Fprintln(out, "  no recap. the card will say so, which is worse than a short one.")
 	}
 	fmt.Fprintf(out, "  card %s\n", answer.TaskID)

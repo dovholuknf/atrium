@@ -747,6 +747,13 @@ function cardHTML(t) {
       ${t.auto_approve ? `<span class="chip auto"
         title="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
+      ${t.report_unverified ? `<span class="chip warn"
+        title="${esc("this session reported done at " + (t.report_sha || "") +
+          ", and that commit is not in its worktree. it may have landed somewhere else.")}"
+        >sha unverified</span>` : ""}
+      ${t.escalation && t.escalation.count > 0 ? `<span class="chip warn"
+        title="${esc(t.escalation.text)}"
+        >stuck ${esc(String(t.escalation.minutes))}m</span>` : ""}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
         title="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
           ". anyone with that address types into it as you would. right click to stop.")}"

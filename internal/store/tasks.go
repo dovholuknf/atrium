@@ -15,7 +15,8 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
 	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
-	model, throwaway, promote_to, pin_order`
+	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
+	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -34,6 +35,11 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		askAt        string
 		peerTyping   int
 		throwaway    int
+		reportedAt   string
+		unverified   int
+		toolSeen     string
+		stopSeen     string
+		promptedAt   string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
@@ -42,10 +48,31 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
 		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
-		&throwaway, &t.PromoteTo, &t.PinOrder); err != nil {
+		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
+		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt); err != nil {
 		return nil, err
 	}
 	t.Throwaway = throwaway != 0
+	t.ReportUnverified = unverified != 0
+	for _, f := range []struct {
+		raw  string
+		dst  **time.Time
+		name string
+	}{
+		{reportedAt, &t.ReportedAt, "reported_at"},
+		{toolSeen, &t.ToolHookSeenAt, "tool_hook_seen_at"},
+		{stopSeen, &t.StopHookSeenAt, "stop_hook_seen_at"},
+		{promptedAt, &t.PromptedAt, "prompted_at"},
+	} {
+		if f.raw == "" {
+			continue
+		}
+		v, err := parseTS(f.raw)
+		if err != nil {
+			return nil, fmt.Errorf("task %s %s: %w", t.ID, f.name, err)
+		}
+		*f.dst = &v
+	}
 	t.Gated = gated != 0
 	t.AutoApprove = auto != 0
 	t.PeerTyping = peerTyping != 0
@@ -311,7 +338,8 @@ func (s *Store) insertTask(t *Task) error {
 	// A new card has no ask and no recap. Both are things a session says once
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+			?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -332,7 +360,11 @@ func (s *Store) insertTask(t *Task) error {
 		0, "",
 		// No place in the pinned bucket, because a new card is not pinned.
 		// The first drag after somebody pins it is what gives it one.
-		0)
+		0,
+		// No lineage and no report. Lineage is written once by `SetLineage`
+		// after the card exists, and a report is something a session says once
+		// it has run. No hook has been heard from yet.
+		"", "", "", "", 0, "", "", "")
 	return err
 }
 
@@ -1113,6 +1145,15 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 	e := &Event{ID: newID(), TaskID: taskID, At: now(), Kind: kind, Payload: json.RawMessage(blob)}
 	if err := s.hot.Append(taskID, e); err != nil {
 		return err
+	}
+	// The last prompt is kept on the card, because the silent-stop check asks
+	// for it at every turn end and a long turn pushes it out of any window of
+	// recent events. Written here so every path that records a prompt stamps
+	// it, including ones written after this.
+	if kind == EventPrompted {
+		if _, err := s.db.Exec(`UPDATE task SET prompted_at = ? WHERE id = ?`, ts(e.At), taskID); err != nil {
+			return err
+		}
 	}
 	for _, c := range s.cold {
 		// Best effort by contract. A cold sink swallows its own failures and

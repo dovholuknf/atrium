@@ -138,12 +138,31 @@ func (c *controlMCP) server() *mcp.Server {
 			"that session at its next tool call or at the end of its turn, and the answer says " +
 			"`queued`. Neither is instant and neither is a reply: if you want one, ask for it " +
 			"and then look, or wait to be told.\n\n" +
+			"`undeliverable` means that session has no way to receive a queued message (its " +
+			"runner has no atrium hook and atrium does not own its terminal), and " +
+			"`queued-unconfirmed` means it has never shown one. The note says what to do instead.\n\n" +
 			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
 			"agent talking to another. The receiving session is told who you are " +
 			"automatically, so do not announce yourself.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
 			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.",
 	}, c.sayHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_report",
+		Description: "Report on your work to the session that launched you.\n\n" +
+			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN WITH THIS, or with an `atrium_say` " +
+			"to your launcher. A turn that ends with neither is a silent stop: your launcher is " +
+			"told you went quiet, and the human's board is told after that.\n\n" +
+			"status is one of:\n" +
+			"- `done`: the work is finished. Give `sha`, the commit it landed as, or `no_commit` " +
+			"saying why there is none.\n" +
+			"- `blocked`: you cannot go on. Give `ask`: what you need, and from whom.\n" +
+			"- `question`: you need an answer to go on. Give `ask`.\n" +
+			"- `progress`: you are stopping on purpose while something runs.\n\n" +
+			"`summary` is what happened, in your words. It reaches your launcher verbatim. An " +
+			"incomplete report is refused with what is missing, so fix it and call again.",
+	}, c.reportHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_task",
@@ -506,15 +525,80 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 
 	var res struct {
 		Delivered string `json:"delivered"`
+		Warning   string `json:"warning"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 		map[string]string{"text": in.Text, "from": from}, &res); err != nil {
 		return nil, out, err
 	}
 	out.Delivered = res.Delivered
-	if res.Delivered == "queued" {
+	switch {
+	case res.Warning != "":
+		// The room knows whether that card can drain its queue, and says so
+		// when it cannot. Passed through, so the sender hears it now rather
+		// than finding out an hour later that nothing arrived.
+		out.Note = res.Warning
+	case res.Delivered == "queued":
 		out.Note = "queued, not typed. it arrives at that session's next tool call or at the " +
 			"end of its turn, which may be a while if it is idle."
+	}
+	return nil, out, nil
+}
+
+// ── report ──────────────────────────────────────────────────────────────────────
+
+type reportInput struct {
+	Status   string `json:"status" jsonschema:"done, blocked, question or progress"`
+	Summary  string `json:"summary" jsonschema:"what happened, in your words. your launcher reads it verbatim"`
+	SHA      string `json:"sha,omitempty" jsonschema:"for done: the commit the work landed as"`
+	NoCommit string `json:"no_commit,omitempty" jsonschema:"for done with no commit: why there is none"`
+	Ask      string `json:"ask,omitempty" jsonschema:"for blocked or question: what you need, and from whom"`
+}
+
+type reportOutput struct {
+	Recorded     bool   `json:"recorded"`
+	Status       string `json:"status"`
+	Unverified   bool   `json:"unverified,omitempty"`
+	LauncherTold bool   `json:"launcher_told"`
+	Note         string `json:"note,omitempty"`
+}
+
+// reportHandler files the caller's report on its own card. The room validates
+// it and queues it to the launcher, so this only finds the card. See
+// internal/daemon/finish.go.
+func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest, in reportInput) (
+	*mcp.CallToolResult, reportOutput, error) {
+
+	out := reportOutput{}
+	me := agentOf(req)
+	if me == "" {
+		return nil, out, fmt.Errorf("atrium_report is for a session atrium knows. this call did not say which one it is")
+	}
+	room := roomOf(req)
+	id, _, err := c.resolvePeer(ctx, room, me)
+	if err != nil {
+		return nil, out, err
+	}
+	var res struct {
+		Recorded     bool   `json:"recorded"`
+		Status       string `json:"status"`
+		Unverified   bool   `json:"unverified"`
+		LauncherTold bool   `json:"launcher_told"`
+	}
+	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,
+		map[string]string{
+			"status": strings.TrimSpace(in.Status), "recap": in.Summary, "sha": strings.TrimSpace(in.SHA),
+			"no_commit": in.NoCommit, "ask": in.Ask,
+		}, &res); err != nil {
+		return nil, out, err
+	}
+	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold
+	switch {
+	case res.Unverified:
+		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
+			"landed somewhere else, say where with atrium_say."
+	case !res.LauncherTold:
+		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return nil, out, nil
 }
@@ -604,6 +688,10 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 // rather than a new field because tags already flow end to end, and one already
 // lowercase and free of commas and spaces survives NormalizeTags unchanged.
 const OriginTag = "origin:agent"
+
+// reportLine is appended to every agent launch's prompt. See launchHandler.
+const reportLine = "When you finish, get blocked, or need an answer, call atrium_report " +
+	"(or atrium_say your launcher) before you end your turn."
 
 // hasOriginTag reports whether a card carries the agent-launch marker.
 func hasOriginTag(tags []string) bool {
@@ -783,11 +871,22 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// cap counts, which is how an agent launch is told apart from a human's
 	// hand-started session.
 	tags := append(append([]string{}, in.Tags...), OriginTag)
+	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
+	// record the lineage and route the worker's reports back. See
+	// docs/a2a-reliability-design.md.
+	//
+	// The prompt ends with the one line of the worker contract a launch prompt
+	// most often leaves out. A launch prompt that lists steps scopes the turn to
+	// those steps, and the worker stops without a word.
+	prompt := strings.TrimSpace(in.Prompt)
+	if prompt != "" {
+		prompt += "\n\n" + reportLine
+	}
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": strings.TrimSpace(in.Prompt),
+		"why": in.Why, "prompt": prompt,
 		"brief": strings.TrimSpace(in.Brief), "tags": tags,
-		"theme": strings.TrimSpace(in.Theme),
+		"theme": strings.TrimSpace(in.Theme), "spawned_by": agentOf(req),
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {

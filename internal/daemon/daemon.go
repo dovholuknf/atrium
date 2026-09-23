@@ -94,6 +94,10 @@ type Daemon struct {
 	// act holds what each runner is doing right now, in memory only. See
 	// docs/activity-design.md.
 	act *activityTracker
+	// esc is which agent-launched cards the board should hear about, and how
+	// many times it has. In memory, like the activity it is derived from: a
+	// restart recomputes it on the next tick. See a2a.go.
+	esc escalations
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -231,6 +235,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.TextScrollback = d.handleTextScrollback
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
+	d.ap.Report = d.handleReport
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
@@ -369,6 +374,9 @@ func New(opts Options) (*Daemon, error) {
 	// How much context it has burned. Held the same way and for the same
 	// reason. See docs/statusline-telemetry.md.
 	api.TelemetryOf = d.telemetryFor
+	// Which agent-launched cards are stuck, for the board to ring about. Held
+	// the same way. See a2a.go.
+	api.EscalationOf = d.escalationFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	return d, nil
@@ -383,6 +391,7 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	// where the version check is allowed to hold a launch up. Set here rather
 	// than read off the body so nothing on the wire can claim it.
 	req.Interactive = true
+	req.SpawnedBy = launcherFor(req)
 	return d.Launch(req)
 }
 
@@ -587,6 +596,12 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 	// report. A gated session therefore shows live activity with no activity
 	// hook wired up, at no cost: this call is already being made.
 	d.act.set(task.ID, ActivityTool, tool)
+	// This card has a hook that carries messages in. Written once per card.
+	if task.ToolHookSeenAt == nil {
+		if err := d.st.SawHook(task.ID, store.HookTool); err != nil {
+			return "", nil, err
+		}
+	}
 	// A `Task` call used to be counted here as a subagent starting. It is not
 	// any more, and removing it fixes two things rather than one.
 	//

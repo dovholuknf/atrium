@@ -1390,6 +1390,67 @@ var migrations = []struct {
 			`ALTER TABLE harness ADD COLUMN bin_path TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// WHO STARTED THIS CARD, kept so a worker can address its launcher back.
+		//
+		// See docs/agent-lineage-design.md. Two columns rather than one: the
+		// HANDLE names the parent for a peer message and prints on the card, and
+		// the ID is the direct link the board can click to. Both empty on a card
+		// nobody launched, which is every card written before this existed and
+		// every session that joined on its own.
+		//
+		// Room-tagged as `room~id` when the parent lives on another room, the same
+		// form the aggregate view builds. Written once, by `SetLineage`, at launch
+		// time; not observed, so a reconnect never clears it; not an override, so
+		// a `SetOverrides` with an empty value cannot delete it.
+		name: "0055_task_lineage",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN spawned_by TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN spawned_by_id TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// WHAT A WORKER OWES ITS LAUNCHER, and whether atrium can reach a card at
+		// all. See docs/a2a-reliability-design.md.
+		//
+		// `reported_at` is the last time the card said something to its launcher:
+		// a structured report, or a peer message to it. A turn that ends later than
+		// the last prompt with nothing newer here is a silent stop.
+		//
+		// `report_sha` is the commit a `done` report named, and `report_unverified`
+		// is set when that commit is not in the card's worktree. Accepted and
+		// flagged rather than refused, because a worker that committed in another
+		// worktree is doing its job.
+		//
+		// The two `seen_at` columns are the hooks that can carry a queued message
+		// back to the model, stamped the first time each one is heard from. A
+		// runner that should have hooks and a card that has shown none is the
+		// claude session started from a shell without them.
+		//
+		// `prompted_at` is the last prompt, stamped by `appendEvent` for every
+		// `prompted` event, so the silent-stop check does not have to find it in a
+		// window of recent events that a long turn pushes it out of.
+		//
+		// `a2a_notice` is the dedupe for automatic notices: one row per worker,
+		// source and the key of the event that created it, so a notice is sent
+		// once however many times its trigger is seen.
+		name: "0056_a2a_reliability",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN reported_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN report_sha TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN report_unverified INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE task ADD COLUMN tool_hook_seen_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN stop_hook_seen_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN prompted_at TEXT NOT NULL DEFAULT ''`,
+			`CREATE TABLE IF NOT EXISTS a2a_notice (
+				worker_id  TEXT NOT NULL,
+				source     TEXT NOT NULL,
+				key        TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (worker_id, source, key)
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

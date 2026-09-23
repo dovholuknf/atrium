@@ -121,6 +121,11 @@ type LaunchRequest struct {
 	// can ask it. It lived in that one caller, which is why the endpoint under
 	// it never asked.
 	IfRunning string `json:"if_running,omitempty"`
+	// SpawnedBy is the handle of the session asking for this launch, sent by
+	// the hub's `atrium_launch` from the caller's own identity header. The
+	// board's dialog sends nothing and is recorded as `@human`. See
+	// store.SetLineage.
+	SpawnedBy string `json:"spawned_by,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -705,6 +710,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	// An agent-launched claude session gets the Stop hook for itself, so its
+	// turn ends are reported even where the operator never installed it. The
+	// marker is on the request for a new launch and on the card for a reopen.
+	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task)
+	args = withStopHook(h, args, agent)
 	prompt := wanted
 
 	title := strings.TrimSpace(req.Title)
@@ -810,7 +820,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			fresh = &launchSpec{cmd: h.Exe(), args: h.Args, cwd: cwd, env: env}
+			fresh = &launchSpec{cmd: h.Exe(), args: withStopHook(h, h.Args, agent), cwd: cwd, env: env}
 		}
 		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
@@ -880,6 +890,22 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		Branch: req.Branch, Window: req.Window, Theme: req.Theme,
 	}); err != nil {
 		return nil, err
+	}
+	// WHO LAUNCHED IT, so a worker's report and a silent stop have somewhere to
+	// go. Written once: `SetLineage` leaves a card that already has a parent
+	// alone, so a reopen cannot rename it. The parent's card is looked up here
+	// on a best-effort basis, and a handle that resolves to nothing still names
+	// it. See docs/a2a-reliability-design.md.
+	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
+		parentID := ""
+		if by != store.HumanLauncher {
+			if p, err := d.st.GetByWireName(d.st.Qualify(by)); err == nil && p.ID != created.ID {
+				parentID = p.ID
+			}
+		}
+		if err := d.st.SetLineage(created.ID, by, parentID); err != nil {
+			return nil, err
+		}
 	}
 	// WHICH MODEL THIS CARD IS RUNNING ON, written after the runner is up
 	// rather than before, so a launch that was refused leaves nothing behind.

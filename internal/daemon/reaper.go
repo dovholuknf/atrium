@@ -186,6 +186,12 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			continue
 		}
 		lastErr = ""
+		// Agent-launched work nobody has heard from. Same tick, after liveness,
+		// so a card the reaper just marked dead is not reported as stuck. See
+		// a2a.go.
+		if err := d.watchWorkers(time.Now()); err != nil {
+			log.Printf("[atrium] watching launched sessions: %v", err)
+		}
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.
