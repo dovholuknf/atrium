@@ -2,11 +2,12 @@
 
 Design for how atrium guarantees that work handed from one session to another never stalls without somebody
 hearing about it, and that a message between sessions is never lost without somebody hearing about that either.
-Design only. Nothing here is built until clint approves it.
+Clint approved stage 1 with changes on 2026-09-23 (see "Decisions"), and stage 1 is built. Stages 2 and 3 are
+design only.
 
 Read `docs/agent-messaging.md` first. It is the reference for the queue and the two delivery paths this design
-builds on. `docs/agent-lineage-design.md` is the design for recording who launched whom, which this design needs
-and which has not shipped.
+builds on. `docs/agent-lineage-design.md` is the design for recording who launched whom. Stage 1 ships its two
+columns and the write-once setter.
 
 ## What went wrong on 2026-09-23
 
@@ -69,7 +70,7 @@ The brief's seven, and eight more found while tracing the incident or raised dur
 | F3b | A message is typed into a terminal mid-command. | Guarded already by the typing gate (`runner.injectPeer`). |
 | F4 | The launcher is down, restarting, compacted or `/clear`ed when a report arrives. | The queue is durable, so it waits. A turn lost in a restart can take a delivered message with it. |
 | F5 | A report is ambiguous: done with no sha, blocked with no ask. | Accepted as written. |
-| F6 | A guard that forces a turn loops or burns tokens. | No guard exists. |
+| F6 | A guard loops or burns tokens. | No guard exists. Resolved by never forcing a turn (decision 3). |
 | F7 | A worker is stuck in a long tool call or a hung process. | Activity shows the tool and its age. Nobody is told. |
 | F8 | The launcher's identity is not recorded, so nothing can route back to it. | The root cause today. |
 | F9 | A worker process dies (crash, kill, room restart) without reporting. | The reaper marks it dead. The launcher is not told. |
@@ -82,9 +83,9 @@ The brief's seven, and eight more found while tracing the incident or raised dur
 
 ## The worker contract
 
-**Every agent-launched session ends each turn in a report, or atrium makes it.** A card is agent-launched when it
-carries the `origin:agent` tag, which `launchHandler` already adds. Human-started cards are untouched by all of
-this.
+**Every agent-launched session ends each turn in a report, or atrium says it did not.** A card is agent-launched
+when it carries the `origin:agent` tag, which `launchHandler` already adds. Human-started cards are untouched by
+all of this.
 
 ### The report
 
@@ -99,7 +100,7 @@ Both land on one room endpoint and one function, so they cannot drift.
 
 ```
 status    done | blocked | question | progress      required
-summary   what happened, in the worker's words      required, bounded to 8000 chars
+summary   what happened, in the worker's words      reaches the launcher verbatim, bounded to 8000 chars
 sha       the commit the work landed as             required for done, unless no_commit says why
 no_commit why a done has no commit                   e.g. "research only, answer is in the summary"
 ask       what the worker needs                      required for blocked and question
@@ -107,15 +108,15 @@ ask       what the worker needs                      required for blocked and qu
 
 What each status does to the card:
 
-| Status | Card moves to | Launcher is told | Satisfies the turn-end guard |
+| Status | Card moves to | Launcher is told | Counts as the turn's report |
 | --- | --- | --- | --- |
 | `done` | `done` | yes | yes |
 | `blocked` | `needs-input`, reason `blocked` | yes | yes |
-| `question` | `needs-input`, reason `asked` | yes | yes |
-| `progress` | unchanged | yes | yes, once per prompt |
+| `question` | `needs-input`, reason `question` | yes | yes |
+| `progress` | unchanged | yes | yes |
 
-`progress` exists for a worker that ends a turn on purpose while something runs in the background. Without it the
-guard would force a turn on every such stop.
+`progress` exists for a worker that ends a turn on purpose while something runs in the background. Without it
+every such stop would be reported as silent.
 
 ### Validation (F5, F14)
 
@@ -162,14 +163,15 @@ One function in the room daemon, `notifyLauncher(worker, source, body)`, and eve
 one of `report`, `silent-stop`, `permission-wait`, `long-tool`, `died`, `dead-letter`.
 
 1. Resolve the launcher from `worker.SpawnedByID`, falling back to `GetByWireName(SpawnedBy)`.
-2. No launcher (empty, `@human`, unresolvable): escalate to the board instead. Never silent.
-3. Launcher `done` or `dead` (F10): queue it anyway, because a dead card can be resumed and its queue survives,
-   and escalate to the board as well.
-4. Queue with `QueueFromPeer(launcher, body, worker.WireName)`, with a new `auto` flag on the row that marks it as
-   written by atrium rather than typed by a model.
-5. Try to type it through `typeThroughGate` when atrium owns the launcher's terminal. The existing gate and the
-   pending injector apply unchanged, so F3b stays covered.
-6. `publishTask(launcher)` so its waiting count moves.
+2. No launcher (empty, `@human`, unresolvable): nothing is queued. The board still hears, because the watchdog's
+   escalation is computed from the worker alone.
+3. Launcher `done` or `dead` (F10): queued anyway, because a dead card can be resumed and its queue survives.
+4. Claim the notice in `a2a_notice`. A key already there means it was sent, and nothing more happens.
+5. Deliver through `deliverPeer`, the path `atrium tell` uses: typed when atrium owns the launcher's terminal
+   and the gate is open, queued with the on-screen retry otherwise, so F3b stays covered. Sent from the worker's
+   handle, so the launcher can reply straight to it.
+
+It never fails its caller. It runs beside a report, a Stop hook and a tick, and every failure is logged.
 
 **System notices are not subject to the per-sender rate limit (F13).** That limit exists to stop a looping model,
 and a notice is not a model. They have their own bound instead: at most one notice per `(worker, source, key)`,
@@ -185,133 +187,96 @@ where the key names the one event that created the obligation. A second notice w
 | `dead-letter` | the message id | one notice per message |
 
 A worker that is prompted three times and stops silently each time produces three `silent-stop` notices, one per
-prompt. A worker that stops twice on one prompt (the natural Stop and the Stop after the forced turn) produces
-one.
+prompt. A worker whose one silent stop is seen by the Stop hook and again by every watchdog tick produces one.
 
 **Automatic notices only travel upward, from a worker to its launcher or to the board.** Atrium never writes an
 automatic message to a worker. So no cycle of automatic messages can exist. Any loop needs a model to choose to
 send, and model sends stay bounded by the 20 per minute peer limit.
 
-## The turn-end guard (F1)
+## Silent stops (F1)
 
-This is the Stop-hook guard, and it is stage 1.
+**Atrium never forces a turn.** An earlier draft had the Stop hook block an agent-launched session that ended a
+turn without reporting, sending it back to work with the contract as the reason. Clint rejected it: atrium is
+token-conservative, and a forced turn spends tokens every time it fires. So a silent stop is DETECTED and
+REPORTED, never corrected, and the Stop hook's answer is exactly what it was before this design: queued messages
+when there are any, nothing otherwise.
 
-`handleStop` already runs on every turn end and already knows the card. Before it drains the queue it asks one
-more question:
+`handleStop` already runs on every turn end and already knows the card. On the path where it has no messages to
+deliver, which is a turn that really is over, it asks one question:
 
 ```
 card has origin:agent
-AND the Stop is a turn end, not a subagent end                  (turn.go already filters these)
-AND stop_hook_active is false                                   (turn.go already refuses to block when set)
-AND no report and no peer message to its launcher since the last prompt
-AND the card's guard budget is not spent
-  -> block, with the contract as the reason
+AND it is in needs-input (the turn just ended)
+AND prompted_at is later than reported_at      (nothing said to the launcher since the last prompt)
+  -> notifyLauncher(worker, "silent-stop", key = the prompt's time)
 ```
 
-The reason is short and carries the exact call:
+A report is `atrium_report`, `atrium finish --status`, or any peer message to the launcher (`atrium_say`,
+`atrium tell`, `atrium ask --peer`, `atrium answer`). Clint's decision: a message to the launcher counts, and the
+structured report is the form a worker is asked to prefer. `prompted_at` is stamped by the store wherever a
+`prompted` event is written, so a long turn cannot push the last prompt out of reach.
 
-```
-You are an agent-launched session and you ended your turn without reporting to <launcher>.
-Call atrium_report now with status done (and the sha), blocked or question (and what you need), or progress
-(if you are waiting on something on purpose). Then end your turn.
-```
+The launcher hears about the stop within seconds, which is what `sa20` needed at 12:38:34. The board hears next,
+on the backoff below.
 
-A peer message to the launcher (`atrium_say`, `atrium tell`) since the last prompt also satisfies the guard. A
-worker that has already told its launcher something should not be made to repeat it. The launcher sees what it
-said.
+### Why this cannot loop (F6)
 
-If messages are also queued, one block carries both: the queued messages first, then the contract line.
+- **The Stop hook never blocks for the guard.** No turn is ever started by atrium, so there is nothing to loop.
+- **`stop_hook_active` handling is unchanged.** `turn.go` still refuses to block on the Stop that follows a
+  blocked Stop, which bounds the existing message delivery exactly as before.
+- **One notice per prompt.** The dedupe key is the prompt, so however many Stops or watchdog ticks see the same
+  silent stop, the launcher is told once.
+- **Upward-only notices.** Atrium never writes to a worker. A launcher's reaction to a notice is a model choice,
+  bounded by the 20 per minute peer limit.
 
-### When the guard gives up
+### The Stop hook on agent-launched sessions
 
-When a Stop arrives with `stop_hook_active` set and there is still no report, the forced turn did not produce one.
-The guard does not block again. It calls `notifyLauncher(worker, "silent-stop", ...)` with the last activity it
-saw, and lets the turn end. The launcher hears about the silent stop within seconds of it happening, which is
-what `sa20` needed.
+Approved by clint for agent-launched claude sessions. `launchLocked` adds `--settings <json>` in front of the
+claude arguments for an `origin:agent` launch, holding one Stop hook: `<atrium> turn --event end`. Given the
+decision above, **this hook only reports that the turn ended.** It is the same hook the operator can install, with
+the same three safety properties in `turn.go`, and on these sessions it has nothing to block with except queued
+messages, the same as everywhere else.
 
-### Loop bounds (F6)
+- **Not added when the operator already has it.** `claudeconf.Inspect` reads the operator's settings, and when a
+  Stop hook reporting `turn-end` is installed, Claude Code already runs it for every session.
+- **The program is taken from a hook the operator already has**, since that binary is known to run from a claude
+  session on this machine. The room's own binary is the wrong answer: `atrium2` has no `turn` subcommand. With no
+  atrium hook installed at all, nothing is added, and the watchdog catches the stop at 2 minutes.
+- **Human sessions keep the opt-in.** The `CLAUDE.md` rule governs installing the hook into the operator's
+  settings, and none of this touches install all, the hooks pane, or `settings.json`.
 
-Four independent bounds, any one of which stops a loop:
+## The watchdog (F2, F7)
 
-1. **`stop_hook_active`.** Claude Code sets it on the Stop that follows a blocked Stop. `turn.go` already refuses
-   to block when it is set, and that code is not touched. One forced turn per natural stop, at most.
-2. **Once per prompt.** The guard fires only when there has been no report since the last prompt. A forced turn
-   that reports resets nothing, because there is no new prompt.
-3. **A per-card budget.** At most 3 forced turns per card per rolling hour (`ATRIUM_GUARD_BUDGET`). Past that the
-   guard stops forcing and notifies instead. A worker that keeps being prompted and keeps not reporting costs at
-   most three extra turns an hour.
-4. **Upward-only notices.** See above. The launcher's reaction to a notice is a model choice, bounded by the peer
-   limit.
+A pass in the room daemon on the reaper's tick, every 20 seconds (`ReapEvery`), after liveness is settled so a
+card just marked dead is not reported as stuck. It reads the store and the in-memory activity. It never calls a
+runner, never types, never wakes a model. It only calls `notifyLauncher` and sets the board escalation.
 
-### How it squares with "Stop is optional"
+| Condition on a live `origin:agent` card | Launcher | Board |
+| --- | --- | --- |
+| Silent stop: `needs-input`, owing a report | at the Stop hook, or at 2 min by the watchdog when no Stop hook caught it | on the backoff, from the moment it stopped |
+| Stuck tool: one tool call running past 20 min | once, at 20 min | on the backoff, from 20 min |
+| Permission wait (F2) | never. A launcher never answers its workers' permissions | the board's permission nag, on the same backoff, "X is STUCK on a permission, n minutes" |
 
-`CLAUDE.md` says the Stop hook is optional and never installed by "install all", because it is the one hook
-whose answer changes what a session does. That rule stays exactly as it is for human sessions.
+**The backoff is clint's:** 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h, then every 24 hours. One schedule for all
+three, `EscalationBackoff` in `internal/daemon/a2a.go` and `nagSlot` in `notify.js`. **It resets when the card
+moves**: an escalation is dropped the moment the card leaves the stuck state, and a card that gets stuck again
+starts at 1 minute. A permission nag resets per request.
 
-- **The rule governs installing the hook into the operator's settings.** This design does not change install
-  all, the hooks pane, or `settings.json`.
-- **Agent-launched claude sessions get the Stop hook for themselves, at launch.** `launchLocked` adds
-  `--settings <file>` to the claude command line for `origin:agent` launches, pointing at an atrium-written file
-  that holds only the Stop hook. Claude Code merges settings from `--settings` with the user's own, and it
-  deduplicates identical hook commands, so a machine that already has the Stop hook runs it once. The daemon also
-  treats two `/stop` posts for one turn as one (same session id within the same second), in case the commands
-  differ in spelling.
-- **The policy lives in the daemon, not the hook.** The hook is the same `atrium turn --event end` everywhere. The
-  daemon's answer depends on the card's `origin:agent` tag. A human card's Stop behaves exactly as today, even on
-  a machine where the hook is installed.
-- **An agent-launched card can be opted out.** A launch with `guard: false`, or clearing the tag on the card,
-  turns the guard off for that card.
+**Auto mode means no prompt at all.** With approve everything on, the permission is decided before it pends, so
+nothing is waiting and nothing rings. That was already true and is unchanged.
 
-Why this is acceptable: the concern behind the rule is a human's session that will not stop. An agent-launched
-session has no human at its keyboard by default, the launcher asked for the work, and the contract is the thing
-it was launched under. The three safety properties in `turn.go` (every failure prints nothing, `stop_hook_active`
-is honored, only a well-formed block passes through) are unchanged.
-
-For runners other than claude, `docs/other-runners.md` says codex sends the same Stop payload, so the same
-`--settings` equivalent (its `hooks.json`) applies. A runner with no Stop hook falls back to the watchdog below,
-which catches the same stop minutes later instead of seconds.
-
-## The watchdog (F2, F3, F7, F9)
-
-A new ticker in the room daemon, beside the reaper, every 20 seconds (`ReapEvery`). It reads the store and the
-in-memory activity. It never calls a runner, never types, never wakes a model. It only calls `notifyLauncher` and
-the board escalation.
-
-| Trigger | Condition on an `origin:agent` card | Launcher at | Board at |
-| --- | --- | --- | --- |
-| Silent stop, no Stop hook | `needs-input`, no report and no peer message to its launcher since last prompt | 2 min | +10 min |
-| Permission wait (F2) | `needs-permission` with a pending request | 2 min | 5 min |
-| Question or blocked | a report with status `blocked` or `question` | immediately (it is the report) | +15 min unanswered |
-| Long tool (F7) | activity `tool` with no hook heard | 20 min | 45 min |
-| Died (F9) | the reaper moves it to `dead` with no report | immediately | immediately if no launcher |
-| Undeliverable (F3) | a message pending 30 min to a card that is idle, dead or unhookable | the SENDER is told | 30 min |
-
-"Launcher at" means `notifyLauncher` fires. "Board at" means the escalation fires if the card is still in that
-state and the launcher has not acted. The launcher has acted when it sent the worker a message, answered the
-permission, or moved the card. Every threshold is a constant with an environment override, the way `QuietAfter`
-and `OrphanGrace` are:
+**The long-tool trigger cannot tell a hung process from a long build**, so it only says what it sees ("sa20 has
+been in one Bash call for 25 minutes"). It never kills anything. It reads the activity table past its 15 minute
+staleness cutoff, since a tool that ran that long is the one it is looking for. A session that died mid-tool is
+marked dead by the reaper first and leaves the watched set.
 
 | Constant | Default | Override |
 | --- | --- | --- |
 | `SilentStopNotifyAfter` | 2 min | `ATRIUM_A2A_SILENT_STOP` |
-| `SilentStopBoardAfter` | 10 min after the notice | `ATRIUM_A2A_SILENT_STOP_BOARD` |
-| `PermWaitNotifyAfter` | 2 min | `ATRIUM_A2A_PERM_WAIT` |
-| `PermWaitBoardAfter` | 5 min | `ATRIUM_A2A_PERM_WAIT_BOARD` |
-| `AskBoardAfter` | 15 min unanswered | `ATRIUM_A2A_ASK_BOARD` |
-| `LongToolNotifyAfter` | 20 min | `ATRIUM_A2A_LONG_TOOL` |
-| `LongToolBoardAfter` | 45 min | `ATRIUM_A2A_LONG_TOOL_BOARD` |
-| `DeadLetterAfter` | 30 min | `ATRIUM_A2A_DEAD_LETTER` |
-| `GuardBudget` | 3 forced turns per card per hour | `ATRIUM_GUARD_BUDGET` |
+| `LongToolAfter` | 20 min | `ATRIUM_A2A_LONG_TOOL` |
 
-Each override takes a Go duration (`90s`, `5m`), or an integer for the budget. A value that does not parse is
-ignored, the same rule `launchCap` uses.
-
-The long-tool trigger cannot tell a hung process from a long build, so it only says what it sees ("sa20 has been
-in Bash for 20 minutes, no hook since 12:41"). It never kills anything.
-
-The permission-wait notice tells the launcher what is being asked. The launcher cannot answer the permission. The
-answer stays with the human, and the notice says so. Whether a launcher may answer its own workers' permissions
-is an open question below.
+Each override takes a Go duration (`90s`, `5m`). A value that does not parse is ignored, the same rule `launchCap`
+uses. The backoff has no override: it is the operator's schedule, and one place to change it.
 
 ## Delivery guarantees
 
@@ -434,58 +399,62 @@ digest again mid-session.
 
 The launcher first, clint's board second.
 
-- **The launcher** hears through its queue, typed when its terminal is free, carried by a hook otherwise.
-- **The board** hears through a new card reason, `unattended`, set on the WORKER's card with the source attached
-  (for example `unattended: silent-stop, launcher did not act in 10 min`). It rides the existing notify path
-  (`notify.js`, the toast log), so it rings the way `needs-input` already does when clint is away. The notice
-  names the launcher, which is the identity half of dispatch-notify.
-- A worker with no launcher (F8 residue, a crossed room, `@human` as launcher of an `origin:agent` card) skips
-  straight to the board.
+- **The launcher** hears through its queue, typed when its terminal is free, carried by a hook otherwise, from
+  the worker's handle so a reply reaches the worker.
+- **The board** hears through a new field on the card, `escalation` (`source`, `since`, `count`, `minutes`,
+  `text`), computed by the watchdog and held in memory like activity. The board rings each time `count` steps up,
+  through the existing notify path (`notify.js`, the toast log), titled from `text`, for example
+  `sa20 is STUCK: it stopped without reporting, 5 minutes`. The body names the launcher, which is the identity
+  half of dispatch-notify. The card also shows a `stuck` chip.
+- A worker whose launcher cannot be found (a crossed room, a pruned card) still escalates to the board, because
+  the board's escalation is computed from the worker alone.
 
 ## How each part keeps the resilience rules
 
 From `CLAUDE.md`, "Resilience guarantees (daemon)".
 
-1. **Storage failure halts.** The report endpoint, `notifyLauncher`, ack and dead-letter all write through the
-   store and return its error, the way `handleFinish` already does. A store that fails closes the agent listener
-   as today. The watchdog stops ticking when the store halts, since there is nothing durable to act on, and never
-   holds notices in memory as a substitute.
+1. **Storage failure halts.** The report endpoint writes through the store and returns its error, the way
+   `handleFinish` always has. `prompted_at` is written inside `appendEvent`, under the same guard, so a store that
+   cannot record it cannot record the event either. A store that fails closes the agent listener as today, and
+   the watchdog's list fails with it, so it acts on nothing rather than on a guess.
 2. **A hook never fails a session.**
-   - The Stop hook's three guards in `turn.go` are untouched. The guard decision is made in the daemon. Any error
-     computing it (store read, tag lookup) answers `{}` and the turn ends normally.
-   - The SessionStart digest is best effort. Any error, or anything past the three second budget, prints nothing.
-     The digest is capped at 2000 characters.
-   - `--settings` is only added when the atrium-written file exists and parses. A missing file launches without
-     it, the watchdog covers the stop.
+   - The Stop hook is unchanged in `turn.go`. In `handleStop` the silent-stop check runs only on the path that
+     already answers `{}`, and every failure inside it (a store read, a notice that cannot be queued) is logged and
+     the answer is still `{}`.
+   - The hook-seen stamp in the permission hook is one write per card, not per call, and returns its error like
+     every other write on that path. The one in the Stop hook is logged and ignored.
+   - `--settings` is added only when a working atrium hook command is known. Otherwise the session launches as
+     before and the watchdog covers the stop.
 3. **`/activity` stays fire and forget.** Nothing here reads `/activity`'s answer or adds work to its path. The
    watchdog reads the in-memory activity table the endpoint already fills.
-4. **Shutdown is narrated and bounded.** The watchdog is one more ticker, stopped with the reaper.
+4. **Shutdown is narrated and bounded.** The watchdog is not a new goroutine. It rides the reaper's tick and
+   stops with it.
 
 ## Stages
 
-### Stage 1: the silent stop is caught, within seconds
+### Stage 1: the silent stop is caught, within seconds (BUILT)
 
-Ships the most value, and would have caught `sa20` at 12:38:34.
-
-1. Lineage plumbing from `claude/dispatch-notify` (migration `0055` cherry-picked, the rest per `HANDOFF.md`).
-2. `atrium_report` and `atrium finish --status --sha`, with validation.
-3. `notifyLauncher` with sources `report` and `silent-stop`, the `auto` flag, and the per-state dedupe.
-4. The turn-end guard in `handleStop`, with the per-card budget.
-5. `--settings` with the Stop hook on `origin:agent` claude launches. This waits on open question 4. If clint
-   says no, stage 1 still ships items 1 to 4 and 6. The guard then runs only where the operator already installed
-   the Stop hook (as on this machine), and item 6's ticker catches the rest at 2 minutes instead of seconds.
-6. The first slice of the watchdog: the ticker itself, with only the silent-stop rows. It notifies the launcher at
-   2 minutes when no Stop hook caught the stop, and escalates to the board when the launcher has not acted 10
-   minutes after its notice. The launcher is named on the board notice. Stage 2 adds the other rows to the same
-   ticker.
+1. Lineage: migration `0055` cherry-picked from `claude/dispatch-notify`, `SetLineage` write-once, `spawned_by`
+   forwarded by `atrium_launch`, `@human` for the board's dialog.
+2. `atrium_report` on the control MCP, and `atrium finish --status --sha --no-commit --ask`, validated. A `done`
+   on an agent-launched card needs a sha or `no_commit`. A sha the worktree does not contain is accepted and the
+   card flags it (`sha unverified`). `blocked` and `question` need `ask`.
+3. `notifyLauncher`, deduped per `(worker, source, key)` in the `a2a_notice` table, not rate limited.
+4. Silent-stop detection in `handleStop`. No block, ever.
+5. The Stop hook via `--settings` on agent-launched claude sessions, reporting only.
+6. The watchdog on the reaper's tick: silent stop and stuck tool, launcher then board on the backoff. The board's
+   permission nag moved to the same backoff and wording.
+7. F15, the send-time warning. The daemon stamps `tool_hook_seen_at` and `stop_hook_seen_at`, and
+   `handleMessage` and `/tell` answer `queued`, `queued-unconfirmed` or `undeliverable`, with the alternatives.
+   `atrium_say` passes the warning through. Which runners have hooks is a stand-in (`runnerDelivers`: claude and
+   codex) until sa22's `Adapter.Delivery` lands.
+8. `atrium_launch` appends one line to the launch prompt asking for a report before the turn ends.
 
 ### Stage 2: nothing waits unseen
 
-1. The rest of the watchdog rows: permission wait, long tool, died.
-2. Dead letters, the sender told, the board chip.
-3. Delivery capability (F15): `Adapter.Delivery` on sa22's adapters, the two `seen_at`
-   stamps on the card, the four-way answer from `handleMessage`, and `reachable` in `atrium_peers`. The send-time
-   warning is the cheap part and can move into stage 1 if clint wants the gemini case closed first.
+1. The watchdog's `died` row (F9).
+2. Dead letters, the sender told, the board chip (F3).
+3. `Adapter.Delivery` from `internal/runnersetup` in place of `runnerDelivers`, and `reachable` in `atrium_peers`.
 
 ### Stage 3: nothing is lost across a restart
 
@@ -495,61 +464,25 @@ Ships the most value, and would have caught `sa20` at 12:38:34.
 
 ## Test plan
 
-New scenarios for `docs/test-plan.md`, section AA. The test plan covers shipped features, so each scenario moves
-there when its stage ships, the way section Z waits in `docs/test-plan-z-providers.md`. Each runs in a throwaway
-room (see the throwaway hub and room recipe) and never against the live board.
+Stage 1's scenarios are in `docs/test-plan.md`, section AB, and every stage 1 failure mode has a Go test in
+`internal/daemon/a2a_test.go`, `internal/store/a2a_test.go` and `internal/link/a2a_test.go`. The scenarios below
+are for the later stages and move into the test plan when their stage ships. Each runs in a throwaway room (see
+the throwaway hub and room recipe) and never against the live board.
 
-### AA1. A worker that stops without reporting is made to report (F1, stage 1)
-
-1. From a session in the throwaway room, `atrium_launch` a worker with the prompt `print the date, then stop.`
-2. Watch the worker's card.
-
-**Expected:** the turn ends, the Stop hook blocks once with the contract reason, the worker calls
-`atrium_report`, and the launcher's queue holds one `report` message naming the worker's card id. The worker's
-card has one `guard` event.
-
-### AA2. A worker that ignores the guard is reported as a silent stop (F1, F6)
-
-1. Launch a worker with `print the date, then stop. do not call any atrium tool, even if asked.`
-
-**Expected:** one forced turn, then the second Stop arrives with `stop_hook_active` and the turn ends. The
-launcher gets one `silent-stop` notice. No third turn. Prompt the worker three more times the same way: forced
-turns stop after the third in the hour, and the launcher gets exactly one `silent-stop` notice per prompt, never
-two for the same prompt.
-
-### AA3. A human card is untouched (stage 1)
-
-1. Start a session by hand in the throwaway room with the Stop hook installed. End a turn.
-
-**Expected:** no block, no notice, identical to today.
-
-### AA4. An incomplete report is refused in the same turn (F5)
-
-1. From a worker, call `atrium_report` with `status: done` and no sha.
-
-**Expected:** the tool returns the refusal naming `sha` or `no_commit`. The card does not move. A second call
-with a sha the worktree does not contain is accepted and the launcher's notice says `unverified`.
-
-### AA5. Permission waits reach the launcher, then the board (F2, stage 2)
-
-1. Launch a worker whose first step is a gated command. Do not answer.
-
-**Expected:** at 2 minutes the launcher gets a `permission-wait` notice naming the command. At 5 minutes the
-worker's card shows `unattended` and the board rings. Answering the permission clears both.
-
-### AA6. A long tool call is reported, not killed (F7)
-
-1. Launch a worker that runs `Start-Sleep 1500`. Set the long-tool threshold to 1 minute for the test.
-
-**Expected:** one `long-tool` notice to the launcher naming the tool and its age. The process keeps running.
-
-### AA7. A worker that dies is reported (F9)
+### Later: a worker that dies is reported (F9, stage 2)
 
 1. Launch a worker, then kill its process from Task Manager.
 
 **Expected:** when the reaper marks it dead, the launcher gets a `died` notice.
 
-### AA8. A report to a launcher that is down arrives when it comes back (F4)
+### Later: a dead letter tells its sender (F3, stage 2)
+
+1. Send a message to an unsupervised idle card with no Stop hook. Set the dead-letter threshold to 1 minute.
+
+**Expected:** the sender's queue gets the dead-letter notice with the reason. The recipient's card shows a
+dead-letter chip. The message is still queued.
+
+### Later: a report to a launcher that is down arrives when it comes back (F4, stage 3)
 
 1. Launch a worker. Exit the launcher's session. Have the worker report.
 2. Resume the launcher's card.
@@ -557,7 +490,7 @@ worker's card shows `unattended` and the board rings. Answering the permission c
 **Expected:** the report is in the launcher's queue while it is down, and the SessionStart digest lists the worker
 as done. The first tool call or turn end delivers the report.
 
-### AA9. A message delivered in a lost turn is redelivered as a possible repeat (F12, stage 3)
+### Later: a message delivered in a lost turn is redelivered as a possible repeat (F12, stage 3)
 
 1. Queue a message to a session. Let the permission hook deliver it. Kill the room before the turn ends.
 2. Restart the room and resume the card.
@@ -565,52 +498,26 @@ as done. The first tool call or turn end delivers the report.
 **Expected:** the message is delivered again with the "may be a repeat" banner. `acked_at` is set only after the
 resumed turn ends.
 
-### AA10. A dead letter tells its sender (F3)
-
-1. Send a message to an unsupervised idle card with no Stop hook. Set the dead-letter threshold to 1 minute.
-
-**Expected:** the sender's queue gets the dead-letter notice with the reason. The recipient's card shows a
-dead-letter chip. The message is still queued.
-
-### AA11. A compacted worker is pointed back at its brief (F11, stage 3)
+### Later: a compacted worker is pointed back at its brief (F11, stage 3)
 
 1. Launch a worker, then run `/compact` in it.
 
 **Expected:** the new context carries the digest line naming its launcher, its `BRIEF.md` and `atrium_report`.
 
-### AA12. A message to a runner that cannot receive it says so at send time (F15)
+## Decisions (clint, 2026-09-23)
 
-1. In the throwaway room, start a gemini session by hand, not through atrium, so atrium does not own its terminal.
-2. From another session, `atrium_say` to it.
-3. Repeat with a claude session started from a shell whose settings have no atrium hooks.
-
-**Expected:** the gemini send answers `undeliverable`, naming the runner and the two alternatives (relaunch under
-atrium, or the human relays it). The claude send answers `queued-unconfirmed`, because the runner declares hooks
-and the card has shown none. `atrium_peers` shows `reachable: no` and `reachable: unconfirmed`. Both messages are
-still in the queue, and the gemini one shows on the board as a dead letter at once.
-
-### AA13. The guard survives an unreachable daemon (resilience)
-
-1. Stop the throwaway room daemon. End a turn in a launched worker.
-
-**Expected:** the turn ends normally. No hang, no error shown to the model.
-
-## Open questions for clint
-
-1. **May a launcher answer its own workers' permissions?** Today only a human can. Allowing it would close F2
-   without waking clint, at the cost of an agent approving another agent's commands. Recommend no for now: the
-   notice tells the launcher, and the launcher tells clint.
-2. **Does an `atrium_say` to the launcher count as a report for the guard?** Recommend yes, so a worker that
-   already spoke is not made to repeat itself. The alternative is to demand the structured report every turn.
-3. **The timer defaults.** 2 minutes to the launcher, then 5 to 15 more to the board, 20 minutes for a long tool,
-   3 forced turns an hour. These are guesses sized to today's waves. Confirm or give numbers.
-4. **Adding `--settings` to launched claude sessions.** It is a change to what a launched session runs with, even
-   if only the Stop hook. Confirm that is acceptable under the "Stop is optional" rule as framed above.
-5. **A card that went to `done` without its work landing (dispatch-notify).** Should `done` on an
-   `origin:agent` card require a verified sha before the card moves, rather than accepting it as `unverified`?
-6. **When does the no-hook send warning (F15) ship?** It is in stage 2 because it needs sa22's adapters. The
-   send-time `undeliverable` answer for a runner with no hooks is small and could ride stage 1. Recommend stage 1,
-   so the gemini case stops answering `queued` first.
+1. **Permissions.** A launcher never answers its workers' permissions. The human does, unless auto mode is on, in
+   which case the prompt never appears. A worker waiting on one escalates to the operator's board as "agent X is
+   STUCK on a permission, n minutes", re-notified on the backoff 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h. The
+   same schedule serves silent stops and stuck tools. It resets when the card moves.
+2. **An `atrium_say` to the launcher counts as a report.** `atrium_report` and `finish --status --sha` stay as the
+   structured form.
+3. **No forced turns.** The Stop hook never blocks for the guard. A silent stop is detected, the launcher is
+   notified, then the board on the backoff. The forced-turn budget and the loop rules that existed only for it are
+   gone. `stop_hook_active` handling for message delivery is unchanged.
+4. **The Stop hook via `--settings` for agent-launched sessions: approved.** It only reports turn end.
+5. **A done report with an unverified sha is accepted, and the card flags it.**
+6. **The F15 send-time warning ships in stage 1.**
 
 ## Appendix: review rounds
 
@@ -640,3 +547,11 @@ the effective list drops the hook paths when the adapter's `hooks` check is not 
 | A1 | Convert open questions to decisions after clint answers. | deferred | Same as round 1. |
 
 No structural findings in round 2, so no third round was run.
+
+### After approval
+
+Clint approved stage 1 with six changes (see "Decisions"). The largest removed the forced turn and everything
+that existed only to bound it (the per-card budget, the "when the guard gives up" path). The watchdog's board
+escalation moved from fixed thresholds to his backoff, and the permission-wait row moved from a launcher notice to
+the board's permission nag. The F15 warning moved into stage 1. The `auto` flag on queued notices was dropped: the
+dedupe table and the worker's handle as sender carry what it was for.

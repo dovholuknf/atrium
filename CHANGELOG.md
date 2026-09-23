@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A session launched by another session that stops without a word is reported, not left sitting.**
+
+  An agent-launched worker (`atrium_launch`) now owes its launcher a report every turn: `atrium_report` on the
+  control MCP, `atrium finish --status done|blocked|question|progress --sha ...`, or any message to the launcher.
+  A turn that ends with none is a silent stop. The launcher hears at once, from the worker's handle, and the board
+  rings `X is STUCK: it stopped without reporting, n minutes` on a 1m, 2m, 5m, 10m, 30m, 1h ... 24h backoff that
+  resets when the card moves. A tool call running past 20 minutes is reported the same way and never killed. A
+  stuck permission nags on the same backoff. Atrium never forces a turn: the Stop hook only reports.
+
+  A `done` from a worker needs a sha or a reason there is none, and a sha the worktree does not contain is
+  accepted with a `sha unverified` chip. Launches record their launcher (`spawned_by`, `@human` for the board's
+  dialog). Agent-launched claude sessions get the Stop hook through `--settings` when the operator has not
+  installed it. A message to a session nothing will deliver to (a gemini card atrium does not own, a claude
+  session with no hooks) now answers `undeliverable` or `queued-unconfirmed` with what to do instead. Migrations
+  `0055` and `0056`. See `docs/a2a-reliability-design.md`. ROOM-SIDE and HUB-SIDE.
+
 - **A runner's row says what stops it working where atrium launches it, and fixes what atrium may fix.**
 
   Gemini stopped at its trust prompt in every new worktree, because it had never been told to trust the folder.
