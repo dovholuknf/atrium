@@ -73,5 +73,23 @@ go build -o build.claude\atrium2.exe ./cmd/atrium2
 - Room down, hub up: `pwsh -File C:\Users\claude\.atrium2\scripts\start-atrium-room.ps1`. The auto mode classifier
   may refuse to let me start the room directly. Then clint runs it.
 - `maintenance-window.ps1` is the older hub-and-room script. Prefer `deploy-batch.ps1`.
+- **A room deploy kills my own turn,** and the resumed session can be missing it, which is how one deploy ran twice.
+  Before starting one, write `C:\Users\claude\.atrium2\restart-marker.txt` with the sha and the built `atrium2.exe`
+  hash. After any resume, compare the installed hash to it and never re-run a deploy that already landed.
+- **The hook binary is separate.** Hooks run `C:\Users\claude\.atrium\bin\atrium.exe`, built from `cmd/atrium`, and
+  neither deploy script touches it. When `internal/cli` changes, build it
+  (`go build -o build.claude\atrium.exe ./cmd/atrium`), move the old one to `atrium.old.exe`, and copy the new one in.
+- **If the atrium MCP tools are gone** (they fail to connect when this session starts before the hub), use the HTTP
+  API on `127.0.0.1:7778`: `POST /v1/tasks/<room>~<id>/message {"text"}` types into a worker's terminal. A card
+  whose runner died is resumed with `POST /v1/launch` and header `X-Atrium-Room: claude-sg4`, body `harness`,
+  `cwd`, `title`, `task_id` (bare id) and `resume` (from `GET /v1/tasks/<room>~<id>/sessions`), with NO `prompt`.
+  Send the instruction as a message afterwards. `/restart` only works while atrium still owns a live terminal.
+- **Workers cannot finish a rebase.** A hook blocks `git add` on a detached HEAD. Either finish it for them from
+  PowerShell in their worktree (`$env:GIT_EDITOR='true'`, `git add`, `git rebase --continue`), or tell them to
+  cherry-pick onto a fresh branch instead of rebasing.
+- **Headless board checks in a worktree** need `NODE_PATH=/d/git/github/dovholuknf/atrium/node_modules`, since only
+  the main checkout has Playwright installed.
+- **Every launch prompt ends with "carry out the whole BRIEF through to the report, without stopping between
+  steps".** A prompt that names only the first steps makes the worker stop after them.
 
 At the next wave boundary, run `docs/wrapup.md` before the next `/clear`.

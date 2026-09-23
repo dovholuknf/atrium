@@ -43,6 +43,26 @@ Rules for adding:
   `atrium_exit` it (card + branch + history persist) to make room under the 10-session cap. clint authorized
   culling idle validated doers without asking. Do NOT exit a doer mid-task.
 
+## 2026-09-23
+
+- **Terminals: a claude runner never goes under 120 columns** (the `terminal_min_cols` setting). A narrower window
+  scrolls sideways. Shells are exempt.
+- **The agents half of hide inactive stays,** and it applies inside pinned too. A heading reads `5/15` only while
+  something is hidden, and a plain `13` otherwise.
+- **On/off rows switch from their own pill,** fixtures-style, on the runners page panes. Rooms keep their
+  "marked for deletion" chip: they have no enable flag, and clint did not ask for one.
+- **a2a stage 1: no forced turns.** atrium is token-conservative. A silent stop tells the launcher, then the board,
+  on the backoff 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h. A launcher never answers its workers' permissions.
+- **Seen tracking** replaces an orchestrator status log: atrium knows whether clint saw a turn and answered its
+  Open Questions. `atrium_task` on my own card says so.
+- **Hub-only deploys need no ask.** Room restarts still wait for workers to settle and are asked about.
+- **SDK comparisons use `main`,** never the latest release. It is a go-forward effort.
+- **Personas: the specialist agents live in `dotagents/personas/<id>/`,** runner neutral, with their memory in git.
+  Only the human commits or pushes the pack. No session ids anywhere: a lesson carries its own one-line `Why:`.
+  `MEMORY.md` is generated. Design: `docs/personas-design.md`. clint stopped the design review after round 3 to
+  build, and later said the atrium stages (3 and 6) were more than he wanted: "i thought i was just making a few
+  files in a few places". Keep persona work to files unless he asks for atrium features.
+
 ## Before 2026-09-21
 
 - **Board-share auth** (see docs/interview-log.md): public zrok share auth = OIDC or basic (updb) with creds set on

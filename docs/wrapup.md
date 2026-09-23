@@ -49,6 +49,12 @@ here, a fresh session will not know a room restart is owed.
 If clint made a product or architecture decision this wave, append it to `docs/decisions-log.md`. If he answered a
 design question, append it to `docs/interview-log.md` so it is never re-asked.
 
+## 5b. Write FACTORY-STATUS.md
+
+`D:\worktrees\claude\atrium\orchestrator\FACTORY-STATUS.md`, untracked: the live build id, what is merged but not
+live, workers in flight, what clint owes (his commits, answers), filed bugs not yet dispatched, and the next `sa`
+number. Cold start reads it first.
+
 ## 6. Cull validated doers (only if clint validated them)
 
 Only after clint has said the work is good, recycle idle validated doers with `atrium_exit` to free launch slots
