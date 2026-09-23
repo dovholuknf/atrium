@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -81,10 +82,11 @@ func (v *keptOpenViewer) seen() string {
 	return v.buf.String()
 }
 
-// The move `textWithCursor` appends: up from the resting row, carriage return,
-// across to the column. Its presence is what "the cursor was restored" means.
+// The move `textWithCursor` appends: an absolute `CSI row;col H` to the
+// session's cursor, as the last thing in the replay. Its presence is what "the
+// cursor was restored" means.
 func hasCursorMove(s string) bool {
-	return strings.Contains(s, "\x1b[") && strings.Contains(s, "A\r")
+	return regexp.MustCompile(`\x1b\[\d+;\d+H$`).MatchString(s)
 }
 
 func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {

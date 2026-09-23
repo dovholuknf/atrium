@@ -34,10 +34,9 @@ func TestReplayRestoresTheCursor(t *testing.T) {
 	in := "line one\r\nline two\r\nline three\r\n\x1b[2;6H"
 	got := string(Replay([]byte(in), "screen", 40, 24))
 
-	// Row 2 of three is one row up from the bottom-most content, and the
-	// terminal rests one line below that content after the replay, so the move
-	// is up two lines and across to column 6 (five columns from the left).
-	want := "\x1b[2A\r\x1b[5C"
+	// The screen is replayed at its own rows, so the move is to the session's
+	// own row and column. See `TestReplayKeepsTheSessionsRows`.
+	want := "\x1b[2;6H"
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("replay did not restore the cursor (want suffix %q):\n%q", want, got)
 	}
@@ -58,9 +57,8 @@ func TestAttachRestoresTheCursorOverTheSocket(t *testing.T) {
 	if !strings.Contains(got, "some more") {
 		t.Fatalf("the replay itself did not arrive: %q", got)
 	}
-	// Two rows of content, cursor on the first, so up two lines from the resting
-	// position and across to column 3 (two columns from the left).
-	want := "\x1b[2A\r\x1b[2C"
+	// Row 1, column 3, where the session parked it.
+	want := "\x1b[1;3H"
 	if !strings.Contains(got, want) {
 		t.Fatalf("the attach did not restore the cursor (want %q):\n%q", want, got)
 	}

@@ -50,6 +50,16 @@ section heading is just "what landed in this iteration."
   tall at phone width. A room's switch is its deletion mark: off means marked, so nothing new starts there. A
   runner whose command is not on PATH can still be switched off but not on. HUB-SIDE.
 
+- **Typed text stays in claude's input box after attaching to a session that is already running.**
+
+  The attach replays the session through a screen model, and that replay folded every run of blank rows to one,
+  including the two blank rows claude leaves under its banner on the live screen. Everything below them arrived one
+  row high, and on a long session the screen's first row was not the top of the viewport either. Claude draws its
+  input box with absolute moves once a line wraps, so the second line of input landed on the rule under the prompt
+  and the status lines drew twice. A fresh attach hid it, because claude repaints right after it starts. The live
+  screen is now replayed row for row at the pty's height, the history still folds its blank runs, and the cursor is
+  put back with an absolute move. ROOM-SIDE.
+
 - **The agents half of `hide inactive` is back.**
 
   It was removed along with the shown/total group counts, and that removal was a mistake. The `agents` segment
