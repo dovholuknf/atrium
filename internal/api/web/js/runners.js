@@ -541,7 +541,10 @@ async function renderRunners() {
   // actually run.
   document.getElementById("harness-list").innerHTML = roomGroups(allHarnesses, h => `
     <div class="row line">
-      <span class="chip ${h.enabled ? "accent" : ""}">${h.enabled ? "on" : "off"}</span>
+      ${switchChip("runner", h.id, h.room, h.enabled,
+        // Only turning ON is refused: a runner whose command has gone can still
+        // be switched off, so it stops being offered.
+        !h.found && !h.enabled ? "its command is not on PATH, so it cannot be enabled" : "")}
       <span class="tool">${esc(h.label)}</span>
       <code class="grow ell" title="${esc([h.cmd].concat(h.args || []).join(" "))}">${
         esc([h.cmd].concat(h.args || []).join(" "))}</code>
@@ -551,9 +554,6 @@ async function renderRunners() {
       <span class="by">${esc(h.launch_mode)}</span>
       <span class="hookcell">${hooksChip(h)}</span>
       ${h.setup ? `<span class="setupcell">${setupChip(h)}</span>` : ""}
-      <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
-        onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
-          h.enabled ? "disable" : "enable"}</button>
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
       <button title="a copy of this runner, to change one thing about"
         onclick="copyHarness('${esc(h.id)}','${esc(h.room || "")}')">duplicate</button>
@@ -661,7 +661,7 @@ async function renderActions() {
 
   setHTML(host, roomGroups(allActions, a => `
     <div class="row line">
-      <span class="chip ${a.enabled ? "accent" : ""}">${a.enabled ? "on" : "off"}</span>
+      ${switchChip("action", a.id, a.room, a.enabled)}
       <span class="tool">${esc(a.label)}</span>
       <code class="grow ell" title="${esc(a.prompt)}">${esc(a.prompt)}</code>
       ${a.after === "exit" ? `<span class="by" title="asks the runner to quit afterwards"
@@ -764,8 +764,7 @@ async function renderSources() {
 
   setHTML(host, roomGroups(allSources, s => `
     <div class="row line">
-      <span class="chip ${s.enabled ? "accent" : s.last_error ? "warn" : ""}"
-        >${s.enabled ? "on" : s.last_error ? "off" : "off"}</span>
+      ${switchChip("source", s.id, s.room, s.enabled)}
       <span class="tool">${esc(s.label || s.id)}</span>
       <code class="grow ell" title="${esc([s.cmd].concat(s.args || []).join(" "))}">${
         esc([s.cmd].concat(s.args || []).join(" "))}</code>
@@ -949,7 +948,7 @@ async function renderRecognisers() {
   // debugging "why did the wrong row answer" is looking for exactly this.
   setHTML(host, roomGroups(allRecognisers, r => `
     <div class="row line">
-      <span class="chip ${r.enabled ? "accent" : ""}">${r.enabled ? "on" : "off"}</span>
+      ${switchChip("recogniser", r.id, r.room, r.enabled)}
       <span class="by" title="asked in this order, lowest first">${esc(String(r.rank))}</span>
       <span class="tool">${esc(r.label || r.id)}</span>
       <code class="grow ell" title="${esc(r.pattern)}">${esc(r.pattern)}</code>
