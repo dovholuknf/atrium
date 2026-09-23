@@ -2769,3 +2769,27 @@ ends with `-m "Lessons-reviewed: codebase-steward"` and counts what was done.
    `.md` file. Open lessons and press delete on that file.
 
 **Expected:** refused with a sentence saying the path is a link. The file outside the pack is still there.
+
+## Z. The terminals pane after a room restart
+
+### Z1. The main board's pane reattaches by itself
+
+1. Attach a claude card in the main board's terminals view, and pop out a second card into its own window.
+2. Restart the room, and watch the board's DevTools console for lines starting with `[atrium`.
+
+**Expected:** both come back without a click. The pane is torn down while the room is away, the board waits for
+the card, and it attaches again as soon as the card is supervised.
+
+Reported as broken on 2026-09-23 (the pane stayed unattached while the popped-out window reconnected). It was
+not reproduced in seven throwaway hub+room variants, and not reproduced on the live board at the 19:33 room
+restart that day. Capture from clint's board console:
+
+```
+19:33:55.253 pane torn down
+19:33:56.477 boot. remembered view terms card ...
+19:33:56.564 try 1 supervised=false
+19:33:57.573 try 2 supervised=true
+it is back. attaching
+```
+
+If it recurs, capture the same lines. The line after `waiting for` names the branch that gave up.
