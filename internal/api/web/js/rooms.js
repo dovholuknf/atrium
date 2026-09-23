@@ -361,17 +361,13 @@ function thisMachineRow() {
 function roomRow(r) {
   const here = roomNow() === r.name;
   const line = roomLine(r);
-  // The hub's own room has no mark (see paintRoomFacts), and a hidden pill of the
-  // same box stands in for it so the names still start in one column.
-  const mark = r.transport === "local"
-    ? `<span class="chip toggle" style="visibility:hidden" aria-hidden="true">off</span>`
-    : switchChip("room", r.name, "", !roomIsMarked(r));
   return `<div class="roomrow${line ? " has-hint" : ""}">
     <div class="roomrow-top">
-      ${mark}
       <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.transport)}
       ${roomState(r)}
+      ${r.marked || r.state === "marked-for-deletion"
+        ? `<span class="chip no">marked for deletion</span>` : ""}
       ${here ? `<span class="chip">showing this one</span>` : ""}
       <span class="grow"></span>
       <button class="ghost roomcog" data-room="${esc(r.name)}"
@@ -549,7 +545,7 @@ function paintRoomFacts(r) {
   setHTML(table, facts
     .map(f => `<tr><td class="by">${f[0]}</td><td>${f[1]}</td></tr>`).join(""));
 
-  const marked = roomIsMarked(r);
+  const marked = r.state === "marked-for-deletion";
   state.innerHTML = (marked
     ? `<b>Marked for deletion.</b> No new work starts here; what's running finishes.
        Take the mark off to use it again. `
@@ -561,11 +557,11 @@ function paintRoomFacts(r) {
   if (mark) {
     // NOT FOR THE HUB'S OWN ROOM. Marking is "start no new cards here, I am
     // going to remove this", and removing the machine the board is served from
-    // is not a thing this switch could do. The switch above is what turns that
+    // is not a thing this button could do. The switch above is what turns that
     // room off, and it is the honest control for it.
     mark.hidden = r.transport === "local";
-    mark.innerHTML = mark.hidden ? "" : switchChip("room", r.name, "", !marked) +
-      ` <span class="by">${marked ? "marked for deletion" : "takes new work"}</span>`;
+    mark.textContent = marked ? "take the mark off" : "mark for deletion";
+    mark.className = marked ? "go" : "no";
   }
 }
 
@@ -652,31 +648,29 @@ function forgetRoomCfg() {
   });
 })();
 
-// markRoom is the one change the board can make to a room. Its switch is the
-// `room` entry in SWITCHES, on the room's row and in its pane, which says the
-// refusal and puts the pill back, so this throws rather than telling anyone.
-async function markRoom(name, marked) {
-  const got = await plainFetch("/_hub/inventory/mark", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name, marked: !!marked })
-  });
-  if (!got.ok) {
-    const why = await got.json().catch(() => ({}));
-    throw new Error(why.error || "the hub refused that");
-  }
+// markFromCog is the mark button inside the room's own pane.
+async function markFromCog() {
+  const r = hubInventory.find(x => String(x.name) === String(roomCfgFor));
+  if (!r) return;
+  await markRoom(r.name, r.state !== "marked-for-deletion");
+  await openRoomCog(roomCfgFor);
 }
 
-// roomMarked repaints both places the mark is drawn, after it changed.
-async function roomMarked() {
+// markRoom is the one change the board can make to a room.
+async function markRoom(name, marked) {
+  try {
+    const got = await plainFetch("/_hub/inventory/mark", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, marked: !!marked })
+    });
+    if (!got.ok) {
+      const why = await got.json().catch(() => ({}));
+      throw new Error(why.error || "the hub refused that");
+    }
+  } catch (e) { tellUser("rooms", e.message); return; }
   hubRead = 0;
   await loadHubRooms();
   renderRooms();
-  if (roomCfgOpen) paintRoomFacts(hubInventory.find(x => String(x.name) === String(roomCfgFor)));
-}
-
-// roomIsMarked reads the mark off either spelling the inventory has used.
-function roomIsMarked(r) {
-  return !!(r && (r.marked || r.state === "marked-for-deletion"));
 }
 
 // rejectRoom culls a stale or duplicate room record from the hub's picker.

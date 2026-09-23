@@ -144,16 +144,6 @@ const SWITCHES = {
     find: id => (allProviders || []).find(p => p.name === id), title: switchTitle("provider"),
     save: putEnabled(p => "/v1/providers/" + encodeURIComponent(p.name)),
     after: () => renderProviders()
-  },
-  // A room's one bit is the deletion mark: on takes new work, off is marked and
-  // starts nothing new while what is running finishes. See markRoom.
-  room: {
-    find: id => (hubInventory || []).find(r => String(r.name) === id),
-    title: on => on
-      ? "on. new work starts here. click to mark this room for deletion, so nothing new starts on it"
-      : "marked for deletion. nothing new starts here. click to take the mark off",
-    save: (r, on) => markRoom(r.name, !on),
-    after: () => roomMarked()
   }
 };
 
