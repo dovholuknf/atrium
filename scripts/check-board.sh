@@ -134,6 +134,14 @@ if ! node "$here/scripts/check-runner-panes.js" "$whole"; then
   fail=1
 fi
 
+# The runner setup chip and dialog, RUN against a fake row. A fix button that
+# posts to the wrong place, or a sign-in check that grows a fix button, draws
+# fine and is wrong. See docs/runner-setup-design.md.
+if ! node "$here/scripts/check-runner-setup.js" "$whole"; then
+  echo "the runner setup chip or dialog is broken" >&2
+  fail=1
+fi
+
 # The terminal pane's invariants. Every one of these is a bug that has already
 # been hit, and all of them are invisible until somebody types: a keystroke
 # arriving twice, a paste arriving as one Enter per line, output from a socket

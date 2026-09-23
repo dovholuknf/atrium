@@ -291,6 +291,108 @@ function hooksChip(h) {
     >hooks${n ? `: ${n} missing` : ""}</button>`;
 }
 
+// ── runner setup ────────────────────────────────────────
+//
+// What stops a runner working in the folders atrium launches it in: a folder
+// it does not trust, a sign-in never done, hooks never wired. The daemon runs
+// the checks and sends them on each row as `setup`. A row with no adapter has
+// no setup and shows nothing here. See docs/runner-setup-design.md.
+function setupChip(h) {
+  const s = h.setup;
+  if (!s) return "";
+  const n = s.failing || 0;
+  return `<button class="${n ? "go" : ""}" data-setup="${esc(s.adapter)}"
+    onclick="openRunnerSetup('${esc(h.id)}','${esc(h.room || "")}')"
+    title="${n ? "this runner will stop or run restricted where atrium launches it" : "setup checks pass"}"
+    >setup${n ? `: ${n} to fix` : " ok"}</button>`;
+}
+
+function openRunnerSetup(id, room) {
+  const dlg = document.getElementById("runner-setup");
+  dlg.dataset.id = id;
+  dlg.dataset.room = room || "";
+  renderRunnerSetup();
+  dlg.showModal();
+}
+
+const SETUP_STATE = { ok: "found", fail: "missing", warn: "missing", "n/a": "" };
+
+// One check as a row, then the fix under it: a button per target for a fix
+// atrium applies, the command with a copy button for one it only explains.
+function setupCheckRow(c, h) {
+  const cls = SETUP_STATE[c.state] || "";
+  let fix = "";
+  if (c.fix === "apply") {
+    const targets = (c.targets && c.targets.length) ? c.targets : [""];
+    fix = targets.map(t => `<div class="row line">
+      ${t ? `<code class="grow ell" title="${esc(t)}">${esc(t)}</code>` : `<span class="grow"></span>`}
+      <button class="go" data-setup-fix="${esc(c.id)}"
+        onclick='fixRunnerSetup(${JSON.stringify(c.id).replace(/'/g, "&#39;")},${
+          JSON.stringify(t).replace(/'/g, "&#39;")})'>${esc(c.fix_label || "fix")}</button></div>`).join("");
+  } else if (c.fix === "explain" && c.command) {
+    fix = `<div class="row line copypath"><code class="grow">${esc(c.command)}</code>
+      <button onclick='copyText(this, ${JSON.stringify(c.command).replace(/'/g, "&#39;")})'
+        title="copy this command">copy</button></div>`;
+  }
+  const where = c.path
+    ? `<div class="row line copypath"><span class="hintline">file</span><code class="grow ell">${esc(c.path)}</code>
+        <button onclick='copyText(this, ${JSON.stringify(c.path).replace(/'/g, "&#39;")})'
+          title="copy this path">copy</button></div>`
+    : "";
+  return `<div class="row line" data-setup-check="${esc(c.id)}">
+      <span class="tool">${esc(c.label)}</span>
+      <span class="grow"></span>
+      <span class="by ${cls}">${esc(c.state)}</span>
+    </div>
+    <div class="row line"><span class="hintline">${esc(c.detail || "")}</span></div>${fix}${
+      c.state === "ok" || c.state === "n/a" ? "" : where}`;
+}
+
+function renderRunnerSetup() {
+  const dlg = document.getElementById("runner-setup");
+  const h = rowOf(allHarnesses, dlg.dataset.id, dlg.dataset.room);
+  const host = document.getElementById("runner-setup-status");
+  if (!h || !h.setup || !host) return;
+  const s = h.setup;
+  document.getElementById("runner-setup-title").textContent = `${h.label} setup`;
+  const bin = s.installed
+    ? `<span class="by found" title="${esc(s.exe)}">installed${s.version ? " " + esc(s.version) : ""}</span>
+       <code class="grow ell" title="${esc(s.exe)}">${esc(s.exe)}</code>`
+    : `<span class="by missing">not installed</span><span class="grow"></span>`;
+  setHTML(host, `<div class="panel"><div class="row line">${bin}</div>` +
+    (s.checks || []).map(c => setupCheckRow(c, h)).join("") + `</div>`);
+}
+
+// Applying one fix. Confirmed first and never skippable, for the reason
+// installHooks gives: this edits a file atrium does not own.
+async function fixRunnerSetup(check, target) {
+  const dlg = document.getElementById("runner-setup");
+  const h = rowOf(allHarnesses, dlg.dataset.id, dlg.dataset.room);
+  if (!h || !h.setup) return;
+  const c = (h.setup.checks || []).find(x => x.id === check);
+  if (!c) return;
+  const what = target ? ` for <b>${esc(target)}</b>` : "";
+  if (!await confirmUser(`${esc(c.fix_label || "fix")}?`,
+    `Atrium edits <b>${esc(c.path || "the runner's config")}</b>${what}. A copy of the old file is kept ` +
+    `beside it, and nothing already in the file is changed or removed.`, c.fix_label || "fix")) return;
+  if (!await chooseWriteRoom(h, "runner")) return;
+  let got;
+  try {
+    got = await api(`/v1/harnesses/${encodeURIComponent(h.id)}/setup/fix`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ check, target: target || "" })
+    });
+  } catch (e) {
+    tellUser("could not fix it", e.message);
+    return;
+  }
+  h.setup = got.report;
+  renderRunnerSetup();
+  toast(got.changed ? "fixed" : "nothing to change",
+    got.backup ? `the old file is at ${got.backup}` : (got.path || ""));
+  refresh();
+}
+
 async function openHooks() {
   document.getElementById("hooks").showModal();
   await loadHooks();

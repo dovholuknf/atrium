@@ -773,6 +773,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<!-- One runner's setup: what stops it working where atrium launches it. Wide
+     for the same reason as the hooks dialog, a row is a check, a sentence and
+     a button. Filled by renderRunnerSetup. -->
+<dialog id="runner-setup" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="runner-setup-title">runner setup</h2></div>
+    <button onclick="document.getElementById('runner-setup').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline" style="margin:0 0 12px">
+      What this runner needs before it works in the folders atrium launches it in. A <b>fix</b>
+      button edits the runner's own config and keeps a copy of the old file. A command is for you
+      to run: atrium never holds a runner's key or token.
+    </p>
+    <div id="runner-setup-status"></div>
+  </div>
+</dialog>
+
 <!-- Doing it by hand. Wide, because every line here is a command to be copied
      into another editor, and a command that wraps is a command you have to
      reassemble before you can trust it. -->
