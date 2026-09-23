@@ -17,6 +17,16 @@ section heading is just "what landed in this iteration."
   sign-in and hooks. `docs/runner-setup-design.md` has the design and the checklist for the next runner.
   ROOM-SIDE and HUB-SIDE.
 
+- **The terminals list's controls are a tray that rolls up to one summary line.**
+
+  The sort, hide and group controls were a sticky header inside the list's scroll box, and the cards scrolled
+  under it. They are now a panel of their own above the rows, and the rows scroll in a box beneath it. Folded, the
+  tray is a summary such as `sorted by activity · by project · hiding inactive subagents (2)`; a click rolls it
+  down to the controls, laid out as labelled rows of even pills: sort (name | activity), hide inactive (agents |
+  subagents) and group, with `+ new group` as a full-width row under the six modes. The width buttons stay on the
+  tray's bar. Folded or open is remembered per device and defaults to folded. On a phone the same tray sits at the
+  top of the switcher and replaces the `filters` button. HUB-SIDE.
+
 - **The `pinned` heading counts shown out of total, like every group heading.**
 
   `hide inactive` now reaches into the pinned bucket, so its heading reads `5/15` while pinned rows are hidden, and
