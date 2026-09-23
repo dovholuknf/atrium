@@ -798,6 +798,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		atrium["ATRIUM_ROOM"] = room
 	}
 	env := childEnvFrom(base, h.Env, atrium)
+	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 
 	if h.LaunchMode == store.LaunchPTY {
