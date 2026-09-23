@@ -579,6 +579,14 @@ async function main() {
         // this must be empty: grey and hidden are one predicate.
         coldAgents: [...document.querySelectorAll("#term-list .card.tab.cold")]
           .map(c => c.dataset.id).filter(id => id === "aglive" || id === "agdead"),
+        // The pinned bucket's heading count and its empty line, and every other
+        // heading's count, for the shown/total checks.
+        pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {})
+          .textContent || "",
+        pinnedEmpty: ((document.querySelector("#term-list .termbucket .bucketdrop") || {})
+          .textContent || "").trim(),
+        groupCounts: [...document.querySelectorAll(
+          "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim()),
         agentMode: hideAgentsMode(), subMode: hideSubagentsMode(),
         agentLit: !!(a && a.classList.contains("on")),
         subLit: !!(s && s.classList.contains("on")),
@@ -625,6 +633,12 @@ async function main() {
       fail("the default did not light the subagents segment alone with a count of " +
         "2 (idle, dead): " + JSON.stringify(hDef));
     }
+    // The pinned heading counts shown out of total: the dead pinned subagent is
+    // hidden, the dead pinned agent is not, so `1/2`.
+    if (hDef.pinnedCount !== "1/2") {
+      fail("the pinned heading does not read shown/total (1/2) with a pinned row " +
+        "hidden: " + JSON.stringify(hDef));
+    }
     // The subagents segment says, in its tooltip, that a subagent is an
     // atrium-launched session, so the word is not left to guess at.
     if (!/atrium/i.test(hDef.subTitle) || !/origin:agent/.test(hDef.subTitle)) {
@@ -649,6 +663,11 @@ async function main() {
     if (hNone.coldAgents.join() !== "agdead") {
       fail("with neither toggle on the grey agent rows are not exactly the dead " +
         "one: " + JSON.stringify(hNone.coldAgents));
+    }
+    // Nothing hidden, so every heading reads its plain count.
+    if (hNone.pinnedCount !== "2" || hNone.groupCounts.some(c => c.includes("/"))) {
+      fail("with nothing hidden a heading still reads shown/total: " +
+        JSON.stringify(hNone));
     }
     if (hNone.agentMode !== "none" || hNone.subMode !== "none" ||
         hNone.agentLit || hNone.subLit) {
@@ -723,6 +742,30 @@ async function main() {
         !/^subagents \(2\)$/.test(hBoth.subLabel)) {
       fail("the two lit segments did not show hidden counts of 1 (dead agent) " +
         "and 2 (idle, dead subagent): " + JSON.stringify(hBoth));
+    }
+    // Both pinned rows hidden: the bucket reads `0/2` and says why it is empty
+    // rather than offering a first drag. The idle subagent is unpinned, so some
+    // group heading below also reads shown/total.
+    if (hBoth.pinnedCount !== "0/2" || !/^2 hidden by hide inactive$/.test(hBoth.pinnedEmpty)) {
+      fail("with every pinned row hidden the bucket does not read 0/2 and say so: " +
+        JSON.stringify(hBoth));
+    }
+    // Grouped by age every unpinned row lands in one bucket: three rows, the idle
+    // subagent hidden, so `2/3`.
+    const byAge = await page.evaluate(async () => {
+      const prev = localStorage.getItem(GROUPING_KEY);
+      localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "recency", by: "" }));
+      await renderTermList();
+      const counts = [...document.querySelectorAll(
+        "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim());
+      if (prev === null) localStorage.removeItem(GROUPING_KEY);
+      else localStorage.setItem(GROUPING_KEY, prev);
+      await renderTermList();
+      return counts;
+    });
+    if (byAge.join() !== "2/3") {
+      fail("grouped by age with the idle subagent hidden, the one group heading " +
+        "does not read 2/3: " + JSON.stringify(byAge));
     }
 
     // AGENTS on, subagents off: the other independence check. Turning the
@@ -1892,7 +1935,8 @@ async function main() {
     "connection) and inactive subagents (idle, waiting, or exited - not working " +
     "right now) each on their own (both/either/neither, subagents on by default), " +
     "so an idle subagent hides while an idle-but-live agent stays, a pinned row " +
-    "hides like any other, the agents toggle hides exactly the grey rows, counting each " +
+    "hides like any other, the agents toggle hides exactly the grey rows, the pinned and " +
+    "group headings read shown/total while rows are hidden, counting each " +
     "kind's hidden rows in parens, " +
     "the control cluster is a sticky header pinned to the top of the list, " +
     "the board paints its lists, a hung fetch does not blank it, the " +

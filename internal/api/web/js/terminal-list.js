@@ -1545,7 +1545,8 @@ async function renderTermList() {
   // it drops because the board says those better.
   setHTML(host, tasks.length
     ? termDropHTML() + `<div class="termbody">` + head +
-      termBucketHTML(pinnedTasks, termFolded().has(PINNED_FOLD)) +
+      termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
+        termFolded().has(PINNED_FOLD)) +
       termGroupsHTML(shown.filter(t => !t.pinned || termFiled(t))) + `</div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
@@ -1614,16 +1615,25 @@ let pinnedNow = [];
 // A FOLDED BUCKET STILL TAKES A DROP. It is a fold, not a lid: a row dragged
 // onto it goes on the end, which is the same thing dropping past the last row
 // does when it is open.
-function termBucketHTML(pinned, folded) {
+//
+// SHOWN OUT OF HOW MANY, like every group heading (see `termHeading`). `hide
+// inactive` reaches into the bucket, so `total` is every pinned row and the
+// count reads `5/15` while any are hidden. A bucket whose rows are all hidden
+// says so rather than inviting a first drag.
+function termBucketHTML(pinned, total, folded) {
   const rows = folded ? "" : pinned.map(t => termRow(t, false)).join("");
-  const empty = folded ? "" :
-    `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
+  const hidden = total - pinned.length;
+  const empty = folded ? "" : hidden > 0
+    ? `<div class="empty bucketdrop">${hidden} hidden by hide inactive</div>`
+    : `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
+  const count = hidden > 0 ? `${pinned.length}/${total}` : `${pinned.length}`;
+  const tip = hidden > 0 ? ` (${hidden} hidden by hide inactive)` : "";
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
       <button class="tgroup pinnedhead" onclick="toggleTermGroup('${PINNED_FOLD}')"
-        title="${folded ? "show" : "hide"} the pinned terminals"
+        title="${folded ? "show" : "hide"} the pinned terminals${tip}"
         ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
         ><span class="tgname">pinned</span
-        ><span class="tgcount">${pinned.length}</span></button>
+        ><span class="tgcount">${count}</span></button>
       ${rows || empty}
     </div>`;
 }
