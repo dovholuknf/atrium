@@ -550,6 +550,7 @@ async function renderRunners() {
         : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
       <span class="hookcell">${hooksChip(h)}</span>
+      ${h.setup ? `<span class="setupcell">${setupChip(h)}</span>` : ""}
       <button ${h.found ? "" : "disabled title='its command is not on PATH'"}
         onclick="toggleHarness('${esc(h.id)}','${esc(h.room || "")}')">${
           h.enabled ? "disable" : "enable"}</button>
@@ -565,6 +566,7 @@ async function renderRunners() {
   renderActions();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
+  if (document.getElementById("runner-setup").open) renderRunnerSetup();
 }
 
 // ── everything that has ever run here ───────────────────
