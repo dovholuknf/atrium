@@ -207,7 +207,7 @@ const fitAt = html.indexOf("function onTermResize(");
 if (fitAt < 0) {
   fail("there is no onTermResize. The layout handler is where a fit gets its position wrong.");
 } else {
-  const body = html.slice(fitAt, fitAt + 1400);
+  const body = html.slice(fitAt, fitAt + 1700);
   if (!/wasCols \|\| term\.rows !== wasRows/.test(body)) {
     fail("onTermResize does not check whether the size actually changed. A fit that changes " +
       "nothing still reaches xterm's resize, which snaps a scrolled-up terminal to the bottom.");

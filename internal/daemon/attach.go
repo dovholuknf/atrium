@@ -55,6 +55,15 @@ type attachCaps struct {
 	BracketedPaste bool `json:"bracketed_paste"`
 }
 
+// attachSize is the size the pty is running at, sent before the backlog, so
+// the board sizes its grid before the replay lands, and again every time it
+// changes. See `tellSize` in `attach`.
+type attachSize struct {
+	T    string `json:"t"`
+	Cols int    `json:"cols"`
+	Rows int    `json:"rows"`
+}
+
 // bracketedPasteFor returns the harness capability for a card.
 // Return false for unknown runners and store errors to avoid unsupported markers.
 // Shell panes use stream detection because shells toggle the mode around prompts.
@@ -389,6 +398,35 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	selfMu.Lock()
 	self = updates
 	selfMu.Unlock()
+	// THE PTY'S SIZE, told to this viewer whenever it moves.
+	//
+	// The pty follows the widest viewer (see `runner.setViewport`), so a
+	// narrower one has to draw a width it did not ask for, and only the daemon
+	// knows what that is. Checked before every chunk as well as on the wake-up,
+	// because the repaint that follows a resize can reach `updates` before the
+	// wake-up is picked, and a repaint drawn into the old width garbles.
+	//
+	// SENT ONLY TO A BOARD THAT KNOWS THE FRAME. An older board writes any text
+	// frame that is not `caps` straight into the terminal, so the hub has to
+	// carry `takeTermSize` before a room sends this.
+	sizeWake := run.sizeChanged()
+	var toldCols, toldRows int
+	tellSize := func() error {
+		cols, rows := run.buf.CurrentSize()
+		if cols == toldCols && rows == toldRows {
+			return nil
+		}
+		toldCols, toldRows = cols, rows
+		msg, err := json.Marshal(attachSize{T: "size", Cols: cols, Rows: rows})
+		if err != nil {
+			return nil
+		}
+		return c.Write(ctx, websocket.MessageText, msg)
+	}
+	if err := tellSize(); err != nil {
+		return
+	}
+
 	if len(backlog) > 0 {
 		// WHY THE SCROLLBACK STOPS WHERE IT STOPS, said at the top where
 		// somebody who has scrolled all the way up is looking.
@@ -471,6 +509,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		select {
 		case <-ctx.Done():
 			return
+		case <-sizeWake:
+			sizeWake = run.sizeChanged()
+			if err := tellSize(); err != nil {
+				return
+			}
 		case chunk, ok := <-updates:
 			if !ok {
 				// Exited. Say so in the terminal rather than just going quiet,
@@ -481,6 +524,9 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				_ = c.Write(ctx, websocket.MessageBinary,
 					[]byte("\r\n\x1b[38;5;244m"+gone+"\x1b[0m\r\n"))
 				c.Close(websocket.StatusNormalClosure, why)
+				return
+			}
+			if err := tellSize(); err != nil {
 				return
 			}
 			sent := lagStart()

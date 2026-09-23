@@ -720,6 +720,10 @@ function connectTerm(taskID) {
   // be the previous session's answer applied to this one, and switching from
   // an agent to a card's shell would bracket a paste the shell never asked for.
   termCaps = {};
+  // The same for the pty's width. The new socket's `{"t":"size"}` sets it again
+  // before the replay, and a room too old to send one gets this window's width.
+  termPtyCols = 0;
+  applyPtyWidth();
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the
@@ -800,7 +804,8 @@ function connectTerm(taskID) {
     traceOut(e.data);
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
-      if (!takeTermCaps(e.data)) term.write(e.data, lagOnOutput(followScroll));
+      if (takeTermCaps(e.data) || takeTermSize(e.data)) return;
+      term.write(e.data, lagOnOutput(followScroll));
       return;
     }
     term.write(new Uint8Array(e.data), lagOnOutput(followScroll));
@@ -1457,11 +1462,61 @@ function followScroll() {
   term.scrollToBottom();
 }
 
+// What this window can SHOW, not what it draws. A window drawing a wider pty's
+// width must not report that width back, or the pty could never narrow again.
 function sendResize() {
   clearTimeout(resizeSettleTimer);
   resizeSettleTimer = 0;
   if (!term) return;
-  send({ t: "resize", cols: term.cols, rows: term.rows });
+  send({ t: "resize", cols: termFitCols || term.cols, rows: term.rows });
+}
+
+// fitTerm is `termFit.fit()`, drawing at the pty's width when that is wider.
+//
+// The fit addon only knows this window's box. It proposes what fits, and xterm
+// is sized to the larger of that and the pty's width. See `termPtyCols`.
+function fitTerm() {
+  if (!term || !termFit) return;
+  const dims = termFit.proposeDimensions();
+  if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
+  termFitCols = dims.cols;
+  const cols = Math.max(dims.cols, termPtyCols);
+  if (cols !== term.cols || dims.rows !== term.rows) {
+    // What the addon's own fit does first, so a resize does not leave stale
+    // glyphs from the old grid.
+    try { term._core._renderService.clear(); } catch (e) {}
+    term.resize(cols, dims.rows);
+  }
+  markWide();
+}
+
+// applyPtyWidth re-sizes the grid after the daemon said the pty's width moved.
+function applyPtyWidth() {
+  if (!term) return;
+  const fit = termFitCols || term.cols;
+  const cols = Math.max(fit, termPtyCols);
+  if (cols !== term.cols) term.resize(cols, term.rows);
+  markWide();
+}
+
+// A GRID WIDER THAN THE PANE SCROLLS SIDEWAYS.
+//
+// `.xterm` is sized to the grid in pixels and `#t-screen` scrolls it, so the
+// narrow window reads the pty's full width with a horizontal scrollbar. The fit
+// addon measures `#t-screen`, not `.xterm`, so the next fit still proposes what
+// the pane can show and this is not a feedback loop.
+function markWide() {
+  const host = document.getElementById("t-screen");
+  const el = host && host.querySelector(".xterm");
+  if (!el || !term) return;
+  const wide = termFitCols > 0 && term.cols > termFitCols;
+  host.classList.toggle("wide", wide);
+  if (!wide) { el.style.width = ""; return; }
+  let cell = 0;
+  try { cell = term._core._renderService.dimensions.css.cell.width; } catch (e) {}
+  // The vertical scrollbar's room on top of the grid, the same allowance the
+  // fit addon subtracts.
+  el.style.width = cell ? Math.ceil(term.cols * cell + 16) + "px" : "";
 }
 
 // A DRAG IS ONE RESIZE, not one per step.
@@ -1664,9 +1719,9 @@ function onTermResize() {
   const before = term.buffer.active;
   const wasAtBottom = before.viewportY >= before.baseY;
   const fromBottom = before.baseY - before.viewportY;
-  const wasCols = term.cols, wasRows = term.rows;
+  const wasCols = term.cols, wasRows = term.rows, wasFit = termFitCols;
 
-  termFit.fit();
+  fitTerm();
   // After the fit, whatever it decided: the grid may have changed rows, or the
   // cell height may have moved under a font change with the rows the same.
   sizeTermHost();
@@ -1682,8 +1737,9 @@ function onTermResize() {
       viewportY: before.viewportY, baseY: before.baseY
     });
   }
+  // A resize even when a wider pty kept the grid still. See `termFitCols`.
+  if (termFitCols !== wasFit || term.rows !== wasRows) sendResizeSettled();
   if (!changed) return;
-  sendResizeSettled();
   if (wasAtBottom) return;
   holdScrollAt(fromBottom);
 }

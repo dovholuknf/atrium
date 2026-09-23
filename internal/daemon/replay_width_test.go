@@ -63,11 +63,11 @@ func TestAReplayAfterARestartKeepsWiderHistoryOnItsOwnWidth(t *testing.T) {
 	}
 }
 
-// A WIND-DOWN DOES NOT GROW THE PTY TO THE WIDEST VIEWER.
+// A WIND-DOWN DOES NOT MOVE THE PTY TO WHICHEVER VIEWER IS LEFT.
 //
 // The viewers of an exiting runner detach one at a time. Each detach used to
 // resize the pty to the viewers left, so the size recorded for the next room
-// was the widest window rather than the one the session was drawn for.
+// was the last window left rather than the one the session was drawn for.
 func TestAWindDownDetachLeavesTheSizeTheSessionHad(t *testing.T) {
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
@@ -83,12 +83,12 @@ func TestAWindDownDetachLeavesTheSizeTheSessionHad(t *testing.T) {
 	before := len(f.resized())
 
 	close(r.done)
-	r.dropViewport("pane")
+	r.dropViewport("wide window")
 
 	if n := len(f.resized()); n != before {
 		t.Fatalf("an exited runner's pty was resized on detach: %+v", f.resized())
 	}
-	if cols := r.buf.CurrentWidth(); cols != 110 {
-		t.Fatalf("the width saved for the next room moved to %d, want the 110 the session was drawn at", cols)
+	if cols := r.buf.CurrentWidth(); cols != 214 {
+		t.Fatalf("the width saved for the next room moved to %d, want the 214 the session was drawn at", cols)
 	}
 }

@@ -32,6 +32,30 @@ function takeTermCaps(data) {
   return true;
 }
 
+// THE PTY'S WIDTH, which is not always this window's.
+//
+// The pty follows the WIDEST attached viewer (see `runner.setViewport` in
+// internal/daemon/supervisor.go), so a window narrower than that draws the
+// pty's width and scrolls sideways rather than dragging every other window's
+// session narrow. The daemon says what the width is in a `{"t":"size"}` frame
+// before the replay and on every change. Zero means it has not said, which is
+// an older room, and then this window draws its own width as it always did.
+//
+// `termFitCols` is what this window can show, which is what it tells the
+// daemon. `term.cols` is what it draws, the larger of the two.
+let termPtyCols = 0;
+let termFitCols = 0;
+
+function takeTermSize(data) {
+  if (!data || data[0] !== "{") return false;
+  let msg;
+  try { msg = JSON.parse(data); } catch (e) { return false; }
+  if (!msg || msg.t !== "size") return false;
+  termPtyCols = Number(msg.cols) || 0;
+  applyPtyWidth();
+  return true;
+}
+
 // WHEN THE DAEMON SAID IT WAS GOING DOWN.
 //
 // Set by the `going-down` event and read by every path that has to decide
@@ -521,6 +545,8 @@ function openTerm(task) {
   // first attach fills an empty screen and only a later reconnect resets. See
   // `termReplayed`.
   termReplayed = false;
+  // Another session's pty width must not size this one's first fit.
+  termPtyCols = 0;
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
@@ -776,7 +802,7 @@ function openTerm(task) {
   // Fit after the pane has a size, or the first resize is computed against a
   // hidden element and the runner is told a nonsense width.
   requestAnimationFrame(() => {
-    termFit.fit();
+    fitTerm();
     // Size the host to the fitted grid so the terminal sits on the footer with
     // no remainder band above it. See `sizeTermHost`.
     sizeTermHost();

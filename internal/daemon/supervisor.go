@@ -673,9 +673,12 @@ type runner struct {
 	// old runner's width.
 	carried *carryover
 	// views is what size each attached viewer can draw. See `setViewport`:
-	// the pty gets the smallest of them, because a shared terminal has one
-	// size and several windows.
-	views     map[any]viewport
+	// the pty gets the widest width and the shortest height of them, because
+	// a shared terminal has one size and several windows.
+	views map[any]viewport
+	// resized is closed and replaced every time the pty changes size, so
+	// every attach can tell its viewer at once. See `sizeChanged`.
+	resized   chan struct{}
 	watchers  map[chan []byte]struct{}
 	done      chan struct{}
 	exitOnce  sync.Once
@@ -1128,26 +1131,43 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 // screen fills with torn text, duplicated status lines and rows that never
 // clear. Dragging a shared window resized somebody else's terminal.
 //
-// THE SMALLEST VIEWER DECIDES, which is what every multiplexer settled on for
-// the same reason. Every attached viewer can then render what it is sent
-// correctly, and the cost is unused margin in the larger window rather than
-// a screen nobody can read.
+// THE WIDEST VIEWER SETS THE WIDTH, and the shortest sets the height.
+//
+// The width used to follow the smallest viewer, which is what every multiplexer
+// settled on, and it is the wrong answer for Claude Code. Claude redraws its
+// whole conversation on every width change and never clears the scrollback
+// first, so a phone or a narrow popped-out window attaching dragged every other
+// window's session down to its width and left a complete copy of the transcript,
+// composed at that width, in everybody's scrollback for good. One narrow viewer
+// cost everyone.
+//
+// So a viewer narrower than the pty keeps the pty's width and draws it in a box
+// that scrolls sideways. The daemon tells each viewer the pty's size with a
+// `{"t":"size"}` frame (see `attach.go`), and the board sizes xterm to it (see
+// `applyPtyWidth`). The narrow reader pays with a horizontal scrollbar, and
+// nobody else pays at all.
+//
+// WIDEST RATHER THAN THE ONE THAT LAST TYPED. Last-typed moves the width every
+// time a different person types, and each move is a full reprint, which is the
+// churn this block exists to stop. Widest moves only when a wider window
+// arrives or the widest one leaves, it never needs to know who is typing, and
+// the answer does not depend on the order the frames arrive in.
+//
+// ROWS STILL FOLLOW THE SHORTEST. A pty taller than a pane puts the runner's
+// prompt below the pane's bottom edge, and a height change does not reflow the
+// history the way a width change does.
 //
 // THE PTY MOVES ONLY WHEN THE AGREED SIZE ACTUALLY CHANGES, which is the whole
-// of the resize-sanity fix. A shared raw-mode TUI cannot be decoupled from the
-// pty outright: it composes for one width, and a viewer narrower than that
-// width gets a garbled screen, so the narrowest reader has to set the size.
-// That is coupling, and it is inherent. What was NOT inherent is the CHURN: the
-// pty was resized on every attach, detach and drag, so a `Resize` to the size
-// it already was still raised SIGWINCH and every viewer repainted. One
-// console's drag flickered the others even when it changed nothing binding.
+// of the resize-sanity fix. The pty used to be resized on every attach, detach
+// and drag, so a `Resize` to the size it already was still raised SIGWINCH and
+// every viewer repainted. One console's drag flickered the others even when it
+// changed nothing binding.
 //
-// So `setViewport` and `dropViewport` compute the agreed size exactly as before
-// and resize only when it differs from the size the pty is already at. A viewer
-// wider than the current width drags freely and touches nobody. An attach or
-// detach that does not change the smallest lays no mark and repaints no one. A
-// genuinely narrower reader still moves the pty, because the others cannot read
-// a width their pane cannot show. See `docs/terminal-resize-decoupling-design.md`.
+// So `setViewport` and `dropViewport` compute the agreed size and resize only
+// when it differs from the size the pty is already at. A viewer narrower than
+// the current width drags freely and touches nobody. An attach or detach that
+// does not change the agreed size lays no mark and repaints no one. See
+// `docs/terminal-resize-decoupling-design.md`.
 type viewport struct{ cols, rows int }
 
 // setViewport records one viewer's size and applies the agreed one, but only
@@ -1165,7 +1185,7 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 		r.views = map[any]viewport{}
 	}
 	r.views[id] = viewport{cols, rows}
-	agreed := smallestViewport(r.views)
+	agreed := agreedViewport(r.views)
 	r.mu.Unlock()
 	// THE GUARD. A resize to the size the pty is already at is not free: it
 	// raises SIGWINCH and repaints every viewer, which is exactly the churn one
@@ -1178,11 +1198,34 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	// already on the new side of the mark. The other order leaves a repaint
 	// filed under the width it replaced, which is the whole bug.
 	r.buf.SetSize(agreed.cols, agreed.rows)
-	return r.pty.Resize(agreed.cols, agreed.rows)
+	err := r.pty.Resize(agreed.cols, agreed.rows)
+	r.noteResized()
+	return err
+}
+
+// sizeChanged returns a channel that closes the next time the pty changes
+// size. Read the size from `buf.CurrentSize` once it does, and ask again.
+func (r *runner) sizeChanged() <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.resized == nil {
+		r.resized = make(chan struct{})
+	}
+	return r.resized
+}
+
+// noteResized wakes everybody waiting in `sizeChanged`.
+func (r *runner) noteResized() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.resized != nil {
+		close(r.resized)
+	}
+	r.resized = make(chan struct{})
 }
 
 // dropViewport forgets a viewer that has detached, and lets the pty follow the
-// size back up only when the viewer that left was the binding one.
+// viewers left only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
 	r.mu.Lock()
 	if r.views == nil {
@@ -1194,14 +1237,14 @@ func (r *runner) dropViewport(id any) {
 		return
 	}
 	delete(r.views, id)
-	agreed := smallestViewport(r.views)
+	agreed := agreedViewport(r.views)
 	left := len(r.views)
 	r.mu.Unlock()
 	// NOT ONCE THE RUNNER HAS EXITED. A wind-down closes every viewer one at a
-	// time, and growing the pty to whichever is left resized a dead terminal
-	// and moved the width the card is saved at to the WIDEST viewer. The next
-	// room then reopened the session wider than the pane that reads it, and
-	// the reprinted transcript came back composed for a width nobody had.
+	// time, and following whichever is left resized a dead terminal and moved
+	// the width the card is saved at to a viewer the session was not drawn
+	// for. The next room then reopened the session at that width, and the
+	// reprinted transcript came back composed for a width nobody had.
 	select {
 	case <-r.done:
 		return
@@ -1213,8 +1256,8 @@ func (r *runner) dropViewport(id any) {
 	if left == 0 {
 		return
 	}
-	// The same guard as `setViewport`. A wider viewer detaching leaves the
-	// smallest unchanged, so nothing resizes and no other viewer is churned.
+	// The same guard as `setViewport`. A narrower viewer detaching leaves the
+	// agreed size unchanged, so nothing resizes and no other viewer is churned.
 	// Only the binding viewer's departure moves the pty, and the ring merges
 	// the marks when nothing was drawn in between, so a popped window costs no
 	// scrollback.
@@ -1224,13 +1267,15 @@ func (r *runner) dropViewport(id any) {
 	}
 	r.buf.SetSize(agreed.cols, agreed.rows)
 	_ = r.pty.Resize(agreed.cols, agreed.rows)
+	r.noteResized()
 }
 
-// smallestViewport is the largest size every viewer can draw.
-func smallestViewport(all map[any]viewport) viewport {
+// agreedViewport is the size the pty runs at: the widest viewer's width and
+// the shortest viewer's height. See the block above `viewport`.
+func agreedViewport(all map[any]viewport) viewport {
 	out := viewport{}
 	for _, v := range all {
-		if out.cols == 0 || v.cols < out.cols {
+		if v.cols > out.cols {
 			out.cols = v.cols
 		}
 		if out.rows == 0 || v.rows < out.rows {
