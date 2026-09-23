@@ -285,6 +285,9 @@
     background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-md); white-space: pre;
   }
+  /* The lessons view: one block per memory file, its diff folded away. */
+  .lesson { margin-bottom: 14px; }
+  pre.lesson-diff { max-height: 260px; overflow: auto; }
   /* A path is there to be pasted somewhere else, so it carries its own copy
      button rather than being selected by hand. */
   .copypath { display: inline-flex; align-items: center; gap: 6px; }

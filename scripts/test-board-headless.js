@@ -274,6 +274,31 @@ const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
 const hubStreams = [];       // hub event streams, used to push a `rooms` event
 
+// The persona pack. See js/personas.js.
+const PERSONAS = [
+  { id: "go-sec", name: "go-sec", description: "Go security reviewer.", runners: ["claude"],
+    renders: ["claude"], reviews: { paths: ["**/*.go"], surfaces: ["security", "http"] }, last_run: "" },
+  { id: "styler", name: "Styler", description: "style", runners: ["codex"], renders: [] }
+];
+const personaReviews = [];
+const lessonDecisions = [];
+function lessonsBody(deleted, gone) {
+  const all = [
+    { file: "memory/fresh.md", status: "untracked", description: "brand new", repo: "general",
+      why: "seen twice", diff: "+brand new\n" },
+    { file: "memory/old.md", status: "modified", description: "an old one", repo: "", why: "",
+      diff: "-a\n+b\n" }
+  ];
+  const lessons = all.filter(l => l.file !== gone);
+  return {
+    persona: "go-sec", baseline: "abc1234def", baseline_subject: "personas: lessons review",
+    lessons, rejections: ["- 2026-09-22 repo: general | x | y"], tally: { promoted: 0, kept: 0, deleted },
+    commit: "personas: lessons review, 0 promoted, 0 kept, " + deleted + " deleted\n\nLessons-reviewed: go-sec",
+    command: 'cd "D:/dotagents"\ngit add -- "personas/go-sec"\ngit commit -m "personas: lessons review, 0 ' +
+      'promoted, 0 kept, ' + deleted + ' deleted" -m "Lessons-reviewed: go-sec"'
+  };
+}
+
 const HTML = wholeBoard();
 
 function sendJSON(res, obj) {
@@ -306,6 +331,15 @@ const server = http.createServer((req, res) => {
   // no-room restart with 503 and a genuine missing card with 404, and the solo
   // window has to tell those apart. Placed before the list route, which is the
   // exact path "/v1/tasks" with no trailing id.
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/persona-review") && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      personaReviews.push({ url, body: JSON.parse(raw || "{}") });
+      sendJSON(res, Object.assign({}, T1, { id: "rev1" }));
+    });
+    return;
+  }
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -380,6 +414,25 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
   if (url === "/v1/providers") { sendJSON(res, { providers: [] }); return; }
   if (url === "/v1/dispatch") { sendJSON(res, { dispatches: [] }); return; }
+  // The persona pack: one persona that renders for claude, one that does not.
+  if (url === "/v1/personas") {
+    sendJSON(res, { pack: "D:/dotagents/personas", setting: "persona_pack_path", personas: PERSONAS });
+    return;
+  }
+  if (url === "/v1/personas/go-sec/lessons") {
+    if (req.method === "POST") {
+      let raw = "";
+      req.on("data", c => { raw += c; });
+      req.on("end", () => {
+        const d = JSON.parse(raw || "{}");
+        lessonDecisions.push(d);
+        sendJSON(res, lessonsBody(d.action === "delete" ? 1 : 0, d.file));
+      });
+      return;
+    }
+    sendJSON(res, lessonsBody(0, ""));
+    return;
+  }
   if (url === "/v1/history") {
     if (!histMany) { sendJSON(res, { tasks: [HIST], total: 1 }); return; }
     // Paged the way the store pages, so "show more" and the live re-read ask
@@ -2930,6 +2983,106 @@ async function main() {
       resetSwitches();
     }
 
+    // ── personas: the catalog, the card action, the lessons view ─────────────
+    // The runners page lists each persona with what it reviews and the runners
+    // it renders for. A card's menu offers "review with…" and posts the persona
+    // and runner to that card. The lessons view draws the memory diff and the
+    // commit for clint to run, and a delete posts that one file.
+    // The 404 section above leaves every single-card read answering gone, and
+    // the card menu starts by reading its card.
+    soloMode = "ok";
+    tasksMode = "first";
+    const pCtx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const pp = await pCtx.newPage();
+    const ppErrors = [];
+    pp.on("pageerror", e => ppErrors.push(String(e)));
+    try {
+      await pp.goto(base, { waitUntil: "domcontentloaded" });
+      await pp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+      await pp.evaluate(() => goRunners("personas"));
+      await pp.waitForSelector('#persona-list .persona-row[data-id="go-sec"]', { timeout: 15000 });
+      const row = await pp.evaluate(() => {
+        const r = document.querySelector('#persona-list .persona-row[data-id="go-sec"]');
+        const s = document.querySelector('#persona-list .persona-row[data-id="styler"]');
+        return { text: r.textContent, renders: !!r.querySelector(".by.found"),
+          stylerMissing: s ? !!s.querySelector(".by.missing") : null,
+          nav: [...document.querySelectorAll("#runners .pane-nav button")].map(b => b.textContent.trim()) };
+      });
+      if (!/Go security reviewer\./.test(row.text) || !/\*\*\/\*\.go/.test(row.text) ||
+          !/security, http/.test(row.text) || !row.renders) {
+        fail("the persona row does not show its description, paths, surfaces and runner: " + JSON.stringify(row));
+      }
+      if (row.stylerMissing !== true) fail("a persona with no render is not marked as missing one.");
+      if (!row.nav.includes("personas")) fail("the runners page has no personas pane: " + JSON.stringify(row.nav));
+
+      // The card's menu offers the review, and the flyout lists only personas
+      // that render for a runner.
+      await pp.evaluate(() => {
+        const el = document.querySelector('#stack-list .stackrow[data-id="t1"]');
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+      });
+      await pp.waitForFunction(() => {
+        const m = document.getElementById("cardmenu");
+        return m && m.classList.contains("on") &&
+          [...m.querySelectorAll(":scope > button")].some(b => /^review with/.test(b.textContent.trim()));
+      }, { timeout: 15000 }).catch(() => fail("a card with a worktree has no `review with…` in its menu."));
+      const sub = await pp.evaluate(() => personaReviewSub("t1", lastTasks.find(x => x.id === "t1"))
+        .map(s => s.label || s.quiet));
+      if (JSON.stringify(sub) !== JSON.stringify(["go-sec"])) {
+        fail("the review flyout lists the wrong personas: " + JSON.stringify(sub));
+      }
+      await pp.keyboard.press("Escape");
+      const posted = pp.waitForResponse(r => r.url().endsWith("/v1/tasks/t1/persona-review") &&
+        r.request().method() === "POST", { timeout: 15000 });
+      await pp.evaluate(() => {
+        const t = lastTasks.find(x => x.id === "t1");
+        personaReviewSub("t1", t)[0].act();
+      });
+      await pp.waitForSelector("#ask[open]", { timeout: 15000 });
+      await pp.click("#ask-actions button.go");
+      await posted;
+      const rv = personaReviews[personaReviews.length - 1];
+      if (!rv || rv.body.persona !== "go-sec" || rv.body.runner !== "claude") {
+        fail("review with posted " + JSON.stringify(rv) + ", not the persona and runner.");
+      }
+
+      // The lessons view.
+      await pp.evaluate(() => goRunners("personas"));
+      await pp.click('#persona-list button[data-lessons="go-sec"]');
+      await pp.waitForSelector('#lessons[open] .lesson[data-file="memory/fresh.md"]', { timeout: 15000 });
+      const lv = await pp.evaluate(() => {
+        const b = document.getElementById("lessons-body");
+        return { text: b.textContent, lessons: b.querySelectorAll(".lesson").length,
+          commit: (b.querySelector(".lesson-commit") || {}).textContent || "" };
+      });
+      if (lv.lessons !== 2 || !/abc1234def/.test(lv.text) || !/repo: general \| x \| y/.test(lv.text) ||
+          !/no Why line/.test(lv.text)) {
+        fail("the lessons view does not draw the lessons, the baseline and the rejections: " + JSON.stringify(lv));
+      }
+      if (!/Lessons-reviewed: go-sec/.test(lv.commit) || !/git add/.test(lv.commit)) {
+        fail("the lessons view does not end with the commit to run: " + JSON.stringify(lv.commit));
+      }
+      const decided = pp.waitForResponse(r => r.url().endsWith("/v1/personas/go-sec/lessons") &&
+        r.request().method() === "POST", { timeout: 15000 });
+      await pp.click('#lessons .lesson[data-file="memory/old.md"] button[data-act="delete"]');
+      await pp.waitForSelector("#ask[open]", { timeout: 15000 });
+      await pp.click("#ask-actions button.go");
+      await decided;
+      const d = lessonDecisions[lessonDecisions.length - 1];
+      if (!d || d.file !== "memory/old.md" || d.action !== "delete") {
+        fail("delete posted " + JSON.stringify(d) + ", not that file.");
+      }
+      await pp.waitForFunction(() => !document.querySelector('#lessons .lesson[data-file="memory/old.md"]') &&
+        /1 deleted/.test(document.querySelector("#lessons .lesson-commit").textContent),
+        { timeout: 15000 }).catch(() => fail("the lessons view did not redraw from the answer to delete."));
+      if (ppErrors.length) fail("the personas page threw: " + ppErrors.join(" | "));
+    } catch (e) {
+      fail("the personas test did not run through: " + e.message);
+    } finally {
+      await pp.close();
+      await pCtx.close();
+    }
+
     // ── cards wear their terminal colours ───────────────────────────────────
     // The board setting that draws every card in its own terminal theme. Off,
     // nothing changes. On, every card in the terminals list, the stack and the
@@ -2996,7 +3149,9 @@ async function main() {
     "and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width), " +
-    "and a card whose last turn is unread wears a dot and its open questions `? N`.");
+    "a card whose last turn is unread wears a dot and its open questions `? N`, " +
+    "and the personas pane lists each persona, a card's menu reviews with one, and the " +
+    "lessons view draws the memory diff and the commit and posts a delete.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

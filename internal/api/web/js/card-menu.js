@@ -534,6 +534,8 @@ async function cardMenu(e, id) {
   // show an empty flyout on the first right click of a session.
   if (!allActions.length) await loadActions();
   await loadHarnesses();
+  // The same bargain for the persona flyout, read once and then held.
+  await loadPersonas();
 
   // A card that is finished has nothing to terminate, and offering it produced
   // a dialog that failed and changed nothing. Auto mode and shelving are the
@@ -610,6 +612,16 @@ async function cardMenu(e, id) {
         : "Starts a runner in this card's directory, onto this card. A fresh " +
           "conversation, not the old one.",
       sub: newAgentSub(id, t)
+    } : null,
+    // A specialist from the persona pack, reading this card's branch. Offered
+    // only when the pack has one this machine can run, since an entry whose
+    // flyout says "none" is a menu describing itself.
+    t.worktree && allPersonas.some(p => (p.room || "") === (t.room || "") && (p.renders || []).length) ? {
+      label: "review with…",
+      help: "Starts a fresh session as one of your personas, in a scratch directory of its own, to " +
+        "review this card's branch against the default branch. It changes no files and reports its " +
+        "findings back to this card.",
+      sub: personaReviewSub(id, t)
     } : null,
     // Only when it can. An entry that says "cannot resume" underneath itself
     // is a menu explaining why it is there, which is a question it raised.

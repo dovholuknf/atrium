@@ -75,6 +75,8 @@ var merged = map[string]struct {
 	"/v1/recognisers": {field: "recognisers"},
 	"/v1/actions":     {field: "actions"},
 	"/v1/rules":       {field: "rules"},
+	// A persona pack is configured per machine, so each room lists its own.
+	"/v1/personas": {field: "personas"},
 
 	// The queue of work handed to machines, and what was decided about
 	// permission requests. Both are lists of things that happened on a
