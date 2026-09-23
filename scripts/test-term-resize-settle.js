@@ -56,7 +56,7 @@ const harness = new Function(`
   const sent = [];
   function send(m) { sent.push(m); }
   let term = null;
-  let termFitCols = 0;
+  let termFitCols = 0, termFitRows = 0;
   function termMinCols() { return 0; }
   ${src}
   return {
@@ -112,12 +112,15 @@ if (harness.sent.length !== 0) {
 // is 150, so xterm draws 150, the pane scrolls sideways, and the resize this
 // window sends still says 80, or the pty could never narrow again.
 const wideSrc = lift("function fitTerm(", "\n}") + "\n" +
-  lift("function applyPtyWidth(", "\n}") + "\n" +
+  lift("function ptyRowsFor(", "\n}") + "\n" +
+  lift("function applyPtySize(", "\n}") + "\n" +
   lift("function markWide(", "\n}") + "\n" +
   lift("function sendResize(", "\n}");
 const wide = new Function(`
   let termFitCols = 0, termPtyCols = 0, resizeSettleTimer = 0;
+  let termFitRows = 0, termPtyRows = 0;
   let floor = 0, noted = 0;
+  function sizeTermHost() {}
   function termMinCols() { return floor; }
   function noteUnderFloor() { noted++; }
   function clearTimeout() {}
@@ -139,9 +142,10 @@ const wide = new Function(`
   };
   ${wideSrc}
   return {
-    fitTerm, applyPtyWidth, sendResize, sent, term, xtermEl,
+    fitTerm, applyPtySize, sendResize, sent, term, xtermEl,
     wide: () => classes.has("wide"),
     setPty: c => { termPtyCols = c; },
+    setPtyRows: r => { termPtyRows = r; },
     propose: (c, r) => { proposed = { cols: c, rows: r }; },
     setFloor: n => { floor = n; },
     noted: () => noted,
@@ -153,7 +157,7 @@ if (wide.term.cols !== 80 || wide.wide()) {
   fail("with no pty width known, the window did not draw its own width. cols " + wide.term.cols + ".");
 }
 wide.setPty(150);
-wide.applyPtyWidth();
+wide.applyPtySize();
 if (wide.term.cols !== 150 || !wide.wide() || !wide.xtermEl.style.width) {
   fail("a pty wider than the window did not widen the grid into a sideways scroll. cols " +
     wide.term.cols + ", wide " + wide.wide() + ", width " + JSON.stringify(wide.xtermEl.style.width) + ".");
@@ -200,6 +204,51 @@ if (wide.term.cols !== 80 || wide.wide() || wide.sent[0].cols !== 80) {
   fail("a shell was held to the floor. cols " + wide.term.cols + ", sent " + JSON.stringify(wide.sent) + ".");
 }
 
+// ── a window taller than the pty draws the pty's rows ───────────────────────
+//
+// Rows follow the shortest viewer. ConPTY places every row absolutely and
+// scrolls with a newline on the pty's last row, so a grid one row taller misses
+// that scroll and every later row lands one above: the typed text is drawn on
+// the rule over claude's input box. This window fits 31 rows, the pty is 30, so
+// xterm draws 30, and the resize it sends still says 31, or the pty could never
+// grow back when the short viewer leaves.
+wide.sent.length = 0;
+wide.setPty(0);
+wide.propose(120, 31);
+wide.fitTerm();
+if (wide.term.rows !== 31) {
+  fail("with no pty height known, the window did not draw its own rows. rows " + wide.term.rows + ".");
+}
+wide.setPtyRows(30);
+wide.applyPtySize();
+if (wide.term.rows !== 30) {
+  fail("a pty shorter than the window left the grid taller than the pty, so every absolute row " +
+    "the runner draws lands one off. rows " + wide.term.rows + ".");
+}
+wide.fitTerm();
+if (wide.term.rows !== 30) {
+  fail("a re-fit put the grid back to the window's rows over a shorter pty. rows " + wide.term.rows + ".");
+}
+wide.sendResize();
+if (wide.sent[0].rows !== 31) {
+  fail("a clamped window reported the pty's rows as its own, so the pty can never grow. sent " +
+    JSON.stringify(wide.sent) + ".");
+}
+// The short viewer leaves and the pty grows to this window: it draws its own.
+wide.setPtyRows(31);
+wide.applyPtySize();
+if (wide.term.rows !== 31) {
+  fail("a pty that grew back did not give the window its rows back. rows " + wide.term.rows + ".");
+}
+// A window shorter than the pty draws its own rows, as before.
+wide.setPtyRows(40);
+wide.propose(120, 25);
+wide.fitTerm();
+if (wide.term.rows !== 25) {
+  fail("a window shorter than the pty drew more rows than it can show. rows " + wide.term.rows + ".");
+}
+
 if (bad) process.exit(1);
 console.log("a window drag tells the runner its size once, after it settles, " +
-  "a window narrower than the pty scrolls sideways, and a runner pane holds the width floor.");
+  "a window narrower than the pty scrolls sideways, a window taller than the pty draws its rows, " +
+  "and a runner pane holds the width floor.");

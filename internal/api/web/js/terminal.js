@@ -43,8 +43,24 @@ function takeTermCaps(data) {
 //
 // `termFitCols` is what this window can show, which is what it tells the
 // daemon. `term.cols` is what it draws, the larger of the two.
+//
+// THE PTY'S HEIGHT, which a taller window must draw too.
+//
+// Rows follow the SHORTEST viewer, so a taller window's fit has more rows than
+// the pty. The runner's screen reaches the board through ConPTY, which places
+// every row with an absolute `CSI row;col H` and scrolls with a newline on the
+// pty's last row. In a taller grid that newline lands on a spare row and
+// scrolls nothing, so from then on every absolute row is one off: the typed
+// text is drawn on the rule above claude's input box. So xterm draws the pty's
+// rows when the pty is shorter, and the host sits it on the footer. See
+// `applyPtySize`.
+//
+// `termFitRows` is what this window can show, and what it tells the daemon, or
+// the pty could never grow back once a short viewer leaves.
 let termPtyCols = 0;
 let termFitCols = 0;
+let termPtyRows = 0;
+let termFitRows = 0;
 
 function takeTermSize(data) {
   if (!data || data[0] !== "{") return false;
@@ -52,7 +68,8 @@ function takeTermSize(data) {
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "size") return false;
   termPtyCols = Number(msg.cols) || 0;
-  applyPtyWidth();
+  termPtyRows = Number(msg.rows) || 0;
+  applyPtySize();
   return true;
 }
 
@@ -545,8 +562,9 @@ function openTerm(task) {
   // first attach fills an empty screen and only a later reconnect resets. See
   // `termReplayed`.
   termReplayed = false;
-  // Another session's pty width must not size this one's first fit.
+  // Another session's pty size must not size this one's first fit.
   termPtyCols = 0;
+  termPtyRows = 0;
   term = new Terminal({
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which

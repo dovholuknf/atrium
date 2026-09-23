@@ -1496,7 +1496,7 @@ async function saveMinCols(value) {
   }
   fillMinCols(pastePrefs);
   flashSaved(box);
-  if (typeof applyPtyWidth === "function") applyPtyWidth();
+  if (typeof applyPtySize === "function") applyPtySize();
   toast("width floor saved",
     `a runner's terminal goes no narrower than ${pastePrefs.terminal_min_cols_now} columns`);
 }

@@ -12,6 +12,14 @@ section heading is just "what landed in this iteration."
   right now, each on its own. A pinned session still stays whatever either says, and group headings still read
   `7/15` when rows are hidden. HUB-SIDE.
 
+- **Typed text lands in claude's input box again, not on the rule above it, in a window taller than the pty.**
+
+  The pty's height follows the shortest attached viewer, but a taller window kept its own row count. ConPTY places
+  every row with an absolute cursor move and scrolls with a newline on the pty's last row, so in a taller grid that
+  newline scrolled nothing and every later row landed one above where the runner put it. A window taller than the
+  pty now draws the pty's rows, sat on the footer, and still tells the room its own height so the pty can grow back
+  when the short viewer leaves. HUB-SIDE.
+
 - **A claude terminal never goes narrower than 120 columns. A narrower window scrolls sideways.**
 
   Claude reprints its whole conversation at every width it passes through and keeps each copy in the scrollback,
