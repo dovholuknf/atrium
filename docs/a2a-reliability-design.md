@@ -279,7 +279,7 @@ the board escalation.
 
 | Trigger | Condition on an `origin:agent` card | Launcher at | Board at |
 | --- | --- | --- | --- |
-| Silent stop, no Stop hook | `needs-input`, no report since last prompt | 2 min | +10 min |
+| Silent stop, no Stop hook | `needs-input`, no report and no peer message to its launcher since last prompt | 2 min | +10 min |
 | Permission wait (F2) | `needs-permission` with a pending request | 2 min | 5 min |
 | Question or blocked | a report with status `blocked` or `question` | immediately (it is the report) | +15 min unanswered |
 | Long tool (F7) | activity `tool` with no hook heard | 20 min | 45 min |
@@ -374,7 +374,8 @@ check is `ok` and a card that has shown neither. That is the second live case, a
 | the runner declares no hook and atrium does not own the terminal | `undeliverable`, with the alternatives |
 
 The message is still written to the queue in every case, because a card can gain hooks or be resumed under a
-supervised terminal, and the queue is the durable record. What changes is what the sender is told. The
+supervised terminal, and the queue is the durable record. The table is for live cards. A `done` or `dead` target
+follows the rule under "Dead letter". What changes is what the sender is told. The
 `undeliverable` answer names the alternatives in the text `atrium_say` returns:
 
 ```
@@ -386,15 +387,24 @@ its terminal. Relaunch it under atrium so the text can be typed, or ask the huma
 before it sends. A launch from `atrium_launch` is always supervised, so every worker it starts is reachable by
 typing whatever its runner declares.
 
-**It ages into a dead letter like any other undelivered message.** See below. An `undeliverable` message skips the
-30 minute wait for the sender's notice, because the sender was already told, and goes straight to the board's
-dead-letter chip.
+**It ages into a dead letter like any other undelivered message.** See "Dead letter" below for the rule, which
+covers `undeliverable` sends.
 
 ### Dead letter (F3)
 
-A message pending for 30 minutes to a card that cannot drain it is a dead letter. "Cannot drain it" is concrete:
-the card is `dead` or `done`, or it is idle with no Stop hook and no terminal atrium owns (the known gap in
-`docs/agent-messaging.md`). The message stays in the queue, because the card may come back. In addition:
+A message pending for 30 minutes (`DeadLetterAfter`) to a card that cannot drain it is a dead letter. "Cannot
+drain it" is concrete: the card is `dead` or `done`, or its effective delivery has no path that works for it now
+(no hook seen, no terminal atrium owns). The message stays in the queue, because the card may come back. This is
+the one rule for `done` and `dead` recipients:
+
+- **A model's send to a `done` or `dead` card** is refused with 409, as `resolvePeer` does today. Nothing is
+  queued, and the refusal is the sender's notice.
+- **An automatic notice to a `done` or `dead` launcher** is queued (F10), escalated to the board at once, and
+  becomes a dead letter after the normal 30 minutes like any other.
+- **An `undeliverable` send (F15)** is queued and shown as a dead letter at once, since the sender was already told
+  at send time.
+
+Otherwise, at 30 minutes:
 
 - The sender is told, on its own queue: `your message to <handle> has not been delivered in 30 minutes: <why>`.
   For an automatic notice the sender is atrium, so this goes to the board.
@@ -485,8 +495,9 @@ Ships the most value, and would have caught `sa20` at 12:38:34.
 
 ## Test plan
 
-New scenarios for `docs/test-plan.md`, section AA. Each runs in a throwaway room (see the throwaway hub and room
-recipe) and never against the live board.
+New scenarios for `docs/test-plan.md`, section AA. The test plan covers shipped features, so each scenario moves
+there when its stage ships, the way section Z waits in `docs/test-plan-z-providers.md`. Each runs in a throwaway
+room (see the throwaway hub and room recipe) and never against the live board.
 
 ### AA1. A worker that stops without reporting is made to report (F1, stage 1)
 
@@ -567,7 +578,18 @@ dead-letter chip. The message is still queued.
 
 **Expected:** the new context carries the digest line naming its launcher, its `BRIEF.md` and `atrium_report`.
 
-### AA12. The guard survives an unreachable daemon (resilience)
+### AA12. A message to a runner that cannot receive it says so at send time (F15)
+
+1. In the throwaway room, start a gemini session by hand, not through atrium, so atrium does not own its terminal.
+2. From another session, `atrium_say` to it.
+3. Repeat with a claude session started from a shell whose settings have no atrium hooks.
+
+**Expected:** the gemini send answers `undeliverable`, naming the runner and the two alternatives (relaunch under
+atrium, or the human relays it). The claude send answers `queued-unconfirmed`, because the runner declares hooks
+and the card has shown none. `atrium_peers` shows `reachable: no` and `reachable: unconfirmed`. Both messages are
+still in the queue, and the gemini one shows on the board as a dead letter at once.
+
+### AA13. The guard survives an unreachable daemon (resilience)
 
 1. Stop the throwaway room daemon. End a turn in a launched worker.
 
@@ -586,6 +608,9 @@ dead-letter chip. The message is still queued.
    if only the Stop hook. Confirm that is acceptable under the "Stop is optional" rule as framed above.
 5. **A card that went to `done` without its work landing (dispatch-notify).** Should `done` on an
    `origin:agent` card require a verified sha before the card moves, rather than accepting it as `unverified`?
+6. **When does the no-hook send warning (F15) ship?** It is in stage 2 because it needs sa22's adapters. The
+   send-time `undeliverable` answer for a runner with no hooks is small and could ride stage 1. Recommend stage 1,
+   so the gemini case stops answering `queued` first.
 
 ## Appendix: review rounds
 
@@ -605,3 +630,13 @@ server's own config and generic calibration.
 Added between rounds, from the orchestrator and sa22: failure mode F15 (a message to a runner with no atrium
 hooks), and the delivery capability section. The capability lives on sa22's `Adapter` as `Delivery []string`, and
 the effective list drops the hook paths when the adapter's `hooks` check is not `ok`.
+
+### Round 2: needs changes, two consistency fixes
+
+| Ref | Finding | Taken | What changed |
+| --- | --- | --- | --- |
+| C1 | The watchdog's silent-stop row did not share the guard's exemption for a peer message to the launcher. | yes | The row now reads "no report and no peer message to its launcher since last prompt", the same test as the guard. |
+| C2 | Messages to `done` cards were queued in one section and dead letters in another. | yes | One rule under "Dead letter": a model's send to a `done` or `dead` card is refused with 409 as today, an automatic notice is queued and escalated at once, an `undeliverable` send is a dead letter at once. |
+| A1 | Convert open questions to decisions after clint answers. | deferred | Same as round 1. |
+
+No structural findings in round 2, so no third round was run.
