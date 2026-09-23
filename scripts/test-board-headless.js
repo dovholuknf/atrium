@@ -220,8 +220,13 @@ let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  return { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
+  const out = { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
+  if (packView) out.persona_pack = packView;
+  return out;
 }
+// The persona pack nag the mocked daemon reports, or null for off. See the
+// persona pack chip test.
+let packView = null;
 // The global auto switch the mocked daemon holds, and whether a room-scoped
 // settings read fails: the room the picker is scoped to has not re-attached yet,
 // so the hub cannot reach it. See the gauto-never-blank test.
@@ -2714,6 +2719,90 @@ async function main() {
       hubHasRoom = true;
     }
 
+    // ── the persona pack chip ────────────────────────────────────────────────
+    // Hidden while the pack path is empty. A nag shows its text, warn-coloured,
+    // with /safe-to-push in the hover. A `persona-pack` event repaints it without
+    // a read. A pack it cannot read is a muted reason. Snoozing dims it and keeps
+    // it, keyed on the state, and `off` hides it.
+    {
+      packView = null;
+      const pkCtx = await browser.newContext();
+      const pk = await pkCtx.newPage();
+      const pkErrors = [];
+      pk.on("pageerror", e => pkErrors.push(String(e)));
+      const chip = () => pk.evaluate(() => {
+        const b = document.getElementById("packnag");
+        return b ? { hidden: b.hidden, cls: b.className, text: b.textContent.trim(), title: b.title } : null;
+      });
+      const pushPack = v => openStreams.forEach(r => {
+        try { r.write("event: persona-pack\ndata: " + JSON.stringify(v) + "\n\n"); } catch (e) {}
+      });
+      const NAG = {
+        path: "/x/dotagents/personas", repo: "/x/dotagents", uncommitted: 2, unpushed: 0, no_upstream: true,
+        personas: ["alpha", "beta"], nag: true, key: "k1", count: 0,
+        text: "persona pack: 2 files not committed, no upstream configured",
+        detail: "changed: alpha, beta. atrium never commits or pushes this. before you push, run " +
+          "/safe-to-push in /x/dotagents."
+      };
+      try {
+        await pk.goto(base, { waitUntil: "domcontentloaded" });
+        await pk.waitForTimeout(1500);
+        let c = await chip();
+        if (!c || !c.hidden) fail("persona pack: the chip shows with no pack configured, " + JSON.stringify(c));
+
+        packView = NAG;
+        await pk.evaluate(() => loadGlobalAuto());
+        c = await chip();
+        if (!c || c.hidden || c.text !== NAG.text || !/(^|\s)packnag(\s|$)/.test(c.cls) || /unread/.test(c.cls)) {
+          fail("persona pack: a nag did not draw its text, " + JSON.stringify(c));
+        }
+        if (c && !/\/safe-to-push/.test(c.title)) fail("persona pack: the hover does not say /safe-to-push, " + c.title);
+        if (c && !/alpha, beta/.test(c.title)) fail("persona pack: the hover does not name the personas, " + c.title);
+
+        pushPack(Object.assign({}, NAG, { unpushed: 0, count: 1, key: "k2",
+          text: "persona pack: 3 files not committed, no upstream configured" }));
+        try {
+          await pk.waitForFunction(() => /3 files/.test(document.getElementById("packnag").textContent),
+            null, { timeout: 5000 });
+        } catch (e) { fail("persona pack: a persona-pack event did not repaint the chip, " + JSON.stringify(await chip())); }
+
+        // Snoozed from its own dialog: dimmed, still there, and remembered for this key.
+        await pk.click("#packnag");
+        await pk.click("#ask button:has-text('snooze an hour')");
+        c = await chip();
+        if (!c || c.hidden || !/snoozed/.test(c.cls)) fail("persona pack: snoozing did not dim the chip, " + JSON.stringify(c));
+        const snooze = await pk.evaluate(() => JSON.parse(localStorage.getItem("atrium.packnag.snooze") || "null"));
+        if (!snooze || snooze.key !== "k2") fail("persona pack: the snooze is not keyed on the state, " + JSON.stringify(snooze));
+        // A new state drops the snooze.
+        pushPack(Object.assign({}, NAG, { key: "k3", count: 1 }));
+        try {
+          await pk.waitForFunction(() => !document.getElementById("packnag").classList.contains("snoozed"),
+            null, { timeout: 5000 });
+        } catch (e) { fail("persona pack: a changed state kept the snooze, " + JSON.stringify(await chip())); }
+
+        pushPack({ path: NAG.path, error: "git is not installed or not on PATH", nag: false, count: 0,
+          text: "cannot read the persona pack: git is not installed or not on PATH" });
+        try {
+          await pk.waitForFunction(() => document.getElementById("packnag").classList.contains("unread"),
+            null, { timeout: 5000 });
+        } catch (e) { fail("persona pack: a pack it cannot read is not a muted reason, " + JSON.stringify(await chip())); }
+        c = await chip();
+        if (c && !/^cannot read the persona pack: /.test(c.text)) fail("persona pack: the reason reads " + c.text);
+
+        pushPack({ off: true });
+        try {
+          await pk.waitForFunction(() => document.getElementById("packnag").hidden, null, { timeout: 5000 });
+        } catch (e) { fail("persona pack: turning it off did not hide the chip, " + JSON.stringify(await chip())); }
+        if (pkErrors.length) fail("the persona pack page threw: " + pkErrors.join(" | "));
+      } catch (e) {
+        fail("the persona pack test did not run through: " + e.message);
+      } finally {
+        packView = null;
+        await pk.close();
+        await pkCtx.close();
+      }
+    }
+
     // ── the on/off switch: runners and fixtures ──────────────────────────────
     // Every enable/disable on the runners page is the row's own on/off pill. No
     // separate enable button; a click writes the row with `enabled` flipped; a
@@ -2902,7 +2991,9 @@ async function main() {
     "the global auto button is never blank (a failed read at load, in a room scope, or on a " +
     "stream reopen says unknown or stale, and heals when settings answer), " +
     "a desktop notification fired while no window has focus is recorded in " +
-    "the toast log without also drawing a toast, and the runner and fixture " +
+    "the toast log without also drawing a toast, the persona pack chip hides when off, " +
+    "shows its nag and /safe-to-push, repaints on its event, snoozes per state and mutes a read failure, " +
+    "and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width), " +
     "and a card whose last turn is unread wears a dot and its open questions `? N`.");

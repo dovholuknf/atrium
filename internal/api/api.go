@@ -124,6 +124,11 @@ type Server struct {
 	// is: each waiting agent is parked on an in-memory reply channel, and a
 	// decision written straight to the store never reaches it.
 	DrainAuto func() (int, error)
+	// PersonaPack is the persona pack nag, or nil when it is off. Held by the
+	// daemon, which reads the pack on its own timer. PersonaPackChanged asks it
+	// to read now, after the path is saved. See internal/daemon/personapack.go.
+	PersonaPack        func() any
+	PersonaPackChanged func()
 	// Shutdown winds the daemon down. Supplied by the daemon, which is the only
 	// thing that can stop itself and owns the access rules for doing so.
 	Shutdown http.HandlerFunc

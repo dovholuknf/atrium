@@ -1542,6 +1542,13 @@ function connect() {
     } catch (err) { return; }
     paintGlobalAuto();
   });
+  // The persona pack nag, pushed by the room when what it shows changes. See
+  // paintPackNag.
+  es.addEventListener("persona-pack", e => {
+    let p;
+    try { p = JSON.parse(e.data); } catch (err) { return; }
+    setPackNag(p);
+  });
   // The fixtures that came up with the daemon, said once.
   //
   // Each of them produces a ready card, and a ready card is normally announced,
