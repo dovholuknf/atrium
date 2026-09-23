@@ -19,8 +19,8 @@ import (
 // The attach replay restores the cursor (see cursor_position_test.go). But a
 // viewer that re-fits WHILE ATTACHED gets a cursor only if that re-fit moves the
 // pty: the pty resize raises SIGWINCH and the runner repaints, and the repaint
-// carries the move. Since 8400fa8 the pty moves only when the smallest attached
-// viewport changes, so a viewer that is not the binding one re-fits, the pty
+// carries the move. The pty moves only when the agreed size (widest width,
+// shortest height) changes, so a viewer that is not the binding one re-fits, the pty
 // stays put, no SIGWINCH fires, nothing is sent, and that viewer is left showing
 // its old cursor against a reflowed grid.
 //
@@ -107,29 +107,32 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	if !hasCursorMove(large.seen()) {
 		t.Fatalf("the initial attach did not restore the cursor: %q", large.seen())
 	}
-	before := len(large.seen())
+	before := len(small.seen())
 	ptyMovesBefore := len(f.resized())
 
-	// NON-BINDING RE-FIT: the large viewer re-fits, but 40 is still the smallest,
-	// so the pty does not move. No SIGWINCH, no repaint, nothing sent. The board
-	// re-attaches to cover exactly this.
-	large.resize(t, 90, 28)
+	// NON-BINDING RE-FIT: the small viewer re-fits, but 100 is still the widest
+	// and 20 still the shortest, so the pty does not move. No SIGWINCH, no
+	// repaint, nothing sent. The board re-attaches to cover exactly this.
+	small.resize(t, 36, 20)
 	time.Sleep(500 * time.Millisecond)
-	if delta := large.seen()[before:]; delta != "" {
+	if delta := small.seen()[before:]; delta != "" {
 		t.Fatalf("a non-binding re-fit sent bytes it should not have: %q", delta)
 	}
 	if moves := len(f.resized()); moves != ptyMovesBefore {
 		t.Fatalf("a non-binding re-fit moved the pty: %+v", f.resized())
 	}
-	_ = small
 
-	// BINDING RE-FIT: the small viewer re-fits smaller, which IS the smallest, so
-	// the pty moves. A real runner would get SIGWINCH here and repaint, which is
-	// how a binding viewer's cursor is carried without a re-attach.
-	small.resize(t, 30, 16)
+	// BINDING RE-FIT: the large viewer re-fits narrower, and it IS the widest,
+	// so the pty moves. A real runner would get SIGWINCH here and repaint, which
+	// is how a binding viewer's cursor is carried without a re-attach.
+	large.resize(t, 90, 28)
 	time.Sleep(400 * time.Millisecond)
 	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{30, 16}) {
+	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{90, 20}) {
 		t.Fatalf("a binding re-fit did not move the pty: %+v", sizes)
+	}
+	// And every viewer is told, so the narrower one draws the new width.
+	if !strings.Contains(small.seen(), `{"t":"size","cols":90,"rows":20}`) {
+		t.Fatalf("the narrower viewer was not told the pty's new size: %q", small.seen()[before:])
 	}
 }

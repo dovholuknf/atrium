@@ -254,11 +254,10 @@ func TestTheReplayCannotEraseItself(t *testing.T) {
 	}
 }
 
-// RESIZING A WIDER CONSOLE NEVER TOUCHES THE PTY, so it cannot churn the other
-// viewers. The pty follows the smallest viewer and moves only when that
-// smallest actually changes, which is the whole of the resize-sanity fix: a
-// viewer that is not the binding one drags freely.
-func TestAWiderViewerNeverResizesThePTY(t *testing.T) {
+// A NARROWER CONSOLE NEVER TOUCHES THE PTY, so it cannot churn the other
+// viewers or pile a reprint into their scrollback. The pty follows the widest
+// viewer and moves only when that widest actually changes.
+func TestANarrowerViewerNeverResizesThePTY(t *testing.T) {
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := &runner{
@@ -268,54 +267,80 @@ func TestAWiderViewerNeverResizesThePTY(t *testing.T) {
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
-	// The narrow viewer is the binding one and matches the launch width, so it
-	// is already a no-op.
-	if err := r.setViewport("narrow", 80, 24); err != nil {
+	// The wide viewer is the binding one and matches the launch size, so it is
+	// already a no-op.
+	if err := r.setViewport("wide", 80, 24); err != nil {
 		t.Fatal(err)
 	}
-	// A wider viewer joins and then drags wider still. Neither is the smallest,
-	// so the pty is never asked to resize.
-	_ = r.setViewport("wide", 200, 50)
-	_ = r.setViewport("wide", 300, 60)
+	// A narrower viewer joins and then drags narrower still. Neither is the
+	// widest, so the pty is never asked to resize.
+	_ = r.setViewport("narrow", 60, 24)
+	_ = r.setViewport("narrow", 40, 24)
 	if sizes := f.resized(); len(sizes) != 0 {
-		t.Fatalf("a wider viewer churned the pty: %+v", sizes)
+		t.Fatalf("a narrower viewer churned the pty: %+v", sizes)
 	}
-	// The binding viewer resizing IS applied, exactly once, because now the
-	// smallest moved.
-	_ = r.setViewport("narrow", 120, 40)
-	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{120, 40}) {
+	// The binding viewer resizing IS applied, exactly once.
+	_ = r.setViewport("wide", 120, 24)
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{120, 24}) {
 		t.Fatalf("the binding viewer's resize was not applied once: %+v", sizes)
 	}
-	// The wider viewer detaching does not move the pty either.
-	r.dropViewport("wide")
+	// The narrower viewer detaching does not move the pty either.
+	r.dropViewport("narrow")
 	if sizes := f.resized(); len(sizes) != 1 {
-		t.Fatalf("a wider viewer detaching churned the pty: %+v", sizes)
+		t.Fatalf("a narrower viewer detaching churned the pty: %+v", sizes)
 	}
 }
 
-// A GENUINELY NARROWER READER STILL MOVES THE PTY, because the others cannot
-// read a width their pane cannot show, and when it leaves the pty follows back
-// up to the readers that remain. This is the coupling the fix keeps: only the
-// churn is removed, not the rule that the narrowest reader sets the size.
-func TestANarrowerViewerMovesThePTYAndReleasesIt(t *testing.T) {
+// A WIDER READER MOVES THE PTY, and when it leaves the pty follows back to the
+// readers that remain.
+func TestAWiderViewerMovesThePTYAndReleasesIt(t *testing.T) {
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := &runner{
-		taskID:   "narrower",
+		taskID:   "wider",
 		pty:      f,
 		buf:      newRing(1<<16, 80),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
-	_ = r.setViewport("wide", 80, 24)  // matches the launch width, a no-op
-	_ = r.setViewport("phone", 40, 20) // binding, so it shrinks the pty
-	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{40, 20}) {
-		t.Fatalf("the narrow reader did not shrink the pty: %+v", sizes)
+	_ = r.setViewport("pane", 80, 24)  // matches the launch width, a no-op
+	_ = r.setViewport("desk", 200, 24) // binding, so it widens the pty
+	if sizes := f.resized(); len(sizes) != 1 || sizes[len(sizes)-1] != (viewport{200, 24}) {
+		t.Fatalf("the wide reader did not widen the pty: %+v", sizes)
 	}
-	// The phone leaves. The pty follows back up to the wide reader still there.
-	r.dropViewport("phone")
+	r.dropViewport("desk")
 	if sizes := f.resized(); len(sizes) != 2 || sizes[len(sizes)-1] != (viewport{80, 24}) {
-		t.Fatalf("the pty did not follow back up when the binding viewer left: %+v", sizes)
+		t.Fatalf("the pty did not follow back when the binding viewer left: %+v", sizes)
+	}
+}
+
+// EVERY ATTACH IS TOLD THE PTY'S SIZE WHEN IT MOVES, so a narrower board can
+// draw the width it did not ask for. See `sizeChanged`.
+func TestAResizeWakesSizeWatchers(t *testing.T) {
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   "wake",
+		pty:      f,
+		buf:      newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
+	}
+	wake := r.sizeChanged()
+	_ = r.setViewport("pane", 80, 24) // a no-op wakes nobody
+	select {
+	case <-wake:
+		t.Fatal("a resize to the size already in force woke the watchers")
+	default:
+	}
+	_ = r.setViewport("pane", 132, 24)
+	select {
+	case <-wake:
+	default:
+		t.Fatal("a real resize did not wake the watchers")
+	}
+	if cols, _ := r.buf.CurrentSize(); cols != 132 {
+		t.Fatalf("woken before the new size was readable: %d", cols)
 	}
 }
 

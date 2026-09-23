@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A narrow window no longer shrinks a shared session for everyone. It scrolls sideways instead.**
+
+  The pty's width now follows the widest attached viewer, and its height still follows the shortest. It used to
+  follow the narrowest, so a phone or a small popped-out window dragged every other window's Claude session down
+  to its width, and Claude reprinted the whole transcript at that width into everybody's scrollback. The room tells
+  each viewer the pty's size in a new `{"t":"size"}` frame, and a window narrower than that draws the full width
+  with a horizontal scrollbar. The hub must carry this before any room does: an older board prints the new frame
+  into the terminal. ROOM-SIDE and HUB-SIDE.
+
 - **Dragging a window's edge tells the runner its new size once, not once per step.**
 
   Claude Code redraws its whole conversation on every resize and keeps the old copy in the scrollback, so one drag

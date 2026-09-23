@@ -542,6 +542,9 @@
   /* Height is set by `sizeTermHost` to the fitted grid so there is no sub-row remainder inside this box; the
      100% is the fallback for the frame before the first fit runs and for a host with no `.xterm` yet. */
   #t-screen .xterm { height: 100%; width: 100%; flex: 0 0 auto; }
+  /* The pty is wider than this pane, because another viewer is wider. `markWide` sizes `.xterm` to the grid
+     and the pane scrolls it sideways, rather than the pty shrinking for every other window. */
+  #t-screen.wide { overflow-x: auto; overflow-y: hidden; }
   /* Why a terminal jumped to the bottom whenever it was focused. xterm parks a 20x20 textarea at the cursor
      to receive keystrokes, so an input method draws its candidates in the right place, and the cursor is at
      the bottom. A browser scrolls a focused element into view, so every path that focused that textarea took
