@@ -126,6 +126,11 @@ type LaunchRequest struct {
 	// board's dialog sends nothing and is recorded as `@human`. See
 	// store.SetLineage.
 	SpawnedBy string `json:"spawned_by,omitempty"`
+	// RunnerArgs go after the runner's own arguments and before the model and
+	// the prompt. NOT ON THE WIRE: set only by a persona review, whose
+	// `--agent <name>` is argv the daemon built rather than text a caller sent.
+	// See personareview.go.
+	RunnerArgs []string `json:"-"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -279,6 +284,18 @@ func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []st
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+// launchArgs is runnerArgs with the request's RunnerArgs placed after the
+// runner's own arguments, so they come before the model and the prompt. A
+// resume replaces the base arguments and takes none of them.
+func launchArgs(h *store.Harness, req LaunchRequest, prompt, model string) ([]string, string, error) {
+	if len(req.RunnerArgs) > 0 && req.Resume == "" {
+		cp := *h
+		cp.Args = append(append([]string{}, h.Args...), req.RunnerArgs...)
+		h = &cp
+	}
+	return runnerArgs(h, req.Resume, prompt, model)
 }
 
 // Launch starts a runner and returns the card it created.
@@ -706,7 +723,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if model == "" && task != nil {
 		model = task.Model
 	}
-	args, logged, err := runnerArgs(h, req.Resume, wanted, model)
+	args, logged, err := launchArgs(h, req, wanted, model)
 	if err != nil {
 		return nil, err
 	}
