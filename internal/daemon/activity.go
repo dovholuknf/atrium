@@ -547,6 +547,9 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// needs-input for the rest of the session.
 		d.act.set(taskID, ActivityThinking, "")
 		d.turnResumed(taskID)
+		// And it saw the turn and answered its questions, unless the prompt
+		// was a peer's message atrium typed in. See seen.go.
+		d.seenPrompted(taskID)
 	case "subagent-start":
 		d.act.subagentStarted(taskID, in.AgentID, in.AgentType)
 	case "subagent-end":

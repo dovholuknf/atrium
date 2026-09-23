@@ -358,6 +358,7 @@ func (s *Server) Handler() http.Handler {
 	// is for the dialog, where somebody is reading the card rather than
 	// scanning it, and it is the only place the rest of them exist.
 	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
+	mux.HandleFunc("POST /v1/tasks/{id}/seen", s.markSeen)
 	if s.DismissAsks != nil {
 		mux.HandleFunc("DELETE /v1/tasks/{id}/asks", s.DismissAsks)
 	}
@@ -604,6 +605,11 @@ type view struct {
 	// `UndeliveredCounts` already does for messages. Absent when it is one or
 	// zero, because the row says that much by drawing the ask or not.
 	AsksOpen int `json:"asks_open,omitempty"`
+	// Seen is whether the operator has seen this card's latest turn, and the
+	// Open Questions that turn left that nobody has answered. Absent on a card
+	// no turn has ever ended on. Durable, unlike Activity. See
+	// docs/seen-design.md.
+	Seen *store.SeenView `json:"seen,omitempty"`
 }
 
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
@@ -685,14 +691,69 @@ func toViews(ts []*store.Task) []view {
 func (s *Server) withAskCounts(vs []view) []view {
 	counts, err := s.st.OpenAskCounts()
 	if err != nil {
-		return vs
+		return s.withSeen(vs)
 	}
 	for i := range vs {
 		if vs[i].Task != nil {
 			vs[i].AsksOpen = counts[vs[i].Task.ID]
 		}
 	}
+	return s.withSeen(vs)
+}
+
+// withSeen stamps each card's seen state, for the whole list in one query and
+// swallowing a failure for the same reason `withAskCounts` does: it decorates
+// a row that is worth serving without it.
+func (s *Server) withSeen(vs []view) []view {
+	all, err := s.st.SeenAll()
+	if err != nil {
+		return vs
+	}
+	for i := range vs {
+		if vs[i].Task != nil {
+			vs[i].Seen = all[vs[i].Task.ID].View()
+		}
+	}
 	return vs
+}
+
+// markSeen is the board saying a window showed this card's terminal to
+// somebody. The rule for when it may say so is the board's, because only a
+// browser knows whether its window is in front. See docs/seen-design.md.
+//
+// `turn_ended_at` is the turn the board was showing. One older than the stored
+// turn marks nothing, and the answer carries `stale` and the current state so
+// the board can start over on the newer turn.
+func (s *Server) markSeen(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		TurnEndedAt *time.Time `json:"turn_ended_at"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil && err != io.EOF {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that is not a seen report: " + err.Error()})
+		return
+	}
+	t, err := s.st.Get(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	changed, err := s.st.MarkSeen(t.ID, store.SeenViewed, body.TurnEndedAt)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	cur, err := s.st.GetSeen(t.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if changed {
+		s.Broadcast("task", toView(t))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"seen": cur.View(), "changed": changed, "stale": !changed && cur.Unseen(),
+	})
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
@@ -740,7 +801,8 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toView(t))
+	v := s.withSeen([]view{toView(t)})[0]
+	writeJSON(w, http.StatusOK, v)
 }
 
 // autoModeReason answers a request already waiting when auto mode is switched

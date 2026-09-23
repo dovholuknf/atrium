@@ -137,6 +137,11 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// SessionEvent.Resumable: an id with nothing written cannot be
 		// resumed, and storing it loses the one that could.
 		Resumable *bool `json:"resumable,omitempty"`
+		// The Open Questions the turn ended on, read by the hook off the last
+		// message. Only the questions travel. See docs/seen-design.md.
+		Questions      []string `json:"questions,omitempty"`
+		QuestionsBlock bool     `json:"questions_block,omitempty"`
+		QuestionsKnown bool     `json:"questions_known,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -200,6 +205,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// now. NEVER A BLOCK: this reports, it does not send the model back to
 		// work. See a2a.go.
 		d.silentStop(task.ID)
+		// And it is a turn the operator has not seen. See seen.go.
+		d.noteTurnForSeen(task.ID, store.TurnQuestions{
+			Known: in.QuestionsKnown, Block: in.QuestionsBlock, List: in.Questions,
+		})
 		nothing()
 		return
 	}
@@ -360,6 +369,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			if target, err := d.st.Get(taskID); err == nil {
 				d.peerSaid(from, target)
 			}
+			if from == "" {
+				d.seenAnswered(taskID, store.SeenMessage)
+			}
 			d.publishTask(taskID)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
@@ -399,6 +411,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// asking things the operator has already been told about. A peer's answer
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
+	// A peer's message is not the operator reading the turn. See docs/seen-design.md.
+	if from == "" {
+		d.seenAnswered(taskID, store.SeenMessage)
+	}
 	d.publishTask(taskID)
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
@@ -478,6 +494,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	// The note reached the session, so a question it had outstanding has been
 	// answered through the operator's channel. Same rule as handleMessage.
 	d.askAnswered(taskID, "the operator")
+	d.seenAnswered(taskID, store.SeenMessage)
 
 	// Only now.
 	if err := d.st.SetNote(taskID, ""); err != nil {

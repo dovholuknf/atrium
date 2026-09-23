@@ -304,6 +304,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// atrium reading its own typing as the person being busy.
 				// See `runner.noteOperatorTyped`.
 				run.noteOperatorTyped([]byte(in.D))
+				// Typing into it is looking at it. One map lookup when the
+				// turn is already seen. A shell is another screen, and the
+				// turn's text is not on it. See seen.go.
+				if !shell {
+					d.seenTyped(taskID)
+				}
 				// Through the input lock, so these bytes wait behind a peer
 				// paste in flight rather than interleaving with it. The
 				// bookkeeping above is not locked and stays instant. See
