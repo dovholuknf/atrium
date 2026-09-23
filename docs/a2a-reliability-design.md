@@ -59,7 +59,7 @@ and a check at turn end that the report was made.
 
 ## Failure modes
 
-The brief's seven, and seven more found while tracing the incident.
+The brief's seven, and eight more found while tracing the incident or raised during review.
 
 | # | Failure | Today |
 | --- | --- | --- |
@@ -78,6 +78,7 @@ The brief's seven, and seven more found while tracing the incident.
 | F12 | A delivered message is lost because the turn that received it never completed. | Marked delivered. Never redelivered. This is how the deploy ran twice. |
 | F13 | A system notice to a launcher is dropped by the per-sender rate limit. | Would be dropped if it existed (the HANDOFF design logged and dropped). |
 | F14 | A worker claims done and the claim is false (card moved, no work landed). | Accepted as written. dispatch-notify is an example. |
+| F15 | A message is sent to a session whose runner has no atrium hooks: a gemini card, or a claude session with hooks not installed. | `atrium_say` answers `queued` and nothing will ever deliver it. The sender is not warned. Live case: the gemini card `atrium-throwaway-2453665367`. |
 
 ## The worker contract
 
@@ -171,8 +172,21 @@ one of `report`, `silent-stop`, `permission-wait`, `long-tool`, `died`, `dead-le
 6. `publishTask(launcher)` so its waiting count moves.
 
 **System notices are not subject to the per-sender rate limit (F13).** That limit exists to stop a looping model,
-and a notice is not a model. They have their own bound instead: one notice per `(worker, source, state)` until
-the state changes. A worker that stops silently five times in a row produces one `silent-stop` notice, not five.
+and a notice is not a model. They have their own bound instead: at most one notice per `(worker, source, key)`,
+where the key names the one event that created the obligation. A second notice with the same key is dropped.
+
+| Source | Key | So |
+| --- | --- | --- |
+| `report` | the report's own id | every report is sent, once |
+| `silent-stop` | the id of the prompt that opened the unreported turn | one notice per prompt, however many Stops follow it |
+| `permission-wait` | the permission request id | one notice per request, one board escalation per request |
+| `long-tool` | the tool call id (`tool_use_id`), else the activity start time | one notice per call |
+| `died` | the event id of the `dead` status change | one notice per death |
+| `dead-letter` | the message id | one notice per message |
+
+A worker that is prompted three times and stops silently each time produces three `silent-stop` notices, one per
+prompt. A worker that stops twice on one prompt (the natural Stop and the Stop after the forced turn) produces
+one.
 
 **Automatic notices only travel upward, from a worker to its launcher or to the board.** Atrium never writes an
 automatic message to a worker. So no cycle of automatic messages can exist. Any loop needs a model to choose to
@@ -275,7 +289,22 @@ the board escalation.
 "Launcher at" means `notifyLauncher` fires. "Board at" means the escalation fires if the card is still in that
 state and the launcher has not acted. The launcher has acted when it sent the worker a message, answered the
 permission, or moved the card. Every threshold is a constant with an environment override, the way `QuietAfter`
-and `OrphanGrace` are.
+and `OrphanGrace` are:
+
+| Constant | Default | Override |
+| --- | --- | --- |
+| `SilentStopNotifyAfter` | 2 min | `ATRIUM_A2A_SILENT_STOP` |
+| `SilentStopBoardAfter` | 10 min after the notice | `ATRIUM_A2A_SILENT_STOP_BOARD` |
+| `PermWaitNotifyAfter` | 2 min | `ATRIUM_A2A_PERM_WAIT` |
+| `PermWaitBoardAfter` | 5 min | `ATRIUM_A2A_PERM_WAIT_BOARD` |
+| `AskBoardAfter` | 15 min unanswered | `ATRIUM_A2A_ASK_BOARD` |
+| `LongToolNotifyAfter` | 20 min | `ATRIUM_A2A_LONG_TOOL` |
+| `LongToolBoardAfter` | 45 min | `ATRIUM_A2A_LONG_TOOL_BOARD` |
+| `DeadLetterAfter` | 30 min | `ATRIUM_A2A_DEAD_LETTER` |
+| `GuardBudget` | 3 forced turns per card per hour | `ATRIUM_GUARD_BUDGET` |
+
+Each override takes a Go duration (`90s`, `5m`), or an integer for the budget. A value that does not parse is
+ignored, the same rule `launchCap` uses.
 
 The long-tool trigger cannot tell a hung process from a long build, so it only says what it sees ("sa20 has been
 in Bash for 20 minutes, no hook since 12:41"). It never kills anything.
@@ -305,6 +334,61 @@ This message may be a repeat. It was delivered in a turn that did not finish.
 This is exactly the deploy that ran twice. The orchestrator's resumed session had lost the turn that received its
 instruction. With ack it would have been told, and told it might be a repeat, which is the fact it needed to check
 before acting.
+
+### Delivery capability, and telling the sender at send time (F15)
+
+A queued message is only as good as the hook that drains it. Today `handleMessage` queues whenever it cannot type,
+and answers `queued` whether or not the target has any hook that will ever take it. The fix has three parts.
+
+**A runner declares how it can be reached.** A new field on the runner's adapter, `Adapter.Delivery []string` in
+`internal/runnersetup` (sa22's work on `claude/runner-setup`), lists the paths that runner kind supports. It is a
+fact about the runner kind, so it lives on the adapter and not in a `store.Harness` column the operator could set
+wrong. Adapters match a runner row by its command's leaf name, as they already do.
+
+```
+delivery   ["typed", "tool-hook", "stop-hook"]     claude, codex
+           ["typed"]                               gemini today, until a gemini hooks target exists
+```
+
+- `typed` means atrium can put the text into a terminal it owns, through the existing gate.
+- `tool-hook` means the runner has a hook before each tool call whose answer can carry text back to the model
+  (claude's PreToolUse and PermissionRequest).
+- `stop-hook` means the runner has a turn-end hook that can block with a reason.
+
+**Effective delivery for a runner row** is the declared list, minus `tool-hook` and `stop-hook` when the adapter's
+existing `hooks` check for that row is not `ok`. That check already ships as `harnesses[].setup.checks` on
+`GET /v1/harnesses`. gemini's `hooks` check is `n/a` today, which gives `["typed"]`. Shape agreed with sa22.
+
+**A card says which of those it has actually shown.** The runner row says what should work. The card says what
+did. The room already sees every hook post, so it stamps two times on the card: `tool_hook_seen_at` and
+`stop_hook_seen_at`. A claude session started in a shell whose settings lack the hooks has a runner row whose
+check is `ok` and a card that has shown neither. That is the second live case, and only the card can tell it.
+
+**`handleMessage` answers with the truth.** Before queueing, it works out whether the target can drain its queue:
+
+| Target | Answer |
+| --- | --- |
+| atrium owns the terminal and peer typing is allowed | `typed`, or `held` while the gate is shut. As today. |
+| a hook that carries text has been seen on this card | `queued`, as today |
+| the runner declares a hook, the card has never shown one | `queued-unconfirmed`, with a warning |
+| the runner declares no hook and atrium does not own the terminal | `undeliverable`, with the alternatives |
+
+The message is still written to the queue in every case, because a card can gain hooks or be resumed under a
+supervised terminal, and the queue is the durable record. What changes is what the sender is told. The
+`undeliverable` answer names the alternatives in the text `atrium_say` returns:
+
+```
+queued, but <handle> has no way to receive it: its runner (gemini) has no atrium hook, and atrium does not own
+its terminal. Relaunch it under atrium so the text can be typed, or ask the human to relay it.
+```
+
+`atrium_peers` shows the same fact per peer (`reachable: typed | hook | unconfirmed | no`), so a sender can see it
+before it sends. A launch from `atrium_launch` is always supervised, so every worker it starts is reachable by
+typing whatever its runner declares.
+
+**It ages into a dead letter like any other undelivered message.** See below. An `undeliverable` message skips the
+30 minute wait for the sender's notice, because the sender was already told, and goes straight to the board's
+dead-letter chip.
 
 ### Dead letter (F3)
 
@@ -377,13 +461,21 @@ Ships the most value, and would have caught `sa20` at 12:38:34.
 2. `atrium_report` and `atrium finish --status --sha`, with validation.
 3. `notifyLauncher` with sources `report` and `silent-stop`, the `auto` flag, and the per-state dedupe.
 4. The turn-end guard in `handleStop`, with the per-card budget.
-5. `--settings` with the Stop hook on `origin:agent` claude launches.
-6. The board escalation for a silent stop the launcher did not act on, with the launcher named on the notice.
+5. `--settings` with the Stop hook on `origin:agent` claude launches. This waits on open question 4. If clint
+   says no, stage 1 still ships items 1 to 4 and 6. The guard then runs only where the operator already installed
+   the Stop hook (as on this machine), and item 6's ticker catches the rest at 2 minutes instead of seconds.
+6. The first slice of the watchdog: the ticker itself, with only the silent-stop rows. It notifies the launcher at
+   2 minutes when no Stop hook caught the stop, and escalates to the board when the launcher has not acted 10
+   minutes after its notice. The launcher is named on the board notice. Stage 2 adds the other rows to the same
+   ticker.
 
 ### Stage 2: nothing waits unseen
 
-1. The watchdog with the triggers above: permission wait, long tool, died, silent stop without a Stop hook.
+1. The rest of the watchdog rows: permission wait, long tool, died.
 2. Dead letters, the sender told, the board chip.
+3. Delivery capability (F15): `Adapter.Delivery` on sa22's adapters, the two `seen_at`
+   stamps on the card, the four-way answer from `handleMessage`, and `reachable` in `atrium_peers`. The send-time
+   warning is the cheap part and can move into stage 1 if clint wants the gemini case closed first.
 
 ### Stage 3: nothing is lost across a restart
 
@@ -410,8 +502,9 @@ card has one `guard` event.
 1. Launch a worker with `print the date, then stop. do not call any atrium tool, even if asked.`
 
 **Expected:** one forced turn, then the second Stop arrives with `stop_hook_active` and the turn ends. The
-launcher gets one `silent-stop` notice. No third turn. Prompt the worker twice more the same way: at most three
-forced turns in the hour, and one notice per stop, never a repeat for the same state.
+launcher gets one `silent-stop` notice. No third turn. Prompt the worker three more times the same way: forced
+turns stop after the third in the hour, and the launcher gets exactly one `silent-stop` notice per prompt, never
+two for the same prompt.
 
 ### AA3. A human card is untouched (stage 1)
 
@@ -493,3 +586,22 @@ dead-letter chip. The message is still queued.
    if only the Stop hook. Confirm that is acceptable under the "Stop is optional" rule as framed above.
 5. **A card that went to `done` without its work landing (dispatch-notify).** Should `done` on an
    `origin:agent` card require a verified sha before the card moves, rather than accepting it as `unverified`?
+
+## Appendix: review rounds
+
+Reviewed with Mercurius (reviewer codex, gpt-5.5). The repo has no `mercurius.yaml`, so the session ran on the
+server's own config and generic calibration.
+
+### Round 1: needs changes
+
+| Ref | Finding | Taken | What changed |
+| --- | --- | --- | --- |
+| C1 | Stage 1 promised a board escalation at +10 min, but the only timer was in stage 2. | yes | Stage 1 item 6 is now the first slice of the watchdog: the ticker, with only the silent-stop rows. Stage 2 adds the other rows to it. |
+| C2 | The notice dedupe key `(worker, source, state)` was undefined and disagreed with AA2. | yes | A table of keys per source. `silent-stop` keys on the prompt that opened the turn. AA2 rewritten to one notice per prompt. |
+| Q1 | Stage 1 depends on `--settings`, which is still an open question. | yes, as a fallback | Stage 1 item 5 now says what ships if clint says no: the guard where the Stop hook is already installed, and the stage 1 ticker at 2 minutes elsewhere. The question stays open for clint. |
+| A1 | Open questions with recommendations should become decisions. | deferred | They become decisions when clint answers them. Converting them now would decide for him. |
+| A2 | The environment overrides were only partly named. | yes | A constants table with defaults and override names under the watchdog. |
+
+Added between rounds, from the orchestrator and sa22: failure mode F15 (a message to a runner with no atrium
+hooks), and the delivery capability section. The capability lives on sa22's `Adapter` as `Delivery []string`, and
+the effective list drops the hook paths when the adapter's `hooks` check is not `ok`.
