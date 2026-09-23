@@ -185,9 +185,21 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Recorded whatever happens next, including when a message is about to send
 	// the model back to work, since the message path sets it running again.
 	d.turnEnded(task.ID)
+	// This card has a Stop hook, so a message queued to it will arrive. Best
+	// effort: a turn must not fail over bookkeeping.
+	if task.StopHookSeenAt == nil {
+		if err := d.st.SawHook(task.ID, store.HookStop); err != nil {
+			log.Printf("[atrium] could not record the stop hook on %s: %v", task.ID, err)
+		}
+	}
 
 	msgs, err := d.takeMessages(task.ID, "stop")
 	if err != nil || len(msgs) == 0 {
+		// The turn really is over. An agent-launched card that said nothing
+		// to its launcher is a silent stop, and the launcher hears about it
+		// now. NEVER A BLOCK: this reports, it does not send the model back to
+		// work. See a2a.go.
+		d.silentStop(task.ID)
 		nothing()
 		return
 	}
@@ -345,6 +357,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			d.askAnswered(taskID, "the operator")
+			if target, err := d.st.Get(taskID); err == nil {
+				d.peerSaid(from, target)
+			}
 			d.publishTask(taskID)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
@@ -389,8 +404,25 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
 	d.deferPeerInjection(taskID, m.ID, from, body.Text)
+
+	// SAY WHETHER IT WILL EVER ARRIVE. A queued message is only as good as the
+	// hook that drains it, and a card whose runner has none (a gemini session
+	// atrium does not own, a claude session with no hooks installed) holds the
+	// message forever while the sender is told `queued`. It is still queued,
+	// because the card may be relaunched under atrium, but the sender hears
+	// the truth and what to do instead. See docs/a2a-reliability-design.md.
+	out := map[string]any{"delivered": "queued", "id": m.ID}
+	if target, err := d.st.Get(taskID); err == nil {
+		d.peerSaid(from, target)
+		reach, why := d.reachability(target)
+		out["delivered"] = deliveredWord(reach)
+		out["reachable"] = reach
+		if why != "" {
+			out["warning"] = why
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "id": m.ID})
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // handleSendNote turns a card's note into one message and clears it.

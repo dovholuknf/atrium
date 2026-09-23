@@ -555,6 +555,13 @@ const alerting = (() => {
     if (on === undefined) return settlingNow;
     settlingNow = !!on;
   }
+  // How many steps of the backoff `mins` minutes of waiting have passed.
+  function nagSlot(mins) {
+    const steps = [1, 2, 5, 10, 30, 60, 120, 240, 480, 1440];
+    let n = steps.filter(s => mins >= s).length;
+    if (mins > 1440) n += Math.floor((mins - 1440) / 1440);
+    return n;
+  }
   function nag(perms) {
     const now = Date.now();
     perms.forEach(p => {
@@ -564,12 +571,13 @@ const alerting = (() => {
       const waitedMs = now - since;
       if (waitedMs < 60000) return;
 
-      // Every minute for the first ten, then every five. A request waiting
-      // that long is either forgotten or being avoided, and both deserve
-      // saying out loud.
+      // THE OPERATOR'S BACKOFF: 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h, then
+      // daily. The same schedule the room uses for a silent stop and a stuck
+      // tool (EscalationBackoff in internal/daemon/a2a.go), so every kind of
+      // stuck rings on one rhythm. Keyed on the request, so a new one starts
+      // over.
       const mins = Math.floor(waitedMs / 60000);
-      const step = mins < 10 ? 1 : 5;
-      const slot = Math.floor(mins / step);
+      const slot = nagSlot(mins);
       if (nagged[p.id] === slot) return;
 
       // Asked before the slot is claimed, because an undecidable answer has to
@@ -591,7 +599,7 @@ const alerting = (() => {
       // below the fold, where the toast is the only thing that would take you
       // to it. It only silences the toast in THIS window: a nag that reaches
       // Windows, or another window, is not about what is on screen here.
-      notify(`${who} has been frozen for ${mins}m`, body, "perms", p.id, p.id,
+      notify(`${who} is STUCK on a permission, ${mins} minutes`, body, "perms", p.id, p.id,
         p.task_id || p.id, iconForAlert(p), "", { quiet: showing === "on-screen" });
     });
     // Forget anything answered, so a later request with a fresh id starts over.
@@ -713,6 +721,7 @@ const alerting = (() => {
       ? `${fresh.length} ${{
         permission: "agents need permission",
         arrived: "new agents on the board",
+        stuck: "launched agents are stuck",
       }[kind] || "agents are ready"}`
       : d.title;
     // A pile names who, since the count alone does not, and the names are the

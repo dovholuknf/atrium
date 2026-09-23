@@ -341,6 +341,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	d.peerSaid(from, target)
 	log.Printf("[atrium] %s told %s something (%d chars, typed %v)", from, to, len(text), typed)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -350,8 +351,15 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// The same warning `handleMessage` gives when the card has no way to
+	// drain its queue. See reachability in a2a.go.
+	note := queuedNote
+	reach, why := d.reachability(target)
+	if why != "" {
+		note = why
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queued": true, "to": to, "note": queuedNote,
+		"queued": true, "to": to, "note": note, "reachable": reach,
 	})
 }
 

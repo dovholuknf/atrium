@@ -259,6 +259,29 @@ type Task struct {
 	// Zero on every card until something drags one, which leaves the pinned
 	// set tied and falling back to the sort underneath.
 	PinOrder int `json:"pin_order"`
+	// SpawnedBy is the handle of the session that launched this card, `@human`
+	// for the board's own launch dialog, and empty for a session nobody
+	// launched. SpawnedByID is that session's card id when it was known at
+	// launch. Written once, by `SetLineage`. See docs/agent-lineage-design.md.
+	SpawnedBy   string `json:"spawned_by,omitempty"`
+	SpawnedByID string `json:"spawned_by_id,omitempty"`
+	// ReportedAt is the last time this card said something to its launcher: a
+	// structured report, or a peer message to it. See
+	// docs/a2a-reliability-design.md.
+	ReportedAt *time.Time `json:"reported_at,omitempty"`
+	// ReportSHA is the commit a `done` report named. ReportUnverified is set
+	// when that commit is not in this card's worktree, and the board flags it.
+	ReportSHA        string `json:"report_sha,omitempty"`
+	ReportUnverified bool   `json:"report_unverified,omitempty"`
+	// ToolHookSeenAt and StopHookSeenAt are when the two hooks that can carry
+	// a queued message into the model were first heard from on this card. Nil
+	// means a message queued here has no hook known to take it.
+	ToolHookSeenAt *time.Time `json:"tool_hook_seen_at,omitempty"`
+	StopHookSeenAt *time.Time `json:"stop_hook_seen_at,omitempty"`
+	// PromptedAt is when this card was last given something to do: a prompt,
+	// a typed message, or a queued one a hook carried in. Stamped wherever a
+	// `prompted` event is written.
+	PromptedAt *time.Time `json:"prompted_at,omitempty"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
 	// which is the point of coloring terminals: telling them apart at a

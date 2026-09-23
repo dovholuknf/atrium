@@ -1312,6 +1312,19 @@ async function refresh(signal) {
         title: `${t.display_title} is on the board`,
         body: t.why || t.worktree || "a new card"
       }));
+      // AN AGENT-LAUNCHED CARD THAT IS STUCK: it stopped without reporting, or
+      // one tool call has run too long. The room works out when, on the
+      // operator's backoff (1m, 2m, 5m, 10m, 30m, 1h ... 24h), and steps
+      // `escalation.count` each time. Keyed on the count, so each step rings
+      // once and a card that moves starts over. See internal/daemon/a2a.go.
+      alerting.check("stuck", lastTasks
+        .filter(t => t.escalation && t.escalation.count > 0 && !over(t))
+        .map(t => Object.assign({}, t, {
+          id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
+        })), t => ({
+        title: t.escalation.text,
+        body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
+      }));
     }
     if (perms) {
       badge("c-perm", perms.length);

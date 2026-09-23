@@ -230,6 +230,22 @@ func (a *activityTracker) get(taskID string) *Activity {
 	return a.withHeld(taskID, &out)
 }
 
+// toolSince is the tool a card is running and when it started, READ PAST THE
+// STALENESS CUTOFF. `get` stops believing a tool after `staleAfter`, which is
+// right for the badge and exactly wrong for the watchdog: a tool call that has
+// run that long is the one it is looking for. A session that died mid-tool is
+// caught by the reaper and leaves the running set, so this does not report a
+// dead process as stuck forever.
+func (a *activityTracker) toolSince(taskID string) (string, time.Time, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	if cur == nil || cur.What != ActivityTool {
+		return "", time.Time{}, false
+	}
+	return cur.Tool, cur.Since, true
+}
+
 // withHeld attaches a held peer message to an activity, synthesising one when
 // the card has no running-process activity to carry it. Caller holds the lock.
 //

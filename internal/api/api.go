@@ -112,6 +112,10 @@ type Server struct {
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
+	// Report is a session on a card reporting to whoever launched it: the
+	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
+	// queue. See internal/daemon/finish.go.
+	Report http.HandlerFunc
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
@@ -482,6 +486,9 @@ func (s *Server) Handler() http.Handler {
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
 	}
+	if s.Report != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)
+	}
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a
 	// board that does not show the queue makes that look like nothing
@@ -579,6 +586,11 @@ type view struct {
 	// activity worth drawing and a context figure that still decides whether
 	// you resume it.
 	Telemetry any `json:"telemetry,omitempty"`
+	// Escalation is an agent-launched card that is stuck: it stopped without
+	// reporting, or one tool call has run too long. Its `count` steps up on the
+	// operator's backoff and the board rings each time it does. Absent when
+	// the card is fine. See docs/a2a-reliability-design.md.
+	Escalation any `json:"escalation,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -618,6 +630,11 @@ var ActivityOf func(taskID string) any
 // daemon for the same reason: it is held in memory there and never stored.
 var TelemetryOf func(taskID string) any
 
+// EscalationOf returns an agent-launched card's escalation, or nil. Supplied
+// by the daemon, which works it out on the reaper's tick and holds it in
+// memory. See internal/daemon/a2a.go.
+var EscalationOf func(taskID string) any
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -637,6 +654,9 @@ func toView(t *store.Task) view {
 	}
 	if TelemetryOf != nil {
 		v.Telemetry = TelemetryOf(t.ID)
+	}
+	if EscalationOf != nil {
+		v.Escalation = EscalationOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
