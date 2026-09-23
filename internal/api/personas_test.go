@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/persona"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -34,7 +33,7 @@ func TestPersonaEndpoints(t *testing.T) {
 
 	// Off: an answer that says so, not an error.
 	code, out := personaCall(t, srv, http.MethodGet, "/v1/personas", "")
-	if code != http.StatusOK || out["pack"] != "" || out["setting"] != persona.PackPathSetting {
+	if code != http.StatusOK || out["pack"] != "" || out["setting"] != store.SettingPersonaPackPath {
 		t.Fatalf("off: %d %v", code, out)
 	}
 	if code, _ := personaCall(t, srv, http.MethodGet, "/v1/personas/x/lessons", ""); code != http.StatusConflict {
@@ -64,7 +63,7 @@ func TestPersonaEndpoints(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	if err := st.SetSetting(persona.PackPathSetting, filepath.ToSlash(pack)); err != nil {
+	if err := st.SetSetting(store.SettingPersonaPackPath, filepath.ToSlash(pack)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -20,16 +20,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/store"
 	"go.yaml.in/yaml/v3"
 )
-
-// PackPathSetting is the room setting that names the pack: the personas
-// directory itself, for example D:/git/github/dovholuknf/dotagents/personas.
-// Empty means the feature is off.
-//
-// The key is owned by the pack nag (sa30's branch), which exposes it as
-// store.SettingPersonaPackPath. Named here until that lands, then swapped.
-const PackPathSetting = "persona_pack_path"
 
 // RunsDirName is the folder under atrium's data directory that holds one
 // scratch directory per persona run.
@@ -126,7 +119,7 @@ type personaYAML struct {
 func Catalog(pack, runsDir string) ([]Persona, error) {
 	pack = strings.TrimSpace(pack)
 	if pack == "" {
-		return nil, errors.New("no persona pack is configured. set " + PackPathSetting)
+		return nil, errors.New("no persona pack is configured. set " + store.SettingPersonaPackPath)
 	}
 	entries, err := os.ReadDir(filepath.FromSlash(pack))
 	if err != nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/persona"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -59,10 +58,10 @@ func TestPersonaReviewSetsUpTheRunAndLaunchesAsTheAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := d.PersonaReview(card.ID, "go-sec", "claude"); err == nil ||
-		!strings.Contains(err.Error(), persona.PackPathSetting) {
+		!strings.Contains(err.Error(), store.SettingPersonaPackPath) {
 		t.Fatalf("with no pack configured: %v", err)
 	}
-	if err := d.st.SetSetting(persona.PackPathSetting, filepath.ToSlash(pack)); err != nil {
+	if err := d.st.SetSetting(store.SettingPersonaPackPath, filepath.ToSlash(pack)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.PersonaReview(card.ID, "go-sec", "codex"); err == nil {
