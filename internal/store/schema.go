@@ -1451,6 +1451,31 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// Whether the operator has seen a card's latest turn, and the open
+		// questions that turn asked. See docs/seen-design.md.
+		//
+		// A table of its own rather than columns on `task`, because every column
+		// there changes `taskColumns`, `scanTask` and the insert's placeholder
+		// count, and several branches are adding to it at once. One row per
+		// card, read for the whole list in one query and gone with the card.
+		//
+		// 0057 because 0055 and 0056 are taken by claude/a2a-reliability.
+		name: "0057_turn_seen",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS turn_seen (
+				task_id            TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				turn_ended_at      TEXT NOT NULL DEFAULT '',
+				seen_at            TEXT NOT NULL DEFAULT '',
+				seen_via           TEXT NOT NULL DEFAULT '',
+				questions          TEXT NOT NULL DEFAULT '[]',
+				questions_unparsed INTEGER NOT NULL DEFAULT 0,
+				questions_at       TEXT NOT NULL DEFAULT '',
+				answered_at        TEXT NOT NULL DEFAULT '',
+				answered_via       TEXT NOT NULL DEFAULT ''
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
