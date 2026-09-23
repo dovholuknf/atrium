@@ -58,5 +58,6 @@ tidy:
 test:
 	go test ./...
 
+# Keeps $(OUT)/go.mod, which fences build output off from `go vet ./...`.
 clean:
-	rm -rf $(OUT)
+	find $(OUT) -mindepth 1 ! -name go.mod -delete 2>/dev/null || true
