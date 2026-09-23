@@ -40,6 +40,15 @@
     .row.line .ell { white-space: normal; overflow: visible; }
     .row.line .tool { min-width: 0; }
     .row.line button { margin-left: auto; }
+    /* The on/off switch leads its row, so it stays at the left rather than being
+       pushed right with the row's other buttons, and it takes a thumb like the
+       header controls. Still one box in both states: border-box now counts the
+       padding and border, so the min-width is the wider word plus those 18px. */
+    .row.line .chip.toggle { margin-left: 0; }
+    .chip.toggle {
+      min-height: 40px; box-sizing: border-box; min-width: calc(3.5ch + 18px);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
     .row { flex-wrap: wrap; }
 
     /* A pending request is the one card that must not compress. Its command

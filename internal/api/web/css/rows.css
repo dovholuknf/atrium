@@ -244,7 +244,8 @@
   .chip.no { background: var(--warn-bg); color: var(--warn); cursor: pointer;
              border: 1px solid var(--warn-stroke); }
   .chip.no:hover { background: var(--warn-stroke); color: var(--head); }
-  /* A fixture's on/off pill is the switch, so it reads as one and lights on hover.
+  /* A row's on/off pill is the switch, so it reads as one and lights on hover. It is a
+     button, for the keyboard, and keeps the chip's look rather than a button's: no lift.
      One box for both states: `off` is a character wider than `on`, and a pill that
      changed width shoved the number and the name right on every off row, so the
      columns down the list stopped lining up. A fixed min-width sized to the wider
@@ -254,7 +255,8 @@
     cursor: pointer; display: inline-block;
     min-width: 3.5ch; text-align: center; box-sizing: content-box;
   }
-  .chip.toggle:hover { border-color: var(--teal); color: var(--head); }
+  .chip.toggle:hover { border-color: var(--teal); color: var(--head); transform: none; }
+  .chip.toggle[data-busy] { cursor: progress; }
   .term-files .crumbs .crumb { color: var(--term-fg, var(--dim)); opacity: .75; }
   .term-files .crumbs .crumb.here { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
   .term-files .crumbs .crumb:hover { background: var(--term-line, var(--lift)); opacity: 1; }
@@ -441,6 +443,9 @@
     opacity: .55; transition: opacity .12s, border-color .12s, color .12s;
   }
   .row.line:hover button { opacity: 1; }
+  /* The on/off switch is a button so the keyboard reaches it, but it is the row's state, not one of its
+     actions: chip size and full strength whatever the pointer is doing. */
+  .row.line .chip.toggle { padding: 1px 8px; font-size: var(--fs-xs); opacity: 1; }
 
   .subhead {
     font-size: var(--fs-sm); color: var(--dim); margin: -4px 0 12px; max-width: 78ch;

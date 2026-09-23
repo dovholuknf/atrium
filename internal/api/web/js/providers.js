@@ -67,7 +67,7 @@ function providerRow(p) {
   const count = rows ? rows.length + (rows.length === 1 ? " repository" : " repositories") : "";
   return `
     <div class="row line">
-      <span class="chip ${p.enabled ? "accent" : ""}">${p.enabled ? "on" : "off"}</span>
+      ${switchChip("provider", p.name, "", p.enabled)}
       <span class="tool">${esc(p.name)}</span>
       <code class="grow ell" title="${esc(p.root)}">${esc(p.root)}</code>
       ${p.worktrees ? `<span class="chip" title="${

@@ -24,11 +24,7 @@ async function renderFixtures() {
   // number them 1 to 12 and grey out the wrong arrows.
   setHTML(host, roomGroups(allFixtures, (f, i, mine) => `
     <div class="row line${f.last_error ? " broke" : ""}">
-      <span class="chip toggle ${f.enabled ? "accent" : ""}" role="button" tabindex="0"
-        title="${f.enabled ? "on. click to stop it starting with atrium" : "off. click to start it with atrium"}"
-        onclick="toggleFixture('${esc(f.id)}','${esc(f.room || "")}')"
-        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"
-        >${f.enabled ? "on" : "off"}</span>
+      ${switchChip("fixture", f.id, f.room, f.enabled)}
       <span class="ord">${i + 1}</span>
       <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
       <code class="grow ell" title="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
@@ -58,28 +54,140 @@ async function renderFixtures() {
     </div>` : "")));
 }
 
-// Flip whether a fixture starts with the daemon, from its own pill.
+// ── the on/off switch ───────────────────────────────────
 //
-// Off keeps the definition and only stops the auto-start, so the row stays put
-// and can be turned back on. Mirrors toggleHarness: the whole row is PUT back
-// with enabled flipped, and SaveFixture leaves the daemon-owned columns
-// (task_id, last_error, last_run_at) alone on conflict.
+// One control for every configuration row that is either on or off: the pill
+// that says which IS the switch, and clicking it flips the row. A separate
+// `enable` button beside an `on` chip was two controls for one bit, and the
+// button's word was the opposite of the chip's, so the row read as arguing
+// with itself.
 //
-// Turning one on does NOT start it now: that is the `start` button's job, and
-// pairing the two would mean the pill both saved a setting and spawned a
-// terminal, which is two decisions on one click.
-async function toggleFixture(id, room) {
-  const f = rowOf(allFixtures, id, room);
-  if (!f) return;
-  if (!await chooseWriteRoom(f, "fixture")) return;
-  try {
-    await api(`/v1/fixtures/${id}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({}, f, { enabled: !f.enabled }))
-    });
-  } catch (e) { tellUser("atrium", e.message); return; }
-  renderFixtures();
+// A real button, so tab reaches it and space and enter press it, with
+// role=switch and aria-checked so a screen reader says which way it is. The
+// row it belongs to rides in `data-` attributes and comes back through the
+// DOM, for the reason `renderRecognisers` gives: an id is typed text, and an
+// inline handler built out of it breaks on an apostrophe.
+//
+// `kind` names an entry in SWITCHES, which knows where the rows are, how to
+// write one, and what to repaint after.
+function switchChip(kind, id, room, on, disabled) {
+  const sw = SWITCHES[kind];
+  return `<button type="button" class="chip toggle${on ? " accent" : ""}" role="switch"
+    aria-checked="${on ? "true" : "false"}" data-switch="${esc(kind)}"
+    data-id="${esc(id)}" data-room="${esc(room || "")}"
+    title="${esc(disabled || sw.title(on))}"${disabled ? " disabled" : ""}
+    >${on ? "on" : "off"}</button>`;
 }
+
+// The title says what a click does, not what the state is: the word on the
+// pill already says that.
+function switchTitle(noun) {
+  return on => on ? `on. click to disable this ${noun}` : `off. click to enable this ${noun}`;
+}
+
+function paintSwitch(btn, on) {
+  const sw = SWITCHES[btn.dataset.switch];
+  btn.classList.toggle("accent", on);
+  btn.setAttribute("aria-checked", on ? "true" : "false");
+  btn.textContent = on ? "on" : "off";
+  btn.title = sw.title(on);
+}
+
+// A row PUT back whole with `enabled` changed. Every one of these saves is an
+// upsert that leaves the daemon-owned columns (last_error, last_run_at and the
+// like) alone, so the row as the list read it is a safe body.
+function putEnabled(path) {
+  return (row, on) => api(path(row), {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({}, row, { enabled: on }))
+  });
+}
+
+// `pick` says the row belongs to one machine, so a merged hub view asks which
+// before writing, the way every editor does. `find` defaults to id and room.
+const SWITCHES = {
+  // Off keeps the definition and only stops the auto-start. Turning one on does
+  // NOT start it now: that is the `start` button's job, and pairing the two
+  // would mean the pill both saved a setting and spawned a terminal, which is
+  // two decisions on one click.
+  fixture: {
+    rows: () => allFixtures, pick: "fixture",
+    title: on => on ? "on. click to stop it starting with atrium" : "off. click to start it with atrium",
+    save: putEnabled(f => `/v1/fixtures/${encodeURIComponent(f.id)}`),
+    after: () => renderFixtures()
+  },
+  runner: {
+    rows: () => allHarnesses, pick: "runner", title: switchTitle("runner"),
+    save: putEnabled(h => `/v1/harnesses/${encodeURIComponent(h.id)}`),
+    after: () => { renderRunners(); refresh(); }
+  },
+  // Turning a source back on also clears its failure count: the daemon reads
+  // that as the operator saying they fixed it, which is what the dialog's
+  // checkbox has always meant too.
+  source: {
+    rows: () => allSources, pick: "source", title: switchTitle("source"),
+    save: putEnabled(s => "/v1/sources/" + encodeURIComponent(s.id)),
+    after: () => renderSources()
+  },
+  recogniser: {
+    rows: () => allRecognisers, pick: "recogniser", title: switchTitle("recogniser"),
+    save: putEnabled(r => "/v1/recognisers/" + encodeURIComponent(r.id)),
+    after: () => renderRecognisers()
+  },
+  action: {
+    rows: () => allActions, pick: "action", title: switchTitle("action"),
+    save: putEnabled(a => "/v1/actions/" + encodeURIComponent(a.id)),
+    after: () => renderActions()
+  },
+  // Keyed by name, and not grouped by room, the same as its editor.
+  provider: {
+    find: id => (allProviders || []).find(p => p.name === id), title: switchTitle("provider"),
+    save: putEnabled(p => "/v1/providers/" + encodeURIComponent(p.name)),
+    after: () => renderProviders()
+  },
+  // A room's one bit is the deletion mark: on takes new work, off is marked and
+  // starts nothing new while what is running finishes. See markRoom.
+  room: {
+    find: id => (hubInventory || []).find(r => String(r.name) === id),
+    title: on => on
+      ? "on. new work starts here. click to mark this room for deletion, so nothing new starts on it"
+      : "marked for deletion. nothing new starts here. click to take the mark off",
+    save: (r, on) => markRoom(r.name, !on),
+    after: () => roomMarked()
+  }
+};
+
+// Flip a switch. The pill changes at once, because a click that does nothing
+// for a round trip reads as a click that missed. A refusal puts it back and
+// says why, the same way every other write on this page does.
+async function flipSwitch(btn) {
+  const sw = SWITCHES[btn.dataset.switch];
+  if (!sw || btn.disabled || btn.dataset.busy) return;
+  const id = btn.dataset.id, room = btn.dataset.room;
+  const row = sw.find ? sw.find(id, room) : rowOf(sw.rows(), id, room);
+  if (!row) return;
+  if (sw.pick && !await chooseWriteRoom(row, sw.pick)) return;
+  const was = btn.getAttribute("aria-checked") === "true";
+  btn.dataset.busy = "1";
+  paintSwitch(btn, !was);
+  try {
+    await sw.save(row, !was);
+  } catch (e) {
+    paintSwitch(btn, was);
+    delete btn.dataset.busy;
+    tellUser("atrium", e.message);
+    return;
+  }
+  delete btn.dataset.busy;
+  sw.after();
+}
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.chip.toggle[data-switch]");
+  if (!btn) return;
+  e.preventDefault();
+  flipSwitch(btn);
+});
 
 // Reordering by swapping sort values with the neighbor.
 //
@@ -883,19 +991,6 @@ function nextCopyID(id, room) {
     if (!taken.has(base + n)) return base + n;
   }
   return base;
-}
-
-async function toggleHarness(id, room) {
-  const h = rowOf(allHarnesses, id, room);
-  if (!h) return;
-  if (!await chooseWriteRoom(h, "runner")) return;
-  try {
-    await api(`/v1/harnesses/${encodeURIComponent(id)}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({}, h, { enabled: !h.enabled }))
-    });
-  } catch (e) { tellUser("atrium", e.message); }
-  refresh();
 }
 
 // Called with an id from the runners tab, or with nothing from the header's
