@@ -724,6 +724,9 @@ function connectTerm(taskID) {
   // before the replay, and a room too old to send one gets this window's width.
   termPtyCols = 0;
   applyPtyWidth();
+  // The width floor is the daemon's number. Asked once per window, and a pane
+  // built on the default is re-sized when it arrives.
+  if (!pastePrefs) pasteSettings().then(() => fitTerm());
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the
@@ -1468,7 +1471,62 @@ function sendResize() {
   clearTimeout(resizeSettleTimer);
   resizeSettleTimer = 0;
   if (!term) return;
-  send({ t: "resize", cols: termFitCols || term.cols, rows: term.rows });
+  send({ t: "resize", cols: Math.max(termFitCols || term.cols, termMinCols()), rows: term.rows });
+}
+
+// THE WIDTH FLOOR. A runner's terminal never goes under this many columns.
+//
+// Claude reprints its whole conversation at every width it passes through and
+// keeps the old copy in the scrollback, so a narrow width leaves a narrow copy
+// nobody can read. A pane under the floor sends the floor, draws the floor's
+// width, and scrolls sideways. The room enforces the same number, so an old tab
+// cannot get under it either. A shell does not reprint and is exempt. The
+// number is the daemon's (`terminal_min_cols_now`), with its default until the
+// settings have arrived.
+function termMinCols() {
+  if (termKind === "shell") return 0;
+  const n = pastePrefs && Number(pastePrefs.terminal_min_cols_now);
+  return n > 0 ? n : 120;
+}
+
+// Said once, the first time a pane is under the floor. Once per page, and
+// never again once "do not show this again" is ticked in this browser.
+const FLOOR_NOTICE = "width-floor";
+let floorNoticed = false;
+
+async function noteUnderFloor() {
+  if (floorNoticed) return;
+  floorNoticed = true;
+  if (skippedConfirms()[FLOOR_NOTICE]) return;
+  const n = termMinCols();
+  await askUser({
+    title: "this terminal scrolls sideways",
+    body: `<p>A runner's terminal will not go narrower than <b>${n} columns</b>. A narrower window ` +
+      `scrolls sideways instead.</p>` +
+      `<p>A narrower claude terminal leaves a narrow copy of the conversation in the scrollback for ` +
+      `good.</p>` +
+      `<p><a href="#" onclick="openFloorSetting(); return false">change the floor in settings</a></p>`,
+    rememberKey: FLOOR_NOTICE,
+    rememberLabel: "do not show this again",
+    buttons: [{ label: "got it", value: true, style: "go" }]
+  });
+}
+
+// Opens the settings cog on the board pane, with the floor field in view and
+// highlighted.
+function openFloorSetting() {
+  const ask = document.getElementById("ask");
+  if (ask && ask.open) ask.close();
+  document.getElementById("gear").click();
+  showSettingsPane("board");
+  const field = document.getElementById("s-mincols-field");
+  if (!field) return;
+  field.scrollIntoView({ block: "center" });
+  field.classList.remove("flash");
+  void field.offsetWidth;
+  field.classList.add("flash");
+  const box = document.getElementById("s-mincols");
+  if (box) box.focus();
 }
 
 // fitTerm is `termFit.fit()`, drawing at the pty's width when that is wider.
@@ -1480,7 +1538,9 @@ function fitTerm() {
   const dims = termFit.proposeDimensions();
   if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
   termFitCols = dims.cols;
-  const cols = Math.max(dims.cols, termPtyCols);
+  const floor = termMinCols();
+  const cols = Math.max(dims.cols, termPtyCols, floor);
+  if (dims.cols < floor) noteUnderFloor();
   if (cols !== term.cols || dims.rows !== term.rows) {
     // What the addon's own fit does first, so a resize does not leave stale
     // glyphs from the old grid.
@@ -1494,7 +1554,7 @@ function fitTerm() {
 function applyPtyWidth() {
   if (!term) return;
   const fit = termFitCols || term.cols;
-  const cols = Math.max(fit, termPtyCols);
+  const cols = Math.max(fit, termPtyCols, termMinCols());
   if (cols !== term.cols) term.resize(cols, term.rows);
   markWide();
 }

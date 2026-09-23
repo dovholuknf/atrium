@@ -81,6 +81,8 @@ func globalAutoView(s *Server) map[string]any {
 		// always being cmd, so the escape hatch for the problem was itself
 		// unreachable by anybody hitting the problem.
 		SettingShellCommand: "shell_command",
+		// The narrowest a runner's terminal goes. Empty means the default.
+		SettingTerminalMinCols: "terminal_min_cols",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -103,6 +105,12 @@ func globalAutoView(s *Server) map[string]any {
 	out["scrollback_lines_now"] = scrollbackLines(s.st)
 	out["scrollback_mb_max"] = maxScrollbackMB
 	out["scrollback_lines_max"] = maxScrollbackLines
+	// The floor in force, and its bounds, so the board sizes a pane from the
+	// daemon's number rather than one of its own.
+	out["terminal_min_cols_now"] = TerminalMinCols(s.st)
+	out["terminal_min_cols_default"] = defaultTerminalMinCols
+	out["terminal_min_cols_min"] = minTerminalMinCols
+	out["terminal_min_cols_max"] = maxTerminalMinCols
 	// Report total scrollback capacity across live runners and shells.
 	// This is the upper bound if every ring fills, not current memory usage.
 	// Send separate values so the board can format the explanation.
@@ -228,6 +236,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether this room logs terminal input lag. Applied at once, with no
 		// restart. See inputlag.go.
 		InputLag *bool `json:"input_lag_log"`
+		// The narrowest a runner's terminal goes, in columns. A string like the
+		// scrollback boxes, because empty is a value and means the default.
+		TerminalMinCols *string `json:"terminal_min_cols"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -491,6 +502,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingReplayMode, mode); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.TerminalMinCols != nil {
+		v, err := checkMinCols(*body.TerminalMinCols)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(SettingTerminalMinCols, v); err != nil {
 			s.fail(w, err)
 			return
 		}

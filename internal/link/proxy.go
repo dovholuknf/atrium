@@ -453,6 +453,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fanInputLag(w, r, lagOn)
 			return
 		}
+		// The terminal width floor goes to every room. See mincolssetting.go.
+		if payload, ok := minColsIn(r); ok {
+			p.fanMinCols(w, r, payload)
+			return
+		}
 		if r.URL.Path == "/v1/health" {
 			p.health(w, r)
 			return
