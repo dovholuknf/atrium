@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The header says when the persona pack is not committed or not pushed.**
+
+  Reviews change the persona pack's memory files, and nothing backs them up but the operator. A new setting,
+  `persona_pack_path`, names the pack directory (`dotagents/personas`), and it is empty and off by default. Once a
+  minute the room runs `git status --porcelain` and `git rev-list --count @{u}..HEAD` there, on its own timer and
+  never on a request, and the header shows a chip such as `persona pack: 3 files not committed, 2 commits not
+  pushed`. With no upstream it says `no upstream configured` instead of a count. The hover names the personas the
+  changed files belong to and says to run `/safe-to-push` in the checkout before pushing. It rings on the
+  stuck-agent backoff from `a2a.go`, starts over when the state changes, and can be snoozed from the chip, per
+  state, in this browser. A pack it cannot read shows `cannot read the persona pack: <why>` and never rings. Atrium
+  runs only those two reads, from an allow-list, with optional locks off so `git status` does not write the index,
+  and it never commits, pushes or holds a credential. ROOM-SIDE and HUB-SIDE.
+
 - **The header's global auto button is never an empty pill.**
 
   After a deploy the button could draw as a grey pill with no dot and no word. Only a settings read that landed
