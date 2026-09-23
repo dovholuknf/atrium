@@ -551,6 +551,18 @@ a card claiming to run a tool inside a process that no longer exists is worse th
 
 **Failure mode** a badge stuck on a session that died. It should expire after fifteen minutes on its own.
 
+### G2b. A finished worker stops thinking
+
+**Steps**
+
+1. Launch a worker that ends its brief with `atrium_report` status `done`, then ends its turn.
+2. Watch its card, in the board and in the terminals list, as the turn ends.
+
+**Expect** the card lands in `done` and the badge does not read `thinking`. The report marks the card done during
+the tool call, the tool-end sets `thinking` again, and the Stop that follows puts it to idle.
+
+**Failure mode** a `done` card whose badge still reads `thinking` for up to fifteen minutes.
+
 ### G3. Auto mode and the review
 
 **Steps**

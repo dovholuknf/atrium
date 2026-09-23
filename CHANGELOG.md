@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A finished worker's badge stops reading `thinking`.**
+
+  A worker that called `atrium_report` with `done` kept a `thinking` badge after its turn ended. The report marks
+  the card done and forgets the activity, but the tool-end hook that follows sets `thinking` again. The Stop hook
+  then saw a card that was not `running` and returned before it reset the badge. A Stop now sets the badge to idle
+  whatever column the card is in, and moves the column only from `running` or `dead` as before. ROOM-SIDE.
+
 - **Personas on the board: a catalog, a review launched at a card, and the lessons view.**
 
   Stage 6 of `docs/personas-design.md`. The pack path is the room setting `persona_pack_path`, the personas folder
