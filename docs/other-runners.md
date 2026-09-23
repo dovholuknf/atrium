@@ -189,3 +189,64 @@ Fixed rows, and each one says what it can report, which is the same argument
 - A codex entry that does not name codex reads as `points elsewhere` rather than as wired. It is the right
   binary and the right subcommand and it reports `claude`, which the path check cannot see, so without this it
   would sit there correct-looking and wrong with nothing offering to fix it.
+
+## Personas on other runners
+
+The persona pack (`docs/personas-design.md`) asks a different question of each runner: which instruction file it
+reads, whether it follows an instruction to read other files by absolute path, and whether it can write a lesson
+file where it is told. Measured on 2026-09-23 with a probe persona, a scratch `CODEX_HOME` holding only a copy of
+`auth.json` and a two-line `config.toml`, and nothing of the operator's real codex configuration.
+
+| Runner | Instruction file | Reads by absolute path | Writes a lesson where told | Measured |
+| --- | --- | --- | --- | --- |
+| codex | `AGENTS.md` in the working directory. One in the parent directory was not read. | yes, anywhere, once the Windows sandbox is configured | only into a directory passed with `--add-dir`, under `--sandbox workspace-write` | codex-cli 0.154.0 |
+| ollama | a Modelfile `SYSTEM` block. Nothing else. | no, it has no tools | no | ollama 0.32.14 |
+| gemini | documented as `GEMINI.md` | not measured | not measured | no, quota exhausted |
+
+### Codex
+
+- **The instruction file.** Started in a run directory that is not a git repository, codex loaded that directory's
+  `AGENTS.md` and no other. A probe line in `AGENTS.md` one directory up never reached the answer. The model also
+  listed the system skills under `$CODEX_HOME/skills/.system/` as available, unread.
+- **The sandbox decides everything else, and on Windows it needs one setting.** With no `[windows]` table in
+  `config.toml`, `--sandbox workspace-write` still reported `sandbox: read-only`, and every shell call, even a read
+  of a file outside the working directory, came back `rejected: blocked by policy`. With `[windows]` and
+  `sandbox = "unelevated"`, reads anywhere worked, and writes worked in the working directory and in each
+  `--add-dir` path.
+- **Trust changes the default.** A run directory codex had already marked trusted in `config.toml` defaulted to
+  `workspace-write`. A fresh one defaulted to `read-only`, and the model said it could not write the lesson. So a
+  persona launch passes `--sandbox workspace-write` explicitly rather than relying on trust.
+- **The memory contract held.** Given the rendered `AGENTS.md`, a `TARGET.md` naming the persona directory, and
+  `--add-dir <persona>/memory`, codex read the knowledge paths, `memory/MEMORY.md` and the one lesson it listed,
+  reviewed the diff, and wrote `github-example-fetcher_download_boundaries.md` with `name`, `description`, `repo:`
+  and a `Why:` line, exactly as told. It did not touch `MEMORY.md`, and it did not write into the reviewed tree,
+  which was readable but not in the writable set.
+
+### Ollama
+
+A Modelfile with the persona body as `SYSTEM` and `PARAMETER num_ctx 32768` builds with `ollama create` for every
+rendered persona. The go-security-reviewer body is about 5,100 prompt tokens with the diff, the one memory file and
+the panel's finding schema. Measured on one Go diff with SSRF, path traversal, an unbounded read and a client with
+no timeout:
+
+- **qwen3:8b**, 186 seconds: a parseable json array with every schema field. Found the unbounded read and the
+  unclosed body. Missed SSRF, path traversal and the timeout. Two findings were false: it claimed errors were
+  unchecked on lines that check them.
+- **gemma4 (8B)**, 160 seconds: the same shape. Found path traversal, the timeout, the unbounded read and the ignored
+  read error. Missed SSRF in the array while naming it in prose after the json, rated three findings `blocking`,
+  and missed the unclosed body.
+
+Neither cited file:line in `evidence`, and both had line numbers off by several lines. The output fits the panel's
+schema. Its content needs the verify pass.
+
+### Gemini, to measure when the quota is back
+
+Not run. What to find out, in the same scratch-home way:
+
+- Which `GEMINI.md` files it loads from a run directory: that directory only, or its parents up to a git root or
+  the home directory, and whether `~/.gemini/GEMINI.md` is added on top.
+- Whether it reads a file outside the working directory by absolute path, and under which sandbox or approval
+  mode.
+- Whether it can write one file into a directory outside the working directory, and which flag grants that, the
+  way `--add-dir` does for codex.
+- Whether a non-interactive run (`gemini -p`) behaves the same as an interactive one on all three.

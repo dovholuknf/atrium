@@ -1,6 +1,7 @@
 # Personas: specialist agents that keep what they learn, on any runner
 
-Status: design, round 2. Nothing here is built.
+Status: stage 1 built (the pack and the claude render). Stage 5a measured codex and ollama, and stage 5b built
+their adapters and the generated memory index. Gemini is unmeasured.
 
 ## The problem
 
@@ -50,8 +51,8 @@ dotagents/personas/<id>/
     github/openziti/ziti.md
     github/dovholuknf/atrium.md
   memory/                 MODEL-WRITTEN lessons, unreviewed. Read as hints, never as rules.
-    MEMORY.md             the index, in the format Claude's native memory uses
-    project_openziti_channel.md
+    MEMORY.md             GENERATED index, one line per lesson from its frontmatter, in Claude's native format
+    github-openziti-channel_multilistener.md
     rejected.md           what this persona got wrong, one line each, appended by the review conductor
   evals/                  golden cases: a diff and the findings a good review must produce
     0001-http-no-timeout/
@@ -76,12 +77,17 @@ dotagents/personas/<id>/
 - **Every `memory/` file names its repo and its reason:** a `repo:` line in its frontmatter (or `repo: general`),
   and a one-line `Why:` in its body saying what taught it. A review loads
   the general ones and the target repo's, the same way it loads knowledge. It also lets the person committing see
-  which repositories a change quotes.
+  which repositories a change quotes. The file is named `<repo slug>_<topic>.md`, where the slug is the repo key
+  with `/` as `-` (`github-openziti-ziti_channel-close.md`), so a directory listing groups by repo. The name is a
+  convention for people. The render step reads only the frontmatter.
 - **`memory/rejected.md`** records findings that were wrong, so the same persona stops raising them. See "What a
   wrong finding teaches" below.
 - **`evals/`** is what makes "restore a previous state" mean something. A persona change is a commit. Running the
   evals before and after says whether it got better. Without evals a revert is a guess.
 - **`render/`** keeps the per-runner files out of the hand-edited tree, so there is one source of truth.
+- **`memory/MEMORY.md` is generated** by the render step from each lesson's frontmatter. No runner edits it. Two
+  runners writing lessons at once each add one file and never touch a shared one, and a runner that ignores the
+  index format cannot corrupt it.
 
 ### The id is not the name
 
@@ -91,35 +97,57 @@ on the id: the folder, the native memory directory, atrium's catalog. A rename e
 ## Runners
 
 The body in `persona.md` is written once. A render step (`dotagents/scripts/render-personas.ps1`) turns each
-persona into what each runner can load. `render-personas.ps1 -Check` exits non-zero when `render/` does not match
-its sources, and is the only check.
+persona into what each runner can load, for each runner listed in the persona's `runners:` line
+(`runners: [claude, codex, ollama]`). `render-personas.ps1 -Check` exits non-zero when `render/` or any
+`memory/MEMORY.md` does not match its sources, and is the only check.
 
 | Runner | What it loads | Memory | Tools | Measured? |
 | --- | --- | --- | --- | --- |
-| claude code | `render/claude/<id>.md`: subagent frontmatter from the yaml, body from the md, and a block naming the knowledge, checklists and memory files to read | native: `~/.claude/agent-memory/<id>` is a SYMLINK to `memory/` | from the yaml's tier | yes, today's setup |
-| codex | `render/codex/AGENTS.md`, read when codex starts in a persona run directory | instructed: read `memory/`, write new lessons to `memory/inbox/` | codex's own | no, measure first |
-| gemini | `render/gemini/GEMINI.md`, the same way | instructed, as codex | gemini's own | no, measure first |
-| ollama | `render/ollama/Modelfile` with the body as `SYSTEM`. The diff, the repo's knowledge and memory files, and `rejected.md` go in the prompt. | read only, through the prompt. It cannot write. | none | partly: no tools, no file access |
+| claude code | `render/claude/<id>.md`: subagent frontmatter from the yaml, body from the md | native: `~/.claude/agent-memory/<id>` is a SYMLINK to `memory/` | from the yaml's tier | yes, today's setup |
+| codex | `render/codex/AGENTS.md`, copied into a persona run directory beside `TARGET.md` | instructed: read by absolute path, write one lesson file into `memory/` | codex's own, started with `--sandbox workspace-write --add-dir <persona>/memory` | yes, codex-cli 0.154.0 |
+| gemini | not rendered | instructed, as codex, once measured | gemini's own | no, quota exhausted when stage 5 ran |
+| ollama | `render/ollama/Modelfile`: `FROM` the yaml's `ollama_model:` (default `gemma4:latest`), the body as `SYSTEM`. The diff, the repo's knowledge and memory files, and `rejected.md` go in the prompt. | read only, through the prompt. It cannot write. | none | yes, ollama 0.32.14, qwen3:8b and gemma4 |
 | next runner | one adapter function in the render script, plus one row in atrium's `docs/other-runners.md` | whichever of the three modes it supports | its own | per runner |
 
-The codex and gemini rows name the file each is documented to read. Before building either, measure it the way
-atrium's `docs/other-runners.md` measured codex's hooks: a probe persona, a scratch home, and a record of what the
-runner actually loaded. atrium's `docs/atrium-for-agents.md` is the brief for that.
+Each runner was measured the way atrium's `docs/other-runners.md` measured codex's hooks: a probe persona, a scratch
+home, and a record of what the runner actually loaded. The results are in that page's "Personas on other runners"
+section.
+
+The codex and ollama renders cut the body at its `# Persistent Agent Memory` heading. That section is Claude Code's
+native memory instructions, with a `~/.claude/agent-memory` path and a step that edits `MEMORY.md` by hand, and it is
+wrong on every other runner. The claude render keeps it for now, because stage 1 froze that render byte for byte.
+Moving the section into the claude adapter, and teaching it the `repo:` and `Why:` lines, is one render change for
+clint to approve. Until then a claude-written lesson reaches the contract at its first lessons review.
 
 A persona on a runner without tools is still useful. An ollama reviewer cannot open files, but handed a diff and
-the right knowledge file it can still produce findings in the panel's schema. It is a cheap second opinion.
+the right knowledge file it can still produce findings in the panel's schema. It is a cheap second opinion, and
+measurement says it needs the verify pass: see "Read only" below.
 
 ### Memory, per runner
 
 Claude's native memory is the only automatic one. The pack treats it as the model and the others follow it by
 instruction.
 
+Every runner that writes a lesson writes the same thing: one ordinary file in `memory/`, with `name`,
+`description` and `repo:` in its frontmatter and a one-line `Why:` in its body. There is no inbox. `MEMORY.md` is
+generated from those files by the render step, so no runner ever edits the index, and a new lesson file shows up as
+`-Check` failing until the render runs. That failure is also how clint sees that a review learned something.
+
 - **Native (claude).** The symlink makes the native directory BE `memory/`. Nothing is copied, so nothing drifts.
-- **Instructed (codex, gemini).** The rendered instructions say: read `memory/MEMORY.md` at start. To record a
-  lesson, write one file to `memory/inbox/` in the same format, with a `repo:` line and a one-line `Why:`. The lessons review merges the
-  inbox, so an unfamiliar runner never rewrites the index on its own.
+  Claude Code's own memory instructions still tell the model to add a line to `MEMORY.md`. The next render replaces
+  the index with the generated one, which lists that file anyway, so the edit is harmless and short-lived.
+- **Instructed (codex, gemini).** The rendered `AGENTS.md` names the persona directory through `TARGET.md` and says:
+  read `knowledge/`, `memory/MEMORY.md` and `rejected.md` by absolute path. To record a lesson, write one new file
+  in `memory/` in the shape above. Never edit `MEMORY.md`, `rejected.md` or another lesson. The run grants write
+  access to `memory/` and nothing else in the pack (`--add-dir` on codex), so the persona cannot edit its own
+  definition.
 - **Read only (ollama).** It reads what it is handed and writes nothing. What it gets wrong still reaches
-  `rejected.md`, because the conductor writes that file, not the reviewer.
+  `rejected.md`, because the conductor writes that file, not the reviewer. Measured on one Go diff with SSRF, path
+  traversal, an unbounded read and no client timeout: both local models returned a parseable json array with every
+  schema field. qwen3:8b missed SSRF and path traversal and raised two false findings. gemma4 found path traversal,
+  the timeout and the unbounded read, missed SSRF in the array, over-rated three findings as `blocking`, and added
+  prose after the json. Neither cited file:line in `evidence`, and line numbers were off. So the shape fits the
+  panel. The content is a second opinion that the verify pass must check, never a reviewer on its own.
 
 ## What a wrong finding teaches
 
@@ -168,7 +196,7 @@ The step that keeps the pack honest. On demand, because it needs clint.
 
 For each persona with anything new since its last review:
 
-1. **Memory diff.** What `git diff` shows in `memory/` and `memory/inbox/`. For each lesson: promote to
+1. **Memory diff.** What `git diff` shows in `memory/`. For each lesson: promote to
    `knowledge/`, keep as memory, or delete. The lesson's own `Why:` line says what taught it. No session id or run
    id is recorded: the reason is what matters, and it lives in the lesson.
 2. **Rejections.** New lines in `rejected.md`. A cluster of the same mistake becomes one line in the persona's
@@ -226,7 +254,11 @@ directory, `<atrium data>/persona-runs/<id>/<run>/`, holding the rendered instru
 `TARGET.md` naming the worktree and diff to review. A runner that reads its instructions from the working
 directory then loads exactly the rendered file. And a persona session never has the dotagents tree as its working
 directory, so it cannot edit its own definition by accident. It writes memory through the symlink (claude) or the
-absolute inbox path (the others).
+absolute `memory/` path it was granted (the others).
+
+`TARGET.md` carries three lines the rendered instructions rely on: `persona_dir:` (the absolute path of
+`dotagents/personas/<id>`), `repo:` (the repo key, `github/openziti/ziti`), and what to review. The rendered file
+holds no absolute path, so `render/` is the same on every machine and `-Check` holds everywhere.
 
 ## Stages
 
@@ -239,7 +271,13 @@ absolute inbox path (the others).
    repo facts. A `lessons-review` skill walks the review in chat.
 3. **The atrium nag.** The one atrium piece with value on its own.
 4. **Evals.** Seed three golden cases per reviewer from real confirmed findings. A script runs them.
-5. **Other runners.** Measure codex and gemini, write their adapters, try one diversity panel.
+5. **Other runners,** in two steps, so no adapter is written for behaviour nobody has seen.
+   - **5a. Measure.** Per runner, a probe persona in a scratch home, and a record in atrium's
+     `docs/other-runners.md` of what it loaded, what it could read, and whether it could write a lesson where told.
+     Done for codex and ollama. Gemini waits for its quota.
+   - **5b. Build only what passed.** The codex and ollama adapters, the generated `MEMORY.md`, and `runners:` in
+     `persona.yaml`. Done. Still to do: gemini (after 5a), a conductor step that assembles the ollama prompt, and one
+     diversity panel.
 6. **The rest of atrium.** The catalog, launching a persona at a card, and the lessons view.
 
 Stages 1 to 3 are worth doing even if nothing after them is built.
@@ -269,3 +307,7 @@ Stages 1 to 3 are worth doing even if nothing after them is built.
   C3: a rejection is scoped to its repo unless marked general. Fixed. C2 (the inbox contract for codex and gemini),
   A1 (split stage 5) and A2 (no upstream configured) deferred to the stages they belong to. clint stopped the review
   here to build stage 1: the later stages get their own short review when they are reached.
+- Stage 5, decided by measurement. C2: the inbox is dropped. Every runner writes lessons as ordinary memory files
+  with `repo:` and `Why:`, and `MEMORY.md` is generated by the render step, so no runner edits the index. A codex
+  probe wrote a lesson in exactly that shape and left the index alone. A1: stage 5 is split into 5a (measure) and
+  5b (build only what passed).
