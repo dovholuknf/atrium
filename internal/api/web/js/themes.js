@@ -211,6 +211,138 @@ function repoLeaf(name) {
   return parts.length ? parts[parts.length - 1] : "";
 }
 
+// ── cards that wear their terminal's colours ────────────
+//
+// Off, a card shows its theme as a stripe on the terminals list and nowhere
+// else. On, every card is drawn in its own terminal theme, in every place a
+// card is drawn: the terminals list, the stack and the board's columns. It is
+// a way of finding a session by colour across a screen of them.
+//
+// PER BROWSER, like text size and focus on hover, and unlike the skin. The
+// skin is the board's look and follows you to a phone. This is how one screen
+// reads the cards: a wall monitor may want it and the laptop beside it not,
+// and nothing about the cards changes.
+let cardColors = localStorage.getItem("atrium.cardColors") === "1";
+
+function toggleCardColors(on) {
+  cardColors = !!on;
+  try { localStorage.setItem("atrium.cardColors", cardColors ? "1" : "0"); } catch (e) {}
+  cardWearCache = new WeakMap();
+  runRefresh();
+  renderTermList();
+}
+
+// THE PALETTE IS REWRITTEN ON THE CARD, NOT RESTYLED ROUND IT.
+//
+// A card's chips, star, wait timer and status edge all read the skin's
+// variables. Setting those variables on the card itself makes every one of
+// them take the terminal's colours with no rule of its own, so a chip added
+// next year is covered too. The terminal's ANSI colours stand in for the
+// skin's accents: yellow for warn, cyan for live, blue for paths, red for
+// danger.
+//
+// EVERY TEXT COLOUR IS HELD TO 4.5:1, WCAG AA for body text, against the
+// surface it sits on, chip washes included. A theme's accent is chosen for a
+// cursor, not for text, and several are far under that on their own
+// background: `deep-amethyst`'s violet, `dusk-blue`'s. Those are moved toward
+// white or black, whichever the background is further from, one step at a
+// time until they pass, so they keep their hue and stop being unreadable.
+const CARD_TEXT_FLOOR = 4.5;
+
+let cardWearCache = new WeakMap();
+
+// The style and class a card is drawn with, or null with the setting off or a
+// theme whose colours cannot be read.
+function cardWear(t) {
+  if (!cardColors) return null;
+  const th = themeFor(t);
+  if (!cardWearCache.has(th)) cardWearCache.set(th, wearOf(th));
+  return cardWearCache.get(th);
+}
+
+function wearOf(th) {
+  const bg = hexRGB(th.background);
+  const fg0 = hexRGB(th.foreground);
+  if (!bg || !fg0) return null;
+  const pick = (name, fallback) => hexRGB(th[name]) || fallback;
+  const fg = legible(fg0, bg);
+  const accent = pick("cursor", fg);
+  const title = legible(accent, bg);
+  const warn = legible(pick("yellow", fg), bg, 0.14);
+  const teal = legible(pick("cyan", pick("green", fg)), bg, 0.10);
+  const path = legible(pick("blue", fg), bg, 0.14);
+  const red = pick("red", fg);
+  const hi = legible(title, bg, 0.14);
+  const vars = {
+    "--card-0": rgbHex(bg), "--card-1": rgbHex(bg),
+    "--head": rgbHex(title), "--body": rgbHex(fg), "--label": rgbHex(fg),
+    "--dim": rgbHex(legible(mixRGB(fg, bg, 0.8), bg)),
+    "--dimmest": rgbHex(legible(mixRGB(fg, bg, 0.65), bg)),
+    "--stroke": rgbaOf(fg, 0.22), "--stroke-dim": rgbaOf(fg, 0.14), "--stroke-dim-rgb": rgbList(fg),
+    "--chip": rgbaOf(fg, 0.10), "--chip-rgb": rgbList(fg), "--hairline": rgbaOf(fg, 0.10),
+    "--lift": rgbaOf(fg, 0.07), "--blue": rgbHex(accent),
+    "--warn": rgbHex(warn), "--warn-rgb": rgbList(warn),
+    "--warn-bg": rgbaOf(warn, 0.14), "--warn-stroke": rgbaOf(warn, 0.4),
+    "--teal": rgbHex(teal), "--teal-rgb": rgbList(teal),
+    "--path": rgbHex(path), "--path-rgb": rgbList(path),
+    "--danger": rgbHex(red), "--danger-rgb": rgbList(red),
+    "--danger-text": rgbHex(legible(red, bg, 0.24)),
+    "--chip-accent": rgbaOf(hi, 0.14), "--chip-accent-stroke": rgbaOf(hi, 0.4),
+    "--chip-accent-text": rgbHex(hi)
+  };
+  return {
+    cls: " worn",
+    style: Object.keys(vars).map(k => k + ":" + vars[k]).join(";")
+  };
+}
+
+// `c` moved toward white or black until it reads at the floor against `bg`,
+// and against `bg` under a wash of `c` itself at `wash` opacity, which is what
+// a chip is. Unchanged if it already does.
+function legible(c, bg, wash) {
+  const away = contrastRGB({ r: 255, g: 255, b: 255 }, bg) >= contrastRGB({ r: 0, g: 0, b: 0 }, bg)
+    ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
+  let out = c;
+  for (let i = 0; i <= 20; i++) {
+    out = mixRGB(away, c, i / 20);
+    const under = wash ? mixRGB(out, bg, wash) : bg;
+    // A tenth over the floor, because the browser composites the wash in its
+    // own rounding and a colour at exactly 4.50 here measured 4.49 there.
+    if (contrastRGB(out, under) >= CARD_TEXT_FLOOR + 0.1) return out;
+  }
+  return away;
+}
+
+function hexRGB(s) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(s || "").trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].replace(/./g, "$&$&") : m[1];
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+
+function rgbHex(c) {
+  return "#" + [c.r, c.g, c.b].map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
+}
+
+function rgbList(c) { return [c.r, c.g, c.b].map(Math.round).join(","); }
+
+function rgbaOf(c, a) { return "rgba(" + rgbList(c) + "," + a + ")"; }
+
+// `a` weighted by `w`, the rest `b`.
+function mixRGB(a, b, w) {
+  return { r: a.r * w + b.r * (1 - w), g: a.g * w + b.g * (1 - w), b: a.b * w + b.b * (1 - w) };
+}
+
+function contrastRGB(a, b) {
+  const lum = c => ["r", "g", "b"].reduce((sum, k, i) => {
+    const s = Math.round(c[k]) / 255;
+    const v = s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    return sum + v * [0.2126, 0.7152, 0.0722][i];
+  }, 0);
+  const la = lum(a), lb = lum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 // Choosing what a terminal looks like.
 //
 // Applied to the live terminal immediately as well as stored, so the choice

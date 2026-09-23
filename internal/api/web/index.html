@@ -1064,6 +1064,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">How much room around things, without changing how big anything reads.
         Tight fits about a third more rows on a screen.</span>
     </div>
+    <!-- Kept in this browser, like text size: it is how this screen reads the
+         cards, and a phone or a second monitor may want the other answer. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-cardcolors" onchange="toggleCardColors(this.checked)">
+        <span>cards wear their terminal colours</span>
+      </label>
+      <span class="hintline">Every card is drawn in its own terminal's theme, on the terminals
+        list, the stack and the board, so you can find a session by its colour. The one you are
+        attached to keeps a heavy frame. Kept in this browser only.</span>
+    </div>
 
     <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
          A browser keeps a handful of accelerators for itself, the list differs

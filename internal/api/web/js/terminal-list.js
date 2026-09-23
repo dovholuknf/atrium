@@ -964,7 +964,9 @@ function termRow(t, deep) {
   // waiting said something the board already says better and cost the one
   // signal that is actually per session.
   const th = themeFor(t);
-  const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}`;
+  const wear = cardWear(t);
+  const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}` +
+    (wear ? ";" + wear.style : "");
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
   const tail = termSuffix.get(t.id) || "";
@@ -986,7 +988,7 @@ function termRow(t, deep) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           termCold(t) ? " cold" : ""}"
+           termCold(t) ? " cold" : ""}${wear ? wear.cls : ""}"
          data-id="${t.id}"
          title="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
          style="${style}"

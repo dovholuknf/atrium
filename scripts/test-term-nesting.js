@@ -132,10 +132,10 @@ const terminalParts = (t) => {
 // the nesting is about. `seenChips` (js/seen.js) draws nothing here for the
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
-  "themeFor", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
+  "themeFor", "cardWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
-  () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null,
+  () => ({ cursor: "#fff", background: "#000" }), () => null, () => "", () => false, null,
   () => false, () => false, () => "");
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
