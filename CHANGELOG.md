@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A terminal's scrollback reaches back past a room restart again.**
+
+  After a restart a claude terminal showed only what claude reprints on resume, which is its recent conversation,
+  and everything older lived only in the text scrollback view. The attach now puts the saved pre-restart history
+  in front of the live replay, cut where the reprint picks it up, so the older history shows once and the recent
+  part is not doubled. The cut matches text, not bytes, since the reprint is drawn at another width. When no line
+  matches, the saved history is kept whole. On a real 11 MB card, 81% of the saved history is kept and the joined
+  replay renders in 150 ms. Also reverts the scrollback clear at a width change, which wiped that history. ROOM-SIDE.
+
 - **A narrow window no longer shrinks a shared session for everyone. It scrolls sideways instead.**
 
   The pty's width now follows the widest attached viewer, and its height still follows the shortest. It used to
