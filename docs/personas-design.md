@@ -127,7 +127,8 @@ When the review panel's verify pass refutes a finding, or clint skips one when c
 things is true. The conductor picks by asking: would a different persona make the same mistake?
 
 - **No: this persona misread something.** The conductor appends one line to that persona's `memory/rejected.md`:
-  the date, the repo, the claim, and why it was wrong. The next review by that persona, on any runner, reads the
+  the date, the repo, the claim, and why it was wrong. A line applies only to reviews of its own repo, unless its
+  repo is `general`, and the dispatch prompt says so. The next review by that persona, on any runner, reads the
   file and does not raise it again. Example: "c-systems-reviewer flagged a leak in `ziti_conn_close`, but the
   buffer is freed by the loop's close callback."
 - **Yes: the code is intended, and any reviewer would trip on it.** That is a fact about the repo, not about a
@@ -229,7 +230,8 @@ absolute inbox path (the others).
 
 ## Stages
 
-1. **Move.** Create `dotagents/personas/<id>/` for all eleven. Split each definition in `dotfiles/claude/agents`
+1. **Move.** First an inventory: map every `~/.claude/agent-memory/*` directory to a persona id, and stop if a
+   non-empty directory maps to none. Then create `dotagents/personas/<id>/` for every agent. Split each definition in `dotfiles/claude/agents`
    into `persona.yaml` and `persona.md`, render `render/claude/<id>.md`, and point `~/.claude/agents/<id>.md` at
    it. Move each `~/.claude/agent-memory/<id>/` into `memory/`, add `repo:` lines, and symlink it back. Delete the
    two orphan directories. Behaviour does not change, and everything is in git for clint to commit.
@@ -263,3 +265,7 @@ Stages 1 to 3 are worth doing even if nothing after them is built.
   review". Fixed with a `Lessons-reviewed: <persona-id>` commit trailer. C2: non-Claude lessons carried no session
   id for attribution. clint rejected session ids as noise: every lesson carries a one-line `Why:` instead, and the
   lessons view shows no session. A1: `skip_when` is free text the conductor reads.
+- Round 3 (Mercurius, codex gpt-5.5, needs changes). C1: stage 1 needs a memory inventory before the move. Fixed.
+  C3: a rejection is scoped to its repo unless marked general. Fixed. C2 (the inbox contract for codex and gemini),
+  A1 (split stage 5) and A2 (no upstream configured) deferred to the stages they belong to. clint stopped the review
+  here to build stage 1: the later stages get their own short review when they are reached.
