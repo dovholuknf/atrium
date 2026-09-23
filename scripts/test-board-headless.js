@@ -220,8 +220,13 @@ let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  return { global_auto: false, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
+  return { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
 }
+// The global auto switch the mocked daemon holds, and whether a room-scoped
+// settings read fails: the room the picker is scoped to has not re-attached yet,
+// so the hub cannot reach it. See the gauto-never-blank test.
+let gautoOn = false;
+let roomSettingsDown = false;
 // The on/off switch rows: one runner and one fixture in each state, so the test
 // can compare the pill's box across an on row and an off row, and flip each way.
 // `switchFail` makes the next write refuse, which must put the pill back.
@@ -424,6 +429,11 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: "pick a room first" }));
       return;
     }
+    if (room && roomSettingsDown) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "room " + room + " is not attached" }));
+      return;
+    }
     sendJSON(res, settingsBody(room));
     return;
   }
@@ -431,7 +441,7 @@ const server = http.createServer((req, res) => {
   // The plain-daemon stream and the hub's own spelling of it. On a hub the board
   // opens `/v1/events/hub`, and the room-picker test writes a `rooms` event onto
   // that one to make a room attach while the dropdown is open.
-  if (url === "/v1/events" || url === "/v1/events/hub") {
+  if (url === "/v1/events" || url === "/v1/events/hub" || url.startsWith("/v1/events/room/")) {
     // An event stream that stays open and says nothing. The board polls for its
     // data, so an idle stream is enough to keep it out of the reconnect state.
     res.writeHead(200, {
@@ -2584,6 +2594,126 @@ async function main() {
       resetSkins();
     }
 
+    // ── the global auto button is never blank ────────────────────────────────
+    // `#gauto` has no class and no text in the markup, and only a settings read
+    // that landed ever painted it. A deploy restarts the hub, the board reloads
+    // or reconnects before a room is back, the read fails, and the header shows
+    // an empty grey pill with no dot and no word. Three ways in: the read fails
+    // at load, the read fails in a room scope, and the read fails on a stream
+    // reopen after it had worked. Each must still say something, and each must
+    // heal to the real answer without a reload.
+    const gautoPaint = pg => pg.evaluate(() => {
+      const b = document.getElementById("gauto");
+      return b ? { cls: b.className, text: b.textContent.trim(), title: b.title } : null;
+    });
+    const gautoDrawn = (what, g) => {
+      if (!g || !/(^|\s)gauto(\s|$)/.test(g.cls) || !g.text) {
+        fail(what + ": #gauto was blank, " + JSON.stringify(g) + ". It needs the gauto class and a word.");
+        return false;
+      }
+      return true;
+    };
+    const gautoHeals = async (what, pg, want) => {
+      try {
+        await pg.waitForFunction(w => {
+          const b = document.getElementById("gauto");
+          return b && b.textContent.trim() === w &&
+            !b.classList.contains("unknown") && !b.classList.contains("stale");
+        }, want, { timeout: 15000 });
+      } catch (e) {
+        fail(what + ": #gauto did not heal to " + JSON.stringify(want) + " once settings answered, it is " +
+          JSON.stringify(await gautoPaint(pg)));
+      }
+    };
+    const pushRooms = () =>
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+
+    // (1) the read fails at load: the hub has no room to borrow settings from.
+    hubMode = true;
+    hubHasRoom = false;
+    sggAttached = false;
+    const ga1Ctx = await browser.newContext();
+    const ga1 = await ga1Ctx.newPage();
+    const ga1Errors = [];
+    ga1.on("pageerror", e => ga1Errors.push(String(e)));
+    try {
+      await ga1.goto(base, { waitUntil: "domcontentloaded" });
+      await ga1.waitForTimeout(1500);
+      const g = await gautoPaint(ga1);
+      if (gautoDrawn("settings failing at load", g) && !/unknown/.test(g.cls)) {
+        fail("settings failing at load: #gauto claims a state nobody read, " + JSON.stringify(g));
+      }
+      // Past loadHubRooms' 2s throttle, a room attaches and the read succeeds.
+      await ga1.waitForTimeout(2200);
+      hubHasRoom = true;
+      pushRooms();
+      await gautoHeals("settings failing at load", ga1, "asking");
+      if (ga1Errors.length) fail("the gauto load page threw: " + ga1Errors.join(" | "));
+    } finally {
+      await ga1.close();
+      await ga1Ctx.close();
+      hubHasRoom = true;
+    }
+
+    // (2) a room scope whose room has not re-attached: the scoped read fails.
+    roomSettingsDown = true;
+    const ga2Ctx = await browser.newContext();
+    await ga2Ctx.addInitScript(() => { try { localStorage.setItem("atrium.room", "alpha"); } catch (e) {} });
+    const ga2 = await ga2Ctx.newPage();
+    const ga2Errors = [];
+    ga2.on("pageerror", e => ga2Errors.push(String(e)));
+    try {
+      await ga2.goto(base, { waitUntil: "domcontentloaded" });
+      await ga2.waitForTimeout(1500);
+      gautoDrawn("settings failing in a room scope", await gautoPaint(ga2));
+      // The room comes back. The poll re-reads while the switch is unknown.
+      roomSettingsDown = false;
+      await gautoHeals("settings failing in a room scope", ga2, "asking");
+      if (ga2Errors.length) fail("the gauto room page threw: " + ga2Errors.join(" | "));
+    } finally {
+      await ga2.close();
+      await ga2Ctx.close();
+      roomSettingsDown = false;
+    }
+
+    // (3) a stream reopen after a good read: approving everything, then the hub
+    // restarts. The reopen's read fails, so the last answer must read as stale
+    // rather than as fresh, and the button must still say something.
+    gautoOn = true;
+    const ga3Ctx = await browser.newContext();
+    const ga3 = await ga3Ctx.newPage();
+    const ga3Errors = [];
+    ga3.on("pageerror", e => ga3Errors.push(String(e)));
+    try {
+      await ga3.goto(base, { waitUntil: "domcontentloaded" });
+      await gautoHeals("before the stream reopen", ga3, "approving everything");
+      hubHasRoom = false;
+      const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: 15000 });
+      const settingsAfter = reopened.then(() => ga3.waitForResponse(r =>
+        r.url().split("?")[0].endsWith("/v1/settings") && r.status() === 409, { timeout: 15000 }));
+      openStreams.splice(0).forEach(r => { try { r.end(); } catch (e) {} });
+      hubStreams.splice(0);
+      await settingsAfter;
+      await ga3.waitForTimeout(300);
+      const g = await gautoPaint(ga3);
+      if (gautoDrawn("settings failing on a stream reopen", g) && !/stale/.test(g.cls)) {
+        fail("settings failing on a stream reopen: #gauto shows its old answer as fresh, " + JSON.stringify(g));
+      }
+      await ga3.waitForTimeout(2200);
+      hubHasRoom = true;
+      pushRooms();
+      await gautoHeals("settings failing on a stream reopen", ga3, "approving everything");
+      if (ga3Errors.length) fail("the gauto reopen page threw: " + ga3Errors.join(" | "));
+    } catch (e) {
+      fail("the gauto stream-reopen test did not run through: " + e.message);
+    } finally {
+      await ga3.close();
+      await ga3Ctx.close();
+      gautoOn = false;
+      hubMode = false;
+      hubHasRoom = true;
+    }
+
     // ── the on/off switch: runners and fixtures ──────────────────────────────
     // Every enable/disable on the runners page is the row's own on/off pill. No
     // separate enable button; a click writes the row with `enabled` flipped; a
@@ -2769,6 +2899,8 @@ async function main() {
     "hub's, each room its own, a save lands in the current scope, a room " +
     "attaching leaves the ALL skin alone), a persisted skin heals when a " +
     "room attaches after a load that could not read settings, with no reload, " +
+    "the global auto button is never blank (a failed read at load, in a room scope, or on a " +
+    "stream reopen says unknown or stale, and heals when settings answer), " +
     "a desktop notification fired while no window has focus is recorded in " +
     "the toast log without also drawing a toast, and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +

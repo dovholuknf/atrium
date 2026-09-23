@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The header's global auto button is never an empty pill.**
+
+  After a deploy the button could draw as a grey pill with no dot and no word. Only a settings read that landed
+  ever painted it, and a hub that was just restarted answers `/v1/settings` with a 409 until a room attaches. A
+  board that loaded or reconnected in that window never read it again, because only the skin retried on a room
+  attaching. The button now starts as `asking` in the markup, shows `auto: unknown` if the first read fails, and
+  dims the last answer as stale if a later one fails, so an old `approving everything` does not pass for a fresh
+  one. The board poll and a room attaching re-read it until a read lands. This covers the ALL view and a room
+  scope whose room is not back yet. HUB-SIDE.
+
 - **Atrium knows whether you have seen a session's last turn, and whether you answered its Open Questions.**
 
   An orchestrator ended turns with an `Open Questions:` block while eight workers ran, the operator never saw

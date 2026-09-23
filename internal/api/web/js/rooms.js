@@ -999,6 +999,12 @@ async function loadHubRooms() {
     const changed = roomSetDelta(attachedRoomKey, roomKey);
     if (!settled || (sel && changed.has(sel))) bootSkin();
   }
+  // The global auto button heals on the same tick, for the same reason: its
+  // read failed while no room was there to answer it. See `loadGlobalAuto`.
+  if (roomKey !== attachedRoomKey && typeof globalAutoNeedsRead === "function" &&
+      globalAutoNeedsRead()) {
+    loadGlobalAuto();
+  }
   attachedRoomKey = roomKey;
   // THE DURABLE LIST COMES WITH IT, because the header's counter needs both
   // halves: how many rooms are answering, and how many exist to answer. Asked

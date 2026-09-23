@@ -1230,8 +1230,9 @@ async function refresh(signal) {
   // A deadline that is running is re-read from the daemon rather than counted
   // down here. It costs one small request while a switch is temporary and
   // nothing at all the rest of the time, and it means the label cannot drift
-  // away from the thing that actually decides.
-  if (globalAuto && globalAutoLeft > 0) loadGlobalAuto();
+  // away from the thing that actually decides. A read that failed is retried
+  // here too, so the header does not sit on "unknown" until a reload.
+  if (globalAutoStale || (globalAuto && globalAutoLeft > 0)) loadGlobalAuto();
 
   // A pass is done only when everything it started has settled. The jobs are
   // collected and awaited at the end so the single-flight guard cannot call a
@@ -1536,6 +1537,8 @@ function connect() {
       const s = JSON.parse(e.data);
       globalAuto = !!s.global_auto;
       globalAutoLeft = s.global_auto_seconds || 0;
+      globalAutoRead = true;
+      globalAutoStale = false;
     } catch (err) { return; }
     paintGlobalAuto();
   });

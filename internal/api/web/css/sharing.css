@@ -45,7 +45,11 @@
       font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
     }
     .gauto.on::after { content: "AUTO"; }
+    .gauto.unknown::after { content: "?"; }
   }
+  /* Not read yet, or the last read failed: the dot and the word dim, so a stale answer does not pass for a
+     fresh one. The word still says what it last knew. */
+  .gauto.unknown, .gauto.stale { opacity: .6; border-style: dashed; }
   .gauto.on {
     color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg);
   }
