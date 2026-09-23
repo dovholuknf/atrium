@@ -5,13 +5,6 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
-- **A Claude session's width change replaces its transcript in the scrollback instead of adding another copy.**
-
-  Claude Code reprints its whole conversation when its width changes. For a card whose runner is Claude, the board
-  now clears its scrollback at a width change, just before the reprint arrives, and an attach replays only the
-  output since the last width change. A shell keeps everything, since a resize does not reprint there. This trusts
-  Claude to reprint everything. ROOM-SIDE and HUB-SIDE.
-
 - **A narrow window no longer shrinks a shared session for everyone. It scrolls sideways instead.**
 
   The pty's width now follows the widest attached viewer, and its height still follows the shortest. It used to

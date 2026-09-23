@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,9 +53,6 @@ type attachCaps struct {
 	// sequence can fall out of scrollback before attach. This describes runner
 	// support, not current terminal mode; the board also checks the stream.
 	BracketedPaste bool `json:"bracketed_paste"`
-	// ReprintsOnResize says the runner redraws its whole history on a width
-	// change, so the board drops its scrollback at one. See `reprintsOnResize`.
-	ReprintsOnResize bool `json:"reprints_on_resize"`
 }
 
 // attachSize is the size the pty is running at, sent before the backlog, so
@@ -84,46 +80,6 @@ func (d *Daemon) bracketedPasteFor(taskID string, shell bool) bool {
 		return false
 	}
 	return h.BracketedPaste
-}
-
-// reprintsOnResize is whether a card's runner is Claude Code, matched on the
-// command's leaf the way the board matches a hooks target.
-//
-// THIS TRUSTS CLAUDE TO REPRINT EVERYTHING. Claude redraws its whole
-// conversation at every width change and never clears the scrollback first, so
-// every older width in the ring holds a stale copy of the same transcript. For
-// this runner alone, the attach replays from the last width cut and the board
-// clears its scrollback at a width change, so the reprint replaces the old copy
-// rather than piling on top of it. A shell never qualifies: a resize does not
-// reprint there, and dropping the older widths would lose its history.
-func (d *Daemon) reprintsOnResize(taskID string, shell bool) bool {
-	if shell {
-		return false
-	}
-	t, err := d.st.Get(taskID)
-	if err != nil || t == nil || t.Runner == "" {
-		return false
-	}
-	h, err := d.st.Harness(t.Runner)
-	if err != nil || h == nil {
-		return false
-	}
-	leaf := strings.ToLower(path.Base(strings.ReplaceAll(h.Cmd, `\`, "/")))
-	leaf = strings.TrimSuffix(strings.TrimSuffix(leaf, ".exe"), ".cmd")
-	return leaf == "claude"
-}
-
-// lastWidthOnly cuts a replay down to the run after its last width cut, when
-// `reprints` says the runner redrew everything there.
-func lastWidthOnly(backlog []byte, cuts []widthCut, reprints bool) ([]byte, []widthCut) {
-	if !reprints || len(cuts) < 2 {
-		return backlog, cuts
-	}
-	last := cuts[len(cuts)-1]
-	if last.at < 0 || last.at > len(backlog) {
-		return backlog, cuts
-	}
-	return backlog[last.at:], []widthCut{{0, last.cols}}
 }
 
 // WHICH OF A CARD'S TWO TERMINALS.
@@ -397,11 +353,9 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 
 	// Send capabilities before waiting for size so an immediate paste can use
 	// them. The board retains this message for the socket's lifetime.
-	reprints := d.reprintsOnResize(taskID, shell)
 	if caps, err := json.Marshal(attachCaps{
-		T:                "caps",
-		BracketedPaste:   d.bracketedPasteFor(taskID, shell),
-		ReprintsOnResize: reprints,
+		T:              "caps",
+		BracketedPaste: d.bracketedPasteFor(taskID, shell),
 	}); err == nil {
 		_ = c.Write(ctx, websocket.MessageText, caps)
 	}
@@ -439,10 +393,6 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 
 	backlog, cuts, bufRows, wantCols, wrapped, updates := run.subscribeSized()
 	defer run.unsubscribe(updates)
-	// FROM THE LAST WIDTH ONLY, for a runner that reprints at every width
-	// change. Everything before the last cut is an older copy of what the
-	// reprint after it holds. See `reprintsOnResize`.
-	backlog, cuts = lastWidthOnly(backlog, cuts, reprints)
 	// Now that this attach is a watcher, the fan-out can recognise its channel
 	// and skip it, so this pane is not echoed its own keystrokes.
 	selfMu.Lock()
