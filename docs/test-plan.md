@@ -2640,3 +2640,67 @@ does not clear it.
 
 **Expected:** the hook prints nothing and exits 0 both times, inside its 2 second budget. The card records the
 turn and keeps whatever questions it had.
+
+## AD. The persona pack nag
+
+The room reads git state in the persona pack once a minute and the header says what is not committed or not
+pushed. It runs `git status --porcelain` and `git rev-list --count @{u}..HEAD` and nothing else, and never writes.
+See `docs/personas-design.md` and `internal/daemon/personapack.go`.
+
+Run these in a throwaway hub and room, never against the live board. Use a scratch checkout, not dotagents: clone
+dotagents to `D:/tmp/pack` (or `git init` one with a `personas/alpha/memory/MEMORY.md` in it) so the steps that
+edit and commit files do not touch the real pack. Set `ATRIUM_PERSONA_PACK_EVERY=10s` in the room daemon's
+environment to shorten the wait.
+
+### AD1. Off until a path is set
+
+1. Open the gear, find **persona pack** and leave it empty.
+
+**Expected:** no persona pack chip in the header. `GET /v1/settings` has `persona_pack_path: ""` and no
+`persona_pack`.
+
+### AD2. Files not committed, named by persona
+
+1. Set **persona pack** to `D:/tmp/pack/personas`. Edit `personas/alpha/memory/MEMORY.md` and add a new file
+   `personas/beta/memory/x.md`. Edit a file outside `personas/` too.
+
+**Expected:** within seconds of the save, a chip reads `persona pack: 2 files not committed, ...`. The file outside
+the pack does not count. Hovering it says `changed: alpha, beta` and `run /safe-to-push in D:/tmp/pack`.
+
+### AD3. No upstream says so
+
+1. With AD2's scratch repo created by `git init` (no remote), look at the chip.
+
+**Expected:** it says `no upstream configured` where a count would go, not `0 commits not pushed`.
+
+### AD4. Commits not pushed
+
+1. In a clone with an upstream, commit two changes under `personas/` and do not push.
+
+**Expected:** the chip reads `persona pack: 2 commits not pushed`. Push them, and the chip goes at the next look.
+
+### AD5. It escalates, resets and snoozes
+
+1. Leave AD2's changes in place. Watch the board for ten minutes.
+2. Commit one of the files.
+3. Click the chip and press **snooze an hour**.
+
+**Expected:** step 1 rings at 1, 2, 5 and 10 minutes, the stuck-agent backoff. Step 2 changes the state, so the
+count starts over and the next ring is a minute later. Step 3 dims the chip and it stops ringing. Changing the pack
+again drops the snooze.
+
+### AD6. A pack it cannot read is a reason, not a nag
+
+1. Set the path to a directory that does not exist. Then to a directory that is not in a git checkout. Then start
+   the room with `git` off its PATH.
+
+**Expected:** each time the chip is muted and reads `cannot read the persona pack: <why>`. Nothing rings, and the
+rest of the board works. Fixing the cause clears it at the next look.
+
+### AD7. It never writes
+
+1. In AD2's scratch repo, note `git stash list`, `git log -1` and the modification time of `.git/index`. Leave the
+   nag running for five minutes.
+
+**Expected:** nothing changed. No commit, no stash, no index write, no push. The room's log shows no git command
+other than the two reads.

@@ -611,6 +611,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   feed reports `rolled_off`. Databases give freed space back to disk. Docs: `CHANGELOG.md`. Landed 2026-09-18
   (`8bf4083`, `1959d8a`, `ede2f4b`, `739948a`).
 
+- **The header nags when the persona pack is not committed or not pushed.**
+  Set `persona_pack_path` in the gear. The room reads git state there once a minute, read only, and the chip
+  names the personas changed, rings on the stuck-agent backoff, and can be snoozed. Docs:
+  `docs/personas-design.md`. Landed 2026-09-23, **claude/main only**.
+
 ### History, audit and notifications: removed, and why
 
 - None recorded.
