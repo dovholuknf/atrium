@@ -39,9 +39,8 @@ func TestKeyboardProtocolSequencesDoNotMoveTheCursor(t *testing.T) {
 	if strings.Contains(got, "2m") || strings.Contains(got, "4m") {
 		t.Errorf("modifyOtherKeys was read as colour:\n%q", got)
 	}
-	// And the cursor is restored into the input row, one row above the rule
-	// and the bottom, at column 8 (seven from the left).
-	if !strings.HasSuffix(got, "\x1b[2A\r\x1b[7C") {
+	// And the cursor is restored into the input row, row 3 at column 8.
+	if !strings.HasSuffix(got, "\x1b[3;8H") {
 		t.Errorf("the cursor was not put back in the input row:\n%q", got)
 	}
 }

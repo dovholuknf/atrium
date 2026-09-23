@@ -342,6 +342,9 @@ func (s *screen) text() string {
 // cursor move. Once an attach at an unchanged size stopped resizing, the repaint
 // stopped coming, and restoring the cursor became the replay's own job.
 func (s *screen) textWithCursor() string {
+	if s.fixedRows && !s.alt {
+		return s.textAtRows()
+	}
 	body, curLine, total, ok := s.render()
 	if !ok {
 		return body
@@ -358,6 +361,80 @@ func (s *screen) textWithCursor() string {
 		b.WriteString("\x1b[" + strconv.Itoa(s.col) + "C")
 	}
 	return b.String()
+}
+
+// textAtRows is the replay when the grid's height is the terminal's real one:
+// the history, then the screen ROW FOR ROW, then the cursor put back with an
+// absolute move.
+//
+// A TUI keeps drawing after the attach, and once its input box grows it draws
+// with absolute moves (`CSI row;col H`) into its own screen rows. Those land
+// right only when the attaching terminal holds the session's screen at the same
+// rows. So the screen is not blank-collapsed, and not trimmed at the bottom, the
+// way `render` does to the history: claude leaves two blank rows under its
+// banner, collapsing them replayed everything below one row high, and a wrapped
+// line of input then drew over the rule under the prompt.
+//
+// The screen's last row is written without a line ending, so the terminal
+// stops on it rather than scrolling one more, and the screen's first row is the
+// top of the viewport. That holds whatever the history's length, provided the
+// attaching terminal is this grid's height, which the pty size frame sent ahead
+// of the replay sees to. See `TestReplayKeepsTheSessionsRows`.
+func (s *screen) textAtRows() string {
+	var b strings.Builder
+	cur := ""
+	blanks := 0
+	for _, r := range s.history {
+		// Blank runs in the history still collapse to one, for the reason
+		// `render` gives. Nothing addresses history rows, so nothing moves.
+		if rowIsBlank(r) {
+			blanks++
+			if blanks > 1 {
+				continue
+			}
+		} else {
+			blanks = 0
+		}
+		writeRow(&b, r, &cur)
+		b.WriteString("\r\n")
+	}
+	for i, r := range s.cells {
+		writeRow(&b, r, &cur)
+		if i < len(s.cells)-1 {
+			b.WriteString("\r\n")
+		}
+	}
+	b.WriteString("\x1b[" + strconv.Itoa(s.row+1) + ";" + strconv.Itoa(s.col+1) + "H")
+	return b.String()
+}
+
+// writeRow writes one row, trailing blanks dropped, with its colour reset at
+// the end the way `render` does.
+func writeRow(b *strings.Builder, r []cell, cur *string) {
+	end := len(r)
+	for end > 0 && (r[end-1].ch == ' ' || r[end-1].ch == 0) {
+		end--
+	}
+	for j := 0; j < end; j++ {
+		c := r[j]
+		if c.sgr != *cur {
+			if c.sgr == "" {
+				b.WriteString("\x1b[m")
+			} else {
+				b.WriteString(c.sgr)
+			}
+			*cur = c.sgr
+		}
+		ch := c.ch
+		if ch == 0 {
+			ch = ' '
+		}
+		b.WriteRune(ch)
+	}
+	if *cur != "" {
+		b.WriteString("\x1b[m")
+		*cur = ""
+	}
 }
 
 // render is text() plus where the cursor ended up: the emitted-line index of
