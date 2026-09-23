@@ -223,12 +223,14 @@ func New(opts Options) (*Daemon, error) {
 	if err := os.RemoveAll(api.ScrapDir); err != nil {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}
+	api.PersonaRunsDir = d.personaRunsDir()
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
+	d.ap.PersonaReview = d.PersonaReview
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/persona"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -231,6 +232,13 @@ type Server struct {
 	// without restarting the daemon. Empty uses the embedded copy.
 	BoardDir string
 
+	// PersonaReview launches a persona from the pack at a card's diff, in a
+	// run directory of its own. Owned by the daemon, which owns process
+	// spawning. See personas.go and internal/daemon/personareview.go.
+	PersonaReview PersonaReviewFunc
+	// lessons holds the lessons view's tallies and serializes its edits.
+	lessons *persona.Service
+
 	BuildExport func() (any, error)
 	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
 	// is the question somebody restoring a machine actually has, and is the
@@ -264,7 +272,7 @@ func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 
 // New builds a server over a store.
 func New(st *store.Store) *Server {
-	return &Server{st: st, bus: newBus()}
+	return &Server{st: st, bus: newBus(), lessons: persona.NewService()}
 }
 
 // Broadcast publishes a change to every connected client.
@@ -480,6 +488,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/shell", s.ShutShell)
 	}
+	mux.HandleFunc("GET /v1/personas", s.listPersonas)
+	mux.HandleFunc("GET /v1/personas/{id}/lessons", s.personaLessons)
+	mux.HandleFunc("POST /v1/personas/{id}/lessons", s.decideLesson)
+	mux.HandleFunc("POST /v1/tasks/{id}/persona-review", s.reviewWithPersona)
 	mux.HandleFunc("GET /v1/actions", s.listActions)
 	mux.HandleFunc("PUT /v1/actions/{id}", s.saveAction)
 	mux.HandleFunc("DELETE /v1/actions/{id}", s.deleteAction)
