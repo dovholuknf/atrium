@@ -282,6 +282,85 @@ holds no absolute path, so `render/` is the same on every machine and `-Check` h
 
 Stages 1 to 3 are worth doing even if nothing after them is built.
 
+## Stage 4: evals, as built
+
+Built 2026-09-23 in dotagents, uncommitted for clint: nine cases and `scripts/run-persona-evals.ps1`.
+
+### A case
+
+`personas/<id>/evals/<nnnn>-<slug>/` holds three files.
+
+- `diff.patch` is a real diff from an openziti repo, trimmed to the hunks that matter. Where the commit that
+  introduced a bug could be found, the diff is that commit, not a reversed fix, because a reversed fix deletes the
+  guard and often the comment that explains it, which gives the answer away. All nine are introducing commits.
+- `context.md` is what the reviewer gets besides the diff: the repo key and the few facts from outside the diff a
+  reviewer needs, such as a dependency's ownership rule or the house exemplar. It never names the bug.
+- `expect.json` holds `must_find` (a claim, a file, a severity floor), `must_not_find` (a known false positive and why
+  it is wrong), and a `source` block naming the checkout, the diff's commit, the commit or review that confirmed the
+  bug, and the memory file it came from. The source is for people. The reviewer never sees it.
+
+Seeded: go-security-reviewer from openziti/channel (heartbeat option loaded into the wrong field, a uint32 frame
+length sum that wraps on peer input, the multi-listener close race). c-systems-reviewer from ziti-sdk-c (a json-c
+tokener leak, an `edge_error` leak, an uninitialized length passed with an unchecked NULL body). codebase-steward from
+ziti-openwrt (dnsmasq entries owned by a value pattern), tlsuv (a public vtable member documented never NULL) and
+sdk-golang (a bitset const block that steals a type's doc comment). Each case has one must-not-find.
+
+### The run
+
+One persona per run, one review per case, no retries.
+
+1. **The reviewer** is `claude -p --agent <id> --tools "" --settings '{"disableAllHooks":true}'
+   --no-session-persistence --output-format json`, prompt on stdin, from a scratch directory. The prompt is the
+   context, the persona's knowledge and memory for the case's repo, the diff, and the severity scale and finding
+   schema read verbatim from the review-panel skill.
+2. **The judge** is haiku with its own `--system-prompt` and a `--json-schema`. It gets the expectations and the
+   findings' file and claim, never the diff, and returns, per expectation, the index of the finding that states the
+   same defect or -1. It is told it compares and does not review.
+3. **The score** is computed in the script, not by a model. A must-find is a hit when the judge matched it, the
+   finding names the same file by path suffix or basename, and its severity is at least the floor. A must-not-find
+   fails when any finding matches it.
+
+Output is one table and a total on stdout, and `evals/_results/<yyyy-MM-dd-HHmm>.json` with the raw reviews, which
+the dotagents `.gitignore` excludes. `-Rescore <results.json>` re-grades a saved run with the current `expect.json`
+and judge and runs no review, for when the grading changed and the persona did not.
+
+### What the claude CLI actually does (2.1.280, measured)
+
+- **`--agent <id>` works headless** and loads the rendered persona through the `~/.claude/agents` symlink, with the
+  persona's own model (sonnet, opus). `--model` overrides it. This is the claude runner row as designed.
+- **Native memory in `-p` is the index only.** `--agent` injects the `MEMORY.md` lines, not the lesson bodies. A
+  reviewer without the Read tool never sees a lesson, so the runner inlines the memory files for the case's repo, as
+  the panel's dispatch prompt tells a reviewer to read them. The design assumed native memory meant the lessons.
+- **`--agent` also loads clint's global `CLAUDE.md`,** as a panel subagent does. The run keeps it, so the eval
+  measures the persona as the panel runs it.
+- **Hooks fire in `-p` sessions.** Without `disableAllHooks`, every eval review and judge call would show up on the
+  atrium board and pass through the permission hook.
+- **`--bare` is not usable here.** It would drop `CLAUDE.md` and hooks in one flag, but it reads only
+  `ANTHROPIC_API_KEY` and never the OAuth login this machine uses.
+- **A judge call is not cheap even with `--system-prompt`:** about 7.3k input tokens before the prompt, and
+  `--json-schema` costs a second turn. The answer arrives in `structured_output`.
+- `--output-format json` reports `usage` and `total_cost_usd` per call, which is where the token counts come from.
+
+### Starting score
+
+| Persona | Model | Score | Tokens | Cost |
+| --- | --- | --- | --- | --- |
+| go-security-reviewer | sonnet | 8/8 | 105k | $0.42 |
+| codebase-steward | opus | 9/9 | 110k | $0.65 |
+| c-systems-reviewer | sonnet | 6/6 | 80k | $0.23 |
+
+One run of all three is about 295k tokens and $1.30, of which the haiku judge is about 8k tokens and 2 cents a case.
+
+c-systems-reviewer first scored 5/6: it reported the tokener leak and the `json_object` leak as two findings, and the
+judge would not match either to the one expectation naming both. The judge rule now says a finding that states any
+part of a multi-part expectation matches, and `-Rescore` of the saved run gave 6/6.
+
+A perfect start means the set can show a regression but not an improvement. Seven of the nine cases come from lessons
+in the persona's own memory, and the run inlines that memory, so part of what a clean score shows is that the memory
+is read. What would make the set discriminate: cases no memory file describes, a no-memory run to measure what memory
+adds (not built, since `--agent` always injects the index, so it needs `--system-prompt` with the rendered body
+instead), and more than one run per case to see the noise.
+
 ## Open questions
 
 1. Do `persona` and `style-harvester` belong in the pack? They are about clint's own style, not reviewing, and have
