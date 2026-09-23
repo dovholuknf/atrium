@@ -242,6 +242,7 @@
   main > #stack,
   main > #perms,
   main > #runners,
+  main > #audit,
   main > #terms { flex: 1 1 auto; min-height: 0; }
   /* The ones that can be taller than the window scroll themselves. The board scrolls per lane and the terminal
      never scrolls, so neither is here. */
@@ -255,6 +256,11 @@
   }
   #stack > .filters { flex: 0 0 auto; }
   #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* The audit pane the same way: the heading and the room and kind filters stay put and the feed scrolls
+     under them. Left out of both lists above, it was as tall as its rows and main clipped the rest. */
+  main > #audit { display: flex; flex-direction: column; overflow: hidden; }
+  #audit > * { flex: 0 0 auto; }
+  #audit > #audit-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   /* ── scrollbars ─────────────────────────────────────── */
   /* Every scrollbar on the board, in one universal rule, with one carve-out.
 
@@ -308,6 +314,7 @@
      margin, because main clips and a box wider than main loses the strip the bar is in along with the last of
      the content. */
   #stack-list,
+  #audit-list,
   main > #perms,
   main > #runners,
   .board .col > .cards { padding-right: 12px; }

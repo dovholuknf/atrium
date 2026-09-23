@@ -68,7 +68,33 @@ async function loadAudit() {
     list.innerHTML = '<p class="pane-lead">Nothing recorded yet.</p>';
     return;
   }
+  const anchor = auditAnchor(list);
   list.innerHTML = events.map(auditRow).join("");
+  if (anchor) restoreAuditAnchor(list, anchor);
+}
+
+// auditAnchor notes the top visible row and how far it sits below the top of the
+// scroll box, but only when the reader has scrolled down. A new event lands at
+// the top and pushes every row down one, so holding scrollTop alone still moves
+// what they were reading. At the top there is nothing to hold, and the new line
+// shows.
+function auditAnchor(list) {
+  if (list.scrollTop <= 0) return null;
+  const top = list.getBoundingClientRect().top;
+  for (const row of list.querySelectorAll(".aud-row")) {
+    const r = row.getBoundingClientRect();
+    if (r.bottom > top) return { id: row.dataset.id, offset: r.top - top, scrollTop: list.scrollTop };
+  }
+  return null;
+}
+
+// restoreAuditAnchor puts the anchored row back where it was. A row that fell out
+// of the page, or a feed with no ids, keeps the old scrollTop instead.
+function restoreAuditAnchor(list, a) {
+  const row = a.id ? list.querySelector('.aud-row[data-id="' + CSS.escape(a.id) + '"]') : null;
+  if (!row) { list.scrollTop = a.scrollTop; return; }
+  const top = list.getBoundingClientRect().top;
+  list.scrollTop += (row.getBoundingClientRect().top - top) - a.offset;
 }
 
 // auditRow is one line: when, which room, what kind, and the detail.
@@ -78,7 +104,7 @@ function auditRow(e) {
   const room = e.room
     ? '<span class="aud-room">' + esc(e.room) + "</span>"
     : '<span class="aud-room aud-hub">hub</span>';
-  return '<div class="aud-row">' +
+  return '<div class="aud-row" data-id="' + esc(e.id || "") + '">' +
     '<span class="aud-when">' + esc(stamp) + "</span>" +
     room +
     '<span class="aud-kind">' + esc(e.kind || "") + "</span>" +
@@ -117,6 +143,12 @@ function onAuditEvent() {
 document.addEventListener("DOMContentLoaded", () => {
   const roomSel = document.getElementById("audit-room");
   const kindSel = document.getElementById("audit-kind");
-  if (roomSel) roomSel.addEventListener("change", () => { auditRoomFilter = roomSel.value; loadAudit(); });
-  if (kindSel) kindSel.addEventListener("change", () => { auditKindFilter = kindSel.value; loadAudit(); });
+  // A new filter is a new list, so it starts at the top rather than holding a row.
+  const refilter = () => {
+    const list = document.getElementById("audit-list");
+    if (list) list.scrollTop = 0;
+    loadAudit();
+  };
+  if (roomSel) roomSel.addEventListener("change", () => { auditRoomFilter = roomSel.value; refilter(); });
+  if (kindSel) kindSel.addEventListener("change", () => { auditKindFilter = kindSel.value; refilter(); });
 });

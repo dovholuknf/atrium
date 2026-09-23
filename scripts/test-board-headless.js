@@ -171,8 +171,21 @@ const AUDIT_BASE = [
 let auditLive = false;
 const AUDIT_LIVE = { id: "a5", at: "2026-09-19T12:10:00Z", room: "sgg", kind: "session-exit",
   detail: "second card exited with code 0 after 3s" };
-function auditFeed() { return auditLive ? [AUDIT_LIVE].concat(AUDIT_BASE) : AUDIT_BASE.slice(); }
-function resetAudit() { auditLive = false; }
+// `auditMany` swaps in a feed far taller than the window, for the scroll test, and
+// `auditManyLive` puts one more line on top of it.
+let auditMany = false;
+let auditManyLive = false;
+const AUDIT_MANY = Array.from({ length: 150 }, (_, i) => ({
+  id: "m" + (150 - i), at: new Date(Date.UTC(2026, 8, 19, 12, 0, 150 - i)).toISOString(),
+  room: i % 2 ? "sgg" : "alpha", kind: "session-start", detail: "card " + (150 - i) + " started"
+}));
+const AUDIT_MANY_LIVE = { id: "m151", at: "2026-09-19T12:03:00Z", room: "sgg", kind: "session-exit",
+  detail: "card 151 exited" };
+function auditFeed() {
+  if (auditMany) return auditManyLive ? [AUDIT_MANY_LIVE].concat(AUDIT_MANY) : AUDIT_MANY.slice();
+  return auditLive ? [AUDIT_LIVE].concat(AUDIT_BASE) : AUDIT_BASE.slice();
+}
+function resetAudit() { auditLive = false; auditMany = false; auditManyLive = false; }
 
 // The board skin follows the room-picker scope: the ALL view (no X-Atrium-Room
 // header) wears the HUB's own skin, and each room wears its own. `skinFor` is
@@ -1917,6 +1930,69 @@ async function main() {
       }, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not pick up a live event on the `audit` delta."));
 
+      // ── a long feed scrolls in its own box, filters stay put ──────────────
+      // main clips, so a pane that is not a scroll box of its own can never show
+      // the rows below the window. The list scrolls and the filters above it do
+      // not move. Checked at desktop and phone widths.
+      auditMany = true;
+      hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
+      await hub.waitForFunction(() =>
+        document.querySelectorAll("#audit-list .aud-row").length === 150,
+        { timeout: 15000 }).catch(() => fail("the audit pane did not draw the long feed."));
+      for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
+        await hub.setViewportSize(vp);
+        const sc = await hub.evaluate(() => {
+          const list = document.getElementById("audit-list");
+          const filters = document.querySelector("#audit > .filters");
+          list.scrollTop = 0;
+          const before = filters.getBoundingClientRect().top;
+          const tall = { sh: list.scrollHeight, ch: list.clientHeight };
+          list.scrollTop = 600;
+          return Object.assign(tall, {
+            moved: list.scrollTop,
+            filtersMoved: filters.getBoundingClientRect().top - before,
+            filtersOnScreen: filters.getBoundingClientRect().bottom <= window.innerHeight
+          });
+        });
+        if (!(sc.sh > sc.ch) || sc.moved <= 0) {
+          fail("the audit list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
+        }
+        if (sc.filtersMoved !== 0 || !sc.filtersOnScreen) {
+          fail("the audit filters moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
+        }
+      }
+      await hub.setViewportSize({ width: 1280, height: 800 });
+
+      // ── a live delta does not yank a reader who has scrolled down ─────────
+      // A new line lands on top. The row the reader was looking at stays where it
+      // was, which means scrollTop grows by about one row rather than resetting.
+      const held = await hub.evaluate(() => {
+        const list = document.getElementById("audit-list");
+        list.scrollTop = 600;
+        const top = list.getBoundingClientRect().top;
+        const row = [...list.querySelectorAll(".aud-row")]
+          .find(r => r.getBoundingClientRect().bottom > top);
+        return { scrollTop: list.scrollTop, id: row.dataset.id,
+          offset: row.getBoundingClientRect().top - top };
+      });
+      auditManyLive = true;
+      hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
+      await hub.waitForFunction(() =>
+        document.querySelectorAll("#audit-list .aud-row").length === 151,
+        { timeout: 15000 }).catch(() => fail("the audit pane did not pick up the live line on the long feed."));
+      const late = await hub.evaluate((id) => {
+        const list = document.getElementById("audit-list");
+        const row = list.querySelector('.aud-row[data-id="' + id + '"]');
+        return { scrollTop: list.scrollTop,
+          offset: row.getBoundingClientRect().top - list.getBoundingClientRect().top };
+      }, held.id);
+      if (late.scrollTop <= 0 || late.scrollTop < held.scrollTop) {
+        fail("a live audit delta reset the reader's scroll: " + JSON.stringify({ held, late }));
+      }
+      if (Math.abs(late.offset - held.offset) > 1) {
+        fail("a live audit delta moved the row the reader was on: " + JSON.stringify({ held, late }));
+      }
+
       if (hubErrors.length) {
         fail("the hub page threw uncaught errors after the audit filters: " +
           hubErrors.join(" | "));
@@ -2287,7 +2363,9 @@ async function main() {
     "went away), a popped-out window rides out a hub restart and recovers, the " +
     "open room picker live-updates a newly-attached room from disconnected to " +
     "live, the audit pane paints newest-first, filters by room and by kind, and " +
-    "picks up a live event on the `audit` delta with no reload, and the board " +
+    "picks up a live event on the `audit` delta with no reload, a long feed scrolls in its own box under " +
+    "fixed filters at desktop and phone width and a live line does not move the row a scrolled reader is on, " +
+    "and the board " +
     "skin follows the room-picker scope (ALL wears the " +
     "hub's, each room its own, a save lands in the current scope, a room " +
     "attaching leaves the ALL skin alone), a persisted skin heals when a " +
