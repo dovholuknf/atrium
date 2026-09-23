@@ -66,6 +66,17 @@ const SOLO = Object.assign({}, T1, {
 const LOOP = Object.assign({}, T1, {
   id: "loop1", display_title: "loop card", supervised: true
 });
+// `histMany` swaps in 250 runs, more than two pages, for the scroll test, and
+// `histManyLive` puts one new run on top of them.
+let histMany = false;
+let histManyLive = false;
+const histRun = n => ({
+  id: "hm" + n, display_title: "run " + n, runner: "claude", status: "done",
+  created_at: new Date(Date.UTC(2026, 8, 18, 9, 0, n)).toISOString(), why: "run number " + n,
+  recap: "", worktree: "/tmp/run" + n, archived_at: ""
+});
+const HIST_MANY = Array.from({ length: 250 }, (_, i) => histRun(250 - i));
+function histFeed() { return histManyLive ? [histRun(251)].concat(HIST_MANY) : HIST_MANY; }
 const HIST = {
   id: "h1", display_title: "old run", runner: "claude", status: "done",
   created_at: "2026-09-18T09:00:00Z", why: "did a thing", recap: "",
@@ -346,7 +357,16 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
   if (url === "/v1/providers") { sendJSON(res, { providers: [] }); return; }
   if (url === "/v1/dispatch") { sendJSON(res, { dispatches: [] }); return; }
-  if (url === "/v1/history") { sendJSON(res, { tasks: [HIST], total: 1 }); return; }
+  if (url === "/v1/history") {
+    if (!histMany) { sendJSON(res, { tasks: [HIST], total: 1 }); return; }
+    // Paged the way the store pages, so "show more" and the live re-read ask
+    // for the same slices a real room answers.
+    const q = new URL(req.url, "http://x").searchParams;
+    const all = histFeed();
+    const offset = +q.get("offset") || 0, limit = +q.get("limit") || 100;
+    sendJSON(res, { tasks: all.slice(offset, offset + limit), total: all.length });
+    return;
+  }
   if (url === "/v1/waiting") { sendJSON(res, { tasks: [] }); return; }
   if (url === "/v1/permissions") { sendJSON(res, { permissions: [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
@@ -500,6 +520,108 @@ async function main() {
     await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
     const histRows = await page.locator("#history-list .row.line").count();
     if (histRows < 1) fail("the history view painted no rows from /v1/history.");
+
+    // ── a long history scrolls in its own box, filters stay put ───────────
+    // main clips, so a view that is not a scroll box of its own can never show
+    // the rows below the window. Two pages loaded, then checked at desktop and
+    // phone widths.
+    histMany = true;
+    await page.evaluate(() => renderHistory(false));
+    await page.waitForFunction(() =>
+      document.querySelectorAll("#history-list .row.line").length === 100,
+      { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
+    await page.evaluate(() => moreHistory());
+    await page.waitForFunction(() =>
+      document.querySelectorAll("#history-list .row.line").length === 200,
+      { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
+    for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
+      await page.setViewportSize(vp);
+      const sc = await page.evaluate(() => {
+        const list = document.getElementById("history-list");
+        const bar = document.querySelector("#history > .toolbar");
+        list.scrollTop = 0;
+        const before = bar.getBoundingClientRect().top;
+        const tall = { sh: list.scrollHeight, ch: list.clientHeight };
+        list.scrollTop = 600;
+        return Object.assign(tall, {
+          moved: list.scrollTop,
+          barMoved: bar.getBoundingClientRect().top - before,
+          barOnScreen: bar.getBoundingClientRect().bottom <= window.innerHeight
+        });
+      });
+      if (!(sc.sh > sc.ch) || sc.moved <= 0) {
+        fail("the history list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
+      }
+      if (sc.barMoved !== 0 || !sc.barOnScreen) {
+        fail("the history search bar moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // ── a live repaint keeps the pages and the reader's row ───────────────
+    // A board event repaints the open view. It re-reads both pages rather than
+    // cutting back to one, and a new run on top does not move the row a reader
+    // who has scrolled down is on.
+    const hHeld = await page.evaluate(() => {
+      const list = document.getElementById("history-list");
+      list.scrollTop = 3000;
+      const top = list.getBoundingClientRect().top;
+      const row = [...list.querySelectorAll(".row.line")]
+        .find(r => r.getBoundingClientRect().bottom > top);
+      return { scrollTop: list.scrollTop, id: row.dataset.id,
+        offset: row.getBoundingClientRect().top - top };
+    });
+    histManyLive = true;
+    await page.evaluate(() => repaintLists());
+    await page.waitForFunction(() =>
+      document.querySelector("#history-list .row.line").dataset.id === "hm251",
+      { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
+    const hLate = await page.evaluate((id) => {
+      const list = document.getElementById("history-list");
+      const row = list.querySelector('.row.line[data-id="' + id + '"]');
+      return { rows: list.querySelectorAll(".row.line").length, scrollTop: list.scrollTop,
+        offset: row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null };
+    }, hHeld.id);
+    if (hLate.rows < 200) {
+      fail("a live history repaint cut the list back to one page: " + JSON.stringify(hLate));
+    }
+    if (hLate.scrollTop < hHeld.scrollTop || hLate.offset === null ||
+        Math.abs(hLate.offset - hHeld.offset) > 1) {
+      fail("a live history repaint moved the reader: " + JSON.stringify({ hHeld, hLate }));
+    }
+
+    // ── a new search starts at the top ────────────────────────────────────
+    await page.evaluate(() => renderHistory(false));
+    await page.waitForFunction(() =>
+      document.querySelectorAll("#history-list .row.line").length === 100,
+      { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
+    const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
+    if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
+    histMany = false; histManyLive = false;
+    await page.evaluate(() => renderHistory(false));
+
+    // ── changing runners pane goes back to the top ────────────────────────
+    // `#runners` is the scroll box, not main. A short window so the page has
+    // something to scroll.
+    await page.setViewportSize({ width: 1280, height: 320 });
+    const rp = await page.evaluate(() => {
+      switchView("runners");
+      const host = document.getElementById("runners");
+      const btns = [...host.querySelectorAll(".pane-nav button")];
+      if (btns.length < 2) return { error: "no pane nav" };
+      btns[0].click();
+      host.scrollTop = 150;
+      const scrolled = host.scrollTop;
+      btns[1].click();
+      return { scrolled, after: host.scrollTop };
+    });
+    if (rp.error || rp.scrolled <= 0) {
+      fail("the runners page did not scroll in its own box: " + JSON.stringify(rp));
+    } else if (rp.after !== 0) {
+      fail("changing runners pane left the page scrolled: " + JSON.stringify(rp));
+    }
+    await page.evaluate(() => switchView("history"));
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     // ── a terminated terminal can be dismissed from its right-click menu ─────
     // A pinned card whose runner was terminated stays in the terminal strip,
@@ -2362,7 +2484,9 @@ async function main() {
     "board's roll call re-hears a live popped-out window (and drops one that " +
     "went away), a popped-out window rides out a hub restart and recovers, the " +
     "open room picker live-updates a newly-attached room from disconnected to " +
-    "live, the audit pane paints newest-first, filters by room and by kind, and " +
+    "live, a long history scrolls under a fixed search bar at desktop and phone width and a live repaint " +
+    "keeps its pages and the reader's row, changing runners pane goes back to the top, " +
+    "the audit pane paints newest-first, filters by room and by kind, and " +
     "picks up a live event on the `audit` delta with no reload, a long feed scrolls in its own box under " +
     "fixed filters at desktop and phone width and a live line does not move the row a scrolled reader is on, " +
     "and the board " +

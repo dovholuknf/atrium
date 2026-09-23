@@ -348,6 +348,33 @@ async function cappedFetch(fetchFn, path, opts, read) {
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// ── holding a reader's place across a redraw ────────────────────────────────
+//
+// A newest-first list that redraws on a live event gets its new rows on top, and
+// every row below moves down. Holding scrollTop alone still moves what the reader
+// was on, so the top visible row is noted by its `data-id` and put back at the
+// same offset. Only when the reader has scrolled down: at the top there is
+// nothing to hold, and the new rows show. Used by the audit and history panes.
+function scrollAnchor(list, rowSel) {
+  if (!list || list.scrollTop <= 0) return null;
+  const top = list.getBoundingClientRect().top;
+  for (const row of list.querySelectorAll(rowSel)) {
+    const r = row.getBoundingClientRect();
+    if (r.bottom > top) return { id: row.dataset.id, offset: r.top - top, scrollTop: list.scrollTop };
+  }
+  return null;
+}
+
+// A row that is gone from the redraw, or a list with no ids, keeps the old
+// scrollTop instead.
+function restoreScrollAnchor(list, rowSel, a) {
+  if (!a) return;
+  const row = a.id ? list.querySelector(rowSel + '[data-id="' + CSS.escape(a.id) + '"]') : null;
+  if (!row) { list.scrollTop = a.scrollTop; return; }
+  const top = list.getBoundingClientRect().top;
+  list.scrollTop += (row.getBoundingClientRect().top - top) - a.offset;
+}
+
 // ── the atrium mark ─────────────────────────────────────────────────────────
 //
 // An A for atrium: two legs and a crossbar. It is drawn rather than fetched,

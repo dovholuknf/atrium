@@ -1079,7 +1079,11 @@ function repaintLists(signal) {
     // took the repaint with it: the list stopped updating and the only sign was
     // in the console. A tab added without a line here fails exactly this way,
     // which is why the fallback below exists as well.
-    history: () => renderHistory(false)
+    history: () => renderHistory(false, true),
+    // The audit pane is live by its own `audit` delta (see `onAuditEvent`), so a
+    // board event has nothing to repaint there. Without a line it logged "no
+    // renderer" on every refresh pass while the pane was open.
+    audit: () => Promise.resolve()
   }[view];
   // A VIEW NOBODY WIRED UP MUST NOT STOP THE REPAINT. Every other list on the
   // page is behind this call, and one unknown tab name would silently freeze
