@@ -171,7 +171,12 @@ func (c *controlMCP) server() *mcp.Server {
 			"This does NOT return what the session printed. Atrium records that a session ran " +
 			"and every status it moved through, never its output, so `needs-input` here means " +
 			"it stopped and not what it said. To learn what it thinks, ask it, and have it " +
-			"answer with `atrium_say`.",
+			"answer with `atrium_say`.\n\n" +
+			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`) and which of " +
+			"that turn's Open Questions they have not answered yet (`open_questions`, `answered`). " +
+			"Leave `card` empty to ask about your own card. Before telling the human your " +
+			"questions are still open, check this: if `unseen` is true they never read them, so " +
+			"repeat them in full rather than referring back.",
 	}, c.taskHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -306,6 +311,39 @@ type ctlCard struct {
 	Activity struct {
 		What string `json:"what"`
 	} `json:"activity"`
+	Seen *ctlSeen `json:"seen,omitempty"`
+}
+
+// ctlSeen is whether the operator has seen a card's latest turn and answered
+// its Open Questions. The room's `store.SeenView`, mirrored so internal/link
+// learns nothing of the store. See docs/seen-design.md.
+type ctlSeen struct {
+	TurnEndedAt string `json:"turn_ended_at,omitempty"`
+	SeenAt      string `json:"seen_at,omitempty"`
+	SeenVia     string `json:"seen_via,omitempty"`
+	// Unseen is the latest turn having ended with nobody looking at it since.
+	Unseen        bool     `json:"unseen"`
+	OpenQuestions []string `json:"open_questions,omitempty"`
+	// QuestionsUnparsed is a turn that had an Open Questions heading whose
+	// items could not be read. They exist, and their text is not known.
+	QuestionsUnparsed bool   `json:"questions_unparsed,omitempty"`
+	QuestionsAt       string `json:"questions_at,omitempty"`
+	AnsweredAt        string `json:"answered_at,omitempty"`
+	AnsweredVia       string `json:"answered_via,omitempty"`
+	// Answered is absent when no turn ever asked anything.
+	Answered *bool `json:"answered,omitempty"`
+}
+
+// openCount is how many questions are owed, counting an unreadable block as
+// one so it is never reported as none.
+func (s *ctlSeen) openCount() int {
+	if s == nil || s.Answered == nil || *s.Answered {
+		return 0
+	}
+	if len(s.OpenQuestions) == 0 && s.QuestionsUnparsed {
+		return 1
+	}
+	return len(s.OpenQuestions)
 }
 
 // ── status ────────────────────────────────────────────────────────────────────
@@ -393,6 +431,11 @@ type peer struct {
 	// Owned is whether atrium holds this session's terminal, which decides
 	// whether a message is typed or queued.
 	Owned bool `json:"atrium_owns_terminal"`
+	// Unseen is this session's latest turn having ended with the operator not
+	// looking, and OpenQuestions is how many questions it asked that they have
+	// not answered. `atrium_task` has the questions themselves.
+	Unseen        bool `json:"unseen,omitempty"`
+	OpenQuestions int  `json:"open_questions,omitempty"`
 }
 
 type peersOutput struct {
@@ -432,6 +475,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 			Handle: t.Wire, Card: t.ID, Title: t.Title, Status: t.Status,
 			Doing: t.Activity.What, Where: t.Worktree,
 			Waiting: t.Wait, Owned: t.Superv,
+			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.openCount(),
 		})
 	}
 	if out.Me == "" {
@@ -606,7 +650,9 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 // ── one card ────────────────────────────────────────────────────────────────────
 
 type taskInput struct {
-	Card string `json:"card" jsonschema:"a card id or a handle"`
+	// Card is optional so a session can ask about itself, which is the
+	// orchestrator's question: has the operator read my last turn.
+	Card string `json:"card,omitempty" jsonschema:"a card id or a handle. empty means your own card"`
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
@@ -629,7 +675,11 @@ type taskOutput struct {
 	Waiting int         `json:"waiting_seconds,omitempty"`
 	Owned   bool        `json:"atrium_owns_terminal"`
 	Events  []taskEvent `json:"events,omitempty"`
-	Note    string      `json:"note,omitempty"`
+	// Seen is whether the operator has seen this card's latest turn, and the
+	// Open Questions it asked that they have not answered. Absent when no turn has
+	// ended on it.
+	Seen *ctlSeen `json:"seen,omitempty"`
+	Note string   `json:"note,omitempty"`
 }
 
 func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, in taskInput) (
@@ -637,7 +687,14 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 	out := taskOutput{}
 	room := roomOf(req)
-	id, _, err := c.resolvePeer(ctx, room, in.Card)
+	who := strings.TrimSpace(in.Card)
+	if who == "" {
+		if who = agentOf(req); who == "" {
+			return nil, out, fmt.Errorf("say which card. this session is not on the board, " +
+				"so it has no card of its own to default to")
+		}
+	}
+	id, _, err := c.resolvePeer(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
@@ -648,6 +705,7 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out.Card, out.Handle, out.Title = t.ID, t.Wire, t.Title
 	out.Status, out.Doing, out.Where, out.Why = t.Status, t.Activity.What, t.Worktree, t.Why
 	out.Idle, out.Waiting, out.Owned = t.Idle, t.Wait, t.Superv
+	out.Seen = t.Seen
 
 	if in.Events {
 		var body struct {
@@ -670,7 +728,8 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 	}
 	out.Note = "status and events only. atrium does not record what a session printed, so this " +
-		"cannot tell you what it said or thinks."
+		"cannot tell you what it said or thinks. `seen` says whether the operator has seen its " +
+		"last turn and answered that turn's Open Questions."
 	return nil, out, nil
 }
 
