@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A runner's row says what stops it working where atrium launches it, and fixes what atrium may fix.**
+
+  Gemini stopped at its trust prompt in every new worktree, because it had never been told to trust the folder.
+  A runner with a setup adapter now carries a `setup` chip on the runners pane. Its dialog lists named checks, a
+  `fix` button for the ones atrium applies, and a command to copy for the ones it only explains. Gemini checks
+  folder trust against the provider roots and trusts a root with one `TRUST_FOLDER` line. It checks sign-in and
+  warns when a key sits in the runner's env in atrium. A gemini card launched in a new folder inside a provider
+  root is trusted before gemini starts. A `DO_NOT_TRUST` rule is never overridden, and sign-in is never applied.
+  Every edit keeps `.atrium-original.bak` and `.atrium-last.bak` beside the file. Claude has an adapter too, for
+  sign-in and hooks. `docs/runner-setup-design.md` has the design and the checklist for the next runner.
+  ROOM-SIDE and HUB-SIDE.
+
 - **The agents half of `hide inactive` is back.**
 
   It was removed along with the shown/total group counts, and that removal was a mistake. The `agents` segment
