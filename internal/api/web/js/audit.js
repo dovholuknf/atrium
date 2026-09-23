@@ -68,33 +68,11 @@ async function loadAudit() {
     list.innerHTML = '<p class="pane-lead">Nothing recorded yet.</p>';
     return;
   }
-  const anchor = auditAnchor(list);
+  // A new line on top must not move the row a scrolled reader is on. See
+  // `scrollAnchor` in core.js.
+  const anchor = scrollAnchor(list, ".aud-row");
   list.innerHTML = events.map(auditRow).join("");
-  if (anchor) restoreAuditAnchor(list, anchor);
-}
-
-// auditAnchor notes the top visible row and how far it sits below the top of the
-// scroll box, but only when the reader has scrolled down. A new event lands at
-// the top and pushes every row down one, so holding scrollTop alone still moves
-// what they were reading. At the top there is nothing to hold, and the new line
-// shows.
-function auditAnchor(list) {
-  if (list.scrollTop <= 0) return null;
-  const top = list.getBoundingClientRect().top;
-  for (const row of list.querySelectorAll(".aud-row")) {
-    const r = row.getBoundingClientRect();
-    if (r.bottom > top) return { id: row.dataset.id, offset: r.top - top, scrollTop: list.scrollTop };
-  }
-  return null;
-}
-
-// restoreAuditAnchor puts the anchored row back where it was. A row that fell out
-// of the page, or a feed with no ids, keeps the old scrollTop instead.
-function restoreAuditAnchor(list, a) {
-  const row = a.id ? list.querySelector('.aud-row[data-id="' + CSS.escape(a.id) + '"]') : null;
-  if (!row) { list.scrollTop = a.scrollTop; return; }
-  const top = list.getBoundingClientRect().top;
-  list.scrollTop += (row.getBoundingClientRect().top - top) - a.offset;
+  restoreScrollAnchor(list, ".aud-row", anchor);
 }
 
 // auditRow is one line: when, which room, what kind, and the detail.

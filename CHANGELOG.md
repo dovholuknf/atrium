@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The history view scrolls, and a live update keeps your place in it.**
+
+  History had the audit pane's fault: it was as tall as its rows and the board's main area clips, so every run
+  below the window was out of reach. The list now scrolls in its own box under the heading and the search bar,
+  on a desktop and on a phone. A board event used to redraw only the first page, so after `show more` a live
+  update cut the list back to a hundred rows. It now re-reads every page already shown and keeps the row you
+  had scrolled to. A new search or a new visit starts at the top. Changing pane on the rooms page scrolls back
+  to the top again. Nothing reached the audit pane on a board event, which logged `no renderer for the audit
+  view` on every refresh; that is gone. HUB-SIDE.
+
 - **A session launched by another session that stops without a word is reported, not left sitting.**
 
   An agent-launched worker (`atrium_launch`) now owes its launcher a report every turn: `atrium_report` on the

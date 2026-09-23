@@ -46,17 +46,16 @@ function goRunners(pane) {
   switchView("runners");
   const host = document.getElementById("runners");
   if (pane && host && host.dataset.split) {
-    showPane(host, pane, RUNNERS_PANE, { scroller: document.querySelector("main") });
+    showPane(host, pane, RUNNERS_PANE);
   }
 }
 
 function splitRunners() {
-  splitIntoPanes(document.getElementById("runners"), "r-section", RUNNERS_PANE, {
-    // The page scrolls in `main`, not in the pane, so switching panes has to
-    // scroll the thing that actually moved. Without this, changing pane on a
-    // long list leaves you halfway down a short one.
-    scroller: document.querySelector("main")
-  });
+  // No `scroller`: the page scrolls in `#runners` itself (chrome.css), which is
+  // what `showPane` resets by default. It used to name `main`, from when main
+  // scrolled. Main clips now and has no scrollTop to reset, so changing pane on
+  // a long list left you halfway down a short one.
+  splitIntoPanes(document.getElementById("runners"), "r-section", RUNNERS_PANE);
 }
 
 // Other machines reporting into this one.
@@ -578,34 +577,49 @@ async function renderRunners() {
 let historyShown = 0;
 const HISTORY_PAGE = 100;
 
-async function renderHistory(more) {
+// `more` appends the next page. `live` is the repaint a board event asks for: it
+// re-reads every page already shown, in the same pages "show more" asked for,
+// and holds the reader's row. It used to redraw page one, so an event arriving
+// while somebody was a few pages down cut the list back to a hundred rows and
+// dropped them at the end of it. Anything else is a new list and starts at the
+// top.
+async function renderHistory(more, live) {
   const host = document.getElementById("history-list");
   if (!host) return;
-  if (!more) historyShown = 0;
+  const pages = live ? Math.max(1, Math.ceil(historyShown / HISTORY_PAGE)) : 1;
+  const from = more ? historyShown : 0;
 
   const q = document.getElementById("h-q").value.trim();
   const recap = document.getElementById("h-recap").value;
-  let res;
+  let rows = [], total = 0;
   try {
-    res = await api(`/v1/history?limit=${HISTORY_PAGE}&offset=${historyShown}` +
-      `&recap=${encodeURIComponent(recap)}&q=${encodeURIComponent(q)}`);
+    for (let i = 0; i < pages; i++) {
+      const res = await api(`/v1/history?limit=${HISTORY_PAGE}&offset=${from + i * HISTORY_PAGE}` +
+        `&recap=${encodeURIComponent(recap)}&q=${encodeURIComponent(q)}`);
+      const got = res.tasks || [];
+      rows = rows.concat(got);
+      total = res.total || 0;
+      if (got.length < HISTORY_PAGE) break;
+    }
   } catch (e) { return; }
 
-  const rows = res.tasks || [];
-  historyShown += rows.length;
-  document.getElementById("h-count").textContent = res.total
-    ? `${historyShown} of ${res.total}`
+  historyShown = from + rows.length;
+  document.getElementById("h-count").textContent = total
+    ? `${historyShown} of ${total}`
     : "nothing yet";
-  document.getElementById("h-more").hidden = historyShown >= (res.total || 0);
+  document.getElementById("h-more").hidden = historyShown >= total;
 
   const html = rows.map(historyRow).join("");
   if (more) {
     host.querySelector(".panel").insertAdjacentHTML("beforeend", html);
     return;
   }
+  const anchor = live ? scrollAnchor(host, ".row.line") : null;
   setHTML(host, rows.length
     ? `<div class="panel">` + html + `</div>`
     : `<div class="panel"><div class="empty">nothing matches.</div></div>`);
+  if (live) restoreScrollAnchor(host, ".row.line", anchor);
+  else host.scrollTop = 0;
 }
 
 function historyRow(t) {
@@ -614,7 +628,7 @@ function historyRow(t) {
   // dead, and the status column already says which.
   const gone = t.archived_at
     ? `<span class="by" title="off the board since ${esc(t.archived_at)}">archived</span>` : "";
-  return `<div class="row line" onclick="openTask('${t.id}')" style="cursor:pointer">
+  return `<div class="row line" data-id="${esc(t.id)}" onclick="openTask('${t.id}')" style="cursor:pointer">
     ${runnerMark(t.runner)}
     <span class="tool">${esc(t.display_title)}</span>
     <span class="grow ell" title="${esc(t.recap || t.why || t.worktree || "")}">${
