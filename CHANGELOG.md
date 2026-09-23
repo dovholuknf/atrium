@@ -21,6 +21,13 @@ section heading is just "what landed in this iteration."
   session with no hooks) now answers `undeliverable` or `queued-unconfirmed` with what to do instead. Migrations
   `0055` and `0056`. See `docs/a2a-reliability-design.md`. ROOM-SIDE and HUB-SIDE.
 
+- **The audit pane scrolls.**
+
+  The pane was as tall as its rows and the board's main area clips, so every event below the window was out of
+  reach. The feed now scrolls in its own box, and the heading and the room and kind filters stay above it, on a
+  desktop and on a phone. A live event lands at the top without moving the row a reader has scrolled down to. A
+  filter change starts the list at the top. HUB-SIDE.
+
 - **A runner's row says what stops it working where atrium launches it, and fixes what atrium may fix.**
 
   Gemini stopped at its trust prompt in every new worktree, because it had never been told to trust the folder.
