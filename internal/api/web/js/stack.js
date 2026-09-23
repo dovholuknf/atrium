@@ -463,6 +463,7 @@ function stackRow(t) {
       ${recapChip(t)}
       ${activityChip(t)}
       ${contextChip(t)}
+      ${seenChips(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
       ${stateChip(t, w)}

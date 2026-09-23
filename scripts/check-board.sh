@@ -254,6 +254,14 @@ if ! node "$here/scripts/test-refresh-storm.js"; then
   fail=1
 fi
 
+# The seen report, RUN against a fake clock. A turn reported seen from a window
+# behind another one, or scrolled up, or attached to a shell, marks a turn read
+# that nobody read, and nothing on screen says so. See docs/seen-design.md.
+if ! node "$here/scripts/test-seen.js"; then
+  echo "a turn would be reported seen when nobody was looking. see above." >&2
+  fail=1
+fi
+
 # The same guards in a real browser: that the live-style board paints its task
 # and history lists from the daemon's answers, and that a fetch which hangs
 # forever does not leave the board frozen blank (the watchdog runs a later pass

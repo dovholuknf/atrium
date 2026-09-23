@@ -129,13 +129,14 @@ const terminalParts = (t) => {
 // `isWaiting` and `over` decide whether a row's mark is drawn as working, and
 // a mark is not nesting: both answer false so every fixture takes the same
 // path through `termRunnerMark` and the markup this parses stays the markup
-// the nesting is about.
+// the nesting is about. `seenChips` (js/seen.js) draws nothing here for the
+// same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
-  "themeFor", "runnerMark", "poppedOut", "termTask", "isWaiting", "over",
+  "themeFor", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => "", () => false, null,
-  () => false, () => false);
+  () => false, () => false, () => "");
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────
