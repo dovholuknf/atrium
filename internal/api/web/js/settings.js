@@ -227,22 +227,39 @@ let globalAuto = false;
 // machine is ordinary, and it would show as a switch that expired in the
 // future.
 let globalAutoLeft = 0;
+// Whether a settings read has ever landed in this page, and whether the last
+// one failed. A hub that was just restarted answers `/v1/settings` with a 409
+// until a room attaches, and a room scope whose room is not back yet fails the
+// same way. The button used to be painted only by a read that landed, so a
+// failed one left an empty pill in the header. It now says it does not know,
+// or that what it shows is the last answer, and the poll re-reads until one
+// lands. See `refresh` and `loadHubRooms`.
+let globalAutoRead = false;
+let globalAutoStale = false;
+function globalAutoNeedsRead() { return globalAutoStale; }
 
 function paintGlobalAuto() {
   const b = document.getElementById("gauto");
   if (!b) return;
-  b.className = globalAuto ? "gauto on" : "gauto";
+  if (globalAutoStale && !globalAutoRead) {
+    b.className = "gauto unknown";
+    b.textContent = "auto: unknown";
+    b.title = "the daemon has not answered whether requests are gated. retrying.";
+    return;
+  }
+  b.className = (globalAuto ? "gauto on" : "gauto") + (globalAutoStale ? " stale" : "");
   // How long is left goes ON the switch, not behind it. The whole reason a
   // deadline exists is that "approving everything" is easy to leave on, and a
   // reminder you have to hover over is not a reminder.
   b.textContent = globalAuto
     ? (globalAutoLeft ? "approving everything, " + leftLabel(globalAutoLeft) : "approving everything")
     : "asking";
-  b.title = globalAuto
-    ? (globalAutoLeft
-        ? "every session is approved without asking, until this runs out. click to start asking again."
-        : "every session is approved without asking, with no deadline. click to start asking again.")
-    : "requests are gated. click to approve everything from every session.";
+  b.title = (globalAutoStale ? "the last answer, the daemon is not answering right now. retrying. " : "") +
+    (globalAuto
+      ? (globalAutoLeft
+          ? "every session is approved without asking, until this runs out. click to start asking again."
+          : "every session is approved without asking, with no deadline. click to start asking again.")
+      : "requests are gated. click to approve everything from every session.");
 }
 
 // Time left, rounded the way a person reads it. Rounded UP for minutes, so
@@ -266,8 +283,12 @@ async function loadGlobalAuto() {
     // attaching rooms first answers settings, so a skin the load-time read
     // could not fetch heals here rather than staying dark until a reload. Uses
     // this fetch rather than a second one. See `applyResolvedSkin`.
+    globalAutoRead = true;
+    globalAutoStale = false;
     if (typeof applyResolvedSkin === "function") applyResolvedSkin(s);
-  } catch (e) { return; }
+  } catch (e) {
+    globalAutoStale = true;
+  }
   paintGlobalAuto();
 }
 
@@ -309,6 +330,8 @@ async function toggleGlobalAuto() {
     });
     globalAuto = !!s.global_auto;
     globalAutoLeft = s.global_auto_seconds || 0;
+    globalAutoRead = true;
+    globalAutoStale = false;
   } catch (e) {
     toast("that did not stick", e.message);
     return;
