@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Atrium knows whether you have seen a session's last turn, and whether you answered its Open Questions.**
+
+  An orchestrator ended turns with an `Open Questions:` block while eight workers ran, the operator never saw
+  them, and the orchestrator kept referring back to questions nobody had read. A card whose last turn nobody has
+  seen now wears a teal dot, and one whose turn ended on unanswered Open Questions wears `? N`, with the questions
+  in its tooltip. Both show on the board, the stack and the terminal strip. A turn is seen when a focused, visible
+  window shows that card's runner terminal scrolled to the bottom for 3 seconds, or when you type into it, submit
+  a prompt, or send it a message. A peer's message never counts. The questions are read off the Stop hook's last
+  message and only the numbered lines are kept, never the message. A reply answers them. `atrium_task` returns a
+  `seen` block and defaults to the caller's own card, and `atrium_peers` counts unseen turns and open questions.
+  Stored in a new `turn_seen` table (migration `0057_turn_seen`), so it survives a restart.
+  `docs/seen-design.md` has the design and its open questions. ROOM-SIDE and HUB-SIDE.
+
 - **The history view scrolls, and a live update keeps your place in it.**
 
   History had the audit pane's fault: it was as tall as its rows and the board's main area clips, so every run

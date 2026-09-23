@@ -2556,3 +2556,87 @@ The dialog's card shows `spawned_by: "@human"`. Reopening the worker's card does
 1. Stop the throwaway room daemon. End a turn in a launched worker.
 
 **Expected:** the turn ends normally. No hang, no error shown to the model.
+
+## AC. Seen tracking
+
+Whether the operator has seen a card's latest turn, and whether its Open Questions are answered. See
+`docs/seen-design.md`. Run against a throwaway room with the Stop hook (`atrium turn --event end`) and the
+`UserPromptSubmit` hook wired, and two supervised sessions on it: `asker` and `peer`.
+
+### AC1. A turn nobody saw is marked
+
+1. With the board on another tab, have `asker` end a turn with plain text and no questions.
+
+**Expected:** the `asker` card and its terminal strip row carry a teal dot. No `?` chip.
+`atrium_task` with `card` empty, called from `asker`, answers `seen.unseen: true`.
+
+### AC2. Looking at it clears it, passing through does not
+
+1. Attach `asker` and click away to another card within a second.
+2. Attach `asker` again and stay on it, scrolled to the bottom, for 3 seconds.
+
+**Expected:** the dot survives step 1 and clears during step 2. `seen.seen_via` is `viewed`.
+
+### AC3. A window behind another one does not count
+
+1. Pop `asker` out into its own window. End another turn on it.
+2. Put the board window in front of the popped-out one and wait 10 seconds.
+3. Scroll the popped-out terminal up by a screen, bring it to the front, and wait 10 seconds.
+4. Scroll it back to the bottom.
+
+**Expected:** the dot survives steps 2 and 3 and clears about 3 seconds into step 4.
+
+### AC4. Open Questions are recorded and answered by a reply
+
+1. Have `asker` end a turn with:
+
+   ```
+   Open Questions:
+
+   ---
+
+   1. first question
+   2. second question
+   ```
+
+2. Hover the `? 2` chip. Then attach and read it, without typing.
+3. Type a reply into `asker` and submit it.
+
+**Expected:** step 1 draws `? 2` beside the dot, and the tooltip lists both questions. Step 2 clears the dot and
+leaves `? 2`. Step 3 clears `? 2`. `atrium_task` answers `answered: true` and no `open_questions`.
+
+### AC5. A turn with no block keeps the questions
+
+1. Repeat AC4 step 1. Then have `peer` send `asker` a message with `atrium_say`, so `asker` runs a turn that ends
+   with plain text.
+
+**Expected:** `? 2` stays. The peer's message typed into `asker` does not clear it, and neither does the turn it
+started. `atrium_peers` from `peer` lists `asker` with `unseen: true, open_questions: 2`.
+
+### AC6. A message from the board answers
+
+1. Repeat AC4 step 1. Send `asker` a message from its card dialog.
+
+**Expected:** `? 2` and the dot both clear, and `seen.answered_via` is `message`.
+
+### AC7. Typing into the terminal sees the turn
+
+1. End a turn on `asker` with the board attached to it but scrolled up.
+2. Type one character into the terminal and delete it.
+
+**Expected:** the dot clears at the keystroke, with `seen_via: typed`. A keystroke into the card's shell instead
+does not clear it.
+
+### AC8. It survives a restart
+
+1. Leave `asker` with a dot and `? 2`. Restart the throwaway room.
+
+**Expected:** both marks are still there after the restart. Typing into the terminal clears the dot as in AC7.
+
+### AC9. The hook never costs a turn
+
+1. Point `transcript_path` at a file that does not exist (run the hook by hand with a payload), and at a
+   transcript over 50 MB.
+
+**Expected:** the hook prints nothing and exits 0 both times, inside its 2 second budget. The card records the
+turn and keeps whatever questions it had.

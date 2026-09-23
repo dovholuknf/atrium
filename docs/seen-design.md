@@ -1,13 +1,13 @@
 # Seen tracking
 
-Whether the human has seen a session's latest turn, and whether that turn asked him questions he has not answered.
+Whether the human has seen a session's latest turn, and whether that turn asked them questions they have not answered.
 Atrium records both on the card, the board draws them, and an agent can ask for them.
 
 ## The problem
 
 On 2026-09-23 the orchestrator ended turns with an `Open Questions:` block while eight workers were running. Clint
 did not see several of those turns. The orchestrator kept saying "the four questions from my last message are still
-open" about a message he had never read. Neither side knew.
+open" about a message the operator had never read. Neither side knew.
 
 Atrium already knew half of it. The Stop hook says when a turn ended, `UserPromptSubmit` says when somebody typed a
 prompt, and the board knows which terminal is on screen. Nothing put the three together, and nothing wrote them down.
@@ -125,7 +125,7 @@ count, and an agent is told the questions exist and could not be read.
   A peer's message does not answer them. Answering also marks the turn seen.
 
 Answered is a state of the whole set, not per question. Atrium cannot tell which question a reply addressed, and
-guessing would be worse than saying "he replied after you asked".
+guessing would be worse than saying "the operator replied after you asked".
 
 ### Why not the `ask` table
 
@@ -138,8 +138,11 @@ read `ask` as the agent's own deliberate words. Kept separate, and listed below 
 
 Durable, because seen-ness has to survive a restart. `docs/activity-design.md` draws the line: activity is about
 now and dies with the process, and a card fact that answers "how long has this been sitting" is written down. "Has
-he seen this" is the second kind. A board that restarts and forgets which turns were read would mark every card
-unread, or none, and both are lies.
+the operator seen this" is the second kind. A board that restarts and forgets which turns were read would mark
+every card unread, or none, and both are lies.
+
+The keystroke path answers from an in-memory set of unseen cards, filled from the table at start, so a keystroke
+costs one map lookup and the write happens off the path. The table is the truth and the set is a cache of it.
 
 Its own table rather than columns on `task`:
 
@@ -224,19 +227,21 @@ Two marks, both chips, following "status is a column, activity is a badge". Neit
 - **Questions**: a `? 3` chip, in the warn colour, on a card with unanswered questions. `?` alone when the block
   could not be read. The tooltip lists the questions. Clears when answered.
 
-Drawn on the board card and on the terminal strip row, which is where the operator is when workers are running.
+Drawn on the board card, the stack row and the terminal strip row, which is where the operator is when workers are
+running. The detector is `js/seen.js`, ticking every half second.
 
 ### Agents
 
 `atrium_task` gains a `seen` block, the same shape as above, and `card` becomes optional: empty means the calling
 session's own card, so the orchestrator asks about itself with no handle.
 
-`atrium_peers` gains `unseen` and `open_questions` (a count) per peer, so one call answers "who has something he
-has not read".
+`atrium_peers` gains `unseen` and `open_questions` (a count) per peer, so one call answers "who has something the
+operator has not read".
 
 The orchestrator's loop becomes: before saying "my questions are still open", call `atrium_task` with no card. If
-`seen.unseen` is true, he has not read the last turn and the questions should be re-surfaced in full rather than
-referred to. If `answered` is true, he replied, and the reply is in the prompt it is already holding.
+`seen.unseen` is true, the operator has not read the last turn and the questions should be re-surfaced in full
+rather than referred to. If `answered` is true, the operator replied, and the reply is in the prompt it is already
+holding.
 
 ## Not built
 
@@ -244,6 +249,15 @@ referred to. If `answered` is true, he replied, and the reply is in the prompt i
   this. Listed below.
 - `seen` on the stdio `atrium control` server in `internal/cli/control_peers.go`. The hub's control server is the
   one sessions use.
+
+## Known gaps
+
+- A guest typing into a lent session types over the same attach socket, so it counts as `typed`. A lent card is
+  one somebody chose to hand over, and the guest is looking at it.
+- A message posted to a card with no `from` is the operator's channel, whoever sent it. That is the rule the
+  message path already follows for `askAnswered`, so a script posting without a `from` answers the questions.
+- A runner that does not send `last_assistant_message` and writes its transcript late leaves the turn's questions
+  unknown. The card keeps the previous set rather than guessing, and the turn is still recorded as unseen.
 
 ## Open questions
 
@@ -254,7 +268,7 @@ Open Questions:
 1. Should scraped Open Questions also become `ask` rows, so they light the existing ask line and `fleet.go`? The
    default is no: they stay a separate turn fact, drawn by their own chip.
 2. Is 3 seconds at the bottom the right dwell? The default is 3. Longer is safer against flicking past and slower to
-   clear a mark he did read.
+   clear a mark the operator did read.
 3. Should the board-level tray of unanswered questions be built? The default is not yet.
 4. Should an unread mark ever ring or notify on its own, for example after 10 minutes unread? The default is no:
    the existing turn-end alert already rings once.
