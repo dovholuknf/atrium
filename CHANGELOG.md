@@ -17,6 +17,13 @@ section heading is just "what landed in this iteration."
   sign-in and hooks. `docs/runner-setup-design.md` has the design and the checklist for the next runner.
   ROOM-SIDE and HUB-SIDE.
 
+- **The `pinned` heading counts shown out of total, like every group heading.**
+
+  `hide inactive` now reaches into the pinned bucket, so its heading reads `5/15` while pinned rows are hidden, and
+  its tooltip says how many. A bucket whose rows are all hidden says `N hidden by hide inactive` instead of
+  offering a first drag. Group headings already read shown/total, and pinned cards filed into a group now count
+  there the same way. HUB-SIDE.
+
 - **`hide inactive: agents` hides the greyed-out rows.**
 
   The toggle hid agents with no live connection but exempted every pinned one, and in the terminals list only a
