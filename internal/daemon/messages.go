@@ -258,6 +258,12 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 	switch t.Status {
 	case store.StatusRunning, store.StatusDead:
 	default:
+		// The column stays, but the turn still ended. The badge is a fact about
+		// the process, not the card. A worker that reports done mid-turn gets
+		// `thinking` back from the tool-end that follows the report, and this
+		// Stop is the only thing left that can put it to idle.
+		d.act.set(taskID, ActivityIdle, "")
+		d.publishTask(taskID)
 		return
 	}
 	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, reason); err != nil {

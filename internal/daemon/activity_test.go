@@ -303,6 +303,37 @@ func TestSessionEndClearsActivity(t *testing.T) {
 	}
 }
 
+// A turn ending on a card that is already `done` still ends the turn.
+//
+// The order a worker finishes in: it calls atrium_report, which marks the card
+// done and forgets the activity. Then PostToolUse posts tool-end, which sets
+// `thinking` again. Then Stop fires. The Stop has to put the badge to idle,
+// whatever column the card is in, or a finished card reads `thinking`.
+func TestAStopOnADoneCardClearsThinking(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	task, _, err := d.st.Register(store.Observed{
+		WireName: "stop-done", Worktree: "/tmp/atrium-test", Runner: "claude",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	d.act.set(task.ID, ActivityThinking, "")
+
+	resp := postJSON(t, "http://"+d.opts.AgentAddr+"/stop", map[string]any{
+		"agent": "stop-done", "cwd": "/tmp/atrium-test",
+	})
+	resp.Body.Close()
+
+	if a := d.act.get(task.ID); a != nil && a.What == ActivityThinking {
+		t.Fatalf("a turn ended on a done card and it still shows %s", a.What)
+	}
+}
+
 // The board reads activity off the task view, so it has to be there. An absent
 // one has to be absent rather than an empty object, or every card would render
 // a blank badge.
