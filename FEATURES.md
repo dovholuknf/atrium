@@ -148,6 +148,14 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   Attach, resume and start are not drawn, and the hub refuses every request for that room by name. Nothing is
   queued for its return. Docs: `CHANGELOG.md`, `docs/hub-room-requirements.md`. Landed 2026-09-17 (`a59d4d2`).
 
+- **A card says whether you have seen its last turn, and whether you answered its Open Questions.**
+  An unread turn wears a teal dot, and a turn that ended on unanswered Open Questions wears `? N` with the
+  questions in its tooltip, on the board card, the stack row and the terminal strip row. A turn is seen when a
+  focused, visible window shows that card's runner terminal scrolled to the bottom for 3 seconds, or when you type
+  into it, submit a prompt, or send it a message. A peer's message never counts. Only the question lines are kept,
+  never the message. A reply answers them. Stored, so it survives a restart. Docs: `docs/seen-design.md`. Landed
+  2026-09-23 (`e911361`, `dc88645`, `d1bff8c`). **claude/main only**.
+
 ### Cards and columns: removed, and why
 
 - None recorded.
@@ -336,6 +344,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   terminal theme, and is capped at 10 concurrent agent-launched sessions. Loopback only. Docs:
   `docs/agent-messaging.md`, `docs/reload-design.md`. Landed 2026-09-18 (`d192062`, `85204e5`, `09b3fee`), cap
   on 2026-09-19 (`da0866b`).
+
+- **An agent asks whether the human has read its last turn and answered its questions.**
+  `atrium_task` with no card answers about the caller's own card, and its `seen` block says whether the last turn
+  is unseen and which of its Open Questions are still open. `atrium_peers` counts unseen turns and open questions
+  per peer. Docs: `docs/seen-design.md`. Landed 2026-09-23 (`d03762a`). **claude/main only**.
 
 ### Messages, peers and agent commands: removed, and why
 
