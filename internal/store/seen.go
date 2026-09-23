@@ -10,7 +10,7 @@ import (
 )
 
 // Whether the operator has seen a card's latest turn, and whether that turn
-// asked him questions he has not answered. See docs/seen-design.md.
+// asked the operator questions they have not answered. See docs/seen-design.md.
 //
 // DURABLE, UNLIKE ACTIVITY. What a runner is doing right now dies with the
 // daemon because it would be a lie after a restart. Whether a turn was read is
@@ -22,7 +22,7 @@ import (
 // Nothing else the session said is stored here or anywhere.
 
 // The ways a turn comes to be seen. Stored as text so the board and an agent
-// can say how, which is the difference between "he read it" and "he typed at
+// can say how, which is the difference between "they read it" and "they typed at
 // it".
 const (
 	SeenViewed  = "viewed"
