@@ -5,6 +5,12 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Dragging a window's edge tells the runner its new size once, not once per step.**
+
+  Claude Code redraws its whole conversation on every resize and keeps the old copy in the scrollback, so one drag
+  left a full copy of the transcript per column it passed through. The terminal still fits while you drag. The size
+  goes to the runner once it has held still for a quarter second. HUB-SIDE.
+
 - **A group heading says how many it is showing out of how many, and the agents hide toggle is gone.**
 
   When `hide inactive` takes rows out of a group, its heading reads `7/15` rather than `7`, and its tooltip says

@@ -1458,8 +1458,37 @@ function followScroll() {
 }
 
 function sendResize() {
+  clearTimeout(resizeSettleTimer);
+  resizeSettleTimer = 0;
   if (!term) return;
   send({ t: "resize", cols: term.cols, rows: term.rows });
+}
+
+// A DRAG IS ONE RESIZE, not one per step.
+//
+// Claude Code redraws its whole conversation every time it is told a new size,
+// and never clears the scrollback first. A window drag fires a fit per pixel
+// step (170, 171, 172, 173, 174 columns in a recorded trace), and each one sent
+// its own resize, so one drag left one full copy of the transcript in the
+// scrollback per step. The operator's terminal held one message 87 times after a
+// single drag.
+//
+// xterm still fits live, so the pane follows the mouse. Only the frame to the
+// daemon waits until the size has held still for `resizeSettleMs`, and then it
+// sends whatever the size is by then. The attach sends at once through
+// `sendResize`, which also cancels a pending one.
+const resizeSettleMs = 250;
+let resizeSettleTimer = 0;
+
+function sendResizeSettled() {
+  clearTimeout(resizeSettleTimer);
+  const t = term;
+  resizeSettleTimer = setTimeout(() => {
+    resizeSettleTimer = 0;
+    // A terminal switch in the meantime attached the new one at its own size.
+    if (term !== t) return;
+    sendResize();
+  }, resizeSettleMs);
 }
 
 // A FIT MUST NOT MOVE YOU. Scrolling up and then changing window focus used to
@@ -1654,7 +1683,7 @@ function onTermResize() {
     });
   }
   if (!changed) return;
-  sendResize();
+  sendResizeSettled();
   if (wasAtBottom) return;
   holdScrollAt(fromBottom);
 }

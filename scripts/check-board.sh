@@ -219,6 +219,14 @@ if ! node "$here/scripts/test-term-tabreturn.js"; then
   fail=1
 fi
 
+# The resize settle, RUN against a fake clock. Claude Code reprints its whole
+# conversation on every resize, so a drag that sent one per step piled a copy of
+# the transcript into the scrollback per step. This asserts a drag sends one.
+if ! node "$here/scripts/test-term-resize-settle.js"; then
+  echo "a window drag would reprint the transcript once per step. see above." >&2
+  fail=1
+fi
+
 # The terminal trace ring, RUN against stubs. It is the evidence for a garble
 # nobody can reproduce on demand, so it must stay bounded on a busy terminal and
 # must save the exact bytes xterm was handed.
