@@ -529,7 +529,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   diff range and the repo's knowledge and memory. It reports back to the card. The `lessons` view shows memory
   changed since the last `Lessons-reviewed: <id>` commit, and its promote, keep and delete buttons edit the
   dotagents working tree only. The commit is yours. Docs: `docs/personas-design.md`. Landed 2026-09-23
-  (`f34dd0c`, `7d93f3b`). **claude/persona-atrium only**.
+  (`2ffc0e8`, `45a3f74`). **claude/persona-atrium only**.
 
 ### Runners and runner setup: removed, and why
 
