@@ -139,6 +139,11 @@ type Daemon struct {
 	// See pendinginject.go.
 	pending *pendingInjector
 
+	// unseen holds the cards whose latest turn nobody has seen, so an operator
+	// keystroke can answer "does this see a turn" from memory. The durable copy
+	// is the turn_seen table. See seen.go.
+	unseen sync.Map
+
 	// stop is how a shutdown request reaches the wind-down Run is waiting on.
 	stop *stopper
 
@@ -379,6 +384,8 @@ func New(opts Options) (*Daemon, error) {
 	api.EscalationOf = d.escalationFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
+	// Which turns are unread, carried across the restart. See seen.go.
+	d.loadUnseen()
 	return d, nil
 }
 

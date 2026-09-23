@@ -731,6 +731,11 @@ type runner struct {
 	midLine   bool
 	lastTyped time.Time
 	unsent    int
+	// peerSent is when atrium last submitted ANOTHER SESSION'S message here.
+	// The prompt that follows is that session talking, not the operator, and
+	// must not mark the turn seen or its questions answered. See
+	// `promptWasPeer` and docs/seen-design.md.
+	peerSent time.Time
 	// inPaste is inside a bracketed paste, where a carriage return is text
 	// being pasted and not the operator pressing Enter.
 	inPaste bool
@@ -1119,7 +1124,27 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 	if err := r.Write([]byte("\r")); err != nil {
 		return false, err
 	}
+	// A banner is a peer's. The operator's own channel types with none.
+	if banner != "" {
+		r.typeMu.Lock()
+		r.peerSent = time.Now()
+		r.typeMu.Unlock()
+	}
 	return true, nil
+}
+
+// promptWasPeer reports whether a prompt arriving now is the peer message
+// atrium just submitted, rather than the operator: one was submitted inside
+// `peerPromptWindow` and the operator has not typed since.
+func (r *runner) promptWasPeer(at time.Time) bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	if r.peerSent.IsZero() || at.Sub(r.peerSent) > peerPromptWindow {
+		return false
+	}
+	// Strictly before: the gate only lets a peer type after two seconds of quiet,
+	// so a keystroke stamped the same instant came after it.
+	return r.lastTyped.Before(r.peerSent)
 }
 
 // A pseudo terminal has ONE size and a shared session has several viewers.
