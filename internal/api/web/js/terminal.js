@@ -51,19 +51,7 @@ function takeTermSize(data) {
   let msg;
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "size") return false;
-  const was = termPtyCols;
   termPtyCols = Number(msg.cols) || 0;
-  // THIS TRUSTS CLAUDE TO REPRINT EVERYTHING. Claude redraws its whole
-  // conversation at a width change and never clears the scrollback, so each
-  // change left one more full copy of the transcript above the last. For a
-  // runner the daemon says reprints (see `reprintsOnResize` in
-  // internal/daemon/attach.go), the scrollback goes before the reprint lands,
-  // and the reprint replaces it. `clear` keeps the line the cursor is on. Never
-  // for a shell, where a resize reprints nothing and this would lose history.
-  // The first frame on a socket is not a change, so an attach never clears.
-  if (term && termCaps.reprints_on_resize && was > 0 && termPtyCols !== was) {
-    term.clear();
-  }
   applyPtyWidth();
   return true;
 }

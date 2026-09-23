@@ -164,32 +164,6 @@ if (wide.term.cols !== 200 || wide.wide() || wide.xtermEl.style.width !== "") {
   fail("a window wider than the pty kept the sideways scroll. cols " + wide.term.cols + ".");
 }
 
-// ── a claude card drops its scrollback at a width change, a shell never ─────
-const sizeSrc = lift("function takeTermSize(", "\n}");
-function sizeHarness(reprints) {
-  return new Function(`
-    let termPtyCols = 0, cleared = 0;
-    const termCaps = { reprints_on_resize: ${reprints} };
-    const term = { clear() { cleared++; } };
-    function applyPtyWidth() {}
-    ${sizeSrc}
-    return { take: takeTermSize, cleared: () => cleared };
-  `)();
-}
-const claudeCard = sizeHarness(true);
-claudeCard.take('{"t":"size","cols":120,"rows":40}');
-if (claudeCard.cleared() !== 0) fail("the first size frame on an attach cleared the scrollback.");
-claudeCard.take('{"t":"size","cols":120,"rows":30}');
-if (claudeCard.cleared() !== 0) fail("a height-only change cleared the scrollback, and nothing reprints it.");
-claudeCard.take('{"t":"size","cols":150,"rows":30}');
-if (claudeCard.cleared() !== 1) {
-  fail("a claude card's width change kept the old transcript, so the reprint piles a second copy on top.");
-}
-const shellCard = sizeHarness(false);
-shellCard.take('{"t":"size","cols":120,"rows":40}');
-shellCard.take('{"t":"size","cols":150,"rows":40}');
-if (shellCard.cleared() !== 0) fail("a shell's width change cleared its scrollback, which nothing reprints.");
-
 if (bad) process.exit(1);
 console.log("a window drag tells the runner its size once, after it settles, " +
   "and a window narrower than the pty scrolls sideways.");
