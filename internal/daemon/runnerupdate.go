@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,49 +123,11 @@ func (u *updates) release(pkg string, ch chan struct{}) {
 	close(ch)
 }
 
-// installedVersion reads the version of an installed npm package WITHOUT
-// RUNNING IT.
-//
-// npm puts a launcher on PATH and the package beside it, in one of two shapes
-// depending on the platform:
-//
-//	<prefix>/claude.cmd          <prefix>/node_modules/<pkg>/package.json
-//	<prefix>/bin/claude          <prefix>/lib/node_modules/<pkg>/package.json
-//
-// Windows uses the first, unix prefixes and every node version manager use the
-// second. Both are tried from the resolved launcher rather than by asking npm
-// where its root is, because `npm root -g` is another process and the thing
-// this function exists to avoid is starting processes.
-//
-// Empty when it cannot be worked out, which is a normal answer: a runner
-// installed some other way has a version atrium has no business guessing at.
+// installedVersion reads the version of an installed npm package without
+// running it. The one implementation is `runnersetup.InstalledVersion`, which
+// the runner setup report uses too.
 func installedVersion(exePath, pkg string) string {
-	if exePath == "" || pkg == "" {
-		return ""
-	}
-	dir := filepath.Dir(exePath)
-	parts := strings.Split(pkg, "/")
-	candidates := []string{
-		filepath.Join(append([]string{dir, "node_modules"}, parts...)...),
-		filepath.Join(append([]string{dir, "..", "lib", "node_modules"}, parts...)...),
-		filepath.Join(append([]string{dir, "..", "node_modules"}, parts...)...),
-	}
-	for _, c := range candidates {
-		b, err := os.ReadFile(filepath.Join(c, "package.json"))
-		if err != nil {
-			continue
-		}
-		var meta struct {
-			Version string `json:"version"`
-		}
-		if err := json.Unmarshal(b, &meta); err != nil {
-			continue
-		}
-		if v := strings.TrimSpace(meta.Version); v != "" {
-			return v
-		}
-	}
-	return ""
+	return runnersetup.InstalledVersion(exePath, pkg)
 }
 
 // latestPublished asks the registry what the current version is.

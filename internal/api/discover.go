@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -26,6 +27,9 @@ type harnessView struct {
 	*store.Harness
 	// Found is the resolved path of Cmd, or "" when it is not on PATH.
 	Found string `json:"found"`
+	// Setup is what stops this runner working where atrium launches it, for a
+	// runner with an adapter. See internal/runnersetup.
+	Setup *runnersetup.Report `json:"setup,omitempty"`
 }
 
 // candidate is a runner this machine has that is not configured to use it.
@@ -133,7 +137,12 @@ func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]harnessView, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, harnessView{Harness: h, Found: RunnerFound(h)})
+		v := harnessView{Harness: h, Found: RunnerFound(h)}
+		if a := runnersetup.For(h); a != nil {
+			rep := runnersetup.Inspect(a, s.setupEnv(h, v.Found))
+			v.Setup = &rep
+		}
+		out = append(out, v)
 	}
 	models, err := s.st.ModelsUsed()
 	if err != nil {
