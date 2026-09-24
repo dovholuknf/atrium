@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The room's input-lag echo line says whose time it was.** See `docs/test-plan.md` section AS and
+  `docs/input-lag-logging.md`.
+
+  A 2.9s keystroke logged the same gap on the hub (2926.7ms) and the room (2926.2ms) and no other line, so the
+  runner was to blame only by elimination. The room's `echo` line now ends with `runner Nms, atrium Nms`, split at
+  the moment the pty handed output over. ROOM-SIDE.
+
 - **Mode A is removed.** Stage 1 of `docs/one-atrium-plan.md`. See `docs/test-plan.md` sections A to D and F.
 
   `atrium hub` (the v1 terminal UI), `atrium agent` (the `atrium-agent` MCP server), `atrium daemon --tui`,

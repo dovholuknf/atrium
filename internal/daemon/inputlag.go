@@ -51,7 +51,8 @@ func noteLagIn(at *atomic.Int64, got time.Time) {
 }
 
 // noteLagOut closes the gap `noteLagIn` opened, once a chunk has gone out.
-func noteLagOut(at *atomic.Int64, label string, sent, wrote time.Time, queued, n int) {
+// read is the runner's `lagRead`, which splits the gap in two. See `echoSplit`.
+func noteLagOut(at *atomic.Int64, label string, read int64, sent, wrote time.Time, queued, n int) {
 	if !inputlag.On() {
 		return
 	}
@@ -66,9 +67,28 @@ func noteLagOut(at *atomic.Int64, label string, sent, wrote time.Time, queued, n
 	}
 	gap := wrote.Sub(time.Unix(0, in))
 	if inputlag.Over(gap) {
-		inputlag.Logf("room %s echo: ws frame in -> first output out %s (ws write %s, %d bytes, %d chunks queued)",
-			label, inputlag.Ms(gap), inputlag.Ms(write), n, queued)
+		inputlag.Logf("room %s echo: ws frame in -> first output out %s (%s, ws write %s, %d bytes, %d chunks queued)",
+			label, inputlag.Ms(gap), echoSplit(in, read, wrote.UnixNano()), inputlag.Ms(write), n, queued)
 	}
+}
+
+// echoSplit divides an echo gap at the moment the pty handed output over:
+//
+//	runner  ws frame in -> pty read, which is the pty write, the runner's own
+//	        think and redraw, and ConPTY. Atrium's share of it, the pty write,
+//	        has its own "in" line when slow.
+//	atrium  pty read -> ws write out, which is the ring, the fan-out, the
+//	        attach queue and the websocket write.
+//
+// A 2.9s echo with the time on the runner side is the runner or the machine,
+// not atrium. The read is the runner's latest, so a second chunk landing
+// before this one goes out moves the split later. A read outside the gap
+// means the stamp is not this echo's, and the split is left unsaid.
+func echoSplit(in, read, wrote int64) string {
+	if read < in || read > wrote {
+		return "runner/atrium split unknown"
+	}
+	return "runner " + inputlag.Ms(time.Duration(read-in)) + ", atrium " + inputlag.Ms(time.Duration(wrote-read))
 }
 
 // lagStart is the clock for a pty read, zero when the logging is off.

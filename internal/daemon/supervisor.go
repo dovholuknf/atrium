@@ -749,6 +749,10 @@ type runner struct {
 	// bookkeeping, which stays on typeMu and is never blocked. See
 	// `writeOperatorInput` and `injectPeer`.
 	pasteMu sync.Mutex
+	// lagRead is when the pty last handed over output, in unix nanoseconds, so
+	// an attach's echo line can split the runner's time from atrium's. Only
+	// written while input-lag logging is on. See inputlag.go.
+	lagRead atomic.Int64
 	// injectMu serializes peer injections against each other, so two peers do
 	// not interleave their banners and bodies into the pty. It is DELIBERATELY
 	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
@@ -1396,6 +1400,9 @@ func (r *runner) deliverOutput(chunk []byte) {
 		return
 	}
 	t0 := lagStart()
+	if !t0.IsZero() {
+		r.lagRead.Store(t0.UnixNano())
+	}
 	r.mu.Lock()
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)

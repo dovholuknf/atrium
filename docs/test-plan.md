@@ -2971,3 +2971,22 @@ groups the entry is `out of group`, with a flyout of the two.
 3. File it again. On the terminals pane, drag its row from `ar-one` onto the `untagged` group.
 
 **Expected:** the same result as step 2.
+
+## AS. The room's echo line splits runner time from atrium time
+
+Run against a throwaway hub and room built from this branch, never the live ones. Start the room with
+`ATRIUM_DEBUG_INPUTLAG=1`, attach a terminal from the board, and watch the room's stderr.
+
+### AS1. A slow redraw lands on the runner side
+
+1. In an attached shell terminal, run `powershell -c "Start-Sleep 1"` and press a key at once.
+
+**Expected:** a line `room <task> echo: ws frame in -> first output out ~1000ms (runner ~1000ms, atrium 0.xms, ...)`.
+The `runner` figure carries the delay. No `room <task> in:` line.
+
+### AS2. Ordinary typing stays quiet
+
+1. Type a sentence into an idle shell.
+
+**Expected:** no echo line, or ones under 50ms. Each echo line that shows has a `runner` and an `atrium` figure,
+or `runner/atrium split unknown`.

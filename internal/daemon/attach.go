@@ -591,7 +591,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				return
 			}
 			if !sent.IsZero() {
-				noteLagOut(&lagIn, lagLabel, sent, time.Now(), len(updates), len(chunk))
+				noteLagOut(&lagIn, lagLabel, run.lagRead.Load(), sent, time.Now(), len(updates), len(chunk))
 			}
 		case <-time.After(45 * time.Second):
 			// Keeps an idle attach alive through anything in the middle that
