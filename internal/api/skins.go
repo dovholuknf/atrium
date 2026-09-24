@@ -34,6 +34,9 @@ const DefaultSkin = "harbour"
 // cool alternating, so scrolling the picker does not read as a hue wheel.
 var Skins = []string{
 	DefaultSkin,
+	// Harbour's palette plus the docs site's effects: the gradient button, the
+	// frosted header and the glow. The one skin that is more than a palette.
+	"website",
 	// The darks, deepest family first.
 	"graphite",
 	"glacier",

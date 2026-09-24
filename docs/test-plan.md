@@ -2985,3 +2985,31 @@ goes. An empty `text` answers 400 and an unknown card 404.
 **Expected:** at 30 minutes the chip turns to `wake expired`, with the text in its tooltip, and the card's events
 have a `notified` event with `what: expired`. Starting `orch` after that types nothing. The chip goes by itself a
 day later.
+
+## AL. The website skin
+
+Run on the board from this build, with the docs site open beside it for comparison. The hub alone needs the
+build.
+
+### AL1. The board wears the site
+
+1. Gear, skin, pick `website`.
+
+**Expected:** the colours are harbour's. `+ new agent` and every other primary button (`save`, `add a runner`)
+is filled with the teal-to-blue gradient in dark text, on a teal glow that turns blue on hover. The header is
+more see-through than harbour's and its bottom edge is the grid colour. A soft teal and blue glow sits behind the
+top of the board, under the grid. Text sizes, spacing and corners are the same as harbour's.
+
+### AL2. A disabled primary button still looks disabled
+
+1. In the browser console, run `document.querySelector("button.go.newagent").disabled = true`.
+2. Reload to put it back.
+
+**Expected:** after 1, `+ new agent` is dimmed and flat, with no gradient and no glow.
+
+### AL3. No other skin changes
+
+1. Pick `harbour`, then `noir`, then `daylight`.
+
+**Expected:** each looks as it did before this build: `+ new agent` is the flat accent chip, the header is the
+same gradient as before, and there is no glow behind the board.

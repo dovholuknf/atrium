@@ -1059,6 +1059,90 @@ async function groupRemoveSection(browser, base) {
   }
 }
 
+// The website skin is the one skin that carries rules beyond a palette: a
+// gradient primary button, a frosted header and a glow behind the board. Every
+// one is scoped to that skin, and the failure this guards is one leaking out, so
+// harbour is measured before the skin is worn and again after, and must match
+// both times, and a second skin must not pick any of it up either.
+async function websiteSkinSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  try {
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("button.go.newagent", { state: "visible", timeout: 15000 });
+    // Buttons carry `transition: all`, so a colour read straight after a skin
+    // change is partway there.
+    const look = skin => wp.evaluate(async skin => {
+      applySkin(skin);
+      await new Promise(r => setTimeout(r, 400));
+      const go = getComputedStyle(document.querySelector("button.go.newagent"));
+      const hd = getComputedStyle(document.querySelector("header"));
+      const bd = getComputedStyle(document.body);
+      const root = getComputedStyle(document.documentElement);
+      const vars = ["--teal", "--blue", "--bg-0", "--bg-1", "--bg-2", "--card-0", "--stroke", "--head", "--body"];
+      return {
+        goBg: go.backgroundImage, goColor: go.color, goShadow: go.boxShadow, goBorder: go.borderTopColor,
+        hdBg: hd.backgroundImage + " " + hd.backgroundColor, hdFilter: hd.backdropFilter,
+        hdBorder: hd.borderBottomColor, bodyBg: bd.backgroundImage,
+        palette: vars.map(v => v + "=" + root.getPropertyValue(v).trim()).join(" ")
+      };
+    }, skin);
+    const harbour = await look("harbour");
+    const site = await look("website");
+    const noir = await look("noir");
+    const harbourAgain = await look("harbour");
+
+    if (JSON.stringify(harbourAgain) !== JSON.stringify(harbour)) {
+      fail("wearing the website skin left harbour changed: " + JSON.stringify(harbour) + " then " +
+        JSON.stringify(harbourAgain));
+    }
+    if (harbour.goBg !== "none" || /saturate/.test(harbour.hdFilter) || /radial/.test(harbour.bodyBg)) {
+      fail("harbour wears a website effect: " + JSON.stringify(harbour));
+    }
+    if (noir.goBg !== "none" || /saturate/.test(noir.hdFilter) || /radial/.test(noir.bodyBg)) {
+      fail("noir wears a website effect: " + JSON.stringify(noir));
+    }
+    // The skin itself: harbour's palette, plus the three effects.
+    if (site.palette !== harbour.palette) {
+      fail("the website skin's palette is not harbour's: " + site.palette + " vs " + harbour.palette);
+    }
+    if (!/linear-gradient/.test(site.goBg) || site.goColor !== "rgb(4, 18, 29)" || !/rgba\(0, 227, 176/.test(site.goShadow)) {
+      fail("the website skin's primary button is not the gradient on its glow: " + JSON.stringify(site));
+    }
+    if (!/saturate\(1\.6\)|saturate\(160%\)/.test(site.hdFilter)) {
+      fail("the website skin's header is not frosted: " + site.hdFilter);
+    }
+    if ((site.bodyBg.match(/radial-gradient/g) || []).length !== 2) {
+      fail("the website skin has no glow behind the board: " + site.bodyBg);
+    }
+    // A disabled primary button still has to look like it cannot do anything.
+    const disabled = await wp.evaluate(() => {
+      applySkin("website");
+      const b = document.createElement("button");
+      b.className = "go"; b.disabled = true; b.textContent = "x";
+      document.body.appendChild(b);
+      const bg = getComputedStyle(b).backgroundImage;
+      b.remove();
+      return bg;
+    });
+    if (disabled !== "none") fail("a disabled primary button in the website skin keeps its gradient: " + disabled);
+
+    // For checking by eye: WEBSITE_SHOTS=<dir> writes the board in the skin.
+    if (process.env.WEBSITE_SHOTS) {
+      for (const s of ["website", "harbour"]) {
+        await wp.evaluate(s => applySkin(s), s);
+        await wp.waitForTimeout(300);
+        await wp.screenshot({ path: path.join(process.env.WEBSITE_SHOTS, "board-" + s + ".png") });
+      }
+    }
+    if (errors.length) fail("the website skin page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A load asks `/v1/settings` from several places, and on a hub those asks land
 // inside the first one's round trip. They share it: one read per load, and every
 // reader still gets the answer (the skin is worn).
@@ -3240,6 +3324,8 @@ async function main() {
     await bridgeSection(browser, base);
     // ── a load reads settings once ──────────────────────────────────────────
     await settingsOnceSection(browser, base);
+    // ── the website skin's effects stay inside the website skin ─────────────
+    await websiteSkinSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -3295,7 +3381,9 @@ async function main() {
     "the toast log without also drawing a toast, and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width), " +
-    "and a card whose last turn is unread wears a dot and its open questions `? N`.");
+    "a card whose last turn is unread wears a dot and its open questions `? N`, " +
+    "and the website skin wears harbour's palette with a gradient button, a frosted header and a glow " +
+    "while harbour and noir wear none of it.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
