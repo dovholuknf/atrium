@@ -109,6 +109,13 @@
   margin: 3.5rem auto 0;
 }
 
+.caption {
+  margin-top: 0.8rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--at-dim);
+}
+
 .section {
   padding: 4.5rem 0;
 }
@@ -352,7 +359,15 @@
   }
 
   .heroBoard {
-    margin-top: 2.4rem;
+    margin-top: 2rem;
+  }
+
+  .title {
+    margin: 1rem 0 0.9rem;
+  }
+
+  .ctas {
+    margin-top: 1.4rem;
   }
 
   .story {

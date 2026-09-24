@@ -1,16 +1,27 @@
 ---
 title: What atrium is
-description: One board for every coding agent session you run, with a gate on every tool call.
+description: One board for every coding agent session you run, with a gate on their tool calls.
 slug: /intro
 ---
 
 # What atrium is
 
-Atrium puts every coding agent session you run on one board. It tells you which one needs you, it gates every tool
-call those agents make, and it can hold their terminals so you reach any of them from a browser.
+Atrium puts every coding agent session you run on one board. It tells you which one needs you, it can gate the
+tool calls those agents make, and it can hold their terminals so you reach any of them from a browser.
 
-It runs on one machine, for one person. There are no accounts, no tenants and no cloud. The board listens on
+It is self-hosted, for one operator. There are no accounts, no tenants and no hosted service: atrium runs on your
+machines, and your agents talk to their model providers exactly as they did before. The board listens on
 loopback, and reaching it from somewhere else is a job for an overlay such as zrok or OpenZiti.
+
+## What works out of the box, and what you add
+
+| Capability | What it needs |
+| --- | --- |
+| Cards, live activity, history | The reporting hooks. The board writes them for claude and codex with one button. |
+| Supervised terminals in the browser | Nothing more. Launch from the board. Any runner works, including a shell. |
+| Messages to a running session | Supervised terminals, or the reporting hooks. |
+| The permission gate, rules, auto mode | A `PreToolUse` gate hook you add. See [Hooks](./hooks.md#the-permission-gate). |
+| One board over many machines or accounts | The `atrium2` binary, built from source. See [Rooms](./rooms.md). |
 
 ## The name
 
@@ -45,8 +56,8 @@ waits in a queue. Atrium never types into a line somebody is writing.
 
 - A [board](./board.md) of cards in columns that are buckets of your attention: needs permission, ready, running,
   finished and shelved.
-- A [permission gate](./permissions.md) on every tool call, with the real diff for an edit, standing rules, and an
-  auto mode that still keeps the record.
+- A [permission gate](./permissions.md) on gated sessions' tool calls, with the real diff for an edit, standing
+  rules, and an auto mode that still keeps the record.
 - [Supervised terminals](./terminals.md): claude, codex, gemini, ollama or a shell, under a pseudo terminal atrium
   owns, attached from any browser.
 - [Messages](./messages.md) you queue to a running session, and a way for sessions to ask each other.

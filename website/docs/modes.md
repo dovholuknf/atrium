@@ -13,7 +13,7 @@ the gate and the history. They differ in what atrium can do to the session.
 | Where the session runs | Your terminal, your window manager | A pseudo terminal atrium owns |
 | How it reaches the board | Its hooks report in, or `atrium join` | Launched from atrium |
 | Card, activity badge, history | Yes | Yes |
-| Permission gate, rules, auto mode | Yes | Yes |
+| Permission gate, rules, auto mode | With the [gate hook](./hooks.md#the-permission-gate) | With the gate hook |
 | Where you mostly look | **stack** and **board** | **terminals** |
 | Type into it from a browser | No | Yes, from any browser |
 | Pop out into its own window | No | Yes |
@@ -24,8 +24,8 @@ the gate and the history. They differ in what atrium can do to the session.
 ## Watch and gate
 
 This is where atrium started, and it is the lighter mode. Start `claude` wherever you like: a terminal tab, an IDE,
-over ssh. Its hooks report to atrium, so it gets a card, a live badge and a place in the history. Every tool call
-it makes goes through the gate.
+over ssh. Its hooks report to atrium, so it gets a card, a live badge and a place in the history. With the gate
+hook added, and the session gated, every tool call it makes goes through the gate.
 
 Atrium never touches the terminal. Nothing about how you work changes, and an atrium restart does not affect the
 session at all. If atrium is down, the permission hook fails open and the session carries on under Claude Code's

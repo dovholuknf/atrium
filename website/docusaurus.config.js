@@ -92,7 +92,7 @@ const config = {
             ],
           },
         ],
-        copyright: `atrium ${release}. One machine, one person, no cloud.`,
+        copyright: `atrium ${release}. Self-hosted, for one operator. No accounts, no hosted service.`,
       },
       prism: {
         theme: prismThemes.github,

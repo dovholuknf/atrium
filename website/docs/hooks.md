@@ -70,8 +70,9 @@ The reply arrives when you, a rule or auto mode decides:
 ```
 
 - `decision` is `approve` or `block`. On a block, hand `reason` back to the agent. It is your "do this instead".
-- `command` is present only when you edited the command before approving. A hook that ignores it runs the
-  original, so ignoring it is safe.
+- `command` is present only when the operator edited the command before approving. That approval is for the
+  edited command, not the original. A hook must run the replacement, or refuse, and never run the original. The
+  script below refuses and tells the agent the edited command to run instead.
 - `pid` is the runner's own process. It lets atrium tell a live session from a dead one for free.
 - `tool_use_id` is Claude Code's id for this attempt. Send it, so a retried request is recognised as the same
   question and never asked twice.
@@ -93,7 +94,15 @@ restart.
 ### A starting script
 
 This PowerShell hook follows the contract. It is a starting point, not a finished tool: adapt the command it sends
-for the tools you care about, and add `details` for edits.
+for the tools you care about, and add `details` for edits. It needs PowerShell 7 (`pwsh`) on the PATH. Every docs
+build runs this exact script against a mock of atrium: approve, block, an edited approval, an ungated session,
+both `ATRIUM_PERM_GATE` values, and atrium being unreachable (`website/scripts/test-gate-hook.js`).
+
+:::warning When atrium is down, this gate is open
+Every failure path exits 0 with no decision, so Claude Code falls back to its own permission prompt. That is the
+fail-open rule below. A session is never stuck because atrium stopped, and it is also not gated by atrium while
+atrium is away.
+:::
 
 ```powershell
 # atrium-gate.ps1: the permission gate. Every path exits 0, and an unreachable atrium means ungated.
@@ -116,8 +125,14 @@ try {
   $r = Invoke-RestMethod "$hub/permission" -Method Post -Body $body -ContentType 'application/json'
 
   $decision = if ($r.decision -eq 'approve') { 'allow' } else { 'deny' }
+  $reason = $r.reason
+  # An approval of an EDITED command does not approve the original. Refuse, and hand the edit to the agent.
+  if ($decision -eq 'allow' -and $r.command -and $r.command -ne $command) {
+    $decision = 'deny'
+    $reason = "The operator approved an edited command instead. Run exactly this: $($r.command)"
+  }
   @{ hookSpecificOutput = @{
-      hookEventName = 'PreToolUse'; permissionDecision = $decision; permissionDecisionReason = $r.reason
+      hookEventName = 'PreToolUse'; permissionDecision = $decision; permissionDecisionReason = $reason
   } } | ConvertTo-Json -Compress
 } catch { }
 exit 0

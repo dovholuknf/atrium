@@ -8,8 +8,16 @@ import TabItem from '@theme/TabItem';
 
 # Install
 
-Atrium is one Go binary. Each release carries packages for Linux, macOS and Windows, plus a plain archive for each
-platform that installs without `sudo` or administrator rights.
+Each release carries packages for Linux, macOS and Windows, plus a plain archive for each platform that installs
+without `sudo` or administrator rights. Download them from the
+[0.0.1 release page](https://github.com/dovholuknf/atrium/releases/tag/v0.0.1). Its `checksums.txt` lists the
+SHA-256 of every file.
+
+:::note Two binaries
+The packages and archives carry `atrium`: the board, the gate and supervised terminals in one process. That is all
+most people need. [One board over many machines or accounts](./rooms.md) uses a second binary, `atrium2`, which
+you [build from source](#from-source) for 0.0.1.
+:::
 
 :::info Atrium runs as you
 On every platform atrium runs **as you, in your session**. It starts claude and other agents, and those need your
@@ -24,6 +32,7 @@ never a system-wide service.
 <TabItem value="linux" label="Linux">
 
 ```bash
+curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_0.0.1_amd64.deb
 sudo dpkg -i atrium_0.0.1_amd64.deb
 # or
 sudo dnf install ./atrium-0.0.1-1.x86_64.rpm
@@ -43,6 +52,7 @@ An upgrade keeps atrium enabled. Removing the package leaves lingering as it fou
 <TabItem value="mac" label="macOS">
 
 ```bash
+curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_darwin_arm64.pkg
 sudo installer -pkg atrium_v0.0.1_darwin_arm64.pkg -target /
 ```
 
@@ -52,6 +62,8 @@ The package installs a LaunchAgent, never a LaunchDaemon, so atrium starts when 
 <TabItem value="win" label="Windows">
 
 ```powershell
+Invoke-WebRequest https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_0.0.1_windows_amd64.msi `
+  -OutFile atrium_0.0.1_windows_amd64.msi
 Start-Process msiexec "/i atrium_0.0.1_windows_amd64.msi /qn /norestart" -Wait
 & "$env:ProgramFiles\atrium\scripts\atrium-service.ps1" install
 & "$env:ProgramFiles\atrium\scripts\atrium-service.ps1" status
@@ -80,7 +92,9 @@ touches no system location.
 <TabItem value="linux" label="Linux">
 
 ```bash
+curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_linux_amd64.tar.gz
 tar -xzf atrium_v0.0.1_linux_amd64.tar.gz
+mkdir -p ~/.local/bin
 cp atrium_v0.0.1_linux_amd64/atrium ~/.local/bin/atrium
 cd atrium_v0.0.1_linux_amd64
 ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
@@ -90,7 +104,9 @@ ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
 <TabItem value="mac" label="macOS">
 
 ```bash
+curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_darwin_arm64.tar.gz
 tar -xzf atrium_v0.0.1_darwin_arm64.tar.gz
+mkdir -p ~/.local/bin
 cp atrium_v0.0.1_darwin_arm64/atrium ~/.local/bin/atrium
 cd atrium_v0.0.1_darwin_arm64
 ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
@@ -103,24 +119,38 @@ says so and exits cleanly.
 <TabItem value="win" label="Windows">
 
 ```powershell
+$rel = 'https://github.com/dovholuknf/atrium/releases/download/v0.0.1'
+Invoke-WebRequest "$rel/atrium_v0.0.1_windows_amd64.zip" -OutFile atrium_v0.0.1_windows_amd64.zip
 Expand-Archive atrium_v0.0.1_windows_amd64.zip -DestinationPath $HOME\atrium
 $dir = "$HOME\atrium\atrium_v0.0.1_windows_amd64"
 & "$dir\scripts\atrium-service.ps1" install -Exe "$dir\atrium.exe"
 ```
 
 The task runs at `RunLevel Limited`, a standard-user task. Nothing is written to Program Files or the system PATH.
+To run `atrium` by name in a shell, add `$dir` to your user PATH.
 
 </TabItem>
 </Tabs>
 
+On Linux and macOS, `~/.local/bin` must be on your PATH to run `atrium` by name. If `atrium version` is not found,
+add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile and open a new shell. The service does not need it:
+it runs the binary by its full path.
+
 ## From source
 
+You need [Go](https://go.dev/dl/) at the version `go.mod` names, and git.
+
 ```bash
+git clone https://github.com/dovholuknf/atrium
+cd atrium
+git checkout v0.0.1
 go build -o build.claude/ ./...
-./build.claude/atrium daemon
 ```
 
-This builds `atrium`, the single-process daemon, and `atrium2`, which runs the [hub and rooms](./rooms.md).
+This builds `atrium`, the single-process daemon, and `atrium2`, which runs the [hub and rooms](./rooms.md). Copy
+the one you want somewhere it can stay, such as `~/.local/bin`, then start it: `atrium daemon`, or see
+[Rooms](./rooms.md#start-a-hub) for `atrium2`. The service scripts in `scripts/` take the installed path with
+`ATRIUM_EXE=... scripts/atrium-service.sh install` or `scripts\atrium-service.ps1 install -Exe ...`.
 
 :::warning Run the installed copy
 Hooks, the logon task and the self-restart all name a path to the binary. A path inside your build folder is
