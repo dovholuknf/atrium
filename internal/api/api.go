@@ -116,6 +116,10 @@ type Server struct {
 	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
 	// queue. See internal/daemon/finish.go.
 	Report http.HandlerFunc
+	// RestartWake queues, reads or clears the prompt typed into a card once its
+	// runner is back after a restart. Owned by the daemon, which owns the
+	// terminal. See internal/daemon/restartwake.go.
+	RestartWake http.HandlerFunc
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
@@ -494,6 +498,11 @@ func (s *Server) Handler() http.Handler {
 	if s.Report != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)
 	}
+	if s.RestartWake != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/restart-wake", s.RestartWake)
+		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
+		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
+	}
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a
 	// board that does not show the queue makes that look like nothing
@@ -596,6 +605,10 @@ type view struct {
 	// operator's backoff and the board rings each time it does. Absent when
 	// the card is fine. See docs/a2a-reliability-design.md.
 	Escalation any `json:"escalation,omitempty"`
+	// RestartWake is the prompt waiting to be typed in once this card's runner
+	// is back after a restart, or the one that expired unsent. Absent when there
+	// is neither. See docs/restart-wake.md.
+	RestartWake any `json:"restart_wake,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -645,6 +658,10 @@ var TelemetryOf func(taskID string) any
 // memory. See internal/daemon/a2a.go.
 var EscalationOf func(taskID string) any
 
+// RestartWakeOf returns a card's after-restart wake, or nil. Supplied by the
+// daemon, which mirrors the store's rows in memory so this is no query per card.
+var RestartWakeOf func(taskID string) any
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -667,6 +684,9 @@ func toView(t *store.Task) view {
 	}
 	if EscalationOf != nil {
 		v.Escalation = EscalationOf(t.ID)
+	}
+	if RestartWakeOf != nil {
+		v.RestartWake = RestartWakeOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())

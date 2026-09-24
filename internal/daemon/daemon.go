@@ -139,6 +139,10 @@ type Daemon struct {
 	// See pendinginject.go.
 	pending *pendingInjector
 
+	// wake holds the after-restart wakes, mirrored from the store, and when each
+	// card's session last started. See restartwake.go.
+	wake *wakes
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -209,6 +213,7 @@ func New(opts Options) (*Daemon, error) {
 		launching: newKeyedMutex(),
 	}
 	d.pending = newPendingInjector(d)
+	d.wake = newWakes()
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
 	api.ApplyInputLag(st)
@@ -249,6 +254,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.Report = d.handleReport
+	d.ap.RestartWake = d.handleRestartWake
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
@@ -390,6 +396,9 @@ func New(opts Options) (*Daemon, error) {
 	// Which agent-launched cards are stuck, for the board to ring about. Held
 	// the same way. See a2a.go.
 	api.EscalationOf = d.escalationFor
+	// The after-restart wake waiting on a card, or the one that expired there.
+	d.loadWakes()
+	api.RestartWakeOf = d.wakeFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
@@ -992,6 +1001,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// and the snapshot beside the database. See ledger.go.
 	d.startLedger()
 	go d.ledgerWriter(ctx)
+	// Wakes queued before the restart, typed in as their cards come back. A
+	// passive board brings nothing back, so it has nothing to type into.
+	if !d.opts.Passive {
+		go d.wakeLoop(ctx)
+	}
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
 	errCh := make(chan error, 2)

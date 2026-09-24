@@ -345,6 +345,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}); err != nil {
 			return err
 		}
+		// The runner is up and its hooks are posting, which is what an
+		// after-restart wake waits for. See restartwake.go.
+		d.wakeSawSession(task.ID)
 		// A session that has just started is READY, not running.
 		//
 		// SessionStart fires before the session has done anything: it is
