@@ -93,3 +93,19 @@ go build -o build.claude\atrium2.exe ./cmd/atrium2
   steps".** A prompt that names only the first steps makes the worker stop after them.
 
 At the next wave boundary, run `docs/wrapup.md` before the next `/clear`.
+
+## 6. Learned 2026-09-24
+
+- **`orchestrator/OWED.md` is the work list.** Read it before anything else after a `/clear`, work it top down, and
+  ask its open rows as numbered Open Questions, one at a time. A safe copy lives in memory as `owed-table-copy.md`.
+- **A worker's report lives only in my terminal** until the work ledger ships. After a crash, rebuild the open list
+  from git state, and check EVERY repo a worker could have written to before calling work lost (sa19 and sa20's
+  matrices were in the sdk-golang and ziti-sdk-csharp worktrees, not the one I checked).
+- **Launch every worker with `theme: "active-work"` and tags `origin:agent`, `saNN`, `atrium:subagent`.**
+- **The main checkout can be on `main`, not `claude/main`,** after clint lands. Check `git rev-parse --abbrev-ref HEAD`
+  before merging a worker, or the work lands on `main`.
+- **CHANGELOG and test-plan conflict on nearly every cherry-pick.** `D:\tmp\union-changelog.ps1 -p <file>` keeps both
+  sides. Renumber a clashing test-plan section letter by hand.
+- **`check-board.sh` fails spuriously when run beside `go test`.** Rerun it alone before believing it.
+- **The hook binary must be rebuilt when `internal/cli` changes,** and codex's hooks pass `--runner`, so an old hook
+  binary fails every codex tool call.
