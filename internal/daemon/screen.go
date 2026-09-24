@@ -540,12 +540,20 @@ func (s *screen) render() (body string, curLine, total int, ok bool) {
 // without changing the grid.
 func (s *screen) apply(b []byte) { s.applyCuts(b, nil) }
 
-// widthCut is where replayed output changed width: from byte `at` on, it was
-// composed for a terminal `cols` wide.
-type widthCut struct{ at, cols int }
+// sizeCut is where replayed output changed size: from byte `at` on, it was
+// composed for a terminal `cols` wide and `rows` tall. Zero rows means nothing
+// recorded a height there, and the grid keeps the one it has.
+type sizeCut struct{ at, cols, rows int }
 
 // applyCuts is apply with the grid resized at each cut, the way the terminal
 // that produced the bytes was.
+//
+// HEIGHT TOO, not only width. gwt opens a session in a console of about thirty
+// rows and the board attaches later at sixty. Replayed into a grid at the later
+// height, everything the session drew at thirty rows stayed on the grid instead
+// of scrolling into history, and the repaints addressed at rows twenty-two and
+// twenty-three wrote over it. The operator attached to a fresh session and got
+// one screen of it.
 //
 // ONE WIDTH FOR THE WHOLE RING IS WHAT DOUBLED THE LINES. After a room restart
 // a resumed session reprints its transcript at the width the card was saved
@@ -558,16 +566,18 @@ type widthCut struct{ at, cols int }
 //
 // A cut that falls inside an escape sequence or a rune is taken at the next
 // boundary, so resizing never splits one.
-func (s *screen) applyCuts(b []byte, cuts []widthCut) {
+func (s *screen) applyCuts(b []byte, cuts []sizeCut) {
 	for i := 0; i < len(b); {
 		for len(cuts) > 0 && cuts[0].at <= i {
 			s.resize(cuts[0].cols)
+			s.resizeRows(cuts[0].rows)
 			cuts = cuts[1:]
 		}
 		i = s.step(b, i)
 	}
 	for _, c := range cuts {
 		s.resize(c.cols)
+		s.resizeRows(c.rows)
 	}
 }
 
@@ -639,6 +649,69 @@ func (s *screen) resize(cols int) {
 		s.savedCol = cols - 1
 	}
 	s.wrapNext = false
+}
+
+// resizeRows changes the grid's height the way a terminal does. Shrinking drops
+// blank rows under the cursor first, then scrolls rows off the top into
+// history, so the cursor stays on the grid. Growing adds blank rows at the
+// bottom and never pulls history back, because a row pulled back is a row the
+// next repaint can overwrite.
+//
+// A height given here is a recorded one, so the grid stops guessing and stops
+// growing past it.
+func (s *screen) resizeRows(rows int) {
+	if rows <= 0 {
+		return
+	}
+	if rows > screenMaxRows {
+		rows = screenMaxRows
+	}
+	s.fixedRows = true
+	if rows == s.rows {
+		return
+	}
+	if s.alt {
+		s.cells, _ = s.fitRows(s.cells, &s.row, rows, false)
+		s.altCells, _ = s.fitRows(s.altCells, &s.altRow, rows, true)
+	} else {
+		var gone int
+		s.cells, gone = s.fitRows(s.cells, &s.row, rows, true)
+		s.savedRow -= min(gone, s.savedRow)
+	}
+	s.rows = rows
+	if s.savedRow >= rows {
+		s.savedRow = rows - 1
+	}
+	s.wrapNext = false
+}
+
+// fitRows is one grid of resizeRows. `history` is whether rows leaving the top
+// are kept, which is false for the alternate screen. It returns the grid and
+// how many rows left the top.
+func (s *screen) fitRows(cells [][]cell, cur *int, rows int, history bool) ([][]cell, int) {
+	if cells == nil {
+		return nil, 0
+	}
+	for len(cells) < rows {
+		cells = append(cells, blankRow(s.cols))
+	}
+	for len(cells) > rows && len(cells)-1 > *cur && rowIsBlank(cells[len(cells)-1]) {
+		cells = cells[:len(cells)-1]
+	}
+	over := len(cells) - rows
+	if over > 0 {
+		if history {
+			s.history = append(s.history, cells[:over]...)
+		}
+		cells = append([][]cell(nil), cells[over:]...)
+		*cur -= min(over, *cur)
+	} else {
+		over = 0
+	}
+	if *cur >= rows {
+		*cur = rows - 1
+	}
+	return cells, over
 }
 
 // decodeRune reads one UTF-8 character, tolerating a sequence cut in half by
