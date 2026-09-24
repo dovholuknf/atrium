@@ -292,8 +292,9 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
   Decided 2026-09-24: the default becomes IMMEDIATE, typed as soon as the input line is empty and no dialog is
   open (reuse the restart wake's gate: empty line, keyboard quiet, no dialog). Claude Code queues typed input
   mid-turn and reads it at its next step. The old behaviour becomes an option, `when: "done"`, for messages that
-  should not disturb a worker mid-thought. A runner whose profile says it cannot take input mid-turn falls back
-  to done. The board gets an "immediately" button beside send. Check `internal/daemon/peers.go` and CLAUDE.md
+  should not disturb a worker mid-thought. Whether a runner takes typed input mid-turn is a RUNNER SETTING on its
+  row on the runners page (clint, 2026-09-24), seeded from the runner profile (claude: yes, codex: to be checked),
+  and a runner set to no falls back to done. The board gets an "immediately" button beside send. Check `internal/daemon/peers.go` and CLAUDE.md
   "Out of scope": both say peer text is never typed mid-turn, and both need rewording with this.
 - **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
   `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
