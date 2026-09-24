@@ -49,9 +49,20 @@ The hub holds it. The script only learns the answer, and a board only shows what
 
 The script restarts the hub only on `go`. The gate stops nothing itself.
 
+A `go` says which one it is, in `why`, and the script prints it after `go:`. The audit line says it after
+`restarting:`.
+
+- `no board is open`: step 2. Nobody was warned, because nobody was there.
+- `counted down on N board stream(s) and nobody paused`: step 7. Every one of those streams got the countdown and
+  the restarting cover.
+
+Treat the second as proof that a board was counted. The countdown lasts a few seconds and the board then reloads
+onto the new build, so a board nobody was looking at keeps no trace on screen. Its toast log still holds the
+"hub restart" entry.
+
 | Answer | Exit | What it means |
 | --- | --- | --- |
-| `go` | 0 | Restart now. |
+| `go` | 0 | Restart now. `why` says whether a board saw a countdown. |
 | `busy` | 3 | A board stayed in use for the whole of `wait`. |
 | 409 | 3 | Another deploy is already waiting for an answer. |
 | hub gone | 4 | The hub stopped answering, or answered 410, while the ask was waiting. |
@@ -101,6 +112,12 @@ pause goes with it.
 Every window holds its own event stream, and the hub says the same thing down each one. So every window shows
 the countdown, a click in any one of them pauses all of them, and resume from any one resumes all of them. The
 hub counts open streams to answer "is a board open". A window whose stream is reconnecting is not counted.
+
+Every spelling of the stream counts, and every one hears the countdown. The hub never proxies the event stream
+to a room: `/v1/events/hub`, `/v1/events/room/<name>`, and a bare `/v1/events` scoped by `X-Atrium-Room`, by
+`?atrium_room=` or by a hub with one room attached all end in the same list of streams the gate counts and
+speaks to. That holds for popped-out windows and the phone too. The board's `input`, `pause` and `resume` calls
+sit under `/_hub/`, which the hub answers itself before it looks at a room.
 
 ## The restarting cover
 

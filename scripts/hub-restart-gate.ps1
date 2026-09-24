@@ -32,9 +32,13 @@ $ErrorActionPreference = 'Stop'
 
 function Answered($res) {
   $answer = ''
-  try { $answer = ($res.Content | ConvertFrom-Json).answer } catch {}
+  $why = ''
+  try { $reply = $res.Content | ConvertFrom-Json; $answer = $reply.answer; $why = $reply.why } catch {}
+  # The hub says which go it is: no board open, or a countdown the boards saw.
+  # A hub older than that says only go.
+  if (-not $why) { $why = 'the hub said go' }
   switch ($answer) {
-    'go' { Write-Output 'go: nobody is using a board and nobody paused'; exit 0 }
+    'go' { Write-Output "go: $why"; exit 0 }
     'paused' { Write-Output 'held: the restart is paused from the board'; exit 3 }
     'busy' { Write-Output "held: a board stayed in use for $Wait seconds"; exit 3 }
   }

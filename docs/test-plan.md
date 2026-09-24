@@ -2737,7 +2737,7 @@ throwaway hub's board in two windows and pop one terminal out into a third.
 1. Close every board window.
 2. Run `scripts/hub-restart-gate.ps1 -Hub <the throwaway hub>`.
 
-**Expected:** `go: nobody is using a board and nobody paused`, exit 0, within a second.
+**Expected:** `go: no board is open`, exit 0, within a second.
 
 ### AM2. Typing holds the countdown back
 
@@ -2892,6 +2892,41 @@ minute, after a room attaches or detaches, and after the board's stream drops an
 2. Make a card ready while the board is in front of you, then answer it from another window.
 
 **Expected:** its toast goes within a poll of the answer.
+
+## AQ. The gate says which go it gave, and counts every board
+
+Run against a throwaway hub with ONE room attached, the live shape (`/_hub/health` says `"only"`). Never the live
+hub. See `docs/hub-restart-gate.md`.
+
+### AQ1. A go with no board says so
+
+1. Close every board window. Run `scripts/hub-restart-gate.ps1 -Hub <the throwaway hub>`.
+
+**Expected:** `go: no board is open`, exit 0.
+
+### AQ2. A go after a countdown says how many streams saw it
+
+1. Open the board, attach a terminal, and pop a second terminal out into its own window.
+2. `GET /_hub/restart` on the throwaway hub.
+
+**Expected:** `"boards":2`.
+
+3. Leave both windows alone and run the script with `-Idle 2`.
+
+**Expected:** both windows show the countdown, then the restarting cover. The script prints
+`go: counted down on 2 board stream(s) and nobody paused`, exit 0. The hub's audit tab shows the same words after
+`restarting:`.
+
+### AQ3. A board scoped to the room is counted
+
+1. Close every board window. Hold a scoped stream open with `curl -N <the throwaway hub>/v1/events/room/<name>`.
+2. `GET /_hub/restart`.
+
+**Expected:** `"boards":1`.
+
+3. Run the script with `-Idle 2`.
+
+**Expected:** the curl prints `event: hub-restart` with `"state":"countdown"`, then `"state":"restarting"`.
 
 ## AR. Group colours, and moving groups on the terminals pane
 
