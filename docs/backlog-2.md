@@ -308,6 +308,13 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
   one help bubbles and `data-tip` use, if one exists, or build one), on every skin. Add a `check-board.sh` rule
   that fails on a new bare `title=` in `internal/api/web/` unless it is allowlisted (form controls where the
   browser tooltip is the accessible name).
+- **Input lag, 2026-09-24 14:18 sample** (clint, board at localhost:7778): 165 keys, p50 9.1ms, p95 ~90ms, max
+  268ms. Every slow key is `wire` (hub, room, pty, runner redraw), none is send, parse or paint, and no fetch was
+  in flight. Spikes cluster over ~3s, then 4-10ms. Two follow-ups. (1) Line up the hub's and the room's own hop
+  logs for a slow key (ATRIUM_DEBUG_INPUTLAG is pinned on) to say which hop grows. (2) `socket had N bytes
+  unsent` counts the key's OWN frame (18 bytes = `{"t":"in","d":"x"}`), read just after send: subtract it, or
+  read it before send, so the line only appears when something was really queued. Also: a console filter of
+  `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one prefix.
 - **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
   `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
   `Set-NetFirewallProfile -NotifyOnListen False`.
