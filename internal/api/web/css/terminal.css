@@ -656,3 +656,28 @@
      some themes. Worn, the name takes `--head`, which is that colour moved until it reads. */
   .term-list .card.worn.on .title, .term-list .card.worn.on .title .tname { color: var(--head); }
   .term-list .card.worn.on .title .tpath { color: var(--dim); opacity: 1; }
+
+  /* ── the terminals list's own three switches ────────────
+     `termWear` in js/themes.js. `.bare` is the attached row with its theme switched off: the skin's card, with
+     the skin's accent as the frame that says which one, still open toward the pane. */
+  .term-list .card.on.bare, .term-list .card.on.bare:hover {
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border-color: var(--head); border-right-color: transparent;
+  }
+  .term-list .card.on.bare .title, .term-list .card.on.bare .title .tname { color: var(--head); }
+  .term-list .card.on.bare .title .tpath { color: var(--dim); opacity: 1; }
+  /* An exited row that keeps its theme. Washed rather than faded: the list's own surface is laid over the worn
+     row, so the row reads as that session's colour seen through fog. Opacity and grayscale on the row itself
+     suit a row in the skin's colours and make a themed one muddy, so `.cold`'s are undone here.
+     70%, by eye on midnight, daylight, paper, noir and clay with dark, mid and light themes: at 60% a dead row
+     still read as live on a dark skin, and at 85% its hue was gone on a light one. The overlay stops inside the
+     border, so the border is softened to match. Hover lifts most of the fog, as it lifts `.cold`'s fade. */
+  .term-list .card.tab.cold.washed, .term-list .card.tab.cold.washed:hover {
+    opacity: 1; filter: none; border-color: color-mix(in srgb, var(--stroke) 40%, transparent);
+  }
+  .term-list .card.tab.cold.washed::before { opacity: 1; }
+  .term-list .card.tab.cold.washed::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: var(--shell-0); opacity: .7; transition: opacity .16s;
+  }
+  .term-list .card.tab.cold.washed:hover::after { opacity: .25; }

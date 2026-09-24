@@ -1069,11 +1069,30 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-cardcolors" onchange="toggleCardColors(this.checked)">
-        <span>cards wear their terminal colours</span>
+        <span>board cards wear their terminal colours</span>
       </label>
-      <span class="hintline">Every card is drawn in its own terminal's theme, on the terminals
-        list, the stack and the board, so you can find a session by its colour. The one you are
-        attached to keeps a heavy frame. Kept in this browser only.</span>
+      <span class="hintline">Every card on the stack and the board is drawn in its own terminal's
+        theme, so you can find a session by its colour. The terminals list has its own three below.
+        Kept in this browser only.</span>
+    </div>
+    <!-- The terminals list, one switch per kind of row. Per browser, as above. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-termwear-selected"
+          onchange="toggleTermWear('selected', this.checked)">
+        <span>terminals list: the selected row wears its theme</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="s-termwear-idle" onchange="toggleTermWear('idle', this.checked)">
+        <span>terminals list: rows wear their theme when not selected</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="s-termwear-exited" onchange="toggleTermWear('exited', this.checked)">
+        <span>terminals list: exited rows keep their theme, washed out</span>
+      </label>
+      <span class="hintline">Which rows in the terminals list are drawn in their terminal's colours.
+        With every row in colour, the selected one keeps a heavy frame. Off, an exited row is faded to
+        grey. Kept in this browser only.</span>
     </div>
 
     <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
