@@ -227,6 +227,10 @@ function settingsBody(room) {
 // so the hub cannot reach it. See the gauto-never-blank test.
 let gautoOn = false;
 let roomSettingsDown = false;
+// Every settings read answered, and how long each takes. A hub's answer takes
+// over 100ms, which is what lets a load's several readers overlap.
+let settingsReads = 0;
+let settingsDelay = 0;
 // The on/off switch rows: one runner and one fixture in each state, so the test
 // can compare the pill's box across an on row and an off row, and flip each way.
 // `switchFail` makes the next write refuse, which must put the pill back.
@@ -434,6 +438,8 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: "room " + room + " is not attached" }));
       return;
     }
+    settingsReads++;
+    if (settingsDelay) { setTimeout(() => sendJSON(res, settingsBody(room)), settingsDelay); return; }
     sendJSON(res, settingsBody(room));
     return;
   }
@@ -811,46 +817,49 @@ async function termWearSection(browser, base) {
       fail("with idle rows on, a row that is not selected is not in its theme (" + r["tw-nord"].bg + ").");
     }
     if (r["tw-atrium"].bg !== themeBg.atrium) fail("with idle rows on, the selected row lost its theme.");
-    if (r["tw-dead"].opacity !== "0.3" || r["tw-dead"].after) {
-      fail("with idle rows on and exited rows off, an exited row is not faded as before.");
+    // An exited row does not follow `idle`: with its own switch off it is the
+    // skin's card, faded, so it cannot read as a live row in colour.
+    if (worn(r["tw-dead"]) || r["tw-dead"].bg + "|" + r["tw-dead"].img !== plain ||
+        r["tw-dead"].opacity !== "0.3" || r["tw-dead"].after) {
+      fail("with idle rows on and exited rows off, an exited row is not the skin's card faded (" +
+        JSON.stringify(r["tw-dead"]) + ").");
     }
-    await wp.evaluate(() => toggleTermWear("idle", false));
 
-    // EXITED ON: the dead rows in their theme under a wash of the list's
-    // surface, not faded, and the live ones untouched.
+    // EXITED ON: the dead rows in their theme under the same fade every exited
+    // row gets, which is the pale, still-tinted look. No wash laid over them.
+    // With idle rows on and off, since the two are independent.
     await wp.evaluate(() => toggleTermWear("exited", true));
-    r = await read();
-    const d = r["tw-dead"];
-    if (!/\bwashed\b/.test(d.cls) || d.bg !== themeBg.dracula || d.opacity !== "1" || d.filter !== "none") {
-      fail("with exited rows on, an exited row is not drawn in its theme unfaded (" + JSON.stringify(d) + ").");
+    for (const idleOn of [true, false]) {
+      await wp.evaluate(v => toggleTermWear("idle", v), idleOn);
+      r = await read();
+      for (const [id, theme] of [["tw-dead", "dracula"], ["tw-deadlight", "active-light"]]) {
+        const d = r[id];
+        if (!worn(d) || d.bg !== themeBg[theme] || d.opacity !== "0.3" || d.after) {
+          fail("with exited rows on (idle " + idleOn + "), " + id + " is not its theme faded (" +
+            JSON.stringify(d) + ").");
+        }
+      }
+      if (!idleOn && worn(r["tw-nord"])) fail("turning exited rows on coloured a live row.");
     }
-    if (!d.after || d.after.opacity !== "0.7" || d.after.bg !== r.shell) {
-      fail("with exited rows on, an exited row does not carry the 70% wash of the list's surface (" +
-        JSON.stringify(d.after) + ", surface " + r.shell + ").");
-    }
-    if (worn(r["tw-nord"])) fail("turning exited rows on coloured a live row.");
     const stored = await wp.evaluate(() => ["selected", "idle", "exited"]
       .map(k => localStorage.getItem("atrium.termWear." + k)).join(","));
     if (stored !== "1,0,1") fail("the terminals list's switches are not kept in this browser (got " + stored + ").");
 
-    // For choosing the wash by eye: TERMWEAR_SHOTS=<dir> writes the list at
-    // several opacities on several skins.
+    // For checking by eye: TERMWEAR_SHOTS=<dir> writes the list on a dark and
+    // a light skin with the exited switch on and off, idle rows on.
     if (process.env.TERMWEAR_SHOTS) {
       await wp.evaluate(() => toggleTermWear("idle", true));
-      for (const skin of ["midnight", "daylight", "paper", "noir", "clay"]) {
+      for (const skin of ["midnight", "daylight", "paper", "noir"]) {
         await wp.evaluate(s => applySkin(s), skin);
-        for (const op of [0.6, 0.7, 0.75, 0.8, 0.85]) {
-          await wp.evaluate(o => {
-            let st = document.getElementById("tw-shot");
-            if (!st) { st = document.createElement("style"); st.id = "tw-shot"; document.head.appendChild(st); }
-            st.textContent = ".term-list .card.tab.cold.washed::after { opacity: " + o + " !important }";
-          }, op);
+        for (const on of [true, false]) {
+          await wp.evaluate(v => { toggleTermWear("exited", v); termTask = { id: "tw-atrium" }; renderTermList(); }, on);
           await wp.waitForTimeout(400);
           await wp.locator("#term-list").screenshot({
-            path: require("path").join(process.env.TERMWEAR_SHOTS, skin + "-" + op + ".png")
+            path: require("path").join(process.env.TERMWEAR_SHOTS, skin + "-exited-" + (on ? "on" : "off") + ".png")
           });
         }
       }
+      await wp.evaluate(() => { toggleTermWear("idle", false); toggleTermWear("exited", true); });
     }
 
     // A browser that had the old all-cards setting on starts with idle rows on.
@@ -869,11 +878,208 @@ async function termWearSection(browser, base) {
   }
 }
 
+// The attached row bridges the divider into the terminal: a strip in the row's
+// background with the row's border along its top and bottom, reaching the
+// pane's edge. A pinned row filed into a group is drawn twice, and both copies
+// are the attached row, so both get the frame and a bridge of their own.
+async function bridgeSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const bp = await ctx.newPage();
+  const errors = [];
+  bp.on("pageerror", e => errors.push(String(e)));
+  await bp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+  });
+  const was = tasksMode;
+  tasksMode = "filed";
+  try {
+    await bp.goto(base, { waitUntil: "domcontentloaded" });
+    await bp.waitForTimeout(900);
+    await bp.click('.tab[data-view="terms"]');
+    await bp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
+      { state: "attached", timeout: 15000 });
+    // Two ways a row is drawn: in the skin's colours with its theme on the
+    // selected row alone, and with every row worn, which frames the selected one.
+    for (const idle of [false, true]) {
+      const got = await bp.evaluate(async idle => {
+        toggleTermWear("idle", idle);
+        termTask = { id: "filed1" };
+        // Stand-in for an attached terminal. The bridge only asks that there is one.
+        term = term || { stub: true };
+        await renderTermList();
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        placeTabBridge();
+        const pane = document.getElementById("term-pane").getBoundingClientRect();
+        const bridges = [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
+          .map(b => {
+            const r = b.getBoundingClientRect(), s = getComputedStyle(b);
+            return { top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+              bw: s.borderTopWidth + "/" + s.borderBottomWidth,
+              bc: s.borderTopColor + "/" + s.borderBottomColor, bg: s.backgroundColor };
+          });
+        const cards = [...document.querySelectorAll('#term-list .card.tab.on[data-id="filed1"]')].map(c => {
+          const r = c.getBoundingClientRect(), s = getComputedStyle(c);
+          return { top: r.top, bottom: r.bottom, right: r.right, bc: s.borderTopColor, bg: s.backgroundColor,
+            shadow: s.boxShadow, cls: c.className };
+        });
+        return { pane: { left: pane.left }, bridges, cards };
+      }, idle);
+      const where = "(idle rows " + (idle ? "worn" : "plain") + ")";
+      if (process.env.BRIDGE_SHOTS) {
+        await bp.screenshot({ path: require("path").join(process.env.BRIDGE_SHOTS, "bridge-" + idle + ".png") });
+      }
+      if (got.cards.length !== 2) {
+        fail("the pinned, filed attached row is not drawn twice as the selected row " + where + ": " +
+          got.cards.length);
+        continue;
+      }
+      const [a, b] = got.cards;
+      if (a.bc !== b.bc || a.bg !== b.bg || a.shadow !== b.shadow) {
+        fail("the two copies of the attached row are framed differently " + where + ": " + JSON.stringify(got.cards));
+      }
+      for (const [i, c] of got.cards.entries()) {
+        const br = got.bridges.find(x => Math.abs(x.top - c.top) < 1 && Math.abs(x.bottom - c.bottom) < 1);
+        if (!br) {
+          fail("copy " + (i + 1) + " of the attached row has no bridge into the terminal " + where + ".");
+          continue;
+        }
+        // A worn row's frame is 2px, the plain row's border 1px.
+        const bw = / worn\b/.test(c.cls) ? "2px/2px" : "1px/1px";
+        if (br.bw !== bw || br.bc !== c.bc + "/" + c.bc || /rgba\(0, 0, 0, 0\)/.test(br.bc)) {
+          fail("copy " + (i + 1) + "'s bridge does not carry the row's border " + where + ": " + br.bw + " " +
+            br.bc + ", the row's is " + c.bc + ".");
+        }
+        if (br.bg !== c.bg) fail("copy " + (i + 1) + "'s bridge is not the row's background " + where + ".");
+        if (br.left > c.right || br.right < got.pane.left) {
+          fail("copy " + (i + 1) + "'s bridge does not run from the row to the terminal's edge " + where + ": " +
+            JSON.stringify(br) + ", row right " + c.right + ", pane left " + got.pane.left + ".");
+        }
+      }
+    }
+    if (errors.length) fail("the bridge page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// A group made with `+ new group` on the terminals list is removed from its
+// heading's right-click menu. Its cards go back to where they sit without it,
+// with their tags kept, and nothing is closed: no card is written to at all.
+async function groupRemoveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const gp = await ctx.newPage();
+  const errors = [];
+  gp.on("pageerror", e => errors.push(String(e)));
+  const writes = [];
+  gp.on("request", r => { if (r.method() !== "GET" && /\/v1\/tasks/.test(r.url())) writes.push(r.method() + " " + r.url()); });
+  await gp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.grouping",
+      JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
+  });
+  const was = tasksMode;
+  tasksMode = "filed";
+  try {
+    await gp.goto(base, { waitUntil: "domcontentloaded" });
+    await gp.waitForTimeout(900);
+    await gp.click('.tab[data-view="terms"]');
+    await gp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
+      { state: "attached", timeout: 15000 });
+    const heads = () => gp.evaluate(() =>
+      [...document.querySelectorAll("#term-list .tgroup .tgname")].map(e => e.textContent.trim()));
+    const remove = async name => {
+      await gp.locator("#term-list .tgroup", { hasText: name }).first().click({ button: "right" });
+      const item = gp.locator("#cardmenu button", { hasText: "remove from the view" });
+      if (!(await item.count())) { fail("the " + name + " group's heading has no remove item on its menu."); return; }
+      await item.click();
+      await gp.waitForTimeout(400);
+    };
+
+    // The empty group: gone from the list and from the saved view.
+    await remove("spare");
+    let h = await heads();
+    if (h.includes("spare")) fail("an empty group removed from the terminals list is still drawn: " + h.join(", "));
+
+    // The group with a card in it: gone, and the card back where it sits
+    // without the group, still pinned and still carrying its tag.
+    await remove("active");
+    h = await heads();
+    const state = await gp.evaluate(() => ({
+      groups: groupingPrefs().groups,
+      inBucket: !!document.querySelector('#term-list .termbucket .card.tab[data-id="filed1"]'),
+      copies: document.querySelectorAll('#term-list .card.tab[data-id="filed1"]').length,
+      loose: !!document.querySelector('#term-list .card.tab[data-id="loose1"]')
+    }));
+    if (h.includes("active") || JSON.stringify(state.groups) !== "[]") {
+      fail("removing a group from the terminals list left it (" + h.join(", ") + "; saved " +
+        JSON.stringify(state.groups) + ").");
+    }
+    if (!state.inBucket || state.copies !== 1 || !state.loose) {
+      fail("removing a group did not put its cards back where they sit without it: " + JSON.stringify(state));
+    }
+    if (writes.length) fail("removing a group wrote to a card: " + writes.join(" | "));
+    // A heading that is not a group of yours has no menu.
+    const stray = await gp.evaluate(() =>
+      [...document.querySelectorAll("#term-list .tgroup")].filter(b => b.hasAttribute("oncontextmenu") &&
+        !b.classList.contains("pinnedhead")).map(b => b.textContent.trim()));
+    if (stray.length) fail("a heading that is not one of your groups takes the group menu: " + stray.join(", "));
+    if (errors.length) fail("the group remove page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// A load asks `/v1/settings` from several places, and on a hub those asks land
+// inside the first one's round trip. They share it: one read per load, and every
+// reader still gets the answer (the skin is worn).
+async function settingsOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const wasHub = hubMode;
+  hubMode = true;
+  settingsDelay = 135;
+  settingsReads = 0;
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForTimeout(2500);
+    if (settingsReads !== 1) fail("a board load read /v1/settings " + settingsReads + " times, not once.");
+    const skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
+    if (skin !== skinFor[""]) {
+      fail("with the settings read shared, the skin did not land (got " + skin + ", want " + skinFor[""] + ").");
+    }
+    // A read made after the first has answered asks again: nothing finished is kept.
+    const before = settingsReads;
+    await sp.evaluate(() => api("/v1/settings"));
+    if (settingsReads !== before + 1) fail("a settings read after the load did not reach the daemon.");
+  } finally {
+    hubMode = wasHub;
+    settingsDelay = 0;
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
 
   const browser = await chromium.launch();
+  // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
+  if (process.env.HEADLESS_ONLY) {
+    const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+      groupRemove: groupRemoveSection, worn: wornSection };
+    try {
+      for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
+    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
+    await browser.close();
+    openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
+    await new Promise(r => server.close(r));
+    if (bad) process.exit(1);
+    console.log("the sections asked for passed: " + process.env.HEADLESS_ONLY);
+    return;
+  }
   const page = await browser.newPage();
   const consoleErrors = [];
   page.on("pageerror", e => consoleErrors.push(String(e)));
@@ -3003,6 +3209,8 @@ async function main() {
     await wornSection(browser, base);
     // ── the terminals list's three theme switches ───────────────────────────
     await termWearSection(browser, base);
+    // ── a load reads settings once ──────────────────────────────────────────
+    await settingsOnceSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

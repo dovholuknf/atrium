@@ -87,8 +87,8 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   and the board columns takes its terminal theme's background, foreground and accent, and its chips take the
   theme's ANSI colours. Every title, path and chip is held to 4.5:1 against its card, so a theme whose accent
   reads worse is nudged toward white or black until it passes. The terminals list has three switches of its own:
-  the selected row (on), the other rows (off), and exited rows kept in their theme under a 70% wash of the list's
-  surface (off). With every row coloured, the attached one keeps a two-pixel frame, open toward the pane. Kept in
+  the selected row (on), the other rows (off), and exited rows kept in their theme under the exited fade (off;
+  off, an exited row is the skin's card faded to grey). With every row coloured, the attached one keeps a two-pixel frame, open toward the pane. Kept in
   this browser, like text size. Docs: `CHANGELOG.md`. Landed 2026-09-23 on `claude/card-colors`, the list's
   switches 2026-09-24 on `claude/card-theme-toggles`, neither yet on `claude/main`.
 

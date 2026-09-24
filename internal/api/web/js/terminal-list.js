@@ -389,11 +389,32 @@ function applyTermList() {
 //
 // Cheap enough to call on every scroll: two `getBoundingClientRect` calls and
 // four style writes, no layout of its own.
+//
+// ONE BRIDGE PER COPY OF THE ATTACHED ROW. A pinned row filed into a group is
+// drawn twice, in the bucket and in the group, and both are the row you are
+// on. With one bridge, the first copy got it and the second was a tab that
+// stopped short of the pane. `#tab-bridge` is the first, and the rest are
+// copies of it made here and kept beside it.
 function placeTabBridge() {
-  const bridge = document.getElementById("tab-bridge");
-  if (!bridge) return;
+  const first = document.getElementById("tab-bridge");
+  if (!first) return;
+  const cards = [...document.querySelectorAll("#term-list .card.on")];
+  const bridges = [first, ...first.parentNode.querySelectorAll(".tabbridge.extra")];
+  while (bridges.length < cards.length) {
+    const b = first.cloneNode(false);
+    b.removeAttribute("id");
+    b.classList.add("extra");
+    bridges[bridges.length - 1].after(b);
+    bridges.push(b);
+  }
+  bridges.forEach((b, i) => {
+    if (i < cards.length) placeOneBridge(b, cards[i]);
+    else b.hidden = true;
+  });
+}
+
+function placeOneBridge(bridge, card) {
   const lay = document.getElementById("term-layout");
-  const card = document.querySelector("#term-list .card.on");
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
   if (!lay || !card || termListMode === "off" || !term) { bridge.hidden = true; return; }
@@ -436,8 +457,12 @@ function placeTabBridge() {
   bridge.style.top = (Math.max(c.top, lr.top) - l.top) + "px";
   bridge.style.height = (Math.min(c.bottom, lr.bottom) - Math.max(c.top, lr.top)) + "px";
   // The colours are the card's, whatever theme it is wearing.
-  bridge.style.setProperty("--tabbg", getComputedStyle(card).backgroundColor);
-  bridge.style.setProperty("--tabc", getComputedStyle(card).borderTopColor);
+  const cs = getComputedStyle(card);
+  bridge.style.setProperty("--tabbg", cs.backgroundColor);
+  bridge.style.setProperty("--tabc", cs.borderTopColor);
+  // A worn row's frame is its border plus a 2px inset line, so the bridge's
+  // edge is that thick too or the frame steps down where it crosses.
+  bridge.style.setProperty("--tabw", card.classList.contains("worn") ? "2px" : cs.borderTopWidth);
 }
 
 function clampTermW(px) {
@@ -1174,12 +1199,15 @@ function termFlatGroupsHTML(list, g, folded) {
     const shown = name || "uncategorized";
     const at = "g:" + shown;
     const off = folded.has(at);
-    const head = termHeading(shown, at, by.get(name).length, off);
-    if (off) return head;
-    const rows = by.get(name);
     // A group you made keeps the order you set, not the strip's sort. See
     // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
     const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
+    // And its heading takes the board's group menu on a right click, which is
+    // where it is moved, renamed and removed. Without it a group made with
+    // `+ new group` here could never be taken away from here.
+    const head = termHeading(shown, at, by.get(name).length, off, mine ? name : "");
+    if (off) return head;
+    const rows = by.get(name);
     if (mine) rows.sort(byRank);
     return head + `<div class="tnest"${mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
       ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
@@ -1252,7 +1280,10 @@ function toggleTermGroup(path) {
 // and not because the sessions are gone. A group with nothing hidden reads its
 // plain count. The totals are the same grouping run over the unfiltered list,
 // set by `renderTermList` into `termTotals` and keyed by the heading's path.
-function termHeading(name, path, count, folded) {
+//
+// `group` names a group of yours, and gives the heading the board's group menu
+// (see `groupMenu`). Empty for every other heading.
+function termHeading(name, path, count, folded, group) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
   const tip = total > count ? ` (${total - count} hidden by hide inactive)` : "";
@@ -1262,8 +1293,11 @@ function termHeading(name, path, count, folded) {
   // argument and the rest of the attribute parses as nonsense. Same fix, same
   // reason, as `tagChips` in `stack.js`.
   const arg = esc(path).replace(/'/g, "&#39;");
-  return `<button class="tgroup" onclick="toggleTermGroup('${arg}')"
-      title="${folded ? "show" : "hide"} ${esc(name)}${tip}"
+  const menu = group && typeof groupMenu === "function"
+    ? ` oncontextmenu="groupMenu(event, '${esc(group).replace(/'/g, "&#39;")}')"` : "";
+  return `<button class="tgroup" onclick="toggleTermGroup('${arg}')"${menu}
+      title="${folded ? "show" : "hide"} ${esc(name)}${tip}${
+        group ? ". right click to move, rename or remove it" : ""}"
       ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
       ><span class="tgcount">${shown}</span></button>`;
