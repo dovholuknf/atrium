@@ -21,37 +21,6 @@ section heading is just "what landed in this iteration."
   change does, the replay resizes the grid's height at each mark, and shrinking files the top rows into history.
   On the capture from the card that showed it, the replay went from 62 lines to 207. ROOM-SIDE.
 
-- **Personas on the board: a catalog, a review launched at a card, and the lessons view.**
-
-  Stage 6 of `docs/personas-design.md`. The pack path is the room setting `persona_pack_path`, the personas folder
-  in dotagents. Empty turns the feature off. The runners page gains a `personas` pane that lists each persona with
-  its description, the paths and surfaces it reviews, the runners it declares, and which of those have a rendered
-  file. A card with a worktree gains `review with…` in its menu. It makes
-  `<atrium data>/persona-runs/<id>/<run>/` with a `TARGET.md` naming the worktree, the branch against its
-  merge-base with the default branch, the repo key, the knowledge and memory files for that repo, the rejections
-  scoped to it, and the review panel's finding schema. It copies the persona's render to `.claude/agents/`
-  there and starts a fresh claude session in that directory with `--agent <name>`, tagged `origin:agent` and
-  `persona:<id>`, with the reviewed card's session as its launcher so the report comes back to that card. Each
-  persona's `lessons` button opens the memory diff since the last commit carrying `Lessons-reviewed: <id>`, plus
-  anything uncommitted or untracked, and the `rejected.md` lines that commit did not have. Promote, keep and
-  delete edit the dotagents working tree as the lessons-review skill describes. Every edit goes through
-  `internal/safepath` and refuses any link or junction on the way. Git is only read, and the view ends with the
-  commit, trailer included, for you to run. Only claude is launched: codex and gemini are not measured yet.
-  ROOM-SIDE and HUB-SIDE.
-
-- **The header says when the persona pack is not committed or not pushed.**
-
-  Reviews change the persona pack's memory files, and nothing backs them up but the operator. A new setting,
-  `persona_pack_path`, names the pack directory (`dotagents/personas`), and it is empty and off by default. Once a
-  minute the room runs `git status --porcelain` and `git rev-list --count @{u}..HEAD` there, on its own timer and
-  never on a request, and the header shows a chip such as `persona pack: 3 files not committed, 2 commits not
-  pushed`. With no upstream it says `no upstream configured` instead of a count. The hover names the personas the
-  changed files belong to and says to run `/safe-to-push` in the checkout before pushing. It rings on the
-  stuck-agent backoff from `a2a.go`, starts over when the state changes, and can be snoozed from the chip, per
-  state, in this browser. A pack it cannot read shows `cannot read the persona pack: <why>` and never rings. Atrium
-  runs only those two reads, from an allow-list, with optional locks off so `git status` does not write the index,
-  and it never commits, pushes or holds a credential. ROOM-SIDE and HUB-SIDE.
-
 - **The header's global auto button is never an empty pill.**
 
   After a deploy the button could draw as a grey pill with no dot and no word. Only a settings read that landed
