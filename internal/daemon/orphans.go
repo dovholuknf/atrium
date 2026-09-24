@@ -55,7 +55,7 @@ func (d *Daemon) reapOrphans() error {
 	if len(pending) == 0 {
 		return nil
 	}
-	live := d.hb.LiveStoreIDs()
+	live := d.liveStoreIDs()
 
 	byTask := map[string]int{}
 	for _, p := range pending {

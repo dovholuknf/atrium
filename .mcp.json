@@ -1,8 +1,4 @@
 {
-  "mcpServers": {
-    "atrium-agent": {
-      "command": "./build.claude/atrium.exe",
-      "args": ["agent", "--url", "http://localhost:7777"]
-    }
-  }
+  "//": "No servers. The word atrium-agent stays in this file on purpose: the dotfiles permission hook gates a session whose .mcp.json mentions it, so this keeps sessions in an atrium checkout gated. The atrium-agent server itself is gone.",
+  "mcpServers": {}
 }

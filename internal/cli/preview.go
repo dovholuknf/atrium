@@ -201,7 +201,7 @@ func runPreview(ctx context.Context, o previewOpts) error {
 	fmt.Printf("  hooks   untouched. this is not the machine's atrium.\n")
 	fmt.Printf("  stop    ctrl-c\n\n")
 
-	return runDaemon(ctx, opts, false)
+	return runDaemon(ctx, opts)
 }
 
 // copyForPreview duplicates a database so the preview has real cards on it.

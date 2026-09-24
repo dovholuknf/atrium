@@ -3,7 +3,6 @@ package daemon
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/hub"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -80,7 +79,7 @@ func TestShelvedTaskBlocksNewRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, auto, err := d.onPermRequest(hub.PermissionRequest{
+	_, auto, err := d.onPermRequest(PermissionRequest{
 		Agent: "shelved-one", Tool: "Bash", Command: "go build ./...",
 	})
 	if err != nil {
@@ -126,7 +125,7 @@ func TestUnshelvedTaskAsksAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, auto, err := d.onPermRequest(hub.PermissionRequest{
+	_, auto, err := d.onPermRequest(PermissionRequest{
 		Agent: "back-again", Tool: "Bash", Command: "something with no rule",
 	})
 	if err != nil {

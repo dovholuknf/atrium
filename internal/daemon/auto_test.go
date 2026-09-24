@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/hub"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -22,9 +21,9 @@ func autoTask(t *testing.T, d *Daemon, name string) *store.Task {
 	return task
 }
 
-func ask(t *testing.T, d *Daemon, agent, tool, command string) (string, *hub.AutoDecision) {
+func ask(t *testing.T, d *Daemon, agent, tool, command string) (string, *AutoDecision) {
 	t.Helper()
-	id, auto, err := d.onPermRequest(hub.PermissionRequest{
+	id, auto, err := d.onPermRequest(PermissionRequest{
 		Agent: agent, Tool: tool, Command: command,
 	})
 	if err != nil {

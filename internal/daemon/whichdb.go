@@ -16,7 +16,7 @@ import (
 // Saying when this is not the database you were using last time.
 //
 // Which database the daemon opens depends on the environment of the shell it
-// was started from. `hub.HubDir` returns `$WORKTREE_ROOT/hub` when that
+// was started from. `StateDir` returns `$WORKTREE_ROOT/hub` when that
 // variable is set and `~/.atrium` when it is not, so starting the daemon from
 // a terminal that has it and from one that does not gives two different
 // boards, both real, both populated, neither obviously wrong.
