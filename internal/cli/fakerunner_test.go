@@ -127,6 +127,62 @@ func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
 	}
 }
 
+// A message delivered at turn end continues the turn, and the Stop that ends
+// the continued turn carries `stop_hook_active`. That Stop still reaches the
+// room, so the card goes back to needs-input instead of staying running.
+func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
+	for _, r := range runnerShapes {
+		t.Run(r.target.ID, func(t *testing.T) {
+			agentAddr, humanAddr := startTestDaemon(t)
+			for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
+				t.Setenv(k, "")
+			}
+			t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
+
+			commands := installedCommands(t, r.target)
+			cwd := filepath.Join(t.TempDir(), "cont-"+r.target.ID)
+			if err := os.MkdirAll(cwd, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			base := func(hook string, extra map[string]any) map[string]any {
+				m := map[string]any{"session_id": "cont-" + r.target.ID, "cwd": cwd, "hook_event_name": hook}
+				for k, v := range extra {
+					m[k] = v
+				}
+				return m
+			}
+			fire := func(s step) {
+				t.Helper()
+				raw, _ := json.Marshal(s.payload)
+				for _, c := range commands[s.hook] {
+					if code := runHookLine(t, c, string(raw)); code != 0 {
+						t.Fatalf("%s: %q exited %d", s.hook, c, code)
+					}
+				}
+				assertCard(t, humanAddr, filepath.Base(cwd), r.target.ID, s)
+			}
+
+			fire(step{hook: "SessionStart", payload: base("SessionStart", map[string]any{"source": "startup"}),
+				status: store.StatusNeedsInput, activity: "-"})
+			fire(step{hook: "UserPromptSubmit", payload: base("UserPromptSubmit", map[string]any{r.prompt: "go"}),
+				status: store.StatusRunning, activity: daemon.ActivityThinking})
+			card, _ := findCard(t, humanAddr, filepath.Base(cwd))
+			resp, err := http.Post("http://"+humanAddr+"/v1/tasks/"+card.ID+"/message", "application/json",
+				strings.NewReader(`{"text":"run the tests too"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			// The Stop carries the message, so the turn goes on.
+			fire(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": false}),
+				status: store.StatusRunning, activity: daemon.ActivityThinking})
+			// The continued turn ends.
+			fire(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": true}),
+				status: store.StatusNeedsInput, activity: daemon.ActivityIdle})
+		})
+	}
+}
+
 // Every runner profile that names a hooks target has payloads here, and every
 // hooks target belongs to a profile. Gemini and ollama have none, so there is
 // nothing of theirs to fire, and the day one gets a target this fails until it
@@ -316,6 +372,7 @@ func assertCard(t *testing.T, humanAddr, name, runner string, s step) {
 }
 
 type boardCard struct {
+	ID       string `json:"id"`
 	Name     string `json:"wire_name"`
 	Status   string `json:"status"`
 	Runner   string `json:"runner"`

@@ -2907,3 +2907,28 @@ as a `say` and an `instruction`.
 
 **Expected:** the log line `work ledger: backfilled N launched card(s)...`. Every backfilled item says "inferred by
 the backfill" in `work-ledger.md`. A second start does not backfill again.
+
+## AJ. A turn a Stop hook continued still ends
+
+Run on a room with the rebuilt room and the rebuilt `atrium` hook binary, since `atrium turn` is the Stop hook.
+Start a claude session `c` by hand in a terminal the room does not own, with the atrium hooks installed, so a board
+message reaches it through its hooks and is not typed. The silent-stop notice to a launcher is covered by
+`TestAFlaggedStopEndsTheTurnAndNeverBlocks`, since a hand-started card has no launcher.
+
+### AJ1. The card leaves running
+
+1. Give `c` a prompt that ends in a reply with no tool calls, for example "say hi".
+2. As the turn ends, the card is `needs-input`. Send `c` a message from the board's message box that also needs no
+   tool call, for example "say bye". It stays queued, because `c` is idle.
+3. Give `c` another prompt that ends quickly. Its Stop carries the queued message and `c` answers it.
+
+**Expected:** while `c` answers the message the card is `running`. When `c` stops, the card is `needs-input` with
+the badge `idle` and an unseen turn. It does not stay `running`. `c` is not sent back to work a second time.
+
+### AJ2. A message sent during the continued turn waits
+
+1. Repeat AJ1, and while `c` answers the queued message, send it a second message from the board.
+2. Let `c` stop.
+
+**Expected:** `c` stops, and the card is `needs-input`. The second message is still queued: it arrives with `c`'s
+next tool call or next turn end, not before.
