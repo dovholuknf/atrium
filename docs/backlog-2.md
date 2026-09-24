@@ -253,7 +253,10 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
 - **sa58, a popped-out terminal also attached on the main board** (`claude/popout-double-attach`). clint saw
   win32crypto-e2e live in a popped-out window and in the main board's terminals pane at once. Suspect: after a
   restart the main board re-attaches before the roll call hears the popped-out window again. Rule: the popped-out
-  window wins.
+  window wins. DONE at `c26ba01` (not merged). Cause: the hub spells a card `room~id` with several rooms attached
+  and bare with one, a restart re-attaches rooms one at a time so the spelling flips, and the pop-out claim code
+  compared raw ids. Fixed by keying on the bare id. Left: a green `check-board.sh` rerun (last failure looked like
+  the load flake) and the manual AP checks on a two-room throwaway hub.
 - **sa59, the restart gate counts no board** (`claude/gate-counts-every-board`). At 12:57 a gated hub-only deploy
   answered "nobody is using a board" with clint's board open and restarted with no countdown. The gate counts only
   the hub's merged event streams (`internal/link/events.go` `watchers`), and a single-room hub (`only=claude-sg4`)
