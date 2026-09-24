@@ -167,45 +167,63 @@ func TestAWakeReachesARunnerWithNoSessionHook(t *testing.T) {
 	}
 }
 
-// A card that never comes back: the wake expires, stays on the card saying so,
-// is never typed after that, and ages off a day later.
-func TestAWakeThatNeverLandsExpiresOnTheCard(t *testing.T) {
+// No expiry: a card that takes days to come back still gets its wake, and the
+// days in between leave it queued on the card.
+func TestAWakeQueuedLongAgoIsStillDelivered(t *testing.T) {
 	d := testDaemon(t)
 	w, r, f := queuedWake(t, d, "we up")
 	id := w.TaskID
-	// No runner came back in time.
+	// The runner that queued it stays the one that is up for three days.
 	r.started = w.QueuedAt.Add(-time.Hour)
-
-	d.wakeTick(w.ExpiresAt)
-	cur := d.wake.get(id)
-	if cur == nil || cur.ExpiredAt == nil {
-		t.Fatalf("the wake did not expire: %+v", cur)
+	for _, later := range []time.Duration{time.Hour, 25 * time.Hour, 72 * time.Hour} {
+		d.wakeTick(w.QueuedAt.Add(later))
 	}
-	v, _ := d.wakeFor(id).(map[string]any)
-	if v == nil || v["state"] != "expired" {
-		t.Fatalf("the card does not show the expired wake: %+v", v)
-	}
-	ws, _ := d.st.RestartWakes()
-	if len(ws) != 1 || ws[0].ExpiredAt == nil {
-		t.Fatalf("the store does not hold the expiry: %+v", ws)
-	}
-
-	// The runner comes back late. An expired wake is not typed.
-	r.started = w.ExpiresAt.Add(time.Second)
-	d.wakeTick(w.ExpiresAt.Add(wakeNoHook + time.Minute))
 	if f.written() != "" {
-		t.Fatalf("an expired wake was typed: %q", f.written())
+		t.Fatalf("typed into the runner that queued the wake: %q", f.written())
+	}
+	if v, _ := d.wakeFor(id).(map[string]any); v == nil || v["text"] != "we up" {
+		t.Fatalf("the wake left the card while it waited: %+v", v)
+	}
+	if ws, _ := d.st.RestartWakes(); len(ws) != 1 {
+		t.Fatalf("the wake left the store while it waited: %+v", ws)
 	}
 
-	d.wakeTick(cur.ExpiredAt.Add(wakeExpiredKept))
-	if d.wake.get(id) != nil || d.wakeFor(id) != nil {
-		t.Fatal("the expired wake did not age off")
+	// The runner finally comes back.
+	r.started = w.QueuedAt.Add(72 * time.Hour)
+	d.wakeTick(r.started.Add(wakeNoHook))
+	if !strings.Contains(f.written(), "we up") {
+		t.Fatalf("a wake queued three days ago was not typed: %q", f.written())
 	}
-	if ws, _ := d.st.RestartWakes(); len(ws) != 0 {
-		t.Fatalf("the aged off wake is still stored: %+v", ws)
-	}
-	if evs := wakeEvents(t, d, id); strings.Join(evs, ",") != "notified:queued,notified:expired" {
+	if evs := wakeEvents(t, d, id); strings.Join(evs, ",") != "notified:queued,prompted" {
 		t.Fatalf("the card's history is %v", evs)
+	}
+}
+
+// The wake is typed behind the same grey `[atrium] ...` label a peer's message
+// gets, so nobody reads it as the operator, and the prompt it starts is not read
+// as the operator either.
+func TestAWakeIsTypedBehindTheAtriumLabel(t *testing.T) {
+	d := testDaemon(t)
+	w, r, f := queuedWake(t, d, "we up")
+	r.started = w.QueuedAt.Add(time.Second)
+	d.wakeTick(r.started.Add(wakeNoHook))
+
+	got := f.written()
+	want := "\x1b[38;5;244m[atrium] restart wake: \x1b[0m"
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("the wake was not typed behind the label: %q", got)
+	}
+	if wakeLabel != atriumLabel("restart wake:") || peerBanner("x") != atriumLabel("x says:") {
+		t.Fatal("the wake and the peer banner do not share one label style")
+	}
+	if strings.ContainsAny(wakeLabel, "\r\n") {
+		t.Fatalf("the label can press Enter: %q", wakeLabel)
+	}
+	if !strings.Contains(got[len(want):], "we up") {
+		t.Fatalf("the text does not follow the label: %q", got)
+	}
+	if !r.promptWasPeer(time.Now()) {
+		t.Fatal("the prompt the wake started is read as the operator")
 	}
 }
 

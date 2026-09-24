@@ -30,18 +30,31 @@ The room looks at every waiting wake every two seconds. It types a wake when all
 4. The input line is empty and the keyboard has been quiet for two seconds. This is `injectPeer`'s gate, checked
    again under the input lock, the same rule as `docs/typing-race.md`.
 
-If any check fails, the room asks again on the next tick. Once all four hold, it types the text with no banner,
-presses Enter, deletes the row and records a `prompted` event with `from: restart-wake`. A later tick finds no row
-and types nothing. A crash between the Enter and the delete would type the wake again after the next restart.
+If any check fails, the room asks again on the next tick. Once all four hold, it types the text behind a grey
+`[atrium] restart wake:` label, presses Enter, deletes the row and records a `prompted` event with
+`from: restart-wake`. A later tick finds no row and types nothing. A crash between the Enter and the delete would
+type the wake again after the next restart.
 
-## Expiry
+## The label
 
-A wake waits 30 minutes. After that the restart it was queued for is not happening, and a prompt typed hours later
-comes out of nowhere. The row is marked expired and kept. The card shows a `wake expired` chip with the text, and
-a `notified` event with `what: expired` is recorded. An expired wake is never typed. It ages off after a day, or
-goes when it is cleared or replaced.
+The label is the one a peer's typed message carries (`[atrium] <peer> says:`, see `docs/typing-race.md`): the same
+grey, the same `[atrium]` sentinel, and no carriage return, so it cannot submit a line by itself. Both come from
+`atriumLabel` in `internal/daemon/peers.go`. It tells whoever watches the terminal, and the session reading its
+prompt, that atrium typed this and the operator did not. For the same reason the prompt the wake starts does not
+mark the card's turn seen or answer its questions, as with a peer's message.
 
-A card whose runner atrium does not supervise has no terminal to type into, so its wake always expires.
+## No expiry
+
+A wake waits until its card's runner comes back, however long that takes. A card that is down over a weekend gets
+its wake on Monday. A wake goes only when it is typed, cleared or replaced, or when its card is deleted (the row
+cascades with the card) or its room is removed (the room's store goes with it).
+
+A card whose runner atrium does not supervise has no terminal to type into. Its wake waits too, and the card keeps
+the `wake queued` chip until the wake is cleared or the card comes back supervised.
+
+The `restart_wake` table still has `expires_at` and `expired_at` columns from a first cut that expired wakes.
+Migration `0059_restart_wake` is unchanged so a database that already ran it needs nothing more. The columns are
+written with harmless values and never read.
 
 ## Why this is not a forced turn
 
@@ -57,5 +70,6 @@ the same gate as every automated write, so it never merges into a half-typed lin
 
 - `internal/store/restartwake.go`: the `restart_wake` table (migration `0059_restart_wake`) and its events.
 - `internal/daemon/restartwake.go`: the in-memory mirror, the tick, the readiness rule and the endpoint.
+- `internal/daemon/peers.go`: `atriumLabel`, the label the wake and a peer's message share.
 - `internal/link/control_mcp.go`: `atrium_wake_after_restart`.
-- `internal/api/web/js/board.js`: the `wake queued` and `wake expired` chips.
+- `internal/api/web/js/board.js`: the `wake queued` chip.

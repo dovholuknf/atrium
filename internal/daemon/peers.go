@@ -400,7 +400,14 @@ func (d *Daemon) deliverPeer(target *store.Task, from, text string) (bool, error
 // line in two and sent the first half. The label leads with something that
 // cannot press Enter for him, and the body follows it on the same line.
 func peerBanner(from string) string {
-	return "\x1b[38;5;244m[atrium] " + from + " says: \x1b[0m"
+	return atriumLabel(from + " says:")
+}
+
+// atriumLabel is the grey `[atrium] ...` label atrium types ahead of text that
+// is not the operator's. peerBanner is one. The after-restart wake is the other.
+// The rule peerBanner gives holds for every label: no carriage return in `what`.
+func atriumLabel(what string) string {
+	return "\x1b[38;5;244m[atrium] " + what + " \x1b[0m"
 }
 
 // tellByTyping puts a peer's message into the terminal when the terminal is

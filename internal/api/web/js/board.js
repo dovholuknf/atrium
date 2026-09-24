@@ -754,13 +754,9 @@ function cardHTML(t) {
         title="${esc("this session reported done at " + (t.report_sha || "") +
           ", and that commit is not in its worktree. it may have landed somewhere else.")}"
         >sha unverified</span>` : ""}
-      ${t.restart_wake ? (t.restart_wake.state === "expired"
-        ? `<span class="chip warn"
-            title="${esc("this wake was queued for after a restart and never typed in: the runner did not come back in time. it said: " + t.restart_wake.text)}"
-            >wake expired</span>`
-        : `<span class="chip"
-            title="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
-            >wake queued</span>`) : ""}
+      ${t.restart_wake ? `<span class="chip"
+        title="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
+        >wake queued</span>` : ""}
       ${t.escalation && t.escalation.count > 0 ? `<span class="chip warn"
         title="${esc(t.escalation.text)}"
         >stuck ${esc(String(t.escalation.minutes))}m</span>` : ""}

@@ -2952,9 +2952,18 @@ holds the text. The session running now gets nothing typed into it. After 4, abo
 session starts, `we up. check the build` is typed and sent, and `orch` starts a turn on it. The chip is gone. The
 card's events have a `prompted` event with `from: restart-wake`. A second restart types nothing.
 
+### AK1a. The wake carries the atrium label
+
+1. Attach to `orch`'s terminal on the board, queue a wake with `text` `label check`, and restart the room.
+2. Watch the terminal as the wake lands.
+
+**Expected:** the line reads `[atrium] restart wake: label check`, with `[atrium] restart wake:` in the same grey a
+peer's typed message is labelled with (`[atrium] <peer> says:`), and `label check` in the normal colour after it.
+The label and the text are one prompt, sent once. The card's turn is not marked seen by that prompt.
+
 ### AK2. It waits for your line
 
-1. Queue a wake on `orch` as in AJ1 and restart the room.
+1. Queue a wake on `orch` as in AK1 and restart the room.
 2. As soon as `orch` is back, type `half a th` into its line and leave it there.
 3. After ten seconds, clear the line with backspace and take your hands off the keyboard.
 
@@ -2978,13 +2987,15 @@ its own, and `half a th` is not part of that prompt.
 **Expected:** 1 answers `queued: true` and the card shows `wake queued`. 2 answers `cleared: true` and the chip
 goes. An empty `text` answers 400 and an unknown card 404.
 
-### AK5. A wake that never lands expires on the card
+### AK5. A wake waits however long the card takes
 
-1. Queue a wake on `orch`, then stop `orch`'s runner from the board and leave it stopped for 30 minutes.
+1. Queue a wake with `text` `still here` on `orch`, then stop `orch`'s runner from the board.
+2. Leave it stopped for more than 30 minutes. Look at the card now and then.
+3. Start `orch` again from the board and keep your hands off its keyboard.
 
-**Expected:** at 30 minutes the chip turns to `wake expired`, with the text in its tooltip, and the card's events
-have a `notified` event with `what: expired`. Starting `orch` after that types nothing. The chip goes by itself a
-day later.
+**Expected:** through 2 the card keeps its `wake queued` chip and nothing changes on it. There is no `wake expired`
+chip and no `notified` event with `what: expired`. After 3, once the session is up, `[atrium] restart wake: still
+here` is typed and sent.
 
 ## AL. The website skin
 

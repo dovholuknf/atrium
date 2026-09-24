@@ -559,13 +559,19 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 // operator's channel, a note and an action carry none, so a slash command still
 // reaches the runner as one.
 func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, error) {
-	payload := text
-	if d.bracketedPasteFor(taskID, false) {
-		payload = "\x1b[200~" + text + "\x1b[201~"
-	}
 	banner := ""
 	if from != "" {
 		banner = peerBanner(from)
+	}
+	return d.typeLabelledThroughGate(run, taskID, banner, text)
+}
+
+// typeLabelledThroughGate is typeThroughGate with the label given whole, for
+// text that is not a peer's but is not the operator's either. See atriumLabel.
+func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text string) (bool, error) {
+	payload := text
+	if d.bracketedPasteFor(taskID, false) {
+		payload = "\x1b[200~" + text + "\x1b[201~"
 	}
 	return run.injectPeer(banner, payload)
 }

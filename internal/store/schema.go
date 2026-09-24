@@ -1546,10 +1546,10 @@ var migrations = []struct {
 		// docs/restart-wake.md and restartwake.go.
 		//
 		// Durable because the restart it is about ends the process that took it.
-		// One row per card, so a newer wake replaces an older one. `expired_at`
-		// is set, and the row kept, when the card never came back in time, so
-		// the card can say so rather than the wake vanishing. A card deleted
-		// takes its wake with it.
+		// One row per card, so a newer wake replaces an older one. A card
+		// deleted takes its wake with it. `expires_at` and `expired_at` are
+		// unused: wakes do not expire, and the columns stay so a database that
+		// already ran this migration needs no second one.
 		name: "0059_restart_wake",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS restart_wake (

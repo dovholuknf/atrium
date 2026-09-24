@@ -22,10 +22,11 @@ section heading is just "what landed in this iteration."
   session now calls `atrium_wake_after_restart` with a prompt before the restart, and a deploy script can POST the
   same thing to `/v1/tasks/{id}/restart-wake` by card id or wire name. The room keeps it in a new `restart_wake`
   table, so it survives the restart it is about. Once the card's new runner is up, its session has started, the
-  turn is over and the input line is empty, the room types the prompt in and sends it, once, and deletes it. It
-  never types into the runner that queued it. One wake per card, a newer one replaces the older. A wake the card
-  never comes back for expires after 30 minutes, and the card shows `wake expired` for a day. The card shows `wake
-  queued` while it waits. Queued, replaced, cleared and expired are `notified` events on the card, and the
+  turn is over and the input line is empty, the room types the prompt in behind a grey `[atrium] restart wake:`
+  label, the same style as a peer's typed message, sends it, once, and deletes it. It never types into the runner
+  that queued it. One wake per card, a newer one replaces the older. A wake does not expire: it waits however long
+  the card takes to come back, and goes only when it is typed, cleared, replaced, or its card is removed. The card
+  shows `wake queued` while it waits. Queued, replaced and cleared are `notified` events on the card, and the
   delivery is a `prompted` event from `restart-wake`. ROOM-SIDE and HUB-SIDE: the tool and the chip are the hub's.
 
 - **A `website` skin: the board wearing the docs site.**

@@ -726,8 +726,8 @@ type runner struct {
 	midLine   bool
 	lastTyped time.Time
 	unsent    int
-	// peerSent is when atrium last submitted ANOTHER SESSION'S message here.
-	// The prompt that follows is that session talking, not the operator, and
+	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
+	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
 	// `promptWasPeer` and docs/seen-design.md.
 	peerSent time.Time
@@ -1119,7 +1119,8 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 	if err := r.Write([]byte("\r")); err != nil {
 		return false, err
 	}
-	// A banner is a peer's. The operator's own channel types with none.
+	// A banner is a peer's or atrium's own, like the after-restart wake. The
+	// operator's own channel types with none.
 	if banner != "" {
 		r.typeMu.Lock()
 		r.peerSent = time.Now()
