@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/hub"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -32,7 +31,7 @@ type Options struct {
 	AgentAddr string        // agent-facing listener, e.g. ":7777"
 	HumanAddr string        // human-facing listener, e.g. ":7778"
 	DBPath    string        // sqlite file
-	LongPoll  time.Duration // agent long-poll ceiling
+	LongPoll  time.Duration // caps how long shutdown waits on parked agent requests
 	// Room is the hub-facing name this daemon is known by, when it is a room
 	// attached to a hub. It is exported to every launched session as
 	// ATRIUM_ROOM, so the session's HTTP control MCP registration can send
@@ -81,12 +80,15 @@ type Options struct {
 	BoardDir string
 }
 
-// Daemon owns the store, the hub, and both listeners.
+// Daemon owns the store and both listeners.
 type Daemon struct {
 	opts Options
 	st   *store.Store
-	hb   *hub.Hub
 	ap   *api.Server
+
+	// perms holds the hook connections parked on a permission answer. See
+	// permwait.go.
+	perms *permWait
 
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
@@ -174,9 +176,28 @@ type Daemon struct {
 	agentServer *http.Server
 }
 
+// StateDir returns the directory atrium keeps its own state in: a hub folder
+// under WORKTREE_ROOT when that is set, otherwise ~/.atrium.
+//
+// No hardcoded drive path. One machine's layout is not a default for another,
+// and a home directory exists everywhere.
+//
+// The `hub` segment stays. It is where every existing database with
+// WORKTREE_ROOT set already lives, and a daemon that opens a new empty
+// database shows a board that has lost every card.
+func StateDir() string {
+	if root := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); root != "" {
+		return filepath.Join(root, "hub")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".atrium")
+	}
+	return ".atrium"
+}
+
 // DefaultDBPath puts the database next to the rest of atrium's state.
 func DefaultDBPath() string {
-	dir := hub.HubDir()
+	dir := StateDir()
 	if dir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
 			dir = filepath.Join(home, ".atrium")
@@ -206,7 +227,7 @@ func New(opts Options) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{
-		opts: opts, st: st, hb: hub.New(opts.LongPoll), ap: api.New(st),
+		opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
@@ -233,9 +254,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
-	d.hb.Record = d.hooks()
 	d.ap.BoardDir = opts.BoardDir
-	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
@@ -419,10 +438,10 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	return d.Launch(req)
 }
 
-// decide resolves a permission from a human client. It goes through the hub so
-// the blocked runner is actually released: the hub owns the reply channel the
-// permission hook is waiting on, and recording the decision without signalling
-// it would leave that runner hanging.
+// decide resolves a permission from a human client. It goes through the parked
+// request so the blocked runner is actually released: recording the decision
+// without signalling the reply channel the hook is waiting on would leave that
+// runner hanging.
 func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permission, error) {
 	if command != "" {
 		// Record the rewrite before releasing the agent, so the audit log shows
@@ -431,8 +450,8 @@ func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permis
 			return nil, err
 		}
 	}
-	if d.hb.DecideByStoreID(permID, decision, reason, command) {
-		// The hub called back into onPermDecided, which recorded it.
+	if d.decideByStoreID(permID, decision, reason, command) {
+		// That called onPermDecided, which recorded it.
 		return d.st.GetPermission(permID)
 	}
 	// Nothing is blocked on it: the agent gave up, or the daemon restarted
@@ -446,10 +465,6 @@ func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permis
 	d.ap.Broadcast("permission", p)
 	return p, nil
 }
-
-// Hub exposes the hub so an in-process TUI can still attach during the
-// migration. New clients should use the HTTP API instead.
-func (d *Daemon) Hub() *hub.Hub { return d.hb }
 
 // Store exposes the store.
 func (d *Daemon) Store() *store.Store { return d.st }
@@ -525,29 +540,6 @@ func (d *Daemon) onHalt(cause error) {
 	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
 }
 
-// prompt routes a prompt from a human client to the agent holding that task.
-func (d *Daemon) prompt(taskID, text string) error {
-	t, err := d.st.Get(taskID)
-	if err != nil {
-		return err
-	}
-	if t.WireName == "" {
-		return fmt.Errorf("task %s has no connected agent", taskID)
-	}
-	d.hb.SendPrompt(t.WireName, text)
-	return nil
-}
-
-// hooks is the durable side of the hub.
-func (d *Daemon) hooks() *hub.Hooks {
-	return &hub.Hooks{
-		Submit:      d.onSubmit,
-		Prompt:      d.onPrompt,
-		PermRequest: d.onPermRequest,
-		PermDecided: d.onPermDecided,
-	}
-}
-
 // observedFor builds the observed bucket from what the wire name tells us.
 // v1 agents send only a name, so that is all there is until the agent learns
 // to send a registration payload.
@@ -556,54 +548,7 @@ func observedFor(agent string) store.Observed {
 	return store.Observed{WireName: agent, Runner: "claude", Hostname: host}
 }
 
-func (d *Daemon) onSubmit(agent, kind, content string) (string, error) {
-	task, created, err := d.st.Register(observedFor(agent))
-	if err != nil {
-		return "", err
-	}
-	switch kind {
-	case "keepalive":
-		// Liveness only. Never UI-visible, never a status change: a parked
-		// agent is not doing anything worth showing.
-		return task.ID, nil
-	case "task-complete":
-		if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
-			return "", err
-		}
-	default:
-		// A greeting or a response means the agent has handed control back.
-		if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
-			return "", err
-		}
-	}
-	if err := d.st.AppendEvent(task.ID, store.EventSubmitted, map[string]any{
-		"kind": kind, "content": content,
-	}); err != nil {
-		return "", err
-	}
-	d.publishTask(task.ID)
-	_ = created
-	return task.ID, nil
-}
-
-func (d *Daemon) onPrompt(agent, text string) {
-	task, _, err := d.st.Register(observedFor(agent))
-	if err != nil {
-		log.Printf("[atrium] record prompt for %s: %v", agent, err)
-		return
-	}
-	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
-		log.Printf("[atrium] status for %s: %v", agent, err)
-		return
-	}
-	if err := d.st.AppendEvent(task.ID, store.EventPrompted, map[string]any{"text": text}); err != nil {
-		log.Printf("[atrium] event for %s: %v", agent, err)
-		return
-	}
-	d.publishTask(task.ID)
-}
-
-func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDecision, error) {
+func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, error) {
 	obs := observedFor(req.Agent)
 	// The hook reports the runner's own pid and working directory. The pid is
 	// what makes free liveness checks possible.
@@ -667,7 +612,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		}); err != nil {
 			log.Printf("[atrium] could not record a replayed decision: %v", err)
 		}
-		return p.ID, &hub.AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
+		return p.ID, &AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
 	}
 
 	// Anything queued for this session rides the next tool call, which is how a
@@ -680,7 +625,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 			return "", nil, err
 		}
 		d.publishTask(task.ID)
-		return p.ID, &hub.AutoDecision{Decision: "block", Reason: reason}, nil
+		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
 	// A shelved card is a standing no. Putting work down has to answer for that
@@ -690,7 +635,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "shelved"); err != nil {
 			return "", nil, err
 		}
-		return p.ID, &hub.AutoDecision{Decision: "block", Reason: shelvedReason}, nil
+		return p.ID, &AutoDecision{Decision: "block", Reason: shelvedReason}, nil
 	}
 
 	// A standing rule short-circuits the human entirely. The request is still
@@ -707,7 +652,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, rule.Prefix); err != nil {
 			return "", nil, err
 		}
-		return p.ID, &hub.AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
+		return p.ID, &AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
 	}
 
 	// Auto mode: stop asking, keep recording.
@@ -750,7 +695,7 @@ func (d *Daemon) onPermRequest(req hub.PermissionRequest) (string, *hub.AutoDeci
 			return "", nil, err
 		}
 		d.ap.Broadcast("permission", p)
-		return p.ID, &hub.AutoDecision{Decision: "approve", Reason: reason}, nil
+		return p.ID, &AutoDecision{Decision: "approve", Reason: reason}, nil
 	}
 
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
@@ -835,8 +780,7 @@ func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
 
 func (d *Daemon) Run(ctx context.Context) error {
 	agentMux := http.NewServeMux()
-	agentMux.HandleFunc("/submit", d.hb.HandleSubmit)
-	agentMux.HandleFunc("/permission", d.hb.HandlePermission)
+	agentMux.HandleFunc("/permission", d.handlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/stop", d.handleStop)

@@ -138,7 +138,7 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		pend, err := d.st.PendingForTask(task.ID)
-		if err == nil && len(pend) > 0 && d.hb.LiveStoreIDs()[pend[0].ID] {
+		if err == nil && len(pend) > 0 && d.liveStoreIDs()[pend[0].ID] {
 			id = pend[0].ID
 			break
 		}

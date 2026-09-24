@@ -25,12 +25,9 @@ import (
 type Server struct {
 	st  *store.Store
 	bus *bus
-	// Prompt hands a prompt to a waiting agent. Supplied by the daemon, which
-	// owns the agent-facing side.
-	Prompt func(taskID, text string) error
 	// Decide resolves a permission. This must go through the daemon rather
 	// than straight to the store, because the agent is blocked on an in-memory
-	// reply channel that only the hub can signal. Writing the decision without
+	// reply channel that only the daemon can signal. Writing the decision without
 	// signalling would leave the runner hanging forever.
 	Decide func(permID, decision, reason, command string) (*store.Permission, error)
 	// Launch starts a runner. The daemon owns process spawning, so the API
@@ -435,7 +432,6 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
 	mux.HandleFunc("GET /v1/tasks/{id}/review", s.reviewTask)
-	mux.HandleFunc("POST /v1/tasks/{id}/prompt", s.promptTask)
 	mux.HandleFunc("GET /v1/waiting", s.waiting)
 	mux.HandleFunc("GET /v1/permissions", s.listPermissions)
 	mux.HandleFunc("POST /v1/permissions/{id}/decide", s.decidePermission)
@@ -1230,25 +1226,6 @@ func (s *Server) reviewTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rev)
-}
-
-func (s *Server) promptTask(w http.ResponseWriter, r *http.Request) {
-	if s.Prompt == nil {
-		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no agent transport wired"))
-		return
-	}
-	var body struct {
-		Text string `json:"text"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := s.Prompt(r.PathValue("id"), body.Text); err != nil {
-		writeErr(w, http.StatusConflict, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // permView is a request with the session that made it named.
