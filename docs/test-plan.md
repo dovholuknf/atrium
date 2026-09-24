@@ -2806,3 +2806,31 @@ and `half a thought` is not part of that prompt. The chip clears.
 1. With `b` idle and nothing in its line, have `a` call `atrium_say` to `b`.
 
 **Expected:** typed and sent at once, same as before this change. `atrium_say` answers `terminal`.
+
+## AH. Codex on the board: its hooks and its cursor
+
+Run on a room with the codex runner on and its hooks wired (runners tab, codex, atrium hooks). The room needs the
+rebuilt `atrium` hook binary as well as the rebuilt room: the hook lines codex runs are `atrium hook`, `atrium
+session` and `atrium turn`. Start a codex session in a scratch directory and approve its hooks once.
+
+### AH1. No hook fails
+
+1. Ask the codex session to run `dir` (or `ls`) in its shell.
+
+**Expected:** no `Hook failed` / `hook exited with code 1` line after the command. While the command runs the
+card's badge says it is running a tool, then `thinking`, then `idle` when the turn ends. The card keeps the codex
+mark through all of it, and after the turn ends too.
+
+### AH2. The cursor stays at the prompt
+
+1. Give the codex session a task that takes a minute or more, so it animates its input box while it works.
+2. Watch the input box.
+
+**Expected:** the cursor is at the start of codex's input line or not shown. It does not jump across the input
+box to the dots codex draws there. Once codex is idle the cursor sits at the prompt, and typing lands there.
+
+### AH3. Claude is unchanged
+
+1. Open a claude session and type a few characters.
+
+**Expected:** the cursor follows the typing with no lag.

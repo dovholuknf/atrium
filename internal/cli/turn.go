@@ -95,7 +95,7 @@ type turnInput struct {
 const keepGoing = ``
 
 func newTurn() *cobra.Command {
-	var event, name, hubURL string
+	var event, name, hubURL, runner string
 	c := &cobra.Command{
 		Use:   "turn",
 		Short: "Report that a turn ended. Run by a harness, not by hand.",
@@ -107,21 +107,28 @@ func newTurn() *cobra.Command {
 			"session that will not stop.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// See newHook: an unknown flag is not a reason to fail a session.
+		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
+		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprint(cmd.OutOrStdout(), turnEnded(hubURL, event, name))
+			fmt.Fprint(cmd.OutOrStdout(), turnEnded(hubURL, event, name, runner))
 			return nil
 		},
 	}
 	c.Flags().StringVar(&event, "event", "end", "end (the only event today)")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+	// Codex's Stop line carries it. Sent, because the daemon re-registers the
+	// card on a turn ending, and a card that said nothing went back to claude.
+	c.Flags().StringVar(&runner, "runner", "",
+		"which harness is reporting (default: $ATRIUM_RUNNER, then claude)")
 	return c
 }
 
 // turnEnded posts the end of a turn and returns exactly what should go to
 // stdout. It has no error return on purpose: there is no failure this may
 // report, only one it must absorb.
-func turnEnded(hubURL, event, name string) string {
+func turnEnded(hubURL, event, name, runner string) string {
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
 		return keepGoing
 	}
@@ -176,6 +183,7 @@ func turnEnded(hubURL, event, name string) string {
 	questions, block, known := turnQuestions(in)
 	body, err := json.Marshal(map[string]any{
 		"agent":           agent,
+		"runner":          whichRunner(runner),
 		"cwd":             filepath.ToSlash(cwd),
 		"resume":          in.SessionID,
 		"resumable":       hasTranscript(in.TranscriptPath),

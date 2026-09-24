@@ -67,14 +67,39 @@ func speaksForItself(run func(*cobra.Command, []string) error) func(*cobra.Comma
 
 // Execute runs the cobra root. Returns the exit code.
 func Execute() int {
-	if err := newRoot().Execute(); err != nil {
-		// Still a failure, still exit 1. The command said why already.
-		if !errors.Is(err, errAlreadySaid) {
-			fmt.Fprintln(os.Stderr, "atrium:", err)
-		}
-		return 1
+	return run(os.Args[1:])
+}
+
+// run is Execute for any argument list, so a test can run the exact command a
+// hooks file holds through the same exit-code rule.
+func run(args []string) int {
+	root := newRoot()
+	root.SetArgs(args)
+	cmd, err := root.ExecuteC()
+	if err == nil {
+		return 0
 	}
-	return 0
+	// A runner shows a non-zero hook as `Hook failed` after every command, or
+	// blocks the call. Whatever went wrong parsing a hook line, the session
+	// goes on.
+	if isRunnerHook(cmd) {
+		return 0
+	}
+	// Still a failure, still exit 1. The command said why already.
+	if !errors.Is(err, errAlreadySaid) {
+		fmt.Fprintln(os.Stderr, "atrium:", err)
+	}
+	return 1
+}
+
+// runnerHook marks a subcommand a runner's hooks file runs. See isRunnerHook.
+const runnerHook = "atrium/runner-hook"
+
+// isRunnerHook reports whether cmd is one a runner runs as a hook. Its
+// children, `hook install` and `hook status`, are typed by people and keep
+// their failures.
+func isRunnerHook(cmd *cobra.Command) bool {
+	return cmd != nil && cmd.Annotations[runnerHook] == "true"
 }
 
 func newRoot() *cobra.Command {

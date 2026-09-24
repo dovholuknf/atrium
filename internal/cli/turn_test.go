@@ -78,7 +78,7 @@ func TestTurnRefusesToBlockInsideABlockedTurn(t *testing.T) {
 
 	// No daemon is running on this address, but that is not what is being
 	// tested: this must return before it would ever reach one.
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe"); got != keepGoing {
+	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
 		t.Fatalf("got %q, wanted a plain continue inside a blocked turn", got)
 	}
 }
@@ -89,7 +89,7 @@ func TestTurnKeepsGoingWhenAtriumIsNotThere(t *testing.T) {
 	restore := withStdin(t, `{"cwd":"/w","session_id":"abc"}`)
 	defer restore()
 
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe"); got != keepGoing {
+	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
 		t.Fatalf("got %q, wanted a plain continue with no daemon", got)
 	}
 }
@@ -101,7 +101,7 @@ func TestTurnKeepsGoingOnUnreadablePayload(t *testing.T) {
 	restore := withStdin(t, `{"cwd":`)
 	defer restore()
 
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe"); got != keepGoing {
+	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
 		t.Fatalf("got %q, wanted a plain continue on a bad payload", got)
 	}
 }
@@ -112,7 +112,7 @@ func TestTurnKeepsGoingWhenTheGateIsOff(t *testing.T) {
 	restore := withStdin(t, `{"cwd":"/w"}`)
 	defer restore()
 
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe"); got != keepGoing {
+	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
 		t.Fatalf("got %q, wanted a plain continue with the gate off", got)
 	}
 }

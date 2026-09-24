@@ -15,6 +15,30 @@ section heading is just "what landed in this iteration."
   channel is unchanged, and after a restart the hooks deliver a waiting message as before. See
   `docs/typing-race.md`. ROOM-SIDE.
 
+- **Codex's hooks no longer fail, and its cursor stays at the prompt.**
+
+  Every codex hook line atrium writes ends in `--runner codex`, and only `atrium session` knew that flag. So
+  `atrium hook` exited 1 on codex's PreToolUse, PostToolUse and UserPromptSubmit, codex printed `Hook failed`
+  after every command, and the card never showed a tool running. `atrium hook` and `atrium turn` now take
+  `--runner`. A hook subcommand now ignores a flag it does not know, and any error parsing a hook line exits 0.
+  `hook install` and `hook status`, which people type, still fail on a typo. `atrium turn` now sends its runner,
+  and the room's Stop handler uses it: a codex card went back to claude's mark on its first turn ending. This is
+  `internal/cli`, so the hook binary needs a rebuild as well as the room (ROOM-SIDE).
+
+  Codex reaches the board through ConPTY, which splits each of codex's frames into two writes. The first shows
+  the cursor wherever the last cell was drawn, often one of the dots codex animates across its input box. The
+  second moves it back to the prompt about 2ms later. The board painted between the two, so the cursor jumped
+  around the input box. Claude moves its cursor to the prompt before every show, so it never did this. A new
+  `runnerprofile` table holds what each runner needs from the terminal and hooks. Codex's entry sets a 40ms
+  cursor settle, which the room sends in the attach `caps` message. For such a runner the board hides the cursor
+  after each write and shows it again once output has been quiet that long, if the runner last asked for it
+  (ROOM-SIDE, HUB-SIDE). Claude, gemini and ollama have no settle and are written through as before. The dots
+  are codex's own drawing.
+
+  A fake runner test now installs each runner's hooks into a scratch file and runs the commands it wrote through
+  the real command tree. It fires them in session order against a test daemon, with that runner's payloads, and
+  checks the card's column and badge after each one. It needs no agent and no tokens.
+
 - **Terminals list: exited rows fade in their theme, both copies of the attached row bridge, groups can be
   removed.**
 
