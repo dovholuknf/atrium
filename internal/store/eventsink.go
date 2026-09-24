@@ -55,7 +55,8 @@ func (s *Store) configureSinks(dbPath string) {
 	}
 	names := splitSinkNames(raw)
 	if len(names) == 0 {
-		return // default: hot db, no cold, already set in Open
+		s.configureColdKinds() // only logs, since there is no cold sink to route to
+		return                 // default: hot db, no cold, already set in Open
 	}
 
 	// The first name is the hot sink. Only `db` can serve Recent in this phase,
@@ -81,6 +82,45 @@ func (s *Store) configureSinks(dbPath string) {
 		default:
 			log.Printf("event sink: unknown sink %q; ignoring", name)
 		}
+	}
+	s.configureColdKinds()
+}
+
+// dbPinnedKinds are the event kinds the db must keep whatever event_cold_kinds
+// says, because the store reads them back from the table: `created` is how
+// HistoryRolledOff tells a rolled-off card, and `submitted` feeds
+// LatestAgentReports.
+var dbPinnedKinds = map[string]bool{EventCreated: true, EventSubmitted: true}
+
+// configureColdKinds reads event_cold_kinds and routes the named kinds to the
+// cold sinks alone. It runs after the cold sinks are wired, because with no
+// cold sink a cold-only event would be written nowhere; in that case the whole
+// setting is logged and ignored rather than silently dropping history. Pinned
+// kinds are skipped with a log line and the rest still apply.
+func (s *Store) configureColdKinds() {
+	raw, err := s.Setting(SettingEventColdKinds)
+	if err != nil {
+		log.Printf("event sink: reading %s: %v; every kind stays in the db", SettingEventColdKinds, err)
+		return
+	}
+	kinds := splitSinkNames(raw)
+	if len(kinds) == 0 {
+		return // default: every kind goes to the db
+	}
+	if len(s.cold) == 0 {
+		log.Printf("event sink: %s = %q needs a cold sink in %s; every kind stays in the db",
+			SettingEventColdKinds, raw, SettingEventSink)
+		return
+	}
+	for _, k := range kinds {
+		if dbPinnedKinds[k] {
+			log.Printf("event sink: %q is read back from the db and cannot be cold-only; keeping it", k)
+			continue
+		}
+		if s.coldOnly == nil {
+			s.coldOnly = map[string]bool{}
+		}
+		s.coldOnly[k] = true
 	}
 }
 
