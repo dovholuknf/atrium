@@ -80,6 +80,10 @@ type Proxy struct {
 	// Nil until an inventory is wired, because the flag it reads lives in the
 	// hub's store. See autoapprove.go.
 	approver *autoApprover
+
+	// restart is the gate a hub-only deploy asks before it restarts this hub.
+	// See restartgate.go.
+	restart *restartGate
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -89,6 +93,13 @@ type Proxy struct {
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room}
 	p.feeds = newFeeds(p)
+	p.restart = newRestartGate(func(state map[string]any) {
+		data, err := json.Marshal(state)
+		if err != nil {
+			return
+		}
+		p.feeds.broadcast(Event{Kind: restartEvent, Data: data})
+	}, p.feeds.watchers, func(kind, detail string) { p.RecordAudit("", kind, detail) })
 
 	p.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -1142,7 +1153,12 @@ func (p *Proxy) serveControl(w http.ResponseWriter, r *http.Request) {
 // serveHubAPI answers the few things only the hub knows.
 func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	switch strings.TrimPrefix(r.URL.Path, "/_hub/") {
+	sub := strings.TrimPrefix(r.URL.Path, "/_hub/")
+	if sub == "restart" || strings.HasPrefix(sub, "restart/") {
+		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
+		return
+	}
+	switch sub {
 	case "rooms":
 		// ATTACHED ONLY, and every other pane on the board depends on that.
 		// The room picker, the grouping, the counter and the question about

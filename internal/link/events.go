@@ -387,6 +387,31 @@ func (f *feeds) emit(e Event) {
 	}
 }
 
+// broadcast hands a hub event to every board, whatever room it is scoped to.
+//
+// `emit` would skip a room-scoped board for an event with no room, and a hub
+// restart is every window's news, the popped-out ones included. A slow client
+// is dropped the same way `emit` drops one.
+func (f *feeds) broadcast(e Event) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for s := range f.subs {
+		select {
+		case s.ch <- e:
+		default:
+			delete(f.subs, s)
+			s.shut()
+		}
+	}
+}
+
+// watchers is how many boards are holding a stream open right now.
+func (f *feeds) watchers() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.subs)
+}
+
 // ── what a client sees ───────────────────────────────────
 
 // serveEvents writes one stream to one board.

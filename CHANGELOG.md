@@ -37,6 +37,19 @@ section heading is just "what landed in this iteration."
   `website`, that harbour reads the same before and after `website` is worn, and that harbour and noir carry none
   of it. HUB-SIDE.
 
+- **A hub-only deploy asks the board before it restarts the hub.** See `docs/hub-restart-gate.md`.
+
+  `POST /_hub/restart`, loopback only, holds the deploy script's request until nobody has used a board for ten
+  seconds. Every board window reports keystrokes, clicks, scrolls and pastes to the hub, the popped-out ones too.
+  The hub then pushes a `hub-restart` countdown to every board stream: "the hub restarts in 5s unless you click
+  this". A click in any window pauses the restart everywhere, and a sticky "hub restart paused" toast with a resume
+  button holds it until somebody resumes. Typing during the countdown takes it down and waits for quiet again. On
+  `go` every board covers itself with a "the hub is restarting" modal. The modal clears when the event stream comes
+  back. With no board open the answer is `go` at once. `scripts/hub-restart-gate.ps1` is the deploy's side: exit 0
+  to restart, 3 to leave the hub alone. A hub older than the gate answers 404 and is restarted the old way.
+  Covered by Go tests on the gate and the endpoint, and a headless case for the countdown, the pause, resume and
+  the modal. HUB-SIDE.
+
 - **The attached terminal's frame matches the bridge running into it.**
 
   With card colours on, the attached row and its bridge are framed at 3px in the row's title colour, and the

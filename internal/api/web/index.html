@@ -858,6 +858,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      Newest first, because the reason to open this is a toast that went past
      while you were reading something else. Rows that name a card open it, the
      same as clicking the toast would have. -->
+<!-- THE HUB IS RESTARTING.
+     Up from the hub saying go until this window's event stream comes back, so
+     nothing typed while the hub is away lands half way. data-guard keeps a
+     click outside from dismissing it. See js/hubrestart.js. -->
+<dialog id="hubrestart" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><h2>the hub is restarting</h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="hubrestart-t" class="asktext"></div>
+  </div>
+</dialog>
+
 <dialog id="toastlog">
   <div class="dlg-head">
     <div class="grow"><h2>notifications</h2></div>
@@ -2863,6 +2876,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
+<script src="/js/hubrestart.js"></script>
 <script src="/js/boot.js"></script>
 </body>
 </html>

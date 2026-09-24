@@ -1432,6 +1432,9 @@ function connect() {
     // to an open pane by `onAuditEvent`, so a closed one pays nothing. See
     // js/audit.js.
     if (typeof onAuditEvent === "function") onAuditEvent();
+    // A hub restart cover comes down on the stream coming back, and a pause is
+    // re-read. See js/hubrestart.js.
+    if (typeof onHubStreamOpen === "function") onHubStreamOpen();
   };
   es.onerror = () => {
     conn.classList.remove("live");
@@ -1479,6 +1482,13 @@ function connect() {
     let why = "";
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
     armRestart(why);
+  });
+  // THE HUB IS ABOUT TO RESTART, or has been asked to and is waiting. The
+  // countdown, the pause and the cover. See js/hubrestart.js.
+  es.addEventListener("hub-restart", e => {
+    let d = {};
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (typeof onHubRestart === "function") onHubRestart(d);
   });
   // An item moved: handed to a room, started there, or refused. The queue is
   // only drawn on the runners pane, and `renderDispatch` is a single fetch, so

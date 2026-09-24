@@ -17,7 +17,7 @@
 // from the current page, so filtering by a kind does not collapse the choice of
 // kinds. Unknown kinds still show in the list, they are just not offered here.
 const AUDIT_KINDS = [
-  "hub-started", "room-attached", "room-detached", "room-going-down",
+  "hub-started", "hub-restart", "room-attached", "room-detached", "room-going-down",
   "launch-refused", "board-share-opened",
   "session-start", "session-finish", "session-exit",
   "permission-requested", "permission-decided",
