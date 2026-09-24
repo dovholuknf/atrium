@@ -2,9 +2,201 @@
 
 Items owned by this line of work. The original `docs/backlog.md` belongs to another surface; do not edit it.
 
+Sorted: what clint paused on 2026-09-24 first, then bugs, then decided features, then open housekeeping, then the
+larger designs. Inside each group, the item closest to landing comes first.
+
+| # | Item | Group | State |
+| - | ---- | ----- | ----- |
+| 1 | sa58: popped-out terminal also attached on the main board | paused | fix done, not merged |
+| 2 | sa60: process registry design, revised | paused | doc done, not merged |
+| 3 | sa59: restart gate says why it went | paused | WIP |
+| 4 | sa61: terminals pane group drag and group colours | paused | WIP, probe only |
+| 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | plan done, 13 questions |
+| 6 | Taking a card out of a group | bug | not started |
+| 7 | The held-message `!` chip says the wrong reason | bug | not started |
+| 8 | Input lag follow-ups | bug | not started |
+| 9 | Eliminate unstyled tooltips | bug | not started |
+| 10 | `atrium_say` types immediately by default | feature | decided, not started |
+| 11 | Clicking `? N` or a question clears it | feature | not started |
+| 12 | Keep codex up to date | feature | not started |
+| 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
+| 14 | Per-card notification log | design | tentative |
+| 15 | Pluggable event sink, what is left | design | stages 1-2 done |
+
 ------------
 
-## Pluggable event sink: get the audit trail out of the primary database
+## Paused 2026-09-24: work in flight when clint stopped the wave
+
+**Raised 2026-09-24.** Paused to save tokens. Each worker was told to commit what it had and stop. Their cards,
+branches and worktrees are kept (do not cull). Nothing here is on `claude/main` unless it says so.
+
+### 1. sa58: a popped-out terminal also attached on the main board
+
+`claude/popout-double-attach`, **fix done at `c26ba01`, not merged.** clint saw win32crypto-e2e live in a
+popped-out window and in the main board's terminals pane at once. Cause: the hub spells a card `room~id` with
+several rooms attached and bare with one, a restart re-attaches rooms one at a time so the spelling flips, and
+the pop-out claim code compared raw ids. Fixed by keying on the bare id. The popped-out window wins. Left: a green
+`check-board.sh` rerun (the last failure looked like the load flake) and the manual AP checks on a two-room
+throwaway hub.
+
+### 2. sa60: process registry design, revised
+
+`claude/process-registry-design`, **doc done at `00f8c4e`, not merged.** sa56's design
+(`docs/process-registry-design.md`, on `claude/main`) revised with clint's answers: long-running services only,
+a process never outlives its runner, no restart ever, only the owner stops it and others ask the owner. Adds a
+section on the Windows firewall prompts (new exe paths listening on all interfaces: go test binaries in
+`%TEMP%\go-build*`, per-worktree `build.claude`, atrium's own `:7777`/`:7778`/`:7801` defaults). Mercurius
+`s_Klruhz3XfqAr` found one blocker, fixed with a gated `proc-exec` launcher that joins a room-owned job object
+before it spawns. No second round ran. Open: processes on window-mode and joined cards (default: allow while the
+reaper watches the pid), and gate as Bash or as a tool of its own (default: Bash). Build after One atrium.
+
+### 3. sa59: the restart gate says why it went
+
+`claude/gate-counts-every-board`, **WIP `e4052a2`.** At 12:57 a gated hub-only deploy printed "nobody is using a
+board" with clint's board open. The first diagnosis (the gate misses single-room streams) was wrong: the hub audit
+at 16:57:56Z says "restarting after a countdown nobody paused", and every stream path goes through feeds. The
+script printed the same line for every go. The WIP makes a go answer say why and adds a path test for every
+stream route. Left: docs, CHANGELOG, test-plan AQ, AM1's expected text, a non-WIP subject, and removing
+`D:\tmp\gate59\old`.
+
+### 4. sa61: terminals pane group drag and group colours
+
+`claude/term-groups-drag-color`, **WIP `a6a9d3f`, a diagnostic probe only.** Found: the terminals-pane group
+headings never wear `--ghue`, so they show a grey name with no hue. The stack, the board and tag chips recolour
+correctly on harbour, daylight and website. The fix: put `--ghue` on `.tgroup`/`.tnest` the way `.stackgroup`
+has it. Reload and a second window untested. Drag-to-reorder of custom group headings not started (write
+`p.groups` the way `moveCustomGroup` does).
+
+### 5. One atrium
+
+`docs/one-atrium-plan.md`, **on `claude/main`, plan only.** Mode A and Mode B out, one `atrium` binary, "the hub"
+becomes "the atrium" in text people read, `atrium run` starts the atrium and its room. Seven stages, a cutover for
+this machine with rollback, 11 CLAUDE.md edits listed for clint. 13 Open Questions wait on clint (the
+orchestrator's OWED table, row C1). Carries a live bug: the room's `daemon.json` names `atrium2.exe`, so the
+board's "install hooks" writes hook lines that cannot run.
+
+------------
+
+## Bugs
+
+### 6. Taking a card out of a group
+
+**Raised 2026-09-24.** clint cannot find a way to remove a card from a custom group. A group is a tag, so the fix
+is a way to drop that tag from where the card is filed: the card's menu (`out of group`), a drag out to
+`untagged`, or both, on the stack, the board and the terminals pane. Fits with sa61's work.
+
+### 7. The held-message `!` chip says the wrong reason
+
+**Raised 2026-09-24** (clint screenshot `.atrium/incoming/20260924-133410-pasted.png`, 13:34). On a running card
+with an EMPTY input line it said "delivers when your input line is clear and idle. clear or submit your line to
+receive it now", which blames the line when the wait is really for the turn to end. Say which condition is
+holding it. Show the COUNT of held messages on the chip (`! 2`), the way `? N` counts open questions. Most of
+this goes away with item 10.
+
+### 8. Input lag follow-ups
+
+**Raised 2026-09-24.** 14:18 sample (clint, board at localhost:7778): 165 keys, p50 9.1ms, p95 ~90ms, max 268ms.
+Every slow key is `wire` (hub, room, pty, runner redraw), none is send, parse or paint, and no fetch was in
+flight. Spikes cluster over ~3s, then 4-10ms.
+
+- Line up the hub's and the room's own hop logs for a slow key (ATRIUM_DEBUG_INPUTLAG is pinned on) to say which
+  hop grows.
+- `socket had N bytes unsent` counts the key's OWN frame (18 bytes = `{"t":"in","d":"x"}`), read just after send.
+  Subtract it, or read it before send, so the line only appears when something was really queued.
+- A console filter of `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one
+  prefix.
+
+### 9. Eliminate unstyled tooltips
+
+**Raised 2026-09-24.** The `!` chip uses a native `title` tooltip: plain white box, system font, no theme. Find
+every native `title` tooltip on the board and replace it with the board's styled tooltip (the one help bubbles
+and `data-tip` use, if one exists, or build one), on every skin. Add a `check-board.sh` rule that fails on a new
+bare `title=` in `internal/api/web/` unless it is allowlisted (form controls where the browser tooltip is the
+accessible name).
+
+------------
+
+## Decided features
+
+### 10. `atrium_say` types immediately by default
+
+**Decided 2026-09-24.** clint expected a say to land mid-turn the way his own typing does, and it waits for the
+turn to end (the N7 rule), so a "stop now" to four workers reached none of them.
+
+- The default becomes IMMEDIATE: typed as soon as the input line is empty and no dialog is open. Reuse the
+  restart wake's gate (empty line, keyboard quiet, no dialog). Claude Code queues typed input mid-turn and reads
+  it at its next step.
+- The old behaviour becomes an option, `when: "done"`, for messages that should not disturb a worker mid-thought.
+- Whether a runner takes typed input mid-turn is a RUNNER SETTING on its row on the runners page, seeded from the
+  runner profile (claude: yes, codex: to be checked). A runner set to no falls back to done.
+- The board gets an "immediately" button beside send.
+- `internal/daemon/peers.go` and CLAUDE.md "Out of scope" both say peer text is never typed mid-turn. Both need
+  rewording with this, and the CLAUDE.md files are clint's.
+
+### 11. Clicking `? N` or a question clears it
+
+**Raised 2026-09-24.** clint expects open questions he has looked at and clicked to go away. Decide whether a
+click marks them answered or only seen, and do the same for `! N`.
+
+### 12. Keep codex up to date
+
+**Raised 2026-09-24.** Not started.
+
+A codex session on the board stopped at start to update itself: `Updating Codex via npm install -g @openai/codex...`
+inside the card's terminal, with nothing else to show for it. Claude already gets an update card
+(`claude code: <old> to <new>`) from `internal/daemon/runnerupdate.go`, which reads the installed version from the
+package metadata and the published one with one HTTP request.
+
+- **A codex update task,** the same shape as claude's: a card saying `codex: <old> to <new>` when a newer
+  `@openai/codex` is published, with the update as its action.
+- **A "keep codex up to date" setting,** off by default. On, atrium runs the update itself between sessions, never
+  while a codex session is running, and records the result on the card.
+- **Codex updating itself inside a launch** should not look like a hang. Either the setting keeps it current so this
+  never happens, or the launch passes whatever flag codex has to skip its own startup update.
+- Check what `runnerupdate.go` already does for codex before building: its header names `codex --version`.
+
+------------
+
+## Housekeeping
+
+### 13. Asked, not answered
+
+**Raised 2026-09-24.** Waiting on clint:
+
+- Delete worktrees already merged into `claude/main` (128 under `D:\worktrees\claude\atrium\`, several GB),
+  and each future one when its work is accepted.
+- Restart saNN numbering at sa01 after sa99.
+- `Set-NetFirewallProfile -NotifyOnListen False`, clint's machine-wide call on the firewall prompts.
+
+Accepted and on `claude/main` but NOT deployed: the process registry design doc and the one-atrium plan
+(docs only).
+
+------------
+
+## 14. Per-card notification log
+
+**Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
+Not started.
+
+### The idea
+
+A card accumulates notifications over its life: a peer message held/deferred and re-warned on backoff (see the
+peer-message injection work), a permission asked, a going-down, an audit event. Today a notification fires once as
+a transient toast (and toasts have been vanishing too fast to read), so a human who was not looking never learns it
+happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
+and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
+answerable after the fact rather than only in the moment.
+
+### Why it might not be worth it
+
+The global bell history plus the new per-card held-message indicator may already cover the need. The event log
+(and the pluggable event sink above) already records `notified` events per card, so this could be a thin read view
+over data that exists rather than new storage. Decide whether a dedicated per-card log earns its place or whether
+filtering the existing history by card is enough. clint has not committed to building it.
+
+------------
+
+## 15. Pluggable event sink: get the audit trail out of the primary database
 
 **Raised 2026-09-18.** Stages 1 and 2 done. The offsite sink and a live swap are left.
 
@@ -201,124 +393,5 @@ reclaiming disk. Options to design for, in rough order of preference:
 The event sink makes this smaller either way: move the bulk (`output` and old audit rows) out to files or
 offsite, and the primary database plateaus low enough that shrinking it stops mattering.
 
-------------
-
-## Per-card notification log
-
-**Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started.
-
-### The idea
-
-A card accumulates notifications over its life: a peer message held/deferred and re-warned on backoff (see the
-peer-message injection work), a permission asked, a going-down, an audit event. Today a notification fires once as
-a transient toast (and toasts have been vanishing too fast to read), so a human who was not looking never learns it
-happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
-and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
-answerable after the fact rather than only in the moment.
-
-### Why it might not be worth it
-
-The global bell history plus the new per-card held-message indicator may already cover the need. The event log
-(and the pluggable event sink above) already records `notified` events per card, so this could be a thin read view
-over data that exists rather than new storage. Decide whether a dedicated per-card log earns its place or whether
-filtering the existing history by card is enough. clint has not committed to building it.
-
-------------
-
-## Keep codex up to date
-
-**Raised 2026-09-24.** Not started.
-
-A codex session on the board stopped at start to update itself: `Updating Codex via npm install -g @openai/codex...`
-inside the card's terminal, with nothing else to show for it. Claude already gets an update card
-(`claude code: <old> to <new>`) from `internal/daemon/runnerupdate.go`, which reads the installed version from the
-package metadata and the published one with one HTTP request.
-
-- **A codex update task,** the same shape as claude's: a card saying `codex: <old> to <new>` when a newer
-  `@openai/codex` is published, with the update as its action.
-- **A "keep codex up to date" setting,** off by default. On, atrium runs the update itself between sessions, never
-  while a codex session is running, and records the result on the card.
-- **Codex updating itself inside a launch** should not look like a hang. Either the setting keeps it current so this
-  never happens, or the launch passes whatever flag codex has to skip its own startup update.
-- Check what `runnerupdate.go` already does for codex before building: its header names `codex --version`.
-
-------------
-
-## Paused 2026-09-24: work in flight when clint stopped the wave
-
-**Raised 2026-09-24.** Paused to save tokens. Each worker was told to commit what it had and stop. Their cards,
-branches and worktrees are kept. Nothing below is on `claude/main` yet unless it says so.
-
-- **sa58, a popped-out terminal also attached on the main board** (`claude/popout-double-attach`). clint saw
-  win32crypto-e2e live in a popped-out window and in the main board's terminals pane at once. Suspect: after a
-  restart the main board re-attaches before the roll call hears the popped-out window again. Rule: the popped-out
-  window wins. DONE at `c26ba01` (not merged). Cause: the hub spells a card `room~id` with several rooms attached
-  and bare with one, a restart re-attaches rooms one at a time so the spelling flips, and the pop-out claim code
-  compared raw ids. Fixed by keying on the bare id. Left: a green `check-board.sh` rerun (last failure looked like
-  the load flake) and the manual AP checks on a two-room throwaway hub.
-- **sa59, the restart gate counts no board** (`claude/gate-counts-every-board`). At 12:57 a gated hub-only deploy
-  answered "nobody is using a board" with clint's board open and restarted with no countdown. The gate counts only
-  the hub's merged event streams (`internal/link/events.go` `watchers`), and a single-room hub (`only=claude-sg4`)
-  likely proxies the board's stream straight to the room. WRONG DIAGNOSIS: sa59 found the gate did count the
-  board. The hub audit at 16:57:56Z says "restarting after a countdown nobody paused", and every stream path goes
-  through feeds. The script printed the same "nobody is using a board" line for every go, which hid it. WIP
-  `e4052a2`: a go answer says why, plus a path test for every stream route. Left: docs, CHANGELOG, test-plan AQ,
-  AM1's expected text, a non-WIP subject, and removing `D:\tmp\gate59\old`.
-- **sa60, process registry design revision** (`claude/process-registry-design`). sa56's design
-  (`docs/process-registry-design.md`, on `claude/main`) revised with clint's answers: long-running services only,
-  a process never outlives its runner, no restart ever, only the owner stops it and others ask the owner. Plus a
-  section on the Windows firewall prompts (new exe paths listening on all interfaces: go test binaries in
-  `%TEMP%\go-build*`, per-worktree `build.claude`, atrium's own `:7777`/`:7778`/`:7801` defaults). Build after the
-  one-atrium consolidation. DONE as a doc at `00f8c4e` (not merged). Mercurius `s_Klruhz3XfqAr` found one blocker,
-  fixed with a gated `proc-exec` launcher that joins a room-owned job object before it spawns. No second round
-  ran. Open: processes on window-mode and joined cards (default: allow while the reaper watches the pid), and
-  gate as Bash or as a tool of its own (default: Bash).
-- **sa61, terminals pane group drag and group colours** (`claude/term-groups-drag-color`). Drag group headings to
-  reorder in the terminals pane, and find why group colours "don't work". Paused with nothing committed. Found:
-  the terminals-pane group headings never wear `--ghue`, so they show a grey name with no hue. The stack, the
-  board and tag chips recolour correctly on harbour, daylight and website. Reload and a second window untested.
-  Drag not started. WIP `a6a9d3f` holds only the diagnostic probe. The fix: put `--ghue` on `.tgroup`/`.tnest`
-  the way `.stackgroup` has it.
-- **One atrium** (`docs/one-atrium-plan.md`, on `claude/main`). Mode A and Mode B out, one `atrium` binary,
-  "the hub" becomes "the atrium" in text people read. 13 Open Questions wait on clint (see the orchestrator's
-  OWED table, row C1). Also carries a live bug: the room's `daemon.json` names `atrium2.exe`, so the board's
-  "install hooks" writes hook lines that cannot run.
-- **Taking a card out of a group.** clint cannot find a way to remove a card from a custom group. A group is a
-  tag, so the fix is a way to drop that tag from where the card is filed: the card's menu (`out of group`), a
-  drag out to `untagged`, or both, on the stack, the board and the terminals pane. Fits with sa61's work.
-- **`atrium_say` types immediately by default.** clint expected a say to land mid-turn the way his own typing
-  does, and it waits for the turn to end (the N7 rule), so a "stop now" to four workers reached none of them.
-  Decided 2026-09-24: the default becomes IMMEDIATE, typed as soon as the input line is empty and no dialog is
-  open (reuse the restart wake's gate: empty line, keyboard quiet, no dialog). Claude Code queues typed input
-  mid-turn and reads it at its next step. The old behaviour becomes an option, `when: "done"`, for messages that
-  should not disturb a worker mid-thought. Whether a runner takes typed input mid-turn is a RUNNER SETTING on its
-  row on the runners page (clint, 2026-09-24), seeded from the runner profile (claude: yes, codex: to be checked),
-  and a runner set to no falls back to done. The board gets an "immediately" button beside send. Check `internal/daemon/peers.go` and CLAUDE.md
-  "Out of scope": both say peer text is never typed mid-turn, and both need rewording with this.
-- **The held-message `!` chip** (clint screenshot `.atrium/incoming/20260924-133410-pasted.png`, 13:34). On a
-  running card with an EMPTY input line it said "delivers when your input line is clear and idle. clear or submit
-  your line to receive it now", which blames the line when the wait is really for the turn to end. Say which
-  condition is holding it. Show the COUNT of held messages on the chip (`! 2`), the way `? N` counts open
-  questions. Most of this goes away when `atrium_say` types immediately by default (above).
-- **Clicking the `? N` chip or a question in the card clears it.** clint expects open questions he has looked at
-  and clicked to go away. Decide whether a click marks them answered or only seen, and do the same for `! N`.
-- **Eliminate unstyled tooltips.** The chip above uses a native `title` tooltip: plain white box, system font,
-  no theme. Find every native `title` tooltip on the board and replace it with the board's styled tooltip (the
-  one help bubbles and `data-tip` use, if one exists, or build one), on every skin. Add a `check-board.sh` rule
-  that fails on a new bare `title=` in `internal/api/web/` unless it is allowlisted (form controls where the
-  browser tooltip is the accessible name).
-- **Input lag, 2026-09-24 14:18 sample** (clint, board at localhost:7778): 165 keys, p50 9.1ms, p95 ~90ms, max
-  268ms. Every slow key is `wire` (hub, room, pty, runner redraw), none is send, parse or paint, and no fetch was
-  in flight. Spikes cluster over ~3s, then 4-10ms. Two follow-ups. (1) Line up the hub's and the room's own hop
-  logs for a slow key (ATRIUM_DEBUG_INPUTLAG is pinned on) to say which hop grows. (2) `socket had N bytes
-  unsent` counts the key's OWN frame (18 bytes = `{"t":"in","d":"x"}`), read just after send: subtract it, or
-  read it before send, so the line only appears when something was really queued. Also: a console filter of
-  `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one prefix.
-- **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
-  `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
-  `Set-NetFirewallProfile -NotifyOnListen False`.
-
-Accepted and on `claude/main` but NOT deployed: `d401757` and the process registry design doc (docs only).
 
 ------------
