@@ -287,6 +287,14 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
 - **Taking a card out of a group.** clint cannot find a way to remove a card from a custom group. A group is a
   tag, so the fix is a way to drop that tag from where the card is filed: the card's menu (`out of group`), a
   drag out to `untagged`, or both, on the stack, the board and the terminals pane. Fits with sa61's work.
+- **`atrium_say` types immediately by default.** clint expected a say to land mid-turn the way his own typing
+  does, and it waits for the turn to end (the N7 rule), so a "stop now" to four workers reached none of them.
+  Decided 2026-09-24: the default becomes IMMEDIATE, typed as soon as the input line is empty and no dialog is
+  open (reuse the restart wake's gate: empty line, keyboard quiet, no dialog). Claude Code queues typed input
+  mid-turn and reads it at its next step. The old behaviour becomes an option, `when: "done"`, for messages that
+  should not disturb a worker mid-thought. A runner whose profile says it cannot take input mid-turn falls back
+  to done. The board gets an "immediately" button beside send. Check `internal/daemon/peers.go` and CLAUDE.md
+  "Out of scope": both say peer text is never typed mid-turn, and both need rewording with this.
 - **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
   `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
   `Set-NetFirewallProfile -NotifyOnListen False`.
