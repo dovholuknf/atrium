@@ -73,7 +73,7 @@ to the room.
 | `hub <room> echo: frame up -> first bytes back` | the hub's round trip to the room, runner included |
 | `hub <room> up: write toward the room took` | the link refusing bytes, which is backpressure |
 | `room <task> in: ws frame -> pty write` | frame read to bytes in the pty, split by lock wait and pty write |
-| `room <task> echo: ws frame in -> first output out` | the room's round trip, runner included |
+| `room <task> echo: ws frame in -> first output out` | the room's round trip, split into `runner` and `atrium` |
 | `room <task> out: pty read -> fanout` | lock contention inside the room between the pty and the attachers |
 | `room <task> out: ws write` | the room's websocket send blocking |
 | `room <task> out: attacher N chunks behind, N bytes dropped` | an attacher too slow to keep up, output lost |
@@ -84,7 +84,10 @@ Match lines by clock. For one slow keystroke:
 
 - **browser wire** minus **hub echo** is the browser-to-hub leg, including the hub's own HTTP stack.
 - **hub echo** minus **room echo** is the link between hub and room.
-- **room echo** with a fast **room in** is the runner itself taking that long to draw.
+- **room echo** splits itself at the moment the pty handed output over. `runner` is frame in to pty read: the pty
+  write, the runner's think and redraw, and ConPTY. `atrium` is pty read to websocket write: the ring, the fan-out,
+  the attach queue and the send. A large `runner` with no **room in** line is the runner, or the machine not
+  scheduling it. `split unknown` means a later chunk moved the stamp, so fall back to the other lines.
 - A large **input lock** is a keystroke waiting behind a peer message being typed in.
 - A large **main thread blocked** on the browser line means none of the above. Look at what the board was doing.
 
