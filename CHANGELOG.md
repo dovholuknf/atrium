@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A peer message waits for an empty line and the end of the turn before it is typed.**
+
+  A message typed into a session that was mid-turn did not submit. Claude Code held it until the turn ended and
+  then sent it with whatever the operator had typed in the meantime, as one prompt. A peer's message is now typed
+  only when both hold at once: the operator's line is empty and quiet, and the runner's turn is over. Until then
+  it waits on the held-message retry, and the permission and Stop hooks leave it for the typist. A cleared line
+  lets it through. The turn ending re-arms the retry, so it lands about two seconds later. The operator's own
+  channel is unchanged, and after a restart the hooks deliver a waiting message as before. See
+  `docs/typing-race.md`. ROOM-SIDE.
+
 - **Terminals list: exited rows fade in their theme, both copies of the attached row bridge, groups can be
   removed.**
 

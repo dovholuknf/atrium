@@ -57,6 +57,7 @@ From the room store, `main:atrium`, 2026-09-24 local:
 
 ## Recommendation
 
+- Superseded by the decision below. Kept for the record.
 - Option A. It uses the path that already exists for the busy case: the permission and Stop hooks drain the
   queue, and `takeMessages` clears the injector's held copy. It also sends the message sooner than typing does,
   because a tool call comes before the turn ends.
@@ -67,6 +68,35 @@ From the room store, `main:atrium`, 2026-09-24 local:
   injector does not type until the card goes `needs-input`.
 - Not done on this branch. It changes the delivery policy that `peers.go` documents at length, so it needs a
   decision first.
+
+## Decision (clint, 2026-09-24)
+
+- Not option A. Typed delivery waits and re-checks until both hold at the same moment: the line is empty (the
+  existing gate, anything in it means the human is typing) and the session is not mid-turn. It polls, never gives
+  up, and delivers as soon as both clear. A line typed into and then cleared lets it through. Peer text only.
+- No move to the hook queue. The message row is still written, so it is durable, but the permission and Stop
+  hooks skip a peer message the injector is holding (`takeMessages`, `withoutHeldPeers`). Without that skip the
+  next tool call would carry it mid-turn, which is option A by another route.
+
+## What was built
+
+- `activityTracker.midTurn`: the badge says `thinking`, `tool` or `compacting`. Read past the 15 minute staleness
+  cutoff, so a long build still counts. A card that never posted activity is not mid-turn, so runners with no
+  hooks are typed into as before.
+- `peerMustWait(taskID, from)`: peer text and mid-turn. Checked beside `dialogOpen` in `tellByTyping` and
+  `handleMessage`, and per entry in `pendingInjector.attempt`, where it is a silent wait that does not widen the
+  backoff.
+- `turnEndedBecause` re-arms the injector's backoff, so a message that waited out a turn is typed about two
+  seconds after the Stop, once the gate's idle window has passed.
+- Tests in `internal/daemon/typing_race_test.go`: mid-turn waits for the turn to end and the hooks do not carry
+  it; a line with text waits, and a cleared line lets it through; the operator's text is not held for the turn.
+
+## Hazards left
+
+- A runner that dies mid-turn with its pty still open keeps `midTurn` true, and the message waits until the
+  daemon restarts. The held chip shows it. The restart hands it to the hooks.
+- A message held for a dirty line no longer rides the hooks either, so a session whose operator leaves text in
+  the line gets nothing until the line clears. This is the rule as clint stated it.
 
 ## Side notes
 

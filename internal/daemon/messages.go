@@ -105,6 +105,16 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	if err != nil || len(msgs) == 0 {
 		return nil, err
 	}
+	// A peer message waiting to be typed stays for the typist. It waits for an
+	// empty line and the end of the turn, and a hook that carried it mid-turn
+	// would skip that wait. In memory, so after a restart, or once the terminal
+	// is gone, the hooks deliver it as they always did. See docs/typing-race.md.
+	if d.pending != nil {
+		msgs = d.pending.withoutHeldPeers(taskID, msgs)
+		if len(msgs) == 0 {
+			return nil, nil
+		}
+	}
 	ids := messageIDs(msgs)
 	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
 		return nil, err
@@ -251,6 +261,11 @@ func (d *Daemon) turnEnded(taskID string) { d.turnEndedBecause(taskID, "") }
 // Both landed in `ready` and read identically, so a question asked two minutes
 // ago sorted below twenty sessions that had merely finished overnight.
 func (d *Daemon) turnEndedBecause(taskID, reason string) {
+	// A peer message that waited out the turn retries about two seconds from
+	// now, not at whatever interval its wait had reached. See peerMustWait.
+	if d.pending != nil {
+		d.pending.reset(taskID)
+	}
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return
@@ -356,7 +371,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// into the middle of a line clint was writing. `typeThroughGate` types only into
 	// an empty, idle line under the input lock, and a closed gate falls to the
 	// queue below, which retries on screen until the line clears.
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
+	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.peerMustWait(taskID, from) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -384,7 +399,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// A part written line or a keystroke in the last two seconds: nothing
-		// was written. Fall through to the queue.
+		// was written. Fall through to the queue. A peer's text mid-turn skips
+		// the write and lands here too.
 	}
 
 	// A peer message carries its sender so the delivery banner can attribute it

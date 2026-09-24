@@ -359,6 +359,30 @@ func (a *activityTracker) dialogOpen(taskID string) bool {
 	return cur != nil && cur.Dialog
 }
 
+// midTurn reports whether the runner is inside a turn: thinking, running a tool
+// or compacting, with no Stop or Notification since. A peer message typed now
+// would not submit. Claude Code holds a prompt that arrives mid-turn until the
+// turn ends and then sends it together with whatever the operator typed in the
+// meantime. See docs/typing-race.md.
+//
+// READ PAST THE STALENESS CUTOFF, like `toolSince`. A build that runs twenty
+// minutes is still mid-turn, and typing into it is the race this guards. A card
+// that has never posted activity is not mid-turn, so a runner with no hooks is
+// typed into as before.
+func (a *activityTracker) midTurn(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	if cur == nil {
+		return false
+	}
+	switch cur.What {
+	case ActivityThinking, ActivityTool, ActivityCompacting:
+		return true
+	}
+	return false
+}
+
 // addSubagents moves the tally, never below zero.
 //
 // SubagentStart takes it up and SubagentStop takes it down. A hook is best
