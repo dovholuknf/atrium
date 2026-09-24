@@ -24,6 +24,18 @@ lifetimes, so one board can show many machines, or many accounts on one machine.
 **The room dials the hub, never the reverse.** A hub restart is a room noticing a closed socket and dialing again.
 A room also serves its own board on loopback, so it stays usable while the hub is down.
 
+## Start a hub
+
+`atrium2` is not in the 0.0.1 packages. [Build it from source](./install.md#from-source), copy it somewhere it
+can stay, and start the hub on the machine you will open the board from:
+
+```bash
+atrium2 hub
+```
+
+It prints where the board is, `http://localhost:7800` by default, and where rooms dial in, `:7801`. A hub holds
+nothing, so the board is empty until a room joins.
+
 ## Adding a room
 
 The hub names every room. Adding one writes it down and prints a join string for that name:

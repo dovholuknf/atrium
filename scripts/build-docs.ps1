@@ -11,6 +11,7 @@
 
   Checks, each fatal:
     - npm ci, from the committed lockfile, so a build is the same build everywhere
+    - the starter gate script in docs/hooks.md, run against a mock of atrium's agent port
     - docusaurus build, which already refuses broken links and anchors
     - every root-relative href and src in the output starts with the base URL, so the site works under /atrium/
     - .nojekyll is present, so Pages serves the assets folder Docusaurus writes
@@ -56,6 +57,7 @@ function Invoke-Step([string]$what, [scriptblock]$body) {
 Push-Location $site
 try {
   Invoke-Step 'npm ci' { npm ci --no-audit --no-fund }
+  Invoke-Step 'the gate script in docs/hooks.md runs as documented' { node scripts/test-gate-hook.js docs/hooks.md }
 
   $env:ATRIUM_DOCS_URL = $Url
   $env:ATRIUM_DOCS_BASE_URL = $BaseUrl

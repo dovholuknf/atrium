@@ -19,8 +19,8 @@ const questions = [
 const features = [
   {
     icon: 'gate',
-    title: 'A gate on every tool call',
-    body: 'A hook sends each call an agent wants to make to atrium and waits for you. Blocking hands your reason back, so a no is "do this instead", not a wall.',
+    title: 'A gate on tool calls',
+    body: 'A permission hook sends each call a gated agent wants to make to atrium and waits for you. Blocking hands your reason back, so a no is "do this instead", not a wall.',
     to: '/docs/permissions',
   },
   {
@@ -127,15 +127,14 @@ function Hero() {
       <div className={styles.heroGlow} aria-hidden="true" />
       <div className="container">
         <div className={styles.heroText}>
-          <span className={styles.kicker}>atrium {siteConfig.customFields.release} · one machine · one person · no cloud</span>
+          <span className={styles.kicker}>atrium {siteConfig.customFields.release} · self-hosted · one operator</span>
           <h1 className={styles.title}>
             <span className={styles.line}>Every agent you run,</span>{' '}
             <span className={`${styles.line} accent-text`}>on one board you can answer.</span>
           </h1>
           <p className={styles.lede}>
-            Half a dozen agents in half a dozen terminals, none aware of the others. Atrium is the hall they all open
-            onto: it shows which one needs you, gates every tool call they make, and lets you step into any of their
-            terminals from a browser.
+            Atrium shows which agent needs you, puts their tool calls in front of you to answer, and lets you step
+            into any of their terminals from a browser.
           </p>
           <div className={styles.ctas}>
             <Link className={`${styles.cta} ${styles.ctaPrimary}`} to="/docs/quick-start">
@@ -146,9 +145,10 @@ function Hero() {
             </Link>
           </div>
         </div>
-        <div className={styles.heroBoard}>
+        <figure className={styles.heroBoard}>
           <BoardMockup />
-        </div>
+          <figcaption className={styles.caption}>An illustration of the board, drawn with made-up sessions.</figcaption>
+        </figure>
       </div>
     </header>
   );
@@ -233,7 +233,7 @@ function Modes() {
             <h3>Your terminal, atrium's eyes</h3>
             <p>
               Start claude wherever you like. Its hooks report in, it gets a card on the board and the stack, and
-              every tool call is gated. Atrium never touches the terminal, so nothing about how you work changes.
+              with the gate hook added, its tool calls wait for you. Atrium never touches the terminal.
             </p>
             <CodeBlock language="powershell">{'atrium join     # or wire the hooks once from the board'}</CodeBlock>
           </div>
@@ -279,13 +279,13 @@ function QuickStart() {
         <div className={styles.splitGrid}>
           <div>
             <p className={styles.eyebrow}>Quick start</p>
-            <h2 className={styles.h2}>Running in a minute.</h2>
+            <h2 className={styles.h2}>From install to your first card.</h2>
             <ol className={styles.steps}>
-              <li>Install a package from the release, or build from source.</li>
+              <li>Download a package from the release, or build from source.</li>
               <li>Open <code>http://localhost:7778</code>.</li>
               <li><b>rooms → hooks</b> writes the Claude Code reporting hooks for you.</li>
-              <li>Add the permission gate hook, and every tool call waits for you.</li>
-              <li><b>perms → import rules from claude</b> brings your allow list across.</li>
+              <li>Launch an agent with <b>+ new agent</b>, or start claude as usual.</li>
+              <li>Optional: add the permission gate hook, and import your allow list.</li>
             </ol>
             <Link className={styles.more} to="/docs/install">Every install path →</Link>
           </div>
@@ -293,21 +293,21 @@ function QuickStart() {
             <Tabs groupId="os">
               <TabItem value="win" label="Windows">
                 <CodeBlock language="powershell">
-                  {'# per user, no admin\n.\\scripts\\atrium-service.ps1 install\n.\\scripts\\atrium-service.ps1 status\n\n# or run it by hand\natrium daemon'}
+                  {'# download atrium_v0.0.1_windows_amd64.zip from the release\nExpand-Archive atrium_v0.0.1_windows_amd64.zip -DestinationPath $HOME\\atrium\ncd $HOME\\atrium\\atrium_v0.0.1_windows_amd64\n.\\scripts\\atrium-service.ps1 install -Exe \"$PWD\\atrium.exe\"'}
                 </CodeBlock>
               </TabItem>
               <TabItem value="linux" label="Linux">
                 <CodeBlock language="bash">
-                  {'sudo dpkg -i atrium_0.0.1_amd64.deb\n# or: sudo dnf install ./atrium-0.0.1-1.x86_64.rpm\nsystemctl --user status atrium'}
+                  {'# download the package from the release\nsudo dpkg -i atrium_0.0.1_amd64.deb\n# or: sudo dnf install ./atrium-0.0.1-1.x86_64.rpm\nsystemctl --user status atrium'}
                 </CodeBlock>
               </TabItem>
               <TabItem value="mac" label="macOS">
                 <CodeBlock language="bash">
-                  {'tar -xzf atrium_v0.0.1_darwin_arm64.tar.gz\ncp atrium_v0.0.1_darwin_arm64/atrium ~/.local/bin/\ncd atrium_v0.0.1_darwin_arm64\nATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install'}
+                  {'# download atrium_v0.0.1_darwin_arm64.tar.gz from the release\ntar -xzf atrium_v0.0.1_darwin_arm64.tar.gz\nmkdir -p ~/.local/bin\ncp atrium_v0.0.1_darwin_arm64/atrium ~/.local/bin/\ncd atrium_v0.0.1_darwin_arm64\nATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install'}
                 </CodeBlock>
               </TabItem>
               <TabItem value="src" label="From source">
-                <CodeBlock language="bash">{'go build -o build.claude/ ./...\n./build.claude/atrium daemon'}</CodeBlock>
+                <CodeBlock language="bash">{'# needs Go and git\ngit clone https://github.com/dovholuknf/atrium\ncd atrium\ngo build -o build.claude/ ./...\n./build.claude/atrium daemon'}</CodeBlock>
               </TabItem>
             </Tabs>
           </div>
@@ -342,7 +342,7 @@ export default function Home() {
   return (
     <Layout
       title="One board for every coding agent"
-      description="Atrium puts every coding agent session on one board: what needs you, a gate on every tool call, and the agents' terminals in your browser.">
+      description="Atrium puts every coding agent session on one board: what needs you, a gate on their tool calls, and the agents' terminals in your browser.">
       <Hero />
       <main>
         <Questions />

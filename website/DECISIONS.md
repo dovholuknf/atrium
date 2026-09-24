@@ -69,6 +69,31 @@ passes them to the script, and uploads and deploys the output. It runs on a publ
 - Trial surfaces the repository keeps for comparison, parked work, and the older heartbeat federation.
 - Private details from the history: no customer names, hostnames or ticket contents.
 
+## Design review (codex, before first publish)
+
+A codex session reviewed the site read-only. What changed because of it:
+
+- **The gate is not promised by default.** The hero, the features and the intro say atrium gates tool calls, and
+  the intro now carries a table of what works out of the box and what you add: the gate hook, and `atrium2` for
+  rooms. The quick start puts sessions on the board first and adds the gate as an optional step that ends in a
+  request you can see and block.
+- **An edited approval never runs the original.** The starter gate script refuses and hands the edited command
+  to the agent. `website/scripts/test-gate-hook.js` runs that exact script, extracted from `docs/hooks.md`, against
+  a mock of atrium's agent port on every docs build.
+- **Install starts with the download.** Version-pinned release URLs, `mkdir -p ~/.local/bin`, PATH guidance, and a
+  from-source path with its prerequisites. The packages carry `atrium` only, and the docs say so.
+- **"No cloud" became "self-hosted, one operator".** "One machine" read wrong next to rooms, and "no cloud" could
+  be read as the agents never reaching their model providers.
+- **The drawn board is captioned as an illustration**, and the sidebar puts install and the quick start before the
+  story.
+
+Not taken, on purpose:
+
+- **Restructuring the landing page into three outcomes.** Editorial, and the sections each earn their place. Worth
+  another look at the next release.
+- **Docs search.** Algolia needs an account and a crawler, and a local search plugin is another dependency for 22
+  pages. Add it when the docs outgrow the sidebar.
+
 ## Guards
 
 - `website/go.mod` makes `website/` its own Go module, so `go vet ./...` from the root never walks
