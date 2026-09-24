@@ -326,6 +326,9 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+    // Ahead of the solo modes, which an earlier section can leave set: the
+    // group sections read this card's tags for its menu.
+    if (id === "filed1") { sendJSON(res, FILED); return; }
     if (soloMode === "noroom") {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
@@ -1076,6 +1079,212 @@ async function groupRemoveSection(browser, base) {
   }
 }
 
+// A group's colour is `groupHue`, kept in this browser's grouping prefs. A
+// recolour made from the terminals pane has to land on the stack, the board and
+// the strip, on every skin and with card colours either way, survive a reload,
+// and reach a second window without waiting for its poll. The strip's headings
+// drew in the label grey whatever the hue was, which was the break.
+async function groupColorSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const cp = await ctx.newPage();
+  const errors = [];
+  cp.on("pageerror", e => errors.push(String(e)));
+  // Seeded once. Written on every load, it would undo the recolour the reload
+  // is there to check.
+  await cp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    if (!localStorage.getItem("atrium.grouping")) {
+      localStorage.setItem("atrium.grouping",
+        JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
+    }
+  });
+  const was = tasksMode;
+  tasksMode = "filed";
+  const hues = page => page.evaluate(() => {
+    const hue = sel => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).getPropertyValue("--ghue").trim() : "missing";
+    };
+    const tn = document.querySelector('#term-list .tgroup[data-ghead="active"] .tgname');
+    return {
+      stack: hue('.stackgroup[data-morph-key="stack:active"] .gname'),
+      board: hue('.cardgroup.project[data-fold="proj:active"] .gname'),
+      term: hue('#term-list .tgroup[data-ghead="active"]'),
+      nest: hue('#term-list .tnest[data-group="active"]'),
+      termColor: tn ? getComputedStyle(tn).color : "missing",
+      label: getComputedStyle(document.querySelector("#term-list .tgroup.pinnedhead")).color
+    };
+  });
+  const recolor = async (page, hue) => {
+    await page.locator('#term-list .tgroup[data-ghead="active"]').click({ button: "right" });
+    await page.locator("#cardmenu button", { hasText: "recolor" }).click();
+    await page.locator(`#ask-body .swatch[data-hue="${hue}"]`).click();
+    await page.waitForTimeout(500);
+  };
+  try {
+    await cp.goto(base, { waitUntil: "domcontentloaded" });
+    await cp.waitForTimeout(900);
+    await cp.click('.tab[data-view="terms"]');
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: 15000 });
+    await recolor(cp, 140);
+    // A hidden view repaints when it is shown, so each is visited.
+    for (const skin of ["harbour", "daylight", "website"]) {
+      for (const cc of [false, true]) {
+        await cp.evaluate(([s, c]) => { applySkin(s); toggleCardColors(c); }, [skin, cc]);
+        await cp.click('.tab[data-view="board"]');
+        await cp.waitForTimeout(500);
+        await cp.click('.tab[data-view="stack"]');
+        await cp.waitForTimeout(500);
+        await cp.click('.tab[data-view="terms"]');
+        await cp.waitForTimeout(300);
+        const h = await hues(cp);
+        if (h.stack !== "140" || h.board !== "140" || h.term !== "140" || h.nest !== "140") {
+          fail(`a group recoloured from the terminals pane did not land everywhere on ${skin}, ` +
+            `card colours ${cc ? "on" : "off"}: ` + JSON.stringify(h));
+        }
+        if (h.termColor === h.label) {
+          fail(`a terminals pane group heading is still drawn in the label colour on ${skin}: ` + JSON.stringify(h));
+        }
+      }
+    }
+    await cp.reload({ waitUntil: "domcontentloaded" });
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: 15000 });
+    await cp.waitForSelector('.stackgroup[data-morph-key="stack:active"]', { state: "attached", timeout: 15000 });
+    const after = await hues(cp);
+    if (after.term !== "140" || after.stack !== "140") fail("a group colour did not survive a reload: " + JSON.stringify(after));
+
+    // A second window, on the same browser. Well inside `POLL_MS`, so only the
+    // storage event can have carried it.
+    const cp2 = await ctx.newPage();
+    cp2.on("pageerror", e => errors.push(String(e)));
+    await cp2.goto(base, { waitUntil: "domcontentloaded" });
+    await cp2.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: 15000 });
+    await cp2.waitForTimeout(600);
+    await cp.click('.tab[data-view="terms"]');
+    await cp.waitForTimeout(300);
+    await recolor(cp, 250);
+    await cp2.waitForTimeout(1200);
+    const seen = await hues(cp2);
+    await cp2.click('.tab[data-view="stack"]');
+    await cp2.waitForTimeout(500);
+    const other = Object.assign(await hues(cp2), { termBeforeSwitch: seen.term });
+    if (seen.term !== "250" || other.stack !== "250") {
+      fail("a group recoloured in one window did not reach a second window: " + JSON.stringify(other));
+    }
+    if (errors.length) fail("the group colour page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// Dragging a group heading on the terminals pane reorders your groups, and is
+// never mistaken for dragging a row. Taking a card out of a group is a menu
+// entry on every surface and a drop on `untagged` in the strip.
+async function groupDragSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  const writes = [];
+  dp.on("request", r => {
+    if (r.method() === "PATCH" && /\/v1\/tasks\//.test(r.url())) writes.push(r.url() + " " + r.postData());
+  });
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    if (!localStorage.getItem("atrium.grouping")) {
+      localStorage.setItem("atrium.grouping",
+        JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
+    }
+  });
+  const was = tasksMode;
+  tasksMode = "filed";
+  const heads = () => dp.evaluate(() =>
+    [...document.querySelectorAll("#term-list .tgroup")].map(b =>
+      b.classList.contains("pinnedhead") ? "*pinned" : b.querySelector(".tgname").textContent.trim()));
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: 15000 });
+
+    // A heading dragged above another moves the whole group and writes the order.
+    await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
+      dp.locator('#term-list .tgroup[data-ghead="active"]'), { targetPosition: { x: 10, y: 2 } });
+    await dp.waitForTimeout(600);
+    await dp.click('.tab[data-view="stack"]');
+    await dp.waitForTimeout(500);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForTimeout(300);
+    let st = await dp.evaluate(() => ({
+      groups: groupingPrefs().groups,
+      stack: [...document.querySelectorAll(".stackgroup")].map(d => d.dataset.morphKey),
+      nestAfterHead: (() => {
+        const h = document.querySelector('#term-list .tgroup[data-ghead="active"]');
+        return !!(h && h.nextElementSibling && h.nextElementSibling.dataset.group === "active");
+      })()
+    }));
+    if (JSON.stringify(st.groups) !== '["spare","active"]') {
+      fail("dragging a group heading above another did not reorder the groups: " + JSON.stringify(st.groups));
+    }
+    if (st.stack.indexOf("stack:spare") > st.stack.indexOf("stack:active")) {
+      fail("the stack did not follow a group reordered on the terminals pane: " + st.stack.join(", "));
+    }
+    if (!st.nestAfterHead) fail("a group's rows did not travel with its heading.");
+    let h = await heads();
+    if (h[0] !== "*pinned") fail("pinned is no longer on top after a group was dragged: " + h.join(", "));
+    if (writes.length) fail("reordering groups wrote to a card: " + writes.join(" | "));
+
+    // A row dropped on a heading is a row drag, and reorders nothing.
+    await dp.locator('#term-list .card.tab[data-id="loose1"]').dragTo(
+      dp.locator('#term-list .tgroup[data-ghead="spare"]'));
+    await dp.waitForTimeout(500);
+    st = await dp.evaluate(() => groupingPrefs().groups);
+    if (JSON.stringify(st) !== '["spare","active"]') fail("a row dropped on a heading reordered the groups: " + JSON.stringify(st));
+    // And a heading dropped on the pinned bucket pins nothing.
+    await dp.locator('#term-list .tgroup[data-ghead="active"]').dragTo(dp.locator("#term-list .termbucket"));
+    await dp.waitForTimeout(500);
+    if (writes.some(w => /pinned/.test(w))) fail("a heading dropped on the pinned bucket pinned something: " + writes.join(" | "));
+    writes.length = 0;
+
+    // A row dragged from a group onto `untagged` leaves that group.
+    await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').dragTo(
+      dp.locator('#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]'));
+    await dp.waitForTimeout(600);
+    if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
+      fail("a row dragged out of its group onto untagged did not lose the group's tag: " + writes.join(" | "));
+    }
+    writes.length = 0;
+
+    // The same, from the card's menu.
+    await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').click({ button: "right" });
+    const out = dp.locator("#cardmenu button", { hasText: "out of active" });
+    await out.waitFor({ timeout: 5000 }).catch(() => {});
+    if (!(await out.count())) fail("a card in a group has no `out of` entry on its menu.");
+    else {
+      await out.click();
+      await dp.waitForTimeout(500);
+      if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
+        fail("`out of active` did not take the tag off: " + writes.join(" | "));
+      }
+    }
+
+    // Outside custom mode a heading does not drag and says where ordering lives.
+    await dp.evaluate(() => { setGrouping({ mode: "recency" }); });
+    await dp.waitForTimeout(600);
+    const tag = await dp.evaluate(() => [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")]
+      .map(b => ({ drag: b.draggable, grip: !!b.querySelector(".tgrip"), title: b.title })));
+    if (tag.some(t => t.drag || t.grip)) fail("a heading drags outside the custom grouping: " + JSON.stringify(tag));
+    if (!tag.some(t => /custom grouping/.test(t.title))) {
+      fail("a heading outside custom mode does not say where reordering lives: " + JSON.stringify(tag));
+    }
+    if (errors.length) fail("the group drag page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // The website skin is the one skin that carries rules beyond a palette: a
 // gradient primary button, a frosted header and a glow behind the board. Every
 // one is scoped to that skin, and the failure this guards is one leaking out, so
@@ -1401,7 +1610,8 @@ async function main() {
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
-      toastStays: toastStaysSection };
+      toastStays: toastStaysSection, groupColor: groupColorSection,
+      groupDrag: groupDragSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -3550,6 +3760,9 @@ async function main() {
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
     await restartGateSection(browser, base);
     await toastStaysSection(browser, base);
+    // ── group colours on every surface, and dragging group headings ─────────
+    await groupColorSection(browser, base);
+    await groupDragSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

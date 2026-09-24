@@ -688,6 +688,10 @@ async function termMenu(e, id) {
       ? { label: "which repo…", note: t.display_repo || "guessing",
           act: () => setTaskRepo(id, t.display_repo) }
       : null,
+    // Filing into your groups and out of them, the board's two entries. The
+    // strip draws those groups and had neither.
+    typeof groupItem === "function" ? groupItem(id, t) : null,
+    typeof outOfGroupItem === "function" ? outOfGroupItem(id, t) : null,
     // Only while there IS one. Attaching to a card whose runner has exited
     // draws an empty pane and then waits five minutes for something that has
     // already gone. `resume` above is what that click meant.
@@ -1218,14 +1222,26 @@ function termFlatGroupsHTML(list, g, folded) {
     // A group you made keeps the order you set, not the strip's sort. See
     // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
     const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
+    // THE GROUP'S COLOUR, from the same `groupHue` the stack and the board
+    // read, so a recolour made on any of the three lands on all three. The
+    // strip drew every heading in the label grey, which is what "the group
+    // colours don't work" was about when it was said from here.
+    const hue = name && typeof groupHue === "function" ? groupHue(name) : null;
+    const style = hue === null ? "" : ` style="--ghue:${hue}"`;
     // And its heading takes the board's group menu on a right click, which is
-    // where it is moved, renamed and removed. Without it a group made with
-    // `+ new group` here could never be taken away from here.
-    const head = termHeading(shown, at, by.get(name).length, off, mine ? name : "");
+    // where it is moved, renamed, removed and recoloured. Without it a group
+    // made with `+ new group` here could never be taken away from here.
+    // `untagged` is the absence of a group and gets no menu.
+    const menu = name && name !== UNTAGGED ? name : "";
+    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine);
     if (off) return head;
     const rows = by.get(name);
     if (mine) rows.sort(byRank);
-    return head + `<div class="tnest"${mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
+    // `untagged` in custom mode is where a row is dragged to take it OUT of
+    // the group it came from. See `wireUngroupDrop`.
+    const out = g.handOrdered && name === UNTAGGED ? ` data-ungroup="1"` : "";
+    return head + `<div class="tnest${hue === null ? "" : " hued"}"${style}${out}${
+      mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
       ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
   }).join("");
 }
@@ -1297,9 +1313,14 @@ function toggleTermGroup(path) {
 // plain count. The totals are the same grouping run over the unfiltered list,
 // set by `renderTermList` into `termTotals` and keyed by the heading's path.
 //
-// `group` names a group of yours, and gives the heading the board's group menu
-// (see `groupMenu`). Empty for every other heading.
-function termHeading(name, path, count, folded, group) {
+// `group` names a group, and gives the heading the board's group menu (see
+// `groupMenu`). Empty for every other heading. `style` carries its hue.
+//
+// `movable` is a group you made, in `custom` mode, and only that heading drags:
+// it is the one mode whose order is yours to write (`p.groups`). Every other
+// mode sorts its groups by a rule, so a drag there would be undone by the next
+// paint, and the heading says where reordering lives instead of offering it.
+function termHeading(name, path, count, folded, group, style, movable) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
   const tip = total > count ? ` (${total - count} hidden by hide inactive)` : "";
@@ -1311,10 +1332,14 @@ function termHeading(name, path, count, folded, group) {
   const arg = esc(path).replace(/'/g, "&#39;");
   const menu = group && typeof groupMenu === "function"
     ? ` oncontextmenu="groupMenu(event, '${esc(group).replace(/'/g, "&#39;")}')"` : "";
-  return `<button class="tgroup" onclick="toggleTermGroup('${arg}')"${menu}
-      title="${folded ? "show" : "hide"} ${esc(name)}${tip}${
-        group ? ". right click to move, rename or remove it" : ""}"
-      ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
+  const how = movable ? ". drag to move it, right click to rename, remove or recolor it"
+    : group ? ". right click to recolor it. groups reorder by hand in the custom grouping" : "";
+  return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}"${style || ""}${
+      movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
+      onclick="toggleTermGroup('${arg}')"${menu}
+      title="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
+      >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
+        class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
       ><span class="tgcount">${shown}</span></button>`;
 }
@@ -1781,6 +1806,8 @@ function wireTermDrag(host) {
   });
 
   host.querySelectorAll(".tnest[data-group]").forEach(wireGroupDrop);
+  host.querySelectorAll(".tgroup[data-ghead]").forEach(el => wireHeadDrag(host, el));
+  host.querySelectorAll(".tnest[data-ungroup]").forEach(wireUngroupDrop);
 
   const bucket = host.querySelector(".termbucket");
   if (!bucket) return;
@@ -1856,6 +1883,7 @@ function wireTermDrag(host) {
 function wireGroupDrop(nest) {
   const name = nest.dataset.group;
   nest.ondragover = e => {
+    if (termHeadDrag) return headDragOver(e, name);
     if (!termDragEl) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -1870,6 +1898,7 @@ function wireGroupDrop(nest) {
     if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
   };
   nest.ondrop = async e => {
+    if (termHeadDrag) return headDrop(e);
     e.preventDefault();
     // The pinned bucket has a drop of its own and this one has already done it.
     e.stopPropagation();
@@ -1898,6 +1927,118 @@ function wireGroupDrop(nest) {
     if (Object.keys(body).length) await patchTask(id, body);
     repaintTermList();
   };
+}
+
+// `untagged` as a drop target, in custom mode. A row dragged here from one of
+// your groups leaves THAT group: its tag comes off, the same as `out of` on the
+// card's menu. Only the group it was dragged from, because a card in two groups
+// dragged out of one of them has said nothing about the other. A row that was
+// not in a group has nothing to leave, and the drop puts the strip back.
+function wireUngroupDrop(nest) {
+  nest.ondragover = e => {
+    if (!termDragEl || !termDragEl.closest(".tnest[data-group]")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    nest.classList.add("dropover");
+  };
+  nest.ondragleave = e => {
+    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+  };
+  nest.ondrop = async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    nest.classList.remove("dropover");
+    const el = termDragEl;
+    termDragEl = null;
+    termDragID = "";
+    const from = el && el.closest(".tnest[data-group]");
+    if (from) {
+      const t = lastTasks.find(x => x.id === el.dataset.id);
+      const tags = (t && t.tags) || [];
+      const name = from.dataset.group;
+      if (tags.includes(name)) await patchTask(el.dataset.id, { tags: tags.filter(x => x !== name) });
+    }
+    repaintTermList();
+  };
+}
+
+// The name of the group whose HEADING is being dragged, or "".
+//
+// Its own variable, apart from `termDragID` and `termDragEl`, and that is what
+// keeps the two drags from being mistaken for each other. Every row target asks
+// for a row and every heading target asks for a heading, so a heading dropped
+// on the pinned bucket is refused and a row dropped on a heading is not a
+// reorder. Pinned stays on top because nothing here can reach the bucket.
+let termHeadDrag = "";
+
+// A heading of yours, dragged to reorder the groups. The whole group moves: the
+// heading and the nest under it travel together while the pointer does, and
+// the rows inside keep their order. The drop writes `p.groups`, the same list
+// `move up` and `move down` write, so the stack and the board follow.
+function wireHeadDrag(host, el) {
+  el.ondragstart = e => {
+    termHeadDrag = el.dataset.ghead;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", termHeadDrag);
+    el.classList.add("dragging");
+  };
+  el.ondragend = () => {
+    const aborted = !!termHeadDrag;
+    termHeadDrag = "";
+    el.classList.remove("dragging");
+    host.querySelectorAll(".dropover").forEach(x => x.classList.remove("dropover"));
+    // Let go anywhere but a heading or a group, and the strip goes back to the
+    // order that was written, for the reason an abandoned row drag does.
+    if (aborted) repaintTermList();
+  };
+  el.ondragover = e => { if (termHeadDrag) headDragOver(e, el.dataset.ghead); };
+  el.ondrop = e => { if (termHeadDrag) headDrop(e); };
+}
+
+// A group's heading and, when it is open, the nest drawn under it.
+function headBlock(name) {
+  const host = document.getElementById("term-list");
+  const q = CSS.escape(name);
+  return {
+    head: host.querySelector(`.tgroup[data-ghead="${q}"]`),
+    nest: host.querySelector(`.tnest[data-group="${q}"]`)
+  };
+}
+
+// Over another group: the dragged one goes above it or below it, by which half
+// of that group's block the pointer is in, the same rule the rows use.
+function headDragOver(e, over) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  if (!over || over === termHeadDrag) return;
+  const from = headBlock(termHeadDrag), to = headBlock(over);
+  if (!from.head || !to.head) return;
+  const top = to.head.getBoundingClientRect().top;
+  const bottom = (to.nest || to.head).getBoundingClientRect().bottom;
+  const after = e.clientY > (top + bottom) / 2;
+  const parent = to.head.parentNode;
+  const anchor = after ? (to.nest || to.head).nextSibling : to.head;
+  if (anchor === from.head) return;
+  parent.insertBefore(from.head, anchor);
+  if (from.nest) parent.insertBefore(from.nest, from.head.nextSibling);
+}
+
+// The order is read off the headings the strip now shows, rather than worked
+// out from where the pointer was, because what the operator can see is the
+// answer. A group in the list that is not drawn keeps its place at the end.
+function headDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const name = termHeadDrag;
+  termHeadDrag = "";
+  if (!name) return;
+  const host = document.getElementById("term-list");
+  const drawn = [...host.querySelectorAll(".tgroup[data-ghead]")].map(b => b.dataset.ghead);
+  const had = Array.isArray(groupingPrefs().groups) ? groupingPrefs().groups : [];
+  const groups = drawn.filter(n => had.includes(n)).concat(had.filter(n => !drawn.includes(n)));
+  host.__paintedFrom = null;
+  if (groups.join("\n") === had.join("\n")) { renderTermList(); return; }
+  setGrouping({ groups });
 }
 
 // How long to keep trying to attach to a runner that is not there YET.

@@ -489,3 +489,17 @@
      count that is not there. */
   .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; margin-left: 6px; }
   .tgroup:hover .tgcount { opacity: 1; }
+  /* A group's own colour, from the same `--ghue` the stack's and the board's headings use, so one group reads as
+     one colour on all three surfaces. The guide down the nest takes it too, which is what the panel edge does
+     on the stack. Blended toward `--head` even at rest, unlike the stack: this name sits on the bare strip and
+     not on a wash, and the stack's fixed 72% lightness is the open nit 4 in `docs/css-nits.md` on a light skin.
+     The blend darkens it on a light skin and lightens it on a dark one and it stays that group's hue. */
+  .tgroup.hued .tgname { color: color-mix(in srgb, hsl(var(--ghue) 70% 60%) 70%, var(--head)); }
+  .tgroup.hued .tcaret { color: hsl(var(--ghue) 65% 55%); }
+  .tgroup.hued:hover .tgname { color: color-mix(in srgb, hsl(var(--ghue) 72% 60%) 45%, var(--head)); }
+  .tnest.hued { border-left-color: hsl(var(--ghue) 65% 55% / .6); }
+  /* A heading that drags. The grip is the tell, and it is only on the headings whose order is yours to set. */
+  .tgroup.movable { cursor: grab; }
+  .tgroup .tgrip { font-size: 10px; width: 9px; opacity: .45; }
+  .tgroup.movable:hover .tgrip { opacity: .9; }
+  .tgroup.dragging { opacity: .5; }

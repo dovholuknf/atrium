@@ -971,6 +971,16 @@ function setGrouping(patch) {
   refresh();
 }
 
+// A SECOND WINDOW FOLLOWS. The grouping, its order and every group's colour are
+// kept in this browser, which every window on the board shares, but only the
+// window that wrote the change repainted. The others kept the old colour and
+// the old order until their next poll, up to `POLL_MS` later, so a recolour
+// looked like it had not stuck. The browser tells every OTHER window when a
+// key changes, and that is the cue.
+window.addEventListener("storage", e => {
+  if (e.key === GROUPING_KEY) refresh();
+});
+
 // Compiles a function body once per render.
 //
 // Operator-supplied code running in the operator's own browser is not a

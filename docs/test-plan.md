@@ -1186,17 +1186,17 @@ A card that arrives in the wrong place, keeps an old title, or refuses to leave 
 Four places where the board reported an outcome it had not checked. Every one of them looks fine on a board
 with one window open, so all four need a second window and one of them needs a pasted url.
 
-### P1. The toast about a raised window appears in the raised window
+### P1. A raised window is its own answer
 
 **Steps**
 
 1. Pop a supervised card out with the icon on its row. A second window opens with the terminal in it.
-2. Go back to the board and press `attach` on that same card.
+2. Go back to the board and press `attach` on that same card. Then click an alert toast for the same card.
 3. Watch the window that comes to the front.
 
-**Expect** the popped-out window is raised, and the message `the board sent you here` is drawn IN THAT WINDOW.
-The board draws nothing. If a toast appears on the board instead, it is being said in the window you are
-leaving, which is the bug.
+**Expect** the popped-out window is raised both times, and neither window draws a toast about it. A toast on
+either side is the bug. The board says "it is in its own window" only in a browser with no `BroadcastChannel`,
+where it cannot tell whether the raise landed.
 
 ### P2. A window the board did not open is admitted to, not lied about
 
@@ -2892,3 +2892,82 @@ minute, after a room attaches or detaches, and after the board's stream drops an
 2. Make a card ready while the board is in front of you, then answer it from another window.
 
 **Expected:** its toast goes within a poll of the answer.
+
+## AR. Group colours, and moving groups on the terminals pane
+
+Run on a hub built from this branch. In settings, set grouping to `custom` and make two groups, `ar-one` and
+`ar-two`. File one card into `ar-one` with `into group` on its menu. Pin a second card. The headless sections
+`groupColor` and `groupDrag` cover the same ground.
+
+### AR1. A terminals pane heading wears its group's colour
+
+1. Open the terminals pane.
+
+**Expected:** the `ar-one` and `ar-two` headings are drawn in their own colours, the same hues as the stack's
+headings, and the line down each group's rows takes the same colour. `pinned` and `untagged` look as before.
+
+2. Right click `ar-one` on the terminals pane and pick `recolor…`. Choose a green swatch.
+
+**Expected:** the heading turns green at once. On the stack and the board, `ar-one` is green too, and so is the
+`ar-one` tag chip on the card.
+
+3. Repeat on the `daylight` and `website` skins, with card colours on and then off.
+
+**Expected:** the colour follows the recolour every time, and the name stays readable on `daylight`.
+
+### AR2. A colour is kept in this browser and reaches every window of it
+
+1. Reload the page.
+
+**Expected:** `ar-one` is still green everywhere.
+
+2. Open the board in a second window. In the first window, recolour `ar-one` to blue.
+
+**Expected:** within a second, the second window's terminals pane shows `ar-one` in blue, without waiting for a
+poll. A different browser or machine keeps its own colours. The colour is a per-browser preference, not a
+daemon setting.
+
+### AR3. Drag a group heading to move the group
+
+1. On the terminals pane, hover `ar-two`.
+
+**Expected:** a grip shows before the caret, the cursor is a hand, and the tooltip says "drag to move it".
+
+2. Drag the `ar-two` heading above `ar-one` and let go.
+
+**Expected:** the whole `ar-two` group, heading and rows, sits above `ar-one`. `pinned` stays on top. On the stack
+and the board, `ar-two` is now above `ar-one`, and right click `ar-one` offers `move up`.
+
+3. Start dragging a heading and let go outside the list.
+
+**Expected:** the groups go back to the order they had.
+
+### AR4. A heading drag and a row drag do not mix
+
+1. Drag the card in `ar-one` onto the `ar-two` heading's group.
+
+**Expected:** the card is filed into `ar-two` as before. The group order does not change.
+
+2. Drag the `ar-one` heading onto the pinned bucket.
+
+**Expected:** nothing is pinned and the order does not change.
+
+3. Switch grouping to `tag` or `recency`.
+
+**Expected:** no heading has a grip or drags. A heading's tooltip says that groups are reordered by hand in the
+custom grouping.
+
+### AR5. Take a card out of a group
+
+1. Right click the card in `ar-one`, on the stack, the board and the terminals pane.
+
+**Expected:** each menu has `out of ar-one`, and the terminals pane menu now has `into group` too. On a card in both
+groups the entry is `out of group`, with a flyout of the two.
+
+2. Pick `out of ar-one`.
+
+**Expected:** the card leaves `ar-one` and lands in `untagged`. No other tag changes.
+
+3. File it again. On the terminals pane, drag its row from `ar-one` onto the `untagged` group.
+
+**Expected:** the same result as step 2.
