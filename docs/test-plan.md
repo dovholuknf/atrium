@@ -2932,3 +2932,56 @@ the badge `idle` and an unseen turn. It does not stay `running`. `c` is not sent
 
 **Expected:** `c` stops, and the card is `needs-input`. The second message is still queued: it arrives with `c`'s
 next tool call or next turn end, not before.
+
+## AK. The after-restart wake
+
+Run in a throwaway room, never against the live board. See `docs/restart-wake.md`. The room and the hub both need
+this build: the tool is served by the hub, the queue and the typing are the room's. The hook binary is unchanged.
+
+Set up: a supervised claude session `orch` on the throwaway room, idle, with nothing in its input line.
+
+### AK1. A wake is typed in once after the restart
+
+1. From `orch`, call `atrium_wake_after_restart` with `text` `we up. check the build`.
+2. Look at `orch`'s card.
+3. Restart the throwaway room.
+4. Keep your hands off `orch`'s keyboard and wait for it to come back.
+
+**Expected:** after 1 the tool answers `queued: true`. After 2 the card has a `wake queued` chip whose tooltip
+holds the text. The session running now gets nothing typed into it. After 4, about five seconds after the resumed
+session starts, `we up. check the build` is typed and sent, and `orch` starts a turn on it. The chip is gone. The
+card's events have a `prompted` event with `from: restart-wake`. A second restart types nothing.
+
+### AK2. It waits for your line
+
+1. Queue a wake on `orch` as in AJ1 and restart the room.
+2. As soon as `orch` is back, type `half a th` into its line and leave it there.
+3. After ten seconds, clear the line with backspace and take your hands off the keyboard.
+
+**Expected:** nothing is typed while the line has text. About two seconds after 3 the wake is typed and sent on
+its own, and `half a th` is not part of that prompt.
+
+### AK3. A newer wake replaces the older one
+
+1. Call `atrium_wake_after_restart` with `first`, then again with `second`.
+2. `curl -s http://127.0.0.1:<room port>/v1/tasks/<orch's card id>/restart-wake`.
+
+**Expected:** the second call answers `replaced: first`. The GET shows one wake, `second`. After a restart only
+`second` is typed.
+
+### AK4. A deploy script can queue one
+
+1. `curl -s -X POST -d '{"text":"we up","by":"deploy.ps1"}'
+   http://127.0.0.1:<room port>/v1/tasks/<orch's wire name>/restart-wake`.
+2. `curl -s -X DELETE http://127.0.0.1:<room port>/v1/tasks/<orch's wire name>/restart-wake`.
+
+**Expected:** 1 answers `queued: true` and the card shows `wake queued`. 2 answers `cleared: true` and the chip
+goes. An empty `text` answers 400 and an unknown card 404.
+
+### AK5. A wake that never lands expires on the card
+
+1. Queue a wake on `orch`, then stop `orch`'s runner from the board and leave it stopped for 30 minutes.
+
+**Expected:** at 30 minutes the chip turns to `wake expired`, with the text in its tooltip, and the card's events
+have a `notified` event with `what: expired`. Starting `orch` after that types nothing. The chip goes by itself a
+day later.

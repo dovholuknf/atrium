@@ -16,6 +16,18 @@ section heading is just "what landed in this iteration."
   to the launcher. The room never answers a flagged Stop with a block, and it leaves queued messages queued for the
   next hook or the typist. Nothing forces a turn. The hook binary needs a rebuild along with the room. ROOM-SIDE.
 
+- **A session can ask to be woken after a restart.** See `docs/restart-wake.md`.
+
+  A room restart ends every terminal it owns, and a resumed session sits idle until somebody types into it. A
+  session now calls `atrium_wake_after_restart` with a prompt before the restart, and a deploy script can POST the
+  same thing to `/v1/tasks/{id}/restart-wake` by card id or wire name. The room keeps it in a new `restart_wake`
+  table, so it survives the restart it is about. Once the card's new runner is up, its session has started, the
+  turn is over and the input line is empty, the room types the prompt in and sends it, once, and deletes it. It
+  never types into the runner that queued it. One wake per card, a newer one replaces the older. A wake the card
+  never comes back for expires after 30 minutes, and the card shows `wake expired` for a day. The card shows `wake
+  queued` while it waits. Queued, replaced, cleared and expired are `notified` events on the card, and the
+  delivery is a `prompted` event from `restart-wake`. ROOM-SIDE and HUB-SIDE: the tool and the chip are the hub's.
+
 - **The attached terminal's frame matches the bridge running into it.**
 
   With card colours on, the attached row and its bridge are framed at 3px in the row's title colour, and the

@@ -1540,6 +1540,28 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS work_log_task_at ON work_log (task_id, at)`,
 		},
 	},
+	{
+		// THE AFTER-RESTART WAKE: one prompt per card, typed into its terminal
+		// once the card's runner is back after a restart. See
+		// docs/restart-wake.md and restartwake.go.
+		//
+		// Durable because the restart it is about ends the process that took it.
+		// One row per card, so a newer wake replaces an older one. `expired_at`
+		// is set, and the row kept, when the card never came back in time, so
+		// the card can say so rather than the wake vanishing. A card deleted
+		// takes its wake with it.
+		name: "0059_restart_wake",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS restart_wake (
+				task_id    TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				text       TEXT NOT NULL,
+				queued_by  TEXT NOT NULL DEFAULT '',
+				queued_at  TEXT NOT NULL,
+				expires_at TEXT NOT NULL,
+				expired_at TEXT
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

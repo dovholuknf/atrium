@@ -221,8 +221,21 @@ func (c *controlMCP) server() *mcp.Server {
 			"one of them. Say what you are doing before you call this, and expect to be resumed " +
 			"rather than answered.\n\n" +
 			"OTHER AGENTS ARE PARKED FIRST. Any supervised session that is working is told what is " +
-			"coming and given time to stop. Pass `force` to restart even if some are still busy.",
+			"coming and given time to stop. Pass `force` to restart even if some are still busy.\n\n" +
+			"To be prompted when you come back, call `atrium_wake_after_restart` first.",
 	}, c.restartHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_wake_after_restart",
+		Description: "Queue one prompt for YOUR OWN card, typed into your terminal once after a restart " +
+			"brings your session back.\n\n" +
+			"A restart ends your terminal, and the resumed session sits idle until somebody types. Call " +
+			"this before a restart that takes you down, with the line you want to receive, for example " +
+			"what to check next. The room types it once your runner is back, the input line is empty " +
+			"and the turn is over. It is not typed into the session running now.\n\n" +
+			"ONE PER CARD. A second call replaces the first. It expires unsent after 30 minutes if your " +
+			"runner does not come back, and the card says so. Pass `clear` to cancel it.",
+	}, c.wakeHandler)
 
 	return s
 }
@@ -1039,6 +1052,69 @@ func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest,
 	out.Note = "asked " + room + " to restart. it parks its other agents, then winds down and " +
 		"comes back on the same database. if this session is on that room it goes down too: say " +
 		"nothing further this turn and expect to be resumed."
+	return nil, out, nil
+}
+
+// ── wake after restart ────────────────────────────────────────────────────────────
+
+type wakeInput struct {
+	Text  string `json:"text,omitempty" jsonschema:"the prompt to receive once you are back. at most 2000 characters"`
+	Clear bool   `json:"clear,omitempty" jsonschema:"cancel the wake queued for your card instead"`
+}
+
+type wakeOutput struct {
+	Card     string `json:"card"`
+	Queued   bool   `json:"queued"`
+	Cleared  bool   `json:"cleared,omitempty"`
+	Replaced string `json:"replaced,omitempty"`
+	Note     string `json:"note,omitempty"`
+}
+
+// wakeHandler queues or clears the caller's own after-restart wake. Only its own
+// card: a wake on somebody else's card would be a forced turn, which this is
+// not. See docs/restart-wake.md. The room keeps the queue and does the typing.
+func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, in wakeInput) (
+	*mcp.CallToolResult, wakeOutput, error) {
+
+	out := wakeOutput{}
+	me := agentOf(req)
+	if me == "" {
+		return nil, out, fmt.Errorf("atrium_wake_after_restart is for a session atrium knows. this call did " +
+			"not say which one it is")
+	}
+	room := roomOf(req)
+	id, _, err := c.resolvePeer(ctx, room, me)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Card = id
+	path := "/v1/tasks/" + url.PathEscape(id) + "/restart-wake"
+	if in.Clear {
+		var res struct {
+			Cleared bool `json:"cleared"`
+		}
+		if err := c.ask(ctx, http.MethodDelete, path+"?by="+url.QueryEscape(me), room, nil, &res); err != nil {
+			return nil, out, err
+		}
+		out.Cleared = res.Cleared
+		if !res.Cleared {
+			out.Note = "there was no wake on your card."
+		}
+		return nil, out, nil
+	}
+	if strings.TrimSpace(in.Text) == "" {
+		return nil, out, fmt.Errorf("say what to type in when you are back, or pass clear")
+	}
+	var res struct {
+		Queued   bool   `json:"queued"`
+		Replaced string `json:"replaced"`
+		Note     string `json:"note"`
+	}
+	if err := c.ask(ctx, http.MethodPost, path, room,
+		map[string]string{"text": in.Text, "by": me}, &res); err != nil {
+		return nil, out, err
+	}
+	out.Queued, out.Replaced, out.Note = res.Queued, res.Replaced, res.Note
 	return nil, out, nil
 }
 
