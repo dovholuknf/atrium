@@ -3096,3 +3096,35 @@ board reconnects, and the attached terminal reattaches.
 3. Point the script at a hub built before this change.
 
 **Expected:** `go: this hub is older than the restart gate`, exit 0, with no countdown on its board.
+
+## AN. A prepare command next to a chatty profile
+
+Run on a room built from this branch. Pick a runner and note its prepare command so you can put it back. Your
+profile stays as it is.
+
+### AN1. Output from the profile or the command does not fail the launch
+
+1. Give the runner the prepare command `Write-Host 'hello from prepare'; $env:ATRIUM_AN1 = 'yes'` on Windows, or
+   `echo 'hello from prepare'; export ATRIUM_AN1=yes` elsewhere.
+2. Launch a card on that runner. In its terminal, print `ATRIUM_AN1`.
+
+**Expected:** the launch succeeds and the variable is `yes`. If your profile prints something of its own, such as
+`docker -> ...`, the launch still succeeds.
+
+### AN2. A shell that printed no environment says what it printed
+
+1. Give the runner the prepare command `Write-Host 'where did it go'; exit 0` on Windows, or
+   `echo 'where did it go'; exit 0` elsewhere.
+2. Launch a card on that runner.
+
+**Expected:** the launch fails, and the reason reads "the shell did not print the environment. It printed:"
+followed by `where did it go` (after anything your profile printed). It does not mention JSON or an invalid
+character.
+
+### AN3. A failing prepare command still reports the shell's error
+
+1. Give the runner the prepare command `atrium-no-such-command`.
+2. Launch a card on that runner.
+
+**Expected:** the launch fails with "the prepare command failed:" and the shell's complaint that the command does
+not exist. Put the runner's prepare command back.

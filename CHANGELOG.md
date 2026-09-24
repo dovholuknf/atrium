@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A prepare command works next to a profile that prints.** See `docs/test-plan.md` section AN.
+
+  The prepare command runs in a shell that loads the operator's profile, then dumps the environment on stdout.
+  Atrium read all of stdout as that dump, so a profile line such as `Write-Host "docker -> ..."` failed every
+  launch with a prepare command, with "invalid character 'd' looking for beginning of value". The dump is now
+  fenced by a line carrying a fresh random nonce on each side, and atrium reads only what is between them. The
+  profile and the prepare command may print anything. The profile still loads. When the fences are missing, the
+  launch error quotes the first few hundred bytes the shell printed instead. The same fence wraps the `env -0`
+  dump on Linux and macOS, where a login shell's profile can print too. ROOM-SIDE.
+
 - **A turn a Stop hook continued now ends on the board.** Step 1 of `docs/turn-end-spike.md`.
 
   When the Stop hook hands a session a queued message, Claude Code runs the next turn with `stop_hook_active` set
