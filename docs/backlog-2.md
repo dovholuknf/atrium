@@ -244,3 +244,39 @@ package metadata and the published one with one HTTP request.
 - Check what `runnerupdate.go` already does for codex before building: its header names `codex --version`.
 
 ------------
+
+## Paused 2026-09-24: work in flight when clint stopped the wave
+
+**Raised 2026-09-24.** Paused to save tokens. Each worker was told to commit what it had and stop. Their cards,
+branches and worktrees are kept. Nothing below is on `claude/main` yet unless it says so.
+
+- **sa58, a popped-out terminal also attached on the main board** (`claude/popout-double-attach`). clint saw
+  win32crypto-e2e live in a popped-out window and in the main board's terminals pane at once. Suspect: after a
+  restart the main board re-attaches before the roll call hears the popped-out window again. Rule: the popped-out
+  window wins.
+- **sa59, the restart gate counts no board** (`claude/gate-counts-every-board`). At 12:57 a gated hub-only deploy
+  answered "nobody is using a board" with clint's board open and restarted with no countdown. The gate counts only
+  the hub's merged event streams (`internal/link/events.go` `watchers`), and a single-room hub (`only=claude-sg4`)
+  likely proxies the board's stream straight to the room. Until this lands, ask clint before any hub-only deploy.
+- **sa60, process registry design revision** (`claude/process-registry-design`). sa56's design
+  (`docs/process-registry-design.md`, on `claude/main`) revised with clint's answers: long-running services only,
+  a process never outlives its runner, no restart ever, only the owner stops it and others ask the owner. Plus a
+  section on the Windows firewall prompts (new exe paths listening on all interfaces: go test binaries in
+  `%TEMP%\go-build*`, per-worktree `build.claude`, atrium's own `:7777`/`:7778`/`:7801` defaults). Build after the
+  one-atrium consolidation.
+- **sa61, terminals pane group drag and group colours** (`claude/term-groups-drag-color`). Drag group headings to
+  reorder in the terminals pane, and find why group colours "don't work".
+- **One atrium** (`docs/one-atrium-plan.md`, on `claude/main`). Mode A and Mode B out, one `atrium` binary,
+  "the hub" becomes "the atrium" in text people read. 13 Open Questions wait on clint (see the orchestrator's
+  OWED table, row C1). Also carries a live bug: the room's `daemon.json` names `atrium2.exe`, so the board's
+  "install hooks" writes hook lines that cannot run.
+- **Taking a card out of a group.** clint cannot find a way to remove a card from a custom group. A group is a
+  tag, so the fix is a way to drop that tag from where the card is filed: the card's menu (`out of group`), a
+  drag out to `untagged`, or both, on the stack, the board and the terminals pane. Fits with sa61's work.
+- **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
+  `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
+  `Set-NetFirewallProfile -NotifyOnListen False`.
+
+Accepted and on `claude/main` but NOT deployed: `d401757` and the process registry design doc (docs only).
+
+------------
