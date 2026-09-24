@@ -28,6 +28,15 @@ section heading is just "what landed in this iteration."
   queued` while it waits. Queued, replaced, cleared and expired are `notified` events on the card, and the
   delivery is a `prompted` event from `restart-wake`. ROOM-SIDE and HUB-SIDE: the tool and the chip are the hub's.
 
+- **A `website` skin: the board wearing the docs site.**
+
+  The site's dark palette is harbour's already, so the skin is harbour's palette plus the three things the site
+  adds: primary buttons filled with the teal-to-blue gradient on a coloured glow, a frosted header, and a soft teal
+  and blue glow behind the top of the board. It is the one skin that carries rules beyond a palette, and every rule
+  is scoped to its selector. No size, space or radius moves. The headless test checks the effects are there in
+  `website`, that harbour reads the same before and after `website` is worn, and that harbour and noir carry none
+  of it. HUB-SIDE.
+
 - **The attached terminal's frame matches the bridge running into it.**
 
   With card colours on, the attached row and its bridge are framed at 3px in the row's title colour, and the

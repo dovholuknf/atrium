@@ -385,3 +385,70 @@
     --btn-hover: #3F5C5C; --danger-text: #FFD3D3;
     --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
   }
+
+  /* ── website ───────────────────────────────────────────
+     The docs site and landing page, worn by the board. The site's dark palette
+     IS harbour (website/src/css/custom.css says so and copies it), so the block
+     below is harbour's palette value for value. What the site adds is three
+     effects, and this is the one skin that carries more than a palette:
+
+     - the primary button is filled with the teal-to-blue accent gradient and
+       sits on a coloured glow, as the landing page's call to action does,
+     - the header is frosted: flatter, more see-through, and saturated behind the
+       blur, as the site's top bar is,
+     - a soft teal and blue glow sits behind the top of the board, which is the
+       landing page's hero glow spread across the backdrop.
+
+     Every rule is scoped to this skin's selector, so no other skin moves by a
+     pixel, and the headless test holds harbour to that. None of it is layout:
+     no size, space or radius changes. The type and spacing the site uses are
+     left alone on purpose.
+
+     Each rule is written across several lines rather than on one. check-skins.sh
+     reads anything starting `:root[data-skin=` as a skin block until the next
+     line that is a closing brace, and a one-line rule would swallow what follows
+     it. */
+  :root[data-skin="website"] {
+    --sink-rgb: 4,11,20; --bg1-rgb: 7,19,34;
+    --shell0-rgb: 13,33,53; --shell1-rgb: 8,22,37;
+    --chip-rgb: 23,58,87; --stroke-rgb: 44,95,132; --stroke-dim-rgb: 37,80,111;
+    --teal-rgb: 0,227,176; --warn-rgb: 255,198,77; --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255; --shadow-rgb: 2,6,9;
+    --bg-0: #0B1B2E; --blue: #28C2FF; --card-0: #12293F; --card-1: #0A1A2B; --grid: #1B3B5A;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4; --dim: #5E819C; --dimmest: #456C88;
+    --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    --btn-hover: #1D4666; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+  /* The glow is drawn in the body's own background, under the grid, the way the
+     site's hero glow sits under its grid. The blue is spelled out because the
+     palette has no triple for it. */
+  :root[data-skin="website"] body {
+    background:
+      radial-gradient(ellipse 55% 50% at 30% 12%, rgba(var(--teal-rgb),.16), transparent 70%) fixed,
+      radial-gradient(ellipse 50% 45% at 75% 8%, rgba(40,194,255,.16), transparent 70%) fixed,
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
+  }
+  :root[data-skin="website"] header {
+    background: rgba(var(--bg1-rgb),.78);
+    backdrop-filter: saturate(160%) blur(12px);
+    border-bottom-color: var(--grid);
+  }
+  /* Dark ink on the gradient, the site's own `#04121D`, because the accent is
+     too bright for the board's light text to read on. */
+  :root[data-skin="website"] button.go {
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    border-color: transparent; color: #04121D;
+    box-shadow: 0 10px 30px rgba(var(--teal-rgb),.22);
+  }
+  :root[data-skin="website"] button.go:hover {
+    color: #04121D; border-color: transparent;
+    box-shadow: 0 14px 36px rgba(40,194,255,.3);
+  }
+  /* The rules above outrank the board's disabled rule, so a disabled primary
+     button has to be put back to looking like it cannot do anything. */
+  :root[data-skin="website"] button.go:disabled,
+  :root[data-skin="website"] button.go:disabled:hover {
+    background: var(--chip); border-color: var(--stroke-dim); color: var(--body);
+    box-shadow: none;
+  }
