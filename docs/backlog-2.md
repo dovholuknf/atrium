@@ -296,6 +296,18 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
   row on the runners page (clint, 2026-09-24), seeded from the runner profile (claude: yes, codex: to be checked),
   and a runner set to no falls back to done. The board gets an "immediately" button beside send. Check `internal/daemon/peers.go` and CLAUDE.md
   "Out of scope": both say peer text is never typed mid-turn, and both need rewording with this.
+- **The held-message `!` chip** (clint screenshot `.atrium/incoming/20260924-133410-pasted.png`, 13:34). On a
+  running card with an EMPTY input line it said "delivers when your input line is clear and idle. clear or submit
+  your line to receive it now", which blames the line when the wait is really for the turn to end. Say which
+  condition is holding it. Show the COUNT of held messages on the chip (`! 2`), the way `? N` counts open
+  questions. Most of this goes away when `atrium_say` types immediately by default (above).
+- **Clicking the `? N` chip or a question in the card clears it.** clint expects open questions he has looked at
+  and clicked to go away. Decide whether a click marks them answered or only seen, and do the same for `! N`.
+- **Eliminate unstyled tooltips.** The chip above uses a native `title` tooltip: plain white box, system font,
+  no theme. Find every native `title` tooltip on the board and replace it with the board's styled tooltip (the
+  one help bubbles and `data-tip` use, if one exists, or build one), on every skin. Add a `check-board.sh` rule
+  that fails on a new bare `title=` in `internal/api/web/` unless it is allowlisted (form controls where the
+  browser tooltip is the accessible name).
 - **Housekeeping asked, not answered:** delete worktrees already merged into `claude/main` (128 under
   `D:\worktrees\claude\atrium\`, several GB), restart saNN numbering at sa01 after sa99, and clint's call on
   `Set-NetFirewallProfile -NotifyOnListen False`.
