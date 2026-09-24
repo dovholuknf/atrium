@@ -1,0 +1,191 @@
+/* The site wears atrium's own look. Dark is the board's default skin (tokens.css): navy, the teal-to-blue accent
+   the A is drawn in, and a faint grid. Light is the board's `daylight` skin. Worker green is `active-work`, the
+   terminal theme agent-launched sessions wear. Every colour below comes from one of those three. */
+
+:root {
+  --at-teal: #008496;
+  --at-blue: #1d63c4;
+  --at-warn: #a87400;
+  --at-danger: #c6283c;
+  --at-path: #465ac8;
+  --at-work: #2f8f45;
+  --at-work-bg: #e3f3e6;
+
+  --at-bg-0: #f8fafc;
+  --at-bg-1: #f4f7fa;
+  --at-sink: #e9edf2;
+  --at-card-0: #ffffff;
+  --at-card-1: #f3f6fa;
+  --at-grid: #dde4ec;
+  --at-stroke: #cad3de;
+  --at-head: #101823;
+  --at-body: #3d4956;
+  --at-label: #5c6875;
+  --at-dim: #7c8794;
+  --at-chip: #dbe2eb;
+  --at-shadow: 0 16px 40px rgba(90, 105, 125, 0.18);
+
+  --ifm-color-primary: #008496;
+  --ifm-color-primary-dark: #007787;
+  --ifm-color-primary-darker: #007080;
+  --ifm-color-primary-darkest: #005c69;
+  --ifm-color-primary-light: #0091a5;
+  --ifm-color-primary-lighter: #0098ad;
+  --ifm-color-primary-lightest: #00acc3;
+
+  --ifm-background-color: var(--at-bg-0);
+  --ifm-background-surface-color: var(--at-card-0);
+  --ifm-font-color-base: var(--at-body);
+  --ifm-heading-color: var(--at-head);
+  --ifm-font-family-base: Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --ifm-font-family-monospace: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-code-font-size: 90%;
+  --ifm-global-radius: 9px;
+  --ifm-navbar-background-color: rgba(248, 250, 252, 0.82);
+  --ifm-navbar-shadow: 0 1px 0 var(--at-grid);
+  --ifm-toc-border-color: var(--at-grid);
+  --ifm-hr-border-color: var(--at-grid);
+  --ifm-footer-background-color: var(--at-sink);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 132, 150, 0.12);
+}
+
+html[data-theme='dark'] {
+  --at-teal: #00e3b0;
+  --at-blue: #28c2ff;
+  --at-warn: #ffc64d;
+  --at-danger: #ff6b6b;
+  --at-path: #9db4ff;
+  --at-work: #80ff90;
+  --at-work-bg: #0f3d1a;
+
+  --at-bg-0: #0b1b2e;
+  --at-bg-1: #071322;
+  --at-sink: #040b14;
+  --at-card-0: #12293f;
+  --at-card-1: #0a1a2b;
+  --at-grid: #1b3b5a;
+  --at-stroke: #2c5f84;
+  --at-head: #f2f8ff;
+  --at-body: #9fbdd4;
+  --at-label: #7fa6c4;
+  --at-dim: #5e819c;
+  --at-chip: #173a57;
+  --at-shadow: 0 16px 40px rgba(2, 6, 9, 0.6);
+
+  --ifm-color-primary: #00e3b0;
+  --ifm-color-primary-dark: #00cc9e;
+  --ifm-color-primary-darker: #00c196;
+  --ifm-color-primary-darkest: #009f7b;
+  --ifm-color-primary-light: #00fac2;
+  --ifm-color-primary-lighter: #0bffc8;
+  --ifm-color-primary-lightest: #34ffd2;
+
+  --ifm-background-color: var(--at-bg-1);
+  --ifm-background-surface-color: var(--at-card-1);
+  --ifm-navbar-background-color: rgba(7, 19, 34, 0.78);
+  --ifm-footer-background-color: var(--at-sink);
+  --ifm-code-background: rgba(23, 58, 87, 0.6);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 227, 176, 0.12);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The board's own backdrop: a diagonal from the top colour down into the recess colour. */
+body {
+  background: linear-gradient(160deg, var(--at-bg-0) 0%, var(--at-bg-1) 55%, var(--at-sink) 100%) fixed;
+}
+
+/* The board's grid, faded out toward the bottom, so the docs and the product sit on the same surface. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image: linear-gradient(var(--at-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--at-grid) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.28;
+  mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 100%);
+}
+
+.navbar {
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+}
+
+.navbar__title {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.navbar-release {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--at-stroke);
+  color: var(--at-label);
+}
+
+.accent-text {
+  background: linear-gradient(90deg, var(--at-teal), var(--at-blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.markdown h1:first-child {
+  letter-spacing: -0.025em;
+}
+
+.markdown > h2 {
+  letter-spacing: -0.015em;
+  margin-top: 2.4rem;
+}
+
+.markdown table {
+  display: table;
+  width: 100%;
+}
+
+aside.theme-doc-sidebar-container {
+  border-right-color: var(--at-grid);
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  background: linear-gradient(90deg, rgba(0, 227, 176, 0.14), transparent);
+  box-shadow: inset 2px 0 0 var(--ifm-color-primary);
+}
+
+[data-theme='light'] .menu__link--active:not(.menu__link--sublist) {
+  background: linear-gradient(90deg, rgba(0, 132, 150, 0.12), transparent);
+}
+
+.footer--dark {
+  --ifm-footer-background-color: var(--at-sink);
+  --ifm-footer-link-color: var(--at-label);
+  --ifm-footer-title-color: var(--at-head);
+  --ifm-footer-color: var(--at-dim);
+  border-top: 1px solid var(--at-grid);
+}
+
+/* Admonitions in the board's own vocabulary: teal for a note, warn amber, danger red. */
+.alert--info {
+  --ifm-alert-background-color: rgba(40, 194, 255, 0.08);
+  --ifm-alert-border-color: var(--at-blue);
+}
+
+.alert--warning {
+  --ifm-alert-background-color: rgba(255, 198, 77, 0.1);
+  --ifm-alert-border-color: var(--at-warn);
+}
+
+.alert--success,
+.alert--secondary {
+  --ifm-alert-background-color: rgba(0, 227, 176, 0.08);
+  --ifm-alert-border-color: var(--at-teal);
+}

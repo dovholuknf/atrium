@@ -35,6 +35,21 @@ section heading is just "what landed in this iteration."
   is unchanged; `/v1/browse`, where the roots are a permission, still resolves fresh. With 160 worktrees a read
   went from 124ms to under 5ms (ROOM-SIDE).
 
+- **A docs site and landing page, in `website/`, describing atrium as of 0.0.1.**
+
+  Docusaurus, themed from the board itself: the default skin's navy, teal and blue in dark mode, the `daylight`
+  skin in light mode, `active-work` green for workers, and the A redrawn as an SVG. The landing page draws the
+  board, a permission request and a supervised terminal in HTML rather than showing screenshots, so it follows the
+  theme, reflows on a phone and shows no real paths. The docs cover install, the quick start, the two ways to run
+  (watch and gate in your own terminal, or supervised), the board, cards, permissions and auto mode, terminals,
+  messages, files, history, rooms, overlays, runners, intake, settings, the CLI, the control MCP server and hooks,
+  plus the story of why atrium exists, told from the changelog and the decision records.
+
+  It is refreshed at release time, not per feature. `scripts/build-docs.ps1` builds it and checks that every link
+  carries the `/atrium/` base URL, and `.github/workflows/docs.yml` publishes it to GitHub Pages on a published
+  release or by hand, never on push. Nothing has been published. `website/DECISIONS.md` records why Docusaurus,
+  why no Tailwind, and where each colour comes from. DOCS ONLY.
+
 - **Permission events can stay out of the database, and an old database can be compacted offline (opt-in).**
 
   A 57 MB live room database held no `output` events at all. Permission traffic was the bulk: `perm-requested`

@@ -1,0 +1,240 @@
+.frame {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid var(--at-stroke);
+  background: linear-gradient(160deg, var(--at-bg-0), var(--at-bg-1) 60%, var(--at-sink));
+  box-shadow: var(--at-shadow), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  overflow: hidden;
+  font-family: var(--ifm-font-family-base);
+  text-align: left;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--at-grid);
+  background: var(--at-card-1);
+  font-size: 12px;
+  color: var(--at-label);
+}
+
+.lights {
+  display: flex;
+  gap: 6px;
+}
+
+.lights i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--at-stroke);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tabs b {
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.tabs em {
+  font-style: normal;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 198, 77, 0.2);
+  color: var(--at-warn);
+}
+
+.tabs .on {
+  background: var(--at-chip);
+  color: var(--at-head);
+}
+
+.auto {
+  margin-left: auto;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--at-stroke);
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.colHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--at-label);
+  padding: 0 2px 2px;
+}
+
+.count {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--at-dim);
+}
+
+.pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.card {
+  border-radius: 9px;
+  border: 1px solid var(--at-grid);
+  background: linear-gradient(180deg, var(--at-card-0), var(--at-card-1));
+  padding: 9px 10px 8px;
+  min-width: 0;
+}
+
+.work {
+  background: linear-gradient(180deg, var(--at-work-bg), var(--at-card-1));
+  border-color: color-mix(in srgb, var(--at-work) 40%, transparent);
+}
+
+.ring {
+  border-color: var(--at-warn);
+  box-shadow: 0 0 0 3px rgba(255, 198, 77, 0.14);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 198, 77, 0.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+  }
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--at-head);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--at-teal);
+}
+
+.q {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(40, 194, 255, 0.16);
+  color: var(--at-blue);
+}
+
+.repo {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 10.5px;
+  color: var(--at-path);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 2px 0 7px;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--at-chip);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.age {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--at-dim);
+  flex: none;
+}
+
+.warn {
+  color: var(--at-warn);
+}
+
+.blue {
+  color: var(--at-blue);
+}
+
+.teal {
+  color: var(--at-teal);
+}
+
+.dim {
+  color: var(--at-dim);
+}
+
+.work .badge {
+  color: var(--at-work);
+}
+
+@media (max-width: 760px) {
+  .cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auto {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .tabs b:nth-child(n + 4) {
+    display: none;
+  }
+}

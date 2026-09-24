@@ -1,0 +1,60 @@
+# Build the docs site and publish it to GitHub Pages.
+#
+# THERE IS NO LOGIC IN THIS FILE. Everything it does lives in `scripts/build-docs.ps1`, which runs on a developer's
+# machine exactly as it runs here. This file checks out, installs node, asks Pages where the site lives, calls the
+# script with those values, and hands the output folder to the Pages actions.
+#
+# The site describes atrium as of a release and is refreshed only at release time, so it runs on a published
+# release and by hand, and NEVER on push.
+
+name: docs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: build
+        shell: pwsh
+        env:
+          PAGES_ORIGIN: ${{ steps.pages.outputs.origin }}
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: ./scripts/build-docs.ps1 -Url $env:PAGES_ORIGIN -BaseUrl $env:PAGES_BASE_PATH -OutDir "$PWD/website/build"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

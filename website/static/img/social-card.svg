@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1B2E"/>
+      <stop offset="1" stop-color="#040B14"/>
+    </linearGradient>
+    <linearGradient id="a" x1="24" y1="96" x2="104" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E3B0"/>
+      <stop offset="1" stop-color="#28C2FF"/>
+    </linearGradient>
+    <pattern id="g" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M60 0H0V60" fill="none" stroke="#1B3B5A" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#g)" opacity=".45"/>
+  <g transform="translate(96 215) scale(1.6)">
+    <path d="M30 100 64 28 98 100M44 72h40" fill="none" stroke="url(#a)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="330" y="300" font-family="Inter, Segoe UI, sans-serif" font-size="96" font-weight="800" fill="#F2F8FF">atrium</text>
+  <text x="334" y="370" font-family="Inter, Segoe UI, sans-serif" font-size="34" fill="#9FBDD4">The single open hall every agent passes through.</text>
+</svg>
