@@ -396,7 +396,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			d.askAnswered(taskID, "the operator")
 			if target, err := d.st.Get(taskID); err == nil {
-				d.peerSaid(from, target)
+				d.peerSaid(from, target, body.Text)
 			}
 			if from == "" {
 				d.seenAnswered(taskID, store.SeenMessage)
@@ -459,7 +459,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// the truth and what to do instead. See docs/a2a-reliability-design.md.
 	out := map[string]any{"delivered": "queued", "id": m.ID}
 	if target, err := d.st.Get(taskID); err == nil {
-		d.peerSaid(from, target)
+		d.peerSaid(from, target, body.Text)
 		reach, why := d.reachability(target)
 		out["delivered"] = deliveredWord(reach)
 		out["reachable"] = reach

@@ -688,10 +688,13 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// first. On a fresh start only: a resume continues a conversation and takes
 	// no first prompt, and rewriting the file under a session that already read
 	// it would be a second source of truth it believes. See writeBriefFile.
+	briefPath := ""
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
-		if _, err := writeBriefFile(cwd, brief); err != nil {
+		p, err := writeBriefFile(cwd, brief)
+		if err != nil {
 			return nil, err
 		}
+		briefPath = filepath.ToSlash(p)
 		wanted = briefPrompt(wanted)
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
@@ -905,6 +908,21 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 		if err := d.st.SetLineage(created.ID, by, parentID); err != nil {
 			return nil, err
+		}
+	}
+	// A WORK ITEM, for a card another session launched: the brief, the
+	// launcher, and a work state only a report, a verdict or the session
+	// ending moves. A fresh start only, so a resume or a reopen of an older
+	// card does not put it on the ledger after the fact. The board's own
+	// dialog gets none: clint did not ask for a queue of verdicts. See
+	// internal/store/ledger.go.
+	if req.Resume == "" && hasTag(req.Tags, OriginAgentTag) {
+		if t, err := d.st.Get(created.ID); err == nil {
+			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
+				Brief: briefHead(req.Brief, req.Prompt), BriefPath: briefPath,
+			}); err != nil {
+				return nil, err
+			}
 		}
 	}
 	// WHICH MODEL THIS CARD IS RUNNING ON, written after the runner is up

@@ -522,6 +522,13 @@ type Store struct {
 	// runners. It must not call back into the store.
 	OnHalt func(cause error)
 
+	// OnLedgerChange is called after a change to a work item commits, and
+	// OnLedgerNotice after a notice the ledger queued commits. The daemon
+	// rewrites the snapshot file and types the notice when it can. Both run
+	// after the transaction has released the connection. See ledger.go.
+	OnLedgerChange func(taskID string)
+	OnLedgerNotice func(n LedgerNotice)
+
 	// hot serves Recent and takes every event synchronously, on the halt path.
 	// cold are write-only durability sinks fed best-effort. See eventsink.go.
 	// Both are wired once at Open from the event_sink setting; the default is

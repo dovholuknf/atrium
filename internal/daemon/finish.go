@@ -196,22 +196,16 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		}
 		recap += "needs: " + ask
 	}
-	if err := d.st.SetRecap(task.ID, recap); err != nil {
-		return nil, http.StatusInternalServerError, err
-	}
 
 	// The commit, checked against the worktree. Accepted either way: a worker
 	// that committed somewhere else is doing its job, and the card flags what
-	// could not be found so a human can look.
+	// could not be found so a human can look. Checked BEFORE the transaction
+	// below, never inside it: a git call holding the store's only connection
+	// would hold up every other write for as long as git takes.
 	sha := strings.TrimSpace(in.SHA)
 	unverified := false
-	if status == store.StatusDone {
-		if sha != "" {
-			unverified = !commitExists(task.Worktree, sha)
-		}
-		if err := d.st.SetReportSHA(task.ID, sha, unverified); err != nil {
-			return nil, http.StatusInternalServerError, err
-		}
+	if status == store.StatusDone && sha != "" {
+		unverified = !commitExists(task.Worktree, sha)
 	}
 
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
@@ -235,31 +229,56 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if sha != "" {
 		ev["sha"], ev["unverified"] = sha, unverified
 	}
-	if err := d.st.AppendEvent(task.ID, store.EventSubmitted, ev); err != nil {
-		return nil, http.StatusInternalServerError, err
-	}
 
+	// ONE TRANSACTION for everything a report records: the recap, the commit,
+	// the event, the column, `reported_at`, the work item and the notice to the
+	// launcher. These were separate writes, and a failure between two of them
+	// left a card half reported. See store.RecordReport.
+	//
 	// A card put down by hand stays put. Shelving is an answer, and a session
 	// inside a shelved worktree announcing it is done does not overrule it.
-	if task.Status != store.StatusShelved && status != task.Status {
-		if err := d.st.SetStatusBecause(task.ID, status, reason); err != nil {
-			return nil, http.StatusInternalServerError, err
+	//
+	// A worker's `done` still moves its card to `done`: the column is what the
+	// session is doing. Its work item goes to `reported`, which is NOT finished.
+	// Only the launcher's verdict closes work.
+	write := store.ReportWrite{
+		TaskID: task.ID, Recap: recap, Event: ev,
+		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified,
+		MoveStatus: task.Status != store.StatusShelved && status != task.Status,
+		Status:     status, Reason: reason,
+		ReportStatus: in.Status,
+	}
+	if status == store.StatusDone {
+		out := &store.WorkOutputs{NoCommit: strings.TrimSpace(in.NoCommit)}
+		if sha != "" {
+			out.Commits = []string{sha}
+			if unverified {
+				out.Unverified = []string{sha}
+			}
 		}
+		write.Outputs = out
+	}
+	// The launcher hears it, verbatim, queued in the same transaction so a
+	// crash cannot record the report and lose the notice. Keyed on the moment,
+	// so every report is sent once. A card nobody launched has nobody to tell.
+	if launcher := d.launcherOf(task); launcher != nil {
+		write.Notice = &store.NoticeSpec{
+			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
+			Key:  time.Now().UTC().Format(time.RFC3339Nano),
+			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
+		}
+	}
+	res, err := d.st.RecordReport(write)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// Whatever it was doing, it is not doing now. Not for a worker's
 		// report mid-work, which is still doing it.
 		d.act.forget(task.ID)
 	}
-	if err := d.st.MarkReported(task.ID); err != nil {
-		return nil, http.StatusInternalServerError, err
-	}
 	d.publishTask(task.ID)
-
-	// The launcher hears it, verbatim. Keyed on the moment, so every report is
-	// sent once. A card nobody launched has nobody to tell.
-	told := d.notifyLauncher(task, NoticeReport, time.Now().UTC().Format(time.RFC3339Nano),
-		reportBody(task, in.Status, sha, unverified, recap))
+	told := res.Notice != nil
 
 	// The room announces the session handing its work over, which the hub reads
 	// as a card changing column without knowing the session declared it done. See
@@ -275,10 +294,24 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), map[bool]string{true: in.Status, false: "done"}[in.Status != ""],
 		map[bool]string{true: ", and left a recap", false: " and said nothing about what it did"}[recap != ""])
 
-	return map[string]any{
+	out := map[string]any{
 		"ok": true, "recorded": true, "task_id": task.ID, "status": status,
 		"unverified": unverified, "launcher_told": told,
-	}, http.StatusOK, nil
+	}
+	if res.Item != nil {
+		// Said back so a worker reads, in the same turn, that `done` handed
+		// the work over rather than closed it.
+		out["work_state"] = res.Item.State
+	}
+	return out, http.StatusOK, nil
+}
+
+// truncatePeer bounds a notice to what a peer message may carry.
+func truncatePeer(text string) string {
+	if len(text) > maxPeerMessage {
+		return text[:maxPeerMessage]
+	}
+	return text
 }
 
 // reportBody is what a launcher reads when a worker reports.

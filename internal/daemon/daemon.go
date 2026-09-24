@@ -139,6 +139,11 @@ type Daemon struct {
 	// See pendinginject.go.
 	pending *pendingInjector
 
+	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
+	// so any number of changes while a write is under way are one more write.
+	// See ledger.go.
+	ledgerDirty chan struct{}
+
 	// unseen holds the cards whose latest turn nobody has seen, so an operator
 	// keystroke can answer "does this see a turn" from memory. The durable copy
 	// is the turn_seen table. See seen.go.
@@ -220,6 +225,9 @@ func New(opts Options) (*Daemon, error) {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}
 	st.OnHalt = d.onHalt
+	d.ledgerDirty = make(chan struct{}, 1)
+	st.OnLedgerChange = d.ledgerChanged
+	st.OnLedgerNotice = d.ledgerNotice
 	d.hb.Record = d.hooks()
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Prompt = d.prompt
@@ -980,6 +988,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	} else if n > 0 {
 		log.Printf("[atrium] named %d card(s) from their repository and branch", n)
 	}
+	// The work ledger: the one-time backfill, the items no exit path reached,
+	// and the snapshot beside the database. See ledger.go.
+	d.startLedger()
+	go d.ledgerWriter(ctx)
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
 	errCh := make(chan error, 2)
