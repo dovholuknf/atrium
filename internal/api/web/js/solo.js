@@ -655,9 +655,11 @@ async function soloRefresh() {
     openTerm(task);
   }
 
-  const mine = perms ? perms.filter(p => (p.task_id || p.id) === soloID) : null;
+  // By bare id: this window's hash keeps the spelling it opened with, and the
+  // lists spell the card however the current room set does. See `BareIdMap`.
+  const mine = perms ? perms.filter(p => sameCard(p.task_id || p.id, soloID)) : null;
   const ready = waiting
-    ? waiting.some(t => t.id === soloID && t.status !== "needs-permission")
+    ? waiting.some(t => sameCard(t.id, soloID) && t.status !== "needs-permission")
     : null;
 
   if (mine !== null) soloAlert("perm", mine.length > 0, mine[0]);
