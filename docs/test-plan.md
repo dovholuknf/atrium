@@ -2653,6 +2653,48 @@ does not clear it.
 **Expected:** the hook prints nothing and exits 0 both times, inside its 2 second budget. The card records the
 turn and keeps whatever questions it had.
 
+## AD. Event sink, stage 2
+
+Opt-in routing of event kinds out of the db, and the offline compact. See `docs/backlog-2.md`, first section. Run
+against a throwaway room. Never point any of this at the live `atrium.db`.
+
+### AD1. The default is unchanged
+
+1. On a throwaway room with no `event_sink` and no `event_cold_kinds`, approve one permission on a card.
+2. Open the card's detail dialog.
+
+**Expected:** the history shows the permission row. Nothing under the filters says anything is not shown.
+
+### AD2. Perm events go to the file archive only
+
+1. Set `event_sink` to `db,file` and `event_cold_kinds` to `perm-requested,perm-decided`. Restart the throwaway
+   room.
+2. Approve one permission on a card, then open its detail dialog.
+3. Look in the `events` directory beside the throwaway db.
+
+**Expected:** the dialog shows no row for the new permission and says `not shown: perm-decided, perm-requested
+kept in the event archive only`. The newest `events-*.jsonl` file holds both perm events for that card. The
+Permissions pane still lists the decision.
+
+### AD3. No cold sink, no routing
+
+1. Clear `event_sink`, keep `event_cold_kinds`, restart the throwaway room.
+
+**Expected:** the room log says `event_cold_kinds ... needs a cold sink`. A new permission appears in the card's
+history, and the dialog says nothing is missing.
+
+### AD4. Compact a copy
+
+1. Stop the throwaway room. Run `atrium2 db compact --in <db> --out <new>`.
+2. Run it again with `--window-bytes 262144 --drop-kinds perm-requested,perm-decided` and another `--out`.
+3. Start the throwaway room, then run step 1 against its db again.
+4. Run it with `--drop-kinds created`, and once with `--out` equal to `--in`.
+
+**Expected:** steps 1 and 2 print both sizes and the second prints `events N -> M`. The input's size and rows do
+not change. Step 3 fails with `database is open elsewhere` and writes no file. Step 4 fails both times without
+writing anything. Swapping a copy into place (room stopped, old file and its `-wal`/`-shm` moved aside) starts a
+room that no longer logs `not in incremental auto_vacuum mode`.
+
 ## Z. The terminals pane after a room restart
 
 ### Z1. The main board's pane reattaches by itself

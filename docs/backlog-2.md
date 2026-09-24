@@ -6,7 +6,73 @@ Items owned by this line of work. The original `docs/backlog.md` belongs to anot
 
 ## Pluggable event sink: get the audit trail out of the primary database
 
-**Raised 2026-09-18.** Not started.
+**Raised 2026-09-18.** Stages 1 and 2 done. The offsite sink and a live swap are left.
+
+### Status
+
+Done:
+
+- **Stage 1** (in `02fe769`, landed 2026-09-18): the `EventSink` seam, the `db` hot sink, the rolling-JSONL `file`
+  cold sink, the `event_sink` setting, the opt-in per-card hot window `event_window_bytes`, `rolled_off` on a
+  card's event feed, and incremental auto_vacuum for fresh databases.
+- **Stage 2, routing** (`1e03180`): `event_cold_kinds` names kinds that go to the cold sinks only. Off by default.
+  The card's detail dialog says which kinds and whether older events rolled off.
+- **Stage 2, compact** (`1070cbf`): `atrium2 db compact --in <db> --out <db> [--window-bytes N] [--drop-kinds
+  k,...]`, an offline `VACUUM INTO` copy switched to incremental auto_vacuum.
+
+Left:
+
+- The `offsite` sink.
+- The permission table, which is now the largest thing in the file (see the measurement). Nothing trims it.
+- Swapping a compacted copy into place. Today that is a manual step with the room stopped.
+- Turning a bound on by default, with a documented value.
+
+### Measurement, 2026-09-24
+
+A copy of the live room database, 57 MB (59.8 MB file plus a 4 MB `-wal`), 203 cards:
+
+| what                                  | bytes on disk | rows   |
+|---------------------------------------|---------------|--------|
+| `event` table                         | 25.8 MB       | 62,287 |
+| `event` indexes                       | 8.3 MB        |        |
+| `permission` table                    | 20.8 MB       | 23,242 |
+| `permission` indexes                  | 4.4 MB        |        |
+| everything else                       | 0.3 MB        |        |
+
+Event payload bytes per kind: `perm-decided` 8.6 MB (24,711 rows), `perm-requested` 5.7 MB (23,242), `prompted`
+0.46 MB, `launched` 0.45 MB, `status-changed` 0.29 MB (8,097), `exited` 0.16 MB, the rest under 0.05 MB each.
+There are **no `output` events**: no code path writes that kind any more. One card, `main:atrium`, holds 32k
+events (8.8 MB of payload) and 13.6k permission rows (7.4 MB of command and details). The next nine cards hold
+0.14 to 0.59 MB each. In the permission table, `details` is 8.3 MB and `command` 3.8 MB; `Edit` and `Write`
+requests are 8.8 MB of that between them, since their details carry the file content.
+
+`atrium2 db compact` on that copy:
+
+| options                                                  | result  | events kept |
+|----------------------------------------------------------|---------|-------------|
+| none                                                     | 54.8 MB | 62,287      |
+| `--window-bytes 262144`                                  | 37.7 MB | 28,974      |
+| `--drop-kinds perm-requested,perm-decided`               | 28.7 MB | 14,334      |
+| both                                                     | 27.8 MB | 11,572      |
+
+### Decisions, stage 2
+
+- **Route by kind, not `output` alone.** The brief was to route `output` cold if it was the bulk. It does not
+  exist, and permission traffic is the bulk, so the setting takes any list of kinds. `output` fits it if it ever
+  comes back.
+- **No cold sink, no routing.** `event_cold_kinds` without a cold sink in `event_sink` is ignored and logged,
+  rather than dropping events with nowhere to go.
+- **`created` and `submitted` stay in the db.** `HistoryRolledOff` reads `created` and `LatestAgentReports` reads
+  `submitted` from the table. Naming them is logged and skipped live, and refused by the compact.
+- **The dialog says, it does not rebuild.** With perm events routed cold, the timeline shows no permission rows
+  and a line naming the missing kinds. The Permissions pane still lists every decision from the permission table.
+  Rebuilding timeline rows from that table is possible, but it is a second source for one view.
+- **Compact refuses an open database by taking an exclusive lock with no wait.** A running room holds the file,
+  so the lock fails at once. The lock is held through the `VACUUM INTO`, so nothing opens the input part way.
+- **Compact never replaces the input.** The input is the archive for anything the copy drops. The swap stays a
+  human step with the room stopped.
+- **The permission table is not trimmed.** It is 25 MB with indexes and feeds the board's decisions list. Trimming
+  it needs its own retention decision. Recorded as left.
 
 ### The problem
 
@@ -107,7 +173,8 @@ enforces, which is where retention belongs.
   opens). Leaning no: the board shows "history rolled off, see the archive at <where>", the same way an offline
   room shows what it last said rather than pretending.
 - Whether output events belong in the event log at all, or are a separate stream from the start. They are the
-  bulk and the least like an audit event.
+  bulk and the least like an audit event. (2026-09-24: moot for now. No code writes `output` events; see the
+  measurement above.)
 
 ### Reclaiming space the bound leaves behind
 
