@@ -213,10 +213,10 @@ function repoLeaf(name) {
 
 // ── cards that wear their terminal's colours ────────────
 //
-// Off, a card shows its theme as a stripe on the terminals list and nowhere
-// else. On, every card is drawn in its own terminal theme, in every place a
-// card is drawn: the terminals list, the stack and the board's columns. It is
-// a way of finding a session by colour across a screen of them.
+// Off, a board card shows no theme at all. On, every card in the stack and the
+// board's columns is drawn in its own terminal theme. It is a way of finding a
+// session by colour across a screen of them. The terminals list has three
+// settings of its own, below.
 //
 // PER BROWSER, like text size and focus on hover, and unlike the skin. The
 // skin is the board's look and follows you to a phone. This is how one screen
@@ -227,10 +227,51 @@ let cardColors = localStorage.getItem("atrium.cardColors") === "1";
 function toggleCardColors(on) {
   cardColors = !!on;
   try { localStorage.setItem("atrium.cardColors", cardColors ? "1" : "0"); } catch (e) {}
-  cardWearCache = new WeakMap();
   runRefresh();
+}
+
+// ── rows in the terminals list ──────────────────────────
+//
+// Three switches, each on its own, because the list is read three ways:
+//   selected  the row you are attached to, in its terminal's background, as
+//             a tab onto the pane. On by default, which is how it always was.
+//   idle      every other row in its theme too. Off by default. It started
+//             life as part of `cardColors`, so a browser that had that on
+//             starts with this on.
+//   exited    a row whose session has exited keeps its theme, washed out by
+//             the list's own surface laid over it, rather than drained to
+//             grey. Off by default.
+// Per browser, for the reason `cardColors` is.
+const termWearStored = k => localStorage.getItem("atrium.termWear." + k);
+const termWearOn = {
+  selected: termWearStored("selected") !== "0",
+  idle: termWearStored("idle") === null ? cardColors : termWearStored("idle") === "1",
+  exited: termWearStored("exited") === "1"
+};
+
+function toggleTermWear(which, on) {
+  termWearOn[which] = !!on;
+  try { localStorage.setItem("atrium.termWear." + which, on ? "1" : "0"); } catch (e) {}
   renderTermList();
 }
+
+// What a row in the terminals list wears: `{cls, style}`, the classes to add
+// and the style to append, both empty for a row drawn in the skin's colours.
+// A row is one of three things, and the switch for that thing decides.
+function termWear(t, on, cold) {
+  if (on) {
+    if (!termWearOn.selected) return { cls: " bare", style: "" };
+    // The selected row alone keeps `--tabbg`. With the idle rows worn too, it
+    // wears the full palette and the frame says which one it is.
+    return termWearOn.idle ? wearFor(t) || NO_WEAR : NO_WEAR;
+  }
+  const worn = cold ? termWearOn.exited || termWearOn.idle : termWearOn.idle;
+  const w = worn && wearFor(t);
+  if (!w) return NO_WEAR;
+  return cold && termWearOn.exited ? { cls: w.cls + " washed", style: w.style } : w;
+}
+
+const NO_WEAR = { cls: "", style: "" };
 
 // THE PALETTE IS REWRITTEN ON THE CARD, NOT RESTYLED ROUND IT.
 //
@@ -254,7 +295,12 @@ let cardWearCache = new WeakMap();
 // The style and class a card is drawn with, or null with the setting off or a
 // theme whose colours cannot be read.
 function cardWear(t) {
-  if (!cardColors) return null;
+  return cardColors ? wearFor(t) : null;
+}
+
+// Cached per theme object, so a list of a hundred rows in five themes works
+// out five palettes.
+function wearFor(t) {
   const th = themeFor(t);
   if (!cardWearCache.has(th)) cardWearCache.set(th, wearOf(th));
   return cardWearCache.get(th);

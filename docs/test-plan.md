@@ -2718,3 +2718,34 @@ it is back. attaching
 ```
 
 If it recurs, capture the same lines. The line after `waiting for` names the branch that gave up.
+
+## AE. The terminals list's theme switches
+
+Three checkboxes in the gear's board pane, under `board cards wear their terminal colours`. Run on a board with
+at least three sessions in different terminal themes, one of them pinned and exited.
+
+### AE1. The defaults are the old look
+
+1. Open the gear on a browser that never set them. Attach one session.
+
+**Expected:** `the selected row wears its theme` is checked, the other two are not. The attached row is filled
+with its terminal's background, every other row is the skin's card with a coloured left edge, and the exited row
+is faded to grey.
+
+### AE2. Each switch moves only its own rows
+
+1. Uncheck `the selected row wears its theme`.
+2. Check it again, and check `rows wear their theme when not selected`.
+3. Uncheck that, and check `exited rows keep their theme, washed out`.
+
+**Expected:** after 1 the attached row is the skin's card with a frame in the skin's accent, still open toward
+the terminal. After 2 every live row is in its theme and the attached one has a two-pixel frame. The exited row
+is still grey. After 3 the live rows are back to the skin's card and the exited row is in its theme under a
+70% fog of the list's own surface. Hovering it lifts most of the fog.
+
+### AE3. Kept per browser
+
+1. Reload. Open the board in a second browser.
+
+**Expected:** the reload keeps all three. The second browser shows the defaults. A browser that had the old
+`cards wear their terminal colours` on opens with `rows wear their theme when not selected` checked.

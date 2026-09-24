@@ -115,6 +115,8 @@ function paintSettings() {
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
   document.getElementById("s-cardcolors").checked = cardColors;
+  for (const k of ["selected", "idle", "exited"])
+    document.getElementById("s-termwear-" + k).checked = termWearOn[k];
   document.getElementById("s-inputlag").checked = lagOn;
   // The two housekeeping timers. Held by the daemon rather than the browser,
   // because they are about the machine's data and not about this screen, so

@@ -641,8 +641,9 @@ async function wornSection(browser, base) {
         "(distinct looks: stack " + off.stack + ", terminals " + off.term + ").");
     }
 
-    // ON.
-    await wp.evaluate(() => toggleCardColors(true));
+    // ON. The board's setting for the stack and the columns, and the terminals
+    // list's own for the rows that are not selected.
+    await wp.evaluate(() => { toggleCardColors(true); toggleTermWear("idle", true); });
     const stored = await wp.evaluate(() => localStorage.getItem("atrium.cardColors"));
     if (stored !== "1") fail("turning card colours on did not store it in this browser (got " + stored + ").");
     await paintAll();
@@ -703,7 +704,7 @@ async function wornSection(browser, base) {
     // OFF again puts the current look back.
     // A view repaints when it is shown, so walk the three.
     await wp.setViewportSize({ width: 1400, height: 900 });
-    await wp.evaluate(() => toggleCardColors(false));
+    await wp.evaluate(() => { toggleCardColors(false); toggleTermWear("idle", false); });
     for (const v of ["board", "stack", "terms"]) {
       await wp.click('.tab[data-view="' + v + '"]');
       await wp.waitForTimeout(300);
@@ -713,6 +714,155 @@ async function wornSection(browser, base) {
       fail("turning card colours back off left " + left + " cards worn.");
     });
     if (errors.length) fail("the card-colours page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// The terminals list's three switches: the selected row, the rest, and an
+// exited row. Each is flipped on its own and the rows read back, so a switch
+// that moved another kind of row fails here.
+async function termWearSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const was = tasksMode;
+  const live = (id, theme) => Object.assign({}, T1, {
+    id, display_title: "row " + id, theme, supervised: true, pinned: true, worktree: "/tmp/tw/" + id
+  });
+  const dead = (id, theme) => Object.assign(live(id, theme), { status: "dead", supervised: false, pid: 0 });
+  try {
+    wornTasks = [live("tw-atrium", "atrium"), live("tw-nord", "nord"), live("tw-light", "active-light"),
+      dead("tw-dead", "dracula"), dead("tw-deadlight", "active-light")];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await wp.click('.tab[data-view="terms"]');
+
+    // Defaults, as the gear shows them: selected on, the other two off.
+    const boxes = await wp.evaluate(() => {
+      paintSettings();
+      return ["selected", "idle", "exited"].map(k => {
+        const el = document.getElementById("s-termwear-" + k);
+        return el ? k + "=" + el.checked : k + " missing";
+      }).join(" ");
+    });
+    if (boxes !== "selected=true idle=false exited=false") {
+      fail("the terminals list's switches do not open at their defaults in the gear: " + boxes);
+    }
+
+    const read = () => wp.evaluate(async () => {
+      termTask = { id: "tw-atrium" };
+      await renderTermList();
+      const out = {};
+      for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="tw-"]')) {
+        const s = getComputedStyle(el), a = getComputedStyle(el, "::after");
+        out[el.dataset.id] = {
+          cls: el.className, bg: s.backgroundColor, img: s.backgroundImage, opacity: s.opacity, filter: s.filter,
+          after: a.content !== "none" ? { opacity: a.opacity, bg: a.backgroundColor } : null
+        };
+      }
+      out.shell = getComputedStyle(document.getElementById("term-list")).backgroundColor;
+      return out;
+    });
+    const themeBg = await wp.evaluate(() => {
+      const hex = h => { const n = parseInt(h.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
+      const o = {};
+      for (const n of ["atrium", "nord", "active-light", "dracula"]) o[n] = hex(TERM_THEMES[n].background);
+      return o;
+    });
+    const worn = r => / worn\b/.test(r.cls);
+
+    // DEFAULT: the selected row in its terminal's background, nothing else worn,
+    // the exited rows faded to grey the way they always were.
+    let r = await read();
+    if (r["tw-atrium"].bg !== themeBg.atrium || worn(r["tw-atrium"])) {
+      fail("by default the selected row is not in its theme's background (" + r["tw-atrium"].bg + ").");
+    }
+    if (["tw-nord", "tw-light", "tw-dead", "tw-deadlight"].some(id => worn(r[id]))) {
+      fail("by default a row that is not selected wears its theme.");
+    }
+    if (r["tw-dead"].opacity !== "0.3" || r["tw-dead"].after) {
+      fail("by default an exited row is not faded (" + JSON.stringify(r["tw-dead"]) + ").");
+    }
+    const plain = r["tw-nord"].bg + "|" + r["tw-nord"].img;
+
+    // SELECTED OFF: the attached row is the skin's card.
+    await wp.evaluate(() => toggleTermWear("selected", false));
+    r = await read();
+    if (!/\bbare\b/.test(r["tw-atrium"].cls) || r["tw-atrium"].bg + "|" + r["tw-atrium"].img !== plain) {
+      fail("with the selected row's theme off, it is still coloured (" + r["tw-atrium"].bg + " " +
+        r["tw-atrium"].img + ", a plain row is " + plain + ").");
+    }
+    await wp.evaluate(() => toggleTermWear("selected", true));
+
+    // IDLE ON: every live row in its own background, the dead ones still grey.
+    await wp.evaluate(() => toggleTermWear("idle", true));
+    r = await read();
+    if (r["tw-nord"].bg !== themeBg.nord || r["tw-light"].bg !== themeBg["active-light"] || !worn(r["tw-nord"])) {
+      fail("with idle rows on, a row that is not selected is not in its theme (" + r["tw-nord"].bg + ").");
+    }
+    if (r["tw-atrium"].bg !== themeBg.atrium) fail("with idle rows on, the selected row lost its theme.");
+    if (r["tw-dead"].opacity !== "0.3" || r["tw-dead"].after) {
+      fail("with idle rows on and exited rows off, an exited row is not faded as before.");
+    }
+    await wp.evaluate(() => toggleTermWear("idle", false));
+
+    // EXITED ON: the dead rows in their theme under a wash of the list's
+    // surface, not faded, and the live ones untouched.
+    await wp.evaluate(() => toggleTermWear("exited", true));
+    r = await read();
+    const d = r["tw-dead"];
+    if (!/\bwashed\b/.test(d.cls) || d.bg !== themeBg.dracula || d.opacity !== "1" || d.filter !== "none") {
+      fail("with exited rows on, an exited row is not drawn in its theme unfaded (" + JSON.stringify(d) + ").");
+    }
+    if (!d.after || d.after.opacity !== "0.7" || d.after.bg !== r.shell) {
+      fail("with exited rows on, an exited row does not carry the 70% wash of the list's surface (" +
+        JSON.stringify(d.after) + ", surface " + r.shell + ").");
+    }
+    if (worn(r["tw-nord"])) fail("turning exited rows on coloured a live row.");
+    const stored = await wp.evaluate(() => ["selected", "idle", "exited"]
+      .map(k => localStorage.getItem("atrium.termWear." + k)).join(","));
+    if (stored !== "1,0,1") fail("the terminals list's switches are not kept in this browser (got " + stored + ").");
+
+    // For choosing the wash by eye: TERMWEAR_SHOTS=<dir> writes the list at
+    // several opacities on several skins.
+    if (process.env.TERMWEAR_SHOTS) {
+      await wp.evaluate(() => toggleTermWear("idle", true));
+      for (const skin of ["midnight", "daylight", "paper", "noir", "clay"]) {
+        await wp.evaluate(s => applySkin(s), skin);
+        for (const op of [0.6, 0.7, 0.75, 0.8, 0.85]) {
+          await wp.evaluate(o => {
+            let st = document.getElementById("tw-shot");
+            if (!st) { st = document.createElement("style"); st.id = "tw-shot"; document.head.appendChild(st); }
+            st.textContent = ".term-list .card.tab.cold.washed::after { opacity: " + o + " !important }";
+          }, op);
+          await wp.waitForTimeout(400);
+          await wp.locator("#term-list").screenshot({
+            path: require("path").join(process.env.TERMWEAR_SHOTS, skin + "-" + op + ".png")
+          });
+        }
+      }
+    }
+
+    // A browser that had the old all-cards setting on starts with idle rows on.
+    const legacy = await browser.newContext();
+    const lp = await legacy.newPage();
+    await lp.addInitScript(() => localStorage.setItem("atrium.cardColors", "1"));
+    await lp.goto(base, { waitUntil: "domcontentloaded" });
+    const idle = await lp.evaluate(() => termWearOn.idle);
+    await legacy.close();
+    if (idle !== true) fail("a browser with the old card colours setting on did not start with idle rows worn.");
+
+    if (errors.length) fail("the terminals list switches page threw uncaught errors: " + errors.join(" | "));
   } finally {
     tasksMode = was;
     await ctx.close();
@@ -2842,14 +2992,17 @@ async function main() {
     }
 
     // ── cards wear their terminal colours ───────────────────────────────────
-    // The board setting that draws every card in its own terminal theme. Off,
-    // nothing changes. On, every card in the terminals list, the stack and the
-    // board columns takes its theme's background, the attached card keeps a
+    // The board setting that draws every card in its own terminal theme, with
+    // the terminals list's idle-rows switch beside it. Off, nothing changes.
+    // On, every card in the terminals list, the stack and the board columns
+    // takes its theme's background, the attached card keeps a
     // frame the others do not have, and every title, path and chip reads at
     // WCAG AA (4.5:1) against the surface it is on, on every shipped theme.
     // Measured off computed styles, so what is scored is what the browser
     // painted, not what the code meant to paint.
     await wornSection(browser, base);
+    // ── the terminals list's three theme switches ───────────────────────────
+    await termWearSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

@@ -24,6 +24,18 @@ section heading is just "what landed in this iteration."
   plain, 37.7 MB with a 256 KiB window, 28.7 MB with the two perm kinds dropped, 27.8 MB with both. What is left
   is mostly the permission table. ROOM-SIDE, HUB-SIDE.
 
+- **The terminals list decides which rows wear their terminal's theme.**
+
+  Only the selected row in the terminals list was drawn in its terminal's colours, unless the board-wide `cards
+  wear their terminal colours` was on, and then every card everywhere was. The gear's board pane now has three
+  switches for the list, each on its own and kept per browser: `the selected row wears its theme` (on, the old
+  look), `rows wear their theme when not selected` (off), and `exited rows keep their theme, washed out` (off).
+  The third lays the list's own surface over an exited row at 70% instead of fading it to grey, so a dead session
+  still reads as its colour. 70% was picked by eye across five skins: at 60% a dead row read as live on a dark
+  skin, at 85% its hue was gone on a light one. The board-wide setting is now `board cards wear their terminal
+  colours` and covers the stack and the board. A browser that had it on starts with the list's second switch on.
+  HUB-SIDE.
+
 - **A finished worker's badge stops reading `thinking`.**
 
   A worker that called `atrium_report` with `done` kept a `thinking` badge after its turn ended. The report marks
