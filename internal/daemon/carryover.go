@@ -100,6 +100,27 @@ const carryCutNotice = "\x1b[38;5;244m" +
 	"the scrollback limit and has been discarded. raise it in settings, scrollback ----" +
 	"\x1b[0m\r\n"
 
+// carryReplayMax is the most pre-restart history one attach replays.
+//
+// THE SAVED FILE GROWS WITH EVERY RESTART and an attach paid for all of it.
+// `carryFrom` folds the last file in front of the live ring at each clean stop,
+// so a card that has lived through 27 restarts held 23MB, and every attach ran
+// all 23MB through the screen model and sent the result to a browser that then
+// parsed it: about 1.4s to open one terminal, rising by a ring's worth per
+// restart until the scrollback setting (512MB here) stops it.
+//
+// The newest 4MB is about 4,000 lines on screen and costs roughly 70ms here
+// and 300ms in the browser. The file itself is untouched, so the whole of it is
+// still one click away, which is what the notice says.
+const carryReplayMax = 4 << 20
+
+// carryReplayNotice goes at the top of an attach whose pre-restart history was
+// cut to `carryReplayMax`.
+const carryReplayNotice = "\x1b[38;5;244m" +
+	"[atrium] ---- older output from before the restart is not replayed here. all of it is " +
+	"under the terminal's cog, history from before the restart ----" +
+	"\x1b[0m\r\n"
+
 // carryover is one card's retained output and the width it was last composed
 // at.
 //
@@ -476,7 +497,8 @@ func (d *Daemon) adoptCarryover(r *runner) {
 // A missed match keeps the saved bytes whole: a duplicate is recoverable by
 // reading, a gap is not.
 //
-// Bounded by `max`, the size one ring holds, trimmed from the old end.
+// Bounded by `max`, the size one ring holds, trimmed from the old end, and
+// then by `carryReplayMax`, which is what keeps an attach fast. See there.
 func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]byte, []sizeCut, bool) {
 	r.mu.Lock()
 	c := r.carried
@@ -484,7 +506,16 @@ func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]
 	if c == nil || len(c.bytes) == 0 || max <= 0 {
 		return live, cuts, false
 	}
-	old := c.bytes[:reprintCut(c.bytes, live)]
+	// The reprint is looked for near the END of the saved bytes only. It
+	// repeats what the session said last, so its anchor's last copy sits within
+	// about a live ring of the end, and searching the whole file cost a pass
+	// over every restart the file has folded in. A reprint that began further
+	// back than the window keeps the window whole: a duplicate, never a gap.
+	old := c.bytes
+	if w := carryReplayMax + 2*len(live); len(old) > w {
+		old = fromLineStart(old[len(old)-w:])
+	}
+	old = old[:reprintCut(old, live)]
 	if len(old) == 0 {
 		return live, cuts, false
 	}
@@ -492,12 +523,20 @@ func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]
 	prefix = append(prefix, old...)
 	prefix = append(prefix, carryDivider...)
 	trimmed := false
-	if budget := max - len(live); len(prefix) > budget {
+	if budget := max - len(live); budget <= carryReplayMax && len(prefix) > budget {
 		if budget <= len(carryDivider) {
 			return live, cuts, false
 		}
 		prefix = fromLineStart(prefix[len(prefix)-budget:])
 		trimmed = true
+	} else if len(prefix) > carryReplayMax {
+		// Cut by the replay bound, not by the setting, so the setting's notice
+		// would send somebody to raise a number that is not the reason. This
+		// one says where the rest is.
+		kept := fromLineStart(prefix[len(prefix)-carryReplayMax:])
+		prefix = make([]byte, 0, len(carryReplayNotice)+len(kept))
+		prefix = append(prefix, carryReplayNotice...)
+		prefix = append(prefix, kept...)
 	}
 	out := make([]byte, 0, len(prefix)+len(live))
 	out = append(out, prefix...)
