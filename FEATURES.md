@@ -690,10 +690,10 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 ## The older v1 modes
 
-- **A terminal hub and an MCP agent loop.**
-  `atrium hub` is a terminal UI you type into, and `atrium agent` is the MCP server a session calls `submit` on in
-  a loop. This `hub` is not the `atrium2 hub`. Docs: `docs/user-guide.md` patterns 1 to 6. Landed 2026-06-04
-  (`fc4ccd0`) or earlier.
+- **A terminal hub and an MCP agent loop: removed.**
+  `atrium hub`, `atrium agent`, `atrium daemon --tui`, `/submit` and `POST /v1/tasks/{id}/prompt` are gone. The
+  board does everything the terminal UI did, and a supervised session takes a message without a loop. The
+  `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/one-atrium-plan.md` stage 1.
 
 - **A read-only state aggregator.**
   `atrium serve`, `status` and `watch` read an external worktree ledger. Docs: `README.md`. Landed with the v1

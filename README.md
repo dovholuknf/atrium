@@ -211,12 +211,7 @@ On the board, **perms** then **import rules from claude**. It previews what it w
 translating `Bash(go build:*)` into a prefix and `//c/temp/**` into a real path, and reporting anything it cannot
 map rather than dropping it silently.
 
-## Two other modes
-
-**Hub and agent loop.** The original mode, still here and untouched. `atrium hub` is a terminal you type into,
-and a claude session with the `atrium-agent` MCP server wired in calls one tool, `submit`, in a loop: it posts,
-blocks until you reply, acts on the reply, posts again. The agent absorbs disconnects and long-poll timeouts
-silently, so the model never wakes up while you are away and idle costs nothing.
+## One other mode
 
 **State aggregator.** `atrium serve`, `status` and `watch` read a session ledger written by an external worktree
 tool and expose it over MCP. Optional, and inert unless `WORKTREE_ROOT` points at a ledger it understands.
@@ -227,14 +222,12 @@ tool and expose it over MCP. Optional, and inert unless `WORKTREE_ROOT` points a
 | --- | --- | --- |
 | `WORKTREE_ROOT` | unset | Root of a worktree tree. The daemon keeps its database in `hub/` under it. Unset means `~/.atrium`. |
 | `ATRIUM_HUB_URL` | `http://localhost:7777` | Where the hooks post. |
-| `ATRIUM_PERM_GATE` | unset | `on` gates every session. `off` disables. Unset gates only sessions with the atrium-agent MCP wired in. |
+| `ATRIUM_PERM_GATE` | unset | `on` gates every session. `off` disables. Unset gates sessions that joined or were launched by atrium, and sessions under a directory whose `.mcp.json` mentions `atrium-agent`. |
 | `ATRIUM_AGENT_NAME` | directory name | What a session calls itself. Set automatically for runners atrium launches. |
 | `ATRIUM_TASK_ID` | unset | Binds a launched runner to the card that launched it. Set automatically. |
-| `ATRIUM_DISCONNECTED_LOG_INTERVAL` | `10m` | How often the agent mentions that the hub is unreachable. |
 
-Flags: `--addr` for the agent listener, `--http` for the board, `--db` for the database, `--long-poll` for the
-agent long-poll ceiling, `--tui` to also attach the terminal UI, `--shutdown-token` to allow a remote shutdown
-carrying that token instead of refusing everything but loopback.
+Flags: `--addr` for the agent listener, `--http` for the board, `--db` for the database, `--shutdown-token` to
+allow a remote shutdown carrying that token instead of refusing everything but loopback.
 
 **Pass `--db` if you run the daemon from more than one shell.** Which database it opens otherwise depends on
 `WORKTREE_ROOT` in the environment it started from, and opening a different populated one looks exactly like your
@@ -256,7 +249,6 @@ board having lost everything. The daemon says so loudly when the database is not
 | `atrium answer <handle>` | The reply to one of those, which also takes the question off that card. |
 | `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
-| `atrium hub` / `agent` | The v1 terminal broker and its MCP client side. |
 | `atrium serve` / `status` / `watch` | Read-only views over an external worktree ledger. |
 
 ## Scope, and what is not built

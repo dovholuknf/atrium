@@ -70,8 +70,8 @@ state through direct method calls that never cross HTTP. That is why there is no
 the TUI talks to the daemon over loopback HTTP like everything else. If the TUI can only see what the API
 exposes, the web UI can never be second class.
 
-`atrium hub` survives as a convenience: it starts the daemon in process and attaches the TUI over loopback. One
-command, one binary, but no shared pointer. The API can be the terminal. It just cannot skip the API.
+`atrium hub` was to survive as a convenience that attached the TUI over loopback. It did not: Mode A, TUI
+included, was removed in `docs/one-atrium-plan.md` stage 1, and the board is the one client of the API.
 
 ## Domain model
 
@@ -347,7 +347,6 @@ DELETE /v1/tasks/{id}               forget
 POST   /v1/tasks/prune              { statuses?, older_than_hours? } -> { removed }
 GET    /v1/tasks/{id}/events        history, paged
 GET    /v1/tasks/{id}/review        what this session was allowed to do, folded and grouped
-POST   /v1/tasks/{id}/prompt        send text to the agent (the human's turn)
 POST   /v1/tasks/{id}/message       queue something to say to a running session
 GET    /v1/tasks/{id}/attach        WebSocket: live terminal, both directions
 POST   /v1/tasks/{id}/kill          terminate the runner
@@ -521,18 +520,16 @@ future native app is another client of the same JSON plus SSE contract.
 
 ## What carries over from v1
 
-These v1 invariants are agent side or hook side and survive the split untouched. Do not regress them.
+These v1 invariants are hook side and survive the split untouched. Do not regress them.
 
-1. The LLM never sees a daemon disconnect. `internal/agent/agent.go` retries forever with backoff.
-2. The LLM never sees an empty prompt. Long poll timeouts are absorbed internally as keepalives.
-3. No token burn while idle, which follows from 1 and 2.
-4. Activation is opt in, and the activation message's content is ignored.
-5. The permission hook fails open when the daemon is unreachable.
-6. The hook does not gate `mcp__*` or `ToolSearch`, since gating the agent's own `submit` is circular.
+1. The permission hook fails open when the daemon is unreachable.
+2. The hook does not gate `mcp__*` or `ToolSearch`. MCP tools are trusted by being wired in, and gating the
+   meta-tool that finds other tools would gate the same call twice.
 
-Preserving 1 through 3 across the split is not automatic, because v2 introduces storage on the agent facing path.
-"Failure posture" above is what actually holds them up. Read it as part of this list rather than as a separate
-concern.
+The v1 list had four more, about the `atrium agent` submit loop: the LLM never sees a disconnect, never sees an
+empty prompt, burns no tokens while idle, and activates only on request. They went with Mode A, which
+`docs/one-atrium-plan.md` stage 1 removed. A supervised session gets the same quiet idle by owning the terminal,
+not by parking a tool call.
 
 ## What v1 rules get retired
 
@@ -547,7 +544,7 @@ concern.
 
 ## Staged migration
 
-Each stage leaves `atrium hub` working.
+Each stage left `atrium hub` working, until Mode A was removed.
 
 1. **Checkpoint.** Commit the existing working tree. The refactor needs a clean base. **Done.**
 2. **Storage.** Add `internal/store` with the schema, migrations, and the rebind helper. Includes the three tier
@@ -558,10 +555,9 @@ Each stage leaves `atrium hub` working.
    agents send no task id, so the self started path and the observed-versus-overrides rule have to work from the
    first commit that touches storage. **Done.**
 4. **Human facing API.** Add the `/v1` endpoints and the SSE stream on top of the task model. **Done.**
-5. **Cut the pointer.** Rewrite the TUI against the HTTP API. Delete the privileged path. This is the stage that
-   proves the API is complete. **Not done.** The TUI still receives a `*Hub` in process. Everything since stage 4
-   has gone into the board instead, which means the API is exercised by only one client and its gaps are
-   invisible.
+5. **Cut the pointer.** Rewrite the TUI against the HTTP API. Delete the privileged path. **Abandoned.** The TUI
+   was deleted instead, with the rest of Mode A, in `docs/one-atrium-plan.md` stage 1. Everything since stage 4
+   went into the board, which is the one client of the API.
 6. **Board.** Kanban, stack, permissions and runners against the same API. **Done**, as a plain page rather than
    the React SPA the decisions table names. The JSON plus SSE contract is unchanged, so swapping it is a client
    side job.

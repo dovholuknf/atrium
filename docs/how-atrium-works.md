@@ -154,16 +154,14 @@ serve the board on a zrok share or an OpenZiti service, where the SDK hands back
 is one handler on it. Atrium holds the name of a credential, never somebody else's credential.
 `docs/overlays.md`.
 
-## The older surfaces
+## The older surface
 
-Two v1 modes still build and still work. Neither shares state with the daemon.
+One v1 mode still builds and still works, and shares no state with the daemon.
 
-- **Mode A, hub and agent loop.** `atrium hub` plus an `atrium agent` MCP server inside each session. The agent
-  calls `submit` in a loop and long-polls the hub for the next prompt. Amnesiac by design. This `hub` is not the
-  `atrium2 hub` above.
 - **Mode B, read-only aggregator.** `atrium serve` reads the gwt session ledger and exposes it over MCP.
 
-See the project `CLAUDE.md` for both.
+Mode A, the v1 hub and agent loop, is removed. The permission long-poll it shared with the daemon lives in
+`internal/daemon/permwait.go`.
 
 ## Where to go next
 

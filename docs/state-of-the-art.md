@@ -5,8 +5,9 @@
 > `atrium daemon` is the surface that gets used: durable state, a permission gate, a web board, supervised
 > terminals. For that, read `README.md`, `CLAUDE.md`, `docs/architecture-v2.md` and `docs/backlog.md`.
 >
-> What follows is still accurate about the hub and the agent loop, which are untouched by v2 and still work.
-> Keep it for that. Do not read it as a description of the project.
+> What follows describes the v1 hub and agent loop, which are REMOVED (`docs/one-atrium-plan.md` stage 1).
+> `internal/hub`, `internal/agent` and `internal/tui` no longer exist. The `/permission` contract described
+> below still holds, served by `internal/daemon/permwait.go`. Keep the rest as history only.
 
 Pair with `CLAUDE.md` (architectural conventions), `CHANGELOG.md` (full iteration log), `README.md` (user
 reference), and `docs/test-plan.md` (manual scenarios that must pass).

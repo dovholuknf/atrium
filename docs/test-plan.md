@@ -1,10 +1,11 @@
 # Atrium test plan
 
 Manual test scenarios for every shipped feature. Run end-to-end before tagging a build, after touching the
-hub / agent / TUI / hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
+daemon or hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
 
-Sections A through F cover v1: the hub, the agent loop and the permission surface they share. G covers the
-daemon, which is where the work now happens. H covers the overlays, I covers importing rules from Claude Code,
+Sections A, B and D covered Mode A, the v1 hub and agent loop, and are retired with it. C covers the permission
+surface, which the daemon kept. E covers Mode B. F is the resilience sweep. G covers the daemon, which is where
+the work happens. H covers the overlays, I covers importing rules from Claude Code,
 and J covers what landed most recently, written the night it was built so the first person to run it is checking
 claims rather than remembering intent.
 
@@ -29,436 +30,145 @@ build step, so a syntax error in it compiles, ships, and shows up as a blank pag
 the running daemon's address file. That is fixed, and the fix is a test option that is easy to forget when
 adding a new test that calls `Run`: `Options.LocationFile` must point somewhere temporary.
 
-## A. Mode A (hub + agent loop)
+## A. Mode A (hub + agent loop): retired
 
-### A1. Single-agent loop, happy path
+Retired with Mode A. `atrium hub`, `atrium agent` and the `atrium-agent` MCP server no longer exist, so there is
+no submit loop to drive, disconnect or time out. The permission surface they shared lives on in the daemon, and
+section C covers it.
 
-**Steps**
+## B. Multi-agent: retired
 
-1. Start hub: `.\build.claude\atrium.exe hub`
-2. In another wt tab: `cd <atrium-repo>` then `claude`. The `.mcp.json` here wires
-   `atrium-agent`.
-3. Send the claude tab a kickoff: `go`
-4. Expect a greeting line in the hub chat view within ~2 seconds.
-5. Type a prompt in the hub: `what cwd are you in`
-6. Expect a `response` message back with the path.
-
-**Pass criteria**
-- Greeting renders in chat view with the `◆` sigil.
-- Tab bar shows `chat: atrium`.
-- Response renders below greeting with a horizontal rule between them.
-- Status bar momentarily shows `-> atrium`.
-
-**Common failure**
-- "MCP server not connected" in claude -> `.mcp.json` path wrong or binary missing. Rebuild atrium.
-
-### A2. Long response wrapping
-
-**Steps**
-
-1. With a connected agent, prompt: `send me 100 lines numbered 1 to 100`
-2. Watch the chat view fill.
-
-**Pass criteria**
-- Each line is wrapped at viewport width if needed (no horizontal scroll).
-- Lines are visibly indented 2 cols under the header.
-- A muted `─────` separator follows the message before the next one.
-
-**Common failure**
-- Lines run off the right edge -> `wrapOne` is regressed or viewport.Width is 0.
-
-### A3. Hub disconnect / reconnect
-
-**Steps**
-
-1. With an agent connected and idle, Ctrl-C the hub.
-2. Wait 30 seconds.
-3. Restart the hub: `.\build.claude\atrium.exe hub`
-4. From the agent's claude tab, send any prompt (this fires the agent's next submit).
-
-**Pass criteria**
-- During the outage, the agent's claude tab generates NO new text. No tokens spent.
-- After hub returns, the next submit succeeds and the prompt flows.
-- Stderr of the agent process (in claude's MCP debug log) shows a single "unreachable" line on first failure
-  and a single "resumed" line on recovery.
-
-**Common failure**
-- Agent generates filler ("hub is down, retrying...") -> tool description regressed; the LLM is seeing
-  errors that should be absorbed silently.
-
-### A4. Long-poll timeout absorption
-
-**Steps**
-
-1. With an agent connected and idle, leave both terminals untouched for 2 minutes.
-
-**Pass criteria**
-- No new entries in the hub chat view. The hub's 60s long-poll fires, the agent transparently re-polls as
-  `keepalive`, hub does not display keepalives.
-- After 2 minutes, type a prompt in the hub: the agent picks it up on the very next poll cycle.
-
-**Common failure**
-- Hub chat view shows repeated `<agent/keepalive>` entries -> hub `HandleSubmit` is logging keepalives.
-
-### A4b. Inline-mode scrollback
-
-**Steps**
-
-1. Hub running, agent activated. Send 3 prompts, get 3 responses.
-2. Mouse-wheel scroll up in the terminal.
-
-**Pass criteria**
-- The full conversation is visible in the terminal's native scrollback.
-- Each user prompt shows as `[ts] you → <agent>` followed by the prompt body.
-- Each agent message shows as `[ts] <agent>/response` followed by the body.
-- No perm-request lines appear in the scrollback.
-- The floating bottom frame stays in place at the cursor.
-
-### A4c. Perm requests stay out of scrollback
-
-**Steps**
-
-1. Trigger a Bash perm request: prompt the agent `run "echo hi"`.
-2. Approve via `y`.
-3. Trigger another. Deny via `n`.
-4. Scroll up through terminal scrollback.
-
-**Pass criteria**
-- Neither perm-request appears in scrollback. They were transient banner entries only.
-- The eventual `echo hi` output (or denial result) DOES appear in scrollback as part of the agent's
-  response.
-
-### A4d. Hook skips MCP tools and ToolSearch
-
-**Steps**
-
-1. Agent activated. Watch the hub for perm-requests as the agent loops.
-
-**Pass criteria**
-- No perm-request fires for `mcp__atrium-agent__submit` (the agent's own loop tool).
-- No perm-request fires for `ToolSearch`.
-- Bash, Write, Edit, etc still DO fire perm-requests.
-
-**Common failure**
-- Every loop turn produces a perm-request: the skip rules in `atrium-perm-hook.ps1` regressed. Confirm the
-  `mcp__*` glob match and the `ToolSearch` literal are both present in `$skipTools` or the like-pattern.
-
-### A5. Opt-in activation
-
-**Steps**
-
-1. Hub running. Launch claude in a dir whose `.mcp.json` wires `atrium-agent`.
-2. Send a normal prompt like `what time is it`.
-
-**Pass criteria**
-- The agent answers normally. Hub chat view stays empty (no greeting).
-- The model does NOT call `atrium-agent.submit`.
-
-3. Now send: `atrium`
-
-**Pass criteria**
-- Agent calls submit; greeting appears in the hub chat view.
-- Loop begins.
-
-4. From inside the loop, send: `stop atrium`
-
-**Pass criteria**
-- Agent acknowledges and returns to normal claude session behavior.
-- No further submits unless re-activated.
-
-**Common failure**
-- Greeting appears on the FIRST normal message (regression to auto-start). Tool description regressed; the
-  ServerOptions.Instructions block must keep the opt-in language.
-- Casual mention of the word "atrium" triggers activation. Tighten the language in instructions: only verb-y
-  phrasings count.
-
-## B. Multi-agent
-
-### B1. Two agents, separate scrollback
-
-**Steps**
-
-1. Hub running.
-2. Two claude tabs in two different `.mcp.json`-equipped dirs. Each greets.
-3. Press `Ctrl-K` to open the agent switcher; pick agent A. Send a prompt. See the response in chat.
-4. Press `Ctrl-K`, pick agent B. The chat view should be EMPTY of agent A's messages.
-
-**Pass criteria**
-- Each agent's scrollback is isolated.
-- Tab bar shows `chat: <activeAgent> (+N)` where N is unread from OTHER agents.
-- Agents view shows both with last-contact timestamps.
-
-### B2. Quick-switch by number
-
-**Steps**
-
-1. With ≥2 agents known and chat input empty, press `1` then `2`.
-
-**Pass criteria**
-- Each key switches to the corresponding agent. Tab bar updates. Chat view reflows.
-
-**Common failure**
-- A digit gets eaten by an in-progress text input (the input wasn't empty). That's expected behavior; the
-  guard is in place to prevent eating digits inside prompts.
-
-### B3. Waiting indicator
-
-**Steps**
-
-1. Two agents connected. Type a prompt to agent A. Wait for A to respond.
-2. Switch to agent B; don't reply.
-
-**Pass criteria**
-- Agents view shows agent A flashing `← waiting` (alternating bold).
-- Tab bar's `agents` tab shows `[1 waiting]`.
-
-### B3b. Two agents in the same dir, distinct names
-
-**Steps**
-
-1. Hub running. Launch two claude tabs both `cd`'d to `<atrium-repo>\` (or any single dir
-   with `.mcp.json`).
-2. Activate both with `atrium`.
-
-**Pass criteria**
-- Two distinct names appear in `/agents`: `atrium-<pid1>` and `atrium-<pid2>`.
-- Sending a prompt to one does NOT cross-talk to the other.
-
-**Common failure**
-- Both register as `atrium` and share a prompt channel: PID-suffix logic in `resolveAgentName` regressed.
-
-### B3c. `/rename` aliases
-
-**Steps**
-
-1. Two named agents `atrium-19432` and `atrium-21876`.
-2. `/rename atrium-19432 scout`
-3. `/rename atrium-21876 fixer`
-4. Type `@scout do thing`.
-
-**Pass criteria**
-- Status bar shows `-> atrium-19432`. The right agent receives.
-- Chat header and agents view show `scout (atrium-19432)` format.
-- `/rename scout` (no second arg) clears the alias.
-
-### B3d. forget a stale agent
-
-**Steps**
-
-1. Two agents known in the all-agents tab.
-2. Highlight one with `↑`/`↓`, press `x` (or `Delete`).
-
-**Pass criteria**
-- Status bar shows `forgot <name>`. The row disappears from the all-agents tab and the `Ctrl-K` switcher.
-- If the forgotten agent's claude is still running, its next submit re-registers it (row reappears).
-- Forgetting the active agent reselects the first remaining agent (or clears selection if none remain).
-
-**Common failure**
-- Forgetting leaves a phantom in the switcher: `forgetAgent` didn't prune `agentNames` or call `Hub.Forget`.
-
-### B4. `@<agent>` targeting
-
-**Steps**
-
-1. Two agents known. Type `@agentB do thing` in the chat input.
-
-**Pass criteria**
-- Status bar shows `-> agentB` regardless of which agent is currently focused.
-- Agent A's scrollback is unchanged.
-
-**Common failure**
-- Typing `@unknownname ...` should print a warning, not silently route. Verify with a typo.
+Retired with Mode A. Every scenario here drove the v1 terminal UI: its switcher, its tabs, `/rename`, `@agent`
+targeting. The board shows every session at once and section G covers it.
 
 ## C. Permissions
+
+The permission hook is `atrium-perm-hook.ps1` in the dotfiles repo. It POSTs to the daemon's agent listener at
+`/permission` and blocks on the answer. Every scenario here answers on the board, in the card's permission queue.
 
 ### C1. Permission gating round-trip
 
 **Steps**
 
-1. Hub running. Agent launched in a dir with `.mcp.json` referencing `atrium-agent` (so auto-gate on).
+1. Daemon running. A claude session opened in an atrium checkout, which is gated by the rule in C10.
 2. Prompt the agent: `run "echo hello" via Bash`.
 
 **Pass criteria**
-- A `perm-request` message appears in the hub chat, with the command echoed.
-- `perms` tab shows `(1!)` badge.
-- Pressing `y` (or `/approve`) in the hub: status bar shows `approve perm #1 (<agent>)`. Within 1-2 seconds
-  the agent's tool call resolves and a response submits back.
+- The card moves to `needs-permission` and the request shows with the command echoed.
+- Approving it on the board resolves the agent's tool call within 1-2 seconds, and the card goes back to running.
 
 ### C2. Permission denial
 
 **Steps**
 
 1. Trigger a permission request as in C1.
-2. Press `n` (or `/deny`).
+2. Deny it on the board.
 
 **Pass criteria**
-- Status bar shows `block perm #N`. Agent's tool call returns with `decision: block` and the agent's response
-  reflects that the command was blocked.
+- The agent's tool call returns blocked and the agent says the command was blocked.
 
-### C3. `y`/`n` does NOT leak as prompt
+### C3. `y`/`n` does NOT leak as prompt: retired
+
+Retired with Mode A. It tested a shortcut in the v1 terminal UI.
+
+### C4. Daemon-down failover (perm gate)
 
 **Steps**
 
-1. With NO pending permissions, type `n` and enter.
+1. A session that is gated (C10, or `ATRIUM_PERM_GATE=on`). The daemon is DOWN.
+2. In the session, ask it to run a Bash command.
 
 **Pass criteria**
-- Status bar: `no pending permissions to block`. The literal `n` is NOT sent to any agent.
+- The hook fails open. Claude Code's normal permission prompt fires inside the session, and approving it there
+  works. A missing daemon must never block a session.
 
-**Common failure**
-- If `n` shows up as `<agent/response>` in chat, the shortcut handler is regressed.
+### C4b and C4c. Terminal banners: retired
 
-### C4. Hub-down failover (perm gate)
-
-**Steps**
-
-1. Set `ATRIUM_PERM_GATE` is implicit-on (dir has `.mcp.json` with atrium-agent). Hub is DOWN.
-2. In the agent claude tab, ask it to run a Bash command.
-
-**Pass criteria**
-- The hook fails open. Claude-code's normal permission UI fires inside the agent's tab. Approval there
-  works. (We're NOT supposed to block on a missing hub.)
-
-### C4c. Multi-pending banner
-
-**Steps**
-
-1. With agent activated, prompt: `write three files: a.txt, b.txt, c.txt each with content "x"`.
-2. Expect three permission requests to queue.
-
-**Pass criteria**
-- The banner shows `⚠ PERMISSION PENDING — 3 total   (showing oldest; 2 more queued -- see perms tab)`.
-- The detail lines correspond to perm #1 (the oldest).
-- Switching to the perms tab shows all three with their IDs.
-- `y` resolves #1, banner updates to show #2. Repeat until empty.
-
-**Common failure**
-- Banner shows only "1 total" when 3 are pending: the perms snapshot isn't being refreshed (check the
-  `tickMsg` handler).
-
-### C4b. Permission arrival banner + boop
-
-**Steps**
-
-1. Hub + agent activated. Switch to the chat view.
-2. Prompt the agent: `write a file foo.txt with content "x"`.
-
-**Pass criteria**
-- A bordered, multi-line, flashing banner appears at the top of the chat view with the perm details. Yellow
-  and red alternate.
-- Terminal beeps (or visually flashes if you've disabled audible bell) once.
-- Status bar shows `⚠ NEW permission #N -- press y/n`.
-
-**Common failure**
-- No beep: terminal has BEL suppressed; visual bell setting usually flashes the window instead. Either is
-  fine, just confirm SOMETHING happened.
-- Banner missing or one-line: renderPermBanner regressed; check that ThickBorder/Width are still applied.
+Retired with Mode A. Both tested the v1 terminal UI's banner. The board's own notification is covered in G8.
 
 ### C5. Permission gating for Write/Edit
 
 **Steps**
 
-1. Hub + agent activated. Prompt the agent: `write a file foo.txt with content "hi"`.
+1. Gated session. Prompt the agent: `write a file foo.txt with content "hi"`.
 
 **Pass criteria**
-- A `perm-request` shows in the hub for the `Write` tool, displaying the file path.
-- No in-tab claude permission prompt fires.
+- A request shows on the board for the `Write` tool, displaying the file path and the content being written.
+- No in-session claude permission prompt fires.
 
 **Common failure**
-- claude's own permission UI fires inside the agent tab. Hook is filtering by `tool_name -ne 'Bash'` -- old
-  hook binary or settings.json regression.
+- Claude's own permission prompt fires inside the session. The hook is filtering by `tool_name -ne 'Bash'`: an old
+  hook or a settings.json regression.
 
 ### C6. Read-only tools NOT gated
 
 **Steps**
 
-1. Hub + agent activated. Prompt the agent: `read README.md and tell me the first heading`.
+1. Gated session. Prompt the agent: `read README.md and tell me the first heading`.
 
 **Pass criteria**
-- No `perm-request` in the hub for the `Read` tool.
-- Agent completes the work and submits a response.
+- No request on the board for the `Read` tool.
 
 **Common failure**
-- Read fires a perm-request. The hook's $skipTools list got pruned by mistake.
+- Read raises a request. The hook's `$skipTools` list got pruned by mistake.
 
 ### C7. Footgun guard still wins
 
 **Steps**
 
-1. Hub running. Approve a permission that the existing `pre-tool-use-hook.ps1` would reject (e.g., a command
+1. Approve, on the board, a command that the existing `pre-tool-use-hook.ps1` would reject (for example one
    matching the inline-env-prefixed-docker pattern: `FOO=bar docker ps`).
 
 **Pass criteria**
-- Even after `/approve`, the second hook (footgun guard) blocks the command. Agent reports the block.
+- Even after the approval, the second hook (the footgun guard) blocks the command. The agent reports the block.
 
 ### C8. Deny with free-form guidance
 
 **Steps**
 
-1. Trigger a permission request (e.g. agent wants to run a Bash command).
-2. In the perms tab, highlight it, type `no, use a temp file under ./build instead` and press Enter.
+1. Trigger a permission request.
+2. Deny it on the board with the reason `no, use a temp file under ./build instead`.
 
 **Pass criteria**
-- Status bar shows `denied perm #N (<agent>) with guidance`. The request clears.
 - The agent's tool call returns blocked, and the model sees the typed reason and course-corrects (retries with
   the suggested approach) rather than just reporting a bare block.
-- `/deny <id> <why>` and `/deny <why>` (oldest) produce the same guided block from any tab.
+
+### C9. Permissions-only mode
+
+**Steps**
+
+1. Set `ATRIUM_PERM_GATE=on` (env block of settings.json, or `$env:ATRIUM_PERM_GATE='on'`). Daemon running.
+2. Launch a plain claude session in a directory with NO `.mcp.json` that has not run `atrium join`. Ask it to
+   run a Bash command.
+
+**Pass criteria**
+- The request appears on the board, on a card named after the session's cwd leaf (or `ATRIUM_AGENT_NAME`).
+- Approving or denying it on the board resolves the tool call.
 
 **Common failure**
-- Typed text routes to an agent as a prompt instead of denying the perm: the `viewPerms` branch in
-  `submitInput` regressed, or you were not on the perms tab.
+- No request arrives: `$forceGate` parsing broke, or the env var did not reach the session. It is read at
+  session start, so restart the session after editing settings.json.
 
-### C9. Permissions-only mode (no submit loop)
+### C10. An atrium checkout is still gated
 
 **Steps**
 
-1. Set `ATRIUM_PERM_GATE=on` (env block of settings.json, or `$env:ATRIUM_PERM_GATE='on'`). Hub running.
-2. Launch a plain claude session in a dir with NO `.mcp.json` and NO atrium activation. Ask it to run a Bash
-   command.
+1. `ATRIUM_PERM_GATE` unset. Open a plain claude session (not launched by atrium, not joined) in any atrium
+   worktree.
+2. Ask it to run a Bash command.
 
 **Pass criteria**
-- The perm-request appears in the hub even though the session has no atrium-agent MCP and never greeted.
-- The agent shows up in the all-agents/perms views named after its cwd leaf (or `ATRIUM_AGENT_NAME`).
-- Approving/denying from the hub resolves the agent's tool call. No submit loop is involved.
+- The request appears on the board. The repo's `.mcp.json` holds no servers, but it still contains the word
+  `atrium-agent`, which is what the hook's auto-detect looks for.
+- `claude mcp list` in that directory reports no MCP config error.
 
 **Common failure**
-- No perm-request arrives: `_AtriumWired` is still required because `$forceGate` parsing broke, or the env var
-  did not reach the session (it is read at session start, so restart the session after editing settings.json).
+- No request arrives: somebody removed the word from `.mcp.json`, or the hook stopped reading it.
 
-## D. Choices picker
+## D. Choices picker: retired
 
-### D1. `{choices}` block renders as picker
-
-**Steps**
-
-1. Prompt the agent: `Ask me how to proceed, with three concrete options.`
-
-**Pass criteria**
-- Agent emits a `{choices}...{/choices}` block (per its tool description).
-- TUI strips the markers and renders a styled box with numbered options below the prose.
-
-**Common failure**
-- The agent invents `1) ... 2) ...` prose instead. Restart the agent claude so the new tool description takes
-  effect; the description tells it to use `{choices}` whenever the reply is a small finite set.
-
-### D2. 1-9 picks an option
-
-**Steps**
-
-1. With an active choices picker (D1), press `1`.
-
-**Pass criteria**
-- Status bar: `picked: <text of option 1>`.
-- Agent receives that text as its next prompt and responds.
-- The picker disappears from the latest message footer.
-
-### D3. Typing a freeform reply clears the picker
-
-**Steps**
-
-1. With an active choices picker, type your own message and press Enter.
-
-**Pass criteria**
-- Status bar: `-> <agent>`. Agent's `activeChoices` is cleared so subsequent 1-9 reverts to agent-switching.
+Retired with Mode A. The `{choices}` block was a convention taught by the `atrium-agent` tool description and
+rendered by the v1 terminal UI, and both are gone.
 
 ## E. Mode B (read-only aggregator)
 
@@ -494,21 +204,13 @@ adding a new test that calls `Run`: `Options.LocationFile` must point somewhere 
 
 ## F. Resilience regression sweep
 
-### F1. ANSI sentinel translation still works
+### F1. ANSI sentinel translation: retired
 
-Send the agent: `Reply with {green}done{reset} and {bold}heads up{reset}.`
+Retired with Mode A. Only the v1 terminal UI translated `{green}` and friends, and it is gone.
 
-**Pass criteria**
-- The response renders in real green and bold. No literal `{green}` text visible.
+### F2 and F3. Long-poll keepalive and hub restart: retired
 
-### F2. Long-poll keepalive still silent
-
-Connect an agent, let it idle for 90 seconds. Hub chat must show NOTHING new during that window.
-
-### F3. Restart hub mid-prompt-typing
-
-While typing a long prompt in the hub, Ctrl-C the hub (don't press Enter). Reopen. Agent state on the next
-reconnect is fine; conversation is empty (no persistence is intentional).
+Retired with Mode A. Both exercised the submit loop. The daemon's own restart behavior is covered in section G.
 
 ## G. The daemon
 

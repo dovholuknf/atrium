@@ -5,6 +5,23 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Mode A is removed.** Stage 1 of `docs/one-atrium-plan.md`. See `docs/test-plan.md` sections A to D and F.
+
+  `atrium hub` (the v1 terminal UI), `atrium agent` (the `atrium-agent` MCP server), `atrium daemon --tui`,
+  `internal/hub`, `internal/agent` and `internal/tui` are gone, and so are the Bubble Tea, Lip Gloss and Bubbles
+  modules. The agent listener no longer answers `/submit`, and the board API no longer has
+  `POST /v1/tasks/{id}/prompt`. Nothing called either: the board never used the route, and only a session parked
+  in the submit loop could receive what it sent.
+
+  The daemon kept one piece: the `/permission` long-poll the dotfiles permission hook blocks on. It moved to
+  `internal/daemon/permwait.go` unchanged on the wire, with the same URL, request fields, response fields and
+  fail-open posture. The default database directory is `daemon.StateDir`, which returns the same path as before,
+  `hub` segment included, so nobody's database moves.
+
+  The repo's `.mcp.json` holds no servers now, but it still contains the word `atrium-agent`. The dotfiles hook
+  gates a session whose `.mcp.json` mentions it, and that keeps a session opened in an atrium checkout gated.
+  ROOM-SIDE, and the hook binary.
+
 - **A paused hub restart stays paused until somebody resumes it, and toasts stay on screen.** See
   `docs/test-plan.md` section AO and `docs/hub-restart-gate.md`.
 
