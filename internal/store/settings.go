@@ -103,6 +103,22 @@ const SettingEventSink = "event_sink"
 // rather than pretend the window is the whole story. See HistoryRolledOff.
 const SettingEventWindowBytes = "event_window_bytes"
 
+// SettingEventColdKinds names event kinds, comma separated, that go to the cold
+// sinks only and never into the db, e.g. `perm-requested,perm-decided`.
+//
+// Measured on a live room db of 57 MB, permission traffic is the bulk: the two
+// perm kinds are 48k of 62k event rows and 14 of 16 MB of event payload, and
+// they repeat what the permission table already holds. Routing them cold is the
+// lever that keeps the db small without a window rolling anything off.
+//
+// OFF BY DEFAULT. Empty means every kind goes to the db as before. It only takes
+// effect with a cold sink named in event_sink, since a cold-only event with no
+// cold sink would be written nowhere; without one the setting is ignored and
+// logged. `created` and `submitted` are read back from the table and always stay
+// in the db. The board's detail dialog says which kinds a card's history is
+// missing; see ColdOnlyKinds.
+const SettingEventColdKinds = "event_cold_kinds"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {

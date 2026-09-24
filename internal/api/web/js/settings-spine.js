@@ -484,8 +484,9 @@ async function openTask(id) {
       : "";
   paintQueued();
 
-  const { events } = await api(`/v1/tasks/${id}/events?limit=400`);
-  detailEvents = events || [];
+  const ev = await api(`/v1/tasks/${id}/events?limit=400`);
+  detailEvents = ev.events || [];
+  paintHistoryGaps(ev);
   paintTimeline();
   detail.showModal();
 }
@@ -567,6 +568,18 @@ function paintTimeline() {
   document.getElementById("d-ev-count").textContent =
     hidden > 0 ? `${hidden} housekeeping events hidden` : "";
   setHTML(document.getElementById("d-events"), timelineHTML(shown));
+}
+
+// Says what the history below does not hold, when the room keeps part of it
+// out of the db: older events rolled off the hot window, or kinds routed to a
+// cold sink only. Silent under the default, where the db has everything.
+function paintHistoryGaps(ev) {
+  const gaps = [];
+  if (ev.rolled_off) gaps.push("older events rolled off");
+  const cold = ev.cold_only_kinds || [];
+  if (cold.length) gaps.push(`${cold.join(", ")} kept in the event archive only`);
+  document.getElementById("d-ev-gaps").textContent =
+    gaps.length ? `not shown: ${gaps.join("; ")}` : "";
 }
 
 // One line per thing that happened, newest first.

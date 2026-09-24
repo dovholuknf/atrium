@@ -1189,7 +1189,10 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff})
+	// cold_only_kinds names the kinds this room writes to cold sinks and never to
+	// the db, so the board can say those rows are missing rather than hide it.
+	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff,
+		"cold_only_kinds": s.st.ColdOnlyKinds()})
 }
 
 // reviewTask answers "what did this session actually do".

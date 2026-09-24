@@ -529,6 +529,11 @@ type Store struct {
 	hot  EventSink
 	cold []EventSink
 
+	// coldOnly names the event kinds that skip the hot sink and go to the cold
+	// sinks alone, from the event_cold_kinds setting. Empty by default, so every
+	// kind lands in the db as before. Set once at Open, read-only after.
+	coldOnly map[string]bool
+
 	fresh bool
 
 	// incrementalVacuum is whether this database is in incremental auto_vacuum

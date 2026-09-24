@@ -1143,8 +1143,12 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 		blob = b
 	}
 	e := &Event{ID: newID(), TaskID: taskID, At: now(), Kind: kind, Payload: json.RawMessage(blob)}
-	if err := s.hot.Append(taskID, e); err != nil {
-		return err
+	// A kind routed cold-only never reaches the db. configureColdKinds only
+	// allows that when a cold sink exists, so the event still lands somewhere.
+	if !s.coldOnly[kind] {
+		if err := s.hot.Append(taskID, e); err != nil {
+			return err
+		}
 	}
 	// The last prompt is kept on the card, because the silent-stop check asks
 	// for it at every turn end and a long turn pushes it out of any window of
@@ -1205,6 +1209,19 @@ func (s *Store) HistoryRolledOff(taskID string) (bool, error) {
 		return nil
 	})
 	return rolled, err
+}
+
+// ColdOnlyKinds lists, sorted, the event kinds this store writes to its cold
+// sinks and never to the db, so the board can say which rows a card's history
+// does not hold rather than present what is left as the whole story. Empty
+// under the default.
+func (s *Store) ColdOnlyKinds() []string {
+	out := make([]string, 0, len(s.coldOnly))
+	for k := range s.coldOnly {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var _ = time.Time{}
