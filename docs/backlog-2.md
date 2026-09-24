@@ -7,15 +7,15 @@ larger designs. Inside each group, the item closest to landing comes first.
 
 | # | Item | Group | State |
 | - | ---- | ----- | ----- |
-| 1 | sa58: popped-out terminal also attached on the main board | paused | fix done, not merged |
-| 2 | sa60: process registry design, revised | paused | doc done, not merged |
-| 3 | sa59: restart gate says why it went | paused | WIP |
-| 4 | sa61: terminals pane group drag and group colours | paused | WIP, probe only |
-| 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | plan done, 13 questions |
-| 6 | Taking a card out of a group | bug | not started |
+| 1 | sa58: popped-out terminal also attached on the main board | paused | DONE, `7b62aa3` `7e85a80`, deployed |
+| 2 | sa60: process registry design, revised | paused | DONE, `eb887da`, Mercurius ready_to_build |
+| 3 | sa59: restart gate says why it went | paused | DONE, `8872505`, deployed |
+| 4 | sa61: terminals pane group drag and group colours | paused | DONE, `b12b323`, deployed |
+| 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
+| 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
 | 7 | The held-message `!` chip says the wrong reason | bug | not started |
-| 8 | Input lag follow-ups | bug | not started |
-| 9 | Eliminate unstyled tooltips | bug | not started |
+| 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
+| 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | decided, not started |
 | 11 | Clicking `? N` or a question clears it | feature | not started |
 | 12 | Keep codex up to date | feature | not started |
