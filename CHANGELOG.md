@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The attached terminal's frame matches the bridge running into it.**
+
+  With card colours on, the attached row and its bridge are framed at 3px in the row's title colour, and the
+  terminal pane they run into kept a 1px border in the theme's cursor colour, so the outline thinned and changed
+  colour at the pane. `placeTabBridge` now hands the attached row's `--framew` and border colour to the pane, and the
+  bridge reaches across the pane's whole left border so no line crosses the join. A plain row, its bridge and the
+  pane stay 1px. The headless bridge check fails when the pane's frame differs from the bridge in width, or in
+  colour on a worn row, on noir and daylight, and it now runs in the full headless pass. HUB-SIDE.
+
 - **The attached row's bridge is as thick as its frame.**
 
   With card colours on, the attached row's frame is its 1px border plus a 2px inset line, 3px in all, and the
