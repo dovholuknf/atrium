@@ -22,16 +22,24 @@ The full design is `docs/work-ledger-design.md`.
 - A worker's `done` report moves the work to `reported`, waiting on the launcher. Nothing closes until the launcher
   accepts it, rejects it back to the worker with a reason, or abandons it with a reason. The human can overrule
   any of these.
+- A verdict names the version of the work the launcher looked at. If the worker reported again in the meantime,
+  the verdict is refused, so nothing gets accepted unread.
 - A session that ends before a `done` report, by crash, kill or exit, moves its work to `ended-without-report`. This
-  happens in the same write that records the exit, so no exit path can miss it. A sweep on startup catches the rest.
-- After a crash, atrium flags those items, tells each launcher once (queued, so a launcher that died too hears it
-  when it comes back), and shows them red on the board. It never resumes or relaunches anything. The launcher or
-  the human decides.
+  happens in the same database transaction that records the exit, so no exit path can miss it, and one death counts
+  once however many parts of atrium notice it.
+- When atrium cannot tell whether a session is alive, it says "unknown" and leaves the work where it is. It never
+  invents an exit to tidy the list.
+- After a crash, atrium flags those items and shows them red on the board. It queues one notice to each launcher
+  in the same transaction, so the notice cannot be lost, and a launcher that died too reads it when it comes back.
+  Atrium never resumes or relaunches anything. The launcher or the human decides.
 - A final report names its outputs in a fixed shape: repo, branch, commits, files. Atrium checks that each one
   exists and marks what it could not find. It still accepts the report, and the launcher judges it.
 - Work that moves to a new card, as sa19 and sa20 did, links the old item to the new one, so the list shows one
-  open piece of work, not two.
-- The log is bounded per item, and nothing that changed the state is ever trimmed. Items outlive their cards.
+  open piece of work, not two. Only the launcher or the human can do that.
+- The log is capped per item. It trims chatter first and always keeps the report that was accepted. Items outlive
+  their cards.
+- A one-time backfill puts the last 14 days of launched cards on the list, marked as inferred, because the old
+  records are thin.
 - The room also rewrites a `work-ledger.md` file beside its database on every change, so the list can be read with
   the daemon down.
 
@@ -55,7 +63,7 @@ The full design is `docs/work-ledger-design.md`.
 
 ## Build stages
 
-1. The ledger records: reports, messages, the ended-without-report flag, the crash notice, the snapshot file.
+1. The ledger records: transactions, reports, messages, the ended-without-report flag, the crash notice, the file.
 2. The launcher rules: `atrium_verdict`, and the work state in `atrium_peers` and `atrium_task`.
 3. Structured outputs: branch, commits and files on the report, each one checked.
 4. The Work view on the board, with verdict buttons for you.
