@@ -220,13 +220,8 @@ let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  const out = { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
-  if (packView) out.persona_pack = packView;
-  return out;
+  return { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
 }
-// The persona pack nag the mocked daemon reports, or null for off. See the
-// persona pack chip test.
-let packView = null;
 // The global auto switch the mocked daemon holds, and whether a room-scoped
 // settings read fails: the room the picker is scoped to has not re-attached yet,
 // so the hub cannot reach it. See the gauto-never-blank test.
@@ -274,31 +269,6 @@ const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
 const hubStreams = [];       // hub event streams, used to push a `rooms` event
 
-// The persona pack. See js/personas.js.
-const PERSONAS = [
-  { id: "go-sec", name: "go-sec", description: "Go security reviewer.", runners: ["claude"],
-    renders: ["claude"], reviews: { paths: ["**/*.go"], surfaces: ["security", "http"] }, last_run: "" },
-  { id: "styler", name: "Styler", description: "style", runners: ["codex"], renders: [] }
-];
-const personaReviews = [];
-const lessonDecisions = [];
-function lessonsBody(deleted, gone) {
-  const all = [
-    { file: "memory/fresh.md", status: "untracked", description: "brand new", repo: "general",
-      why: "seen twice", diff: "+brand new\n" },
-    { file: "memory/old.md", status: "modified", description: "an old one", repo: "", why: "",
-      diff: "-a\n+b\n" }
-  ];
-  const lessons = all.filter(l => l.file !== gone);
-  return {
-    persona: "go-sec", baseline: "abc1234def", baseline_subject: "personas: lessons review",
-    lessons, rejections: ["- 2026-09-22 repo: general | x | y"], tally: { promoted: 0, kept: 0, deleted },
-    commit: "personas: lessons review, 0 promoted, 0 kept, " + deleted + " deleted\n\nLessons-reviewed: go-sec",
-    command: 'cd "D:/dotagents"\ngit add -- "personas/go-sec"\ngit commit -m "personas: lessons review, 0 ' +
-      'promoted, 0 kept, ' + deleted + ' deleted" -m "Lessons-reviewed: go-sec"'
-  };
-}
-
 const HTML = wholeBoard();
 
 function sendJSON(res, obj) {
@@ -331,15 +301,6 @@ const server = http.createServer((req, res) => {
   // no-room restart with 503 and a genuine missing card with 404, and the solo
   // window has to tell those apart. Placed before the list route, which is the
   // exact path "/v1/tasks" with no trailing id.
-  if (url.startsWith("/v1/tasks/") && url.endsWith("/persona-review") && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      personaReviews.push({ url, body: JSON.parse(raw || "{}") });
-      sendJSON(res, Object.assign({}, T1, { id: "rev1" }));
-    });
-    return;
-  }
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -414,25 +375,6 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
   if (url === "/v1/providers") { sendJSON(res, { providers: [] }); return; }
   if (url === "/v1/dispatch") { sendJSON(res, { dispatches: [] }); return; }
-  // The persona pack: one persona that renders for claude, one that does not.
-  if (url === "/v1/personas") {
-    sendJSON(res, { pack: "D:/dotagents/personas", setting: "persona_pack_path", personas: PERSONAS });
-    return;
-  }
-  if (url === "/v1/personas/go-sec/lessons") {
-    if (req.method === "POST") {
-      let raw = "";
-      req.on("data", c => { raw += c; });
-      req.on("end", () => {
-        const d = JSON.parse(raw || "{}");
-        lessonDecisions.push(d);
-        sendJSON(res, lessonsBody(d.action === "delete" ? 1 : 0, d.file));
-      });
-      return;
-    }
-    sendJSON(res, lessonsBody(0, ""));
-    return;
-  }
   if (url === "/v1/history") {
     if (!histMany) { sendJSON(res, { tasks: [HIST], total: 1 }); return; }
     // Paged the way the store pages, so "show more" and the live re-read ask
@@ -2772,90 +2714,6 @@ async function main() {
       hubHasRoom = true;
     }
 
-    // ── the persona pack chip ────────────────────────────────────────────────
-    // Hidden while the pack path is empty. A nag shows its text, warn-coloured,
-    // with /safe-to-push in the hover. A `persona-pack` event repaints it without
-    // a read. A pack it cannot read is a muted reason. Snoozing dims it and keeps
-    // it, keyed on the state, and `off` hides it.
-    {
-      packView = null;
-      const pkCtx = await browser.newContext();
-      const pk = await pkCtx.newPage();
-      const pkErrors = [];
-      pk.on("pageerror", e => pkErrors.push(String(e)));
-      const chip = () => pk.evaluate(() => {
-        const b = document.getElementById("packnag");
-        return b ? { hidden: b.hidden, cls: b.className, text: b.textContent.trim(), title: b.title } : null;
-      });
-      const pushPack = v => openStreams.forEach(r => {
-        try { r.write("event: persona-pack\ndata: " + JSON.stringify(v) + "\n\n"); } catch (e) {}
-      });
-      const NAG = {
-        path: "/x/dotagents/personas", repo: "/x/dotagents", uncommitted: 2, unpushed: 0, no_upstream: true,
-        personas: ["alpha", "beta"], nag: true, key: "k1", count: 0,
-        text: "persona pack: 2 files not committed, no upstream configured",
-        detail: "changed: alpha, beta. atrium never commits or pushes this. before you push, run " +
-          "/safe-to-push in /x/dotagents."
-      };
-      try {
-        await pk.goto(base, { waitUntil: "domcontentloaded" });
-        await pk.waitForTimeout(1500);
-        let c = await chip();
-        if (!c || !c.hidden) fail("persona pack: the chip shows with no pack configured, " + JSON.stringify(c));
-
-        packView = NAG;
-        await pk.evaluate(() => loadGlobalAuto());
-        c = await chip();
-        if (!c || c.hidden || c.text !== NAG.text || !/(^|\s)packnag(\s|$)/.test(c.cls) || /unread/.test(c.cls)) {
-          fail("persona pack: a nag did not draw its text, " + JSON.stringify(c));
-        }
-        if (c && !/\/safe-to-push/.test(c.title)) fail("persona pack: the hover does not say /safe-to-push, " + c.title);
-        if (c && !/alpha, beta/.test(c.title)) fail("persona pack: the hover does not name the personas, " + c.title);
-
-        pushPack(Object.assign({}, NAG, { unpushed: 0, count: 1, key: "k2",
-          text: "persona pack: 3 files not committed, no upstream configured" }));
-        try {
-          await pk.waitForFunction(() => /3 files/.test(document.getElementById("packnag").textContent),
-            null, { timeout: 5000 });
-        } catch (e) { fail("persona pack: a persona-pack event did not repaint the chip, " + JSON.stringify(await chip())); }
-
-        // Snoozed from its own dialog: dimmed, still there, and remembered for this key.
-        await pk.click("#packnag");
-        await pk.click("#ask button:has-text('snooze an hour')");
-        c = await chip();
-        if (!c || c.hidden || !/snoozed/.test(c.cls)) fail("persona pack: snoozing did not dim the chip, " + JSON.stringify(c));
-        const snooze = await pk.evaluate(() => JSON.parse(localStorage.getItem("atrium.packnag.snooze") || "null"));
-        if (!snooze || snooze.key !== "k2") fail("persona pack: the snooze is not keyed on the state, " + JSON.stringify(snooze));
-        // A new state drops the snooze.
-        pushPack(Object.assign({}, NAG, { key: "k3", count: 1 }));
-        try {
-          await pk.waitForFunction(() => !document.getElementById("packnag").classList.contains("snoozed"),
-            null, { timeout: 5000 });
-        } catch (e) { fail("persona pack: a changed state kept the snooze, " + JSON.stringify(await chip())); }
-
-        pushPack({ path: NAG.path, error: "git is not installed or not on PATH", nag: false, count: 0,
-          text: "cannot read the persona pack: git is not installed or not on PATH" });
-        try {
-          await pk.waitForFunction(() => document.getElementById("packnag").classList.contains("unread"),
-            null, { timeout: 5000 });
-        } catch (e) { fail("persona pack: a pack it cannot read is not a muted reason, " + JSON.stringify(await chip())); }
-        c = await chip();
-        if (c && !/^cannot read the persona pack: /.test(c.text)) fail("persona pack: the reason reads " + c.text);
-
-        pushPack({ off: true });
-        try {
-          await pk.waitForFunction(() => document.getElementById("packnag").hidden, null, { timeout: 5000 });
-        } catch (e) { fail("persona pack: turning it off did not hide the chip, " + JSON.stringify(await chip())); }
-        if (pkErrors.length) fail("the persona pack page threw: " + pkErrors.join(" | "));
-      } catch (e) {
-        fail("the persona pack test did not run through: " + e.message);
-      } finally {
-        packView = null;
-        await pk.close();
-        await pkCtx.close();
-      }
-    }
-
     // ── the on/off switch: runners and fixtures ──────────────────────────────
     // Every enable/disable on the runners page is the row's own on/off pill. No
     // separate enable button; a click writes the row with `enabled` flipped; a
@@ -2983,106 +2841,6 @@ async function main() {
       resetSwitches();
     }
 
-    // ── personas: the catalog, the card action, the lessons view ─────────────
-    // The runners page lists each persona with what it reviews and the runners
-    // it renders for. A card's menu offers "review with…" and posts the persona
-    // and runner to that card. The lessons view draws the memory diff and the
-    // commit for clint to run, and a delete posts that one file.
-    // The 404 section above leaves every single-card read answering gone, and
-    // the card menu starts by reading its card.
-    soloMode = "ok";
-    tasksMode = "first";
-    const pCtx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-    const pp = await pCtx.newPage();
-    const ppErrors = [];
-    pp.on("pageerror", e => ppErrors.push(String(e)));
-    try {
-      await pp.goto(base, { waitUntil: "domcontentloaded" });
-      await pp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
-      await pp.evaluate(() => goRunners("personas"));
-      await pp.waitForSelector('#persona-list .persona-row[data-id="go-sec"]', { timeout: 15000 });
-      const row = await pp.evaluate(() => {
-        const r = document.querySelector('#persona-list .persona-row[data-id="go-sec"]');
-        const s = document.querySelector('#persona-list .persona-row[data-id="styler"]');
-        return { text: r.textContent, renders: !!r.querySelector(".by.found"),
-          stylerMissing: s ? !!s.querySelector(".by.missing") : null,
-          nav: [...document.querySelectorAll("#runners .pane-nav button")].map(b => b.textContent.trim()) };
-      });
-      if (!/Go security reviewer\./.test(row.text) || !/\*\*\/\*\.go/.test(row.text) ||
-          !/security, http/.test(row.text) || !row.renders) {
-        fail("the persona row does not show its description, paths, surfaces and runner: " + JSON.stringify(row));
-      }
-      if (row.stylerMissing !== true) fail("a persona with no render is not marked as missing one.");
-      if (!row.nav.includes("personas")) fail("the runners page has no personas pane: " + JSON.stringify(row.nav));
-
-      // The card's menu offers the review, and the flyout lists only personas
-      // that render for a runner.
-      await pp.evaluate(() => {
-        const el = document.querySelector('#stack-list .stackrow[data-id="t1"]');
-        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
-      });
-      await pp.waitForFunction(() => {
-        const m = document.getElementById("cardmenu");
-        return m && m.classList.contains("on") &&
-          [...m.querySelectorAll(":scope > button")].some(b => /^review with/.test(b.textContent.trim()));
-      }, { timeout: 15000 }).catch(() => fail("a card with a worktree has no `review with…` in its menu."));
-      const sub = await pp.evaluate(() => personaReviewSub("t1", lastTasks.find(x => x.id === "t1"))
-        .map(s => s.label || s.quiet));
-      if (JSON.stringify(sub) !== JSON.stringify(["go-sec"])) {
-        fail("the review flyout lists the wrong personas: " + JSON.stringify(sub));
-      }
-      await pp.keyboard.press("Escape");
-      const posted = pp.waitForResponse(r => r.url().endsWith("/v1/tasks/t1/persona-review") &&
-        r.request().method() === "POST", { timeout: 15000 });
-      await pp.evaluate(() => {
-        const t = lastTasks.find(x => x.id === "t1");
-        personaReviewSub("t1", t)[0].act();
-      });
-      await pp.waitForSelector("#ask[open]", { timeout: 15000 });
-      await pp.click("#ask-actions button.go");
-      await posted;
-      const rv = personaReviews[personaReviews.length - 1];
-      if (!rv || rv.body.persona !== "go-sec" || rv.body.runner !== "claude") {
-        fail("review with posted " + JSON.stringify(rv) + ", not the persona and runner.");
-      }
-
-      // The lessons view.
-      await pp.evaluate(() => goRunners("personas"));
-      await pp.click('#persona-list button[data-lessons="go-sec"]');
-      await pp.waitForSelector('#lessons[open] .lesson[data-file="memory/fresh.md"]', { timeout: 15000 });
-      const lv = await pp.evaluate(() => {
-        const b = document.getElementById("lessons-body");
-        return { text: b.textContent, lessons: b.querySelectorAll(".lesson").length,
-          commit: (b.querySelector(".lesson-commit") || {}).textContent || "" };
-      });
-      if (lv.lessons !== 2 || !/abc1234def/.test(lv.text) || !/repo: general \| x \| y/.test(lv.text) ||
-          !/no Why line/.test(lv.text)) {
-        fail("the lessons view does not draw the lessons, the baseline and the rejections: " + JSON.stringify(lv));
-      }
-      if (!/Lessons-reviewed: go-sec/.test(lv.commit) || !/git add/.test(lv.commit)) {
-        fail("the lessons view does not end with the commit to run: " + JSON.stringify(lv.commit));
-      }
-      const decided = pp.waitForResponse(r => r.url().endsWith("/v1/personas/go-sec/lessons") &&
-        r.request().method() === "POST", { timeout: 15000 });
-      await pp.click('#lessons .lesson[data-file="memory/old.md"] button[data-act="delete"]');
-      await pp.waitForSelector("#ask[open]", { timeout: 15000 });
-      await pp.click("#ask-actions button.go");
-      await decided;
-      const d = lessonDecisions[lessonDecisions.length - 1];
-      if (!d || d.file !== "memory/old.md" || d.action !== "delete") {
-        fail("delete posted " + JSON.stringify(d) + ", not that file.");
-      }
-      await pp.waitForFunction(() => !document.querySelector('#lessons .lesson[data-file="memory/old.md"]') &&
-        /1 deleted/.test(document.querySelector("#lessons .lesson-commit").textContent),
-        { timeout: 15000 }).catch(() => fail("the lessons view did not redraw from the answer to delete."));
-      if (ppErrors.length) fail("the personas page threw: " + ppErrors.join(" | "));
-    } catch (e) {
-      fail("the personas test did not run through: " + e.message);
-    } finally {
-      await pp.close();
-      await pCtx.close();
-    }
-
     // ── cards wear their terminal colours ───────────────────────────────────
     // The board setting that draws every card in its own terminal theme. Off,
     // nothing changes. On, every card in the terminals list, the stack and the
@@ -3144,14 +2902,10 @@ async function main() {
     "the global auto button is never blank (a failed read at load, in a room scope, or on a " +
     "stream reopen says unknown or stale, and heals when settings answer), " +
     "a desktop notification fired while no window has focus is recorded in " +
-    "the toast log without also drawing a toast, the persona pack chip hides when off, " +
-    "shows its nag and /safe-to-push, repaints on its event, snoozes per state and mutes a read failure, " +
-    "and the runner and fixture " +
+    "the toast log without also drawing a toast, and the runner and fixture " +
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width), " +
-    "a card whose last turn is unread wears a dot and its open questions `? N`, " +
-    "and the personas pane lists each persona, a card's menu reviews with one, and the " +
-    "lessons view draws the memory diff and the commit and posts a delete.");
+    "and a card whose last turn is unread wears a dot and its open questions `? N`.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

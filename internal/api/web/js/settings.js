@@ -273,84 +273,11 @@ function leftLabel(secs) {
   return m ? h + "h " + m + "m left" : h + "h left";
 }
 
-// The persona pack nag: files in the pack not committed, commits not pushed.
-//
-// The room reads the pack on its own timer and works out the backoff (1m, 2m,
-// 5m, 10m, 30m, 1h ... 24h, the stuck-agent one). The board draws the chip and
-// rings once each time `count` goes up. `key` changes whenever the state does,
-// which starts the count over and drops a snooze. See
-// internal/daemon/personapack.go.
-//
-// The snooze is this browser's, like the sound. It silences the ring and dims
-// the chip, and the chip stays: what is not backed up is still not backed up.
-let packNag = null;
-const PACK_SNOOZE = "atrium.packnag.snooze";
-
-function packSnoozed(p) {
-  if (!p || !p.key) return false;
-  let s = null;
-  try { s = JSON.parse(localStorage.getItem(PACK_SNOOZE) || "null"); } catch (e) { s = null; }
-  return !!s && s.key === p.key && Date.now() < Number(s.until || 0);
-}
-
-function setPackNag(p) {
-  packNag = p && !p.off ? p : null;
-  paintPackNag();
-}
-
-function paintPackNag() {
-  const b = document.getElementById("packnag");
-  if (!b) return;
-  const p = packNag;
-  if (!p || (!p.nag && !p.error)) {
-    b.hidden = true;
-    if (typeof alerting !== "undefined") alerting.check("persona-pack", [], () => ({}));
-    return;
-  }
-  const snoozed = packSnoozed(p);
-  b.hidden = false;
-  b.className = "packnag" + (p.error ? " unread" : "") + (snoozed ? " snoozed" : "");
-  b.textContent = p.text;
-  b.title = (p.detail || p.text) + (snoozed ? " snoozed." : "");
-  // A pack it cannot read never rings. It is a reason on a chip, not a nag.
-  const ring = p.nag && !p.error && p.count > 0 && !snoozed
-    ? [{ id: `persona-pack#${p.key}#${p.count}` }] : [];
-  if (typeof alerting !== "undefined") {
-    alerting.check("persona-pack", ring, () => ({ title: p.text, body: p.detail || "" }));
-  }
-}
-
-async function openPackNag() {
-  const p = packNag;
-  if (!p) return;
-  const lines = [esc(p.text)];
-  if (p.detail) lines.push(esc(p.detail));
-  if (p.path) lines.push(`pack: <code>${esc(p.path)}</code>`);
-  if (p.error) {
-    await askUser({ title: "persona pack", body: lines.join("<br><br>"), buttons: [{ label: "ok", value: null }] });
-    return;
-  }
-  const choice = await askUser({
-    title: "persona pack",
-    body: lines.join("<br><br>"),
-    buttons: [
-      { label: "ok", value: null },
-      { label: "snooze a day", value: 24 * 60 },
-      { label: "snooze an hour", value: 60, style: "go" }
-    ]
-  });
-  const mins = Number(choice) || 0;
-  if (!mins) return;
-  localStorage.setItem(PACK_SNOOZE, JSON.stringify({ key: p.key, until: Date.now() + mins * 60000 }));
-  paintPackNag();
-}
-
 async function loadGlobalAuto() {
   try {
     const s = await api("/v1/settings");
     globalAuto = !!s.global_auto;
     globalAutoLeft = s.global_auto_seconds || 0;
-    setPackNag(s.persona_pack || null);
     // Re-wear the scope's skin off this same read. Called on every stream
     // reopen (see connect), which is when a hub that was down or still
     // attaching rooms first answers settings, so a skin the load-time read

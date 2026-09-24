@@ -121,9 +121,6 @@
          has nothing to report is noise. -->
     <button id="working" class="working" onclick="switchView('terms')" hidden></button>
     <button id="sharing" class="sharing" onclick="openSharing()" hidden></button>
-    <!-- What in the persona pack is not committed or not pushed. Hidden while the pack path is empty. See
-         internal/daemon/personapack.go. -->
-    <button id="packnag" class="packnag" onclick="openPackNag()" hidden></button>
     <button id="gauto" class="gauto" onclick="toggleGlobalAuto()">asking</button>
     <button class="go newagent" onclick="openLaunch()">+ new agent</button>
     <!-- Trying a skin is the same act as trying a terminal theme, so it is the
@@ -731,21 +728,6 @@ Limit one to a tag or a runner when it only makes sense there: run the tests mea
     </div>
     <div id="action-list"></div>
 
-    <!-- The persona pack: specialist reviewers, each a folder in dotagents.
-         Here because a persona is something this machine runs, launched at a
-         card from the card's own menu. See docs/personas-design.md. -->
-    <div class="col-head r-section" data-pane="personas" style="margin:0 0 10px">
-      <span>personas</span>
-      <span class="help" tabindex="0" data-tip="Specialist reviewers from the persona pack, one folder each in dotagents.
-
-Right-click a card and pick 'review with' to start one on that card's branch. It runs in a scratch directory of its own, reads only that repo's knowledge and memory, changes no files, and reports its findings back to the card.
-
-'lessons' shows what a persona has learned since its last lessons review. Promote, keep and delete edit files in the dotagents working tree. Atrium never commits or pushes: the view ends with the commit for you to run.">?</span>
-    </div>
-    <p class="pane-lead">Reviewers that keep what they learn. Launch one from a card's menu, and review what
-      it learned here.</p>
-    <div id="persona-list"></div>
-
     <!-- The queue, drawn UNDER the rooms rather than beside them, because it is
          a different kind of fact. A room row is what that machine says about
          itself right now and is gone when it stops saying it. This is what this
@@ -789,16 +771,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </p>
     <div id="hook-status"></div>
   </div>
-</dialog>
-
-<!-- One persona's lessons review. Wide, because a row is a status, a path, a
-     repo and three buttons, with a diff under it. Filled by renderLessons. -->
-<dialog id="lessons" class="wide">
-  <div class="dlg-head">
-    <div class="grow"><h2 id="lessons-title">lessons</h2></div>
-    <button onclick="document.getElementById('lessons').close()">close</button>
-  </div>
-  <div class="dlg-body" id="lessons-body"></div>
 </dialog>
 
 <!-- One runner's setup: what stops it working where atrium launches it. Wide
@@ -1605,20 +1577,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         a request for one is refused. The same word the worktree command takes, for the same
         reason.<br>
         Right now that comes out as <b id="s-shell-now"></b></span>
-    </div>
-
-    <!-- The persona pack. The nag reads git state there and never writes it.
-         See internal/daemon/personapack.go. -->
-    <div class="field">
-      <label class="eyebrow" for="s-personapack">persona pack</label>
-      <div class="picker">
-        <input id="s-personapack" spellcheck="false" data-saves="savePersonaPack"
-          placeholder="empty means off">
-      </div>
-      <span class="hintline">The <code>personas</code> directory in your dotagents checkout, for example
-        <code>D:/git/github/dovholuknf/dotagents/personas</code>. Once a minute this machine reads
-        <code>git status</code> and the unpushed count there, and the header says what is not committed
-        or not pushed. Atrium never commits or pushes it.</span>
     </div>
 
     <!-- Two buffers, one question. Kept side by side because the smaller of
@@ -2881,7 +2839,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
-<script src="/js/personas.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

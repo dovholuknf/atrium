@@ -563,7 +563,6 @@ async function renderRunners() {
   renderProviders();
   renderRecognisers();
   renderActions();
-  renderPersonas();
   // Only paints when the dialog is open. Nothing to draw otherwise.
   if (document.getElementById("hooks").open) renderHooks();
   if (document.getElementById("runner-setup").open) renderRunnerSetup();

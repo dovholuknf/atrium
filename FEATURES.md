@@ -523,14 +523,6 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   Runners, fixtures, sources, providers, recognisers, actions and rooms all use one `role=switch` pill. Docs:
   `CHANGELOG.md`. Landed 2026-09-23 (`04ac808`). **claude/main only**.
 
-- **You review a card's branch with one of your personas, and review what they learned.**
-  The runners page lists the persona pack named by `persona_pack_path`. `review with…` on a card starts a fresh
-  claude session as that persona (`claude --agent`) in a run directory of its own, with a `TARGET.md` naming the
-  diff range and the repo's knowledge and memory. It reports back to the card. The `lessons` view shows memory
-  changed since the last `Lessons-reviewed: <id>` commit, and its promote, keep and delete buttons edit the
-  dotagents working tree only. The commit is yours. Docs: `docs/personas-design.md`. Landed 2026-09-23
-  (`2ffc0e8`, `45a3f74`). **claude/persona-atrium only**.
-
 ### Runners and runner setup: removed, and why
 
 - **`scripts/sources/runner-updates.ps1`.** It started each runner binary on a ten-minute timer to read its
@@ -618,11 +610,6 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   `event_sink` names `db`, `file` or both. An opt-in per-card window rolls old events off the database, and the
   feed reports `rolled_off`. Databases give freed space back to disk. Docs: `CHANGELOG.md`. Landed 2026-09-18
   (`8bf4083`, `1959d8a`, `ede2f4b`, `739948a`).
-
-- **The header nags when the persona pack is not committed or not pushed.**
-  Set `persona_pack_path` in the gear. The room reads git state there once a minute, read only, and the chip
-  names the personas changed, rings on the stuck-agent backoff, and can be snoozed. Docs:
-  `docs/personas-design.md`. Landed 2026-09-23, **claude/main only**.
 
 ### History, audit and notifications: removed, and why
 

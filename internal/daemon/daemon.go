@@ -98,9 +98,6 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
-	// pack is the persona pack nag, in memory like esc and on the same backoff.
-	// See personapack.go.
-	pack packNag
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -207,7 +204,6 @@ func New(opts Options) (*Daemon, error) {
 		launching: newKeyedMutex(),
 	}
 	d.pending = newPendingInjector(d)
-	d.pack.nudge = make(chan struct{}, 1)
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
 	api.ApplyInputLag(st)
@@ -223,14 +219,12 @@ func New(opts Options) (*Daemon, error) {
 	if err := os.RemoveAll(api.ScrapDir); err != nil {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}
-	api.PersonaRunsDir = d.personaRunsDir()
 	st.OnHalt = d.onHalt
 	d.hb.Record = d.hooks()
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Prompt = d.prompt
 	d.ap.Decide = d.decide
 	d.ap.Launch = d.launchFromJSON
-	d.ap.PersonaReview = d.PersonaReview
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
@@ -238,8 +232,6 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
 	d.ap.DrainAuto = d.drainForAuto
-	d.ap.PersonaPack = d.personaPackView
-	d.ap.PersonaPackChanged = d.nudgePack
 	d.ap.Attach = d.handleAttach
 	d.ap.OpenShell = d.handleShellOpen
 	d.ap.ShutShell = d.handleShellClose
@@ -923,9 +915,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
-	// What in the persona pack is not committed or not pushed. Its own timer,
-	// never a request. See personapack.go.
-	go d.watchPack(ctx, PersonaPackEvery)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.
