@@ -134,7 +134,7 @@ func notificationKind(in hookInput) string {
 }
 
 func newHook() *cobra.Command {
-	var event, name, hubURL string
+	var event, name, hubURL, runner string
 	c := &cobra.Command{
 		Use:   "hook",
 		Short: "Report what this session is doing. Run by a harness, not by hand.",
@@ -145,6 +145,10 @@ func newHook() *cobra.Command {
 		// and this runs inside somebody's tool call.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// A flag this build does not know is a hooks file written by another
+		// atrium, and it still must not fail the tool call it rides on.
+		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
+		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			reportActivity(hubURL, event, name)
 			// Run at a prompt, silence is indistinguishable from a hang. Only
@@ -169,6 +173,11 @@ func newHook() *cobra.Command {
 	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start or subagent-end")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+	// Every command a Named target writes carries this. Without it here,
+	// codex's PreToolUse, PostToolUse and UserPromptSubmit all exited 1. The
+	// session hook is what records the runner, and activity finds the card by
+	// name, so the value is accepted and not sent.
+	c.Flags().StringVar(&runner, "runner", "", "which harness is reporting (accepted, not needed)")
 	c.AddCommand(newHookInstall(), newHookStatus())
 	return c
 }

@@ -143,6 +143,11 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// twice on the board under one name.
 		Cwd    string `json:"cwd"`
 		Resume string `json:"resume"`
+		// Which runner is reporting. Register rewrites the card's runner, so
+		// without this every codex card went back to claude on its first
+		// turn ending. Empty from a hook older than the field, which keeps
+		// the claude default it always had.
+		Runner string `json:"runner,omitempty"`
 		// Whether there is a conversation behind that id yet. See the note on
 		// SessionEvent.Resumable: an id with nothing written cannot be
 		// resumed, and storing it loses the one that could.
@@ -169,6 +174,9 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	obs := observedFor(in.Agent)
+	if in.Runner != "" {
+		obs.Runner = in.Runner
+	}
 	if in.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
 	}

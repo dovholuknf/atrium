@@ -70,6 +70,9 @@ func newSession() *cobra.Command {
 			"It never fails a session: whatever goes wrong, it exits 0.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// See newHook: an unknown flag is not a reason to fail a session.
+		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
+		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			reported := reportSession(hubURL, event, name, runner)
 			if interactive() {

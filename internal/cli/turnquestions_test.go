@@ -138,7 +138,7 @@ func TestTheStopHookPostsOnlyTheQuestions(t *testing.T) {
 	defer restore()
 	t.Setenv("ATRIUM_PERM_GATE", "")
 
-	if got := turnEnded(srv.URL, "end", "orchestrator"); got != keepGoing {
+	if got := turnEnded(srv.URL, "end", "orchestrator", ""); got != keepGoing {
 		t.Fatalf("the hook printed %q", got)
 	}
 	qs, _ := body["questions"].([]any)
@@ -166,7 +166,7 @@ func TestTheStopHookSaysUnknownWithNoText(t *testing.T) {
 	defer restore()
 	t.Setenv("ATRIUM_PERM_GATE", "")
 
-	if got := turnEnded(srv.URL, "end", "orchestrator"); got != keepGoing {
+	if got := turnEnded(srv.URL, "end", "orchestrator", ""); got != keepGoing {
 		t.Fatalf("the hook printed %q", got)
 	}
 	if body["questions_known"] != false {
