@@ -36,7 +36,14 @@ func captureEnv(prepare, cwd string) (map[string]string, error) {
 	// the env dump succeed and the runner start without what it needed.
 	//
 	// `env -0` so a value containing a newline does not read as two variables.
-	cmd := exec.CommandContext(ctx, shell, "-lc", "set -e\n"+prepare+"\nenv -0")
+	//
+	// The dump is fenced because the profile and the command may both print.
+	// See fenced. No newline after either fence: the first variable starts
+	// right after the opening one, and the closing one follows the last NUL.
+	nonce := envNonce()
+	fence := "printf '%s%s%s' '" + envFencePrefix + "' '" + nonce + "' '" + envFenceSuffix + "'"
+	script := "set -e\n" + prepare + "\n" + fence + "\nenv -0\n" + fence
+	cmd := exec.CommandContext(ctx, shell, "-lc", script)
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
@@ -51,8 +58,12 @@ func captureEnv(prepare, cwd string) (map[string]string, error) {
 		return nil, fmt.Errorf("the prepare command failed: %w", err)
 	}
 
+	dump, err := fenced(out, nonce)
+	if err != nil {
+		return nil, err
+	}
 	env := map[string]string{}
-	for _, entry := range strings.Split(string(out), "\x00") {
+	for _, entry := range strings.Split(string(dump), "\x00") {
 		if k, v, ok := strings.Cut(entry, "="); ok && k != "" {
 			env[k] = v
 		}

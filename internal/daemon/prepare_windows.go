@@ -46,9 +46,16 @@ func captureEnv(prepare, cwd string) (map[string]string, error) {
 	//
 	// -AsArray so a prepare command that somehow leaves one variable still
 	// produces a list rather than a bare object.
+	//
+	// The dump is fenced because the profile and the command may both print.
+	// See fenced.
+	nonce := envNonce()
+	fence := `('` + envFencePrefix + `' + '` + nonce + `' + '` + envFenceSuffix + `')`
 	script := `$ErrorActionPreference = 'Stop'
 ` + prepare + `
-Get-ChildItem env: | Select-Object Name,Value | ConvertTo-Json -Compress -Depth 2 -AsArray`
+Write-Output ` + fence + `
+Get-ChildItem env: | Select-Object Name,Value | ConvertTo-Json -Compress -Depth 2 -AsArray
+Write-Output ` + fence
 
 	ctx, cancel := context.WithTimeout(context.Background(), prepareTimeout)
 	defer cancel()
@@ -74,8 +81,12 @@ Get-ChildItem env: | Select-Object Name,Value | ConvertTo-Json -Compress -Depth 
 		return nil, fmt.Errorf("the prepare command failed: %w", err)
 	}
 
+	dump, err := fenced(out, nonce)
+	if err != nil {
+		return nil, err
+	}
 	var pairs []struct{ Name, Value string }
-	if err := json.Unmarshal(out, &pairs); err != nil {
+	if err := json.Unmarshal(dump, &pairs); err != nil {
 		return nil, fmt.Errorf("could not read the environment back: %w", err)
 	}
 	env := make(map[string]string, len(pairs))
