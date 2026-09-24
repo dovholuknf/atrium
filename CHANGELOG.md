@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A turn a Stop hook continued now ends on the board.** Step 1 of `docs/turn-end-spike.md`.
+
+  When the Stop hook hands a session a queued message, Claude Code runs the next turn with `stop_hook_active` set
+  on its Stop. The hook returned before it posted that Stop, so the room never heard the turn end. The card stayed
+  `running` with the previous turn's unread dot, and no silent-stop check ran for a launched worker that went
+  quiet. The hook now posts every Stop, with `stop_hook_active` in the body, and still prints nothing on a flagged
+  Stop whatever the room answers. The room treats a flagged Stop as a turn that is over: the card goes to
+  `needs-input`, the turn is noted for seen, and a launched worker that owes a report gets its silent-stop notice
+  to the launcher. The room never answers a flagged Stop with a block, and it leaves queued messages queued for the
+  next hook or the typist. Nothing forces a turn. The hook binary needs a rebuild along with the room. ROOM-SIDE.
+
 - **The attached terminal's frame matches the bridge running into it.**
 
   With card colours on, the attached row and its bridge are framed at 3px in the row's title colour, and the

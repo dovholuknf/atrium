@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -71,15 +74,57 @@ func TestTurnAnswerOnlyPassesThroughARealBlock(t *testing.T) {
 }
 
 // stop_hook_active means this turn is only running because a Stop hook already
-// blocked it. Blocking again never terminates.
+// blocked it. Blocking again never terminates, so a block from the room is
+// thrown away. The Stop is still posted, flagged, because the turn did end.
 func TestTurnRefusesToBlockInsideABlockedTurn(t *testing.T) {
+	var posted map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&posted)
+		_, _ = w.Write([]byte(`{"decision":"block","reason":"run the tests first"}`))
+	}))
+	defer srv.Close()
+	restore := withStdin(t, `{"cwd":"/w","stop_hook_active":true,"hook_event_name":"Stop"}`)
+	defer restore()
+
+	if got := turnEnded(srv.URL, "end", "probe", ""); got != keepGoing {
+		t.Fatalf("got %q, wanted a plain continue inside a blocked turn", got)
+	}
+	if posted == nil {
+		t.Fatal("the Stop inside a blocked turn was never posted, so the room never hears the turn end")
+	}
+	if posted["stop_hook_active"] != true || posted["agent"] != "probe" {
+		t.Fatalf("posted %v, want the flag and the agent", posted)
+	}
+}
+
+// An ordinary Stop says it is not inside a blocked turn, and a block from the
+// room still passes through.
+func TestTurnPassesABlockThroughOutsideABlockedTurn(t *testing.T) {
+	block := `{"decision":"block","reason":"run the tests first"}`
+	var posted map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&posted)
+		_, _ = w.Write([]byte(block))
+	}))
+	defer srv.Close()
+	restore := withStdin(t, `{"cwd":"/w","hook_event_name":"Stop"}`)
+	defer restore()
+
+	if got := turnEnded(srv.URL, "end", "probe", ""); got != block {
+		t.Fatalf("got %q, wanted the block passed through", got)
+	}
+	if posted["stop_hook_active"] != false {
+		t.Fatalf("posted %v, want stop_hook_active false", posted)
+	}
+}
+
+// With atrium down the flagged Stop costs a session nothing either.
+func TestTurnInsideABlockedTurnKeepsGoingWhenAtriumIsNotThere(t *testing.T) {
 	restore := withStdin(t, `{"cwd":"/w","stop_hook_active":true}`)
 	defer restore()
 
-	// No daemon is running on this address, but that is not what is being
-	// tested: this must return before it would ever reach one.
 	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
-		t.Fatalf("got %q, wanted a plain continue inside a blocked turn", got)
+		t.Fatalf("got %q, wanted a plain continue with no daemon", got)
 	}
 }
 

@@ -157,6 +157,11 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		Questions      []string `json:"questions,omitempty"`
 		QuestionsBlock bool     `json:"questions_block,omitempty"`
 		QuestionsKnown bool     `json:"questions_known,omitempty"`
+		// Set on the Stop that ends a turn a Stop hook continued. That turn
+		// is over for good: the hook will not block on it whatever this says,
+		// so nothing is taken off the queue for it. False from a hook older
+		// than the field, which never posted such a Stop at all.
+		StopHookActive bool `json:"stop_hook_active,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -216,7 +221,13 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	msgs, err := d.takeMessages(task.ID, "stop")
+	// A flagged Stop is never answered with a block, so its messages stay
+	// queued for the next hook or the typist rather than being marked delivered
+	// into an answer the hook throws away.
+	var msgs []*store.Message
+	if !in.StopHookActive {
+		msgs, err = d.takeMessages(task.ID, "stop")
+	}
 	if err != nil || len(msgs) == 0 {
 		// The turn really is over. An agent-launched card that said nothing
 		// to its launcher is a silent stop, and the launcher hears about it

@@ -38,7 +38,8 @@ import (
 //     hangs a session.
 //   - `stop_hook_active` is honored. Claude Code sets it when the turn is
 //     already running because a Stop hook blocked it. Blocking again on that
-//     pass is an infinite loop, so this refuses to.
+//     pass is an infinite loop, so this refuses to. That Stop is still
+//     posted, flagged, so the room hears the turn end.
 //   - The daemon's answer is passed through only when it parses and only when
 //     it is one of the two shapes a Stop hook may return. Anything else is
 //     treated as nothing to say.
@@ -148,11 +149,6 @@ func turnEnded(hubURL, event, name, runner string) string {
 			return keepGoing
 		}
 	}
-	// Already going round once. Whatever the daemon would say, saying it again
-	// starts a turn that ends by asking for another turn.
-	if in.StopHookActive {
-		return keepGoing
-	}
 	// A subagent finishing is not this session finishing. See HookEventName.
 	// Anything that names itself and does not name `Stop` is left alone, which
 	// covers `SubagentStop` and anything a future runner adds, and `keepGoing`
@@ -190,6 +186,9 @@ func turnEnded(hubURL, event, name, runner string) string {
 		"questions":       questions,
 		"questions_block": block,
 		"questions_known": known,
+		// Sent so the room hears this turn end, and knows not to answer it
+		// with a block. What it answers is ignored anyway. See below.
+		"stop_hook_active": in.StopHookActive,
 	})
 	if err != nil {
 		return keepGoing
@@ -202,6 +201,13 @@ func turnEnded(hubURL, event, name, runner string) string {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		return keepGoing
+	}
+	// Already going round once. Whatever the daemon would say, saying it again
+	// starts a turn that ends by asking for another turn. Checked after the post
+	// and not before it: the turn a Stop hook continued still ends, and a room
+	// that never hears so leaves the card running with nobody told.
+	if in.StopHookActive {
 		return keepGoing
 	}
 	return turnAnswer(resp.Body)
