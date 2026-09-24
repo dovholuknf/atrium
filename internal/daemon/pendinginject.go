@@ -4,6 +4,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // A peer message that could not be typed in right away, kept trying.
@@ -241,8 +243,17 @@ func (pi *pendingInjector) attempt(taskID string) {
 	// its own line, so several waiting messages arrive as several turns. The
 	// gate only shuts here if the operator starts typing between two of them,
 	// which leaves the rest for the next tick.
+	//
+	// A peer's entry also waits for the runner's turn to end. That is not the
+	// operator's line either, so it is a silent wait at the same interval, and the
+	// turn ending re-arms the retry. See peerMustWait.
 	delivered := map[string]bool{}
+	turnWait := false
 	for _, e := range entries {
+		if pi.d.peerMustWait(taskID, e.from) {
+			turnWait = true
+			break
+		}
 		wrote, err := run.injectPeer(e.banner, e.body)
 		if err != nil {
 			log.Printf("[atrium] retrying a held message into %s failed: %v", taskID, err)
@@ -277,6 +288,13 @@ func (pi *pendingInjector) attempt(taskID string) {
 		pi.mu.Unlock()
 		pi.drop(taskID)
 		pi.d.publishTask(taskID)
+		return
+	}
+	if turnWait {
+		if ht.timer != nil {
+			ht.timer.Reset(backoffSteps[ht.step])
+		}
+		pi.mu.Unlock()
 		return
 	}
 	// Still blocked. Widen the backoff, warn once for this tick, and reschedule.
@@ -334,6 +352,32 @@ func (pi *pendingInjector) drop(taskID string) {
 	}
 	pi.d.act.clearHeld(taskID)
 	pi.d.publishTask(taskID)
+}
+
+// withoutHeldPeers drops from a hook's batch the peer messages this card is
+// holding for the terminal, so the hook leaves them to be typed. The operator's
+// own held text still rides the hooks.
+func (pi *pendingInjector) withoutHeldPeers(taskID string, msgs []*store.Message) []*store.Message {
+	pi.mu.Lock()
+	held := map[string]bool{}
+	if ht := pi.by[taskID]; ht != nil {
+		for _, e := range ht.entries {
+			if e.from != "" {
+				held[e.msgID] = true
+			}
+		}
+	}
+	pi.mu.Unlock()
+	if len(held) == 0 {
+		return msgs
+	}
+	out := make([]*store.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if !held[m.ID] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // deliveredElsewhere reconciles a card's held set after the hooks drained its

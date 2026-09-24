@@ -2784,3 +2784,25 @@ opens no menu of its own.
 
 **Expected:** one `GET /v1/settings` for the load. Reloads after the first answer in a few milliseconds rather
 than over 100, on a room with many worktrees. Opening the gear reads it again.
+
+## AG. A peer message waits for an empty line and the end of the turn
+
+Run with two supervised sessions, `a` and `b`, both attached on the board. Room restarted on this build.
+
+### AG1. A message that arrives mid-turn waits for the turn to end
+
+1. Give `b` a prompt that keeps it working for a minute (`run sleep 60 in bash, then say done`).
+2. While `b` is working, have `a` call `atrium_say` to `b` with `ping from a`.
+3. While `b` is still working, type `half a thought` into `b`'s terminal and leave it there. Do not press Enter.
+4. After `b`'s turn ends, clear the line with backspace and take your hands off the keyboard.
+
+**Expected:** after 2 nothing appears in `b`'s terminal and `b`'s card shows the held-message chip for `a`. `b`'s
+next tool calls do not carry the message. After 3 and the turn's end, the message still does not appear, because
+the line has text. After 4, about two seconds later, `[atrium] a says: ping from a` is typed and sent on its own,
+and `half a thought` is not part of that prompt. The chip clears.
+
+### AG2. An idle session still takes a message at once
+
+1. With `b` idle and nothing in its line, have `a` call `atrium_say` to `b`.
+
+**Expected:** typed and sent at once, same as before this change. `atrium_say` answers `terminal`.

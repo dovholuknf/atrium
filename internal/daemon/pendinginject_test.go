@@ -146,7 +146,8 @@ func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
 }
 
 // The hooks draining the queue clears the held set and the board signal at
-// once, rather than leaving the chip lit until the next backoff tick.
+// once, rather than leaving the chip lit until the next backoff tick. The
+// operator's own text, because a held peer message is left to the typist.
 func TestHookDeliveryClearsTheHeldSignal(t *testing.T) {
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
@@ -155,11 +156,11 @@ func TestHookDeliveryClearsTheHeldSignal(t *testing.T) {
 	// no retry will fire for a long time.
 	r.noteOperatorTyped([]byte("half a command"))
 
-	m, err := d.st.QueueFromPeer(target.ID, "handled by the hook", "sg4/doer")
+	m, err := d.st.QueueMessage(target.ID, "handled by the hook")
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "handled by the hook")
+	d.deferPeerInjection(target.ID, m.ID, "", "handled by the hook")
 
 	if heldCount(d.pending, target.ID) != 1 {
 		t.Fatal("the message was not held for retry")

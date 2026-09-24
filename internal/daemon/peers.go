@@ -439,6 +439,10 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if d.act.dialogOpen(target.ID) {
 		return false, ""
 	}
+	// A FIFTH, and it waits rather than refuses. See peerMustWait.
+	if d.peerMustWait(target.ID, from) {
+		return false, ""
+	}
 	// Bracketed paste when supported, so a long report stays together even if
 	// the PTY splits the write. See SayPasted and B2-47. The banner stays
 	// outside the markers so its grey label renders rather than arriving as
@@ -458,6 +462,23 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	}
 	d.notePeerTyped(target.ID, from, text, "typed and sent")
 	return true, typedNote
+}
+
+// peerMustWait reports whether a peer's text has to wait for the runner's turn
+// to end before it is typed.
+//
+// The line gate alone is not enough. It is checked at the instant of the write,
+// and a runner that is mid-turn does not submit what arrives then: Claude Code
+// holds it until the turn ends and sends it with whatever the operator typed in
+// between, as one prompt. So a peer message is typed only when the line is empty
+// AND the turn is over, and until both hold it waits in `pendingInjector`. The
+// hooks leave it alone while it waits (see takeMessages). See
+// docs/typing-race.md.
+//
+// Peer text only. The operator's own channel (notes, actions, the board's box)
+// keeps today's rule.
+func (d *Daemon) peerMustWait(taskID, from string) bool {
+	return from != "" && d.act.midTurn(taskID)
 }
 
 // notePeerTyped records a typed message on the timeline.
