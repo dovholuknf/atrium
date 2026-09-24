@@ -3013,3 +3013,75 @@ top of the board, under the grid. Text sizes, spacing and corners are the same a
 
 **Expected:** each looks as it did before this build: `+ new agent` is the flat accent chip, the header is the
 same gradient as before, and there is no glow behind the board.
+
+## AM. The hub restart gate
+
+Run against a throwaway hub built from this branch, never the live one. See `docs/hub-restart-gate.md`. Open the
+throwaway hub's board in two windows and pop one terminal out into a third.
+
+### AM1. No board open goes at once
+
+1. Close every board window.
+2. Run `scripts/hub-restart-gate.ps1 -Hub <the throwaway hub>`.
+
+**Expected:** `go: nobody is using a board and nobody paused`, exit 0, within a second.
+
+### AM2. Typing holds the countdown back
+
+1. Open the board. Type into an attached terminal without stopping.
+2. Run the script with `-Idle 5`.
+
+**Expected:** no toast while you type. Stop typing. About five seconds later every window, the popped-out one
+included, shows "the hub restarts in 5s unless you click this", counting down. At zero every window shows the
+"the hub is restarting" modal and the script prints `go`, exit 0.
+
+### AM3. Typing during the countdown starts the wait again
+
+1. Run the script. When the countdown shows, press a key in any window.
+
+**Expected:** the countdown goes from every window. It comes back once the boards have been quiet for the idle
+window.
+
+### AM4. A click pauses everywhere, and resume lets it through
+
+1. Run the script with `-Wait 120`. Click the countdown toast in the popped-out window.
+
+**Expected:** the countdown goes from every window and each shows "hub restart paused" with a resume button. The
+paused toast stays past nine seconds and stays when other toasts fill the stack.
+
+2. Open a fourth board window.
+
+**Expected:** it shows the paused toast too.
+
+3. Click resume in any window.
+
+**Expected:** the paused toast goes from every window. After the idle window a fresh countdown shows, then the
+modal, and the script prints `go`.
+
+### AM5. A pause outlasts the deploy's wait
+
+1. Run the script with `-Wait 20`. Click the countdown.
+
+**Expected:** after 20 seconds the script prints `held: the restart is paused from the board`, exit 3. The paused
+toast is still up. A second run while paused also ends `paused`.
+
+### AM6. The modal holds until the new hub answers
+
+1. Let a countdown run out, then stop the throwaway hub and start it again.
+
+**Expected:** Escape and clicks outside do not close the modal while the hub is down. It clears by itself when the
+board reconnects, and the attached terminal reattaches.
+
+### AM7. Loopback, one at a time, and an old hub
+
+1. From another machine, over an overlay, `curl -X POST <the hub's board address>/_hub/restart`.
+
+**Expected:** 403.
+
+2. Run the script twice at once.
+
+**Expected:** the second prints `held: another restart is already waiting for an answer`, exit 3.
+
+3. Point the script at a hub built before this change.
+
+**Expected:** `go: this hub is older than the restart gate`, exit 0, with no countdown on its board.

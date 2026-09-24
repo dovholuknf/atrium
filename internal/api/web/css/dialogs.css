@@ -165,6 +165,10 @@
   }
   .toast .copy { font-size: var(--fs-base); opacity: .6; }
   .toast .x:hover, .toast .copy:hover { color: var(--head); opacity: 1; }
+  /* The hub restart gate's two toasts. Sticky, so they carry a button that says
+     what the click does rather than a dismiss. See js/hubrestart.js. */
+  .toast.hubgate { border-left-color: var(--teal); }
+  .toast .hubgate-act { flex: none; align-self: center; }
   .hints { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: 7px; }
   button.hint {
     font: 500 var(--fs-xs)/1.5 var(--mono); padding: 2px 9px; border-radius: var(--r-sm);

@@ -1,0 +1,308 @@
+package link
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+// gateUnderTest is a gate whose boards and events the test controls.
+type gateUnderTest struct {
+	g      *restartGate
+	mu     sync.Mutex
+	states []string
+	boards int
+}
+
+func newGateUnderTest(boards int) *gateUnderTest {
+	t := &gateUnderTest{boards: boards}
+	t.g = newRestartGate(func(s map[string]any) {
+		t.mu.Lock()
+		t.states = append(t.states, s["state"].(string))
+		t.mu.Unlock()
+	}, func() int {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		return t.boards
+	}, func(string, string) {})
+	return t
+}
+
+func (t *gateUnderTest) said() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]string(nil), t.states...)
+}
+
+// waitSaid waits for a state to have been said.
+func (t *gateUnderTest) waitSaid(tb testing.TB, state string) {
+	tb.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, s := range t.said() {
+			if s == state {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tb.Fatalf("the gate never said %q, it said %v", state, t.said())
+}
+
+type answer struct {
+	said string
+	err  error
+}
+
+func (t *gateUnderTest) ask(ctx context.Context, countdown, idle, wait time.Duration) <-chan answer {
+	out := make(chan answer, 1)
+	if !t.g.claim() {
+		out <- answer{err: context.Canceled}
+		return out
+	}
+	go func() {
+		s, err := t.g.ask(ctx, countdown, idle, wait)
+		out <- answer{s, err}
+	}()
+	return out
+}
+
+func got(tb testing.TB, ch <-chan answer) answer {
+	tb.Helper()
+	select {
+	case a := <-ch:
+		return a
+	case <-time.After(10 * time.Second):
+		tb.Fatal("the gate never answered")
+		return answer{}
+	}
+}
+
+// NO BOARD OPEN IS NOBODY TO WARN, so the answer is immediate and nothing is
+// counted down.
+func TestNoBoardOpenGoesStraightAway(t *testing.T) {
+	gt := newGateUnderTest(0)
+	a := got(t, gt.ask(context.Background(), time.Second, time.Hour, time.Minute))
+	if a.said != "go" {
+		t.Fatalf("with no board open the gate said %q", a.said)
+	}
+	if len(gt.said()) != 0 {
+		t.Errorf("with no board open the gate still said %v", gt.said())
+	}
+}
+
+// A quiet board gets the countdown, then the restart.
+func TestAQuietBoardIsCountedDownThenRestarted(t *testing.T) {
+	gt := newGateUnderTest(1)
+	a := got(t, gt.ask(context.Background(), 150*time.Millisecond, 50*time.Millisecond, time.Minute))
+	if a.said != "go" {
+		t.Fatalf("a quiet board ended in %q", a.said)
+	}
+	if s := strings.Join(gt.said(), ","); s != "countdown,restarting" {
+		t.Errorf("the boards were told %s, not countdown then restarting", s)
+	}
+}
+
+// TYPING HOLDS THE COUNTDOWN BACK. Input inside the idle window means no
+// countdown yet, however long the typing goes on.
+func TestTypingHoldsTheCountdownBack(t *testing.T) {
+	gt := newGateUnderTest(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := gt.ask(ctx, 100*time.Millisecond, 300*time.Millisecond, time.Minute)
+	for i := 0; i < 8; i++ {
+		gt.g.input()
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(gt.said()) != 0 {
+		t.Fatalf("a board being typed into was told %v", gt.said())
+	}
+	if a := got(t, ch); a.said != "go" {
+		t.Fatalf("once the typing stopped the gate said %q", a.said)
+	}
+}
+
+// Typing during the countdown takes it down and waits for quiet again, without
+// pausing anything.
+func TestTypingDuringTheCountdownStartsTheWaitAgain(t *testing.T) {
+	gt := newGateUnderTest(1)
+	ch := gt.ask(context.Background(), 400*time.Millisecond, 50*time.Millisecond, time.Minute)
+	gt.waitSaid(t, "countdown")
+	gt.g.input()
+	gt.waitSaid(t, "cancelled")
+	if a := got(t, ch); a.said != "go" {
+		t.Fatalf("after the typing stopped the gate said %q", a.said)
+	}
+	if s := strings.Join(gt.said(), ","); s != "countdown,cancelled,countdown,restarting" {
+		t.Errorf("the boards were told %s", s)
+	}
+}
+
+// A CLICK PAUSES, AND THE PAUSE HOLDS until the script's wait runs out.
+func TestAPauseHoldsUntilTheWaitRunsOut(t *testing.T) {
+	gt := newGateUnderTest(1)
+	ch := gt.ask(context.Background(), 5*time.Second, 10*time.Millisecond, 600*time.Millisecond)
+	gt.waitSaid(t, "countdown")
+	gt.g.pause()
+	if a := got(t, ch); a.said != "paused" {
+		t.Fatalf("a paused restart ended in %q", a.said)
+	}
+	if st := gt.g.state(); st["paused"] != true {
+		t.Errorf("the pause did not outlive the script that gave up: %v", st)
+	}
+	// A new ask while paused is held too, and says paused rather than go.
+	if a := got(t, gt.ask(context.Background(), 10*time.Millisecond, 10*time.Millisecond,
+		200*time.Millisecond)); a.said != "paused" {
+		t.Fatalf("an ask made while paused said %q", a.said)
+	}
+}
+
+// Resume lets a held restart through, after the idle window and a fresh
+// countdown.
+func TestResumeLetsAHeldRestartThrough(t *testing.T) {
+	gt := newGateUnderTest(1)
+	ch := gt.ask(context.Background(), 150*time.Millisecond, 50*time.Millisecond, time.Minute)
+	gt.waitSaid(t, "countdown")
+	gt.g.pause()
+	gt.waitSaid(t, "paused")
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case a := <-ch:
+		t.Fatalf("a paused restart answered %q before it was resumed", a.said)
+	default:
+	}
+	gt.g.resume()
+	if a := got(t, ch); a.said != "go" {
+		t.Fatalf("a resumed restart said %q", a.said)
+	}
+	if s := strings.Join(gt.said(), ","); s != "countdown,paused,resumed,countdown,restarting" {
+		t.Errorf("the boards were told %s", s)
+	}
+}
+
+// Boards that never go quiet are a `busy`, never a restart.
+func TestABoardThatNeverGoesQuietIsBusy(t *testing.T) {
+	gt := newGateUnderTest(1)
+	gt.g.input()
+	a := got(t, gt.ask(context.Background(), 10*time.Millisecond, time.Hour, 200*time.Millisecond))
+	if a.said != "busy" {
+		t.Fatalf("a board that never went quiet ended in %q", a.said)
+	}
+}
+
+// A script that goes away takes its countdown off every board.
+func TestAScriptGoingAwayTakesTheCountdownDown(t *testing.T) {
+	gt := newGateUnderTest(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := gt.ask(ctx, 5*time.Second, 10*time.Millisecond, time.Minute)
+	gt.waitSaid(t, "countdown")
+	cancel()
+	if a := got(t, ch); a.err == nil {
+		t.Fatalf("a cancelled ask answered %q", a.said)
+	}
+	gt.waitSaid(t, "cancelled")
+	if st := gt.g.state(); st["waiting"] != false {
+		t.Errorf("a cancelled ask still holds the slot: %v", st)
+	}
+}
+
+// Through the proxy: the ask is loopback only, one at a time, and every board
+// stream hears the countdown.
+func TestTheRestartEndpointThroughTheProxy(t *testing.T) {
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	front := httptest.NewServer(p)
+	defer front.Close()
+
+	// Not from this machine: refused before anything is held.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/_hub/restart", strings.NewReader(`{}`))
+	r.RemoteAddr = "192.0.2.7:5555"
+	p.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("an ask from elsewhere answered %d", w.Code)
+	}
+
+	events, shut := listen(t, front.URL+"/v1/events/hub")
+	defer shut()
+	// The stream is registered once its headers are back, which `listen`
+	// waited for, so the gate counts one board.
+	type result struct {
+		code int
+		body map[string]any
+	}
+	first := make(chan result, 1)
+	go func() {
+		res, err := http.Post(front.URL+"/_hub/restart", "application/json",
+			strings.NewReader(`{"countdown":0.2,"idle":0.05,"wait":30}`))
+		if err != nil {
+			first <- result{}
+			return
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&body)
+		first <- result{res.StatusCode, body}
+	}()
+
+	e := waitEvent(t, events, restartEvent)
+	if obj := fields(t, e.Data); obj["state"] != "countdown" {
+		t.Fatalf("the first restart event said %v", obj)
+	}
+	// A second ask while the first is held is refused out loud.
+	res, err := http.Post(front.URL+"/_hub/restart", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Errorf("a second ask answered %d, not 409", res.StatusCode)
+	}
+
+	e = waitEvent(t, events, restartEvent)
+	if obj := fields(t, e.Data); obj["state"] != "restarting" {
+		t.Fatalf("the second restart event said %v", obj)
+	}
+	out := <-first
+	if out.code != http.StatusOK || out.body["answer"] != "go" {
+		t.Fatalf("the ask ended %d %v", out.code, out.body)
+	}
+
+	// The board's own calls answer as the gate's state.
+	res, err = http.Post(front.URL+"/_hub/restart/pause", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&st)
+	res.Body.Close()
+	if st["paused"] != true {
+		t.Errorf("pause answered %v", st)
+	}
+	if e := waitEvent(t, events, restartEvent); fields(t, e.Data)["state"] != "paused" {
+		t.Errorf("a pause said %s", e.Data)
+	}
+}
+
+// A hub event reaches a board scoped to one room, which `emit` would skip.
+func TestABroadcastReachesARoomScopedBoard(t *testing.T) {
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	s := p.feeds.add("beta")
+	defer p.feeds.drop(s)
+	p.feeds.broadcast(Event{Kind: restartEvent, Data: []byte(`{"state":"countdown"}`)})
+	select {
+	case e := <-s.ch:
+		if e.Kind != restartEvent {
+			t.Fatalf("a scoped board heard %q", e.Kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a board scoped to a room did not hear the hub restart")
+	}
+	if n := p.feeds.watchers(); n != 1 {
+		t.Errorf("one board open counted as %d", n)
+	}
+}

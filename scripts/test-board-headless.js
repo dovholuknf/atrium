@@ -175,6 +175,10 @@ let sggAttached = false;
 // read fails. Flipping it true and pushing a `rooms` event is a room attaching,
 // which is when the skin must heal without a reload. See the skin-heals test.
 let hubHasRoom = true;
+// The hub restart gate's mocked state: whether a pause is held, and how many
+// times the board called each of its three endpoints.
+let gatePaused = false;
+const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
 
@@ -479,6 +483,17 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
+  // The hub restart gate's board calls. The countdown itself is pushed onto the
+  // open streams by the test, the way the hub pushes it. See restartGateSection.
+  if (url.startsWith("/_hub/restart")) {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    const sub = url.slice("/_hub/restart".length);
+    if (sub === "/input") gateCalls.input++;
+    if (sub === "/pause") { gateCalls.pause++; gatePaused = true; }
+    if (sub === "/resume") { gateCalls.resume++; gatePaused = false; }
+    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: 0, boards: 1 });
+    return;
+  }
   // The operational audit feed, newest first and filterable by room and kind the
   // same way the hub serves it, so the pane's filters can be driven against a
   // real response. See js/audit.js.
@@ -1172,6 +1187,109 @@ async function settingsOnceSection(browser, base) {
   }
 }
 
+// The hub restart gate, the board's half. The hub's events are written onto the
+// open streams the way the hub writes them, and the board's three calls are
+// counted by the mock. See docs/hub-restart-gate.md.
+async function restartGateSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const gp = await ctx.newPage();
+  const errors = [];
+  gp.on("pageerror", e => errors.push(String(e)));
+  const wasHub = hubMode;
+  hubMode = true;
+  gatePaused = false;
+  Object.assign(gateCalls, { input: 0, pause: 0, resume: 0 });
+  const say = state => {
+    const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
+    openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+  };
+  const countdownText = () => gp.evaluate(() => {
+    const el = document.querySelector(".toast.hubgate .what");
+    return el ? el.textContent : "";
+  });
+  try {
+    await gp.goto(base, { waitUntil: "domcontentloaded" });
+    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+
+    // Input is reported, and throttled.
+    await gp.mouse.click(700, 450);
+    await gp.keyboard.press("Shift");
+    await gp.waitForTimeout(300);
+    if (gateCalls.input !== 1) fail("a click and a key inside the throttle reported input " +
+      gateCalls.input + " times, not once.");
+
+    // The countdown shows and counts.
+    say({ state: "countdown", seconds: 5 });
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("a countdown from the hub drew no toast."));
+    const first = await countdownText();
+    if (!/the hub restarts in [45]s unless you click this/.test(first)) {
+      fail("the countdown toast said: " + first);
+    }
+    await gp.waitForTimeout(1300);
+    const later = await countdownText();
+    if (!/in [34]s/.test(later)) fail("the countdown did not count down: " + first + " then " + later);
+
+    // A click on it pauses, and is not reported as input.
+    const inputBefore = gateCalls.input;
+    await gp.waitForTimeout(3100);
+    await gp.click(".toast.hubgate");
+    await gp.waitForTimeout(300);
+    if (gateCalls.pause !== 1) fail("clicking the countdown called pause " + gateCalls.pause + " times.");
+    if (gateCalls.input !== inputBefore) fail("clicking the countdown was also reported as input.");
+    if (await gp.$(".toast.hubgate")) fail("the countdown toast stayed up after it was clicked.");
+
+    // The hub says paused: a sticky toast with a resume button, which survives
+    // the stack filling up.
+    say({ state: "paused" });
+    await gp.waitForFunction(() => {
+      const el = document.querySelector(".toast.hubgate");
+      return el && /hub restart paused/.test(el.textContent);
+    }, null, { timeout: 5000 }).catch(() => fail("a pause from the hub drew no paused toast."));
+    await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
+    await gp.waitForTimeout(100);
+    if (!(await gp.$(".toast.hubgate .hubgate-act"))) fail("the paused toast was pushed off the stack.");
+    await gp.waitForTimeout(9500);
+    if (!(await gp.$(".toast.hubgate"))) fail("the paused toast timed out like an ordinary one.");
+    await gp.click(".toast.hubgate .hubgate-act");
+    await gp.waitForTimeout(300);
+    if (gateCalls.resume !== 1) fail("the resume button called resume " + gateCalls.resume + " times.");
+    if (await gp.$(".toast.hubgate")) fail("the paused toast stayed up after resume.");
+
+    // A window that opens while a pause is held shows it without an event.
+    gatePaused = true;
+    const late = await ctx.newPage();
+    await late.goto(base, { waitUntil: "domcontentloaded" });
+    await late.waitForFunction(() => {
+      const el = document.querySelector(".toast.hubgate");
+      return el && /hub restart paused/.test(el.textContent);
+    }, null, { timeout: 15000 }).catch(() => fail("a board opened during a pause did not show it."));
+    await late.close();
+    gatePaused = false;
+
+    // Restarting: a modal that Escape and closing every dialog both leave up.
+    say({ state: "restarting" });
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+      .catch(() => fail("the hub restarting drew no modal."));
+    await gp.keyboard.press("Escape");
+    await gp.evaluate(() => closeOpenDialogs());
+    await gp.waitForTimeout(200);
+    if (!(await gp.evaluate(() => document.getElementById("hubrestart").open))) {
+      fail("the restarting modal came down while the hub was still away.");
+    }
+    // The hub goes and a new one answers: the stream reopens and the modal clears.
+    openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+      .catch(() => fail("the restarting modal did not clear when the stream came back."));
+    if (errors.length) fail("the restart gate page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    hubMode = wasHub;
+    gatePaused = false;
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -1180,7 +1298,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
-      groupRemove: groupRemoveSection, worn: wornSection };
+      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -3326,6 +3444,8 @@ async function main() {
     await settingsOnceSection(browser, base);
     // ── the website skin's effects stay inside the website skin ─────────────
     await websiteSkinSection(browser, base);
+    // ── the hub restart gate: countdown, pause, resume and the modal ────────
+    await restartGateSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -3382,8 +3502,10 @@ async function main() {
     "rows switch on and off from their own pill (no enable button, the right write, " +
     "a refusal puts it back, one box on and off, 40px tall at phone width), " +
     "a card whose last turn is unread wears a dot and its open questions `? N`, " +
-    "and the website skin wears harbour's palette with a gradient button, a frosted header and a glow " +
-    "while harbour and noir wear none of it.");
+    "the website skin wears harbour's palette with a gradient button, a frosted header and a glow " +
+    "while harbour and noir wear none of it, " +
+    "and the hub restart gate counts down in a toast, pauses on a click without reporting it as input, " +
+    "holds a sticky paused toast with resume, and covers the board until the stream comes back.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
