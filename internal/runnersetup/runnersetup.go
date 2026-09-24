@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -163,16 +164,7 @@ func For(h *store.Harness) *Adapter {
 	return nil
 }
 
-func cmdLeaf(cmd string) string {
-	cmd = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(cmd, `\`, "/")))
-	if i := strings.LastIndex(cmd, "/"); i >= 0 {
-		cmd = cmd[i+1:]
-	}
-	for _, ext := range []string{".exe", ".cmd", ".bat", ".ps1"} {
-		cmd = strings.TrimSuffix(cmd, ext)
-	}
-	return cmd
-}
+func cmdLeaf(cmd string) string { return runnerprofile.Leaf(cmd) }
 
 // Report is everything the board shows for one row.
 type Report struct {

@@ -13,6 +13,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/runnerprofile"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Attach is the one place the client contract widens past JSON and SSE.
@@ -53,6 +55,10 @@ type attachCaps struct {
 	// sequence can fall out of scrollback before attach. This describes runner
 	// support, not current terminal mode; the board also checks the stream.
 	BracketedPaste bool `json:"bracketed_paste"`
+	// CursorSettleMs is how long the board holds the cursor hidden after
+	// output, 0 to write it straight through. From the runner's profile, see
+	// `runnerprofile.Profile.CursorSettle`.
+	CursorSettleMs int `json:"cursor_settle_ms,omitempty"`
 }
 
 // attachSize is the size the pty is running at, sent before the backlog, so
@@ -80,6 +86,26 @@ func (d *Daemon) bracketedPasteFor(taskID string, shell bool) bool {
 		return false
 	}
 	return h.BracketedPaste
+}
+
+// cursorSettleFor is the runner profile's cursor settle for a card, in
+// milliseconds. A shell is not the runner, and an unknown runner or a store
+// error gets 0, which writes the cursor through as it always was.
+func (d *Daemon) cursorSettleFor(taskID string, shell bool) int {
+	if shell {
+		return 0
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || t == nil || t.Runner == "" {
+		return 0
+	}
+	// A card its session's hooks named, with no harness row by that name, is
+	// still that runner.
+	h, err := d.st.Harness(t.Runner)
+	if err != nil || h == nil {
+		h = &store.Harness{ID: t.Runner}
+	}
+	return int(runnerprofile.For(h).CursorSettle / time.Millisecond)
 }
 
 // WHICH OF A CARD'S TWO TERMINALS.
@@ -371,6 +397,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	if caps, err := json.Marshal(attachCaps{
 		T:              "caps",
 		BracketedPaste: d.bracketedPasteFor(taskID, shell),
+		CursorSettleMs: d.cursorSettleFor(taskID, shell),
 	}); err == nil {
 		_ = c.Write(ctx, websocket.MessageText, caps)
 	}
