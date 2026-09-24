@@ -5,6 +5,25 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Permission events can stay out of the database, and an old database can be compacted offline (opt-in).**
+
+  A 57 MB live room database held no `output` events at all. Permission traffic was the bulk: `perm-requested`
+  and `perm-decided` were 48k of 62k event rows and 14 of 16 MB of event payload, and the `permission` table
+  with its indexes was another 25 MB. The perm events repeat what the permission table already holds.
+
+  A new setting, `event_cold_kinds`, names event kinds that go to the cold sinks only, never the db. It is empty
+  by default. It only takes effect with a cold sink in `event_sink` (say `db,file`), because an event routed cold
+  with no cold sink would be written nowhere; without one it is ignored and logged. `created` and `submitted`
+  are read back from the table and always stay in the db. The card's detail dialog now says what its history
+  does not hold: kinds kept in the event archive only, and older events rolled off the hot window.
+
+  `atrium2 db compact --in <db> --out <db>` writes a packed copy with `VACUUM INTO` and switches the copy to
+  incremental auto_vacuum, which an existing file cannot do in place. `--window-bytes` applies the hot window to
+  every card on the copy and `--drop-kinds` removes kinds from it. The input is never changed or replaced, the
+  output must not exist, and a database anything has open is refused. On a copy of the 57 MB database: 54.8 MB
+  plain, 37.7 MB with a 256 KiB window, 28.7 MB with the two perm kinds dropped, 27.8 MB with both. What is left
+  is mostly the permission table. ROOM-SIDE, HUB-SIDE.
+
 - **A finished worker's badge stops reading `thinking`.**
 
   A worker that called `atrium_report` with `done` kept a `thinking` badge after its turn ended. The report marks
