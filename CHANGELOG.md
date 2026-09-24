@@ -36,6 +36,16 @@ section heading is just "what landed in this iteration."
   colours` and covers the stack and the board. A browser that had it on starts with the list's second switch on.
   HUB-SIDE.
 
+- **Opening a terminal stays fast however many restarts its session has lived through.**
+
+  Every attach replayed the whole of the card's saved pre-restart history, and that file grows by a ring's worth at
+  each clean stop, bounded only by the scrollback setting. The main atrium card had lived through 27 restarts and
+  held 23MB. Each attach ran all of it through the screen model (about 360ms) and sent 2.5MB and 21,000 lines to a
+  browser that took another 800ms to draw it. An attach now replays the newest 4MB of that history, with a line at
+  the top that says the rest is under the terminal's cog, `history from before the restart`. The reprint that
+  follows a restart is looked for near the end of the file only. On the same card the attach now costs 90ms in the
+  daemon and sends 790KB, and the cost no longer rises with each restart. The file on disk is unchanged. ROOM-SIDE.
+
 - **A finished worker's badge stops reading `thinking`.**
 
   A worker that called `atrium_report` with `done` kept a `thinking` badge after its turn ended. The report marks

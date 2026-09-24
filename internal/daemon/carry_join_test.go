@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -51,6 +52,73 @@ func TestTheJoinedReplayKeepsEachRunsWidth(t *testing.T) {
 	if len(cuts) != 2 || cuts[0] != (sizeCut{0, 188, 0}) || cuts[1].cols != 164 ||
 		!bytes.HasPrefix(out[cuts[1].at:], live) {
 		t.Fatalf("the width marks are wrong: %+v", cuts)
+	}
+}
+
+// savedLines is n lines of saved history, each one numbered so a test can say
+// which end was kept.
+func savedLines(n int) []byte {
+	var b bytes.Buffer
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "saved line %07d %s\r\n", i, strings.Repeat("x", 60))
+	}
+	return b.Bytes()
+}
+
+// A card that has lived through many restarts holds far more than an attach
+// should replay. The attach keeps the NEWEST part, says where the rest is, and
+// does not blame the scrollback setting, which is not the reason.
+func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
+	old := savedLines(3 * carryReplayMax / 80)
+	r := &runner{carried: &carryover{cols: 188, bytes: old}}
+	live := []byte("● live line from the new process, long enough\r\n")
+	out, cuts, trimmed := r.withCarried(live, nil, 164, 512<<20)
+	if trimmed {
+		t.Fatal("reported as cut by the setting, which would tell somebody to raise it")
+	}
+	prefix := len(out) - len(live)
+	if max := len(carryReplayNotice) + carryReplayMax; prefix > max {
+		t.Fatalf("replayed %d bytes of saved history, want at most %d", prefix, max)
+	}
+	if !bytes.HasPrefix(out, []byte(carryReplayNotice)) {
+		t.Fatalf("no notice saying where the rest is: %q", out[:min(len(out), 120)])
+	}
+	if !bytes.HasSuffix(out, live) || !bytes.Contains(out, carryDivider) {
+		t.Fatal("the live ring or the divider is missing")
+	}
+	newest := old[len(old)-100:]
+	if !bytes.Contains(out, newest) || bytes.Contains(out, []byte("saved line 0000000 ")) {
+		t.Fatal("kept the wrong end of the saved history")
+	}
+	if len(cuts) != 2 || cuts[1].at != prefix {
+		t.Fatalf("the live ring's width mark is not where it starts: %+v", cuts)
+	}
+}
+
+// A scrollback setting smaller than the replay bound still cuts first, and says
+// so the way it always has.
+func TestASmallScrollbackSettingStillCutsTheJoin(t *testing.T) {
+	r := &runner{carried: &carryover{cols: 188, bytes: savedLines(1000)}}
+	live := []byte("● live line from the new process, long enough\r\n")
+	out, _, trimmed := r.withCarried(live, nil, 164, 16<<10)
+	if !trimmed || len(out) > 16<<10 {
+		t.Fatalf("trimmed=%v, %d bytes out of a 16KB setting", trimmed, len(out))
+	}
+	if bytes.Contains(out, []byte(carryReplayNotice)) {
+		t.Fatal("the replay bound's notice on a cut the setting made")
+	}
+}
+
+// The reprint is still found when the saved file is far bigger than what is
+// searched, because it repeats the END of what was saved.
+func TestTheReprintIsFoundAtTheEndOfABigSavedFile(t *testing.T) {
+	old := append(savedLines(3*carryReplayMax/80),
+		"● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\n"...)
+	live := []byte("● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\nnew\r\n")
+	r := &runner{carried: &carryover{cols: 188, bytes: old}}
+	out, _, _ := r.withCarried(live, nil, 164, 512<<20)
+	if n := bytes.Count(out, []byte("the answer the resumed session reprints")); n != 1 {
+		t.Fatalf("the reprinted answer appears %d times, want once", n)
 	}
 }
 
