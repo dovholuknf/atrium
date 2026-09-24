@@ -748,7 +748,7 @@ function soloAlert(kind, now, item) {
   // Handing it its own claim would silence it. `artFor` carries the card the
   // picture belongs to, which is the same id by a different road.
   alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "",
-    item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID);
+    item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID, { pending: true });
 }
 
 // Back to the view you were on, and to the terminal you were reading.

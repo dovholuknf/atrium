@@ -178,6 +178,8 @@ let hubHasRoom = true;
 // The hub restart gate's mocked state: whether a pause is held, and how many
 // times the board called each of its three endpoints.
 let gatePaused = false;
+// What `GET /_hub/restart` says is left of a countdown, for a window opened during one.
+let gateCountdownLeft = 0;
 const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
@@ -491,7 +493,7 @@ const server = http.createServer((req, res) => {
     if (sub === "/input") gateCalls.input++;
     if (sub === "/pause") { gateCalls.pause++; gatePaused = true; }
     if (sub === "/resume") { gateCalls.resume++; gatePaused = false; }
-    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: 0, boards: 1 });
+    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1 });
     return;
   }
   // The operational audit feed, newest first and filterable by room and kind the
@@ -1268,6 +1270,62 @@ async function restartGateSection(browser, base) {
     await late.close();
     gatePaused = false;
 
+    // THE COUNTDOWN STAYS until the hub says what comes next: not the toast cap,
+    // not a removal, not its own clock running out, not a stream reopen.
+    const hasCountdown = () => gp.evaluate(() =>
+      [...document.querySelectorAll(".toast.hubgate")].some(el => /hub restarts in/.test(el.textContent)));
+    say({ state: "countdown", seconds: 3 });
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("the second countdown drew no toast."));
+    await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
+    await gp.waitForTimeout(100);
+    if (!(await hasCountdown())) fail("the countdown toast was pushed off the stack.");
+    const plainCount = await gp.evaluate(() => document.querySelectorAll("#toasts .toast:not(.sticky)").length);
+    if (plainCount !== 3) fail("with a countdown up the stack held " + plainCount + " ordinary toasts, not 3.");
+    await gp.evaluate(() => document.querySelector(".toast.hubgate").remove());
+    await gp.waitForTimeout(100);
+    if (!(await hasCountdown())) fail("the countdown toast stayed gone after something removed it.");
+    await gp.waitForTimeout(9500);
+    if (!(await hasCountdown())) fail("the countdown toast went away on a timer.");
+    openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
+    await gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
+      { timeout: 15000 }).catch(() => fail("the stream did not come back."));
+    await gp.waitForTimeout(500);
+    if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
+    say({ state: "cancelled" });
+    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("a cancelled countdown stayed on screen."));
+
+    // On a phone the cap is one, and a paused toast is on top of it, not in it.
+    await gp.setViewportSize({ width: 400, height: 800 });
+    say({ state: "paused" });
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("a pause on a phone drew no toast."));
+    await gp.evaluate(() => { for (let i = 0; i < 3; i++) toast("phone filler " + i, "pushing the stack"); });
+    await gp.waitForTimeout(100);
+    const phone = await gp.evaluate(() => ({
+      paused: !!document.querySelector(".toast.hubgate .hubgate-act"),
+      plain: document.querySelectorAll("#toasts .toast:not(.sticky)").length
+    }));
+    if (!phone.paused || phone.plain !== 1) {
+      fail("on a phone the stack was " + JSON.stringify(phone) + ", not the paused toast and one other.");
+    }
+    say({ state: "resumed" });
+    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("a resume did not take the paused toast down."));
+    await gp.setViewportSize({ width: 1400, height: 900 });
+
+    // A window opened during a countdown shows what is left of it.
+    gateCountdownLeft = 30;
+    const mid = await ctx.newPage();
+    await mid.goto(base, { waitUntil: "domcontentloaded" });
+    await mid.waitForFunction(() => {
+      const el = document.querySelector(".toast.hubgate");
+      return el && /hub restarts in (29|30)s/.test(el.textContent);
+    }, null, { timeout: 15000 }).catch(() => fail("a board opened during a countdown did not show it."));
+    await mid.close();
+    gateCountdownLeft = 0;
+
     // Restarting: a modal that Escape and closing every dialog both leave up.
     say({ state: "restarting" });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
@@ -1286,6 +1344,50 @@ async function restartGateSection(browser, base) {
   } finally {
     hubMode = wasHub;
     gatePaused = false;
+    gateCountdownLeft = 0;
+    await ctx.close();
+  }
+}
+
+// A TOAST STAYS FOR ITS WHOLE LIFE. An alert about something nobody answers (a
+// card arriving, a stuck step, a share that stopped) was keyed by its subject,
+// and the poll that raised it reaped every keyed toast not waiting or pending,
+// so it popped and went at once. A pending one still goes when it is answered.
+async function toastStaysSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const tp = await ctx.newPage();
+  const errors = [];
+  tp.on("pageerror", e => errors.push(String(e)));
+  try {
+    await tp.goto(base, { waitUntil: "domcontentloaded" });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await tp.evaluate(() => {
+      window.__reaps = 0;
+      const real = reapToasts;
+      window.reapToasts = keys => { window.__reaps++; return real(keys); };
+      document.getElementById("toasts").innerHTML = "";
+      // The shape `check("arrived")` raises for one new card.
+      alerting.notify("new card is on the board", "a new card", "stack", "", "arrived9", "arrived9", "");
+      // And a card waiting on you, which is answered.
+      alerting.notify("ready card is ready", "its turn ended", "stack", "", "ready9", "ready9", "", "",
+        { pending: true });
+    });
+    const has = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
+      .some(el => el.querySelector("b").textContent === t), title);
+    const born = Date.now();
+    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
+      .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug."));
+    await tp.waitForTimeout(400);
+    if (!(await has("new card is on the board"))) {
+      fail("an arrival toast was taken down by the poll after it, " + (Date.now() - born) + "ms in.");
+    }
+    if (await has("ready card is ready")) fail("a toast for a card no longer waiting was not reaped.");
+    await tp.waitForTimeout(Math.max(0, 8500 - (Date.now() - born)));
+    if (!(await has("new card is on the board"))) fail("an arrival toast went before its 9 seconds.");
+    await tp.waitForTimeout(1200);
+    if (await has("new card is on the board")) fail("an arrival toast outlived its 9 seconds.");
+    if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
+  } finally {
     await ctx.close();
   }
 }
@@ -1298,7 +1400,8 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
-      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection };
+      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
+      toastStays: toastStaysSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -3446,6 +3549,7 @@ async function main() {
     await websiteSkinSection(browser, base);
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
     await restartGateSection(browser, base);
+    await toastStaysSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
@@ -3505,7 +3609,9 @@ async function main() {
     "the website skin wears harbour's palette with a gradient button, a frosted header and a glow " +
     "while harbour and noir wear none of it, " +
     "and the hub restart gate counts down in a toast, pauses on a click without reporting it as input, " +
-    "holds a sticky paused toast with resume, and covers the board until the stream comes back.");
+    "holds a sticky paused toast with resume, keeps the countdown and paused toasts through the toast cap, " +
+    "a removal, a timer and a stream reopen, and covers the board until the stream comes back, " +
+    "and a toast nobody answers stays its full nine seconds while a pending one goes when it is answered.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

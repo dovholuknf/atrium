@@ -60,13 +60,18 @@ type answer struct {
 }
 
 func (t *gateUnderTest) ask(ctx context.Context, countdown, idle, wait time.Duration) <-chan answer {
+	return t.askPatient(ctx, countdown, idle, wait, false)
+}
+
+func (t *gateUnderTest) askPatient(ctx context.Context, countdown, idle, wait time.Duration,
+	patient bool) <-chan answer {
 	out := make(chan answer, 1)
 	if !t.g.claim() {
 		out <- answer{err: context.Canceled}
 		return out
 	}
 	go func() {
-		s, err := t.g.ask(ctx, countdown, idle, wait)
+		s, err := t.g.ask(ctx, countdown, idle, wait, patient)
 		out <- answer{s, err}
 	}()
 	return out
@@ -182,6 +187,69 @@ func TestResumeLetsAHeldRestartThrough(t *testing.T) {
 	}
 	if s := strings.Join(gt.said(), ","); s != "countdown,paused,resumed,countdown,restarting" {
 		t.Errorf("the boards were told %s", s)
+	}
+}
+
+// HELD MEANS HELD. A patient ask outlasts its wait while paused, and after the
+// resume it gets the idle window and a fresh countdown, then `go`.
+func TestAPatientPauseOutlastsTheWaitThenGoesOnResume(t *testing.T) {
+	gt := newGateUnderTest(1)
+	const wait = 300 * time.Millisecond
+	ch := gt.askPatient(context.Background(), 150*time.Millisecond, 50*time.Millisecond, wait, true)
+	gt.waitSaid(t, "countdown")
+	gt.g.pause()
+	gt.waitSaid(t, "paused")
+	// Three waits' worth, where an impatient ask would have said `paused`.
+	time.Sleep(3 * wait)
+	select {
+	case a := <-ch:
+		t.Fatalf("a held restart answered %q %v before it was resumed", a.said, a.err)
+	default:
+	}
+	gt.g.resume()
+	if a := got(t, ch); a.said != "go" {
+		t.Fatalf("a resumed restart said %q", a.said)
+	}
+	if s := strings.Join(gt.said(), ","); s != "countdown,paused,resumed,countdown,restarting" {
+		t.Errorf("the boards were told %s", s)
+	}
+}
+
+// An ask made while already paused is held too, with no timeout, and a resume
+// lets it through.
+func TestAPatientAskMadeWhilePausedWaitsForResume(t *testing.T) {
+	gt := newGateUnderTest(1)
+	gt.g.pause()
+	ch := gt.askPatient(context.Background(), 50*time.Millisecond, 20*time.Millisecond,
+		100*time.Millisecond, true)
+	time.Sleep(400 * time.Millisecond)
+	select {
+	case a := <-ch:
+		t.Fatalf("an ask made during a pause answered %q before the resume", a.said)
+	default:
+	}
+	gt.g.resume()
+	if a := got(t, ch); a.said != "go" {
+		t.Fatalf("after the resume the ask said %q", a.said)
+	}
+}
+
+// A resume starts the idle wait over: a board still busy after the resume gets
+// a whole wait before `busy`, not whatever was left before the pause.
+func TestAResumeStartsTheWaitOver(t *testing.T) {
+	gt := newGateUnderTest(1)
+	const wait = 300 * time.Millisecond
+	ch := gt.askPatient(context.Background(), 5*time.Second, time.Hour, wait, true)
+	gt.g.pause()
+	time.Sleep(2 * wait)
+	gt.g.resume()
+	resumed := time.Now()
+	a := got(t, ch)
+	if a.said != "busy" {
+		t.Fatalf("a board busy after the resume ended in %q", a.said)
+	}
+	if d := time.Since(resumed); d < wait-20*time.Millisecond {
+		t.Errorf("after the resume the ask gave up in %v, not a fresh %v", d, wait)
 	}
 }
 

@@ -3076,6 +3076,9 @@ modal, and the script prints `go`.
 **Expected:** after 20 seconds the script prints `held: the restart is paused from the board`, exit 3. The paused
 toast is still up. A second run while paused also ends `paused`.
 
+Superseded by AO1: a script from this change waits out a pause with no timeout. AM5 still holds for a script that
+does not send `hold`.
+
 ### AM6. The modal holds until the new hub answers
 
 1. Let a countdown run out, then stop the throwaway hub and start it again.
@@ -3128,3 +3131,62 @@ character.
 
 **Expected:** the launch fails with "the prepare command failed:" and the shell's complaint that the command does
 not exist. Put the runner's prepare command back.
+
+## AO. A held restart stays held, and toasts stay on screen
+
+Run against a throwaway hub built from this branch, never the live one. See `docs/hub-restart-gate.md`. Open the
+throwaway hub's board in two windows. Use `scripts/hub-restart-gate.ps1` from this branch.
+
+### AO1. A pause holds the deploy with no timeout
+
+1. Run the script with `-Wait 20`. Click the countdown toast.
+2. Wait a full minute.
+
+**Expected:** the script prints `waiting: the restart is paused from the board, until somebody resumes it` and is
+still running after the minute. The paused toast is still up in both windows.
+
+3. Click resume.
+
+**Expected:** the script prints `waiting: resumed from the board, ...`. After the idle window a fresh countdown
+shows, then the modal, and the script prints `go`, exit 0.
+
+### AO2. A pause made with no deploy waiting holds the next one
+
+1. Run the script, click the countdown, and stop the script with Ctrl+C. The paused toast stays up.
+2. Run the script again and wait a minute.
+
+**Expected:** no countdown shows. The script says it is paused and keeps waiting. Resume lets it through.
+
+### AO3. A hub that dies while held stops the deploy
+
+1. Run the script and click the countdown.
+2. Stop the throwaway hub.
+
+**Expected:** the script prints `held: the hub went away while the restart was waiting`, exit 4. It does not
+print `go`.
+
+3. Start the hub again, run the script, click the countdown, then restart the hub within a few seconds.
+
+**Expected:** the script ends with `held: ...` and exit 4, either "went away" or "forgot the ask".
+
+### AO4. The countdown and paused toasts stay until the hub moves on
+
+1. Run the script with `-Countdown 30`. While the countdown shows, cause four or more other toasts (for example,
+   copy a card path four times).
+
+**Expected:** the countdown stays, and the ordinary toasts stack up to three beside it.
+
+2. Narrow the window to phone width and click the countdown.
+
+**Expected:** the paused toast stays with one ordinary toast beside it as more arrive. It is still there after a
+minute, after a room attaches or detaches, and after the board's stream drops and comes back.
+
+### AO5. An alert about news stays its full life
+
+1. Launch a card from a shell with `atrium launch` while the board is in front of you.
+
+**Expected:** the "... is on the board" toast stays for nine seconds. It does not pop and go.
+
+2. Make a card ready while the board is in front of you, then answer it from another window.
+
+**Expected:** its toast goes within a poll of the answer.
