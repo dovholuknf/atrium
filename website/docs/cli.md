@@ -80,11 +80,9 @@ machine's hooks, `--accept-upgrades` to install builds the hub offers, and `--db
 | `ATRIUM_PRIORITY` | above normal | `normal` turns off the raised process priority on Windows. |
 | `WORKTREE_ROOT` | unset | A worktree tree root. The database lives under it. Unset means `~/.atrium`. |
 
-## The older modes
+## The older mode
 
-Two modes from atrium's first version still build and still work, and share no state with the daemon.
+One mode from atrium's first version still builds and still works, and shares no state with the daemon.
 
-- **`atrium hub` and `atrium agent`**: a terminal you type prompts into, and the MCP server a claude session calls
-  `submit` on in a loop. This `hub` is not `atrium2 hub`.
 - **`atrium serve`, `atrium status` and `atrium watch`**: read-only views over an external worktree ledger,
   inert unless `WORKTREE_ROOT` points at one.
