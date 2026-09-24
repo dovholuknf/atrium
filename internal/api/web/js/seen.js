@@ -28,7 +28,7 @@ function seenChips(t) {
   let out = "";
   if (s.unseen) {
     out += `<span class="chip unseen"
-      title="this session's last turn ended and nobody has looked at it since. attach and read it, or type to it, and this clears"
+      data-tip="this session's last turn ended and nobody has looked at it since. attach and read it, or type to it, and this clears"
       >&#9679;</span>`;
   }
   const qs = s.open_questions || [];
@@ -37,7 +37,7 @@ function seenChips(t) {
       ? "its last turn asked you:\n" + qs.map((q, i) => (i + 1) + ". " + q).join("\n") +
         "\n\nclears when you reply to it"
       : "its last turn asked you questions atrium could not read. clears when you reply to it";
-    out += `<span class="chip warn questions" title="${esc(tip)}"
+    out += `<span class="chip warn questions" data-tip="${esc(tip)}"
       >?${qs.length ? " " + qs.length : ""}</span>`;
   }
   return out;

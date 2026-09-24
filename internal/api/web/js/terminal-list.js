@@ -201,7 +201,7 @@ function termHideControlsHTML(c) {
   const seg = (name, on, hidden, fn, title) => {
     const label = on && hidden ? `${name} (${hidden})` : name;
     return `<button class="${on ? "on" : ""}" onclick="${fn}"
-        title="${esc(title)}">${esc(label)}</button>`;
+        data-tip="${esc(title)}">${esc(label)}</button>`;
   };
   // Agents: inactive = exited (no live connection). A live agent stays, even idle
   // or waiting on you.
@@ -286,14 +286,14 @@ function termTrayHTML(c) {
   const open = termTrayOpen();
   const sortSeg = `<div class="seg trayseg">
       <button class="${sortByActivity ? "" : "on"}" onclick="setTermSort(false)"
-        title="alphabetical by name">name</button>
+        data-tip="alphabetical by name">name</button>
       <button class="${sortByActivity ? "on" : ""}" onclick="setTermSort(true)"
-        title="working sessions first, then anything waiting on you, then newest activity"
+        data-tip="working sessions first, then anything waiting on you, then newest activity"
         >activity</button></div>`;
   return `<div class="termtray${open ? " open" : ""}">
       <div class="traybar">
         <button class="traytoggle" onclick="toggleTermTray()" aria-expanded="${open}"
-          title="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
+          data-tip="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
           ><span class="traychev">&#9656;</span
           ><span class="traysum">${esc(termTraySummary(c))}</span></button>
         ${termListButtons()}
@@ -359,7 +359,7 @@ function termDropHTML() {
     : "choose a session";
   return `<div class="termdrop">
       <button class="termdrop-cur" onclick="toggleTermListOpen()"
-        title="switch session"><span class="tname">${esc(label)}</span
+        data-tip="switch session"><span class="tname">${esc(label)}</span
         ><span class="caret">&#9662;</span></button>
     </div>`;
 }
@@ -531,13 +531,13 @@ function termListButtons() {
   let out = "";
   if (at > 0) {
     out += `<button class="termsort tlcycle" onclick="stepTermList(-1)"
-      title="${termListMode === "full"
+      data-tip="${termListMode === "full"
         ? "shrink it to just the names"
         : "hide it, and hover the edge to peek"}">&laquo;</button>`;
   }
   if (at < TERM_LIST_MODES.length - 1) {
     out += `<button class="termsort tlcycle" onclick="stepTermList(1)"
-      title="${termListMode === "off"
+      data-tip="${termListMode === "off"
         ? "put the list back"
         : "show the whole name"}">&raquo;</button>`;
   }
@@ -1036,7 +1036,7 @@ function termRow(t, deep) {
            // the session again where it was.
            termCold(t) ? " cold" : ""}${wear.cls}"
          data-id="${t.id}"
-         title="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
+         data-tip="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
          style="${style}"
          onclick="${termCold(t)
            ? `resumePinned('${t.id}')`
@@ -1045,17 +1045,18 @@ function termRow(t, deep) {
       <div class="card-line">
         <div class="title">
           <span class="pin ${t.pinned ? "on" : ""}"
-            title="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+            aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
+            data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
             class="tstack"><span
-            class="tname${secondary ? "" : " aspath"}" title="${esc(hover)}"
+            class="tname${secondary ? "" : " aspath"}" data-tip="${esc(hover)}"
             >${esc(primary)}</span>${
               // Where it lives, under the name and dimmed. Only when the name is
               // its own: an unnamed card already shows the address as its name,
               // so a second copy of it under itself says nothing.
               secondary
-                ? `<span class="tpath" title="${esc(hover)}">${esc(secondary)}</span>`
+                ? `<span class="tpath" data-tip="${esc(hover)}">${esc(secondary)}</span>`
                 : ""
             }</span>
         </div>
@@ -1073,7 +1074,7 @@ function termRowChips(t) {
     // Says where it is rather than letting you click and wonder why nothing
     // happened. Clicking raises that window.
     ? `<span class="chip accent"
-         title="this session is showing in a window of its own. click to raise it"
+         aria-label="this session is showing in a window of its own. click to raise it" data-tip="this session is showing in a window of its own. click to raise it"
          >&#8599;</span>`
     : "";
   // Unread and unanswered, which is where the operator is looking while workers
@@ -1094,7 +1095,7 @@ function termRoomChip(t) {
   const room = roomOf(t && t.id);
   if (!room) return "";
   return `<span class="chip room" style="--rhue:${roomHue(room)}"
-    title="this card runs in room ${esc(room)}"
+    data-tip="this card runs in room ${esc(room)}"
     >${esc(room)}</span>`;
 }
 
@@ -1119,7 +1120,7 @@ function termHeldChip(t) {
   const waited = secs > 0 ? ` waiting ${termHeldAge(secs)}` : "";
   const title = `message from ${from}${waited} - delivers when your input line ` +
     `is clear and idle. clear or submit your line to receive it now`;
-  return `<span class="chip held" title="${esc(title)}">!</span>`;
+  return `<span class="chip held" data-tip="${esc(title)}">!</span>`;
 }
 
 // A coarse age for the held tooltip, in the largest unit that is not zero.
@@ -1337,7 +1338,7 @@ function termHeading(name, path, count, folded, group, style, movable) {
   return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
       onclick="toggleTermGroup('${arg}')"${menu}
-      title="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
+      data-tip="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
       >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
@@ -1748,7 +1749,7 @@ function termBucketHTML(pinned, total, folded) {
   const tip = hidden > 0 ? ` (${hidden} hidden by hide inactive)` : "";
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
       <button class="tgroup pinnedhead" onclick="toggleTermGroup('${PINNED_FOLD}')"
-        title="${folded ? "show" : "hide"} the pinned terminals${tip}"
+        data-tip="${folded ? "show" : "hide"} the pinned terminals${tip}"
         ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
         ><span class="tgname">pinned</span
         ><span class="tgcount">${count}</span></button>

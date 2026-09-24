@@ -138,12 +138,12 @@ function paintRooms() {
   const label = document.getElementById("rooms-t");
   if (room) {
     label.textContent = room;
-    el.title = here
+    el.dataset.tip = here
       ? `scoped to ${room}. this is that machine's atrium.`
       : `scoped to ${room}, which is not attached right now.`;
   } else {
     label.textContent = `${here}/${known} room${known === 1 ? "" : "s"}`;
-    el.title = "you are on an atrium hub, looking at every room at once. " +
+    el.dataset.tip = "you are on an atrium hub, looking at every room at once. " +
       "click to focus on one.";
   }
   // `down` belonged to the folded-in stream state and coloured the whole chip as
@@ -183,7 +183,7 @@ function roomPickerRows() {
         <span class="dot live"></span>
         <strong>${name}</strong>${r.host
           ? `<span class="meta">${esc(r.host)}</span>` : ""}
-        <span class="roomcog" title="settings for ${name}"
+        <span class="roomcog" aria-label="settings for ${name}" data-tip="settings for ${name}"
           onclick="event.stopPropagation();openRoomCog('${q}')">&#9881;</span></button>`);
   }
   // Rooms that dialled in before and are not attached now. Listed after the live
@@ -208,7 +208,7 @@ function roomPickerRows() {
         <strong>${name}</strong>
         <span class="meta">disconnected${r.last_seen
           ? " &middot; " + esc(shortTime(r.last_seen)) : ""}</span>
-        <span class="roomx" title="forget ${name}, removing this stale room from the hub"
+        <span class="roomx" aria-label="forget ${name}, removing this stale room from the hub" data-tip="forget ${name}, removing this stale room from the hub"
           onclick="event.stopPropagation();rejectRoom('${q}')">&times;</span></button>`);
   }
   // A room that was chosen and has since gone. Kept in the list so there is
@@ -281,7 +281,7 @@ function roomChip(t) {
   if (t.offline) return "";
   const name = esc(t.room);
   return `<span class="chip room" style="--rhue:${roomHue(t.room)}"
-    title="on ${name}. click to focus on it."
+    data-tip="on ${name}. click to focus on it."
     onclick="event.stopPropagation();pickRoom('${name.replace(/'/g, "&#39;")}')"
     >${name}</span>`;
 }
@@ -345,7 +345,7 @@ function thisMachineRow() {
     <div class="roomrow-top">
       <b class="roomname">this machine</b>
       <span class="grow"></span>
-      <button class="ghost roomcog" data-room="" title="settings for this machine"
+      <button class="ghost roomcog" data-room="" aria-label="settings for this machine" data-tip="settings for this machine"
         >&#9881;</button>
     </div>
     <div class="hintline">Editor, paste, shell and scrollback settings are behind the cog.</div>
@@ -371,7 +371,7 @@ function roomRow(r) {
       ${here ? `<span class="chip">showing this one</span>` : ""}
       <span class="grow"></span>
       <button class="ghost roomcog" data-room="${esc(r.name)}"
-        title="settings for this room">&#9881;</button>
+        aria-label="settings for this room" data-tip="settings for this room">&#9881;</button>
     </div>
     ${line ? `<div class="hintline">${line}</div>` : ""}
   </div>`;
@@ -390,7 +390,7 @@ function transportBadge(t) {
     local: ["here", "this hub's own machine, over a pipe inside one process"],
   };
   const m = marks[t] || [t || "?", "how this room reaches the hub"];
-  return `<span class="chip" title="${esc(m[1])}">${esc(m[0])}</span>`;
+  return `<span class="chip" data-tip="${esc(m[1])}">${esc(m[0])}</span>`;
 }
 
 // roomState is the one chip that says how the room is doing.
@@ -753,7 +753,7 @@ function roomGroups(rows, row) {
     return `<div class="col-head roomgroup"><span>${esc(name)}</span>
       <span class="grow"></span>
       <button class="ghost roomcog" data-room="${esc(name)}"
-        title="settings for ${esc(name)}">&#9881;</button></div>` + panel(mine);
+        aria-label="settings for ${esc(name)}" data-tip="settings for ${esc(name)}">&#9881;</button></div>` + panel(mine);
   }).join("");
 }
 

@@ -3025,3 +3025,49 @@ The `runner` figure carries the delay. No `room <task> in:` line.
 
 **Expected:** no echo line, or ones under 50ms. Each echo line that shows has a `runner` and an `atrium` figure,
 or `runner/atrium split unknown`.
+
+## AT. Every tooltip on the board wears the skin
+
+Run on a hub built from this branch, with at least one supervised card and one message held for it. The headless
+section `tooltip` covers AT1, AT2 and AT4, and `scripts/check-titles.sh` fails the build on a new native `title`.
+
+### AT1. A card chip, a toolbar button and a terminals row
+
+1. On the terminals pane, rest the pointer on the `!` held-message chip of a row for half a second.
+
+**Expected:** the tooltip is the board's panel, in the skin's colours and font, not the browser's white box. It
+reads "message from ... waiting ..." as before.
+
+2. Do the same on the header's gear, and on a chip of a card on the stack.
+
+**Expected:** the same panel each time. Passing the pointer across a card without stopping raises none.
+
+3. Move the pointer away, or scroll the stack.
+
+**Expected:** the panel goes at once. Output arriving in an attached terminal does not take it down.
+
+### AT2. Two skins
+
+1. Wear `daylight` and repeat AT1 step 2. Then wear `noir`.
+
+**Expected:** the panel is light on `daylight` and dark on `noir`, matching the board around it.
+
+### AT3. Keyboard and phone
+
+1. Press Tab until the header's gear has focus.
+
+**Expected:** its tooltip shows at once, with no half-second wait. Clicking a button with the mouse does not leave
+its tooltip up.
+
+2. On a phone, tap a chip, then press and hold one.
+
+**Expected:** a tap does what the chip does and raises no tooltip. A press and hold raises it, and lifting the
+finger takes it down.
+
+### AT4. No native title is left
+
+1. Walk the stack, board, terminals, history, rooms and perms tabs. Hover icon-only buttons such as the terminal's
+   folder, the find bar's arrows and the skin lab's arrows.
+
+**Expected:** no browser tooltip anywhere. A screen reader still names each icon-only button, from its
+`aria-label`.

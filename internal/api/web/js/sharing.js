@@ -41,7 +41,7 @@ function paintSharing() {
   el.hidden = n === 0;
   if (!n) return;
   el.textContent = n === 1 ? "1 session shared" : n + " sessions shared";
-  el.title = "click to see what is published, and stop it";
+  el.dataset.tip = "click to see what is published, and stop it";
 }
 
 // The list, and a way to stop each one.
@@ -533,15 +533,15 @@ function showMenu(e, items) {
     ? `<div class="stepper" data-i="${i}">
         <span class="steplabel">${esc(it.label)}${
           it.help ? `<span class="help" tabindex="0" data-tip="${esc(it.help)}">?</span>` : ""}</span>
-        <button class="stepdown" title="smaller">&minus;</button>
+        <button class="stepdown" aria-label="smaller" data-tip="smaller">&minus;</button>
         <input class="stepval" type="number" inputmode="numeric"
           min="${it.min}" max="${it.max}" value="${it.get()}"
           aria-label="${esc(it.label)}">
-        <button class="stepup" title="bigger">+</button>
+        <button class="stepup" aria-label="bigger" data-tip="bigger">+</button>
       </div>`
     : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
         it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
-        data-i="${i}"${it.tip ? ` title="${esc(it.tip)}"` : ""}>${esc(it.label)}${
+        data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${esc(it.label)}${
         // The board's own bubble, not the browser's. A native tooltip arrives
         // a second late, in the operating system's font, at the pointer rather
         // than against the thing it explains, and it is the one part of a menu

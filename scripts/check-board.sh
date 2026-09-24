@@ -346,6 +346,14 @@ else
   echo "every id on the page is unique."
 fi
 
+# NO NATIVE title TOOLTIPS. The browser draws them in its own white box and the
+# system font, whatever the skin, and there are a couple of hundred places a new
+# one could slip back in. The allowlist and the reason for each entry are in
+# scripts/title-allowlist.txt.
+if ! bash "$here/scripts/check-titles.sh"; then
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

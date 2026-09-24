@@ -716,7 +716,7 @@ function fillThemeSlots(palette) {
     // empty, which is what actually gets saved.
     const swatch = v || (s.name === "background" ? "#000000" : "#cccccc");
     return `<div class="thslot">
-      <label for="th-c-${esc(s.name)}" title="${esc(s.name)}${s.required ? "" : ", optional"}"
+      <label for="th-c-${esc(s.name)}" data-tip="${esc(s.name)}${s.required ? "" : ", optional"}"
         >${esc(s.name)}${s.required ? "" : " ?"}</label>
       <input type="color" id="th-s-${esc(s.name)}" data-slot="${esc(s.name)}"
         value="${esc(swatch)}">

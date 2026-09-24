@@ -345,7 +345,8 @@ const alerting = (() => {
   const paint = () => {
     btn.classList.toggle("muted", prefs.muted);
     btn.innerHTML = prefs.muted ? "&#128263;" : "&#9835;";
-    btn.title = prefs.muted ? "muted. click for sound" : "sound on. click to mute";
+    btn.dataset.tip = prefs.muted ? "muted. click for sound" : "sound on. click to mute";
+    btn.setAttribute("aria-label", btn.dataset.tip);
   };
   paint();
 
@@ -379,7 +380,7 @@ const alerting = (() => {
   function paintAudioState() {
     const el = document.getElementById("sound");
     el.classList.toggle("blocked", audioBlocked());
-    if (audioBlocked()) el.title = "click anywhere on the page once to let the browser play sound";
+    if (audioBlocked()) el.dataset.tip = "click anywhere on the page once to let the browser play sound";
   }
   // First paint, and again shortly after load in case the context settles.
   setTimeout(paintAudioState, 300);

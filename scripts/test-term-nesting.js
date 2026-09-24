@@ -225,11 +225,11 @@ function drawn(html) {
   return { rows, heads };
 }
 
-// The `title` on the name, which is the whole label. A row drawn under the
-// headings that spell its path shows its LEAF, and the title is where the rest
+// The `data-tip` on the name, which is the whole label. A row drawn under the
+// headings that spell its path shows its LEAF, and the tooltip is where the rest
 // of it still is.
 function findTitle(el) {
-  if (has(el, "tname")) return el.attrs.title || "";
+  if (has(el, "tname")) return el.attrs["data-tip"] || "";
   for (const k of el.kids) {
     const found = findTitle(k);
     if (found !== null) return found;

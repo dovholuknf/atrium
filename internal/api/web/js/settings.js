@@ -87,7 +87,7 @@ function paintGrouping() {
   // reading "on" is ambiguous about whether that is the state or the action.
   const btn = document.getElementById("s-group-toggle");
   btn.textContent = g.on ? "enabled" : "disabled";
-  btn.title = g.on ? "click to disable grouping" : "click to enable grouping";
+  btn.dataset.tip = g.on ? "click to disable grouping" : "click to enable grouping";
   btn.className = g.on ? "go" : "";
   document.getElementById("s-group-code").hidden = !g.on;
   document.getElementById("s-order-code").hidden = !g.on;
@@ -198,14 +198,14 @@ function paintGroupSegs() {
   ];
   const html = opts.map(([v, label, title]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
-       title="${esc(title)}">${esc(label)}</button>`).join("");
+       data-tip="${esc(title)}">${esc(label)}</button>`).join("");
   // A `+ new group` button rides beside the picker when `custom` is on.
   // Drawn in the same host as the picker so it sits alongside the mode
   // buttons and disappears the moment another mode is chosen: an add
   // button for a mode that is off does nothing anybody expects.
   const plus = mode === "custom"
     ? `<button class="groupplus" onclick="addCustomGroup()"
-         title="add a group. it is a tag under the hood: files a card into this bucket by tagging it">+ new group</button>`
+         data-tip="add a group. it is a tag under the hood: files a card into this bucket by tagging it">+ new group</button>`
     : "";
   // The strip is the third. It is rebuilt wholesale on every render, so it
   // calls this afterwards rather than relying on having been painted once.
@@ -244,7 +244,7 @@ function paintGlobalAuto() {
   if (globalAutoStale && !globalAutoRead) {
     b.className = "gauto unknown";
     b.textContent = "auto: unknown";
-    b.title = "the daemon has not answered whether requests are gated. retrying.";
+    b.dataset.tip = "the daemon has not answered whether requests are gated. retrying.";
     return;
   }
   b.className = (globalAuto ? "gauto on" : "gauto") + (globalAutoStale ? " stale" : "");
@@ -254,7 +254,7 @@ function paintGlobalAuto() {
   b.textContent = globalAuto
     ? (globalAutoLeft ? "approving everything, " + leftLabel(globalAutoLeft) : "approving everything")
     : "asking";
-  b.title = (globalAutoStale ? "the last answer, the daemon is not answering right now. retrying. " : "") +
+  b.dataset.tip = (globalAutoStale ? "the last answer, the daemon is not answering right now. retrying. " : "") +
     (globalAuto
       ? (globalAutoLeft
           ? "every session is approved without asking, until this runs out. click to start asking again."

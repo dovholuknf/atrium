@@ -73,11 +73,11 @@ function browseList() {
   list.innerHTML = rows.length
     ? rows.map(e => `
         <div class="drow ${e.repo ? "repo" : ""}" data-path="${esc(e.path)}">
-          <button class="dir" title="${esc(e.path)}">
+          <button class="dir" data-tip="${esc(e.path)}">
             <span class="ic">${e.repo ? "&#9679;" : "&#9656;"}</span>
             <span class="nm">${esc(e.name)}</span>
           </button>
-          <button class="into" title="list what is inside">open&#8202;&#8250;</button>
+          <button class="into" data-tip="list what is inside">open&#8202;&#8250;</button>
         </div>`).join("")
     : `<div class="empty">${browseEntries.length ? "nothing here matches that" : "nothing to open in here"}</div>`;
   // The path goes in an attribute and comes back through the DOM, never through

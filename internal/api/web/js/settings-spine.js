@@ -394,12 +394,12 @@ async function openTask(id) {
   document.getElementById("d-title").textContent = current.display_title;
   document.getElementById("d-chips").innerHTML = [
     `<span class="chip accent">${esc(current.runner || "?")}</span>`,
-    `<span class="chip" title="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
+    `<span class="chip" data-tip="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
     current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
     `<span class="chip">idle ${ago(current.idle_seconds)}</span>`,
     current.created_at
-      ? `<span class="chip" title="${esc(current.created_at)}">first seen ${
+      ? `<span class="chip" data-tip="${esc(current.created_at)}">first seen ${
           esc(firstSeen(current.created_at))}</span>`
       : ""
   ].join("");
@@ -550,7 +550,7 @@ async function paintQueued() {
   } catch { return; }
   setHTML(host, (msgs || []).map(m =>
     `<div class="q"><span>waiting</span><span class="txt">${esc(m.text)}</span>
-     <span title="${esc(m.created_at)}">${esc(ago(sinceSecs(m.created_at)))} ago</span></div>`
+     <span data-tip="${esc(m.created_at)}">${esc(ago(sinceSecs(m.created_at)))} ago</span></div>`
   ).join(""));
 }
 
@@ -634,7 +634,7 @@ function evRow(r) {
     <span class="c-verdict ${r.vcls || ""}">${r.verdict}</span>
     <span class="c-at">${esc(r.at)}</span>
     <span class="c-tool">${r.tool || ""}</span>
-    <span class="c-cmd" title="${r.title || ""}">${r.text || ""}</span>
+    <span class="c-cmd" data-tip="${r.title || ""}">${r.text || ""}</span>
     <span class="c-by">${r.by || ""}</span>
   </div>`;
 }
@@ -748,9 +748,9 @@ async function openReview() {
         <div class="rev-row ${e.unattended ? "unseen" : ""}">
           <span class="verdict ${e.decision === "approve" ? "" : "no"}">${
             e.decision === "approve" ? "approved" : "blocked"}</span>
-          <span class="rep" ${e.repeats > 1 ? `title="identical calls folded together"` : ""}>${
+          <span class="rep" ${e.repeats > 1 ? `data-tip="identical calls folded together"` : ""}>${
             e.repeats > 1 ? "&times;" + e.repeats : ""}</span>
-          <code title="${esc(e.command)}">${esc(e.command)}</code>
+          <code data-tip="${esc(e.command)}">${esc(e.command)}</code>
           <span class="by">${e.unattended ? `<span class="auto">auto</span>` : esc(e.by || "you")}</span>
         </div>`).join("")}</div>
     </details>`).join("");

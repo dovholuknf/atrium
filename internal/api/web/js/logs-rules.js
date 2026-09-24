@@ -30,7 +30,7 @@ function paintHistSort() {
   document.getElementById("hist-sort").innerHTML =
     Object.entries(HIST_SORTS).map(([k, s]) =>
       `<button class="${k === histSort ? "on" : ""}" onclick="setHistSort('${k}')"
-        title="sort by ${s.label}${k === histSort ? ", again to reverse" : ""}"
+        data-tip="sort by ${s.label}${k === histSort ? ", again to reverse" : ""}"
         >${s.label}${k === histSort ? (histDesc ? " ↑" : " ↓") : ""}</button>`
     ).join("");
 }
@@ -240,13 +240,13 @@ function prefixOf(tool, command) {
 const RULE_TOOLBAR = `
   <div class="toolbar">
     <button class="go big" onclick="allowFolder()"
-      title="stop asking about anything under a folder, whatever the command">
+      data-tip="stop asking about anything under a folder, whatever the command">
       &#128193;&nbsp; allow a folder</button>
     <button class="go big" onclick="importClaude()"
-      title="read your Claude Code allow and deny lists and turn them into standing rules">
+      data-tip="read your Claude Code allow and deny lists and turn them into standing rules">
       &#8681;&nbsp; import rules from claude</button>
-    <button onclick="exportRules()" title="download every rule as json">export</button>
-    <button onclick="document.getElementById('rules-file').click()" title="load rules from a json file">import file</button>
+    <button onclick="exportRules()" data-tip="download every rule as json">export</button>
+    <button onclick="document.getElementById('rules-file').click()" data-tip="load rules from a json file">import file</button>
     <input type="file" id="rules-file" accept="application/json" hidden onchange="importFile(this)">
   </div>`;
 
@@ -312,7 +312,7 @@ function paintRuleSort() {
   if (!host) return;
   host.innerHTML = Object.entries(RULE_SORTS).map(([k, s]) =>
     `<button class="${k === ruleSort ? "on" : ""}" onclick="setRuleSort('${k}')"
-      title="sort by ${s.label}${k === ruleSort ? ", again to reverse" : ""}"
+      data-tip="sort by ${s.label}${k === ruleSort ? ", again to reverse" : ""}"
       >${s.label}${k === ruleSort ? (ruleDesc ? " ↑" : " ↓") : ""}</button>`).join("");
 }
 
@@ -335,7 +335,7 @@ function paintRules() {
           <span class="stamp">${when(r.created_at)}</span>
           <span class="tool">${esc(r.tool)}</span>
           <code class="grow ell ${r.kind === "path" ? "path" : ""}"
-            title="${esc(r.prefix)}">${r.kind === "path" ? "\u{1F4C1} " : ""}${esc(r.prefix)}</code>
+            data-tip="${esc(r.prefix)}">${r.kind === "path" ? "\u{1F4C1} " : ""}${esc(r.prefix)}</code>
           <span class="by">${r.kind === "path" ? "folder"
             : /[*?]/.test(r.prefix) ? "wildcard" : "prefix"}</span>
           <span class="by">${r.hits} use${r.hits === 1 ? "" : "s"}</span>

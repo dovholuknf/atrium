@@ -90,7 +90,7 @@
       <div class="tab on" data-view="stack">stack</div>
       <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
-           title="terminals atrium is supervising"></span></div>
+           data-tip="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
       <!-- Put machine configuration and the permissions audit after the daily work views.
            Called `rooms` because a room is the machine, and everything under this tab is a
@@ -98,7 +98,7 @@
            actions. The view keeps its old internal name so nothing else has to change. -->
       <div class="tab" data-view="runners">rooms</div>
       <div class="tab" data-view="perms">perms<span class="count zero" id="c-perm"
-           title="requests waiting to be answered"></span></div>
+           data-tip="requests waiting to be answered"></span></div>
       <!-- Hub only. `/_hub/audit` is a 404 on a plain daemon, so this reveals
            itself once the hub probe finds a hub, the same as the room counter.
            See js/audit.js and js/rooms.js. -->
@@ -137,9 +137,9 @@
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
-      title="what the board has told you">&#128276;<span class="count"></span></button>
-    <button id="sound" class="icon" title="sound on. click to mute">&#9835;</button>
-    <button id="gear" class="icon" title="sound settings">&#9881;</button>
+      aria-label="what the board has told you" data-tip="what the board has told you">&#128276;<span class="count"></span></button>
+    <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
+    <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
          Hidden outright on a plain daemon, which is every atrium that is not a
          hub: `js/rooms.js` probes for one and turns this off when there is
@@ -256,8 +256,8 @@ The most specific match wins, so a narrow block beats a broad approve.">?</span>
         </div>
         <input type="search" id="rules-q" placeholder="filter by tool, pattern or reason" spellcheck="false">
         <span class="matchcount" id="rules-match"></span>
-        <button onclick="exportRulesView('json')" title="download what is showing as json">export json</button>
-        <button onclick="exportRulesView('csv')" title="download what is showing as csv">csv</button>
+        <button onclick="exportRulesView('json')" data-tip="download what is showing as json">export json</button>
+        <button onclick="exportRulesView('csv')" data-tip="download what is showing as csv">csv</button>
       </div>
       <div class="filters">
         <span class="barlabel">sort by</span>
@@ -291,8 +291,8 @@ Exports honor whatever filter is applied.">?</span>
         </div>
         <input type="search" id="hist-q" placeholder="filter by agent, tool or command" spellcheck="false">
         <span class="matchcount" id="hist-match"></span>
-        <button onclick="exportHistory('json')" title="download what is showing as json">export json</button>
-        <button onclick="exportHistory('csv')" title="download what is showing as csv">csv</button>
+        <button onclick="exportHistory('json')" data-tip="download what is showing as json">export json</button>
+        <button onclick="exportHistory('csv')" data-tip="download what is showing as csv">csv</button>
       </div>
       <div class="filters">
         <span class="barlabel">sort by</span>
@@ -325,7 +325,7 @@ Exports honor whatever filter is applied.">?</span>
            a control that only answers to a pointer is one some people do not
            have. -->
       <button class="term-grip" id="term-grip" aria-label="resize the session list"
-        title="drag to resize the list"
+        data-tip="drag to resize the list"
         onpointerdown="startGrip(event)"
         onkeydown="gripKey(event)"></button>
       <!-- Carries the attached session's colour across the gap and over the
@@ -357,14 +357,14 @@ Exports honor whatever filter is applied.">?</span>
               onchange="previewTheme(this.value)"
               onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelTheme(); }
                          else if (event.key === 'Enter') { event.preventDefault(); keepTheme(); }"></select>
-            <button class="go" onclick="keepTheme()" title="keep this one">use it</button>
+            <button class="go" onclick="keepTheme()" data-tip="keep this one">use it</button>
             <!-- The colours of whatever is selected, opened where you are
                  already looking at them. Nothing about the terminal changes
                  until the editor is saved, so this is not a second way to set
                  a card's theme. -->
             <button onclick="openThemeEditor(document.getElementById('t-theme').value)"
-              title="change these colours, or bring a scheme of your own">edit &#9998;</button>
-            <button onclick="cancelTheme()" title="put back what was there">cancel</button>
+              data-tip="change these colours, or bring a scheme of your own">edit &#9998;</button>
+            <button onclick="cancelTheme()" data-tip="put back what was there">cancel</button>
           </span>
           <!-- WHICH OF THIS CARD'S TWO TERMINALS. Hidden until there is a
                choice, which means until the card has a runner atrium owns.
@@ -374,19 +374,19 @@ Exports honor whatever filter is applied.">?</span>
                find out what the other one is. -->
           <span class="termkind" id="t-kind" hidden>
             <button id="t-kind-agent" onclick="showTerminal('runner')"
-              title="the terminal the agent is running in">agent</button>
+              data-tip="the terminal the agent is running in">agent</button>
             <button id="t-kind-shell" onclick="showTerminal('shell')"
-              title="a plain shell in the same directory, for when the agent is not answering">shell</button>
+              data-tip="a plain shell in the same directory, for when the agent is not answering">shell</button>
           </span>
           <span class="grow"></span>
           <button onclick="sendSignal('int')"
-            title="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
+            data-tip="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
           <button id="t-popout" onclick="popOutTerm()"
-            title="open this terminal in its own window, so alt-tab reaches it">pop out</button>
+            data-tip="open this terminal in its own window, so alt-tab reaches it">pop out</button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
-            title="the files in this session's directory, on the machine running it">&#128193;</button>
+            aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it">&#128193;</button>
           <button class="no" onclick="exitTerm()"
-            title="ask this runner to quit, the way its own harness says to">exit</button>
+            data-tip="ask this runner to quit, the way its own harness says to">exit</button>
           <!-- No detach. Stopping watching is not a thing you decide, it is
                what happens when you look at something else: attaching to
                another session, leaving the tab, or closing a popped-out
@@ -395,7 +395,7 @@ Exports honor whatever filter is applied.">?</span>
                The cog is LAST because it is the only control here that opens
                something rather than doing something. -->
           <button id="t-cog" class="icon" onclick="termSettings(event)"
-            title="how this terminal looks and behaves">&#9881;</button>
+            aria-label="how this terminal looks and behaves" data-tip="how this terminal looks and behaves">&#9881;</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
         <!-- This session's directory, in the pane rather than in a dialog.
@@ -408,11 +408,11 @@ Exports honor whatever filter is applied.">?</span>
              what may be reached. -->
         <div class="term-files" id="t-files-panel" hidden>
           <div class="filebar">
-            <button id="t-files-up" class="icon" onclick="termFilesUp()" title="up one directory">&#8593;</button>
+            <button id="t-files-up" class="icon" onclick="termFilesUp()" aria-label="up one directory" data-tip="up one directory">&#8593;</button>
             <span class="crumbs" id="t-files-where"></span>
             <a class="chip go" id="t-files-zip" download hidden></a>
             <span class="chip no" id="t-files-del" hidden></span>
-            <button onclick="openTermFiles()" title="close this">close</button>
+            <button onclick="openTermFiles()" data-tip="close this">close</button>
           </div>
           <div class="filelist" id="t-files-list"></div>
           <span class="hintline" id="t-files-note"></span>
@@ -433,7 +433,7 @@ Exports honor whatever filter is applied.">?</span>
                    necessarily where you are: the button says which machine so
                    that is a choice rather than a surprise. -->
               <button id="t-edit-tab" onclick="openFileTab()"
-                title="read it in a browser tab, served by atrium">new tab</button>
+                data-tip="read it in a browser tab, served by atrium">new tab</button>
               <button id="t-edit-there" onclick="openFileThere()"></button>
               <button class="go" onclick="saveEditor()">save</button>
               <button onclick="closeEditor()">close</button>
@@ -482,13 +482,13 @@ Exports honor whatever filter is applied.">?</span>
                          runFind(true, event.shiftKey); }
                        else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
           <span class="findcount" id="t-find-n"></span>
-          <button onclick="runFind(true, true)" title="previous (shift-enter)">&#8593;</button>
-          <button onclick="runFind(true, false)" title="next (enter)">&#8595;</button>
+          <button onclick="runFind(true, true)" aria-label="previous (shift-enter)" data-tip="previous (shift-enter)">&#8593;</button>
+          <button onclick="runFind(true, false)" aria-label="next (enter)" data-tip="next (enter)">&#8595;</button>
           <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
-            title="match case">Aa</button>
+            aria-label="match case" data-tip="match case">Aa</button>
           <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
-            title="regular expression">.*</button>
-          <button onclick="closeFind()" title="close (escape)">&times;</button>
+            aria-label="regular expression" data-tip="regular expression">.*</button>
+          <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
         </div>
         <!-- The paste that needs no permission.
              Reading the clipboard from script is a permission, and it is
@@ -503,8 +503,8 @@ Exports honor whatever filter is applied.">?</span>
           <textarea id="t-paste-in" spellcheck="false" autocomplete="off"
             placeholder="press ctrl-v here"></textarea>
           <div class="pastebox-row">
-            <button onclick="sendPasteBox()" title="send it (ctrl-enter)">send</button>
-            <button onclick="closePasteBox()" title="close (escape)">&times;</button>
+            <button onclick="sendPasteBox()" data-tip="send it (ctrl-enter)">send</button>
+            <button onclick="closePasteBox()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
           </div>
         </div>
         <div id="t-screen"></div>
@@ -803,7 +803,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <p class="hintline" style="margin:0 0 4px">
       Run these. Each one writes its entry into
       <span class="copypath"><code id="steps-path"></code><button id="steps-copy"
-        title="copy this path">copy</button></span>
+        data-tip="copy this path">copy</button></span>
     </p>
     <p class="hintline" style="margin:0 0 16px">
       Same edit the buttons make, and the same care: a copy of the old file is kept first, anything
@@ -919,7 +919,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <div id="tip"></div>
 
 <button id="held" onclick="applyHeld()"
-  title="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
+  data-tip="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
   &#8635;&nbsp; paused while you type, click to catch up</button>
 
 <!-- Moved into whatever modal dialog is open, and back out again.
@@ -946,19 +946,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
        row wrap for a long one and not for a short one, so stepping through the
        list changed the panel's height and it bounced under the pointer. -->
   <div class="lab-grip" id="skinlab-grip" onpointerdown="startLabDrag(event)"
-    title="drag me anywhere">
+    data-tip="drag me anywhere">
     <span class="lab-title">how the board looks</span>
   </div>
   <div class="lab-body">
     <div class="lab-row">
-      <button class="lab-step" onclick="stepSkin(-1)" title="the one before">&#8249;</button>
+      <button class="lab-step" onclick="stepSkin(-1)" aria-label="the one before" data-tip="the one before">&#8249;</button>
       <select id="skinlab-pick" onchange="previewSkin(this.value)"></select>
-      <button class="lab-step" onclick="stepSkin(1)" title="the next one">&#8250;</button>
+      <button class="lab-step" onclick="stepSkin(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
     </div>
     <div class="lab-row lab-answers">
-      <button class="go" onclick="keepSkin()" title="keep this one">use it</button>
-      <button onclick="useDefaultSkin()" title="back to the one it came with">use the default</button>
-      <button onclick="cancelSkin()" title="put back what was there">cancel</button>
+      <button class="go" onclick="keepSkin()" data-tip="keep this one">use it</button>
+      <button onclick="useDefaultSkin()" data-tip="back to the one it came with">use the default</button>
+      <button onclick="cancelSkin()" data-tip="put back what was there">cancel</button>
     </div>
     <span class="lab-hint">Arrow keys walk the list. Nothing is saved until you press
       <b>use it</b>.</span>
@@ -1003,7 +1003,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <!-- The dialog covers the board, and the board is what you are judging.
              This closes it and leaves a small panel you can drag anywhere and
              walk the list with, against the real thing. -->
-        <button onclick="openSkinLab()" title="close this and try them against the real board"
+        <button onclick="openSkinLab()" data-tip="close this and try them against the real board"
           >try them &#9673;</button>
       </div>
       <span class="hintline">Changes as you pick. <b>try them</b> closes this dialog and leaves a
@@ -2655,7 +2655,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <!-- SAVE AND CLOSE, because that is what it already did. See `patchOnChange`. -->
     <button class="go" onclick="detail.close()"
-      title="every field here is written when you leave it, so this only closes">save and close</button>
+      data-tip="every field here is written when you leave it, so this only closes">save and close</button>
   </div>
   <div class="dlg-body">
     <div class="field">
@@ -2720,7 +2720,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="d-sound">its bell</label>
       <div class="picker">
         <select id="d-sound"></select>
-        <button onclick="previewCardSound()" title="hear it">play</button>
+        <button onclick="previewCardSound()" data-tip="hear it">play</button>
       </div>
       <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
         that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
@@ -2741,7 +2741,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input type="file" id="d-icon-file" accept="image/*" hidden
           onchange="uploadIcon(this)">
         <button onclick="document.getElementById('d-icon-file').click()"
-          title="png, jpeg, gif, webp or svg">use a picture</button>
+          data-tip="png, jpeg, gif, webp or svg">use a picture</button>
         <button class="no" id="d-icon-clear" onclick="clearIcon()" hidden>back to a glyph</button>
       </div>
       <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
@@ -2759,7 +2759,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </label>
       <div id="d-files" hidden>
         <div class="filebar">
-          <button id="d-files-up" onclick="filesUp()" title="up one directory">&#8593;</button>
+          <button id="d-files-up" onclick="filesUp()" aria-label="up one directory" data-tip="up one directory">&#8593;</button>
           <span class="crumbs" id="d-files-where"></span>
           <a class="chip go" id="d-files-zip" download hidden></a>
           <span class="chip no" id="d-files-del" hidden></span>
