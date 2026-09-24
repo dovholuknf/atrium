@@ -260,7 +260,11 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
 - **sa59, the restart gate counts no board** (`claude/gate-counts-every-board`). At 12:57 a gated hub-only deploy
   answered "nobody is using a board" with clint's board open and restarted with no countdown. The gate counts only
   the hub's merged event streams (`internal/link/events.go` `watchers`), and a single-room hub (`only=claude-sg4`)
-  likely proxies the board's stream straight to the room. Until this lands, ask clint before any hub-only deploy.
+  likely proxies the board's stream straight to the room. WRONG DIAGNOSIS: sa59 found the gate did count the
+  board. The hub audit at 16:57:56Z says "restarting after a countdown nobody paused", and every stream path goes
+  through feeds. The script printed the same "nobody is using a board" line for every go, which hid it. WIP
+  `e4052a2`: a go answer says why, plus a path test for every stream route. Left: docs, CHANGELOG, test-plan AQ,
+  AM1's expected text, a non-WIP subject, and removing `D:\tmp\gate59\old`.
 - **sa60, process registry design revision** (`claude/process-registry-design`). sa56's design
   (`docs/process-registry-design.md`, on `claude/main`) revised with clint's answers: long-running services only,
   a process never outlives its runner, no restart ever, only the owner stops it and others ask the owner. Plus a
@@ -274,7 +278,8 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
   reorder in the terminals pane, and find why group colours "don't work". Paused with nothing committed. Found:
   the terminals-pane group headings never wear `--ghue`, so they show a grey name with no hue. The stack, the
   board and tag chips recolour correctly on harbour, daylight and website. Reload and a second window untested.
-  Drag not started.
+  Drag not started. WIP `a6a9d3f` holds only the diagnostic probe. The fix: put `--ghue` on `.tgroup`/`.tnest`
+  the way `.stackgroup` has it.
 - **One atrium** (`docs/one-atrium-plan.md`, on `claude/main`). Mode A and Mode B out, one `atrium` binary,
   "the hub" becomes "the atrium" in text people read. 13 Open Questions wait on clint (see the orchestrator's
   OWED table, row C1). Also carries a live bug: the room's `daemon.json` names `atrium2.exe`, so the board's
