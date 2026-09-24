@@ -191,7 +191,7 @@ func windowEveryCard(db *sql.DB, windowBytes int64) error {
 	}
 	sink := newDBSink(db)
 	for _, id := range ids {
-		if err := sink.rollOff(id, windowBytes); err != nil {
+		if err := sink.rollOff(db, id, windowBytes); err != nil {
 			return err
 		}
 	}

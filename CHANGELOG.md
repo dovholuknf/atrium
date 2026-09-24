@@ -22,6 +22,32 @@ section heading is just "what landed in this iteration."
   an attached row and on light and dark skins. A plain row's border and bridge stay 1px. The headless bridge check
   measures the frame, border plus inset line, against the bridge's edge on noir and daylight. HUB-SIDE.
 
+- **The work ledger records who was handed what, and where it is.** Stage 1 of `docs/work-ledger-design.md`.
+
+  A card another session launches now gets a work item in the room's store. It holds the brief, the launcher and
+  a work state beside the card's column. A board launch gets none. A worker's `done` report still moves its card
+  to `done`, and moves the work to `reported`, which means waiting on the launcher, not finished. Nothing in this
+  stage closes work: the launcher's verdict is stage 2. `progress`, `blocked` and `question` reports, and every
+  message between a worker and its launcher, are logged on the item verbatim. The log is capped at 300 rows and
+  1 MB per item and trims chatter first. It never trims the latest `done` report.
+
+  A session that ends before a `done` report moves its work to `ended-without-report`. This happens in the same
+  transaction that records the exit, so no exit path can miss it. One notice is queued to the launcher in that
+  transaction, naming how the session ended and its last report. Exits are keyed on generations, so one death
+  seen by the supervisor, the reaper and the session hook is one log row and one notice. Resuming the card moves
+  the work back to `open`. Atrium never resumes anything itself. A sweep on start and on every reaper tick ends
+  work whose process is gone with no exit recorded. It leaves alone work whose liveness it cannot know.
+
+  A report's writes (recap, commit, event, column, `reported_at`, the item and the launcher's notice) are now one
+  transaction. Before, a failure between two of them left a card half reported, and a notice could be recorded
+  as sent and then lost. The prune sweep keeps a card whose work is still open, and a pruned card's item stays.
+
+  The room rewrites `work-ledger.md` beside its database on every change. It lists open work with the crash case
+  first, then work closed in the last seven days. A failed write is logged and changes nothing else.
+  `atrium2 ledger` prints the same list from the database opened read only, with `--json` for scripts. On first
+  start, launched cards from the last 14 days are backfilled once and marked inferred. Migration
+  `0058_work_ledger` adds two tables. ROOM-SIDE. `internal/cli` is unchanged, so the hook binary needs no rebuild.
+
 - **A peer message waits for an empty line and the end of the turn before it is typed.**
 
   A message typed into a session that was mid-turn did not submit. Claude Code held it until the turn ended and

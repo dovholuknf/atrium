@@ -192,6 +192,11 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.watchWorkers(time.Now()); err != nil {
 			log.Printf("[atrium] watching launched sessions: %v", err)
 		}
+		// Work items whose session is gone with no end recorded. Same tick,
+		// after liveness, for the same reason. See ledger.go.
+		if err := d.sweepLedger(); err != nil {
+			log.Printf("[atrium] work ledger sweep: %v", err)
+		}
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.

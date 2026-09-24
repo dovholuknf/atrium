@@ -341,7 +341,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	d.peerSaid(from, target)
+	d.peerSaid(from, target, text)
 	log.Printf("[atrium] %s told %s something (%d chars, typed %v)", from, to, len(text), typed)
 
 	w.Header().Set("Content-Type", "application/json")

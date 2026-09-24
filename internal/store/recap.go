@@ -35,20 +35,9 @@ const MaxRecap = 2000
 // Empty CLEARS the recap, which is the operator deciding an account was wrong
 // rather than an agent deciding it never happened.
 func (s *Store) SetRecap(id, recap string) error {
-	recap = strings.TrimSpace(recap)
-	if len(recap) > MaxRecap {
-		// On a rune boundary, so truncating never produces invalid UTF-8 in a
-		// field the board renders.
-		cut := MaxRecap
-		for cut > 0 && !utf8Start(recap[cut]) {
-			cut--
-		}
-		recap = strings.TrimSpace(recap[:cut]) + "..."
-	}
-	at := ""
-	if recap != "" {
-		at = ts(now())
-	}
+	// On a rune boundary, so truncating never produces invalid UTF-8 in a
+	// field the board renders.
+	recap, at := boundRecap(recap)
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET recap = ?, recap_at = ? WHERE id = ?`,
 			recap, at, id)

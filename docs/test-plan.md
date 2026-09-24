@@ -2834,3 +2834,76 @@ box to the dots codex draws there. Once codex is idle the cursor sits at the pro
 1. Open a claude session and type a few characters.
 
 **Expected:** the cursor follows the typing with no lag.
+
+## AI. The work ledger records (stage 1)
+
+Run in a throwaway room, never against the live board. See `docs/work-ledger-design.md`. The room needs this
+build. The hook binary is unchanged. `work-ledger.md` is in the room's database directory.
+
+Set up: a session `orch` on the board. From `orch`, `atrium_launch` a worker `w1` with a brief, in a scratch
+directory.
+
+### AI1. A launch makes a work item
+
+1. Open `work-ledger.md`.
+2. Run `atrium2 ledger --db <the room's database>`.
+
+**Expected:** both list `w1` under "Open", launcher `orch`, with the brief's first line. A session started from
+the board's own launch dialog is not listed.
+
+### AI2. A done report does not close the work
+
+1. From `w1`, call `atrium_report` with status `done` and a sha.
+
+**Expected:** `w1`'s card moves to `done`. The report answer carries `work_state: reported`. `work-ledger.md`
+lists `w1` under "Reported, waiting on a verdict" with the report's first line and the commit. `orch` receives
+the report once.
+
+### AI3. A crash is flagged, once
+
+1. Launch a second worker `w2` and have it call `atrium_report` with status `progress` and a summary.
+2. Kill `w2`'s runner process from Task Manager, not through atrium.
+3. Wait for one reaper tick, about 30 seconds.
+
+**Expected:** `work-ledger.md` lists `w2` first, under "Ended without a report". `orch` receives exactly one
+notice: `w2 ended without a final report (process is gone at HH:MM). last report: progress HH:MM "<summary>".
+outputs: none. card <id>`. Waiting another tick sends nothing more.
+
+### AI4. Nothing resumes by itself
+
+1. Restart the throwaway room.
+
+**Expected:** `w2` is still "Ended without a report" and no process was started for it.
+
+2. Resume `w2` from its card.
+
+**Expected:** `w2` moves back to "Open". Its log says it is running again.
+
+### AI5. An exit after a done report leaves it reported
+
+1. Exit `w1`'s session.
+
+**Expected:** `w1` stays under "Reported, waiting on a verdict". `orch` receives no ended notice.
+
+### AI6. Messages are on the work
+
+1. Have `w2` `atrium_say` to `orch`, and `orch` `atrium_say` to `w2`.
+2. Run `atrium2 ledger --json` and find `w2`.
+
+**Expected:** the listing matches the file. The room's database holds both messages verbatim in `w2`'s work log,
+as a `say` and an `instruction`.
+
+### AI7. The file survives the room
+
+1. Stop the room.
+2. `cat work-ledger.md`, and run `atrium2 ledger` again.
+
+**Expected:** both still list every open item. `atrium2 ledger` opens the database read only and writes nothing.
+
+### AI8. The backfill
+
+1. On a COPY of a room database with launched cards from the last two weeks, with fixtures turned off in the copy,
+   start a room on it.
+
+**Expected:** the log line `work ledger: backfilled N launched card(s)...`. Every backfilled item says "inferred by
+the backfill" in `work-ledger.md`. A second start does not backfill again.

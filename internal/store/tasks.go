@@ -196,7 +196,11 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 }
 
 func (s *Store) getBy(where string, args ...any) (*Task, error) {
-	row := s.db.QueryRow(`SELECT `+taskColumns+` FROM task WHERE `+where+` LIMIT 1`, args...)
+	return getByOn(s.db, where, args...)
+}
+
+func getByOn(q querier, where string, args ...any) (*Task, error) {
+	row := q.QueryRow(`SELECT `+taskColumns+` FROM task WHERE `+where+` LIMIT 1`, args...)
 	return scanTask(row)
 }
 
@@ -548,64 +552,69 @@ func (s *Store) SetStatus(id, status string) error {
 // that has gone back to running is not waiting for anything and a stale reason
 // would be waiting to be believed the next time it stopped.
 func (s *Store) SetStatusBecause(id, status, reason string) error {
-	return s.guard(func() error {
-		prev, err := s.getBy(`id = ?`, id)
-		if err != nil {
-			return err
+	return s.guard(func() error { return s.setStatusOn(s.db, id, status, reason) })
+}
+
+// setStatusOn is SetStatusBecause on a given connection, so a report can move
+// its card in the same transaction as everything else it records.
+func (s *Store) setStatusOn(q querier, id, status, reason string) error {
+	prev, err := getByOn(q, `id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if prev.Status == status {
+		return nil
+	}
+	n := now()
+	var waiting any
+	why := ""
+	if status == StatusNeedsInput || status == StatusNeedsPermission {
+		if prev.WaitingSince != nil {
+			waiting = ts(*prev.WaitingSince)
+		} else {
+			waiting = ts(n)
 		}
-		if prev.Status == status {
-			return nil
-		}
-		n := now()
-		var waiting any
-		why := ""
-		if status == StatusNeedsInput || status == StatusNeedsPermission {
-			if prev.WaitingSince != nil {
-				waiting = ts(*prev.WaitingSince)
-			} else {
-				waiting = ts(n)
-			}
-			why = reason
-			// A question already asked survives the turn ending.
-			//
-			// The two facts arrive in the wrong order: the model calls the
-			// asking tool WHILE it is still running, and the Stop hook lands
-			// afterwards with nothing to say about it. That hook goes through
-			// SetStatus, so its reason is empty, and writing it would erase
-			// the more specific thing already recorded a moment earlier.
-			//
-			// Only an empty reason defers. A caller with something to say says
-			// it: a session starting is `started` and means it, even if the
-			// card was mid-question when the runner was replaced.
-			if why == "" && prev.WaitingReason == WaitingAsked {
-				why = WaitingAsked
-			}
-		}
-		// A card that is alive again comes back onto the board.
+		why = reason
+		// A question already asked survives the turn ending.
 		//
-		// Archiving is for work that is over, and the sweep applies it to dead
-		// cards on a timer. A dead card revives all the time: the session says
-		// something, or a fixture starts it again. Leaving the stamp on made
-		// the card invisible to every board query while it was plainly running,
-		// which showed up as a terminal that had started and was nowhere.
+		// The two facts arrive in the wrong order: the model calls the
+		// asking tool WHILE it is still running, and the Stop hook lands
+		// afterwards with nothing to say about it. That hook goes through
+		// SetStatus, so its reason is empty, and writing it would erase
+		// the more specific thing already recorded a moment earlier.
 		//
-		// Cleared here rather than at each caller because this is the one place
-		// a status changes, and the rule is about the status: anything that is
-		// not over is not archived.
-		archived := ""
-		if status == StatusDone || status == StatusDead {
-			archived = tsOrEmpty(prev.ArchivedAt)
+		// Only an empty reason defers. A caller with something to say says
+		// it: a session starting is `started` and means it, even if the
+		// card was mid-question when the runner was replaced.
+		if why == "" && prev.WaitingReason == WaitingAsked {
+			why = WaitingAsked
 		}
-		if _, err := s.db.Exec(
-			`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?,
-			 waiting_reason = ? WHERE id = ?`,
-			status, waiting, ts(n), archived, why, id); err != nil {
-			return err
-		}
-		return s.appendEvent(id, EventStatusChanged, map[string]any{
-			"from": prev.Status, "to": status,
-		})
+	}
+	// A card that is alive again comes back onto the board.
+	//
+	// Archiving is for work that is over, and the sweep applies it to dead
+	// cards on a timer. A dead card revives all the time: the session says
+	// something, or a fixture starts it again. Leaving the stamp on made
+	// the card invisible to every board query while it was plainly running,
+	// which showed up as a terminal that had started and was nowhere.
+	//
+	// Cleared here rather than at each caller because this is the one place
+	// a status changes, and the rule is about the status: anything that is
+	// not over is not archived.
+	archived := ""
+	if status == StatusDone || status == StatusDead {
+		archived = tsOrEmpty(prev.ArchivedAt)
+	}
+	if _, err := q.Exec(
+		`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?,
+		 waiting_reason = ? WHERE id = ?`,
+		status, waiting, ts(n), archived, why, id); err != nil {
+		return err
+	}
+	_, err = s.appendEventOn(q, id, EventStatusChanged, map[string]any{
+		"from": prev.Status, "to": status,
 	})
+	return err
 }
 
 // SetOverrides merges operator-set values. An empty value removes an override,
@@ -894,8 +903,13 @@ func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) 
 			// Inclusive, because timestamps are stored to the second. With a
 			// zero age the cutoff is now, and a card that finished this second
 			// would otherwise survive a sweep meant to take everything.
+			//
+			// A card whose work item is still open is kept: it holds the
+			// worktree and the resume id somebody may need to rule on it. The
+			// item itself outlives the card either way. See ledger.go.
 			`DELETE FROM task WHERE status IN (`+placeholders(len(keep))+`)
-			 AND last_activity_at <= ?`, args...)
+			 AND last_activity_at <= ?
+			 AND id NOT IN (SELECT task_id FROM work_item WHERE state IN `+openStatesSQL+`)`, args...)
 		if err != nil {
 			return err
 		}
@@ -1122,7 +1136,21 @@ func (s *Store) Forget(id string) error {
 }
 
 // AppendEvent records one entry in a task's history.
+//
+// A session starting or ending also moves its work item, in the SAME
+// transaction as the event. Every exit path in the daemon writes its `exited`
+// event through here, so no exit path can forget the ledger, and a store that
+// cannot move the item cannot record the exit either. See ledger.go.
 func (s *Store) AppendEvent(taskID, kind string, payload any) error {
+	if kind == EventExited || kind == EventLaunched {
+		return s.inTx(func(tx *Tx) error {
+			e, err := s.appendEventOn(tx, taskID, kind, payload)
+			if err != nil {
+				return err
+			}
+			return s.ledgerOnSession(tx, taskID, e)
+		})
+	}
 	return s.guard(func() error { return s.appendEvent(taskID, kind, payload) })
 }
 
@@ -1134,11 +1162,19 @@ func (s *Store) AppendEvent(taskID, kind string, payload any) error {
 // posture. Cold sinks are then fed the same event best-effort: their Append
 // never fails a caller, so a slow or broken cold trail cannot fail a hook.
 func (s *Store) appendEvent(taskID, kind string, payload any) error {
+	_, err := s.appendEventOn(s.db, taskID, kind, payload)
+	return err
+}
+
+// appendEventOn is appendEvent on a given connection. Inside a Tx the db sink
+// writes in the caller's transaction and the cold sinks are fed after it
+// commits, so a rolled back change never reaches a cold trail.
+func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Event, error) {
 	blob := []byte("{}")
 	if payload != nil {
 		b, err := json.Marshal(payload)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		blob = b
 	}
@@ -1146,8 +1182,14 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 	// A kind routed cold-only never reaches the db. configureColdKinds only
 	// allows that when a cold sink exists, so the event still lands somewhere.
 	if !s.coldOnly[kind] {
-		if err := s.hot.Append(taskID, e); err != nil {
-			return err
+		var err error
+		if db, ok := s.hot.(*dbSink); ok {
+			err = db.appendOn(q, taskID, e)
+		} else {
+			err = s.hot.Append(taskID, e)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	// The last prompt is kept on the card, because the silent-stop check asks
@@ -1155,16 +1197,23 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 	// recent events. Written here so every path that records a prompt stamps
 	// it, including ones written after this.
 	if kind == EventPrompted {
-		if _, err := s.db.Exec(`UPDATE task SET prompted_at = ? WHERE id = ?`, ts(e.At), taskID); err != nil {
-			return err
+		if _, err := q.Exec(`UPDATE task SET prompted_at = ? WHERE id = ?`, ts(e.At), taskID); err != nil {
+			return nil, err
 		}
 	}
-	for _, c := range s.cold {
-		// Best effort by contract. A cold sink swallows its own failures and
-		// counts a loss rather than returning one, so this ignores the error.
-		_ = c.Append(taskID, e)
+	fan := func() {
+		for _, c := range s.cold {
+			// Best effort by contract. A cold sink swallows its own failures and
+			// counts a loss rather than returning one, so this ignores the error.
+			_ = c.Append(taskID, e)
+		}
 	}
-	return nil
+	if tx, ok := q.(*Tx); ok {
+		tx.afterCommit(fan)
+	} else {
+		fan()
+	}
+	return e, nil
 }
 
 // Events returns the NEWEST `limit` events, oldest first within that window.

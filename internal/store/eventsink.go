@@ -194,13 +194,18 @@ func newDBSink(db *sql.DB) *dbSink { return &dbSink{db: db} }
 // insert, so the db holds only the recent window. This is what actually shrinks
 // the operational database over time; incremental auto_vacuum hands the freed
 // pages back to disk.
-func (d *dbSink) Append(taskID string, e *Event) error {
-	if _, err := d.db.Exec(`INSERT INTO event (id, task_id, at, kind, payload) VALUES (?,?,?,?,?)`,
+func (d *dbSink) Append(taskID string, e *Event) error { return d.appendOn(d.db, taskID, e) }
+
+// appendOn is Append on a given connection, so an event can be part of the
+// caller's transaction. An `exited` event and the work item it ends commit
+// together or not at all. See tx.go.
+func (d *dbSink) appendOn(q querier, taskID string, e *Event) error {
+	if _, err := q.Exec(`INSERT INTO event (id, task_id, at, kind, payload) VALUES (?,?,?,?,?)`,
 		e.ID, taskID, ts(e.At), e.Kind, string(e.Payload)); err != nil {
 		return err
 	}
 	if d.windowBytes > 0 {
-		return d.rollOff(taskID, d.windowBytes)
+		return d.rollOff(q, taskID, d.windowBytes)
 	}
 	return nil
 }
@@ -214,8 +219,8 @@ func (d *dbSink) Append(taskID string, e *Event) error {
 // once every event at least as new as it already fills the window. Payload bytes
 // are counted as a blob so multi-byte JSON is measured in bytes, not runes,
 // matching the byte the setting names.
-func (d *dbSink) rollOff(taskID string, windowBytes int64) error {
-	_, err := d.db.Exec(
+func (d *dbSink) rollOff(q querier, taskID string, windowBytes int64) error {
+	_, err := q.Exec(
 		`DELETE FROM event
 		 WHERE task_id = ?1
 		   AND id IN (

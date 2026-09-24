@@ -1476,6 +1476,70 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE WORK LEDGER: who was handed what, where it is, and who said it
+		// was done. See docs/work-ledger-design.md and ledger.go.
+		//
+		// Two tables of their own rather than columns on `task`, for the reason
+		// `turn_seen` gives. And NO foreign key to `task`, in either table: the
+		// ledger is the record of what was delegated and has to outlive the
+		// card that did it, so pruning a card never deletes its item.
+		//
+		// `work_item` is one row per launched card, keyed on the card id. It
+		// copies what it needs to be read alone (handle, title, worktree, the
+		// launcher's handle) when it is created.
+		//
+		// `work_log` is the item's bounded history. `client_id` makes a retried
+		// report one row: NULL when there is none, which both SQLite and
+		// Postgres treat as distinct in a UNIQUE constraint.
+		name: "0058_work_ledger",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_item (
+				task_id            TEXT PRIMARY KEY,
+				handle             TEXT NOT NULL DEFAULT '',
+				title              TEXT NOT NULL DEFAULT '',
+				worktree           TEXT NOT NULL DEFAULT '',
+				launcher_id        TEXT NOT NULL DEFAULT '',
+				launcher_handle    TEXT NOT NULL DEFAULT '',
+				arbiter_id         TEXT NOT NULL DEFAULT '',
+				arbiter_handle     TEXT NOT NULL DEFAULT '',
+				brief              TEXT NOT NULL DEFAULT '',
+				brief_path         TEXT NOT NULL DEFAULT '',
+				state              TEXT NOT NULL
+				                     CHECK (state IN ('open','reported','reopened','ended-without-report',
+				                                      'accepted','abandoned','superseded')),
+				state_at           TEXT NOT NULL,
+				state_by           TEXT NOT NULL DEFAULT '',
+				revision           INTEGER NOT NULL DEFAULT 1,
+				generation         INTEGER NOT NULL DEFAULT 1,
+				ended_generation   INTEGER NOT NULL DEFAULT 0,
+				latest_report_id   TEXT NOT NULL DEFAULT '',
+				accepted_report_id TEXT NOT NULL DEFAULT '',
+				outputs            TEXT NOT NULL DEFAULT '{}',
+				continued_in       TEXT NOT NULL DEFAULT '',
+				continues          TEXT NOT NULL DEFAULT '',
+				inferred           INTEGER NOT NULL DEFAULT 0,
+				created_at         TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_item_state ON work_item (state, state_at)`,
+			`CREATE INDEX IF NOT EXISTS work_item_arbiter ON work_item (arbiter_id, state)`,
+			`CREATE TABLE IF NOT EXISTS work_log (
+				id        TEXT PRIMARY KEY,
+				task_id   TEXT NOT NULL,
+				at        TEXT NOT NULL,
+				kind      TEXT NOT NULL CHECK (kind IN ('report','say','instruction','verdict','atrium')),
+				by        TEXT NOT NULL DEFAULT '',
+				status    TEXT NOT NULL DEFAULT '',
+				text      TEXT NOT NULL DEFAULT '',
+				outputs   TEXT NOT NULL DEFAULT '',
+				report_id TEXT NOT NULL DEFAULT '',
+				note      TEXT NOT NULL DEFAULT '',
+				client_id TEXT,
+				UNIQUE (task_id, client_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_log_task_at ON work_log (task_id, at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

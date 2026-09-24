@@ -37,7 +37,7 @@ func main() {
 			"  atrium2 join <string>   on the machine your agents run on\n",
 		SilenceUsage: true,
 	}
-	root.AddCommand(hubCmd(), joinCmd(), roomCmd(), dbCmd(), versionCmd())
+	root.AddCommand(hubCmd(), joinCmd(), roomCmd(), dbCmd(), ledgerCmd(), versionCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "atrium2:", err)
 		os.Exit(1)

@@ -256,13 +256,25 @@ func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bo
 // as a report when the other is its launcher. Called by the doors a model
 // sends through, never by notifyLauncher: a notice atrium wrote about a
 // worker is not the worker reporting.
-func (d *Daemon) peerSaid(from string, target *store.Task) {
+//
+// It also puts the words on the work they are about: a worker's message to its
+// launcher on the worker's item, and the launcher's to the worker likewise, so
+// what used to scroll away in a terminal is on record. Never moves the work: free
+// text cannot be checked. A failure is logged, the posture of a hook.
+func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 	from = strings.TrimSpace(from)
 	if from == "" || target == nil {
 		return
 	}
 	sender, err := d.st.GetByWireName(d.st.Qualify(from))
-	if err != nil || !sender.Launched() {
+	if err != nil {
+		return
+	}
+	if _, err := d.st.LogWorkMessage(sender.ID, target.ID, sender.WireName, text); err != nil {
+		log.Printf("[atrium] could not put %s's message to %s on the work ledger: %v",
+			sender.DisplayTitle(), target.DisplayTitle(), err)
+	}
+	if !sender.Launched() {
 		return
 	}
 	if sender.SpawnedByID != target.ID && d.st.Qualify(sender.SpawnedBy) != target.WireName {
