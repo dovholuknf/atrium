@@ -342,6 +342,9 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (id === "loop1") { sendJSON(res, LOOP); return; }
+    // The solo card under its room-tagged spelling, the form the hub serves
+    // while more than one room is attached. See `popoutTagFlipSection`.
+    if (id === "sgg~s1") { sendJSON(res, Object.assign({}, SOLO, { id: "sgg~s1" })); return; }
     sendJSON(res, id === "s1" ? SOLO : id === "pin1" ? PIN : (id === "t2" ? T2 : T1));
     return;
   }
@@ -1728,6 +1731,93 @@ async function tooltipSection(browser, base) {
   }
 }
 
+// A POPPED-OUT CARD STAYS SPOKEN FOR ACROSS A ROOM-SET CHANGE. The hub tags a
+// card `room~id` while more than one room is attached and serves it bare with
+// one, and a restart re-attaches rooms one at a time. A popped-out window keeps
+// the spelling in its hash while the board re-resolves to the current one, so
+// the board held `sgg~s1` while the window claimed `s1`. The ownership ledger
+// compared raw ids, so the board read the card as free and attached it, and the
+// window's claim never matched the board's pane, so neither let go.
+async function popoutTagFlipSection(browser, base) {
+  // The restart section above leaves the card poll answering 404.
+  soloMode = "ok";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const bp = await ctx.newPage();
+  const errors = [];
+  bp.on("pageerror", e => errors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) bp.on("console", m => console.error("[flip] " + m.text()));
+  try {
+    await bp.goto(base, { waitUntil: "domcontentloaded" });
+    await bp.waitForTimeout(1000);
+    await bp.click('.tab[data-view="terms"]');
+    // A stand-in popped-out window on the shared bus, holding the card under
+    // one spelling and answering every roll call with it.
+    const standIn = spelling => bp.evaluate(s => {
+      if (window.__flipSolo) window.__flipSolo.close();
+      window.__flipSolo = new BroadcastChannel("atrium-solo");
+      window.__flipSolo.onmessage = e => {
+        if ((e.data || {}).type === "solo-who") window.__flipSolo.postMessage({ type: "solo-claim", task: s });
+      };
+      window.__flipSolo.postMessage({ type: "solo-claim", task: s });
+    }, spelling);
+
+    // Claimed bare, asked tagged, and the other way round.
+    await standIn("s1");
+    await bp.waitForTimeout(200);
+    if (!(await bp.evaluate(() => poppedOut("sgg~s1")))) {
+      fail("a card popped out as `s1` read as free once the board spelled it `sgg~s1`.");
+    }
+    await standIn("sgg~s1");
+    await bp.evaluate(() => soloHeld.clear());
+    await bp.evaluate(() => runRefresh());
+    await bp.waitForTimeout(200);
+    if (!(await bp.evaluate(() => poppedOut("s1")))) {
+      fail("a card popped out as `sgg~s1` read as free once the board spelled it `s1`.");
+    }
+
+    // The restore after a restart: the board comes back waiting for its card
+    // under the new spelling while the window holds the old one. It must not
+    // attach.
+    await bp.evaluate(() => soloHeld.clear());
+    await standIn("s1");
+    await bp.waitForTimeout(200);
+    // Counted at `openTerm`, because the list render tears a pane down again
+    // when the mocked list does not carry the card, which would hide the attach.
+    await bp.evaluate(() => {
+      window.__flipOpened = [];
+      const real = openTerm;
+      window.__flipRealOpen = real;
+      openTerm = t => { window.__flipOpened.push(t.id); return real(t); };
+      waitAndAttach("sgg~s1");
+    });
+    await bp.waitForTimeout(1500);
+    const restored = await bp.evaluate(() => {
+      openTerm = window.__flipRealOpen;
+      return window.__flipOpened;
+    });
+    if (restored.length) fail("the board's restore attached " + restored.join(", ") + ", a card popped out as `s1`.");
+
+    // The board already has the pane under the tagged spelling when the window
+    // claims it bare. The popped-out window wins: the board lets go.
+    await bp.evaluate(() => { if (window.__flipSolo) window.__flipSolo.close(); window.__flipSolo = null; });
+    await bp.evaluate(() => soloHeld.clear());
+    await bp.evaluate(async () => openTerm(await api("/v1/tasks/sgg~s1")));
+    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", { timeout: 5000 });
+    await standIn("s1");
+    let yielded = false;
+    try {
+      await bp.waitForFunction(() => !termTask, { timeout: 3000 });
+      yielded = true;
+    } catch (e) {}
+    if (!yielded) {
+      fail("the board kept its pane on `sgg~s1` after a window claimed `s1`: two views on one terminal.");
+    }
+    if (errors.length) fail("the tag-flip page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -1738,7 +1828,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection };
+      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -3892,6 +3982,8 @@ async function main() {
     // ── group colours on every surface, and dragging group headings ─────────
     await groupColorSection(browser, base);
     await groupDragSection(browser, base);
+    // ── a popped-out card stays spoken for across a room-set change ─────────
+    await popoutTagFlipSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

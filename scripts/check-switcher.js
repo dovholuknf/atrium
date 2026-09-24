@@ -108,7 +108,8 @@ if (swAt < 0) {
 // leave the card it is on.
 const soloBranch = html.slice(html.indexOf("if (termOnly()) {"),
   html.indexOf("if (termOnly()) {") + 900);
-if (!/m\.task !== soloID/.test(soloBranch)) {
+// By bare id, so a claim under the other room-tag spelling is still its own.
+if (!/!sameCard\(m\.task, soloID\)/.test(soloBranch)) {
   fail("a popped-out window does not record other windows' claims, or does not exclude its " +
     "own. Without the ledger soloSwitch cannot tell that a card already has a window; without " +
     "the exclusion it decides it cannot leave the card it is on.");
@@ -122,7 +123,8 @@ if (!/m\.task !== soloID/.test(soloBranch)) {
 const claimAt = html.indexOf('if (m.type === "solo-claim" && m.task)');
 if (claimAt < 0) {
   fail("the board no longer records claims at all.");
-} else if (!/termTask\.id === m\.task/.test(html.slice(claimAt, claimAt + 1400))) {
+// By bare id: a raw compare misses the claim once a room-set change retags the pane.
+} else if (!/sameCard\(termTask\.id, m\.task\)/.test(html.slice(claimAt, claimAt + 1400))) {
   fail("the board does not release the pane when another window claims the card it is " +
     "showing. That is two views onto one terminal, which is what every other path here " +
     "refuses.");

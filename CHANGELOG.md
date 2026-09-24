@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A popped-out terminal stays out of the board after a room-set change.** See `docs/test-plan.md` section AP.
+
+  The hub spells a card `room~id` while more than one room is attached and bare with one. A restart re-attaches
+  rooms one at a time, so the spelling flips. A popped-out window keeps the id from its url, while the board
+  re-resolves its card to the current spelling. The board's record of popped-out windows compared the raw ids, so
+  it read the card as free and attached it, and the window's claim never matched the board's pane. Both views then
+  held the terminal and took input. The record now keys by the bare id, and a claim matches the board's pane under
+  either spelling, so the board lets go and the popped-out window keeps the card. Window names use the bare id too,
+  so the board can raise a window after the spelling flips. HUB-SIDE.
+
 - **Every tooltip on the board wears the skin.** See `docs/test-plan.md` section AT.
 
   The board used native `title` attributes in 244 places, and the browser draws those in its own white box
