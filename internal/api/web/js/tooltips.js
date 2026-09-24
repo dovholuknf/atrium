@@ -32,7 +32,7 @@ function placeTip(anchor, text) {
   tipEl.style.top = Math.round(top) + "px";
 }
 
-function hideTip() { tipEl.classList.remove("on"); tipSoon(null); }
+function hideTip() { tipEl.classList.remove("on"); tipSoon(null); tipAt = null; }
 
 // HALF A SECOND OF STAYING PUT, then it appears.
 //
@@ -52,20 +52,55 @@ function tipSoon(fn) {
   if (fn) tipTimer = setTimeout(fn, tipAfter);
 }
 
+// EVERY `data-tip` ON THE BOARD, not only the `?` bubbles. A native `title`
+// draws the browser's own white box in the system font whatever the skin is,
+// so the board does not use one: `scripts/check-titles.sh` fails the build on
+// a new one. The listeners are on the document, so nothing is wired per render
+// and a card repainted every second costs nothing here.
+//
+// On a phone a tap fires pointerout on lift, before the timer, so a tap never
+// opens one and a long press does.
+function tipAnchor(node) {
+  const a = node && node.closest && node.closest("[data-tip]");
+  return a && a.dataset.tip ? a : null;
+}
+let tipAt = null;
+
+function showTip(anchor) {
+  // Repainted out from under the pointer while it waited: no pointerout came.
+  if (!anchor.isConnected || !anchor.dataset.tip) return hideTip();
+  tipAt = anchor;
+  placeTip(anchor, anchor.dataset.tip);
+}
+
 document.addEventListener("pointerover", e => {
-  const help = e.target.closest && e.target.closest(".help");
-  if (!help) return;
+  const a = tipAnchor(e.target);
+  if (a === tipAt && a) return;
+  if (!a) { if (tipAt) hideTip(); return; }
   // Re-read when it fires rather than captured now, so a tooltip whose text
   // was rewritten while you hovered shows what it says at the moment it
   // appears.
-  tipSoon(() => placeTip(help, help.dataset.tip));
+  tipSoon(() => showTip(a));
+  tipAt = a;
 });
 document.addEventListener("pointerout", e => {
-  if (e.target.closest && e.target.closest(".help")) hideTip();
+  // Moving between the children of one anchor is not leaving it.
+  const a = tipAnchor(e.target);
+  if (a && a.contains(e.relatedTarget)) return;
+  if (a) hideTip();
 });
+// A click is the answer to what the tooltip was explaining. The native one
+// goes away on press too.
+document.addEventListener("pointerdown", hideTip, true);
 document.addEventListener("focusin", e => {
-  const help = e.target.closest && e.target.closest(".help");
-  if (help) { tipSoon(null); placeTip(help, help.dataset.tip); }
+  const a = tipAnchor(e.target);
+  if (!a) return;
+  // A `?` opens on any focus, which is how it has always been read. Anything
+  // else only for the keyboard, or every click on a button would pin its
+  // tooltip up until the pointer left.
+  if (!a.classList.contains("help") && !e.target.matches(":focus-visible")) return;
+  tipSoon(null);
+  showTip(a);
 });
 document.addEventListener("focusout", hideTip);
 window.addEventListener("scroll", e => { if (!fromTerminal(e)) hideTip(); }, true);

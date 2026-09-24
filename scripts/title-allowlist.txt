@@ -1,0 +1,7 @@
+# Native `title` tooltips the board keeps on purpose. Read by scripts/check-titles.sh.
+#
+# One entry per line: `file:pattern # reason`. file is relative to internal/api/web. pattern is an extended regex
+# matched against the line that sets the title. An entry with no reason gets removed.
+#
+# Empty on purpose. Every icon-only control carries an aria-label for its name and a data-tip for the styled
+# tooltip, so nothing on the board needs the browser's own box.

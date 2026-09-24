@@ -516,7 +516,7 @@ function activityChip(t) {
   // alone is what hid them.
   const subs = Math.max(a.subagents || 0, (a.running || []).length);
   const sub = subs > 0
-    ? `<span class="chip sub" title="${esc(subagentTitle(a))}"
+    ? `<span class="chip sub" data-tip="${esc(subagentTitle(a))}"
          onclick="event.stopPropagation();toggleSubagents(this)"
          >&#8618; ${subs}</span>`
     : "";
@@ -524,7 +524,7 @@ function activityChip(t) {
   // to it is to do nothing: the session is rewriting what it knows, so a
   // message sent now lands in a conversation that is about to forget it.
   const why = a.what === "compacting"
-    ? ` title="this session is rewriting its context and is about to forget most of it. ` +
+    ? ` data-tip="this session is rewriting its context and is about to forget most of it. ` +
       `nothing says when a compaction ends, so this clears on the next thing the session does."`
     : "";
   return `<span class="chip live ${esc(a.what)}"${why}>${label}${age}</span>${sub}`;
@@ -621,7 +621,7 @@ function contextChip(t) {
   const limits = limitChip("5h", c.five_hour) + limitChip("week", c.weekly);
   if (!c.pct) return limits;
   const heat = c.pct >= CTX_HOT ? " hot" : c.pct >= CTX_WARM ? " warm" : "";
-  return `<span class="chip ctx${heat}" title="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
+  return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
 // What is behind the percentage, for the tooltip. Tokens where the statusline
@@ -657,7 +657,7 @@ function limitChip(label, lim) {
   if (!lim || lim.pct < LIMIT_SHOW) return "";
   const when = lim.resets_at ? `, resets ${resetsIn(lim.resets_at)}` : "";
   return `<span class="chip limit"
-    title="this account is at ${lim.pct}% of its ${label} limit${when}"
+    data-tip="this account is at ${lim.pct}% of its ${label} limit${when}"
     >${label} ${lim.pct}%</span>`;
 }
 
@@ -723,7 +723,7 @@ function cardHTML(t) {
     oncontextmenu="cardMenu(event, '${t.id}')">
     <div class="card-line">
       <div class="title">${w ? '<span class="pulse"></span>' : ""}${
-        t.pinned ? '<span class="pin on" title="pinned">&#9733;</span>' : ""}${
+        t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
       ${modelChip(t)}
@@ -735,53 +735,53 @@ function cardHTML(t) {
       ${contextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact"
-        title="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
+        data-tip="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
         >no contact</span>` : ""}
       ${w
-        ? `<span class="chip warn" title="${t.status === "needs-permission"
+        ? `<span class="chip warn" data-tip="${t.status === "needs-permission"
               ? "how long this agent has been frozen waiting to be answered"
               : "how long since it finished its turn and asked for you"}"
              >${esc(statusLabel(t.status))} ${ago(t.wait_seconds)}</span>`
-        : `<span class="chip" title="${t.status === "dead" ? "how long since this stopped"
+        : `<span class="chip" data-tip="${t.status === "dead" ? "how long since this stopped"
              : t.status === "done" ? "how long since you marked it done"
              : t.status === "running" ? "how long since it last did anything"
              : "how long since anything was heard from it"}"
              >${esc(statusLabel(t.status))} ${ago(t.idle_seconds)}</span>`}
       ${t.auto_approve ? `<span class="chip auto"
-        title="auto mode: requests from this session are approved without asking, and recorded"
+        data-tip="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
       ${t.report_unverified ? `<span class="chip warn"
-        title="${esc("this session reported done at " + (t.report_sha || "") +
+        data-tip="${esc("this session reported done at " + (t.report_sha || "") +
           ", and that commit is not in its worktree. it may have landed somewhere else.")}"
         >sha unverified</span>` : ""}
       ${t.restart_wake ? `<span class="chip"
-        title="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
+        data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
       ${t.escalation && t.escalation.count > 0 ? `<span class="chip warn"
-        title="${esc(t.escalation.text)}"
+        data-tip="${esc(t.escalation.text)}"
         >stuck ${esc(String(t.escalation.minutes))}m</span>` : ""}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
-        title="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
+        data-tip="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
           ". anyone with that address types into it as you would. right click to stop.")}"
         oncontextmenu="stopSharingChip(event, '${t.id}')"
         >shared</span>` : ""}
       ${t.status === "shelved" && !t.offline ? `<span class="chip attach"
-        title="${cannotResume(t)
+        data-tip="${cannotResume(t)
           ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
           : "start it again from where the conversation left off"}"
         onclick="event.stopPropagation();unshelveCard('${t.id}')"
         >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
       ${t.status === "backlog" && !t.offline ? `<span class="chip attach"
-        title="open the launch dialog with what the source already knew filled in.
+        data-tip="open the launch dialog with what the source already knew filled in.
                this card is the target, so starting it does not make a second one"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.offline ? `<span class="chip nocontact"
-        title="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
+        data-tip="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
         >&#128683;</span>` : ""}
       ${t.supervised && !t.offline ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
       <span class="chip attach icon"
-        title="open this terminal in its own window"
+        aria-label="open this terminal in its own window" data-tip="open this terminal in its own window"
         onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
       </div>
     </div>
@@ -838,7 +838,7 @@ function askLine(t) {
   // `stopPropagation`, because a card and a stack row are both clickable and
   // the ask sits inside them. Without it this fires the row's own handler too,
   // which opens the same dialog and takes the focus straight back off the box.
-  return `<div class="ask act" title="${esc(tip)}"
+  return `<div class="ask act" data-tip="${esc(tip)}"
     onclick="event.stopPropagation();answerAsk('${esc(t.id)}')"
     ><span class="asklabel">${esc(label)}</span>${esc(t.ask)}${rest}</div>`;
 }
@@ -1324,7 +1324,7 @@ function setGroupHue(name, hue) {
 function pickGroupHue(name) {
   const body = `<div class="swatches">` + GROUP_HUES.map(h =>
     `<button class="swatch" style="--ghue:${h}" data-hue="${h}"
-      title="hue ${h}"></button>`).join("") + `</div>`;
+      aria-label="hue ${h}" data-tip="hue ${h}"></button>`).join("") + `</div>`;
   askUser({
     title: "color for " + name,
     body,
@@ -1438,7 +1438,7 @@ function cardsHTML(cards, g, keyPrefix) {
       style="--ghue:${groupHue(name)}" data-morph-key="${esc(key)}"
       data-fold="${esc(fold)}">
       <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
-        <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
+        <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
       ${mine.length ? mine.map(cardHTML).join("") : emptyGroupHint()}
@@ -1541,7 +1541,7 @@ function paintWorking(tasks) {
   el.hidden = n === 0;
   if (!n) return;
   el.textContent = n === 1 ? "1 working" : n + " working";
-  el.title = n === 1
+  el.dataset.tip = n === 1
     ? "one session is mid-turn. click to go to the terminals"
     : n + " sessions are mid-turn. click to go to the terminals";
 }
@@ -1726,7 +1726,7 @@ async function renderBoard(signal) {
         <span class="help" tabindex="0" onclick="event.stopPropagation()"
           data-tip="${esc(col.why)}">?</span>
         ${col.statuses.length === 1 && PRUNABLE.includes(col.statuses[0]) && mine.length
-          ? `<span class="chip sweep" title="delete every card in this column"
+          ? `<span class="chip sweep" data-tip="delete every card in this column"
                onclick="event.stopPropagation();pruneColumn('${col.statuses[0]}')">clear</span>` : ""}
         <span class="n">${mine.length}</span>
       </div>
@@ -1803,7 +1803,7 @@ function paintBoardSort() {
   const mode = boardSortMode();
   setHTML(el, Object.entries(BOARD_SORTS).map(([v, s]) =>
     `<button class="${v === mode ? "on" : ""}" onclick="setBoardSort('${v}')"
-       title="${esc(s.title)}">${esc(s.label)}</button>`).join(""));
+       data-tip="${esc(s.title)}">${esc(s.label)}</button>`).join(""));
 }
 
 function columnOrder(cards) {
@@ -1879,7 +1879,7 @@ function groupHTML(status, cards, g) {
       <span class="gname">${esc(status)}</span>
       <span class="gn">${cards.length}</span>
       ${PRUNABLE.includes(status) && cards.length
-        ? `<span class="chip sweep" title="delete every ${esc(status)} card"
+        ? `<span class="chip sweep" data-tip="delete every ${esc(status)} card"
              onclick="event.stopPropagation();event.preventDefault();pruneColumn('${status}')"
              >clear</span>` : ""}
     </summary>

@@ -1273,7 +1273,7 @@ async function groupDragSection(browser, base) {
     await dp.evaluate(() => { setGrouping({ mode: "recency" }); });
     await dp.waitForTimeout(600);
     const tag = await dp.evaluate(() => [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")]
-      .map(b => ({ drag: b.draggable, grip: !!b.querySelector(".tgrip"), title: b.title })));
+      .map(b => ({ drag: b.draggable, grip: !!b.querySelector(".tgrip"), title: b.dataset.tip })));
     if (tag.some(t => t.drag || t.grip)) fail("a heading drags outside the custom grouping: " + JSON.stringify(tag));
     if (!tag.some(t => /custom grouping/.test(t.title))) {
       fail("a heading outside custom mode does not say where reordering lives: " + JSON.stringify(tag));
@@ -1601,6 +1601,133 @@ async function toastStaysSection(browser, base) {
   }
 }
 
+// THE BOARD'S OWN TOOLTIP, NOT THE BROWSER'S. A native `title` draws a white box
+// in the system font whatever the skin, so every one became a `data-tip` that
+// `#tip` draws. Checked on a toolbar button, a chip on a stack card and a row on
+// the terminals pane, in two skins, and then the rendered board is searched for
+// any `title` left over. `scripts/check-titles.sh` guards the source, this
+// guards what the source draws.
+async function tooltipSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const tp = await ctx.newPage();
+  const errors = [];
+  tp.on("pageerror", e => errors.push(String(e)));
+  // The first visible, non-empty `data-tip` under a selector, marked so the
+  // pointer can be sent to it.
+  const mark = sel => tp.evaluate(sel => {
+    document.querySelectorAll("[data-tipprobe]").forEach(e => e.removeAttribute("data-tipprobe"));
+    const el = [...document.querySelectorAll(sel)].find(e => {
+      const r = e.getBoundingClientRect();
+      return e.dataset.tip && r.width > 0 && r.height > 0;
+    });
+    if (!el) return null;
+    el.setAttribute("data-tipprobe", "1");
+    return el.dataset.tip;
+  }, sel);
+  const tipNow = () => tp.evaluate(() => {
+    const t = document.getElementById("tip");
+    const cs = getComputedStyle(t);
+    const r = t.getBoundingClientRect();
+    return { on: t.classList.contains("on"), text: t.textContent, bg: cs.backgroundColor, color: cs.color,
+      font: cs.fontFamily, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+      w: innerWidth, h: innerHeight };
+  });
+  // What the skin says the panel should wear, resolved by the browser the same way.
+  const want = () => tp.evaluate(() => {
+    const p = document.createElement("div");
+    p.style.cssText = "background: var(--shell-0); color: var(--body); font-family: var(--sans)";
+    document.body.appendChild(p);
+    const cs = getComputedStyle(p);
+    const out = { bg: cs.backgroundColor, color: cs.color, font: cs.fontFamily };
+    p.remove();
+    return out;
+  });
+  const hover = async (sel, what) => {
+    const text = await mark(sel);
+    if (!text) { fail("no " + what + " with a data-tip to hover (" + sel + ")."); return null; }
+    await tp.mouse.move(2, 890);
+    await tp.waitForTimeout(100);
+    await tp.hover("[data-tipprobe]");
+    await tp.waitForTimeout(150);
+    if ((await tipNow()).on) fail("the tooltip on " + what + " came up before the hover delay.");
+    await tp.waitForTimeout(600);
+    const t = await tipNow();
+    if (!t.on) fail("hovering " + what + " did not bring up the styled tooltip.");
+    else if (t.text !== text) fail("the tooltip on " + what + " said " + JSON.stringify(t.text) +
+      ", not its data-tip " + JSON.stringify(text));
+    else if (t.left < 0 || t.top < 0 || t.right > t.w || t.bottom > t.h) {
+      fail("the tooltip on " + what + " went off screen: " + JSON.stringify(t));
+    }
+    return t;
+  };
+  // The filed set has supervised cards, so the terminals pane has rows.
+  const was = tasksMode;
+  tasksMode = "filed";
+  try {
+    await tp.goto(base, { waitUntil: "domcontentloaded" });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await tp.waitForTimeout(500);
+
+    for (const skin of ["harbour", "daylight"]) {
+      await tp.evaluate(s => applySkin(s), skin);
+      await tp.waitForTimeout(300);
+      const w = await want();
+      const t = await hover("header #gear", "the header's gear button");
+      if (t && (t.bg !== w.bg || t.color !== w.color || t.font !== w.font)) {
+        fail("in " + skin + " the tooltip wore " + JSON.stringify({ bg: t.bg, color: t.color, font: t.font }) +
+          ", not the skin's " + JSON.stringify(w));
+      }
+      // Leaving takes it down.
+      await tp.mouse.move(700, 890);
+      await tp.waitForTimeout(100);
+      if ((await tipNow()).on) fail("in " + skin + " the tooltip stayed up after the pointer left.");
+    }
+    await tp.evaluate(() => applySkin("harbour"));
+
+    await hover("#stack-list .stackrow [data-tip]", "a chip on a stack card");
+    // A scroll that is not the terminal's takes it down.
+    await tp.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    if ((await tipNow()).on) fail("a scroll left the tooltip up.");
+
+    // A click on a button is not keyboard focus, and does not pin its tooltip up.
+    await mark("header #sound");
+    await tp.click("[data-tipprobe]");
+    await tp.waitForTimeout(700);
+    if ((await tipNow()).on) fail("clicking the sound button left its tooltip up.");
+    await tp.click("[data-tipprobe]");
+    // Keyboard focus shows it at once.
+    await tp.mouse.move(700, 890);
+    await tp.keyboard.press("Shift");
+    await tp.evaluate(() => document.getElementById("gear").focus());
+    await tp.waitForTimeout(50);
+    const kb = await tipNow();
+    if (!kb.on || kb.text !== "sound settings") fail("keyboard focus on the gear did not show its tooltip: " +
+      JSON.stringify(kb));
+    await tp.evaluate(() => document.activeElement.blur());
+
+    await tp.click('.tab[data-view="terms"]');
+    await tp.waitForSelector("#term-list .card.tab", { timeout: 15000 });
+    await tp.waitForTimeout(300);
+    await hover("#term-list .card.tab [data-tip]", "a row on the terminals pane");
+    await tp.mouse.move(700, 890);
+
+    // NOTHING DRAWN STILL CARRIES A NATIVE TITLE, on any of the main views.
+    const left = [];
+    for (const v of ["stack", "board", "terms", "history", "runners", "perms"]) {
+      await tp.click('.tab[data-view="' + v + '"]').catch(() => {});
+      await tp.waitForTimeout(400);
+      left.push(...await tp.evaluate(v => [...document.querySelectorAll("[title]")]
+        .map(e => v + ": <" + e.tagName.toLowerCase() + " class=\"" + e.className + "\" title=\"" +
+          e.getAttribute("title") + "\">"), v));
+    }
+    if (left.length) fail("the rendered board still has native titles: " + [...new Set(left)].join(" | "));
+    if (errors.length) fail("the tooltip page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -1611,7 +1738,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection };
+      groupDrag: groupDragSection, tooltip: tooltipSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -1953,7 +2080,7 @@ async function main() {
         subLit: !!(s && s.classList.contains("on")),
         agentLabel: a ? a.textContent.trim() : "",
         subLabel: s ? s.textContent.trim() : "",
-        subTitle: s ? s.getAttribute("title") || "" : "",
+        subTitle: s ? s.dataset.tip || "" : "",
         onePill: document.querySelectorAll("#term-list .termhide").length === 1,
         segCount: document.querySelectorAll("#term-list .termhide button").length
       };
@@ -3502,7 +3629,7 @@ async function main() {
     // heal to the real answer without a reload.
     const gautoPaint = pg => pg.evaluate(() => {
       const b = document.getElementById("gauto");
-      return b ? { cls: b.className, text: b.textContent.trim(), title: b.title } : null;
+      return b ? { cls: b.className, text: b.textContent.trim(), title: b.dataset.tip } : null;
     });
     const gautoDrawn = (what, g) => {
       if (!g || !/(^|\s)gauto(\s|$)/.test(g.cls) || !g.text) {
@@ -3632,7 +3759,7 @@ async function main() {
       const next = b.nextElementSibling ? b.nextElementSibling.getBoundingClientRect().left : 0;
       return { w: r.width, h: r.height, next: next - r.left, tag: b.tagName,
         role: b.getAttribute("role"), checked: b.getAttribute("aria-checked"),
-        title: b.title, text: b.textContent.trim() };
+        title: b.dataset.tip, text: b.textContent.trim() };
     }, [list, id]);
     const checked = (list, id, want) => sw.waitForFunction(([l, i, w]) => {
       const b = document.querySelector(`#${l} .chip.toggle[data-id="${i}"]`);
@@ -3760,6 +3887,8 @@ async function main() {
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
     await restartGateSection(browser, base);
     await toastStaysSection(browser, base);
+    // ── the styled tooltip, and no native title anywhere on the board ───────
+    await tooltipSection(browser, base);
     // ── group colours on every surface, and dragging group headings ─────────
     await groupColorSection(browser, base);
     await groupDragSection(browser, base);

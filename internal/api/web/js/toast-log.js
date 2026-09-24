@@ -116,10 +116,10 @@ async function copyLogRow(btn, text) {
     ok = false;
   }
   btn.classList.add(ok ? "copied" : "failed");
-  btn.title = ok ? "copied" : "could not copy";
+  btn.dataset.tip = ok ? "copied" : "could not copy";
   setTimeout(() => {
     btn.classList.remove("copied", "failed");
-    btn.title = "copy this entry";
+    btn.dataset.tip = "copy this entry";
   }, 1400);
 }
 
@@ -145,7 +145,7 @@ function openToastLog() {
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
             ${t.body ? `<span>${esc(t.body)}</span>` : ""}
           </div>
-          <button class="tlcopy copybit" title="copy this entry" aria-label="copy this entry"
+          <button class="tlcopy copybit" data-tip="copy this entry" aria-label="copy this entry"
             onclick='event.stopPropagation();copyLogRow(this, ${arg})'>${copyIcon()}</button>
         </div>`;
       }).join("")

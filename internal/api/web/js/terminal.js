@@ -518,7 +518,7 @@ function openTerm(task) {
   const named = String(task.display_title || "").trim();
   const titleEl = document.getElementById("t-title");
   titleEl.textContent = solo && named ? named : label;
-  titleEl.title = solo && named && named !== label
+  titleEl.dataset.tip = solo && named && named !== label
     ? label + " · " + (task.worktree || "")
     : (task.worktree || "");
   // The runner as its mark, in front of the name, the way a card carries it.
@@ -536,7 +536,7 @@ function openTerm(task) {
     // nothing until a second room makes the question real, the same as the room
     // chip on the strip row (see `termRoomChip`). The name is the tag itself.
     (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
-       title="this card runs in room ${esc(roomOf(task.id))}"
+       data-tip="this card runs in room ${esc(roomOf(task.id))}"
        >${esc(roomOf(task.id))}</span>` : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
@@ -545,7 +545,7 @@ function openTerm(task) {
     // thing you select with the mouse, which a click handler over all of it
     // makes awkward.
     `<span class="chip path" data-path="${esc(task.worktree || "")}"
-       ><button class="copybit" title="copy this path"
+       ><button class="copybit" data-tip="copy this path"
          onclick="event.stopPropagation();copyPath(this.parentNode)"
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
   paintCopyMode();

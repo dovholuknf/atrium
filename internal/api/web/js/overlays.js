@@ -322,7 +322,7 @@ function overlayCard(o) {
            nonsense. See web/CLAUDE.md, and check-board.sh, which caught
            exactly that when this comment was first written. -->
       <button onclick="teardownOverlay('${esc(o.kind)}')"
-        title="${o.kind === "zrok"
+        data-tip="${o.kind === "zrok"
           ? ((o.setup || {}).own
               ? "remove atrium's own zrok environment. nothing outside atrium is affected."
               : "remove THIS MACHINE's zrok environment, which every other tool here shares")
@@ -331,7 +331,7 @@ function overlayCard(o) {
       <span class="grow"></span>
       <!-- Where the executable is, when there is one, and what shares when
            there is not. The SDK is the answer in both cases. -->
-      <span class="by" title="${missing
+      <span class="by" data-tip="${missing
         ? "sharing is the embedded SDK, so no executable is needed for it"
         : esc(o.found)}">${missing ? "embedded SDK" : esc(o.found)}</span>
     </div>`;
@@ -866,7 +866,7 @@ function overlayField(o, f) {
   const act = (f.actions || []).filter(a => !a.when || a.when(o)).map(a =>
     `<button class="${a.go ? "go" : ""}"
        onclick="${esc(a.fn)}('${esc(o.kind)}','${esc(f.key)}')"
-       ${a.title ? `title="${esc(a.title)}"` : ""}>${esc(a.label)}</button>`).join("");
+       ${a.title ? `data-tip="${esc(a.title)}"` : ""}>${esc(a.label)}</button>`).join("");
   return `<div class="ov-field">
     <label class="eyebrow" for="${id}">${esc(f.label)}</label>
     ${act ? `<div class="picker">${input}${act}</div>` : input}
@@ -1131,10 +1131,10 @@ async function zitiServices(kind, key) {
   // "no such service" from the listener, so it is listed and marked rather
   // than filtered out.
   const rows = svcs.map(s => s.bind
-    ? `<span class="chip attach" title="click to use this one"
+    ? `<span class="chip attach" data-tip="click to use this one"
          onclick="useZitiService('${esc(kind)}','${esc(key)}','${esc(s.name)}')"
          >${esc(s.name)}</span>`
-    : `<span class="chip" title="this identity can reach this service but not host it"
+    : `<span class="chip" data-tip="this identity can reach this service but not host it"
          >${esc(s.name)} (dial only)</span>`).join(" ");
   said.innerHTML = `${who}${cap.bindable} of ${svcs.length} can be hosted.<br>${rows}`;
 }

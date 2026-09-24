@@ -206,8 +206,8 @@ function toast(title, body, goTo, key, taskFor) {
   // whether it was answered here or anywhere else.
   if (key) el.dataset.key = key;
   el.innerHTML = `<div class="body"><b></b><span class="ntimes"></span><span class="what"></span></div>
-    <button class="copy" title="copy this message">&#128203;</button>
-    <button class="x" title="dismiss">&times;</button>`;
+    <button class="copy" aria-label="copy this message" data-tip="copy this message">&#128203;</button>
+    <button class="x" aria-label="dismiss" data-tip="dismiss">&times;</button>`;
   el.querySelector("b").textContent = title;
   el.querySelector(".what").textContent = body || "";
   const dismiss = () => {

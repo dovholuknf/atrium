@@ -118,12 +118,12 @@ function paintStackShow() {
   document.getElementById("stack-seg").innerHTML =
     `<button class="${all ? "on" : ""}" data-v=""
        onclick="setStackShow(new Set())"
-       title="every card, whatever state it is in"
+       data-tip="every card, whatever state it is in"
        >all <i class="pillcount"></i></button>` +
     COLUMNS.filter(c => !STACK_PILL_SKIP.includes(c.id)).map(c =>
       `<button class="${on.has(c.id) ? "on" : ""}" data-v="${esc(c.id)}"
         onclick="toggleStackShow('${esc(c.id)}')"
-        title="${esc(c.label)}: click to add or remove"
+        data-tip="${esc(c.label)}: click to add or remove"
         >${esc(c.label)} <i class="pillcount"></i></button>`).join("");
 }
 
@@ -155,7 +155,7 @@ function paintStackSort() {
       const end = on ? (stackDesc ? s.last : s.first) : "";
       return `<button class="${on ? "on" : ""}" data-sort="${k}"
         onclick="setStackSort('${k}')"
-        title="${on ? end + ". click again to reverse" : "sort by " + s.label}"
+        data-tip="${on ? end + ". click again to reverse" : "sort by " + s.label}"
         >${s.label}${on ? (stackDesc ? " &#8595;" : " &#8593;") : ""}
          <i class="pillcount"></i></button>`;
     }).join("");
@@ -344,7 +344,7 @@ function stackGroupsHTML(list, g) {
     return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}"
       data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
       <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
-        <span class="gname" title="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
+        <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
       <div class="panel">${mine.length ? stackRows(mine) : emptyGroupHint()}</div>
@@ -449,7 +449,7 @@ function stackRow(t) {
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${pinStar(t)}
     ${runnerMark(t.runner)}
-    <div class="wait ${w ? "" : "quiet"}" title="${esc(bigNumberMeans(t))}"
+    <div class="wait ${w ? "" : "quiet"}" data-tip="${esc(bigNumberMeans(t))}"
       >${ago(bigNumber(t))}</div>
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
@@ -470,18 +470,18 @@ function stackRow(t) {
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}
       ${stateChip(t, w)}
       ${t.offline ? `<span class="chip nocontact"
-        title="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
+        data-tip="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
         >&#128683;</span>` : ""}
       ${t.status === "backlog" && !t.offline ? `<span class="chip attach"
-        title="start this, with what the source already knew filled in"
+        data-tip="start this, with what the source already knew filled in"
         onclick="event.stopPropagation();startOffered('${t.id}')">start</span>` : ""}
       ${t.supervised && !t.offline ? `<span class="chip attach"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
       <span class="chip attach icon"
-        title="open this terminal in its own window"
+        aria-label="open this terminal in its own window" data-tip="open this terminal in its own window"
         onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
     </div>
-    <i class="since" title="${esc(bigNumberAtMeans(t))}"
+    <i class="since" data-tip="${esc(bigNumberAtMeans(t))}"
       >${esc(firstSeen(bigNumberAt(t)))}</i>
   </div>`;
 }
@@ -509,7 +509,7 @@ function stateChip(t, w) {
     : askedAPeer(t) ? "asked a peer" : statusLabel(t.status);
   const asking = wasAsked(t) || askedAPeer(t);
   return `<span class="chip ${asking ? "warn asked" : w ? "warn" : over(t) ? "" : "accent"}"
-    title="${esc(wasAsked(t) ? "it put a question to you and is waiting"
+    data-tip="${esc(wasAsked(t) ? "it put a question to you and is waiting"
       : askedAPeer(t) ? "it put a question to " + t.ask_peer + " and is waiting on that session"
       : t.status)}"
     >${esc(label)}${said ? "" : " " + ago(dur)}</span>`;
@@ -575,10 +575,11 @@ function pinStar(t) {
   // still, so a card that was pinned still reads as pinned.
   if (t.offline) {
     return `<span class="pin ${t.pinned ? "on" : ""}"
-      title="${t.pinned ? "pinned" : ""}">${t.pinned ? "&#9733;" : "&#9734;"}</span>`;
+      data-tip="${t.pinned ? "pinned" : ""}">${t.pinned ? "&#9733;" : "&#9734;"}</span>`;
   }
   return `<span class="pin ${t.pinned ? "on" : ""}"
-    title="${t.pinned ? "pinned. click to unpin" : "pin this to the top and to terminals"}"
+    aria-label="${t.pinned ? "pinned. click to unpin" : "pin this to the top and to terminals"}"
+    data-tip="${t.pinned ? "pinned. click to unpin" : "pin this to the top and to terminals"}"
     onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
     >${t.pinned ? "&#9733;" : "&#9734;"}</span>`;
 }
@@ -607,7 +608,7 @@ function tagChips(t) {
   // want to see only cards of. See `js/rooms.js`.
   return roomChip(t) + (t.tags || []).map(tag =>
     `<span class="chip tag" style="--ghue:${groupHue(tag)}"
-       title="show only ${esc(tag)}"
+       data-tip="show only ${esc(tag)}"
        onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"
        >${esc(tag)}</span>`).join("");
 }
@@ -629,12 +630,12 @@ function recapChip(t) {
     // a reproach on every card that crashed.
     if (t.status !== "done") return "";
     return `<span class="chip norecap"
-      title="this finished without saying what it did. only a human moving the card produces that,
+      data-tip="this finished without saying what it did. only a human moving the card produces that,
              or a session that ended before it could say. nothing is wrong, there is just no account
              of it."
       >no recap</span>`;
   }
-  return `<span class="chip recap" title="${esc(t.recap)}">recap</span>`;
+  return `<span class="chip recap" data-tip="${esc(t.recap)}">recap</span>`;
 }
 
 
@@ -650,7 +651,7 @@ function noteChip(t) {
   const note = (t.note || "").trim();
   if (!note) return "";
   return `<span class="chip note"
-    title="${esc("held, not sent:\n\n" + note + "\n\nopen the card to send it")}"
+    data-tip="${esc("held, not sent:\n\n" + note + "\n\nopen the card to send it")}"
     >note</span>`;
 }
 
@@ -668,7 +669,7 @@ function modelChip(t) {
   const model = (t.model || "").trim();
   if (!model) return "";
   return `<span class="chip model"
-    title="${esc("this session was started on " + model + ". chosen once when it launched, " +
+    data-tip="${esc("this session was started on " + model + ". chosen once when it launched, " +
       "and kept across a restart")}"
     >${esc(model)}</span>`;
 }
@@ -694,10 +695,10 @@ function originChip(t) {
     // Either there is no url, or there is one that is not safe to make
     // clickable. Both render as text: the identifier is still worth showing
     // and the value is still visible on hover.
-    return `<span class="chip origin" title="${esc(title)}">${esc(label)}</span>`;
+    return `<span class="chip origin" data-tip="${esc(title)}">${esc(label)}</span>`;
   }
   return `<a class="chip origin" href="${esc(href)}" target="_blank" rel="noopener noreferrer"
-      title="${esc(title)}" onclick="event.stopPropagation()">${esc(label)}</a>`;
+      data-tip="${esc(title)}" onclick="event.stopPropagation()">${esc(label)}</a>`;
 }
 
 // A url that is safe to put in an href, or empty.
@@ -769,7 +770,7 @@ function runnerMark(runner) {
     || `<text x="12" y="16.5" text-anchor="middle" font-size="13"
          font-family="var(--sans)" font-weight="700"
          fill="currentColor">${esc((runner || "?").slice(0, 1).toUpperCase())}</text>`;
-  return `<span class="rmark" data-runner="${esc(key)}" title="${esc(runner || "unknown runner")}">
+  return `<span class="rmark" data-runner="${esc(key)}" data-tip="${esc(runner || "unknown runner")}">
     <svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg></span>`;
 }
 
@@ -830,7 +831,7 @@ function permCard(p) {
       <span class="hintline">this is what runs. edit it to run something else</span>
       <textarea class="cmd edit" id="cmd-${p.id}" rows="1" spellcheck="false"
         oninput="autosize(this)"
-        title="whatever is in here is what runs once you approve"></textarea>
+        aria-label="whatever is in here is what runs once you approve" data-tip="whatever is in here is what runs once you approve"></textarea>
       ${p.details ? `<details class="change" open>
         <summary>what changes</summary>
         <pre class="diff">${diffHTML(p.details)}</pre>
@@ -841,9 +842,9 @@ function permCard(p) {
         <div class="hints">
           ${hintsFor(p).map(h =>
             `<button class="hint ${h.kind === "path" ? "path" : ""}" data-v="${esc(h.value)}"
-              data-kind="${esc(h.kind || "command")}" title="${esc(h.why)}">${
+              data-kind="${esc(h.kind || "command")}" data-tip="${esc(h.why)}">${
               esc((h.icon ? h.icon + " " : "") + h.label)}</button>`).join("")}
-          <button class="hint custom" data-custom="1" title="type your own pattern">custom&hellip;</button>
+          <button class="hint custom" data-custom="1" data-tip="type your own pattern">custom&hellip;</button>
         </div>
       </div>
     </div>
@@ -852,13 +853,13 @@ function permCard(p) {
          standing answer and the second like the exception. -->
     <div class="actions">
       <button class="go" data-do="approve"
-        title="let this one through. the next matching request asks again">approve once</button>
+        data-tip="let this one through. the next matching request asks again">approve once</button>
       <button class="no" data-do="block"
-        title="refuse this one. the next matching request asks again">block once</button>
+        data-tip="refuse this one. the next matching request asks again">block once</button>
       <button class="go" data-do="approve" data-forever="1"
-        title="approve, and never ask again about the scope shown">always</button>
+        data-tip="approve, and never ask again about the scope shown">always</button>
       <button class="no" data-do="block" data-forever="1"
-        title="block, and never ask again about the scope shown">never</button>
+        data-tip="block, and never ask again about the scope shown">never</button>
     </div>`;
 
   // Values are set as properties, not markup, so nothing re-serialises them.
@@ -1074,11 +1075,11 @@ function paintHistory() {
         <div class="row line">
           <span class="chip ${p.decision === "approve" ? "accent" : "warn"}">${p.decision}</span>
           <span class="stamp">${when(p.decided_at)}</span>
-          <span class="asker ell" title="${esc(p.agent || "")}">${esc(p.agent || "?")}</span>
+          <span class="asker ell" data-tip="${esc(p.agent || "")}">${esc(p.agent || "?")}</span>
           <span class="tool">${esc(p.tool)}</span>
-          <code class="grow ell" title="${esc(p.command)}">${esc(p.command)}</code>
-          <span class="by" title="${esc(p.reason || "")}">${p.decided_by === "auto"
-            ? `<span class="auto" title="auto mode answered this, nobody was asked">auto</span>`
+          <code class="grow ell" data-tip="${esc(p.command)}">${esc(p.command)}</code>
+          <span class="by" data-tip="${esc(p.reason || "")}">${p.decided_by === "auto"
+            ? `<span class="auto" data-tip="auto mode answered this, nobody was asked">auto</span>`
             : byRule(p)
               ? `rule ${ruleLink(p.decided_by)}`
               : p.rule_created
@@ -1091,7 +1092,7 @@ function paintHistory() {
 
 // A rule pattern rendered as a link to the rule itself.
 function ruleLink(pattern) {
-  return `<code class="rulelink" title="go to this rule"
+  return `<code class="rulelink" data-tip="go to this rule"
     onclick="event.stopPropagation();gotoRule('${esc(pattern).replace(/'/g, "&#39;")}')"
     >${esc(pattern)}</code>`;
 }

@@ -27,18 +27,18 @@ async function renderFixtures() {
       ${switchChip("fixture", f.id, f.room, f.enabled)}
       <span class="ord">${i + 1}</span>
       <span class="tool">${esc(f.label || repoLeaf(f.cwd) || f.harness)}</span>
-      <code class="grow ell" title="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
+      <code class="grow ell" data-tip="${esc(f.cwd)}">${esc(f.cwd || "(the runner's own directory)")}</code>
       <span class="by">${esc(f.harness)}</span>
       ${f.resume ? `<span class="by">resumes</span>` : `<span class="by">fresh</span>`}
       ${f.theme ? `<span class="chip">${esc(f.theme)}</span>` : ""}
       <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',-1)"
         ${i === 0 ? "disabled" : ""}
-        title="start this one earlier">&#9650;</button>
+        aria-label="start this one earlier" data-tip="start this one earlier">&#9650;</button>
       <button onclick="moveFixture('${esc(f.id)}','${esc(f.room || "")}',1)"
         ${i === mine.length - 1 ? "disabled" : ""}
-        title="start this one later">&#9660;</button>
+        aria-label="start this one later" data-tip="start this one later">&#9660;</button>
       <button onclick="startFixtureNow('${esc(f.id)}','${esc(f.room || "")}')"
-        title="start it now, without restarting atrium">start</button>
+        data-tip="start it now, without restarting atrium">start</button>
       <button onclick="editFixture('${esc(f.id)}','${esc(f.room || "")}')">edit</button>
     </div>` +
     // Why the last start failed, under the row rather than in a tooltip. This
@@ -49,7 +49,7 @@ async function renderFixtures() {
     // Tuesday still says so on Friday, and says when it last tried.
     (f.last_error ? `<div class="row line why-broke">
       <span class="chip warn">did not start</span>
-      <code class="grow ell" title="${esc(f.last_error)}">${esc(f.last_error)}</code>
+      <code class="grow ell" data-tip="${esc(f.last_error)}">${esc(f.last_error)}</code>
       ${f.last_run_at ? `<span class="by">${esc(firstSeen(f.last_run_at))}</span>` : ""}
     </div>` : "")));
 }
@@ -75,7 +75,7 @@ function switchChip(kind, id, room, on, disabled) {
   return `<button type="button" class="chip toggle${on ? " accent" : ""}" role="switch"
     aria-checked="${on ? "true" : "false"}" data-switch="${esc(kind)}"
     data-id="${esc(id)}" data-room="${esc(room || "")}"
-    title="${esc(disabled || sw.title(on))}"${disabled ? " disabled" : ""}
+    data-tip="${esc(disabled || sw.title(on))}"${disabled ? " disabled" : ""}
     >${on ? "on" : "off"}</button>`;
 }
 
@@ -90,7 +90,7 @@ function paintSwitch(btn, on) {
   btn.classList.toggle("accent", on);
   btn.setAttribute("aria-checked", on ? "true" : "false");
   btn.textContent = on ? "on" : "off";
-  btn.title = sw.title(on);
+  btn.dataset.tip = sw.title(on);
 }
 
 // A row PUT back whole with `enabled` changed. Every one of these saves is an
@@ -373,19 +373,19 @@ const HOOK_NAG = "hooks-nag";
 // again.
 function hooksChip(h) {
   const target = hookTargetFor(h);
-  if (!target) return `<span class="by missing" title="${esc(REPORTS_NOTHING)}">n/a</span>`;
+  if (!target) return `<span class="by missing" data-tip="${esc(REPORTS_NOTHING)}">n/a</span>`;
   const rep = target === "codex" ? codexHooks : hookReport;
   // A row atrium could wire and has not looked at yet. The button still opens
   // the dialog, which is where the answer is; a count nobody fetched would be
   // a number made up on the row.
-  if (!rep) return `<button onclick="openHooks()" title="${esc(target)} hooks">hooks</button>`;
+  if (!rep) return `<button onclick="openHooks()" data-tip="${esc(target)} hooks">hooks</button>`;
   if (rep.refused) {
     return `<button onclick="openHooks()"
-      title="${esc(rep.refused)}">hooks: cannot wire</button>`;
+      data-tip="${esc(rep.refused)}">hooks: cannot wire</button>`;
   }
   const n = skippedConfirms()[HOOK_NAG] ? 0 : rep.missing;
   return `<button class="${n ? "go" : ""}" onclick="openHooks()"
-    title="${n ? "atrium cannot see what these sessions are doing" : esc(target) + " hooks"}"
+    data-tip="${n ? "atrium cannot see what these sessions are doing" : esc(target) + " hooks"}"
     >hooks${n ? `: ${n} missing` : ""}</button>`;
 }
 
@@ -401,7 +401,7 @@ function setupChip(h) {
   const n = s.failing || 0;
   return `<button class="${n ? "go" : ""}" data-setup="${esc(s.adapter)}"
     onclick="openRunnerSetup('${esc(h.id)}','${esc(h.room || "")}')"
-    title="${n ? "this runner will stop or run restricted where atrium launches it" : "setup checks pass"}"
+    data-tip="${n ? "this runner will stop or run restricted where atrium launches it" : "setup checks pass"}"
     >setup${n ? `: ${n} to fix` : " ok"}</button>`;
 }
 
@@ -423,19 +423,19 @@ function setupCheckRow(c, h) {
   if (c.fix === "apply") {
     const targets = (c.targets && c.targets.length) ? c.targets : [""];
     fix = targets.map(t => `<div class="row line">
-      ${t ? `<code class="grow ell" title="${esc(t)}">${esc(t)}</code>` : `<span class="grow"></span>`}
+      ${t ? `<code class="grow ell" data-tip="${esc(t)}">${esc(t)}</code>` : `<span class="grow"></span>`}
       <button class="go" data-setup-fix="${esc(c.id)}"
         onclick='fixRunnerSetup(${JSON.stringify(c.id).replace(/'/g, "&#39;")},${
           JSON.stringify(t).replace(/'/g, "&#39;")})'>${esc(c.fix_label || "fix")}</button></div>`).join("");
   } else if (c.fix === "explain" && c.command) {
     fix = `<div class="row line copypath"><code class="grow">${esc(c.command)}</code>
       <button onclick='copyText(this, ${JSON.stringify(c.command).replace(/'/g, "&#39;")})'
-        title="copy this command">copy</button></div>`;
+        data-tip="copy this command">copy</button></div>`;
   }
   const where = c.path
     ? `<div class="row line copypath"><span class="hintline">file</span><code class="grow ell">${esc(c.path)}</code>
         <button onclick='copyText(this, ${JSON.stringify(c.path).replace(/'/g, "&#39;")})'
-          title="copy this path">copy</button></div>`
+          data-tip="copy this path">copy</button></div>`
     : "";
   return `<div class="row line" data-setup-check="${esc(c.id)}">
       <span class="tool">${esc(c.label)}</span>
@@ -454,8 +454,8 @@ function renderRunnerSetup() {
   const s = h.setup;
   document.getElementById("runner-setup-title").textContent = `${h.label} setup`;
   const bin = s.installed
-    ? `<span class="by found" title="${esc(s.exe)}">installed${s.version ? " " + esc(s.version) : ""}</span>
-       <code class="grow ell" title="${esc(s.exe)}">${esc(s.exe)}</code>`
+    ? `<span class="by found" data-tip="${esc(s.exe)}">installed${s.version ? " " + esc(s.version) : ""}</span>
+       <code class="grow ell" data-tip="${esc(s.exe)}">${esc(s.exe)}</code>`
     : `<span class="by missing">not installed</span><span class="grow"></span>`;
   setHTML(host, `<div class="panel"><div class="row line">${bin}</div>` +
     (s.checks || []).map(c => setupCheckRow(c, h)).join("") + `</div>`);
@@ -549,9 +549,9 @@ function hookRow(h, runner) {
     ? `this entry runs:\n${h.found || "(nothing)"}\n\natrium is running:\n${h.want || ""}`
     : (h.found || "");
   const state = h.stale
-    ? `<span class="by missing" title="${esc(drift)}">points elsewhere</span>`
+    ? `<span class="by missing" data-tip="${esc(drift)}">points elsewhere</span>`
     : done
-      ? `<span class="by found" title="${esc(h.found || "")}">wired</span>`
+      ? `<span class="by found" data-tip="${esc(h.found || "")}">wired</span>`
       : `<span class="by missing">not wired</span>`;
   // Each row decides for itself. Wanting the tool events and not the subagent
   // count is a reasonable thing to want, and one button for all of them made
@@ -559,25 +559,25 @@ function hookRow(h, runner) {
   const arg = runner ? `,'${esc(runner)}'` : "";
   const act = done ? "" : `
     <button class="go" onclick="installHooks(['${esc(h.event)}']${arg})"
-      title="write this one entry">wire it</button>` +
+      data-tip="write this one entry">wire it</button>` +
     // The manual steps read the claude report, so they are offered only there
     // rather than showing the wrong command for the other runner.
     (runner ? "" : `
     <button onclick="showHookSteps('${esc(h.event)}')"
-      title="the command to run yourself">manually</button>`);
+      data-tip="the command to run yourself">manually</button>`);
   // An optional hook is off on purpose rather than missing, so it does not
   // read as something to fix. What it does is said next to it in full: this is
   // the one hook whose answer changes what a session does, and nobody should
   // turn that on from a one-line summary.
   const state2 = h.optional && !h.installed
-    ? `<span class="by" title="offered, not installed by default">off</span>`
+    ? `<span class="by" data-tip="offered, not installed by default">off</span>`
     : state;
   const warn = h.warn
     ? `<div class="row line"><span class="hintline warn">${esc(h.warn)}</span></div>`
     : "";
   return `<div class="row line${h.optional ? " optional" : ""}">
     <span class="tool">${esc(h.hook)}</span>
-    <span class="grow ell" title="${esc(h.why)}">${esc(h.why)}</span>
+    <span class="grow ell" data-tip="${esc(h.why)}">${esc(h.why)}</span>
     ${state2}
     ${act}
   </div>${warn}`;
@@ -596,7 +596,7 @@ function renderHooks() {
   const where = `<div class="row line copypath">
       <code>${esc(rep.path)}</code>
       <button onclick='copyText(this, ${JSON.stringify(rep.path).replace(/'/g, "&#39;")})'
-        title="copy this path">copy</button>
+        data-tip="copy this path">copy</button>
       ${rep.exists ? "" : `<span class="by">does not exist yet</span>`}
     </div>`;
 
@@ -619,9 +619,9 @@ function renderHooks() {
   // off: not wiring these is a choice, and so is changing your mind.
   const nag = rep.missing === 0 ? "" : quiet
     ? `<button onclick="setHookNag(false)"
-         title="show the count on the claude row again">remind me again</button>`
+         data-tip="show the count on the claude row again">remind me again</button>`
     : `<button onclick="setHookNag(true)"
-         title="keep the button, drop the count and the color">stop reminding me</button>`;
+         data-tip="keep the button, drop the count and the color">stop reminding me</button>`;
 
   setHTML(host, `<div class="panel">${where}${rows}
     <div class="row line">${nag}<span class="grow"></span>${action}</div></div>` +
@@ -644,7 +644,7 @@ function codexPanel() {
   const where = `<div class="row line copypath">
       <code>${esc(rep.path)}</code>
       <button onclick='copyText(this, ${JSON.stringify(rep.path).replace(/'/g, "&#39;")})'
-        title="copy this path">copy</button>
+        data-tip="copy this path">copy</button>
       ${rep.exists ? "" : `<span class="by">does not exist yet</span>`}
     </div>`;
   // Writing the file is not enough for codex, and saying so is the difference
@@ -657,7 +657,7 @@ function codexPanel() {
   // Codex reads the first word of a hook command as the program and strips no
   // quotes, so a path with a space in it has no spelling that works.
   const action = rep.refused
-    ? `<span class="by missing" title="${esc(rep.refused)}">cannot be wired here</span>`
+    ? `<span class="by missing" data-tip="${esc(rep.refused)}">cannot be wired here</span>`
     : rep.missing === 0
       ? `<span class="by found">all wired.</span>`
       : `<button class="go" onclick="installHooks(null, 'codex')"
@@ -790,7 +790,7 @@ function renderHookSteps(rep, wanted) {
         <span class="by">${esc(h.why)}</span>
         <span class="grow"></span>
         <button onclick='copyText(this, ${JSON.stringify(cmd).replace(/'/g, "&#39;")})'
-          title="copy this command">copy</button>
+          data-tip="copy this command">copy</button>
       </div>
       <pre class="code">${esc(cmd)}</pre>
     </div>`;
@@ -804,7 +804,7 @@ function renderHookSteps(rep, wanted) {
         <span class="by">one command, same result as the button</span>
         <span class="grow"></span>
         <button onclick='copyText(this, ${JSON.stringify(installCommand(rep, "")).replace(/'/g, "&#39;")})'
-          title="copy this command">copy</button>
+          data-tip="copy this command">copy</button>
       </div>
       <pre class="code">${esc(installCommand(rep, ""))}</pre>
     </div>`;

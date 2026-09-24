@@ -274,9 +274,9 @@ function paintSwitcher() {
         <span class="swname">${esc(terminalLabel(t) || t.display_title)}</span>
         ${t.id === here ? `<span class="chip">here</span>` : ""}
         ${poppedOut(t.id) && t.id !== here
-          ? `<span class="chip accent" title="this one is in a window of its own">&#8599;</span>` : ""}
+          ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
-        <span class="swdir" title="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
+        <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
       </div>`).join("")
     : `<div class="empty">${swQuery ? "nothing matches that"
         : (swLoaded ? "no sessions to go to" : "looking&hellip;")}</div>`);
@@ -396,7 +396,7 @@ function paintSwitchKey() {
   const b = document.getElementById("s-switchkey");
   if (!b) return;
   b.textContent = comboName(switchKey());
-  b.title = "click, then press the keys you want";
+  b.dataset.tip = "click, then press the keys you want";
 }
 
 // Bound by PRESSING it, not by picking it off a list. The question is whether

@@ -252,16 +252,16 @@ async function loadFiles(path, ctx) {
     <div class="frow${e.dir ? " dir" : ""}" data-path="${esc(e.path)}"${
         e.dir ? ` data-dir="${esc(e.path)}"` : ""}>
       <input type="checkbox" class="fpick" data-path="${esc(e.path)}"
-        title="pick this for a download">
+        data-tip="pick this for a download">
       <span class="fname">${fileIcon(e)}${esc(e.name)}${e.dir ? "/" : ""}</span>
       <span class="fsize">${e.dir ? "" : esc(bytes(e.size))}</span>
       <span class="fwhen">${esc(firstSeen(e.mtime))}</span>
       <span class="facts">${e.dir ? "" : `
         ${editable(e.name) ? `<span class="chip edit" data-edit="${esc(e.path)}"
-          title="in a box right here, in this browser. works from anywhere."
+          data-tip="in a box right here, in this browser. works from anywhere."
           >edit here</span>` : ""}
         <span class="chip open" data-open="${esc(e.path)}"
-          title="in your own editor, on the machine this session runs on. over an overlay that
+          data-tip="in your own editor, on the machine this session runs on. over an overlay that
                  window opens there, not where you are sitting."
           >open there</span>
         <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
@@ -354,7 +354,7 @@ function paintPicked(ctx) {
       picked.map(p => "path=" + encodeURIComponent(p)).join("&");
     zip.textContent = `download ${picked.length} as a zip`;
   }
-  zip.title = picked.join("\n");
+  zip.dataset.tip = picked.join("\n");
 }
 
 async function deletePicked(ctx, picked) {
@@ -410,7 +410,7 @@ function paintCrumbs(ctx, res) {
   if (!host) return;
   const root = String(res.root || "").replace(/\/+$/, "");
   const at = String(res.path || "").replace(/\/+$/, "");
-  host.title = at;
+  host.dataset.tip = at;
 
   const rest = at.startsWith(root) ? at.slice(root.length).replace(/^\//, "") : "";
   const steps = rest ? rest.split("/") : [];
@@ -499,7 +499,7 @@ async function openEditor(taskID, path) {
   editing = { taskID, path, hash: res.hash, eol: res.eol };
 
   document.getElementById("t-edit-where").textContent = res.path;
-  document.getElementById("t-edit-where").title = res.path;
+  document.getElementById("t-edit-where").dataset.tip = res.path;
   const box = document.getElementById("t-edit-text");
   box.value = res.text;
   editorState("");
@@ -531,7 +531,7 @@ function paintEditorElsewhere() {
   const cmd = (pastePrefs && pastePrefs.editor_command) || "";
   b.hidden = !cmd;
   b.textContent = where ? "open on " + where : "open where the file is";
-  b.title = cmd
+  b.dataset.tip = cmd
     ? "runs " + cmd + " on the machine the file is on, which is not this browser"
     : "";
 }
@@ -749,7 +749,7 @@ async function paintCardActions() {
   if (!mine.length) return;
 
   setHTML(host, mine.map(a =>
-    `<button data-action="${esc(a.id)}" title="${esc(a.prompt)}"
+    `<button data-action="${esc(a.id)}" data-tip="${esc(a.prompt)}"
       >${esc(a.label)}${a.after === "exit"
         ? ` <span class="by">and exit</span>` : ""}</button>`).join(""));
   // Wired rather than inlined, because a label with an apostrophe in it breaks

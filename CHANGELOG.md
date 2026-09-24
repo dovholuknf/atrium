@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Every tooltip on the board wears the skin.** See `docs/test-plan.md` section AT.
+
+  The board used native `title` attributes in 244 places, and the browser draws those in its own white box
+  and the system font whatever the skin is. The held-message `!` chip was the one that got noticed. All of them are
+  now `data-tip`, drawn by the panel the `?` bubbles already used: themed from the skin, kept on screen, shown after
+  half a second of hover or at once on keyboard focus, and taken down by a scroll that is not terminal output.
+  Icon-only buttons carry an `aria-label` for their name. `scripts/check-titles.sh`, run by `check-board.sh`, fails
+  on a new native title unless `scripts/title-allowlist.txt` names it with a reason. The allowlist is empty.
+  HUB-SIDE.
+
 - **The hub restart gate says which go it gave.** See `docs/test-plan.md` section AQ and
   `docs/hub-restart-gate.md`.
 

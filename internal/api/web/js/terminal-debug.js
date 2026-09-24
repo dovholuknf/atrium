@@ -236,7 +236,7 @@ function markTermDead() {
       const close = document.createElement("button");
       close.className = "go t-close";
       close.textContent = "close";
-      close.title = termOnly()
+      close.dataset.tip = termOnly()
         ? "close this window. its card and history stay on the board"
         : "clear this away. its card and history stay on the board";
       // Through the same two routes as the countdown. A user gesture does not
@@ -274,7 +274,7 @@ function offerSoloClose() {
   let left = soloCloseAfter;
   const btn = document.createElement("button");
   btn.className = "no t-autoclose";
-  btn.title = "stop this window closing itself";
+  btn.dataset.tip = "stop this window closing itself";
   bar.appendChild(btn);
   const paint = () => { btn.textContent = `closing in ${left}s. stay open`; };
   paint();
@@ -313,7 +313,7 @@ function closeThisWindow(btn) {
   setTimeout(() => {
     if (!btn || !btn.isConnected) return;
     btn.textContent = "close this window";
-    btn.title = "this browser will not let the page close itself, and no board " +
+    btn.dataset.tip = "this browser will not let the page close itself, and no board " +
       "window is open to close it. the runner has already exited.";
     btn.onclick = () => window.close();
   }, 700);
@@ -426,7 +426,7 @@ async function renderTermPerm() {
       <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve once</button>
       <button class="no" onclick="decideFromTerm('${p.id}','block')">block once</button>
       <button class="to-perms" onclick="switchView('perms')"
-        title="to set a standing rule for this">open in perms</button>
+        data-tip="to set a standing rule for this">open in perms</button>
     </div>`;
 }
 

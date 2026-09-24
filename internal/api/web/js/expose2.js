@@ -432,9 +432,9 @@ async function exp2ZitiServices() {
   const svcs = cap.services || [];
   if (!svcs.length) { if (said) said.textContent = "this identity can bind no services."; return; }
   const rows = svcs.map(s => s.bind
-    ? `<span class="chip attach" title="use this one"
+    ? `<span class="chip attach" data-tip="use this one"
          onclick="exp2UseZitiService('${esc(s.name)}')">${esc(s.name)}</span>`
-    : `<span class="chip" title="reachable but not bindable by this identity">${esc(s.name)} (dial only)</span>`
+    : `<span class="chip" data-tip="reachable but not bindable by this identity">${esc(s.name)} (dial only)</span>`
   ).join(" ");
   if (said) said.innerHTML = `${cap.bindable} of ${svcs.length} can be hosted.<br>${rows}`;
 }

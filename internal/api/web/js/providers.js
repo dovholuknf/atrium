@@ -69,10 +69,10 @@ function providerRow(p) {
     <div class="row line">
       ${switchChip("provider", p.name, "", p.enabled)}
       <span class="tool">${esc(p.name)}</span>
-      <code class="grow ell" title="${esc(p.root)}">${esc(p.root)}</code>
-      ${p.worktrees ? `<span class="chip" title="${
+      <code class="grow ell" data-tip="${esc(p.root)}">${esc(p.root)}</code>
+      ${p.worktrees ? `<span class="chip" data-tip="${
         esc("worktrees go under " + p.worktree_root)}">worktrees</span>` : ""}
-      ${p.last_error ? `<span class="chip warn" title="${esc(p.last_error)}">${
+      ${p.last_error ? `<span class="chip warn" data-tip="${esc(p.last_error)}">${
         esc(shortly(p.last_error))}</span>` : ""}
       <span class="by">${esc(count)}</span>
       <button class="pv-open" data-name="${esc(p.name)}">${open ? "hide" : "repositories"}</button>
@@ -100,7 +100,7 @@ function providerRepoList(p, rows) {
       ${shown.length ? shown.map(r => `
         <div class="pvrepo ${r.present ? "" : "gone"} ${r.hidden ? "hid" : ""}">
           <span class="nm">${esc(r.org || "(no org)")}/${esc(r.repo)}</span>
-          <code class="grow ell" title="${esc(r.path)}">${esc(r.path)}</code>
+          <code class="grow ell" data-tip="${esc(r.path)}">${esc(r.path)}</code>
           ${r.present ? "" : `<span class="chip warn">not on disk</span>`}
           ${r.hidden ? `<span class="chip">hidden</span>` : ""}
           <button class="pv-use" data-path="${esc(r.path)}">use</button>
@@ -380,7 +380,7 @@ function paintPickList() {
   list.innerHTML = rows.map(r => `
     <div class="pvrepo ${r.present ? "" : "gone"}">
       <span class="nm">${esc(r.org || "(no org)")}/${esc(r.repo)}</span>
-      <code class="grow ell" title="${esc(r.path)}">${esc(r.path)}</code>
+      <code class="grow ell" data-tip="${esc(r.path)}">${esc(r.path)}</code>
       ${r.present ? "" : `<span class="chip warn">not on disk</span>`}
       <button class="go pk-where" data-org="${esc(r.org)}" data-repo="${esc(r.repo)}"
         data-path="${esc(r.path)}">choose</button>
@@ -440,13 +440,13 @@ function paintWhere(worktrees) {
   list.innerHTML = `
     <div class="pvrepo">
       <span class="nm">the checkout itself</span>
-      <code class="grow ell" title="${esc(pickWhere.path)}">${esc(pickWhere.path)}</code>
+      <code class="grow ell" data-tip="${esc(pickWhere.path)}">${esc(pickWhere.path)}</code>
       <button class="go pw-use" data-path="${esc(pickWhere.path)}">use</button>
     </div>
     ${worktrees.map(w => `
       <div class="pvrepo">
         <span class="nm">${esc(w.branch)}</span>
-        <code class="grow ell" title="${esc(w.path)}">${esc(w.path)}</code>
+        <code class="grow ell" data-tip="${esc(w.path)}">${esc(w.path)}</code>
         <button class="pw-use" data-path="${esc(w.path)}">use</button>
       </div>`).join("")}`;
   list.querySelectorAll(".pw-use").forEach(b =>

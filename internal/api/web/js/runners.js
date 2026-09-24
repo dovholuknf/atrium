@@ -208,7 +208,7 @@ async function renderRooms() {
           return `<div class="roomcard">
              <span class="grow">${to
                ? `<a href="${esc(to)}" target="_blank" rel="noreferrer"
-                    title="open this terminal on ${esc(r.name)}'s own board">${name}</a>`
+                    data-tip="open this terminal on ${esc(r.name)}'s own board">${name}</a>`
                : name}</span>
              ${c.doing ? `<span class="by">${esc(c.doing)}</span>` : ""}
              <span class="chip ${c.status === "needs-input" || c.status === "needs-permission"
@@ -545,16 +545,16 @@ async function renderRunners() {
         // be switched off, so it stops being offered.
         !h.found && !h.enabled ? "its command is not on PATH, so it cannot be enabled" : "")}
       <span class="tool">${esc(h.label)}</span>
-      <code class="grow ell" title="${esc([h.cmd].concat(h.args || []).join(" "))}">${
+      <code class="grow ell" data-tip="${esc([h.cmd].concat(h.args || []).join(" "))}">${
         esc([h.cmd].concat(h.args || []).join(" "))}</code>
       ${h.found
-        ? `<span class="by found" title="${esc(h.found)}">on PATH</span>`
-        : `<span class="by missing" title="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
+        ? `<span class="by found" data-tip="${esc(h.found)}">on PATH</span>`
+        : `<span class="by missing" data-tip="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
       <span class="hookcell">${hooksChip(h)}</span>
       ${h.setup ? `<span class="setupcell">${setupChip(h)}</span>` : ""}
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>
-      <button title="a copy of this runner, to change one thing about"
+      <button data-tip="a copy of this runner, to change one thing about"
         onclick="copyHarness('${esc(h.id)}','${esc(h.room || "")}')">duplicate</button>
     </div>`);
 
@@ -627,20 +627,20 @@ function historyRow(t) {
   // rather than a status. A card can be archived and done, or archived and
   // dead, and the status column already says which.
   const gone = t.archived_at
-    ? `<span class="by" title="off the board since ${esc(t.archived_at)}">archived</span>` : "";
+    ? `<span class="by" data-tip="off the board since ${esc(t.archived_at)}">archived</span>` : "";
   return `<div class="row line" data-id="${esc(t.id)}" onclick="openTask('${t.id}')" style="cursor:pointer">
     ${runnerMark(t.runner)}
     <span class="tool">${esc(t.display_title)}</span>
-    <span class="grow ell" title="${esc(t.recap || t.why || t.worktree || "")}">${
+    <span class="grow ell" data-tip="${esc(t.recap || t.why || t.worktree || "")}">${
       esc(t.recap || t.why || t.worktree || "")}</span>
     ${originChip(t)}
     ${roomChip(t)}
     ${t.recap
-      ? `<span class="chip recap" title="${esc(t.recap)}">recap</span>`
-      : `<span class="by" title="no account of what this session did">&mdash;</span>`}
-    <span class="chip" title="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
+      ? `<span class="chip recap" data-tip="${esc(t.recap)}">recap</span>`
+      : `<span class="by" data-tip="no account of what this session did">&mdash;</span>`}
+    <span class="chip" data-tip="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
     ${gone}
-    <span class="by" title="${esc(t.created_at)}">${esc(firstSeen(t.created_at))}</span>
+    <span class="by" data-tip="${esc(t.created_at)}">${esc(firstSeen(t.created_at))}</span>
   </div>`;
 }
 
@@ -677,8 +677,8 @@ async function renderActions() {
     <div class="row line">
       ${switchChip("action", a.id, a.room, a.enabled)}
       <span class="tool">${esc(a.label)}</span>
-      <code class="grow ell" title="${esc(a.prompt)}">${esc(a.prompt)}</code>
-      ${a.after === "exit" ? `<span class="by" title="asks the runner to quit afterwards"
+      <code class="grow ell" data-tip="${esc(a.prompt)}">${esc(a.prompt)}</code>
+      ${a.after === "exit" ? `<span class="by" data-tip="asks the runner to quit afterwards"
         >and exit</span>` : ""}
       ${a.tag ? `<span class="chip tag" style="--ghue:${groupHue(a.tag)}">${esc(a.tag)}</span>` : ""}
       ${a.runner ? `<span class="by">${esc(a.runner)}</span>` : ""}
@@ -780,9 +780,9 @@ async function renderSources() {
     <div class="row line">
       ${switchChip("source", s.id, s.room, s.enabled)}
       <span class="tool">${esc(s.label || s.id)}</span>
-      <code class="grow ell" title="${esc([s.cmd].concat(s.args || []).join(" "))}">${
+      <code class="grow ell" data-tip="${esc([s.cmd].concat(s.args || []).join(" "))}">${
         esc([s.cmd].concat(s.args || []).join(" "))}</code>
-      <span class="by" title="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
+      <span class="by" data-tip="how often it runs">${esc(everyLabel(s.interval_secs))}</span>
       ${sourceStateChip(s)}
       <button onclick="editSource('${esc(s.id)}','${esc(s.room || "")}')">edit</button>
     </div>`));
@@ -798,12 +798,12 @@ function sourceStateChip(s) {
     const off = !s.enabled
       ? "switched off after " + s.failures + " failures in a row. "
       : "failed " + s.failures + " time(s) in a row. ";
-    return `<span class="chip warn" title="${esc(off + s.last_error)}">failing</span>`;
+    return `<span class="chip warn" data-tip="${esc(off + s.last_error)}">failing</span>`;
   }
   if (!s.last_run_at) {
-    return `<span class="by" title="it has not run yet">never run</span>`;
+    return `<span class="by" data-tip="it has not run yet">never run</span>`;
   }
-  return `<span class="by" title="${esc(s.last_run_at)}">found ${s.last_count} last time</span>`;
+  return `<span class="by" data-tip="${esc(s.last_run_at)}">found ${s.last_count} last time</span>`;
 }
 
 // An interval as something readable. Seconds are what the field takes, because
@@ -963,11 +963,11 @@ async function renderRecognisers() {
   setHTML(host, roomGroups(allRecognisers, r => `
     <div class="row line">
       ${switchChip("recogniser", r.id, r.room, r.enabled)}
-      <span class="by" title="asked in this order, lowest first">${esc(String(r.rank))}</span>
+      <span class="by" data-tip="asked in this order, lowest first">${esc(String(r.rank))}</span>
       <span class="tool">${esc(r.label || r.id)}</span>
-      <code class="grow ell" title="${esc(r.pattern)}">${esc(r.pattern)}</code>
-      ${r.fetch ? `<span class="chip" title="${esc("fetches more facts with: " + r.fetch)}">fetch</span>` : ""}
-      ${r.last_error ? `<span class="chip warn" title="${
+      <code class="grow ell" data-tip="${esc(r.pattern)}">${esc(r.pattern)}</code>
+      ${r.fetch ? `<span class="chip" data-tip="${esc("fetches more facts with: " + r.fetch)}">fetch</span>` : ""}
+      ${r.last_error ? `<span class="chip warn" data-tip="${
         esc("the fetch failed " + r.failures + " time(s) in a row: " + r.last_error)
       }">fetch failing</span>` : ""}
       <button class="editrec" data-id="${esc(r.id)}" data-room="${esc(r.room || "")}">edit</button>
