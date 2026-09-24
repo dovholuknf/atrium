@@ -606,8 +606,8 @@ type view struct {
 	// the card is fine. See docs/a2a-reliability-design.md.
 	Escalation any `json:"escalation,omitempty"`
 	// RestartWake is the prompt waiting to be typed in once this card's runner
-	// is back after a restart, or the one that expired unsent. Absent when there
-	// is neither. See docs/restart-wake.md.
+	// is back after a restart. Absent when there is none. See
+	// docs/restart-wake.md.
 	RestartWake any `json:"restart_wake,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//

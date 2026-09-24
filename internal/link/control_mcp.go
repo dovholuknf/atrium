@@ -233,8 +233,9 @@ func (c *controlMCP) server() *mcp.Server {
 			"this before a restart that takes you down, with the line you want to receive, for example " +
 			"what to check next. The room types it once your runner is back, the input line is empty " +
 			"and the turn is over. It is not typed into the session running now.\n\n" +
-			"ONE PER CARD. A second call replaces the first. It expires unsent after 30 minutes if your " +
-			"runner does not come back, and the card says so. Pass `clear` to cancel it.",
+			"ONE PER CARD. A second call replaces the first. It waits however long your runner takes " +
+			"to come back, and is typed behind a grey `[atrium] restart wake:` label. Pass `clear` to " +
+			"cancel it.",
 	}, c.wakeHandler)
 
 	return s

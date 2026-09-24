@@ -18,6 +18,11 @@ import (
 //
 // ONE PER CARD. A newer wake replaces an older one, because the newer one is
 // what the caller means now.
+//
+// NO EXPIRY. A wake waits for its card's runner however long that takes. It goes
+// when it is typed, cleared or replaced, or with its card (the cascade on task).
+// The table's `expires_at` and `expired_at` columns are left from a first cut
+// that expired wakes. They are written with harmless values and never read.
 
 // MaxRestartWake bounds a wake's text. It is a prompt to pick work back up, not a
 // briefing: a longer one belongs in a file the prompt names.
@@ -29,14 +34,10 @@ const RestartWakeBy = "restart-wake"
 
 // RestartWake is one card's queued wake.
 type RestartWake struct {
-	TaskID    string    `json:"task_id"`
-	Text      string    `json:"text"`
-	By        string    `json:"by,omitempty"`
-	QueuedAt  time.Time `json:"queued_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	// ExpiredAt is set when the card's runner did not come back before
-	// ExpiresAt. The row stays so the card can show it. Nil while it waits.
-	ExpiredAt *time.Time `json:"expired_at,omitempty"`
+	TaskID   string    `json:"task_id"`
+	Text     string    `json:"text"`
+	By       string    `json:"by,omitempty"`
+	QueuedAt time.Time `json:"queued_at"`
 }
 
 // ErrWakeText is a wake with no text, or with too much.
@@ -45,7 +46,7 @@ var ErrWakeText = errors.New("a wake needs some text, at most 2000 characters")
 // SetRestartWake queues a wake for a card, replacing any it already has, and
 // returns the new row and the one it replaced, if any. A card that does not
 // exist answers sql.ErrNoRows.
-func (s *Store) SetRestartWake(taskID, text, by string, ttl time.Duration) (*RestartWake, *RestartWake, error) {
+func (s *Store) SetRestartWake(taskID, text, by string) (*RestartWake, *RestartWake, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || len(text) > MaxRestartWake {
 		return nil, nil, ErrWakeText
@@ -61,16 +62,13 @@ func (s *Store) SetRestartWake(taskID, text, by string, ttl time.Duration) (*Res
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if prev != nil && prev.ExpiredAt == nil {
-			old = prev
-		}
-		at := now()
-		w = &RestartWake{TaskID: taskID, Text: text, By: strings.TrimSpace(by), QueuedAt: at, ExpiresAt: at.Add(ttl)}
+		old = prev
+		w = &RestartWake{TaskID: taskID, Text: text, By: strings.TrimSpace(by), QueuedAt: now()}
 		if _, err := tx.Exec(`INSERT INTO restart_wake (task_id, text, queued_by, queued_at, expires_at, expired_at)
 			VALUES (?, ?, ?, ?, ?, NULL)
 			ON CONFLICT (task_id) DO UPDATE SET text = excluded.text, queued_by = excluded.queued_by,
 				queued_at = excluded.queued_at, expires_at = excluded.expires_at, expired_at = NULL`,
-			taskID, w.Text, w.By, ts(w.QueuedAt), ts(w.ExpiresAt)); err != nil {
+			taskID, w.Text, w.By, ts(w.QueuedAt), ts(w.QueuedAt)); err != nil {
 			return err
 		}
 		what := "queued"
@@ -79,7 +77,6 @@ func (s *Store) SetRestartWake(taskID, text, by string, ttl time.Duration) (*Res
 		}
 		_, err = s.appendEventOn(tx, taskID, EventNotified, map[string]any{
 			"by": RestartWakeBy, "what": what, "text": w.Text, "queued_by": w.By,
-			"expires_at": ts(w.ExpiresAt),
 		})
 		return err
 	})
@@ -89,13 +86,12 @@ func (s *Store) SetRestartWake(taskID, text, by string, ttl time.Duration) (*Res
 	return w, old, nil
 }
 
-// RestartWakes lists every wake, waiting or expired.
+// RestartWakes lists every waiting wake.
 func (s *Store) RestartWakes() ([]*RestartWake, error) {
 	var out []*RestartWake
 	err := s.guard(func() error {
 		out = nil
-		rows, err := s.db.Query(`SELECT task_id, text, queued_by, queued_at, expires_at, expired_at
-			FROM restart_wake ORDER BY queued_at`)
+		rows, err := s.db.Query(`SELECT task_id, text, queued_by, queued_at FROM restart_wake ORDER BY queued_at`)
 		if err != nil {
 			return err
 		}
@@ -126,7 +122,7 @@ func (s *Store) TakeRestartWake(taskID string, queuedAt time.Time) (bool, error)
 		if err != nil {
 			return err
 		}
-		if !w.QueuedAt.Equal(queuedAt) || w.ExpiredAt != nil {
+		if !w.QueuedAt.Equal(queuedAt) {
 			return nil
 		}
 		if _, err := tx.Exec(`DELETE FROM restart_wake WHERE task_id = ?`, taskID); err != nil {
@@ -142,41 +138,9 @@ func (s *Store) TakeRestartWake(taskID string, queuedAt time.Time) (bool, error)
 	return took, err
 }
 
-// ExpireRestartWake marks a wake as never delivered, and records that on the
-// card. The row stays, so the card shows it until the wake is cleared or
-// replaced. Only the wake queued at `queuedAt`, for the reason TakeRestartWake
-// gives.
-func (s *Store) ExpireRestartWake(taskID string, queuedAt, at time.Time) (bool, error) {
-	done := false
-	err := s.inTx(func(tx *Tx) error {
-		done = false
-		w, err := restartWakeOn(tx, taskID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !w.QueuedAt.Equal(queuedAt) || w.ExpiredAt != nil {
-			return nil
-		}
-		if _, err := tx.Exec(`UPDATE restart_wake SET expired_at = ? WHERE task_id = ?`, ts(at), taskID); err != nil {
-			return err
-		}
-		done = true
-		_, err = s.appendEventOn(tx, taskID, EventNotified, map[string]any{
-			"by": RestartWakeBy, "what": "expired", "text": w.Text, "queued_by": w.By,
-			"queued_at": ts(w.QueuedAt),
-		})
-		return err
-	})
-	return done, err
-}
-
-// ClearRestartWake removes a card's wake, waiting or expired, and records it.
-// `forgotten` says it was an expired one aging off rather than somebody
-// cancelling it. Reports whether there was one.
-func (s *Store) ClearRestartWake(taskID, by string, forgotten bool) (bool, error) {
+// ClearRestartWake removes a card's wake and records it. Reports whether there
+// was one.
+func (s *Store) ClearRestartWake(taskID, by string) (bool, error) {
 	gone := false
 	err := s.inTx(func(tx *Tx) error {
 		gone = false
@@ -191,9 +155,6 @@ func (s *Store) ClearRestartWake(taskID, by string, forgotten bool) (bool, error
 			return err
 		}
 		gone = true
-		if forgotten {
-			return nil
-		}
 		_, err = s.appendEventOn(tx, taskID, EventNotified, map[string]any{
 			"by": RestartWakeBy, "what": "cleared", "text": w.Text, "cleared_by": strings.TrimSpace(by),
 		})
@@ -203,7 +164,7 @@ func (s *Store) ClearRestartWake(taskID, by string, forgotten bool) (bool, error
 }
 
 func restartWakeOn(q querier, taskID string) (*RestartWake, error) {
-	return scanRestartWake(q.QueryRow(`SELECT task_id, text, queued_by, queued_at, expires_at, expired_at
+	return scanRestartWake(q.QueryRow(`SELECT task_id, text, queued_by, queued_at
 		FROM restart_wake WHERE task_id = ?`, taskID))
 }
 
@@ -211,26 +172,15 @@ type rowScanner interface{ Scan(dest ...any) error }
 
 func scanRestartWake(r rowScanner) (*RestartWake, error) {
 	var (
-		w               RestartWake
-		queued, expires string
-		expired         sql.NullString
+		w      RestartWake
+		queued string
 	)
-	if err := r.Scan(&w.TaskID, &w.Text, &w.By, &queued, &expires, &expired); err != nil {
+	if err := r.Scan(&w.TaskID, &w.Text, &w.By, &queued); err != nil {
 		return nil, err
 	}
 	var err error
 	if w.QueuedAt, err = parseTS(queued); err != nil {
 		return nil, err
-	}
-	if w.ExpiresAt, err = parseTS(expires); err != nil {
-		return nil, err
-	}
-	if expired.Valid && expired.String != "" {
-		t, err := parseTS(expired.String)
-		if err != nil {
-			return nil, err
-		}
-		w.ExpiredAt = &t
 	}
 	return &w, nil
 }

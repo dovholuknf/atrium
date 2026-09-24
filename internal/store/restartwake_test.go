@@ -19,7 +19,7 @@ func TestARestartWakeSurvivesReopeningTheStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.SetRestartWake(task.ID, "we up", "orchestrator", 30*time.Minute); err != nil {
+	if _, _, err := s.SetRestartWake(task.ID, "we up", "orchestrator"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -38,9 +38,6 @@ func TestARestartWakeSurvivesReopeningTheStore(t *testing.T) {
 	if len(ws) != 1 || ws[0].TaskID != task.ID || ws[0].Text != "we up" || ws[0].By != "orchestrator" {
 		t.Fatalf("the wake did not survive the reopen: %+v", ws)
 	}
-	if ws[0].ExpiredAt != nil || !ws[0].ExpiresAt.After(ws[0].QueuedAt) {
-		t.Fatalf("the wake came back with the wrong bounds: %+v", ws[0])
-	}
 }
 
 // One per card, and the newer one wins.
@@ -50,10 +47,10 @@ func TestANewerRestartWakeReplacesTheOlder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, old, err := s.SetRestartWake(task.ID, "first", "a", time.Minute); err != nil || old != nil {
+	if _, old, err := s.SetRestartWake(task.ID, "first", "a"); err != nil || old != nil {
 		t.Fatalf("first wake: old %+v, err %v", old, err)
 	}
-	w, old, err := s.SetRestartWake(task.ID, "second", "b", time.Minute)
+	w, old, err := s.SetRestartWake(task.ID, "second", "b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +77,7 @@ func TestANewerRestartWakeReplacesTheOlder(t *testing.T) {
 // and one with no text is refused before it is written.
 func TestARestartWakeIsRefusedForNoCardOrNoText(t *testing.T) {
 	s := openTestStore(t)
-	if _, _, err := s.SetRestartWake("no-such-card", "we up", "", time.Minute); !errors.Is(err, sql.ErrNoRows) {
+	if _, _, err := s.SetRestartWake("no-such-card", "we up", ""); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("a missing card answered %v", err)
 	}
 	if halted, cause := s.Halted(); halted {
@@ -90,7 +87,7 @@ func TestARestartWakeIsRefusedForNoCardOrNoText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.SetRestartWake(task.ID, "   ", "", time.Minute); !errors.Is(err, ErrWakeText) {
+	if _, _, err := s.SetRestartWake(task.ID, "   ", ""); !errors.Is(err, ErrWakeText) {
 		t.Fatalf("an empty wake answered %v", err)
 	}
 }

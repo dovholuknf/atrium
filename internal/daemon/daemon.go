@@ -396,7 +396,7 @@ func New(opts Options) (*Daemon, error) {
 	// Which agent-launched cards are stuck, for the board to ring about. Held
 	// the same way. See a2a.go.
 	api.EscalationOf = d.escalationFor
-	// The after-restart wake waiting on a card, or the one that expired there.
+	// The after-restart wake waiting on a card.
 	d.loadWakes()
 	api.RestartWakeOf = d.wakeFor
 	// Starting a fixture is spawning a process, which the daemon owns.

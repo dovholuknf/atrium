@@ -30,16 +30,19 @@ import (
 // work a restart interrupted. It still goes through the same gate as every
 // automated write: an empty line, a quiet keyboard, and a turn that has ended.
 //
+// NO EXPIRY. A wake waits until its card's runner is back, however long that
+// takes. It goes when it is typed, cleared or replaced, or with its card.
+//
+// LABELLED. It is typed behind a grey `[atrium] restart wake:` label, the same
+// style as a peer's banner, so nobody reads it as the operator's words.
+//
 // THE ROW IS THE TRUTH. The daemon keeps a mirror so the board can draw it
 // without a query per card, and the mirror is only ever written after the store.
 
-const (
-	// restartWakeTTL is how long a wake waits for its card to come back. A
-	// restart is seconds, and a cold machine resuming ten sessions is minutes.
-	// Past this the restart it was queued for is not happening, and a wake typed
-	// hours later would be a prompt out of nowhere.
-	restartWakeTTL = 30 * time.Minute
+// wakeLabel goes ahead of a wake's text. See atriumLabel.
+var wakeLabel = atriumLabel("restart wake:")
 
+const (
 	// wakeTickEvery is how often waiting wakes are looked at. The same front
 	// step as the peer backoff, so a wake lands about as soon as the gate opens.
 	wakeTickEvery = 2 * time.Second
@@ -53,11 +56,6 @@ const (
 	// before a wake is typed into it anyway. A runner with no hooks has no other
 	// signal that it is ready.
 	wakeNoHook = time.Minute
-
-	// wakeExpiredKept is how long an expired wake stays on its card. Long enough
-	// to be seen the next morning, then it ages off. The timeline keeps the
-	// record either way.
-	wakeExpiredKept = 24 * time.Hour
 )
 
 // wakes mirrors the restart_wake table and remembers when each card's session
@@ -161,22 +159,14 @@ func (d *Daemon) wakeFor(taskID string) any {
 }
 
 func wakeView(w *store.RestartWake) map[string]any {
-	v := map[string]any{
-		"text": w.Text, "by": w.By, "queued_at": w.QueuedAt, "expires_at": w.ExpiresAt,
-		"state": "waiting",
-	}
-	if w.ExpiredAt != nil {
-		v["state"] = "expired"
-		v["expired_at"] = *w.ExpiredAt
-	}
-	return v
+	return map[string]any{"text": w.Text, "by": w.By, "queued_at": w.QueuedAt, "state": "waiting"}
 }
 
 // queueWake stores a wake for a card and mirrors it.
 func (d *Daemon) queueWake(taskID, text, by string) (*store.RestartWake, *store.RestartWake, error) {
 	d.wake.deliver.Lock()
 	defer d.wake.deliver.Unlock()
-	w, old, err := d.st.SetRestartWake(taskID, text, by, restartWakeTTL)
+	w, old, err := d.st.SetRestartWake(taskID, text, by)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -186,11 +176,11 @@ func (d *Daemon) queueWake(taskID, text, by string) (*store.RestartWake, *store.
 	return w, old, nil
 }
 
-// clearWake removes a card's wake, waiting or expired.
+// clearWake removes a card's wake.
 func (d *Daemon) clearWake(taskID, by string) (bool, error) {
 	d.wake.deliver.Lock()
 	defer d.wake.deliver.Unlock()
-	gone, err := d.st.ClearRestartWake(taskID, by, false)
+	gone, err := d.st.ClearRestartWake(taskID, by)
 	if err != nil {
 		return false, err
 	}
@@ -213,15 +203,15 @@ func (d *Daemon) wakeLoop(ctx context.Context) {
 	}
 }
 
-// wakeTick is one look at every wake: age off, expire, or try to type it in.
+// wakeTick is one look at every wake, typing in each one whose card is ready.
 func (d *Daemon) wakeTick(now time.Time) {
 	for _, w := range d.wake.all() {
 		d.tryWake(w, now)
 	}
 }
 
-// tryWake handles one wake: age an expired one off, expire one past its bound,
-// or type it in when the runner is back and the gate is open.
+// tryWake types one wake in when the runner is back and the gate is open, and
+// otherwise leaves it for the next tick.
 func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	d.wake.deliver.Lock()
 	defer d.wake.deliver.Unlock()
@@ -233,34 +223,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	}
 	w = cur
 
-	if w.ExpiredAt != nil {
-		if now.Sub(*w.ExpiredAt) >= wakeExpiredKept {
-			if _, err := d.st.ClearRestartWake(w.TaskID, "", true); err != nil {
-				log.Printf("[atrium] could not age off the expired wake on %s: %v", w.TaskID, err)
-				return
-			}
-			d.wake.forget(w.TaskID)
-			d.publishTask(w.TaskID)
-		}
-		return
-	}
-	if !now.Before(w.ExpiresAt) {
-		at := now.UTC().Truncate(time.Millisecond)
-		ok, err := d.st.ExpireRestartWake(w.TaskID, w.QueuedAt, at)
-		if err != nil {
-			log.Printf("[atrium] could not expire the wake on %s: %v", w.TaskID, err)
-			return
-		}
-		if ok {
-			w.ExpiredAt = &at
-			d.wake.put(w)
-			log.Printf("[atrium] after-restart wake for %s expired: its runner did not come back within %s",
-				w.TaskID, restartWakeTTL)
-			d.publishTask(w.TaskID)
-		}
-		return
-	}
-
+	// A card atrium does not supervise has no runner here, and its wake waits.
 	run := d.sup.get(w.TaskID)
 	if run == nil || !d.wakeRunnerReady(w, run, now) {
 		return
@@ -272,8 +235,9 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 		return
 	}
 	// Empty line and a quiet keyboard, re-checked under the input lock. A closed
-	// gate writes nothing, and the next tick asks again.
-	wrote, err := d.typeThroughGate(run, w.TaskID, "", w.Text)
+	// gate writes nothing, and the next tick asks again. The label marks it as
+	// atrium's, and keeps the prompt it starts from marking the turn seen.
+	wrote, err := d.typeLabelledThroughGate(run, w.TaskID, wakeLabel, w.Text)
 	if err != nil {
 		log.Printf("[atrium] could not type the wake into %s: %v", w.TaskID, err)
 		return
@@ -362,8 +326,7 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{
 			"card": task.ID, "queued": true, "wake": wakeView(nw),
 			"note": "typed into this card's terminal once, after its runner comes back from a restart, " +
-				"when the line is empty and the turn is over. it expires unsent after " +
-				restartWakeTTL.String() + ".",
+				"when the line is empty and the turn is over. it waits however long that takes.",
 		}
 		if old != nil {
 			out["replaced"] = old.Text
