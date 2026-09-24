@@ -720,6 +720,7 @@ function connectTerm(taskID) {
   // be the previous session's answer applied to this one, and switching from
   // an agent to a card's shell would bracket a paste the shell never asked for.
   termCaps = {};
+  cursorReset();
   // The same for the pty's size. The new socket's `{"t":"size"}` sets it again
   // before the replay, and a room too old to send one gets this window's size.
   termPtyCols = 0;
@@ -812,7 +813,7 @@ function connectTerm(taskID) {
       term.write(e.data, lagOnOutput(followScroll));
       return;
     }
-    term.write(new Uint8Array(e.data), lagOnOutput(followScroll));
+    writeRunnerOutput(term, new Uint8Array(e.data), lagOnOutput(followScroll));
   };
   termSock.onclose = async ev => {
     if (!term) return;

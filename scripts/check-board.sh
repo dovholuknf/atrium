@@ -243,6 +243,14 @@ if ! node "$here/scripts/test-term-trace.js"; then
   fail=1
 fi
 
+# The held cursor, RUN against stubs with codex's measured frame shape. A
+# runner whose profile holds the cursor must never have it painted at a cell it
+# was only drawing, and a runner that does not must be written straight through.
+if ! node "$here/scripts/test-term-cursor.js"; then
+  echo "the terminal cursor is painted away from the prompt, or claude's is held. see above." >&2
+  fail=1
+fi
+
 # The refresh-storm guard, RUN against a simulated flap storm. A room that
 # attaches and detaches every few seconds used to make the board answer every
 # flip with a fresh fan-out of fetches, until the tab emptied its socket pool
