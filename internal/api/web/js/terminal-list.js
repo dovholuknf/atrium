@@ -460,9 +460,10 @@ function placeOneBridge(bridge, card) {
   const cs = getComputedStyle(card);
   bridge.style.setProperty("--tabbg", cs.backgroundColor);
   bridge.style.setProperty("--tabc", cs.borderTopColor);
-  // A worn row's frame is its border plus a 2px inset line, so the bridge's
-  // edge is that thick too or the frame steps down where it crosses.
-  bridge.style.setProperty("--tabw", card.classList.contains("worn") ? "2px" : cs.borderTopWidth);
+  // A worn row's frame is its border plus an inset line, and it says how
+  // thick in `--framew`. The bridge's edge is that thick too, or the frame
+  // steps down where it crosses.
+  bridge.style.setProperty("--tabw", cs.getPropertyValue("--framew").trim() || cs.borderTopWidth);
 }
 
 function clampTermW(px) {

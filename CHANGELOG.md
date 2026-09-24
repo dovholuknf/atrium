@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The attached row's bridge is as thick as its frame.**
+
+  With card colours on, the attached row's frame is its 1px border plus a 2px inset line, 3px in all, and the
+  bridge across the divider drew its edge at 2px, so the frame stepped down where it met the terminal. The frame
+  now says its thickness in `--framew` and the bridge takes its edge from that, so both are 3px on both copies of
+  an attached row and on light and dark skins. A plain row's border and bridge stay 1px. The headless bridge check
+  measures the frame, border plus inset line, against the bridge's edge on noir and daylight. HUB-SIDE.
+
 - **A peer message waits for an empty line and the end of the turn before it is typed.**
 
   A message typed into a session that was mid-turn did not submit. Claude Code held it until the turn ended and
