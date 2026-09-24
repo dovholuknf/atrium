@@ -911,7 +911,9 @@ async function bridgeSection(browser, base) {
         await renderTermList();
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         placeTabBridge();
-        const pane = document.getElementById("term-pane").getBoundingClientRect();
+        const pe = document.getElementById("term-pane"), ps = getComputedStyle(pe);
+        const pane = { left: pe.getBoundingClientRect().left, bl: ps.borderLeftWidth,
+          bw: ps.borderTopWidth + "/" + ps.borderBottomWidth, bc: ps.borderLeftColor };
         const bridges = [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
           .map(b => {
             const r = b.getBoundingClientRect(), s = getComputedStyle(b);
@@ -932,7 +934,7 @@ async function bridgeSection(browser, base) {
             shadow: s.boxShadow, cls: c.className,
             fw: (parseFloat(s.borderTopWidth) + top) + "px/" + (parseFloat(s.borderBottomWidth) + bottom) + "px" };
         });
-        return { pane: { left: pane.left }, bridges, cards };
+        return { pane, bridges, cards };
       }, [skin, idle]);
       const where = "(" + skin + ", idle rows " + (idle ? "worn" : "plain") + ")";
       if (process.env.BRIDGE_SHOTS) {
@@ -963,6 +965,19 @@ async function bridgeSection(browser, base) {
             br.bc + ", the row's is " + c.bc + ".");
         }
         if (br.bg !== c.bg) fail("copy " + (i + 1) + "'s bridge is not the row's background " + where + ".");
+        // The terminal's frame is as thick as the bridge running into it, and the
+        // bridge covers the pane's left edge, or a line crosses where they meet.
+        if (got.pane.bw !== br.bw || got.pane.bl !== br.bw.split("/")[0]) {
+          fail("copy " + (i + 1) + "'s bridge edge is " + br.bw + " and the terminal's frame " + got.pane.bw +
+            ", " + got.pane.bl + " on the left " + where + ".");
+        }
+        if (/ worn\b/.test(c.cls) && got.pane.bc !== c.bc) {
+          fail("the terminal's frame is " + got.pane.bc + " and the worn row's " + c.bc + " " + where + ".");
+        }
+        if (br.right < got.pane.left + parseFloat(got.pane.bl)) {
+          fail("copy " + (i + 1) + "'s bridge stops at " + br.right + ", inside the terminal's left frame, which " +
+            "ends at " + (got.pane.left + parseFloat(got.pane.bl)) + " " + where + ".");
+        }
         if (br.left > c.right || br.right < got.pane.left) {
           fail("copy " + (i + 1) + "'s bridge does not run from the row to the terminal's edge " + where + ": " +
             JSON.stringify(br) + ", row right " + c.right + ", pane left " + got.pane.left + ".");
@@ -3221,6 +3236,8 @@ async function main() {
     await wornSection(browser, base);
     // ── the terminals list's three theme switches ───────────────────────────
     await termWearSection(browser, base);
+    // ── the attached row's bridge into the terminal, and the terminal's frame ─
+    await bridgeSection(browser, base);
     // ── a load reads settings once ──────────────────────────────────────────
     await settingsOnceSection(browser, base);
   } catch (e) {

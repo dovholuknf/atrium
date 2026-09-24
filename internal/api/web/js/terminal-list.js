@@ -407,6 +407,20 @@ function placeTabBridge() {
     bridges[bridges.length - 1].after(b);
     bridges.push(b);
   }
+  // The pane wears the attached row's frame, so the row, the bridge and the
+  // pane are one outline of one width. Both copies are framed alike, so the
+  // first speaks for them. Set before the bridges, which reach across it.
+  const pane = document.getElementById("term-pane");
+  const fw = cards.length && term ? getComputedStyle(cards[0]).getPropertyValue("--framew").trim() : "";
+  if (pane) {
+    if (fw) {
+      pane.style.setProperty("--framew", fw);
+      pane.style.setProperty("--framec", getComputedStyle(cards[0]).borderTopColor);
+    } else {
+      pane.style.removeProperty("--framew");
+      pane.style.removeProperty("--framec");
+    }
+  }
   bridges.forEach((b, i) => {
     if (i < cards.length) placeOneBridge(b, cards[i]);
     else b.hidden = true;
@@ -446,9 +460,10 @@ function placeOneBridge(bridge, card) {
 
   const pane = document.getElementById("term-pane");
   const p = pane ? pane.getBoundingClientRect() : { left: lr.right };
-  // From just inside the card's right edge to just inside the pane's left
-  // one, so it overlaps both and no seam shows at either end.
-  const from = c.right - 2, to = p.left + 1;
+  // From just inside the card's right edge to the inside of the pane's left
+  // border, so it overlaps both and no seam shows at either end.
+  const pw = pane ? parseFloat(getComputedStyle(pane).borderLeftWidth) || 1 : 1;
+  const from = c.right - 2, to = p.left + pw;
   if (to <= from) { bridge.hidden = true; return; }
 
   bridge.hidden = false;

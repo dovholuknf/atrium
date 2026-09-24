@@ -354,8 +354,10 @@
     background: var(--term-bg,
       linear-gradient(180deg, rgba(var(--shell0-rgb),.7), rgba(var(--shell1-rgb),.7)));
     /* The same edge the tab wears, so the card, the bridge and the pane read as one outline in one colour
-       rather than three things next to each other. */
-    border: 1px solid var(--term-edge, var(--stroke-dim));
+       rather than three things next to each other. A worn attached row is framed thicker and in its title
+       colour, and `placeTabBridge` hands that frame to the pane as `--framew` and `--framec`, or the outline
+       steps down where the bridge runs into it. */
+    border: var(--framew, 1px) solid var(--framec, var(--term-edge, var(--stroke-dim)));
     border-radius: var(--r-lg); overflow: hidden;
     /* The terminal keeps a compositor layer of its own. This pane holds a WebGL canvas, and without its own
        layer it shares one with its siblings, so anything any of them repaints makes the compositor rebuild
