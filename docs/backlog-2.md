@@ -263,9 +263,15 @@ branches and worktrees are kept. Nothing below is on `claude/main` yet unless it
   a process never outlives its runner, no restart ever, only the owner stops it and others ask the owner. Plus a
   section on the Windows firewall prompts (new exe paths listening on all interfaces: go test binaries in
   `%TEMP%\go-build*`, per-worktree `build.claude`, atrium's own `:7777`/`:7778`/`:7801` defaults). Build after the
-  one-atrium consolidation.
+  one-atrium consolidation. DONE as a doc at `00f8c4e` (not merged). Mercurius `s_Klruhz3XfqAr` found one blocker,
+  fixed with a gated `proc-exec` launcher that joins a room-owned job object before it spawns. No second round
+  ran. Open: processes on window-mode and joined cards (default: allow while the reaper watches the pid), and
+  gate as Bash or as a tool of its own (default: Bash).
 - **sa61, terminals pane group drag and group colours** (`claude/term-groups-drag-color`). Drag group headings to
-  reorder in the terminals pane, and find why group colours "don't work".
+  reorder in the terminals pane, and find why group colours "don't work". Paused with nothing committed. Found:
+  the terminals-pane group headings never wear `--ghue`, so they show a grey name with no hue. The stack, the
+  board and tag chips recolour correctly on harbour, daylight and website. Reload and a second window untested.
+  Drag not started.
 - **One atrium** (`docs/one-atrium-plan.md`, on `claude/main`). Mode A and Mode B out, one `atrium` binary,
   "the hub" becomes "the atrium" in text people read. 13 Open Questions wait on clint (see the orchestrator's
   OWED table, row C1). Also carries a live bug: the room's `daemon.json` names `atrium2.exe`, so the board's
