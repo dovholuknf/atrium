@@ -225,3 +225,22 @@ over data that exists rather than new storage. Decide whether a dedicated per-ca
 filtering the existing history by card is enough. clint has not committed to building it.
 
 ------------
+
+## Keep codex up to date
+
+**Raised 2026-09-24.** Not started.
+
+A codex session on the board stopped at start to update itself: `Updating Codex via npm install -g @openai/codex...`
+inside the card's terminal, with nothing else to show for it. Claude already gets an update card
+(`claude code: <old> to <new>`) from `internal/daemon/runnerupdate.go`, which reads the installed version from the
+package metadata and the published one with one HTTP request.
+
+- **A codex update task,** the same shape as claude's: a card saying `codex: <old> to <new>` when a newer
+  `@openai/codex` is published, with the update as its action.
+- **A "keep codex up to date" setting,** off by default. On, atrium runs the update itself between sessions, never
+  while a codex session is running, and records the result on the card.
+- **Codex updating itself inside a launch** should not look like a hang. Either the setting keeps it current so this
+  never happens, or the launch passes whatever flag codex has to skip its own startup update.
+- Check what `runnerupdate.go` already does for codex before building: its header names `codex --version`.
+
+------------
