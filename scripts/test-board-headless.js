@@ -901,8 +901,9 @@ async function bridgeSection(browser, base) {
       { state: "attached", timeout: 15000 });
     // Two ways a row is drawn: in the skin's colours with its theme on the
     // selected row alone, and with every row worn, which frames the selected one.
-    for (const idle of [false, true]) {
-      const got = await bp.evaluate(async idle => {
+    for (const [skin, idle] of [["noir", false], ["noir", true], ["daylight", false], ["daylight", true]]) {
+      const got = await bp.evaluate(async ([skin, idle]) => {
+        applySkin(skin);
         toggleTermWear("idle", idle);
         termTask = { id: "filed1" };
         // Stand-in for an attached terminal. The bridge only asks that there is one.
@@ -920,14 +921,23 @@ async function bridgeSection(browser, base) {
           });
         const cards = [...document.querySelectorAll('#term-list .card.tab.on[data-id="filed1"]')].map(c => {
           const r = c.getBoundingClientRect(), s = getComputedStyle(c);
+          // The frame the eye sees along the top and bottom: the border plus any
+          // inset shadow laid inside it there.
+          let top = 0, bottom = 0;
+          for (const m of s.boxShadow.matchAll(/(-?[\d.]+)px (-?[\d.]+)px [\d.]+px(?: -?[\d.]+px)? inset/g)) {
+            const y = parseFloat(m[2]);
+            if (y > 0) top = Math.max(top, y); else bottom = Math.max(bottom, -y);
+          }
           return { top: r.top, bottom: r.bottom, right: r.right, bc: s.borderTopColor, bg: s.backgroundColor,
-            shadow: s.boxShadow, cls: c.className };
+            shadow: s.boxShadow, cls: c.className,
+            fw: (parseFloat(s.borderTopWidth) + top) + "px/" + (parseFloat(s.borderBottomWidth) + bottom) + "px" };
         });
         return { pane: { left: pane.left }, bridges, cards };
-      }, idle);
-      const where = "(idle rows " + (idle ? "worn" : "plain") + ")";
+      }, [skin, idle]);
+      const where = "(" + skin + ", idle rows " + (idle ? "worn" : "plain") + ")";
       if (process.env.BRIDGE_SHOTS) {
-        await bp.screenshot({ path: require("path").join(process.env.BRIDGE_SHOTS, "bridge-" + idle + ".png") });
+        await bp.screenshot({ path: require("path").join(process.env.BRIDGE_SHOTS,
+          "bridge-" + skin + "-" + (idle ? "worn" : "plain") + ".png") });
       }
       if (got.cards.length !== 2) {
         fail("the pinned, filed attached row is not drawn twice as the selected row " + where + ": " +
@@ -944,9 +954,11 @@ async function bridgeSection(browser, base) {
           fail("copy " + (i + 1) + " of the attached row has no bridge into the terminal " + where + ".");
           continue;
         }
-        // A worn row's frame is 2px, the plain row's border 1px.
-        const bw = / worn\b/.test(c.cls) ? "2px/2px" : "1px/1px";
-        if (br.bw !== bw || br.bc !== c.bc + "/" + c.bc || /rgba\(0, 0, 0, 0\)/.test(br.bc)) {
+        // The bridge's edge is as thick as the row's frame, or the frame steps where it crosses the divider.
+        if (br.bw !== c.fw) {
+          fail("copy " + (i + 1) + "'s bridge edge is " + br.bw + " and the row's frame " + c.fw + " " + where + ".");
+        }
+        if (br.bc !== c.bc + "/" + c.bc || /rgba\(0, 0, 0, 0\)/.test(br.bc)) {
           fail("copy " + (i + 1) + "'s bridge does not carry the row's border " + where + ": " + br.bw + " " +
             br.bc + ", the row's is " + c.bc + ".");
         }

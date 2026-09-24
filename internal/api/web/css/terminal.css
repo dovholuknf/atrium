@@ -647,10 +647,14 @@
   .stackrow.worn:hover { background: linear-gradient(var(--lift), var(--lift)), var(--card-0); }
   /* The attached card. Off, it is the one card in its terminal's colours. On, every card is, so the colour
      stops saying which one you are on. A frame says it instead: two pixels in the card's title colour, open on
-     the side facing the pane like the tab it is. Every other card keeps a hairline. */
+     the side facing the pane like the tab it is. Every other card keeps a hairline.
+     The frame is the card's 1px border with an inset line inside it, 3px in all. `--framew` says so to
+     `placeOneBridge`, whose bridge edge has to match it or the frame steps down where it crosses the divider. */
   .term-list .card.worn.on, .term-list .card.worn.on:hover {
+    --framew: 3px;
     border-color: var(--head); border-right-color: transparent;
-    box-shadow: inset 0 2px 0 var(--head), inset 0 -2px 0 var(--head), inset 2px 0 0 var(--head);
+    box-shadow: inset 0 calc(var(--framew) - 1px) 0 var(--head), inset 0 calc(1px - var(--framew)) 0 var(--head),
+      inset calc(var(--framew) - 1px) 0 0 var(--head);
   }
   /* `.on` paints the name in the raw cursor colour, which is fine alone on its background and under 3:1 on
      some themes. Worn, the name takes `--head`, which is that colour moved until it reads. */
