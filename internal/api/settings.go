@@ -121,7 +121,7 @@ func globalAutoView(s *Server) map[string]any {
 	// What the picker will actually use, resolved. An empty box means the
 	// default set, and the person reading it wants to know what that came out
 	// as rather than being told there is a default.
-	out["browse_roots_now"] = s.browseRootsFor()
+	out["browse_roots_now"] = s.browseRootsShown()
 	// And which shell an empty box comes out as, for the same reason. This one
 	// is a search of PATH on the daemon's machine, so it is not something the
 	// person reading the box could work out for themselves.

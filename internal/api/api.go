@@ -231,6 +231,10 @@ type Server struct {
 	// is the question somebody restoring a machine actually has, and is the
 	// default for that reason.
 	ApplyImport func(body []byte, apply, force bool) (any, error)
+
+	// The browse roots the settings answer last showed. See `browseRootsShown`.
+	rootsMu sync.Mutex
+	rootsShown
 }
 
 // forever turns a one-off decision into a standing rule, so the same command

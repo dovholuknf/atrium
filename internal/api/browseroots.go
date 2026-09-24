@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/safepath"
 )
@@ -69,6 +70,42 @@ const SettingShellCommand = "shell_command"
 // dropped: a configured path that does not exist is not a permission to
 // anything.
 func (s *Server) browseRootsFor() []string {
+	return resolveRoots(s.browseRootsRaw())
+}
+
+// rootsShown is one resolved set and what it was resolved from.
+type rootsShown struct {
+	rootsKey string
+	rootsAt  time.Time
+	roots    []string
+}
+
+// How long the settings answer may show a resolved set before resolving again.
+const rootsShownFor = 30 * time.Second
+
+// browseRootsShown is the resolved set for DISPLAY, in the settings answer.
+//
+// Resolving is one `EvalSymlinks` per root, and by default there is a root per
+// worktree, so a machine with 160 of them spent over 100ms of every settings
+// read on a list only the settings dialog shows. The unresolved list is cheap,
+// so it is built each time and is the key: a new card, fixture or saved root
+// shows at once. Only a symlink moved under an existing root waits out the
+// window. `/v1/browse` never reads this and resolves fresh, because there the
+// set is a permission.
+func (s *Server) browseRootsShown() []string {
+	raw := s.browseRootsRaw()
+	key := strings.Join(raw, "\n")
+	s.rootsMu.Lock()
+	defer s.rootsMu.Unlock()
+	if s.roots != nil && s.rootsKey == key && time.Since(s.rootsAt) < rootsShownFor {
+		return s.roots
+	}
+	s.rootsShown = rootsShown{rootsKey: key, rootsAt: time.Now(), roots: resolveRoots(raw)}
+	return s.roots
+}
+
+// browseRootsRaw is the allowed set as configured, before any resolving.
+func (s *Server) browseRootsRaw() []string {
 	var raw []string
 
 	if v, err := s.st.Setting(SettingBrowseRoots); err == nil && strings.TrimSpace(v) != "" {
@@ -115,7 +152,12 @@ func (s *Server) browseRootsFor() []string {
 			}
 		}
 	}
+	return raw
+}
 
+// resolveRoots makes each root absolute and resolved, and drops the ones that
+// do not resolve and the repeats.
+func resolveRoots(raw []string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, p := range raw {
