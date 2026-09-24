@@ -272,8 +272,8 @@ function paintSwitcher() {
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
         <span class="swname">${esc(terminalLabel(t) || t.display_title)}</span>
-        ${t.id === here ? `<span class="chip">here</span>` : ""}
-        ${poppedOut(t.id) && t.id !== here
+        ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
+        ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
         <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
@@ -335,7 +335,7 @@ async function switchTo(id) {
 //   `false`, so arriving at a session that has been waiting for an hour is
 //   silent, exactly as opening a window on it is.
 async function soloSwitch(id) {
-  if (!id || id === soloID) return;
+  if (!id || sameCard(id, soloID)) return;
   // The same refusal the board makes, for the same reason, and it can be made
   // here now because a solo window keeps the other windows' claims.
   if (poppedOut(id)) {
@@ -357,7 +357,7 @@ async function soloSwitch(id) {
   soloMark = "";
   soloKnown = { perm: null, ready: null };
   history.replaceState(null, "", location.pathname + "#term=" + encodeURIComponent(id));
-  window.name = "atrium-term-" + id;
+  window.name = "atrium-term-" + bareId(id);
   if (soloBus) {
     soloBus.postMessage({ type: "solo-release", task: was });
     soloBus.postMessage({ type: "solo-claim", task: id });

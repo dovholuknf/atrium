@@ -26,7 +26,24 @@
 // So a solo window re-claims on every poll, and a claim that has not been
 // heard in `soloClaimFor` is not believed. Self-healing: the worst case is one
 // poll of being wrong, and it corrects without anybody restarting anything.
-const soloHeld = new Map();
+//
+// KEYED BY THE BARE ID, whatever spelling asks. A popped-out window is
+// addressed by the id in its `#term=` hash, fixed when it opened, while the
+// board re-resolves its attached card between `room~id` and bare every time the
+// room set changes (see `retagTermId`). A restart is a room-set change: rooms
+// re-attach one at a time. So a window opened as `sgg~X` claims `sgg~X` for
+// good while the board comes back holding `X`, and a raw-keyed ledger answered
+// "not popped out" to the board and "not mine" to the claim. Both views then
+// attached the one terminal and neither let go.
+class BareIdMap extends Map {
+  get(k) { return super.get(bareId(k)); }
+  set(k, v) { return super.set(bareId(k), v); }
+  has(k) { return super.has(bareId(k)); }
+  delete(k) { return super.delete(bareId(k)); }
+}
+// Whether two spellings name the same card. See `BareIdMap`.
+function sameCard(a, b) { return !!a && !!b && bareId(a) === bareId(b); }
+const soloHeld = new BareIdMap();
 const soloClaimFor = 15000;
 const soloBus = ("BroadcastChannel" in window) ? new BroadcastChannel("atrium-solo") : null;
 // Declared up here rather than beside the rest of the solo code, because the
@@ -182,7 +199,7 @@ if (soloBus) {
       if (m.type === "solo-who" && soloID && !soloYielded) {
         soloBus.postMessage({ type: "solo-claim", task: soloID });
       }
-      if (m.task && m.task !== soloID) {
+      if (m.task && !sameCard(m.task, soloID)) {
         if (m.type === "solo-claim") soloHeld.set(m.task, Date.now());
         if (m.type === "solo-release") soloHeld.delete(m.task);
       }
@@ -203,7 +220,7 @@ if (soloBus) {
       // `clearTermPane(true)` rather than `closeTerm`: the switching form skips
       // the restore loop, which would otherwise spend ninety seconds trying to
       // reattach the terminal this window was just asked to give up.
-      if (m.type === "solo-yield" && m.task && m.task === soloID) {
+      if (m.type === "solo-yield" && sameCard(m.task, soloID)) {
         soloYielded = true;
         soloBus.postMessage({ type: "solo-release", task: soloID });
         clearTermPane(true);
@@ -233,7 +250,7 @@ if (soloBus) {
       // The restore it starts gives up immediately, because the first thing
       // `waitLoop` asks is whether the card is popped out, and the claim above
       // is already recorded.
-      if (termTask && termTask.id === m.task) {
+      if (termTask && sameCard(termTask.id, m.task)) {
         rlog("another window claimed", m.task, "- letting go of the pane");
         toast("it moved into its own window", "the board let go of that terminal");
         closeTerm();

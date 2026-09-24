@@ -2893,6 +2893,38 @@ minute, after a room attaches or detaches, and after the board's stream drops an
 
 **Expected:** its toast goes within a poll of the answer.
 
+## AP. A popped-out terminal stays out of the board across a room-set change
+
+Run against a throwaway hub built from this branch, with two throwaway rooms joined, never the live one. The
+headless check is `HEADLESS_ONLY=popoutTagFlip node scripts/test-board-headless.js`.
+
+### AP1. A popped-out card keeps its placeholder when a room leaves
+
+1. With both rooms attached, open the terminals view and pop a card out. Its window's url carries `room~id`.
+2. Stop the other room, so one room is attached and the board spells every id bare.
+
+**Expected:** the board shows the popped-out marker on the card's row. The board's pane does not attach it. The
+popped-out window keeps its terminal.
+
+3. Start the other room again.
+
+**Expected:** the same. Nothing attaches on the board.
+
+### AP2. A popped-out card stays out of the board through a restart
+
+1. Attach a card on the board, then pop it out, with both rooms attached.
+2. Restart the hub and both rooms, so the rooms re-attach one at a time.
+
+**Expected:** the board comes back on the terminals view and does not attach the card. The popped-out window
+reconnects and keeps the terminal.
+
+### AP3. The popped-out window wins when both hold the card
+
+1. With one room attached, attach a card on the board. In a second tab, paste the card's `#term=room~id` url.
+
+**Expected:** the board lets go of its pane and says the terminal moved into its own window. Only the new window
+shows the session.
+
 ## AQ. The gate says which go it gave, and counts every board
 
 Run against a throwaway hub with ONE room attached, the live shape (`/_hub/health` says `"only"`). Never the live

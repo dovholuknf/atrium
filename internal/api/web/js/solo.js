@@ -137,7 +137,9 @@ function popOutTerm() {
 // So there are two answers and both are needed. The handle covers this page's
 // own presses. The broadcast covers a window this page never opened, which is
 // every window opened before the last reload.
-const popOuts = new Map();
+// Keyed by bare id, like `soloHeld`, so a handle recorded under one spelling
+// answers for the other after a room-set change.
+const popOuts = new BareIdMap();
 
 // Returns what it did: `raised` for a window that was already there, `opened`
 // for a new one, `unreachable` for one that is out there and cannot be
@@ -247,7 +249,7 @@ async function popOutTask(id) {
   const url = location.pathname + "#term=" + encodeURIComponent(id);
   const size = popOutSize(id);
   // Named per card, which is the first line of defence against a second one.
-  const win = window.open(url, "atrium-term-" + id,
+  const win = window.open(url, "atrium-term-" + bareId(id),
     `width=${size.w},height=${size.h},menubar=no,toolbar=no,location=no,status=no`);
   if (win) popOuts.set(id, win);
   if (!win) {
@@ -260,7 +262,7 @@ async function popOutTask(id) {
   // `docs/supervision-design.md` says nothing arbitrates. Popping out one card
   // from the stack must not tear down the unrelated terminal the board has
   // open, which is what an unconditional `closeTerm` did.
-  if (termTask && termTask.id === id) closeTerm();
+  if (termTask && sameCard(termTask.id, id)) closeTerm();
   return "opened";
 }
 
@@ -272,7 +274,7 @@ async function popOutTask(id) {
 // path; a fresh one is `about:blank`.
 function reopenByName(id) {
   let w = null;
-  try { w = window.open("", "atrium-term-" + id); } catch (e) { return null; }
+  try { w = window.open("", "atrium-term-" + bareId(id)); } catch (e) { return null; }
   if (!w) return null;
   try {
     if (w.location.href !== "about:blank") return w;
