@@ -238,9 +238,11 @@ function toggleCardColors(on) {
 //   idle      every other row in its theme too. Off by default. It started
 //             life as part of `cardColors`, so a browser that had that on
 //             starts with this on.
-//   exited    a row whose session has exited keeps its theme, washed out by
-//             the list's own surface laid over it, rather than drained to
-//             grey. Off by default.
+//   exited    a row whose session has exited keeps its theme under the fade
+//             every exited row gets, so it reads as that session's colour,
+//             pale. Off, it is the skin's card, faded, whatever `idle` says:
+//             an exited row at full strength would read as live. Off by
+//             default.
 // Per browser, for the reason `cardColors` is.
 const termWearStored = k => localStorage.getItem("atrium.termWear." + k);
 const termWearOn = {
@@ -265,10 +267,7 @@ function termWear(t, on, cold) {
     // wears the full palette and the frame says which one it is.
     return termWearOn.idle ? wearFor(t) || NO_WEAR : NO_WEAR;
   }
-  const worn = cold ? termWearOn.exited || termWearOn.idle : termWearOn.idle;
-  const w = worn && wearFor(t);
-  if (!w) return NO_WEAR;
-  return cold && termWearOn.exited ? { cls: w.cls + " washed", style: w.style } : w;
+  return (cold ? termWearOn.exited : termWearOn.idle) && wearFor(t) || NO_WEAR;
 }
 
 const NO_WEAR = { cls: "", style: "" };

@@ -265,7 +265,30 @@ function apiRelease() {
 // hub. A fetch that resolves at all, even a 500, clears it: the wire is up.
 let apiFailStreak = 0;
 
+// ONE SETTINGS READ AT A TIME PER SCOPE.
+//
+// A load asks `/v1/settings` from the skin, the global auto button, and again
+// from each of those when the hub's room list lands, all inside the first
+// read's round trip. On a hub that answer costs over 100ms, so four reads were
+// four times that. A plain read made while one for the same scope is in flight
+// waits for it instead, and each caller gets its own copy of the answer. Only
+// the in-flight read is shared, never a finished one, so a read made after a
+// save or a reconnect still asks the daemon.
+const settingsInflight = new Map();
 const api = async (path, opts) => {
+  if (path === "/v1/settings" && !opts) {
+    const scope = typeof roomNow === "function" ? roomNow() : "";
+    let p = settingsInflight.get(scope);
+    if (!p) {
+      p = apiFetch(path).finally(() => settingsInflight.delete(scope));
+      settingsInflight.set(scope, p);
+    }
+    return structuredClone(await p);
+  }
+  return apiFetch(path, opts);
+};
+
+const apiFetch = async (path, opts) => {
   await apiSlot();
   let res;
   try {

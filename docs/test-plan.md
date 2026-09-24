@@ -2736,12 +2736,14 @@ is faded to grey.
 
 1. Uncheck `the selected row wears its theme`.
 2. Check it again, and check `rows wear their theme when not selected`.
-3. Uncheck that, and check `exited rows keep their theme, washed out`.
+3. Uncheck that, and check `exited rows keep their theme, faded`.
+4. Check `rows wear their theme when not selected` again, and uncheck `exited rows keep their theme, faded`.
 
 **Expected:** after 1 the attached row is the skin's card with a frame in the skin's accent, still open toward
 the terminal. After 2 every live row is in its theme and the attached one has a two-pixel frame. The exited row
-is still grey. After 3 the live rows are back to the skin's card and the exited row is in its theme under a
-70% fog of the list's own surface. Hovering it lifts most of the fog.
+is still grey. After 3 the live rows are back to the skin's card and the exited row is its theme, pale and
+faded, still tinted, on a light skin and a dark one alike (never darker than the list). Hovering it brings most
+of it back. After 4 the live rows are in their theme and the exited row is the skin's card faded to grey.
 
 ### AE3. Kept per browser
 
@@ -2749,3 +2751,36 @@ is still grey. After 3 the live rows are back to the skin's card and the exited 
 
 **Expected:** the reload keeps all three. The second browser shows the defaults. A browser that had the old
 `cards wear their terminal colours` on opens with `rows wear their theme when not selected` checked.
+
+## AF. Terminals list: the bridge, group removal, and one settings read
+
+Run on a board with custom grouping on (gear, grouping, `custom`) and one pinned session filed into a group, so
+it is drawn twice: once under `pinned` and once under its group.
+
+### AF1. Both copies of the attached row bridge into the terminal
+
+1. Attach the pinned, filed session.
+2. Check `rows wear their theme when not selected`, and uncheck it.
+
+**Expected:** both copies of the row are framed the same way, and each has a strip of its background running
+over the divider to the terminal's edge, with the row's border along its top and bottom. With idle rows worn
+the frame and the strip's edges are both two pixels, so there is no step where they meet. Scrolling one copy
+out of view drops only its strip.
+
+### AF2. A group made here can be removed here
+
+1. Press `+ new group` in the list's tray and name it `spare`.
+2. Right click the `spare` heading and choose `remove from the view`.
+3. Right click the heading of the group holding the filed session and choose `remove from the view`.
+
+**Expected:** after 2 the `spare` heading is gone. After 3 that heading is gone too, and the session is drawn
+once, under `pinned`, still pinned and still carrying its tag. Nothing is closed. Adding the group back with
+`+ new group` files the session into it again. Right clicking any other heading (the tree's, or `untagged`)
+opens no menu of its own.
+
+### AF3. A board load reads settings once
+
+1. On a hub, open the browser's network tab and reload the board.
+
+**Expected:** one `GET /v1/settings` for the load. Reloads after the first answer in a few milliseconds rather
+than over 100, on a room with many worktrees. Opening the gear reads it again.

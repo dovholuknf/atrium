@@ -272,8 +272,8 @@
   .tabbridge {
     position: absolute; z-index: 45; pointer-events: none;
     background: var(--tabbg, var(--shell-0));
-    border-top: 1px solid var(--tabc, var(--stroke));
-    border-bottom: 1px solid var(--tabc, var(--stroke));
+    border-top: var(--tabw, 1px) solid var(--tabc, var(--stroke));
+    border-bottom: var(--tabw, 1px) solid var(--tabc, var(--stroke));
     box-sizing: border-box;
   }
   .tabbridge[hidden] { display: none; }
@@ -666,18 +666,5 @@
   }
   .term-list .card.on.bare .title, .term-list .card.on.bare .title .tname { color: var(--head); }
   .term-list .card.on.bare .title .tpath { color: var(--dim); opacity: 1; }
-  /* An exited row that keeps its theme. Washed rather than faded: the list's own surface is laid over the worn
-     row, so the row reads as that session's colour seen through fog. Opacity and grayscale on the row itself
-     suit a row in the skin's colours and make a themed one muddy, so `.cold`'s are undone here.
-     70%, by eye on midnight, daylight, paper, noir and clay with dark, mid and light themes: at 60% a dead row
-     still read as live on a dark skin, and at 85% its hue was gone on a light one. The overlay stops inside the
-     border, so the border is softened to match. Hover lifts most of the fog, as it lifts `.cold`'s fade. */
-  .term-list .card.tab.cold.washed, .term-list .card.tab.cold.washed:hover {
-    opacity: 1; filter: none; border-color: color-mix(in srgb, var(--stroke) 40%, transparent);
-  }
-  .term-list .card.tab.cold.washed::before { opacity: 1; }
-  .term-list .card.tab.cold.washed::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-    background: var(--shell-0); opacity: .7; transition: opacity .16s;
-  }
-  .term-list .card.tab.cold.washed:hover::after { opacity: .25; }
+  /* An exited row that keeps its theme needs no rule of its own: `.cold`'s fade in notify.css, over the worn
+     row, is the pale, still-tinted look. A wash of `--shell-0` laid over it instead darkened it on a light skin. */

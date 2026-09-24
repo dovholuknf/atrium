@@ -5,6 +5,26 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Terminals list: exited rows fade in their theme, both copies of the attached row bridge, groups can be
+  removed.**
+
+  `exited rows keep their theme` laid a 70% wash of the list's surface over an exited row, which on a light skin
+  turned it dark grey. It now keeps the row's theme under the ordinary exited fade, the pale, tinted look. A
+  pinned session filed into a group is drawn twice, and only the first copy got the strip that bridges the
+  divider into the terminal; each copy now gets its own, and a worn row's strip carries its 2px frame. A group
+  made with the list's `+ new group` could not be removed from the list: its heading now takes the board's
+  group menu on a right click, with move, rename and `remove from the view`. Removing one keeps every card's tag
+  and closes nothing; its cards go back where they sit without it. HUB-SIDE.
+
+- **The board reads `/v1/settings` once per load, and the read is cheaper.**
+
+  A load read settings four times on a hub, from the skin, the global auto button and both again when the room
+  list landed, all inside the first read's round trip. Reads for the same scope now share the one in flight
+  (HUB-SIDE). Each read also resolved every browse root with `EvalSymlinks`, one per worktree, for a list only
+  the settings dialog shows. The settings answer now reuses the last resolve for 30s while the configured list
+  is unchanged; `/v1/browse`, where the roots are a permission, still resolves fresh. With 160 worktrees a read
+  went from 124ms to under 5ms (ROOM-SIDE).
+
 - **Permission events can stay out of the database, and an old database can be compacted offline (opt-in).**
 
   A 57 MB live room database held no `output` events at all. Permission traffic was the bulk: `perm-requested`
@@ -29,10 +49,10 @@ section heading is just "what landed in this iteration."
   Only the selected row in the terminals list was drawn in its terminal's colours, unless the board-wide `cards
   wear their terminal colours` was on, and then every card everywhere was. The gear's board pane now has three
   switches for the list, each on its own and kept per browser: `the selected row wears its theme` (on, the old
-  look), `rows wear their theme when not selected` (off), and `exited rows keep their theme, washed out` (off).
-  The third lays the list's own surface over an exited row at 70% instead of fading it to grey, so a dead session
-  still reads as its colour. 70% was picked by eye across five skins: at 60% a dead row read as live on a dark
-  skin, at 85% its hue was gone on a light one. The board-wide setting is now `board cards wear their terminal
+  look), `rows wear their theme when not selected` (off), and `exited rows keep their theme, faded` (off).
+  The third draws an exited row in its theme under the fade every exited row gets, so a dead session reads as
+  its colour, pale. Off, an exited row is the skin's card faded to grey whatever the second says, since one at
+  full strength reads as live. The board-wide setting is now `board cards wear their terminal
   colours` and covers the stack and the board. A browser that had it on starts with the list's second switch on.
   HUB-SIDE.
 
