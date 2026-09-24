@@ -277,8 +277,13 @@ function toast(title, body, goTo, key, taskFor) {
   // 844 pixel screen, drawn over the permissions queue. The queue is the only
   // reason the board is open on a phone at all, so the announcements about it
   // do not get to bury it.
+  //
+  // A STICKY TOAST IS NOT COUNTED AND NOT EVICTED. The hub restart gate's two
+  // are the only place to act on what they say, so the oldest ordinary toast
+  // goes instead.
   const cap = innerWidth <= PHONE ? 1 : 3;
-  while (host.children.length > cap) host.firstChild.remove();
+  const plain = () => [...host.children].filter(c => !c.classList.contains("sticky"));
+  for (let p = plain(); p.length > cap; p = plain()) p[0].remove();
   return el;
 }
 

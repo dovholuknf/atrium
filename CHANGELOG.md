@@ -5,6 +5,26 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A paused hub restart stays paused until somebody resumes it, and toasts stay on screen.** See
+  `docs/test-plan.md` section AO and `docs/hub-restart-gate.md`.
+
+  A click on the countdown held the deploy only until its 300 second wait ran out. Now a pause holds with no
+  timeout. The wait counts only while the boards are busy, and a resume starts it over. No request hangs for the
+  whole pause: the hub holds each one for at most `hold` seconds (25 by default) and then answers `waiting` with
+  an ask id, and `scripts/hub-restart-gate.ps1` asks again. An ask that nobody polls for 30 seconds is dropped,
+  and its countdown comes off the boards. When the hub dies or restarts while the ask waits, the script says so
+  and exits 4. A script that sends no `hold` gets the old single request, and its pause still ends at `paused`.
+
+  The countdown and "hub restart paused" toasts stay up until the hub says what comes next. The toast cap no
+  longer counts or evicts them, and anything else that removes one sees it put back. A window opened during a
+  countdown now shows the time left.
+
+  Some toasts popped and went at once. The board keyed every alert toast by its subject. The same poll that
+  raised the toast then reaped every keyed toast that was not a waiting card or a pending request. So "... is on
+  the board", a stuck launched agent, a share that stopped and a fixture that failed all vanished in under half a
+  second, and their desktop notifications closed with them. Only a pending item, a request or a card waiting on
+  you, now gets a key. HUB-SIDE.
+
 - **A prepare command works next to a profile that prints.** See `docs/test-plan.md` section AN.
 
   The prepare command runs in a shell that loads the operator's profile, then dumps the environment on stdout.

@@ -450,6 +450,9 @@ const alerting = (() => {
   // with its own buttons: a floating copy of the first 120 characters is a
   // panel drawn over the answer. It has no bearing on the other two cases,
   // where by definition you are not looking at anything here.
+  //
+  // `opts.pending` says the subject is a pending item, a card waiting on you or
+  // a request, so the toast and the notification go once it is answered.
   function notify(title, body, goTo, permId, subject, taskFor, mark, artFor, opts) {
     opts = opts || {};
     // A card whose terminal is popped out is spoken for by that window, which
@@ -457,7 +460,12 @@ const alerting = (() => {
     // WHO RAISES the alert. Where it lands is the rest of this function.
     if (taskFor && poppedOut(taskFor)) return;
 
-    const key = permId || subject || null;
+    // THE KEY IS WHAT RETIRES IT, so only a pending item gets one. `reapToasts`
+    // takes down every keyed toast whose key is not waiting or pending, in the
+    // same poll that raised it. Keyed by any subject, "X is on the board", a
+    // stuck agent, a share that stopped and a fixture that failed all popped
+    // and went in the same breath, and their desktop notifications with them.
+    const key = permId || (opts.pending ? subject : "") || null;
 
     // 1. YOU ARE LOOKING AT THIS WINDOW. The toast is the whole message, and a
     // second copy from the operating system is noise.
@@ -488,7 +496,7 @@ const alerting = (() => {
     // toast-log.js records those. Only this branch has to say so itself.
     if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
       logNotification(title, body, goTo, key, taskFor || null);
-      showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor);
+      showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor, key);
       return;
     }
 
@@ -600,7 +608,7 @@ const alerting = (() => {
       // to it. It only silences the toast in THIS window: a nag that reaches
       // Windows, or another window, is not about what is on screen here.
       notify(`${who} is STUCK on a permission, ${mins} minutes`, body, "perms", p.id, p.id,
-        p.task_id || p.id, iconForAlert(p), "", { quiet: showing === "on-screen" });
+        p.task_id || p.id, iconForAlert(p), "", { quiet: showing === "on-screen", pending: true });
     });
     // Forget anything answered, so a later request with a fresh id starts over.
     const live = new Set(perms.map(p => p.id));
@@ -657,7 +665,7 @@ const alerting = (() => {
           d.body, "perms", first.length === 1 ? first[0].id : "",
           first.length === 1 ? first[0].id : "",
           first.length === 1 ? (first[0].task_id || first[0].id) : "",
-          first.length === 1 ? iconForAlert(first[0]) : "");
+          first.length === 1 ? iconForAlert(first[0]) : "", "", { pending: true });
       }
       return;
     }
@@ -738,9 +746,13 @@ const alerting = (() => {
     // window you are actually reading, and a board nobody is looking at rings
     // Windows instead. Two calls could not express that, and what they did
     // instead was both at once.
+    //
+    // Pending only for the two kinds that are answered. An arrival or a stuck
+    // step is news, and it stays for its full life.
     notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject,
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
-      fresh.length === 1 ? iconForAlert(fresh[0]) : "");
+      fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
+      { pending: kind === "permission" || kind === "waiting" });
   }
 })();
 
@@ -883,7 +895,8 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-function showNotification(title, body, goTo, permId, subject, mark, taskFor) {
+// `retireBy` is the pending item it goes with, empty for one nothing answers.
+function showNotification(title, body, goTo, permId, subject, mark, taskFor, retireBy) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
   const expiry = Number(alerting.get().expiry) || 0;
   // Sticky means Windows never takes it down by itself. That is right for a
@@ -924,7 +937,7 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor) {
       // What this is about, so it can be taken down once that is answered.
       // permId only exists for a permission, and a card that has gone ready
       // and then been replied to had nothing to retire it by.
-      subject: subject || permId || "",
+      subject: retireBy || permId || "",
       origin: location.origin
     });
     return null;

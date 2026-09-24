@@ -30,6 +30,13 @@ import (
 // IN MEMORY ON PURPOSE. A pause outliving the process it paused would be a
 // pause on a hub that is already gone, and a restart for any other reason is
 // the end of what it was guarding.
+//
+// HELD MEANS HELD UNTIL SOMEBODY SAYS GO. A script that says it can re-poll
+// (`hold` in its ask) gets a bounded long-poll per request and an ask that
+// outlives any one of them. A pause holds that ask with no timeout, however
+// long it takes, and a resume starts the idle wait over. The ask lives only as
+// long as the script keeps polling: one that stops for `lease` is taken as
+// gone, and its countdown comes down.
 
 // restartEvent is the stream event every board hears.
 const restartEvent = "hub-restart"
@@ -42,7 +49,25 @@ const (
 	maxCountdown     = 60
 	maxIdle          = 600
 	maxWait          = 3600
+	// How long one request of a re-polling script is held before it is
+	// answered `waiting` and asked again.
+	maxHold = 60
+	// How long an ask survives with no script polling it.
+	defaultLease = 30 * time.Second
 )
+
+// heldAsk is one re-polling script's ask. It outlives each request, and is
+// found again by id.
+type heldAsk struct {
+	id     string
+	done   chan struct{}
+	answer string
+	cancel context.CancelFunc
+	// Guarded by the gate's mu.
+	attached  int
+	seen      time.Time
+	delivered bool
+}
 
 // restartGate is one hub's gate.
 type restartGate struct {
@@ -54,6 +79,11 @@ type restartGate struct {
 	asking bool
 	// until is when the countdown on screen ends, zero when none is showing.
 	until time.Time
+	// held is a re-polling script's ask, kept until its answer is collected
+	// or nobody polls it for `lease`. It holds the slot as `asking` does.
+	held  *heldAsk
+	lease time.Duration
+	asks  int
 
 	// wake is poked by every input, pause and resume, so a waiting request
 	// re-reads the state rather than sleeping through it.
@@ -69,6 +99,7 @@ type restartGate struct {
 func newRestartGate(emit func(map[string]any), boards func() int, audit func(string, string)) *restartGate {
 	return &restartGate{
 		wake: make(chan struct{}, 1), emit: emit, boards: boards, audit: audit, now: time.Now,
+		lease: defaultLease,
 	}
 }
 
@@ -141,11 +172,93 @@ func (g *restartGate) state() map[string]any {
 func (g *restartGate) claim() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.asking {
+	if g.asking || g.held != nil {
 		return false
 	}
 	g.asking = true
 	return true
+}
+
+// start runs a claimed ask for a re-polling script, detached from any one
+// request. The ask ends with its answer, or is cancelled once nobody has polled
+// it for `lease`: the script went away and nobody would restart on a `go`.
+func (g *restartGate) start(countdown, idle, wait time.Duration) *heldAsk {
+	ctx, cancel := context.WithCancel(context.Background())
+	g.mu.Lock()
+	g.asks++
+	a := &heldAsk{
+		id: fmt.Sprintf("%d-%d", g.now().UnixNano(), g.asks), done: make(chan struct{}),
+		cancel: cancel, seen: g.now(),
+	}
+	g.held = a
+	lease := g.lease
+	g.mu.Unlock()
+	go func() {
+		answer, err := g.ask(ctx, countdown, idle, wait, true)
+		if err == nil {
+			a.answer = answer
+		}
+		close(a.done)
+	}()
+	go func() {
+		defer cancel()
+		tick := time.NewTicker(maxDur(lease/4, 10*time.Millisecond))
+		defer tick.Stop()
+		for range tick.C {
+			g.mu.Lock()
+			gone := a.delivered || (a.attached == 0 && g.now().Sub(a.seen) > lease)
+			if gone && g.held == a {
+				g.held = nil
+			}
+			g.mu.Unlock()
+			if gone {
+				return
+			}
+		}
+	}()
+	return a
+}
+
+// find is the held ask with this id, nil when there is none: it was answered
+// and collected, its script stopped polling, or this is a hub that restarted
+// since the ask was made.
+func (g *restartGate) find(id string) *heldAsk {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.held == nil || g.held.id != id {
+		return nil
+	}
+	return g.held
+}
+
+// collect waits up to `hold` for a held ask's answer. Empty means none yet, and
+// the script asks again.
+func (g *restartGate) collect(ctx context.Context, a *heldAsk, hold time.Duration) string {
+	g.mu.Lock()
+	a.attached++
+	g.mu.Unlock()
+	t := time.NewTimer(hold)
+	defer t.Stop()
+	answer := ""
+	select {
+	case <-a.done:
+		answer = a.answer
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	g.mu.Lock()
+	a.attached--
+	a.seen = g.now()
+	// An empty answer after done is an ask that was cancelled, which is not
+	// something to hand a script.
+	if answer != "" {
+		a.delivered = true
+		if g.held == a {
+			g.held = nil
+		}
+	}
+	g.mu.Unlock()
+	return answer
 }
 
 // ask is one script's request, answered `go`, `paused` or `busy`.
@@ -154,8 +267,14 @@ func (g *restartGate) claim() bool {
 // because somebody clicked, the second because the boards never went quiet
 // before the script's wait ran out.
 //
+// A PATIENT ask never answers `paused`. It waits out a pause for as long as it
+// lasts, and a resume starts its wait over, so the boards get the whole idle
+// window again rather than whatever was left of it before the click. Only a
+// script that re-polls asks patiently: one waiting on a single request would
+// time out and read the silence as no hub at all, which is a `go`.
+//
 // The caller holds the claim, and this releases it.
-func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Duration) (string, error) {
+func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Duration, patient bool) (string, error) {
 	shown := false
 	defer func() {
 		g.mu.Lock()
@@ -187,12 +306,39 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 		}
 		return true
 	}
+	// Until an input, a pause or a resume pokes it, with no timer at all.
+	sleepHeld := func() bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-g.wake:
+			return true
+		}
+	}
+	held := false
 
 	for {
 		now := g.now()
 		g.mu.Lock()
 		paused, last := g.paused, g.lastInput
 		g.mu.Unlock()
+
+		if paused && patient {
+			// The pause already took the countdown down on every board.
+			shown = false
+			if !held {
+				held = true
+				g.audit(restartEvent, "the deploy is held until the board resumes it")
+			}
+			if !sleepHeld() {
+				return "", ctx.Err()
+			}
+			continue
+		}
+		if held {
+			held = false
+			deadline = now.Add(wait)
+		}
 
 		if !now.Before(deadline) {
 			takeDown()
@@ -277,6 +423,13 @@ func minDur(a, b time.Duration) time.Duration {
 	return b
 }
 
+func maxDur(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // seconds reads one knob off the request, defaulted and clamped.
 func seconds(v float64, def, max int) time.Duration {
 	if v <= 0 {
@@ -314,8 +467,22 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 			Countdown float64 `json:"countdown"`
 			Idle      float64 `json:"idle"`
 			Wait      float64 `json:"wait"`
+			// Hold is how long this request may be held, from a script that
+			// re-polls. Ask is the id of the ask it is polling.
+			Hold float64 `json:"hold"`
+			Ask  string  `json:"ask"`
 		}
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+		if body.Hold > 0 || body.Ask != "" {
+			p.serveHeldAsk(w, r, body.Ask, seconds(body.Hold, maxHold, maxHold),
+				seconds(body.Countdown, defaultCountdown, maxCountdown),
+				seconds(body.Idle, defaultIdle, maxIdle),
+				seconds(body.Wait, defaultWait, maxWait))
+			return
+		}
+		// A SCRIPT THAT DOES NOT RE-POLL waits on this one request, so its ask
+		// is not patient: a pause still ends in `paused` when its wait runs out.
+		// Holding it forever would end in its own timeout, read as no hub.
 		if !g.claim() {
 			w.WriteHeader(http.StatusConflict)
 			fmt.Fprint(w, `{"error":"a restart is already waiting for an answer"}`)
@@ -331,7 +498,7 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 		answer, err := g.ask(r.Context(),
 			seconds(body.Countdown, defaultCountdown, maxCountdown),
 			seconds(body.Idle, defaultIdle, maxIdle),
-			seconds(body.Wait, defaultWait, maxWait))
+			seconds(body.Wait, defaultWait, maxWait), false)
 		if err != nil {
 			// The script went away, so nobody is reading an answer.
 			return
@@ -354,4 +521,43 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// serveHeldAsk answers one request of a re-polling script. The first request
+// starts the ask and later ones name it. Each is held for at most `hold`, then
+// answered `waiting` with the ask's id and whether it is paused, and the
+// script asks again.
+func (p *Proxy) serveHeldAsk(w http.ResponseWriter, r *http.Request, id string,
+	hold, countdown, idle, wait time.Duration) {
+	g := p.restart
+	var a *heldAsk
+	if id == "" {
+		if !g.claim() {
+			w.WriteHeader(http.StatusConflict)
+			fmt.Fprint(w, `{"error":"a restart is already waiting for an answer"}`)
+			return
+		}
+		a = g.start(countdown, idle, wait)
+	} else if a = g.find(id); a == nil {
+		// A HUB THAT RESTARTED has no memory of the ask, and neither does one
+		// whose ask ended. Either way the script is told so rather than left
+		// polling for an answer that is never coming.
+		w.WriteHeader(http.StatusGone)
+		fmt.Fprint(w, `{"error":"this hub has no such restart ask. it restarted, or the ask ended"}`)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	answer := g.collect(r.Context(), a, hold)
+	if r.Context().Err() != nil {
+		return
+	}
+	if answer != "" {
+		_ = json.NewEncoder(w).Encode(map[string]any{"answer": answer})
+		return
+	}
+	st := g.state()
+	_ = json.NewEncoder(w).Encode(map[string]any{"answer": "waiting", "ask": a.id, "paused": st["paused"]})
 }

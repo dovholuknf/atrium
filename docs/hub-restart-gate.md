@@ -33,8 +33,10 @@ and reporting it as input as well would take the countdown down under the pointe
 
 The hub holds it. The script only learns the answer, and a board only shows what the hub says.
 
-1. The script sends `POST /_hub/restart` with `countdown`, `idle` and `wait` in seconds. The hub sends the
-   response headers at once and holds the request open until it has an answer.
+1. The script sends `POST /_hub/restart` with `countdown`, `idle`, `wait` and `hold` in seconds. The hub sends
+   the response headers at once and holds the request for up to `hold` seconds. With no answer by then it
+   answers `waiting`, with the ask's id and whether it is paused, and the script asks again with that id. See
+   "Re-polling" below.
 2. With no board open, the answer is `go` at once. There is nobody to warn.
 3. Otherwise the hub waits until the boards have been idle for `idle` seconds.
 4. The hub sends a `hub-restart` event, state `countdown`, to every board stream. A board scoped to one room
@@ -50,24 +52,46 @@ The script restarts the hub only on `go`. The gate stops nothing itself.
 | Answer | Exit | What it means |
 | --- | --- | --- |
 | `go` | 0 | Restart now. |
-| `paused` | 3 | Somebody paused it, and the pause still held when `wait` ran out. |
 | `busy` | 3 | A board stayed in use for the whole of `wait`. |
 | 409 | 3 | Another deploy is already waiting for an answer. |
+| hub gone | 4 | The hub stopped answering, or answered 410, while the ask was waiting. |
 | 404 | 0 | The hub is older than the gate. It is restarted the old way, with no warning. |
 | no answer | 0 | No hub is listening. There is nothing to warn and nothing to stop. |
 
 ## The pause
 
-A pause holds until somebody resumes it. It also holds against later deploys: an ask made while paused waits
-for its `wait`, then answers `paused`.
+A PAUSE HOLDS UNTIL SOMEBODY RESUMES IT, with no timeout. `wait` is how long the boards may stay busy before the
+deploy gives up. It does not run while the restart is paused, and a resume starts it over. The pause also holds
+against later deploys: an ask made while paused waits, with no timeout, until the resume.
 
-The paused toast is sticky. It has no timer and no dismiss button, and it goes back on the stack if the toast cap
-pushes it off, because it is the way out of the pause. A window that opens during a pause reads
-`GET /_hub/restart` when its stream opens and shows the toast without an event.
+A pause made with no deploy waiting, because the script was already gone, holds for the next deploy the same way.
 
-Resume is the button on that toast. It sends `POST /_hub/restart/resume`. Every board then takes its paused toast
-down. The resume click counts as input, so a deploy still waiting gets the full idle window and a fresh countdown.
-It does not restart the second the button is pressed.
+Both of the gate's toasts are sticky: the countdown and "hub restart paused". Neither has a timer or a dismiss
+button. The toast cap does not count them and never evicts them, so the stack holds up to three ordinary toasts
+beside them, one on a phone. Anything else that takes one off the stack sees it put back. A toast comes down only
+when the hub says what comes next: the countdown goes on `restarting`, `cancelled` or `paused`, and the paused
+toast goes on `resumed` or `restarting`. A window that opens during a pause or a countdown reads
+`GET /_hub/restart` when its stream opens and shows the toast without an event. A stream that reopens leaves a
+countdown already on screen counting.
+
+Resume is the button on the paused toast. It sends `POST /_hub/restart/resume`. Every board then takes its paused
+toast down. The resume click counts as input, so a deploy still waiting gets the full idle window and a fresh
+countdown. It does not restart the second the button is pressed.
+
+## Re-polling
+
+No request is held for the whole of a pause. The script sends `hold`, 25 seconds by default, and the hub holds
+each request for at most that long. It then answers `waiting` with the ask's id, and the script asks again with
+`{"ask": "<id>", "hold": 25}`. The ask lives in the hub between requests. It ends when the script collects its
+answer. It also ends when no request has polled it for 30 seconds: the script is gone, so nobody would restart on
+a `go`. Its countdown then comes off every board. A pause stays.
+
+The script exits 4 when a poll finds no hub, or when the hub answers 410 because it has no such ask. A hub that
+restarted has forgotten every ask, and in both cases nobody said go.
+
+A request with no `hold` is the older script's. The hub holds that one request until it has an answer, and its
+ask is not patient: a pause held past `wait` still answers `paused`, exit 3. Held for ever, that request would hit
+the older script's own timeout, which it reads as no hub, which is a `go`.
 
 The pause is held in memory. A hub that restarts for any other reason has lost what the pause guarded, so the
 pause goes with it.
@@ -99,15 +123,18 @@ most likely to be clicked. There is no auth, the same as the rest of the hub.
 
 ## The deploy script
 
-`scripts/hub-restart-gate.ps1` asks and exits 0 for go, 3 for held. A deploy calls it before it stops the hub:
+`scripts/hub-restart-gate.ps1` asks and exits 0 for go, 3 for held, and 4 when the hub went away while the ask
+was waiting. A deploy calls it before it stops the hub:
 
 ```powershell
 & D:\worktrees\claude\atrium\orchestrator\scripts\hub-restart-gate.ps1
 if ($LASTEXITCODE -ne 0) { Say 'restart held by the board, nothing changed'; exit 0 }
 ```
 
-Its defaults are a 5 second countdown, a 10 second idle window, and a 300 second wait. The hub caps them at 60,
-600 and 3600. The request times out at `wait` plus the countdown plus 30 seconds.
+Its defaults are a 5 second countdown, a 10 second idle window, a 300 second wait and a 25 second hold. The hub
+caps them at 60, 600, 3600 and 60. The first request times out at `wait` plus the countdown plus 30 seconds,
+because a hub older than re-polling holds it for the whole wait. Each poll times out at `hold` plus the countdown
+plus 30 seconds.
 
 ## What this does not do
 

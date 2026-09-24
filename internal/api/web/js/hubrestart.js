@@ -50,13 +50,13 @@ function hubReportInput(e) {
   document.addEventListener(k, hubReportInput, { capture: true, passive: true }));
 
 // A sticky toast: no timer and no dismiss button, because it is taken down by
-// the hub saying so, not by the clock.
+// the hub saying so, not by the clock. `sticky` keeps it out of the toast cap.
 function hubToast(title, body, button, onButton) {
   const host = document.getElementById("toasts");
   if (!host) return null;
   if (typeof recordToLog === "function") recordToLog(title, body, "", null, null);
   const el = document.createElement("div");
-  el.className = "toast hubgate";
+  el.className = "toast hubgate sticky";
   el.innerHTML = `<div class="body"><b></b><span class="what"></span></div>
     <button class="hubgate-act"></button>`;
   el.querySelector("b").textContent = title;
@@ -111,15 +111,19 @@ function hubShowPaused() {
     e => { if (e.target.classList.contains("hubgate-act")) hubResume(); });
 }
 
-// THE PAUSE HAS TO STAY ON SCREEN, because it is the only way back out of it.
-// `toast` trims the stack to three and would evict it, so it is put back.
+// BOTH TOASTS STAY UNTIL THE HUB SAYS WHAT COMES NEXT. The countdown is the
+// only place to pause, and the paused toast is the only way back out. The cap
+// skips them, and anything else that takes one off the stack sees it put back.
+// Dropping one clears its variable first, so a drop is never undone here.
 // The body rather than the host, because `raiseToasts` moves the host into
 // whichever dialog is on top.
 if (window.MutationObserver) {
   new MutationObserver(() => {
-    if (!hubPausedToast || hubPausedToast.isConnected) return;
     const host = document.getElementById("toasts");
-    if (host) host.insertBefore(hubPausedToast, host.firstChild);
+    if (!host) return;
+    [hubCountdown, hubPausedToast].forEach(el => {
+      if (el && !el.isConnected) host.insertBefore(el, host.firstChild);
+    });
   }).observe(document.body, { subtree: true, childList: true });
 }
 
@@ -193,8 +197,9 @@ function onHubRestart(d) {
 
 // The stream opened. Either this is the first time, or it dropped and came back,
 // and a stream only comes back by dropping, so a cover up now is a restart that
-// has finished. The pause is re-read, since a window that opened after it was
-// clicked never heard the event.
+// has finished. The pause and a running countdown are re-read, since a window
+// that opened after either began never heard the event. A countdown already on
+// screen is left counting: the reopen is not news about it.
 function onHubStreamOpen() {
   hubClearRestarting();
   if (!hubIsHub) return;
@@ -202,5 +207,7 @@ function onHubStreamOpen() {
     if (!st) return;
     if (st.paused) hubShowPaused();
     else hubDropPaused();
+    const left = Number(st.countdown_left) || 0;
+    if (!st.paused && left > 0 && !hubCountdown) hubShowCountdown(left);
   }).catch(() => {});
 }
