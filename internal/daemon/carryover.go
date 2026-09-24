@@ -477,7 +477,7 @@ func (d *Daemon) adoptCarryover(r *runner) {
 // reading, a gap is not.
 //
 // Bounded by `max`, the size one ring holds, trimmed from the old end.
-func (r *runner) withCarried(live []byte, cuts []widthCut, wantCols, max int) ([]byte, []widthCut, bool) {
+func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]byte, []sizeCut, bool) {
 	r.mu.Lock()
 	c := r.carried
 	r.mu.Unlock()
@@ -505,12 +505,12 @@ func (r *runner) withCarried(live []byte, cuts []widthCut, wantCols, max int) ([
 
 	// The saved run at its own width, then the live ring's cuts moved past it.
 	// A live ring with no mark at its start gets one at the width it is drawn at.
-	joined := []widthCut{{0, c.cols}}
+	joined := []sizeCut{{0, c.cols, 0}}
 	if len(cuts) == 0 || cuts[0].at > 0 {
-		joined = append(joined, widthCut{len(prefix), wantCols})
+		joined = append(joined, sizeCut{len(prefix), wantCols, 0})
 	}
 	for _, cut := range cuts {
-		joined = append(joined, widthCut{cut.at + len(prefix), cut.cols})
+		joined = append(joined, sizeCut{cut.at + len(prefix), cut.cols, cut.rows})
 	}
 	return out, joined, trimmed
 }

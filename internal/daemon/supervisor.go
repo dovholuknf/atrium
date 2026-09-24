@@ -153,12 +153,13 @@ func (r *ringBuffer) SetWidth(cols int) { r.SetSize(cols, 0) }
 
 // SetSize records the size everything written from here on was composed at.
 //
-// A HEIGHT CHANGE ON ITS OWN DOES NOT LAY A MARK. It is recorded on the mark
-// in force, which is a correction rather than a boundary: the bytes before it
-// were composed at the same width and are still readable as one run. Splitting
-// on height would undo the merge rule below, which exists because a window
-// popped out and closed again changes the agreed size twice in a moment and
-// used to cut an hour of scrollback down to one page.
+// A HEIGHT CHANGE LAYS A MARK TOO. It used to be written over the mark in
+// force, on the reasoning that the bytes before it were still one run at one
+// width. They are, but the height decides what a replay files into history, and
+// overwriting it replayed a session gwt opened at thirty rows as if it had been
+// drawn at sixty: one screen survived. The merge rule below still holds for
+// height, so a size that changes and changes back with nothing written in
+// between leaves no mark.
 //
 // Zero rows means the caller does not know, which is every caller written
 // before rows were recorded. The height already on the mark stands.
@@ -168,14 +169,11 @@ func (r *ringBuffer) SetSize(cols, rows int) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if last := r.marks[len(r.marks)-1]; last.cols == cols {
-		if rows > 0 && rows != last.rows {
-			r.marks[len(r.marks)-1].rows = rows
-		}
-		return
-	}
 	if rows <= 0 {
 		rows = r.marks[len(r.marks)-1].rows
+	}
+	if last := r.marks[len(r.marks)-1]; last.cols == cols && last.rows == rows {
+		return
 	}
 
 	// A WIDTH NOTHING WAS WRITTEN AT DESCRIBES NOTHING, so it is not a mark.
@@ -192,14 +190,14 @@ func (r *ringBuffer) SetSize(cols, rows int) {
 	// if that makes the last two agree they merge, which puts the earlier run
 	// back. Nothing is guessed: the bytes before that position really were
 	// composed at the width now in force.
-	if last := len(r.marks) - 1; r.marks[last].at == r.written && last > 0 {
+	if last := len(r.marks) - 1; r.marks[last].at == r.written {
+		if last == 0 {
+			// Nothing retained was written at the old size.
+			r.marks[0].cols, r.marks[0].rows = cols, rows
+			return
+		}
 		r.marks = r.marks[:last]
-		if r.marks[len(r.marks)-1].cols == cols {
-			// Merged back into the earlier run, and the height still moved, so
-			// it is recorded there. The run is one run whatever its height.
-			if rows > 0 {
-				r.marks[len(r.marks)-1].rows = rows
-			}
+		if prev := r.marks[len(r.marks)-1]; prev.cols == cols && prev.rows == rows {
 			return
 		}
 	}
@@ -398,12 +396,9 @@ func (r *ringBuffer) Replay() (out []byte, widths []int, wrapped bool) {
 
 // ReplaySized is Replay plus the height of the run these bytes end on.
 //
-// THE LAST HEIGHT, not a list of them. Width is returned as a list because a
-// reader has to be told the run it is looking at was composed at more than one
-// of them. Height is used by one caller for one purpose, building a grid to
-// replay into, and a grid has one height: the one the session was drawn at
-// when it stopped. Earlier heights moved text up and down within runs that
-// have already scrolled into history, where a screen model has no more say.
+// THE LAST HEIGHT, not a list of them. A reader of widths only needs the
+// widths. A caller building a grid to replay into needs every height at the
+// byte it took effect, and gets them from `ReplayCuts`.
 func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -440,13 +435,13 @@ func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped 
 //
 // The same rule as the widths list: a mark at the write position describes
 // nothing yet and is left out.
-func (r *ringBuffer) ReplayCuts() (out []byte, cuts []widthCut, rows int, wrapped bool) {
+func (r *ringBuffer) ReplayCuts() (out []byte, cuts []sizeCut, rows int, wrapped bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.replayCutsLocked()
 }
 
-func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []widthCut, rows int, wrapped bool) {
+func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []sizeCut, rows int, wrapped bool) {
 	start := r.retainedStart()
 	out = r.from(start)
 	if len(out) == 0 {
@@ -455,7 +450,7 @@ func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []widthCut, rows int, 
 	// `from` can trim to a line start, so the bytes begin here and not at
 	// `start`.
 	base := r.written - int64(len(out))
-	cuts = []widthCut{{0, r.marks[0].cols}}
+	cuts = []sizeCut{{0, r.marks[0].cols, r.marks[0].rows}}
 	for _, m := range r.marks {
 		if m.at >= r.written {
 			break
@@ -466,11 +461,11 @@ func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []widthCut, rows int, 
 		}
 		last := &cuts[len(cuts)-1]
 		switch {
-		case last.cols == m.cols:
+		case last.cols == m.cols && last.rows == m.rows:
 		case last.at == at:
-			last.cols = m.cols
+			last.cols, last.rows = m.cols, m.rows
 		default:
-			cuts = append(cuts, widthCut{at, m.cols})
+			cuts = append(cuts, sizeCut{at, m.cols, m.rows})
 		}
 	}
 	return out, cuts, r.marks[len(r.marks)-1].rows, start > 0
@@ -1330,7 +1325,7 @@ func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrappe
 // subscribeSized is subscribe, plus the height the buffer was drawn at, which
 // the replay needs to build a grid the right shape and nothing else wants, and
 // the widths as cuts into the backlog, so each run replays at its own width.
-func (r *runner) subscribeSized() (backlog []byte, cuts []widthCut, rows, wantCols int, wrapped bool, updates chan []byte) {
+func (r *runner) subscribeSized() (backlog []byte, cuts []sizeCut, rows, wantCols int, wrapped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()

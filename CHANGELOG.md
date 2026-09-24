@@ -12,6 +12,15 @@ section heading is just "what landed in this iteration."
   then saw a card that was not `running` and returned before it reset the badge. A Stop now sets the badge to idle
   whatever column the card is in, and moves the column only from `running` or `dead` as before. ROOM-SIDE.
 
+- **Scrollback keeps what a session drew before its terminal grew taller.**
+
+  gwt opens a runner in a console about thirty rows tall and the board attaches later at sixty. The ring wrote
+  each height change over the mark in force, so the screen replay drew the whole session into a sixty row grid.
+  Output drawn at thirty rows never scrolled into history, and the next repaint from the top of the old screen
+  erased it. The operator saw one screen of a fresh session. A height change now lays a mark the way a width
+  change does, the replay resizes the grid's height at each mark, and shrinking files the top rows into history.
+  On the capture from the card that showed it, the replay went from 62 lines to 207. ROOM-SIDE.
+
 - **Personas on the board: a catalog, a review launched at a card, and the lessons view.**
 
   Stage 6 of `docs/personas-design.md`. The pack path is the room setting `persona_pack_path`, the personas folder

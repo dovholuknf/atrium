@@ -518,7 +518,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			// end of the last line, so the operator's first keystroke echoes in
 			// the wrong column. See `screen.textWithCursor`.
 			if len(cuts) == 0 {
-				cuts = []widthCut{{0, wantCols}}
+				cuts = []sizeCut{{0, wantCols, 0}}
 			}
 			body = replayCut(backlog, "screen", cuts, bufRows)
 		}
