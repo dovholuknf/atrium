@@ -22,6 +22,31 @@ section heading is just "what landed in this iteration."
   gates a session whose `.mcp.json` mentions it, and that keeps a session opened in an atrium checkout gated.
   ROOM-SIDE, and the hook binary.
 
+- **Groups on the terminals pane wear their colour and move by drag, and a card can leave a group by name.** See
+  `docs/test-plan.md` section AR.
+
+  The terminals pane drew every group heading in the label grey, so a recolour made on the stack or the board
+  never showed there, and one made from the pane changed only the other two views. Its headings and the line down
+  their rows now take the group's hue from the same place the stack and the board read it. The name blends toward
+  the skin's text colour, so it stays readable on a light skin. Every named group's heading takes the group menu,
+  so a group can be recoloured from the pane in any grouping mode. The colour is a per-browser preference. A second window on
+  the same browser used to keep the old colour until its next poll. It now repaints when the grouping changes.
+
+  In the `custom` grouping, a group heading on the terminals pane drags. The heading and its rows move together,
+  and the drop writes the same order `move up` and `move down` write, so the stack and the board follow. `pinned`
+  stays on top. A heading drag and a row drag are told apart, so a heading dropped on the pinned bucket pins
+  nothing and a row dropped on a group reorders nothing. In other modes the groups are sorted by a rule, so no
+  heading drags, and the tooltip says where reordering lives.
+
+  The card menu on the stack, the board and the terminals pane has `out of <group>`, which takes the group's tag
+  off. The terminals pane menu also gets `into group`, which it lacked. On the terminals pane, a row dragged from a
+  group onto `untagged` leaves that group.
+
+  Clicking a card or an alert whose terminal is popped out raises that window and no longer draws "the board sent
+  you here" in it. The window coming to the front says it. The board still says "it is in its own window" in a
+  browser with no `BroadcastChannel`, where it cannot tell whether the raise landed. `docs/test-plan.md` P1 is
+  updated to match. HUB-SIDE.
+
 - **A paused hub restart stays paused until somebody resumes it, and toasts stay on screen.** See
   `docs/test-plan.md` section AO and `docs/hub-restart-gate.md`.
 

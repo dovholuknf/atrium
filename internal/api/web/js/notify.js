@@ -186,21 +186,6 @@ if (soloBus) {
         if (m.type === "solo-claim") soloHeld.set(m.task, Date.now());
         if (m.type === "solo-release") soloHeld.delete(m.task);
       }
-      // Something the BOARD wants said, drawn HERE.
-      //
-      // The board raises this window and then says what it did. It was saying
-      // it in its own window, which is the one that no longer has the terminal
-      // and the one you are in the act of leaving, so the message was always
-      // behind you by the time it appeared.
-      //
-      // `raiseToasts` moves the toast host between elements and cannot cross a
-      // document, so the message crosses instead and the toast is built on
-      // this side. Guarded on the card because every popped-out window hears
-      // every broadcast.
-      if (m.type === "solo-toast" && m.task && m.task === soloID) {
-        toast(m.title || "", m.body || "");
-        return;
-      }
       // ANOTHER WINDOW IS TAKING THIS CARD, and this one lets go.
       //
       // The other half of the refusal in `bootTerminalOnly`. A window opened on

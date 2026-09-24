@@ -809,16 +809,12 @@ async function attachTask(id) {
     // be a heartbeat stale, so "it is already open" is a guess until the
     // window has actually been found.
     //
-    // The raised case is said IN THE RAISED WINDOW. That window is coming to
-    // the front as this line runs, so a toast drawn here appears in the one
-    // document that is on its way behind, and is gone by the time anybody
-    // looks back. Locally only when there is no channel to hand it over, in
-    // which case behind you is better than nowhere.
+    // The raised case says nothing. The window coming to the front is the
+    // answer, and a toast in it saying so was one more thing to dismiss. With
+    // no channel the board cannot know a raise landed, so it says where the
+    // terminal is from here, which is behind you but better than nowhere.
     if (what === "raised") {
-      if (!sayInSoloWindow(id, "the board sent you here",
-            "this card's terminal is already in this window.")) {
-        toast("it is in its own window", "raised it for you");
-      }
+      if (!soloBus) toast("it is in its own window", "raised it for you");
     } else if (what === "opened") {
       toast("it was not there any more", "opened it again");
     }

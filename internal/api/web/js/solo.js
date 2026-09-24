@@ -314,25 +314,6 @@ function stillOutThere(id) {
   });
 }
 
-// Says something in the window that holds a card, rather than in the one that
-// was clicked.
-//
-// The board raises a popped-out window and then has something to say about
-// having done it. Saying it here draws it in the window you are leaving. It
-// belongs where you are going.
-//
-// Returns whether it was HANDED OVER, which is not the same as drawn: a
-// broadcast has no delivery report, and a window running an older build of
-// this page would ignore the message. The claim the caller makes on the back
-// of a `true` is only that this board said nothing itself, which is a fact
-// about this document and is verifiable here.
-function sayInSoloWindow(id, title, body) {
-  if (!soloBus) return false;
-  try { soloBus.postMessage({ type: "solo-toast", task: id, title, body }); }
-  catch (e) { return false; }
-  return true;
-}
-
 // How big a popped-out window opens.
 //
 // Set by resizing one, not by filling in a form. The size you want is a thing

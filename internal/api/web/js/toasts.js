@@ -18,15 +18,10 @@ async function attachIfSupervised(taskID) {
     const t = await api(`/v1/tasks/${taskID}`);
     if (!t.supervised) return false;
     if (poppedOut(taskID)) {
-      const what = await popOutTask(taskID);
-      // Opened means the claim was stale and there is a new window, which is
-      // still where the terminal now is. Every other answer has already said
-      // what happened.
-      if (what !== "opened" && what !== "raised") return true;
-      if (what === "raised") {
-        sayInSoloWindow(taskID, "the board sent you here",
-          "you clicked an alert for this card. its terminal is in this window.");
-      }
+      // Nothing more is said. Raised, the window coming to the front says it.
+      // Opened, the new window does. Every other answer has already said what
+      // happened.
+      await popOutTask(taskID);
       return true;
     }
     openTerm(t);

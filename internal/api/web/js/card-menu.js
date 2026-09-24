@@ -473,6 +473,23 @@ function groupItem(id, t) {
   };
 }
 
+// Take this card OUT of a group, said as its own entry. `into group` already
+// unfiles by pressing a ticked group a second time, and nobody reads a tick in
+// a flyout called "into" as the way out, so the way out had no name. One group
+// is one entry. Several open a flyout of just the ones the card is in.
+function outOfGroupItem(id, t) {
+  if (typeof groupingPrefs !== "function") return null;
+  const p = groupingPrefs();
+  if (p.mode !== "custom") return null;
+  const tags = t.tags || [];
+  const inside = (Array.isArray(p.groups) ? p.groups : []).filter(n => tags.includes(n));
+  if (!inside.length) return null;
+  const out = name => () => patchTask(id, { tags: tags.filter(x => x !== name) }).then(refresh);
+  const help = "Takes the group's tag off this card. Nothing else about the card changes.";
+  if (inside.length === 1) return { label: "out of " + inside[0], help, act: out(inside[0]) };
+  return { label: "out of group", help, sub: inside.map(name => ({ label: name, act: out(name) })) };
+}
+
 async function cardMenu(e, id) {
   // WITH TEXT SELECTED, THIS MENU STANDS ASIDE. Both buttons.
   //
@@ -695,6 +712,7 @@ async function cardMenu(e, id) {
     moveItem(id, t),
     nudgeItems(id, t),
     groupItem(id, t),
+    outOfGroupItem(id, t),
     { label: t.pinned ? "unpin" : "pin to the top", act: () => togglePin(id, !t.pinned) },
     // A toggle, drawn as one. It reads as a state you are looking at rather
     // than a verb you are about to perform, which matters most in the case
