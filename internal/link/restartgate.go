@@ -62,6 +62,7 @@ type heldAsk struct {
 	id     string
 	done   chan struct{}
 	answer string
+	why    string
 	cancel context.CancelFunc
 	// Guarded by the gate's mu.
 	attached  int
@@ -79,6 +80,8 @@ type restartGate struct {
 	asking bool
 	// until is when the countdown on screen ends, zero when none is showing.
 	until time.Time
+	// why is the reason for the last go. See saidGo.
+	why string
 	// held is a re-polling script's ask, kept until its answer is collected
 	// or nobody polls it for `lease`. It holds the slot as `asking` does.
 	held  *heldAsk
@@ -196,7 +199,7 @@ func (g *restartGate) start(countdown, idle, wait time.Duration) *heldAsk {
 	go func() {
 		answer, err := g.ask(ctx, countdown, idle, wait, true)
 		if err == nil {
-			a.answer = answer
+			a.answer, a.why = answer, g.lastWhy()
 		}
 		close(a.done)
 	}()
@@ -361,7 +364,7 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 		// window closing during a wait lets the restart through.
 		if g.boards() == 0 {
 			takeDown()
-			g.audit(restartEvent, "restarting: no board is open")
+			g.saidGo("no board is open")
 			return "go", nil
 		}
 		if quiet := now.Sub(last); quiet < idle {
@@ -377,6 +380,7 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 		g.mu.Lock()
 		g.until = start.Add(countdown)
 		g.mu.Unlock()
+		watching := g.boards()
 		g.emit(map[string]any{"state": "countdown", "seconds": countdown.Seconds()})
 		shown = true
 		for {
@@ -411,9 +415,38 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 			return "", ctx.Err()
 		}
 		g.emit(map[string]any{"state": "restarting"})
-		g.audit(restartEvent, "restarting after a countdown nobody paused")
+		g.saidGo(fmt.Sprintf("counted down on %d board stream(s) and nobody paused", watching))
 		return "go", nil
 	}
+}
+
+// saidGo records why the gate said go, for the audit line and the script.
+//
+// THE TWO GOES ARE TOLD APART OUT LOUD. With one message for both, a deploy
+// that counted down on an open board read exactly like one that found no board,
+// and the gate was blamed for not counting a board it had counted.
+func (g *restartGate) saidGo(why string) {
+	g.mu.Lock()
+	g.why = why
+	g.mu.Unlock()
+	g.audit(restartEvent, "restarting: "+why)
+}
+
+// lastWhy is the reason for the last go. One ask runs at a time, so it is that
+// ask's.
+func (g *restartGate) lastWhy() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.why
+}
+
+// goAnswer is the body a script reads. `why` rides on a go only.
+func goAnswer(answer, why string) map[string]any {
+	out := map[string]any{"answer": answer}
+	if answer == "go" && why != "" {
+		out["why"] = why
+	}
+	return out
 }
 
 func minDur(a, b time.Duration) time.Duration {
@@ -503,7 +536,7 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 			// The script went away, so nobody is reading an answer.
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"answer": answer})
+		_ = json.NewEncoder(w).Encode(goAnswer(answer, g.lastWhy()))
 	case "input", "pause", "resume":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -555,7 +588,7 @@ func (p *Proxy) serveHeldAsk(w http.ResponseWriter, r *http.Request, id string,
 		return
 	}
 	if answer != "" {
-		_ = json.NewEncoder(w).Encode(map[string]any{"answer": answer})
+		_ = json.NewEncoder(w).Encode(goAnswer(answer, a.why))
 		return
 	}
 	st := g.state()

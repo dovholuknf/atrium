@@ -58,6 +58,11 @@ func listen(t *testing.T, url string) (<-chan Event, func()) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("the stream answered %d", res.StatusCode)
 	}
+	return readSSE(res), func() { res.Body.Close() }
+}
+
+// readSSE reads events off a stream already open.
+func readSSE(res *http.Response) <-chan Event {
 	out := make(chan Event, 16)
 	go func() {
 		defer close(out)
@@ -82,7 +87,7 @@ func listen(t *testing.T, url string) (<-chan Event, func()) {
 			}
 		}
 	}()
-	return out, func() { res.Body.Close() }
+	return out
 }
 
 func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {

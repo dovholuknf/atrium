@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The hub restart gate says which go it gave.** See `docs/test-plan.md` section AQ and
+  `docs/hub-restart-gate.md`.
+
+  The script printed `go: nobody is using a board and nobody paused` for every go. A deploy that counted down on
+  an open board read exactly like one that found no board, and the gate was blamed for not counting a board it had
+  counted: the hub's audit log said `restarting after a countdown nobody paused`. A go now carries `why`, either
+  `no board is open` or `counted down on N board stream(s) and nobody paused`, and the script and the audit line
+  both say it. Tests pin that every stream spelling a board can use counts for the gate and hears the countdown,
+  on a single-room hub and a two-room one, and that input from a scoped board reaches the gate. HUB-SIDE.
+
 - **The room's input-lag echo line says whose time it was.** See `docs/test-plan.md` section AS and
   `docs/input-lag-logging.md`.
 
