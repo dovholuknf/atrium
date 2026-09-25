@@ -3128,6 +3128,15 @@ queue that keeps growing. `/v1/health` still answers in the network tab.
 
 **Expected:** within one poll every list repaints and the fetch counts go back to zero. Nothing needs a reload.
 
+### AU3. The hub answers for a silent room
+
+1. During the same window as AU2, watch a board read such as `/v1/waiting` in the network tab.
+
+**Expected:** it comes back as a 503 after about 12 seconds, saying the room is attached but did not answer and may
+still be reconnecting. It does not hang until the room returns. The event stream and an attached terminal stay
+open throughout. `go test ./internal/link -run 'SilentRoom|QuietEventStream|SlowBody'` covers this against a room
+that never answers.
+
 ## AV. A group opened by hand stays open in custom mode
 
 Run on a hub built from this branch with grouping set to custom, at least one group of your own, a card in none of
