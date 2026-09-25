@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A big paste says it is on its way.** See `docs/test-plan.md` section BB.
+
+  A paste of 2KB or more into an attached terminal shows a spinner and `pasting <size>` at the top right of the
+  terminal while it is in flight. It appears only after 150ms, so a paste that lands at once never flashes it. It
+  goes at the first runner output after the socket's send buffer has drained, or after 20 seconds. The send path
+  is unchanged: a paste is still one frame. The input lag log's `socket had N bytes unsent` is now read before the
+  key is sent, so it no longer counts the key's own 18-byte frame on every line, and it reads `before this key`.
+  HUB-SIDE.
+
 - **A theme preview recolours the card.** See `docs/test-plan.md` section BA.
 
   The theme picker on the terminal bar previewed a theme on the terminal alone. With card colours on, the attached
@@ -36,7 +45,6 @@ section heading is just "what landed in this iteration."
   the board and the stack use. Pinned keeps its pin order, and your own groups keep their hand order. The new
   headless section `untaggedSort` reads `untagged` on all three views under name and activity, and on the stack
   under project and runner too. HUB-SIDE.
-
 - **The unexpected-exit notice.** See `docs/unexpected-exit-wake.md` and `docs/test-plan.md` section AY.
 
   When the room crashes, is killed or is stopped for a restart or a deploy while a supervised runner is mid-turn
