@@ -5,6 +5,10 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The popped-out window notice says what to do.** Clicking a card whose terminal is in a window this board cannot
+  raise (one opened before a reload) now says "this terminal is open in another window: switch to that window, or
+  close it and pop the card out again", instead of explaining which windows a page may raise. HUB-SIDE.
+
 - **A popped-out terminal stays out of the board after a room-set change.** See `docs/test-plan.md` section AP.
 
   The hub spells a card `room~id` while more than one room is attached and bare with one. A restart re-attaches

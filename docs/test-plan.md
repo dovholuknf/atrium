@@ -1209,8 +1209,8 @@ board would fail to find it, open a second window onto the same terminal, and sa
    supervised card. The terminal attaches.
 2. Go back to the board. Press `attach` on that card.
 
-**Expect** a dialog saying it is in a window this board did not open, and that a page may only raise a window it
-opened itself. **No second window opens.** Two views on one terminal is the situation `docs/supervision-design.md`
+**Expect** a dialog titled "this terminal is open in another window", telling you to switch to that window, or close
+it and pop the card out again. **No second window opens.** Two views on one terminal is the situation `docs/supervision-design.md`
 says nothing arbitrates, so opening one here is a failure even though it looks helpful.
 
 ### P3. A stale claim still opens a window

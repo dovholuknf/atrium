@@ -236,10 +236,9 @@ async function popOutTask(id) {
     // answers is out there, and the honest answer is that this board cannot
     // bring it forward.
     if (await stillOutThere(id)) {
-      tellUser("it is in a window this board did not open",
-        "That window is still there and still has the terminal, and a page may only raise a " +
-        "window it opened itself, so this board cannot bring it forward. Alt-tab to it, or " +
-        "close it and pop the card out again from here.");
+      tellUser("this terminal is open in another window",
+        "Switch to that window to use it. If you cannot find it, close it and pop the card " +
+        "out again from here.");
       return "unreachable";
     }
   }
