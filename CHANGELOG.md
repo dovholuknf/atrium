@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The restart notice stays on screen until atrium is back.** See `docs/test-plan.md` section BE.
+
+  The restarting cover came down on the first stream reopen, which could be the old hub's stream coming back before
+  the old hub went. A new board build then reloaded the page, and the reloaded page came up bare while atrium was
+  still settling. Now `GET /_hub/restart` names the hub process in a new `boot` field, and the cover waits for a
+  different name, then for the board build to be read and one refresh to finish. A reload under the cover, from a new
+  build or by hand, brings the cover straight back. Nothing else can close it while it is up. A window that missed
+  `restarting` keeps the countdown at `0s` until the new hub answers, and the cover then takes over. The gate's
+  timings and rules did not change. The new headless section `restartStays` covers each path, frame by frame.
+  HUB-SIDE.
+
 - **A click on an alert lands where the alert is about.** See `docs/test-plan.md` section BD.
 
   Clicking `X is on the board` landed on the stack, not on the terminal that had just opened. A desktop

@@ -3474,3 +3474,48 @@ seconds for it.
 1. Close every atrium tab. Launch a session, and click the desktop notification.
 
 **Expected:** a board opens on the new card's terminal, and the address bar shows no `?land=` after it lands.
+
+## BE. The restart notice stays until atrium is back
+
+Run on a hub built from this branch, with the board open on the terminals pane and a card attached. Each step needs
+a hub-only deploy through `scripts/hub-restart-gate.ps1`. The headless section `restartStays` covers BE1 to BE4
+against a mocked hub, frame by frame, and `restartGate` covers the cover clearing on a new hub.
+
+The rule: from the moment `atrium restarts in 5s` appears until the new atrium answers and the board has caught up,
+the countdown or the cover is on screen in every frame. The cover comes down only once `GET /_hub/restart` names a
+different hub process from the one that said `restarting`, the board build has been read, and one refresh has
+finished.
+
+### BE1. Countdown to cover to board
+
+1. Leave the board idle and deploy a hub-only build with no board change.
+
+**Expected:** the countdown runs to `0s` and stays until the cover replaces it, with no frame of bare board between.
+The cover stays while the hub is down and comes down once the new hub answers and the cards have been read again.
+It does not flash off and back on.
+
+### BE2. A new board build
+
+1. Deploy a hub-only build that changes the board.
+
+**Expected:** the page reloads onto the new build while the cover is up, and the reloaded page comes up with the
+cover already on it, its clock still counting from when the restart began. The cover comes down once the reloaded
+board has its cards. At no point is the board bare with atrium still away.
+
+### BE3. Nothing else takes it down
+
+1. During a restart, press Escape, click outside the cover, and click a toast that goes to a view or a card.
+
+**Expected:** the cover stays. Its clock keeps counting.
+
+2. During a restart, reload the page yourself.
+
+**Expected:** the page comes back with the cover up, and it comes down when atrium is back.
+
+### BE4. A window that missed `restarting`
+
+1. Open two board windows. In one, open the browser's dev tools, set the network to offline just before the
+   countdown runs out, and set it back online once the new hub is up.
+
+**Expected:** that window keeps the countdown at `0s` while it is offline. When it reaches the new hub, the cover
+takes over from the countdown and then comes down. The countdown is not left on screen.

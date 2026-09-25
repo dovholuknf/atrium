@@ -27,6 +27,16 @@ let hubCountdown = null;
 let hubCountdownTick = 0;
 let hubPausedToast = null;
 let hubRestarting = 0;
+// Which hub process this page last heard from, as `GET /_hub/restart` names it,
+// and which one said `restarting`. The cover waits for a different name.
+let hubBoot = "";
+let hubRestartFrom = "";
+// Whether the stream has dropped since `restarting`. What stands in for the
+// name when the hub that said it was too old to give one.
+let hubDropped = false;
+// The first refresh pass that has to finish before the cover comes down. Zero
+// until the new hub has answered.
+let hubSettleFrom = 0;
 
 // The gate's own toasts and cover are not input. A click on the countdown is a
 // pause, and reporting it as input as well would take the countdown down under
@@ -150,10 +160,28 @@ if (window.MutationObserver) {
 const HUB_RESTART_SLOW = 30000;
 let hubRestartClock = 0;
 
-function hubShowRestarting() {
+// THE COVER OUTLIVES A RELOAD. A new board build reloads the page the moment the
+// new hub is seen (see `checkBuild`), and a reload blanks it. Holding the reload
+// back would not help: the page goes bare whenever it reloads. So the cover is
+// written down here while it is up, and a page that loads with it written down
+// puts it straight back, before the board under it has drawn anything.
+const HUB_RESTART_KEY = "atrium.hubrestart";
+// Past this a written-down cover is left alone: a tab restored long after has
+// nothing to wait for.
+const HUB_RESTART_STALE = 600000;
+
+// `at` and `from` are only passed by a page that reloaded under the cover, so
+// its clock carries on and it waits for the same hub to go.
+function hubShowRestarting(at, from) {
   const dlg = document.getElementById("hubrestart");
   if (!dlg) return;
-  hubRestarting = Date.now();
+  hubRestarting = at || Date.now();
+  hubRestartFrom = at ? (from || "") : hubBoot;
+  hubDropped = !!at;
+  hubSettleFrom = 0;
+  try {
+    sessionStorage.setItem(HUB_RESTART_KEY, JSON.stringify({ at: hubRestarting, from: hubRestartFrom }));
+  } catch (e) {}
   const line = document.getElementById("hubrestart-t");
   const clock = document.getElementById("hubrestart-el");
   const paint = () => {
@@ -167,27 +195,87 @@ function hubShowRestarting() {
   clearInterval(hubRestartClock);
   hubRestartClock = setInterval(paint, 1000);
   if (!dlg.open) dlg.showModal();
-  const at = hubRestarting;
+  const since = hubRestarting;
   setTimeout(() => {
-    if (hubRestarting !== at) return;
-    // Still live on the same stream means the old hub never went.
+    if (hubRestarting !== since || hubSettleFrom) return;
+    // Still live and still the same hub means the old hub never went.
     const conn = document.getElementById("conn");
-    if (conn && conn.classList.contains("live")) {
+    if (!conn || !conn.classList.contains("live")) return;
+    plainFetch("/_hub/restart").then(r => r.ok ? r.json() : null).then(st => {
+      if (hubRestarting !== since || hubSettleFrom || !st) return;
+      if (hubRestartFrom && st.boot && st.boot !== hubRestartFrom) { hubSettle(); return; }
       hubClearRestarting();
       if (typeof toast === "function") {
         toast("atrium did not restart",
           "the update was called for, but atrium never went down. nothing changed.");
       }
-    }
-  }, HUB_RESTART_GIVEUP);
+    }).catch(() => {});
+  }, Math.max(0, since + HUB_RESTART_GIVEUP - Date.now()));
 }
 
 function hubClearRestarting() {
   hubRestarting = 0;
+  hubSettleFrom = 0;
   clearInterval(hubRestartClock);
   hubRestartClock = 0;
+  try { sessionStorage.removeItem(HUB_RESTART_KEY); } catch (e) {}
   const dlg = document.getElementById("hubrestart");
   if (dlg && dlg.open) dlg.close();
+}
+
+// IS THIS THE NEW HUB. Asked on every stream open while the cover is up, and
+// again each second while the answer does not come. A stream reopening is not
+// the answer on its own: the old hub's stream can blip and come back before the
+// old hub goes, and that reopen took the cover down with the hub still to go.
+// Only a hub that names itself differently from the one that said
+// `restarting` is the new one. A plain daemon has no gate and nothing to wait
+// for.
+let hubChecking = false;
+function hubCheckBack() {
+  if (!hubRestarting || hubSettleFrom || hubChecking) return;
+  hubChecking = true;
+  plainFetch("/_hub/restart").then(r => {
+    if (r.status === 404) return { plain: true };
+    return r.ok ? r.json() : null;
+  }).catch(() => null).then(st => {
+    hubChecking = false;
+    if (!hubRestarting || hubSettleFrom) return;
+    if (!st) {
+      setTimeout(() => {
+        const conn = document.getElementById("conn");
+        if (conn && conn.classList.contains("live")) hubCheckBack();
+      }, 1000);
+      return;
+    }
+    if (st.boot) hubBoot = st.boot;
+    const back = st.plain || (hubRestartFrom ? !!st.boot && st.boot !== hubRestartFrom : hubDropped);
+    if (back) hubSettle();
+  });
+}
+
+// THE NEW HUB IS UP. The cover stays until the board under it has caught up:
+// the build is read first, so a new one reloads the page under the cover rather
+// than after it, and then one whole refresh pass that began after this point
+// has to finish. `onRefreshSettled` takes it from there.
+function hubSettle() {
+  hubSettleFrom = -1;
+  plainFetch("/v1/health").then(r => r.ok ? r.json() : Promise.reject(r.status)).then(h => {
+    if (!hubRestarting) return;
+    if (typeof checkBuild === "function") checkBuild(h.build);
+    if (typeof boardReloading !== "undefined" && boardReloading) return;
+    hubSettleFrom = (typeof refreshSeq === "number" ? refreshSeq : 0) + 1;
+    if (typeof refreshSoon === "function") refreshSoon();
+    else hubClearRestarting();
+  }).catch(() => {
+    setTimeout(() => { if (hubRestarting && hubSettleFrom === -1) hubSettle(); }, 1000);
+  });
+}
+
+// A refresh pass finished. See `runRefresh`.
+function onRefreshSettled(seq) {
+  if (!hubRestarting || hubSettleFrom <= 0 || seq < hubSettleFrom) return;
+  if (typeof boardReloading !== "undefined" && boardReloading) return;
+  hubClearRestarting();
 }
 
 (function holdTheCover() {
@@ -196,9 +284,19 @@ function hubClearRestarting() {
   // Escape does not take it down, and neither does anything that closes every
   // open dialog on its way somewhere: the hub is still away.
   dlg.addEventListener("cancel", e => e.preventDefault());
+  // A close while it is up is refused outright rather than undone after. The
+  // close event comes a task later, and the frame between is a flash of the
+  // board with the hub still away.
+  const close = dlg.close.bind(dlg);
+  dlg.close = v => { if (!hubRestarting) close(v); };
   dlg.addEventListener("close", () => {
     if (hubRestarting) setTimeout(() => { if (hubRestarting && !dlg.open) dlg.showModal(); }, 0);
   });
+  try {
+    const was = JSON.parse(sessionStorage.getItem(HUB_RESTART_KEY) || "null");
+    if (was && was.at && Date.now() - was.at < HUB_RESTART_STALE) hubShowRestarting(was.at, was.from);
+    else sessionStorage.removeItem(HUB_RESTART_KEY);
+  } catch (e) {}
 })();
 
 // What the hub said, off the event stream.
@@ -229,19 +327,35 @@ function onHubRestart(d) {
   }
 }
 
-// The stream opened. Either this is the first time, or it dropped and came back,
-// and a stream only comes back by dropping, so a cover up now is a restart that
-// has finished. The pause and a running countdown are re-read, since a window
-// that opened after either began never heard the event. A countdown already on
-// screen is left counting: the reopen is not news about it.
+// The stream opened. With the cover up, this may be the new hub, and
+// `hubCheckBack` finds out. Otherwise the pause and a running countdown are
+// re-read, since a window that opened after either began never heard the event.
+// A countdown already on screen is left counting: the reopen is not news about
+// it. The hub's name is kept from here, for the cover to wait on.
 function onHubStreamOpen() {
-  hubClearRestarting();
+  if (hubRestarting) { hubCheckBack(); return; }
   if (!hubIsHub) return;
   plainFetch("/_hub/restart").then(r => r.ok ? r.json() : null).then(st => {
-    if (!st) return;
+    if (!st || hubRestarting) return;
+    // A DIFFERENT HUB UNDER A COUNTDOWN is the restart it promised, heard by a
+    // window whose stream missed `restarting`. The countdown stayed up while the
+    // hub was away, and the cover takes over from it now until the board has
+    // settled, rather than leaving it at 0s for good.
+    if (hubCountdown && hubBoot && st.boot && st.boot !== hubBoot) {
+      hubDropCountdown();
+      hubShowRestarting();
+      hubCheckBack();
+      return;
+    }
+    if (st.boot) hubBoot = st.boot;
     if (st.paused) hubShowPaused();
     else hubDropPaused();
     const left = Number(st.countdown_left) || 0;
     if (!st.paused && left > 0 && !hubCountdown) hubShowCountdown(left);
   }).catch(() => {});
+}
+
+// The stream dropped. Under the cover that is the old hub going.
+function onHubStreamDrop() {
+  if (hubRestarting) hubDropped = true;
 }

@@ -215,6 +215,14 @@ let hubHasRoom = true;
 let gatePaused = false;
 // What `GET /_hub/restart` says is left of a countdown, for a window opened during one.
 let gateCountdownLeft = 0;
+// Which hub process `GET /_hub/restart` names, and whether the hub is away. Away
+// drops every stream and hub call on the floor, the way a stopped hub refuses
+// the connection, so the board's event stream keeps retrying. See
+// restartStaysSection.
+let gateBoot = "boot-a";
+let hubAway = false;
+// The board build `/v1/health` reports. A change makes the board reload.
+let healthBuild = "test";
 const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
@@ -329,6 +337,8 @@ function sendJSON(res, obj) {
 
 const server = http.createServer((req, res) => {
   const url = req.url.split("?")[0];
+
+  if (hubAway) { req.socket.destroy(); return; }
 
   if (roomStallUntil > Date.now() && url.startsWith("/v1/") && url !== "/v1/health" &&
       !url.startsWith("/v1/events")) {
@@ -472,7 +482,7 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
   if (url === "/v1/health") {
-    sendJSON(res, { build: "test", settling: false, halted: false }); return;
+    sendJSON(res, { build: healthBuild, settling: false, halted: false }); return;
   }
   if (url === "/v1/settings") {
     // The scope is the room header the board's fetch wrapper adds, or "" for the
@@ -565,7 +575,8 @@ const server = http.createServer((req, res) => {
     if (sub === "/input") gateCalls.input++;
     if (sub === "/pause") { gateCalls.pause++; gatePaused = true; }
     if (sub === "/resume") { gateCalls.resume++; gatePaused = false; }
-    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1 });
+    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1,
+      boot: gateBoot });
     return;
   }
   // The operational audit feed, newest first and filterable by room and kind the
@@ -1641,7 +1652,9 @@ async function restartGateSection(browser, base) {
     if (!(await gp.evaluate(() => document.getElementById("hubrestart").open))) {
       fail("the restarting modal came down while the hub was still away.");
     }
-    // The hub goes and a new one answers: the stream reopens and the modal clears.
+    // The hub goes and a new one answers: the stream reopens onto a hub with a
+    // new name and the modal clears. See restartStaysSection for the old hub.
+    gateBoot = "boot-a2";
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
       .catch(() => fail("the restarting modal did not clear when the stream came back."));
@@ -1650,6 +1663,157 @@ async function restartGateSection(browser, base) {
     hubMode = wasHub;
     gatePaused = false;
     gateCountdownLeft = 0;
+    gateBoot = "boot-a";
+    await ctx.close();
+  }
+}
+
+// THE RESTART NOTICE STAYS UNTIL THE NEW HUB IS UP AND THE BOARD HAS SETTLED.
+// From the countdown to the cover to the new hub answering, something from the
+// gate is on screen every frame. The cover came down on the first stream reopen,
+// which could be the old hub's stream coming back from a blip, and a new build's
+// reload took it down for good: the page came back bare while it settled.
+async function restartStaysSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const gp = await ctx.newPage();
+  const errors = [];
+  gp.on("pageerror", e => errors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) gp.on("console", m => console.error("[stays] " + m.text()));
+  const wasHub = hubMode;
+  hubMode = true;
+  gatePaused = false;
+  gateBoot = "boot-a";
+  healthBuild = "test";
+  const say = state => {
+    const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
+    openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+  };
+  const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
+  const coverUp = () => gp.evaluate(() => document.getElementById("hubrestart").open);
+  const live = () => gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
+    null, { timeout: 15000 });
+  // What is on screen each frame, as runs: `t` a gate toast, `c` the cover, `-`
+  // neither. A `-` anywhere but at the very end is a gap.
+  const watch = () => gp.evaluate(() => {
+    window.__seen = "";
+    const now = () => {
+      const cover = document.getElementById("hubrestart");
+      if (cover && cover.open) return "c";
+      return [...document.querySelectorAll(".toast.hubgate")].some(el => el.getClientRects().length > 0)
+        ? "t" : "-";
+    };
+    const tick = () => {
+      const s = now();
+      if (!window.__seen.endsWith(s)) window.__seen += s;
+      window.__watch = requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  const seen = () => gp.evaluate(() => window.__seen);
+  const gaps = async () => ((await seen()).replace(/-$/, "").match(/-/g) || []).length;
+  try {
+    await gp.goto(base, { waitUntil: "domcontentloaded" });
+    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+    await gp.waitForTimeout(500);
+
+    // Countdown to cover, with no frame between them.
+    say({ state: "countdown", seconds: 1 });
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("a countdown drew no toast."));
+    await watch();
+    await gp.waitForTimeout(1500);
+    if (!(await gp.$(".toast.hubgate"))) fail("the countdown toast went at 0 before the hub said restarting.");
+    say({ state: "restarting" });
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+      .catch(() => fail("restarting drew no cover."));
+    if (await gaps()) fail("between the countdown and the cover a frame showed neither: " + (await seen()));
+
+    // The old hub's stream blips and comes back before the old hub goes. Same
+    // hub, so the cover stays.
+    drop();
+    await live().catch(() => fail("the stream did not come back after a blip."));
+    await gp.waitForTimeout(1000);
+    if (!(await coverUp())) fail("the cover came down when the OLD hub's stream reopened.");
+
+    // Nothing else on the board takes it down: a view switch, the terminals
+    // pane redrawing, a refresh, every dialog being closed.
+    await gp.evaluate(async () => {
+      switchView("terms");
+      if (typeof renderTerms === "function") await renderTerms();
+      switchView("stack");
+      refreshSoon();
+      await closeOpenDialogs();
+      document.getElementById("hubrestart").close();
+    });
+    await gp.waitForTimeout(1500);
+    if (!(await coverUp())) fail("the cover came down on a view switch, a terminals redraw or a dialog close.");
+
+    // The old hub goes. The cover holds while nothing answers.
+    hubAway = true;
+    drop();
+    await gp.waitForTimeout(2500);
+    if (!(await coverUp())) fail("the cover came down while the hub was away.");
+
+    // The new hub answers on the same build: the cover clears, and not before.
+    gateBoot = "boot-b";
+    hubAway = false;
+    await live().catch(() => fail("the stream did not come back from the new hub."));
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 10000 })
+      .catch(() => fail("the cover did not clear once the new hub answered."));
+    if ((await seen()) !== "tc-") fail("from the countdown to the new hub the screen went " + (await seen()) +
+      ", not countdown, cover, clear.");
+    await gp.evaluate(() => cancelAnimationFrame(window.__watch));
+
+    // THE RELOAD PATH. The hub restarts onto a new board build, so the board
+    // reloads. The cover is up when the reloaded page first paints and comes
+    // down once that page has the new hub.
+    say({ state: "countdown", seconds: 1 });
+    await gp.waitForTimeout(1300);
+    say({ state: "restarting" });
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+      .catch(() => fail("the second restarting drew no cover."));
+    hubAway = true;
+    drop();
+    await gp.waitForTimeout(1500);
+    const reloaded = gp.waitForEvent("domcontentloaded", { timeout: 20000 });
+    gateBoot = "boot-c";
+    healthBuild = "test2";
+    hubAway = false;
+    let sawCoverWithReload = false;
+    await reloaded.then(async () => {
+      sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
+    }).catch(() => fail("a new build after the restart did not reload the board."));
+    if (!sawCoverWithReload) fail("the board reloaded onto the new build with the cover down.");
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+      .catch(() => fail("the cover did not clear after the reload settled."));
+
+    // A window that missed `restarting` (its stream was reconnecting when the
+    // hub said it) keeps the countdown at 0 while the hub is away, and the
+    // cover takes over from it when a different hub answers.
+    await live().catch(() => fail("the reloaded board never went live."));
+    await gp.waitForTimeout(500);
+    say({ state: "countdown", seconds: 1 });
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+      .catch(() => fail("the reloaded board drew no countdown."));
+    await watch();
+    await gp.waitForTimeout(1300);
+    hubAway = true;
+    drop();
+    await gp.waitForTimeout(2500);
+    if (!(await gp.$(".toast.hubgate"))) fail("a countdown that ran out went while the hub was away.");
+    gateBoot = "boot-d";
+    hubAway = false;
+    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: 15000 })
+      .catch(() => {});
+    if ((await seen()) !== "tc-") fail("over a missed restarting the screen went " + (await seen()) +
+      ", not countdown, cover, clear.");
+    if (errors.length) fail("the restart-stays page threw: " + errors.join(" | "));
+  } finally {
+    hubMode = wasHub;
+    hubAway = false;
+    gateBoot = "boot-a";
+    healthBuild = "test";
     await ctx.close();
   }
 }
@@ -2717,7 +2881,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
-      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
+      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection };
@@ -4868,6 +5032,7 @@ async function main() {
     await websiteSkinSection(browser, base);
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
     await restartGateSection(browser, base);
+    await restartStaysSection(browser, base);
     await toastStaysSection(browser, base);
     // ── the styled tooltip, and no native title anywhere on the board ───────
     await tooltipSection(browser, base);
@@ -4889,8 +5054,7 @@ async function main() {
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e));
-    if (process.env.DEBUG_HEADLESS) {
+    fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {
         const diag = await page.evaluate(() => ({
           bodyClass: document.body.className,

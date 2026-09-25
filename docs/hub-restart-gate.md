@@ -126,10 +126,30 @@ keystroke typed while the hub is away cannot land half way. Escape does not clos
 outside it, or anything that closes every open dialog. The board also arms the terminal's restart wait, so the
 attached pane waits for its socket to come back rather than tearing down.
 
-The cover comes down when the event stream opens again. A stream only reopens after it drops, so a reopen means a
-new hub answered. A new board build reloads the page anyway (see `docs/reload-design.md`). If the stream is still
-live 90 seconds after `restarting`, the old hub never went. The cover comes down and a toast says the hub did not
-restart.
+THE COVER COMES DOWN ONLY ONCE THE NEW HUB IS UP AND THE BOARD HAS CAUGHT UP. A stream reopening does not prove
+that: the old hub's stream can blip and come back before the old hub goes. So `GET /_hub/restart` names the hub
+process, in `boot`, a random id each hub makes when it starts. A board keeps the name it last heard. On every stream
+open while the cover is up, it asks again, and only a different name is the new hub. The board build cannot stand in
+for the name, because a deploy that changes only Go code keeps the same build. A hub too old to give a name is
+taken as gone once the stream has dropped and reopened.
+
+Once the new hub answers, the board reads `/v1/health`. A new board build reloads the page there (see
+`docs/reload-design.md`), with the cover still up. Otherwise the board waits for one full refresh that began after
+that point, and then the cover comes down.
+
+A reload blanks the page whatever waits for what, so the cover outlives it instead. While the cover is up, the
+board writes it to the tab's `sessionStorage`. A page that loads with it written down puts the cover straight back,
+before the board under it draws, with its clock still counting from `restarting`. It then waits for the new hub in
+the same way. This covers the new-build reload and a reload by hand.
+
+Nothing else takes the cover down. Its `close` is refused while it is up, so a view switch, a toast click or
+anything that closes every open dialog leaves it where it is, with no frame between.
+
+A window whose stream missed `restarting` keeps the countdown at `0s` while the hub is away. When its stream reopens
+onto a hub with a different name, the cover takes over from the countdown and comes down the same way.
+
+If the stream is still live 90 seconds after `restarting` and the hub still gives the old name, the old hub never
+went. The cover comes down and a toast says the hub did not restart.
 
 ## Loopback and auth
 

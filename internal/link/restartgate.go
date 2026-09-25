@@ -2,6 +2,8 @@ package link
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,6 +94,12 @@ type restartGate struct {
 	// re-reads the state rather than sleeping through it.
 	wake chan struct{}
 
+	// boot names this hub process. A board that saw `restarting` holds its
+	// cover until `GET /_hub/restart` answers with a different one, which only
+	// the new hub can. A stream reopening cannot say that: it may be the old
+	// hub's stream coming back from a blip before the old hub goes.
+	boot string
+
 	// emit says a state to every board. boards is how many are listening.
 	emit   func(state map[string]any)
 	boards func() int
@@ -102,8 +110,16 @@ type restartGate struct {
 func newRestartGate(emit func(map[string]any), boards func() int, audit func(string, string)) *restartGate {
 	return &restartGate{
 		wake: make(chan struct{}, 1), emit: emit, boards: boards, audit: audit, now: time.Now,
-		lease: defaultLease,
+		lease: defaultLease, boot: bootID(),
 	}
+}
+
+func bootID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprint(time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 func (g *restartGate) poke() {
@@ -167,6 +183,7 @@ func (g *restartGate) state() map[string]any {
 	}
 	return map[string]any{
 		"paused": g.paused, "waiting": g.asking, "countdown_left": left, "boards": g.boards(),
+		"boot": g.boot,
 	}
 }
 

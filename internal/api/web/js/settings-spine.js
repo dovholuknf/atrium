@@ -1180,9 +1180,13 @@ const RUN_TIMEOUT =
 let refreshInFlight = false;
 let refreshDirty = false;
 let refreshController = null;
+// Counts passes as they start, so a waiter can ask for one that began after it
+// did. The hub restart cover waits on one. See `onRefreshSettled`.
+let refreshSeq = 0;
 function runRefresh() {
   if (refreshInFlight) { refreshDirty = true; return; }
   refreshInFlight = true;
+  const seq = ++refreshSeq;
   refreshDirty = false;
   if (refreshController) refreshController.abort();
   refreshController = typeof AbortController !== "undefined"
@@ -1205,6 +1209,7 @@ function runRefresh() {
   ]).finally(() => {
     clearTimeout(watchdog);
     refreshInFlight = false;
+    if (typeof onRefreshSettled === "function") onRefreshSettled(seq);
     if (refreshDirty) {
       refreshDirty = false;
       const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
@@ -1440,6 +1445,9 @@ function connect() {
     conn.classList.add("down");
     label.textContent = "reconnecting";
     if (typeof paintRooms === "function") paintRooms();
+    // The hub restart cover counts this as the old hub going. See
+    // js/hubrestart.js.
+    if (typeof onHubStreamDrop === "function") onHubStreamDrop();
   };
   ["task", "task-removed", "permission", "halted"]
     .forEach(k => es.addEventListener(k, refreshSoon));
