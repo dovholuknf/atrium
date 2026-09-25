@@ -1468,7 +1468,7 @@ function sendInput(text, quiet) {
 const pasteShowBytes = 2048;
 // Not drawn until the paste has been in flight this long, so one that lands at
 // once never flashes.
-const pasteShowAfterMs = 150;
+const pasteShowAfterMs = 20;
 const pasteGiveUpMs = 20000;
 
 // The paste in flight, or null. A second paste replaces it, which is right:
@@ -1483,7 +1483,8 @@ function pasteBegin(n) {
     if (pasteFlight !== f) return;
     if (termSock !== f.sock || !f.sock || Date.now() - f.t0 > pasteGiveUpMs) { pasteEnd(); return; }
     if (!f.shown && Date.now() - f.t0 >= pasteShowAfterMs) { f.shown = true; pasteShow(f); }
-    f.timer = setTimeout(tick, 50);
+    // The first wait is the show delay, so the box is not held to the poll.
+    f.timer = setTimeout(tick, f.shown ? 50 : pasteShowAfterMs);
   };
   tick();
 }
