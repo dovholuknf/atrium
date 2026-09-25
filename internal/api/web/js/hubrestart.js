@@ -51,17 +51,20 @@ function hubReportInput(e) {
 
 // A sticky toast: no timer and no dismiss button, because it is taken down by
 // the hub saying so, not by the clock. `sticky` keeps it out of the toast cap.
-function hubToast(title, body, button, onButton) {
+// `held` is the paused one, which wears a pause mark rather than the ring.
+function hubToast(title, body, button, onButton, held) {
   const host = document.getElementById("toasts");
   if (!host) return null;
   if (typeof recordToLog === "function") recordToLog(title, body, "", null, null);
   const el = document.createElement("div");
-  el.className = "toast hubgate sticky";
-  el.innerHTML = `<div class="body"><b></b><span class="what"></span></div>
+  el.className = "toast hubgate sticky" + (held ? " held" : "");
+  el.innerHTML = `<div class="hg-icon"><i></i></div>
+    <div class="body"><b></b><div class="what"></div></div>
     <button class="hubgate-act"></button>`;
   el.querySelector("b").textContent = title;
   el.querySelector(".what").textContent = body;
   el.querySelector(".hubgate-act").textContent = button;
+  if (held) el.querySelector(".hg-icon > i").textContent = "❚❚";
   el.addEventListener("click", onButton);
   host.appendChild(el);
   if (typeof raiseToasts === "function") raiseToasts();
@@ -95,20 +98,32 @@ function hubResume() {
 function hubShowCountdown(seconds) {
   hubDropCountdown();
   const end = Date.now() + seconds * 1000;
-  const say = () => "the hub restarts in " + Math.max(0, Math.ceil((end - Date.now()) / 1000)) +
-    "s unless you click this";
-  hubCountdown = hubToast("hub restart", say(), "pause", hubPause);
+  const left = () => Math.max(0, Math.ceil((end - Date.now()) / 1000));
+  const say = () => "atrium restarts in " + left() + "s";
+  // A click anywhere on it pauses, and so does the button. Typing or clicking
+  // anywhere else takes it down until the board is idle again, which is the
+  // "keep working" half.
+  hubCountdown = hubToast(say(),
+    "an update is ready. keep working and it waits, or pause it until you are done.",
+    "pause", hubPause);
   if (!hubCountdown) return;
-  const what = hubCountdown.querySelector(".what");
-  hubCountdownTick = setInterval(() => { what.textContent = say(); }, 250);
+  const title = hubCountdown.querySelector("b");
+  const num = hubCountdown.querySelector(".hg-icon > i");
+  const bar = document.createElement("div");
+  bar.className = "hg-bar";
+  bar.style.animationDuration = seconds + "s";
+  hubCountdown.appendChild(bar);
+  const paint = () => { title.textContent = say(); num.textContent = left(); };
+  paint();
+  hubCountdownTick = setInterval(paint, 250);
 }
 
 function hubShowPaused() {
   if (hubPausedToast && hubPausedToast.isConnected) return;
   hubDropPaused();
-  hubPausedToast = hubToast("hub restart paused",
-    "the deploy is held until you resume it", "resume",
-    e => { if (e.target.classList.contains("hubgate-act")) hubResume(); });
+  hubPausedToast = hubToast("restart on hold",
+    "atrium keeps running as it is until you press resume.", "resume",
+    e => { if (e.target.classList.contains("hubgate-act")) hubResume(); }, true);
 }
 
 // BOTH TOASTS STAY UNTIL THE HUB SAYS WHAT COMES NEXT. The countdown is the
@@ -129,12 +144,28 @@ if (window.MutationObserver) {
 
 // The cover. A modal, so everything under it is inert: nothing typed into a
 // terminal while the hub is away can land half way.
+// A restart takes a few seconds. Past this the line under the headline stops
+// promising that and says it is still waiting, so a slow one does not read as
+// a hang with a cheerful sentence on it.
+const HUB_RESTART_SLOW = 30000;
+let hubRestartClock = 0;
+
 function hubShowRestarting() {
   const dlg = document.getElementById("hubrestart");
   if (!dlg) return;
   hubRestarting = Date.now();
-  document.getElementById("hubrestart-t").textContent =
-    "the board comes back by itself when the new hub answers.";
+  const line = document.getElementById("hubrestart-t");
+  const clock = document.getElementById("hubrestart-el");
+  const paint = () => {
+    const ms = Date.now() - hubRestarting;
+    line.textContent = ms < HUB_RESTART_SLOW
+      ? "back in a few seconds. your agents keep running, and this page picks up where you left off."
+      : "this is taking longer than usual. your agents keep running while atrium comes back.";
+    if (clock) clock.textContent = Math.floor(ms / 1000) + "s";
+  };
+  paint();
+  clearInterval(hubRestartClock);
+  hubRestartClock = setInterval(paint, 1000);
   if (!dlg.open) dlg.showModal();
   const at = hubRestarting;
   setTimeout(() => {
@@ -144,7 +175,8 @@ function hubShowRestarting() {
     if (conn && conn.classList.contains("live")) {
       hubClearRestarting();
       if (typeof toast === "function") {
-        toast("the hub did not restart", "the deploy said go and the hub is still the same one");
+        toast("atrium did not restart",
+          "the update was called for, but atrium never went down. nothing changed.");
       }
     }
   }, HUB_RESTART_GIVEUP);
@@ -152,6 +184,8 @@ function hubShowRestarting() {
 
 function hubClearRestarting() {
   hubRestarting = 0;
+  clearInterval(hubRestartClock);
+  hubRestartClock = 0;
   const dlg = document.getElementById("hubrestart");
   if (dlg && dlg.open) dlg.close();
 }
@@ -190,7 +224,7 @@ function onHubRestart(d) {
       hubShowRestarting();
       // The attached terminal's socket is about to close, and this is what
       // makes the pane wait for it to come back rather than tear down.
-      if (typeof armRestart === "function") armRestart("the hub is restarting");
+      if (typeof armRestart === "function") armRestart("installing an update");
       break;
   }
 }

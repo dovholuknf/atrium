@@ -1403,6 +1403,7 @@ function connect() {
   // because the operator stops watching the queue.
   es.onopen = () => {
     conn.classList.add("live");
+    conn.classList.remove("down");
     label.textContent = "live";
     // On a hub the room counter carries this, so that two indicators cannot
     // disagree about whether the board is connected. See `paintRooms`.
@@ -1436,6 +1437,7 @@ function connect() {
   };
   es.onerror = () => {
     conn.classList.remove("live");
+    conn.classList.add("down");
     label.textContent = "reconnecting";
     if (typeof paintRooms === "function") paintRooms();
   };

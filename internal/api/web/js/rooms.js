@@ -873,7 +873,7 @@ function nameTheSwitch() {
   try { to = sessionStorage.getItem("atrium.switching") || ""; } catch (e) {}
   if (!to) return;
   const what = document.querySelector("#switching .s-what");
-  if (what) what.innerHTML = `switching to <b>${esc(to)}</b>`;
+  if (what) what.innerHTML = `opening <b>${esc(to)}</b>`;
   // A COVER THAT NEVER LIFTS IS WORSE THAN THE FLASH IT HID. Boot has paths
   // that never reach the line which takes it away: a guest page, a terminal
   // only window, anything that throws on the way. Eight seconds is far longer

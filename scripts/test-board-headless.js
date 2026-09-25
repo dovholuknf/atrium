@@ -1464,7 +1464,7 @@ async function restartGateSection(browser, base) {
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
   };
   const countdownText = () => gp.evaluate(() => {
-    const el = document.querySelector(".toast.hubgate .what");
+    const el = document.querySelector(".toast.hubgate b");
     return el ? el.textContent : "";
   });
   try {
@@ -1484,7 +1484,7 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
       .catch(() => fail("a countdown from the hub drew no toast."));
     const first = await countdownText();
-    if (!/the hub restarts in [45]s unless you click this/.test(first)) {
+    if (!/atrium restarts in [45]s/.test(first)) {
       fail("the countdown toast said: " + first);
     }
     await gp.waitForTimeout(1300);
@@ -1505,7 +1505,7 @@ async function restartGateSection(browser, base) {
     say({ state: "paused" });
     await gp.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
-      return el && /hub restart paused/.test(el.textContent);
+      return el && /restart on hold/.test(el.textContent);
     }, null, { timeout: 5000 }).catch(() => fail("a pause from the hub drew no paused toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
     await gp.waitForTimeout(100);
@@ -1523,7 +1523,7 @@ async function restartGateSection(browser, base) {
     await late.goto(base, { waitUntil: "domcontentloaded" });
     await late.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
-      return el && /hub restart paused/.test(el.textContent);
+      return el && /restart on hold/.test(el.textContent);
     }, null, { timeout: 15000 }).catch(() => fail("a board opened during a pause did not show it."));
     await late.close();
     gatePaused = false;
@@ -1531,7 +1531,7 @@ async function restartGateSection(browser, base) {
     // THE COUNTDOWN STAYS until the hub says what comes next: not the toast cap,
     // not a removal, not its own clock running out, not a stream reopen.
     const hasCountdown = () => gp.evaluate(() =>
-      [...document.querySelectorAll(".toast.hubgate")].some(el => /hub restarts in/.test(el.textContent)));
+      [...document.querySelectorAll(".toast.hubgate")].some(el => /atrium restarts in/.test(el.textContent)));
     say({ state: "countdown", seconds: 3 });
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
       .catch(() => fail("the second countdown drew no toast."));
@@ -1579,15 +1579,42 @@ async function restartGateSection(browser, base) {
     await mid.goto(base, { waitUntil: "domcontentloaded" });
     await mid.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
-      return el && /hub restarts in (29|30)s/.test(el.textContent);
+      return el && /atrium restarts in (29|30)s/.test(el.textContent);
     }, null, { timeout: 15000 }).catch(() => fail("a board opened during a countdown did not show it."));
     await mid.close();
     gateCountdownLeft = 0;
+
+    // The cover is a wait card, and a wait card sets its own display, which
+    // must not draw it while it is shut.
+    if (await gp.evaluate(() => getComputedStyle(document.getElementById("hubrestart")).display !== "none")) {
+      fail("the restarting cover is drawn while it is closed.");
+    }
 
     // Restarting: a modal that Escape and closing every dialog both leave up.
     say({ state: "restarting" });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
       .catch(() => fail("the hub restarting drew no modal."));
+    // It says how long it has been, and it wears the skin: its card is the
+    // palette's own card colour, whatever skin is on.
+    await gp.waitForTimeout(1200);
+    const cover = await gp.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.background = "var(--card-0)";
+      document.body.appendChild(probe);
+      const card = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return {
+        card,
+        clock: document.getElementById("hubrestart-el").textContent,
+        say: document.getElementById("hubrestart-t").textContent,
+        bg: getComputedStyle(document.getElementById("hubrestart")).backgroundImage
+      };
+    });
+    if (!/^[1-9]\d*s$/.test(cover.clock)) fail("the restarting cover's clock said " + JSON.stringify(cover.clock));
+    if (!/few seconds/.test(cover.say)) fail("the restarting cover said: " + cover.say);
+    if (!cover.bg.includes(cover.card)) {
+      fail("the restarting cover does not wear the skin: " + cover.bg + " has no " + cover.card);
+    }
     await gp.keyboard.press("Escape");
     await gp.evaluate(() => closeOpenDialogs());
     await gp.waitForTimeout(200);

@@ -166,9 +166,130 @@
   .toast .copy { font-size: var(--fs-base); opacity: .6; }
   .toast .x:hover, .toast .copy:hover { color: var(--head); opacity: 1; }
   /* The hub restart gate's two toasts. Sticky, so they carry a button that says
-     what the click does rather than a dismiss. See js/hubrestart.js. */
-  .toast.hubgate { border-left-color: var(--teal); }
+     what the click does rather than a dismiss. See js/hubrestart.js.
+
+     The countdown leads with the number, in a ring, and drains a bar along its
+     foot over the same seconds, so how long is left reads without reading. The
+     paused one swaps the ring for a pause mark in the warning colour: nothing
+     is moving, and it will not until somebody resumes it. */
+  .toast.hubgate {
+    position: relative; overflow: hidden; align-items: center;
+    border-left-color: var(--teal); padding: 14px 16px 16px;
+    background:
+      radial-gradient(ellipse 60% 120% at 0% 50%, rgba(var(--teal-rgb),.10), transparent 70%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+  }
+  .toast.hubgate:hover { border-left-color: var(--teal); }
+  .toast.hubgate.held { border-left-color: var(--warn); }
+  .toast.hubgate.held:hover { border-left-color: var(--warn); }
+  .toast.hubgate.held {
+    background:
+      radial-gradient(ellipse 60% 120% at 0% 50%, rgba(var(--warn-rgb),.10), transparent 70%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+  }
+  .toast.hubgate b { font-size: var(--fs-md); margin-bottom: 4px; }
+  .toast.hubgate .what {
+    font: var(--fs-sm)/1.5 var(--sans); color: var(--body);
+  }
+  .hg-icon {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 var(--fs-md)/1 var(--mono); color: var(--head);
+    border: 2px solid rgba(var(--teal-rgb),.28); border-top-color: var(--teal);
+    background: rgba(var(--teal-rgb),.08);
+    animation: wc-turn 1s linear infinite;
+  }
+  /* The number stays upright while the ring turns under it. */
+  .hg-icon > i { font-style: normal; animation: wc-turn 1s linear infinite reverse; }
+  .toast.hubgate.held .hg-icon {
+    animation: none; border-color: rgba(var(--warn-rgb),.5); background: var(--warn-bg);
+    color: var(--warn); font-size: var(--fs-md); letter-spacing: -1px;
+  }
+  .toast.hubgate.held .hg-icon > i { animation: none; }
   .toast .hubgate-act { flex: none; align-self: center; }
+  .hg-bar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+    background: rgba(var(--stroke-dim-rgb),.45);
+  }
+  .hg-bar::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    transform-origin: left center;
+    animation: hg-drain linear forwards; animation-duration: inherit;
+  }
+  @keyframes hg-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+  /* ── the wait family ────────────────────────────────────
+     Every surface that stands between you and the board while something happens: atrium restarting
+     (#hubrestart) and a room being switched (#switching). One card for all of them, so they read as the
+     same kind of thing: a turning ring, a small label saying what kind of wait it is, a headline saying
+     what is happening, a line saying how long and what you need to do, and on the long one a moving bar
+     and a clock. Everything is palette, so it wears the skin, light ones included. */
+  /* `display` is only set on the open state: an author `display` on a closed <dialog> beats the browser's
+     own `display: none` and draws it. */
+  .waitcard {
+    position: relative; overflow: hidden;
+    flex-direction: column; align-items: center; text-align: center;
+    width: min(460px, 92vw); padding: 34px 32px 22px;
+    color: var(--body);
+    background:
+      radial-gradient(ellipse 80% 55% at 50% 0%, rgba(var(--teal-rgb),.14), transparent 72%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog);
+  }
+  /* The accent along the top edge, the same teal-to-blue the site's buttons wear. */
+  .waitcard::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+  }
+  /* A modal with nothing focusable focuses itself, and the browser rings it. */
+  dialog.waitcard { top: 26vh; outline: none; }
+  dialog.waitcard[open], div.waitcard { display: flex; }
+  dialog.waitcard[open] { animation: wc-in .28s ease-out; }
+  dialog.waitcard::backdrop { background: rgba(var(--sink-rgb),.62); backdrop-filter: blur(6px) saturate(120%); }
+  @keyframes wc-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+  .wc-ring {
+    width: 52px; height: 52px; border-radius: 50%; flex: none; margin-bottom: 18px;
+    border: 3px solid rgba(var(--teal-rgb),.16);
+    border-top-color: var(--teal); border-right-color: var(--blue);
+    box-shadow: 0 0 24px rgba(var(--teal-rgb),.18);
+    animation: wc-turn .9s linear infinite;
+  }
+  @keyframes wc-turn { to { transform: rotate(360deg); } }
+  .wc-eyebrow {
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--chip-accent-text); margin-bottom: 10px;
+  }
+  .waitcard h2 {
+    margin: 0 0 8px; font: 600 var(--fs-3xl)/1.2 var(--sans); color: var(--head);
+  }
+  .wc-say { font: var(--fs-md)/1.55 var(--sans); color: var(--body); max-width: 36ch; }
+  .wc-say:empty { display: none; }
+  /* Indeterminate: something is happening, and nobody knows for how long. */
+  .wc-bar {
+    position: relative; overflow: hidden; align-self: stretch;
+    height: 3px; margin-top: 24px; border-radius: var(--r-pill);
+    background: rgba(var(--stroke-dim-rgb),.45);
+  }
+  .wc-bar::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+    border-radius: var(--r-pill);
+    background: linear-gradient(90deg, transparent, var(--teal), var(--blue), transparent);
+    animation: wc-slide 1.5s ease-in-out infinite;
+  }
+  @keyframes wc-slide { from { transform: translateX(-100%); } to { transform: translateX(265%); } }
+  .wc-foot {
+    align-self: stretch; display: flex; justify-content: space-between; gap: var(--sp-4);
+    margin-top: 12px; font: var(--fs-xs)/1.4 var(--sans); color: var(--dim); text-align: left;
+  }
+  .wc-clock { font-family: var(--mono); color: var(--label); white-space: nowrap; }
+  /* Slower, not stopped: the motion is the thing saying it has not hung. */
+  @media (prefers-reduced-motion: reduce) {
+    .wc-ring, .hg-icon, .hg-icon > i { animation-duration: 3s; }
+    .wc-bar::after { animation-duration: 4s; }
+    dialog.waitcard[open] { animation: none; }
+  }
   .hints { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: 7px; }
   button.hint {
     font: 500 var(--fs-xs)/1.5 var(--mono); padding: 2px 9px; border-radius: var(--r-sm);
