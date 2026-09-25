@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The unexpected-exit notice.** See `docs/unexpected-exit-wake.md` and `docs/test-plan.md` section AY.
+
+  When the room crashes, is killed or is stopped for a restart or a deploy while a supervised runner is mid-turn
+  (`running` or `needs-permission`), the resumed session gets one grey line: `[atrium] unexpected exit: atrium went
+  away while you were working (crash|restart) at <time>. Your session was resumed. Check where you were and carry
+  on.` A planned stop reads the statuses in the wind-down, before any runner exits. A crash is found at the next
+  start, which sees no planned-stop mark and cards still `running`. The notice is a restart-wake row, so it uses the
+  wake's gate and typing path unchanged. A card's own wake wins, and a crash loop leaves one notice, not a stack.
+  This reverses "no forced turns" for this one case, by clint's decision. The room cog has a setting to switch it
+  off, and it is on by default. ROOM-SIDE, and HUB-SIDE for the room cog's checkbox.
+
 - **One atrium binary.** See `docs/test-plan.md` section AW.
 
   `cmd/atrium2` moved into `internal/cli`, so `atrium` now carries the hub and the room as well as the hooks and

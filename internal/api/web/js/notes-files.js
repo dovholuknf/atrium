@@ -958,6 +958,8 @@ function fillMachineFields(s) {
   if (shared) shared.value = s.shared_location || "";
   const shell = document.getElementById("s-shell");
   if (shell) shell.value = s.shell_command || "";
+  const exitWake = document.getElementById("s-exitwake");
+  if (exitWake) exitWake.checked = s.unexpected_exit_wake !== false;
   // What an empty box comes out as. A search of the daemon's own PATH, so it
   // is not something the person reading the box could work out from here.
   const shellNow = document.getElementById("s-shell-now");
@@ -1431,6 +1433,25 @@ async function saveShellCommand() {
   toast("saved", el.value.trim()
     ? "the next shell you open runs " + el.value.trim()
     : "back to whatever this machine has: " + (pastePrefs.shell_command_now || ""));
+}
+
+// The unexpected-exit notice, on or off for this room.
+async function saveExitWake() {
+  const el = document.getElementById("s-exitwake");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ unexpected_exit_wake: !!el.checked })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.checked
+    ? "a session this room interrupts mid-turn is told so when it comes back"
+    : "nothing is typed after this room goes away mid-turn");
 }
 
 // Both halves together, since they are one decision in two units.

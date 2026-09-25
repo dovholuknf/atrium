@@ -223,6 +223,17 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	}
 	w = cur
 
+	// A notice waiting when the setting goes off is dropped, not held for later.
+	if w.By == store.UnexpectedExitBy && !d.st.UnexpectedExitOn() {
+		if _, err := d.st.ClearRestartWake(w.TaskID, "the unexpected-exit setting"); err != nil {
+			log.Printf("[atrium] could not drop the unexpected-exit notice on %s: %v", w.TaskID, err)
+			return
+		}
+		d.wake.forget(w.TaskID)
+		d.publishTask(w.TaskID)
+		return
+	}
+
 	// A card atrium does not supervise has no runner here, and its wake waits.
 	run := d.sup.get(w.TaskID)
 	if run == nil || !d.wakeRunnerReady(w, run, now) {
@@ -237,7 +248,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	// Empty line and a quiet keyboard, re-checked under the input lock. A closed
 	// gate writes nothing, and the next tick asks again. The label marks it as
 	// atrium's, and keeps the prompt it starts from marking the turn seen.
-	wrote, err := d.typeLabelledThroughGate(run, w.TaskID, wakeLabel, w.Text)
+	wrote, err := d.typeLabelledThroughGate(run, w.TaskID, labelFor(w), w.Text)
 	if err != nil {
 		log.Printf("[atrium] could not type the wake into %s: %v", w.TaskID, err)
 		return
@@ -251,7 +262,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 		log.Printf("[atrium] typed the wake into %s but could not delete it: %v", w.TaskID, err)
 	}
 	d.wake.forget(w.TaskID)
-	log.Printf("[atrium] after-restart wake typed into %s", w.TaskID)
+	log.Printf("[atrium] after-restart wake (%s) typed into %s", orWord(w.By, "unnamed"), w.TaskID)
 	d.publishTask(w.TaskID)
 }
 

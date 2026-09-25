@@ -129,8 +129,14 @@ func (s *Store) TakeRestartWake(taskID string, queuedAt time.Time) (bool, error)
 			return err
 		}
 		took = true
+		// A notice is recorded as one, so the timeline tells it from a wake the
+		// session asked for.
+		from := RestartWakeBy
+		if w.By == UnexpectedExitBy {
+			from = UnexpectedExitBy
+		}
 		_, err = s.appendEventOn(tx, taskID, EventPrompted, map[string]any{
-			"text": w.Text, "via": "terminal", "from": RestartWakeBy, "queued_by": w.By,
+			"text": w.Text, "via": "terminal", "from": from, "queued_by": w.By,
 			"queued_at": ts(w.QueuedAt),
 		})
 		return err

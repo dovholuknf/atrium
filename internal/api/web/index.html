@@ -1636,6 +1636,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
       <span class="hintline" id="s-sbcost" hidden></span>
     </div>
+
+    <!-- The unexpected-exit notice. A room setting: the room is what goes
+         away, and the room types the notice. See docs/unexpected-exit-wake.md. -->
+    <div class="field">
+      <label class="eyebrow" for="s-exitwake">after atrium goes away mid-turn</label>
+      <div class="picker">
+        <label><input id="s-exitwake" type="checkbox" data-saves="saveExitWake">
+          tell the session, so it picks its work back up</label>
+      </div>
+      <span class="hintline">When this room crashes, is killed or is restarted while a session is in the
+        middle of a turn, the resumed session gets one grey <code>[atrium] unexpected exit:</code> line
+        saying so, typed when its line is empty. A session that queued its own restart wake gets that
+        instead. A session that had finished its turn gets nothing. On by default.</span>
+    </div>
   </div>
 </dialog>
 

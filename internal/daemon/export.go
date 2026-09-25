@@ -149,6 +149,7 @@ var exportedSettings = []string{
 	// stop being exported from this release, which is correct, because nothing
 	// on the other end would read them either.
 	SettingShellCommand,
+	store.SettingUnexpectedExit,
 }
 
 // neverExported names the settings keys that must not leave, so the test that
@@ -172,6 +173,8 @@ var neverExported = []string{
 	// the trap: a per-file rule would have to choose between exporting the
 	// secret and exporting nothing, so the blob stays.
 	SettingAuth,
+	// A state like `global_auto`: whether THIS room stopped on purpose.
+	store.SettingRoomStopped,
 }
 
 // BuildExport gathers the configuration, or refuses and says why.

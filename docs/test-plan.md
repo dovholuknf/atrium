@@ -3182,3 +3182,49 @@ pid does not change, and the room reattaches.
 stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the two start lines in
 `docs/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
 cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
+
+## AY. The unexpected-exit notice
+
+AX is held by sa68's branch. See `docs/unexpected-exit-wake.md`. The tests cover a crash, a planned stop, an idle
+card, a self-queued wake winning, restarts in a row and the setting off:
+
+```powershell
+go test ./internal/daemon -run 'Crash|PlannedStop|IdleCard|SelfQueued|RestartsInARow|SettingOff'
+go test ./internal/api -run UnexpectedExit
+```
+
+The steps below are the runs a test cannot make. Run a throwaway room from this branch, with `ATRIUM_LOCATION`
+pointed at a private file and `ATRIUM_SHARED_LOCATION=-`, on ports nothing live uses. Launch one claude card on it.
+
+### AY1. A crash mid-turn
+
+1. Give the card a long task, for example "count slowly to 200, one Bash sleep per number". While it is working,
+   kill the room process with `Stop-Process -Force`. Start the room again with the same flags.
+
+**Expected:** the card comes back on its resumed conversation. About five seconds after its session starts, the
+terminal shows a grey `[atrium] unexpected exit:` label followed by `atrium went away while you were working
+(crash) at <time>. Your session was resumed. Check where you were and carry on.`, and the session carries on. The
+card's history has a `notified` event and a `prompted` event, both from `unexpected-exit`. Nothing is typed a second
+time.
+
+### AY2. A planned stop mid-turn, and an idle card
+
+1. Launch a second card and let it finish its turn. Give the first card a long task again, and while it works stop
+   the room with `POST /v1/shutdown`. Start it again.
+
+**Expected:** the working card gets the notice with `(restart)`. The idle card gets nothing.
+
+### AY3. A card's own wake wins
+
+1. While the card works, call `atrium_wake_after_restart` from it with `text: "we up"`. Kill the room and start it
+   again.
+
+**Expected:** the card gets `[atrium] restart wake: we up` and no unexpected-exit line.
+
+### AY4. Switched off
+
+1. Open the room's cog and clear `after atrium goes away mid-turn`. Give the card a long task, kill the room and
+   start it again.
+
+**Expected:** the card comes back and nothing is typed. With the box ticked again, the next crash mid-turn types the
+notice.

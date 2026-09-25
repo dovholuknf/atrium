@@ -153,6 +153,9 @@ func globalAutoView(s *Server) map[string]any {
 	}
 	out["replay_mode"] = mode
 	out["replay_modes"] = []string{"raw", "screen", "flat"}
+	// Whether a runner the room's exit interrupted mid-turn is told so when it
+	// comes back. On unless switched off. See docs/unexpected-exit-wake.md.
+	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
 	inputLagView(out)
 	return out
 }
@@ -239,6 +242,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The narrowest a runner's terminal goes, in columns. A string like the
 		// scrollback boxes, because empty is a value and means the default.
 		TerminalMinCols *string `json:"terminal_min_cols"`
+		// Whether this room types the unexpected-exit notice. Stored as `on` or
+		// `off`, and read at the next stop, start or delivery.
+		UnexpectedExit *bool `json:"unexpected_exit_wake"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -514,6 +520,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(SettingTerminalMinCols, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.UnexpectedExit != nil {
+		v := "off"
+		if *body.UnexpectedExit {
+			v = "on"
+		}
+		if err := s.st.SetSetting(store.SettingUnexpectedExit, v); err != nil {
 			s.fail(w, err)
 			return
 		}
