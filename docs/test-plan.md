@@ -3293,3 +3293,32 @@ its spelling.
 2. Wear `daylight`, `website` and `noir`, and launch a card in each.
 
 **Expected:** the ring and the chip read clearly on each skin.
+
+## BA. A theme preview recolours the card
+
+Run on a hub built from this branch with `cards wear their terminal colours` on and the terminals list's idle rows
+worn, and two live cards in different themes. The headless section `themePreview` covers BA1 to BA3 against a
+mocked hub.
+
+### BA1. The preview reaches the card
+
+1. Attach to one card. Open the theme picker on the terminal bar and arrow through a few themes.
+
+**Expected:** with each pick the terminal, the attached row, the bridge between the row and the pane, and the
+pane's frame all take the picked theme together. The card on the stack and the board wears it too. The other card
+keeps its own colours.
+
+### BA2. Leaving without use it
+
+1. Preview a theme, then press escape.
+2. Preview a theme, then attach to the other card.
+3. Preview a theme, then close the terminal.
+
+**Expected:** each time the first card goes back to its saved colours everywhere, and the picker closes. Nothing is
+saved: a reload shows the saved theme.
+
+### BA3. Use it
+
+1. Preview a theme and press `use it`. Reload the board.
+
+**Expected:** the card keeps the new theme on every surface, before and after the reload.

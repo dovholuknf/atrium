@@ -356,6 +356,9 @@ const server = http.createServer((req, res) => {
         let body = {};
         try { body = JSON.parse(raw || "{}"); } catch (e) {}
         if (id === "pin1" && typeof body.pinned === "boolean") PIN.pinned = body.pinned;
+        // A theme kept from the picker, saved on the worn list so a reload reads it back.
+        const worn = tasksMode === "worn" && wornTasks.find(t => t.id === id);
+        if (worn && typeof body.theme === "string") { worn.theme = body.theme; sendJSON(res, worn); return; }
         sendJSON(res, id === "pin1" ? PIN : T1);
       });
       return;
@@ -2282,6 +2285,152 @@ async function newCardSection(browser, base) {
   }
 }
 
+// A THEME PREVIEW RECOLOURS THE CARD, not only the terminal: the attached row,
+// its bridge, the pane's frame and the stack card follow the picker, for that
+// card alone. Cancelling, detaching and switching cards put the saved colours
+// back, nothing is written while previewing, and "use it" survives a reload.
+async function themePreviewSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.cardColors", "1");
+    window.__writes = [];
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) { window.__writes.push(k); return set.call(this, k, v); };
+  });
+  const patches = [];
+  p.on("request", r => {
+    if (r.method() === "PATCH" && /\/v1\/tasks\//.test(r.url())) patches.push(r.url() + " " + r.postData());
+  });
+  const was = tasksMode;
+  const live = (id, theme) => Object.assign({}, T1, {
+    id, display_title: "row " + id, theme, supervised: true, pinned: true, worktree: "/tmp/tp/" + id
+  });
+  try {
+    wornTasks = [live("tp-a", "nord"), live("tp-b", "atrium")];
+    tasksMode = "worn";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: 15000 });
+    // Let the view switch finish. `switchView` clears `on` from every `.tab`,
+    // the rows included, and a late one would unselect the stand-in attach.
+    await p.waitForTimeout(1000);
+    const bg = await p.evaluate(() => {
+      const hex = h => { const n = parseInt(h.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
+      const o = {};
+      for (const n of ["nord", "atrium", "dracula", "gruvbox-dark"]) o[n] = hex(TERM_THEMES[n].background);
+      return o;
+    });
+    // Attach a stand-in terminal on tp-a. The picker and the bridge only ask
+    // that there is one with options to set.
+    const attach = id => p.evaluate(async id => {
+      termTask = lastTasks.find(t => t.id === id);
+      term = { options: {}, dispose() {} };
+      await renderTermList();
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      placeTabBridge();
+    }, id);
+    const read = () => p.evaluate(async () => {
+      await new Promise(r => setTimeout(r, 400));
+      await renderStack();
+      const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+      const a = row("tp-a"), b = row("tp-b");
+      const bridge = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden);
+      const pane = document.getElementById("term-pane");
+      const stack = document.querySelector('#stack-list .stackrow[data-id="tp-a"]');
+      return {
+        a: a && getComputedStyle(a).backgroundColor, b: b && getComputedStyle(b).backgroundColor,
+        aEdge: a && getComputedStyle(a).borderTopColor,
+        bridge: bridge ? getComputedStyle(bridge).backgroundColor : null,
+        frame: pane.style.getPropertyValue("--framec"),
+        stack: stack ? stack.style.getPropertyValue("--card-0") : null,
+        term: term && term.options.theme ? term.options.theme.background : null,
+        wrap: document.getElementById("t-theme-wrap").hidden
+      };
+    });
+    const themeHex = n => p.evaluate(n => TERM_THEMES[n].background.toLowerCase(), n);
+
+    await attach("tp-a");
+    let r = await read();
+    if (r.a !== bg.nord) fail("before a preview the attached row is " + r.a + ", not nord's " + bg.nord + ".");
+    const saved = r;
+
+    // Preview dracula: everything that wears tp-a's theme follows it, tp-b does not.
+    await p.evaluate(() => { window.__writes = []; pickTheme(); previewTheme("dracula"); });
+    r = await read();
+    if (r.term !== await themeHex("dracula")) fail("the preview did not reach the terminal: " + r.term);
+    if (r.a !== bg.dracula) fail("previewing dracula, the attached row stayed " + r.a + ".");
+    if (r.b !== saved.b) fail("previewing a theme on tp-a recoloured tp-b: " + r.b);
+    if (!r.bridge || r.bridge !== r.a) fail("previewing, the bridge is " + r.bridge + " and the row " + r.a + ".");
+    if (r.frame !== r.aEdge) fail("previewing, the pane frame is " + r.frame + " and the row's edge " + r.aEdge + ".");
+    if (r.stack !== await themeHex("dracula")) fail("previewing, the stack card wears " + r.stack + ".");
+    // Another pick moves it again.
+    await p.evaluate(() => previewTheme("gruvbox-dark"));
+    r = await read();
+    if (r.a !== bg["gruvbox-dark"]) fail("a second pick did not move the row: " + r.a);
+
+    // Cancel: the saved colours come back, and nothing was written.
+    await p.evaluate(() => cancelTheme());
+    r = await read();
+    for (const k of ["a", "b", "bridge", "frame", "stack"]) {
+      if (r[k] !== saved[k]) fail("after cancel, " + k + " is " + r[k] + ", saved was " + saved[k] + ".");
+    }
+    const writes = await p.evaluate(() => window.__writes);
+    if (writes.length) fail("a preview wrote localStorage: " + [...new Set(writes)].join(", "));
+    if (patches.length) fail("a preview wrote to the daemon: " + patches.join(" | "));
+
+    // Detaching ends a preview.
+    await p.evaluate(() => { pickTheme(); previewTheme("dracula"); });
+    await p.evaluate(() => clearTermPane(false));
+    r = await read();
+    if (r.a !== saved.a || !r.wrap) fail("after detaching mid-preview the row is " + r.a + ", picker hidden " + r.wrap);
+    if (await p.evaluate(() => themePreview)) fail("detaching left a preview held.");
+
+    // So does switching cards.
+    await attach("tp-a");
+    await p.evaluate(() => { pickTheme(); previewTheme("dracula"); });
+    await p.evaluate(async () => {
+      clearTermPane(true);
+      termTask = lastTasks.find(t => t.id === "tp-b");
+      term = { options: {}, dispose() {} };
+    });
+    r = await read();
+    if (r.a !== saved.a) fail("after switching to tp-b mid-preview, tp-a is " + r.a + ", not its saved " + saved.a);
+
+    // Use it: saved once, and kept across a reload.
+    await attach("tp-a");
+    await p.evaluate(async () => {
+      pickTheme();
+      document.getElementById("t-theme").value = "dracula";
+      previewTheme("dracula");
+      await keepTheme();
+    });
+    r = await read();
+    if (r.a !== bg.dracula) fail("after use it the row is " + r.a + ", not dracula.");
+    if (patches.length !== 1 || !/tp-a .*"theme":"dracula"/.test(patches[0])) {
+      fail("use it did not save the theme once: " + patches.join(" | "));
+    }
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: 15000 });
+    // Let the view switch finish. `switchView` clears `on` from every `.tab`,
+    // the rows included, and a late one would unselect the stand-in attach.
+    await p.waitForTimeout(1000);
+    await attach("tp-a");
+    r = await read();
+    if (r.a !== bg.dracula) fail("after use it and a reload the row is " + r.a + ", not dracula.");
+    if (errors.length) fail("the theme preview page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -2293,7 +2442,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection };
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -4457,6 +4606,8 @@ async function main() {
     await untaggedSortSection(browser, base);
     // ── a card this window has not seen says so, once ──────────────────────
     await newCardSection(browser, base);
+    // ── a theme preview recolours the card everywhere it shows ─────────────
+    await themePreviewSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {
