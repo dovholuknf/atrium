@@ -28,6 +28,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
+| 22 | Copy on select copies every find match (ctrl-shift-f) | bug | not started, cause found |
 
 ------------
 
@@ -537,6 +538,20 @@ silent Bash command is not mistaken for idle. Each runner draws differently: cod
 Find out why the existing silent-stop check behind the stuck alerts (`settings-spine.js`, the "stuck" list) did not
 fire here. It may read hook timing only, not pty output. And find why this Stop was lost: check the room log for the
 card around 15:45 on 2026-09-25 (missing, failed, or overwritten by a late fire-and-forget `/activity` post).
+
+## 22. Copy on select copies every find match (bug)
+
+Raised by clint 2026-09-25: with copy on select on, the terminal find bar (ctrl-shift-f) copies to the clipboard. It
+should not.
+
+Cause: the search addon highlights a match by SELECTING it. `termSearch.findNext` / `findPrevious`
+(`js/terminal-links.js:490-491`, including the live re-search `onWriteParsed` schedules at `:440`) fire
+`term.onSelectionChange`, and `js/terminal.js:816-818` copies any selection when `copyOnSelect` is set. Every
+keystroke in the find box, and every output line while it is open, overwrites the clipboard.
+
+Fix: copy on select answers only a selection the user made with the pointer. Either set a guard around the
+find calls, or copy on the pointerup that ends a drag rather than on every selection change. Headless test: with
+copy on select on, typing in the find bar and stepping matches leaves the clipboard untouched, and a drag still copies.
 
 
 ------------
