@@ -1,6 +1,9 @@
 # One atrium: one binary, no Mode A, and the hub renamed
 
-The plan for three decisions clint made on 2026-09-24. Nothing here is built. Written against `claude/main` at
+Stages 1 to 3 are built. Stage 4, the cutover on this machine, is written out step by step in
+`docs/one-atrium-cutover.md`, which also moves the deploy scripts in the same window rather than a day later.
+
+The plan for three decisions clint made on 2026-09-24. Written against `claude/main` at
 `fd95da4`. There is no release, so no user needs a compatibility shim. The one thing that must keep working through
 every stage is this machine, which runs the board, its own room and every agent working on atrium.
 

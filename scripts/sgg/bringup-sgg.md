@@ -27,7 +27,8 @@ that is clint's to make:
 
     pwsh -File scripts\sgg\stage-sgg.ps1
 
-Copies `build.claude\atrium2.exe` to `sgg:C:\Users\localai\.atrium2\bin\atrium2.exe`. Starts nothing.
+Copies `build.claude\atrium.exe` to `sgg:C:\Users\localai\.atrium2\bin\atrium2.exe`. Starts nothing. The file on sgg
+keeps the name `atrium2.exe`, which is harmless: it is the one binary, and it answers `room` with the same flags.
 
 ## Path A: over ziti (recommended once a service exists)
 
@@ -41,11 +42,15 @@ On SG4, run the hub's LINK over ziti (this is a hub-only restart, room untouched
 
 On SG4, mint the room token (ziti join strings carry the service, no secret):
 
-    C:\Users\claude\.atrium2\bin\atrium2.exe hub room add sgg --transport ziti --service atrium-hub
+    C:\Users\claude\.atrium\bin\atrium.exe rooms add sgg --transport ziti --service atrium-hub `
+      --atrium-dir C:\Users\claude\.atrium2\hub
+
+Before the cutover (`docs/one-atrium-cutover.md`) the same line is
+`C:\Users\claude\.atrium2\bin\atrium2.exe hub room add sgg --transport ziti --service atrium-hub`.
 
 On sgg, join once, then it runs from saved creds afterwards:
 
-    C:\Users\localai\.atrium2\bin\atrium2.exe join <token> `
+    C:\Users\localai\.atrium2\bin\atrium2.exe room join <token> `
       --identity C:\Users\localai\.atrium2\sgg.json `
       --dir C:\Users\localai\.atrium2\room `
       --db  C:\Users\localai\.atrium2\room\atrium.db `
@@ -55,10 +60,10 @@ On sgg, join once, then it runs from saved creds afterwards:
 
 1. On sgg: `zrok enable <clint account token>`. This is clint reusing his account on a second machine.
 2. On SG4, restart the hub with the LINK over zrok: `--transport zrok`. The hub reserves the link share and holds it,
-   so the room token must come from that RUNNING hub, not from `hub room add` (the CLI refuses a zrok join string on
+   so the room token must come from that RUNNING hub, not from `rooms add` (the CLI refuses a zrok join string on
    purpose, because it does not own the share).
-3. Take the join string the running hub prints for `sgg`, and on sgg run `atrium2 join <token> --dir ... --db ...
-   --http 127.0.0.1:7781 --agent 127.0.0.1:7777`.
+3. Take the join string the running hub prints for `sgg`, and on sgg run `atrium2.exe room join <token> --dir ...
+   --db ... --http 127.0.0.1:7781 --agent 127.0.0.1:7777`.
 
 ## Verify
 

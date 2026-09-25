@@ -4,8 +4,8 @@ Manual test scenarios for every shipped feature. Run end-to-end before tagging a
 daemon or hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
 
 Sections A, B and D covered Mode A, the v1 hub and agent loop, and are retired with it. C covers the permission
-surface, which the daemon kept. E covered Mode B and is retired with it. F is the resilience sweep. G covers the daemon, which is where
-the work happens. H covers the overlays, I covers importing rules from Claude Code,
+surface, which the daemon kept. E covered Mode B and is retired with it. F is the resilience sweep. G covers the
+daemon, which is where the work happens. H covers the overlays, I covers importing rules from Claude Code,
 and J covers what landed most recently, written the night it was built so the first person to run it is checking
 claims rather than remembering intent.
 
@@ -3129,3 +3129,56 @@ stream of them.
 1. Shut `untagged`. Leave both tabs alone for a minute, then reload one.
 
 **Expected:** it stays shut in both, and after the reload.
+
+## AW. One atrium binary, and the atrium2 shim
+
+Stage 3 of `docs/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
+answers the live scripts' lines until the cutover. This covers the parsing, the collisions, the hook lines, the
+defaults and the one-machine key minting:
+
+```powershell
+go test ./internal/cli -run 'Shim|OneBinary|Colliding|SettingsHook|Defaults|Hints|RunLeaves|RunMakes'
+```
+
+The steps below are the runs a test cannot make.
+
+Run everything from a shell with `ATRIUM_LOCATION` pointed at a private file under the throwaway directory and
+`ATRIUM_SHARED_LOCATION=-`, on ports nothing live uses, or the room takes this machine's hooks.
+
+### AW1. The shim answers the live scripts
+
+1. `build.claude\atrium2.exe <line> --help` for each line in `~/.atrium2/scripts` (`hub --addr ... --link ...
+   --link-advertise ... --dir ...`, `room --dir ... --db ... --http ... --agent ...`), and for `join`, `hub room
+   add`, `db compact` and `ledger`.
+
+**Expected:** each exits 0 and prints that command's help. `atrium2 hub --no-such-flag --help` exits 1, which shows
+`--help` still parses the line.
+
+2. With a throwaway hub on private ports: `atrium2 hub`, `atrium2 hub room add demo`, then `atrium2 join <string>
+   --isolated` and, after stopping it, `atrium2 room --isolated` with the same flags.
+
+**Expected:** the hub shows one room attached each time. The room's address file names `atrium2.exe`, and
+`atrium2 hook --event tool-start` runs, so a hook line naming it would work.
+
+### AW2. atrium run makes this machine's room
+
+1. On private ports and directories: `atrium run --addr ... --link ... --atrium-dir <t>\hub --isolated --dir <t>\room
+   --db <t>\room\atrium.db --http ... --agent ...`.
+
+**Expected:** within a few seconds `/_hub/health` reports one room. `atrium rooms ls --atrium-dir <t>\hub` lists it
+under this machine's name, attached. `<t>\room\room.log` holds the room's output, and its address file names
+`atrium.exe`.
+
+2. Stop `atrium run`. Check the room's `/v1/health`. Start the same `atrium run` again.
+
+**Expected:** the room answers throughout. The second run logs that the room answers and is left alone, the room's
+pid does not change, and the room reattaches.
+
+### AW3. The new live scripts rehearse
+
+1. `scripts\live\cutover.ps1 -WhatIf`, and `-WhatIf` on every other script in `scripts\live`.
+
+**Expected:** the cutover names exactly the running `atrium2.exe` hub and room pids, the database copies, the
+stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the two start lines in
+`docs/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
+cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.

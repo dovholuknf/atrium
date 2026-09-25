@@ -232,7 +232,13 @@ board having lost everything. The daemon says so loudly when the database is not
 
 | Command | Purpose |
 | --- | --- |
-| `atrium daemon` | The board, the API, and the agent listener. This is the one you run. |
+| `atrium run [--no-room]` | The atrium, which serves the board, plus this machine's room, started detached when none is running. The first run makes the room. |
+| `atrium room` | Run this machine's room from its saved keys: the database, the terminals and the agents. |
+| `atrium room join <string>` | Join a room to an atrium elsewhere, the first time, with the string `atrium rooms add` printed. |
+| `atrium rooms add/ls/token/mark/rm/log` | The rooms an atrium knows about, managed from the atrium's side. |
+| `atrium backups [restore <snapshot>]` | The atrium's snapshots of its own store, and putting one back. |
+| `atrium db compact` / `atrium ledger` | Offline tools for a room's database: a packed copy, and the work ledger read straight from it. |
+| `atrium daemon` | The board, the API, and the agent listener in one process with no atrium. Packaging runs it until `atrium run` replaces it. |
 | `atrium stop` | Ask a running daemon to wind down. Not the same as killing it. |
 | `atrium control` | MCP server with `atrium_status` and `restart_atrium`, for restarting the daemon from a session it is running. |
 | `atrium join` / `leave` | Put the session you are in on the board, or take it off, without a restart. |

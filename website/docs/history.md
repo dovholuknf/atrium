@@ -23,7 +23,7 @@ History grows. Two opt-in settings bound it:
 - `event_sink` sends events to the database, to a file, or both. Kinds you name can go to the file only.
 - A per-card event window rolls old events off the database, and the feed reports what rolled off.
 
-Freed space goes back to disk. `atrium2 db compact` writes a compacted copy of an old database offline.
+Freed space goes back to disk. `atrium db compact` writes a compacted copy of an old database offline.
 
 ## Notifications
 
