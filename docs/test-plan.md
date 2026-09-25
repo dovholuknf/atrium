@@ -3339,7 +3339,7 @@ still one paste, not several.
 2. Paste one line of text, and type a few words.
 
 **Expected:** no box, not even a flash. Only a paste of 2KB or more shows it, and only when it is still in flight
-after 150ms.
+after 20ms.
 
 3. Paste 200KB into a card's shell tab with `cat > /dev/null` running, so nothing echoes.
 
