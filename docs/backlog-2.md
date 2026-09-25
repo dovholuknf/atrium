@@ -27,6 +27,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | not started |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
+| 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 
 ------------
 
@@ -506,6 +507,36 @@ socket, or an explicit "reattach" should replay history. Check the other paths t
 the notification landing helper `landOnAlert` (item from sa73, `js/toasts.js`), a `#term=` hash, the theme preview
 `use it`, and the popped-out window's return. Headless test: a second select of the attached card opens no new
 socket and writes nothing to xterm.
+
+## 21. A card stuck on `running` after a lost Stop looks idle (bug)
+
+Raised by clint 2026-09-25 with a screenshot (`.atrium/incoming/20260925-154851-pasted.png`): the card `tlsuv GHSA:
+verify_cert_ca proof of exploit` in `D:/worktrees/github/openziti/tlsuv/ghsa-verify-cert-ca` read `running` with
+activity `thinking` (confirmed from `atrium_peers`) while its terminal showed the turn done at 15:45 and an empty
+prompt. clint's read: a hook did not land. Typing something into the agent cleared it.
+
+### The signal
+
+Atrium owns the terminal. While Claude Code works, its spinner line redraws every second, so the pty produces
+output. At an idle prompt it stops. So `running` plus a silent pty for 20 to 30 seconds is strong evidence the turn
+ended and the Stop never arrived. Confirm from the last screen frame (an empty input box, no spinner line) so a long
+silent Bash command is not mistaken for idle. Each runner draws differently: codex needs its own idle signature.
+
+### What it does
+
+- A new activity badge, not a status change: the stored status stays, per "status is a column, activity is a badge".
+- Its own icon, distinct from running and from waiting on you: the spinner freezes into a hollow ring with a gap, in
+  the warn colour. The spinner must stop, or the board claims work it cannot see. Tooltip: "no turn-end from the
+  agent. its screen has been idle for Ns."
+- It raises the waiting alert, worded as a guess: "looks idle (no turn-end received)".
+- Any pty output or keystroke puts the real icon back. A late Stop settles the card as normal.
+- Every firing is logged, since a missing Stop is a bug somewhere and the count says how often hooks drop.
+
+### First
+
+Find out why the existing silent-stop check behind the stuck alerts (`settings-spine.js`, the "stuck" list) did not
+fire here. It may read hook timing only, not pty output. And find why this Stop was lost: check the room log for the
+card around 15:45 on 2026-09-25 (missing, failed, or overwritten by a late fire-and-forget `/activity` post).
 
 
 ------------
