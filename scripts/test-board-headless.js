@@ -1941,6 +1941,93 @@ async function idleRateSection(browser, base) {
   }
 }
 
+// A GROUP YOU OPEN STAYS OPEN, and two windows left alone write nothing.
+//
+// The board's `untagged` group starts shut in custom mode, so its entry in
+// `atrium.folded` means OPEN, the reverse of every other project group. The
+// `toggle` listener only knew the offline group was reversed, so opening
+// `untagged` wrote the entry, the repaint drew it open and fired `toggle`, the
+// listener read "open" as "take the entry out", the repaint shut it, and round
+// again with a refresh on every turn: the board expanding and collapsing a group
+// on its own, and a fetch pass per flip.
+async function foldStillSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "filed";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+    window.__writes = [];
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (this.getItem(k) !== String(v)) window.__writes.push(k);
+      return set.call(this, k, v);
+    };
+    window.__toggles = 0;
+    addEventListener("toggle", () => { window.__toggles++; }, true);
+  });
+  const open = async who => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(who + ": " + e));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(1200);
+    await p.click('.tab[data-view="board"]');
+    return p;
+  };
+  let live = 0;
+  try {
+    const a = await open("a");
+    const b = await open("b");
+    await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: 10000 });
+    // Open it by hand, the way a click on its summary does.
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
+    // A live board: a card changes and the stream says so, every second, so
+    // every pass repaints. A repaint is where the stored answer meets the screen.
+    let tick = 0;
+    live = setInterval(() => {
+      LOOSE.display_title = "loose card " + (++tick);
+      openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+    }, 1000);
+    await a.waitForTimeout(2500);
+    const reset = p => p.evaluate(() => { window.__writes = []; window.__toggles = 0; });
+    await reset(a); await reset(b);
+    await a.waitForTimeout(+(process.env.FOLD_STILL_SECONDS || 10) * 1000);
+    const got = await Promise.all([a, b].map(p => p.evaluate(() => ({
+      writes: window.__writes, toggles: window.__toggles,
+      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+    }))));
+    if (process.env.DEBUG_HEADLESS) console.log("fold still: " + JSON.stringify(got));
+    got.forEach((g, i) => {
+      const who = i ? "the second window" : "the window it was opened in";
+      if (g.writes.length) {
+        fail(who + " wrote storage " + g.writes.length + " times while idle: " +
+          [...new Set(g.writes)].join(", "));
+      }
+      if (g.toggles > 2) fail(who + " toggled a group " + g.toggles + " times while idle.");
+    });
+    if (!got[0].open) fail("the untagged group, opened by hand in custom mode, did not stay open.");
+
+    // And shut again, which is its default, so the entry goes and stays gone.
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = false; });
+    await a.waitForTimeout(2500);
+    await reset(a); await reset(b);
+    await a.waitForTimeout(4000);
+    const shut = await Promise.all([a, b].map(p => p.evaluate(() => ({
+      writes: window.__writes.length,
+      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+    }))));
+    if (shut.some(s => s.open)) fail("the untagged group, shut again by hand, came back open: " + JSON.stringify(shut));
+    if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
+    if (errors.length) fail("the fold-still pages threw: " + errors.join(" | "));
+  } finally {
+    clearInterval(live);
+    LOOSE.display_title = "loose card";
+    await ctx.close();
+    tasksMode = was;
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -1951,7 +2038,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection };
+      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -4109,6 +4196,8 @@ async function main() {
     await popoutTagFlipSection(browser, base);
     // ── an idle board stays idle, and a silent room cannot fill the fetch cap ─
     await idleRateSection(browser, base);
+    // ── a group opened by hand stays put, and idle windows write nothing ───
+    await foldStillSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

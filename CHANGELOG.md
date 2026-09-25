@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The untagged group stays the way you left it in custom mode.** See `docs/test-plan.md` section AV.
+
+  In custom grouping the board's `untagged` group starts shut, so an entry for it in `atrium.folded` means open, the
+  reverse of every other project group. The render knew that and the `toggle` listener did not: it treated only the
+  offline group as reversed. So opening `untagged` wrote nothing, and the next repaint shut it. Shutting then wrote
+  the entry that the render draws as open, and the two went round, with a refresh on every turn. On a board whose
+  cards were changing that was over a hundred storage writes and fetch passes a second. Every other window on the
+  board followed the shared list and flapped with it: groups expanding and collapsing on their own, and the fetch cap
+  full. The render now marks a group that comes shut with `data-fold-shut`, and the listener reads that mark
+  instead of guessing from the key. The new headless section `foldStill` opens and shuts `untagged` in one of two
+  windows while a card changes every second. It fails on any storage write while they sit idle, or on more than two
+  toggles. HUB-SIDE.
+
 - **A room that stops answering no longer fills the board's fetch cap.** See `docs/test-plan.md` section AU.
 
   After a hub-only restart the room could sit attached and silent for minutes, and the hub holds a proxied read
