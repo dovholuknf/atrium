@@ -297,6 +297,21 @@
      badge wears, because it is the same kind of fact: about the card, never a column. */
   .chip.unseen { background: rgba(var(--teal-rgb),.10); color: var(--teal); padding-left: 6px; padding-right: 6px; }
   .chip.questions { font-weight: 600; }
+  /* A card this window has not seen before. See js/newcard.js. A teal ring that pulses three times and stops,
+     on a board card, a stack row and a terminal row alike, then the chip alone until it is looked at. Moving
+     only because it is short: the chip that stays is still. Teal from the skin, so it reads on every one. An
+     outline rather than a shadow, so the card keeps the shadow it already wears, drawn inside the edge so a
+     scrolling list does not clip it. */
+  @keyframes arrived {
+    0%, 100% { outline-color: rgba(var(--teal-rgb),0); }
+    35% { outline-color: rgba(var(--teal-rgb),.9); }
+  }
+  .arrived.glow { outline: 3px solid rgba(var(--teal-rgb),0); outline-offset: -3px; animation: arrived 1s ease-out 3; }
+  body.tabhidden .arrived.glow { animation: none; }
+  .chip.arrived {
+    background: rgba(var(--teal-rgb),.14); border-color: rgba(var(--teal-rgb),.4); color: var(--teal);
+    font-weight: 600;
+  }
   /* Which room a card runs in, shown only while more than one is attached (the id carries a `room~` tag
      exactly then). A STABLE colour PER ROOM, so sg4 and sgg read apart at a glance rather than letter by
      letter, the whole reason the badge exists. The hue is hashed from the room name in `roomHue` and handed
@@ -379,7 +394,7 @@
      animate through reduced motion for months, because the block only named the chips somebody thought of.
      Naming the animations here covers a new one as soon as it is written. */
   @media (prefers-reduced-motion: reduce) {
-    .pulse, .chip.live.tool, .chip.auto, .gauto.on, .tab .count#c-perm,
+    .pulse, .chip.live.tool, .chip.auto, .gauto.on, .tab .count#c-perm, .arrived.glow,
     button.icon.blocked:not(.muted) { animation: none; opacity: 1; }
     .chip.live.tool::before, .chip.live.thinking::before, .chip.live.compacting::before {
       animation: none; opacity: 1; transform: none;

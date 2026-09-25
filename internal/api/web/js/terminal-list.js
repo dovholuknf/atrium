@@ -1034,7 +1034,7 @@ function termRow(t, deep) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           termCold(t) ? " cold" : ""}${wear.cls}"
+           termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
          data-tip="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
          style="${style}"
@@ -1079,7 +1079,7 @@ function termRowChips(t) {
     : "";
   // Unread and unanswered, which is where the operator is looking while workers
   // run. See js/seen.js.
-  const inner = seenChips(t) + held + room + popped;
+  const inner = newCardChip(t) + seenChips(t) + held + room + popped;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1504,8 +1504,13 @@ function termOrder(tasks) {
       return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
     });
   } else {
-    // Sort by the displayed label. Grouping preserves this order within headings.
-    const named = t => terminalLabel(t) || t.display_title || "";
+    // Sort by the name the row leads with, which is `display_title` and then
+    // the address when the card has no name of its own: the same key `termRow`
+    // draws first and the one the board and the stack sort on. This sorted on
+    // the address alone, so a list of named cards came out in the order of the
+    // dim second line under each name. Grouping preserves this order within
+    // headings.
+    const named = t => String(t.display_title || "").trim() || terminalLabel(t) || "";
     tasks.sort((a, b) => named(a).localeCompare(named(b)) || cardTieBreak(a, b));
   }
   // Lift pinned rows with a stable second pass to preserve the order within
@@ -1542,6 +1547,7 @@ async function renderTermList() {
   // you were watching a terminal is announced whenever you next look at the
   // board, or not at all.
   lastTasks = all;
+  newCardNote(all);
 
   // Terminals, AND the pinned bucket whether or not it is running.
   //

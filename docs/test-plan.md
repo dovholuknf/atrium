@@ -3183,9 +3183,29 @@ stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the tw
 `docs/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
 cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
 
+## AX. Untagged follows the sort pill
+
+Run on a hub built from this branch with grouping set to custom, at least one group of your own, and four or more
+live cards in none of your groups, named so their name order differs from their path order. The headless section
+`untaggedSort` covers AX1 and AX2 against a mocked hub.
+
+### AX1. Sorted by name
+
+1. On the terminals pane, set the tray to `sorted by name`. Read the `untagged` group.
+2. Set the stack's sort pill and the board's sort pill to `name`, and read `untagged` on each.
+
+**Expected:** all three read a to z by the name each row shows first, not by the dim path under it. Pinned keeps
+its pin order, and each group of your own keeps the order you dragged it into.
+
+### AX2. Sorted by activity, and the stack's other pills
+
+1. Switch each view to activity, then walk the stack through `project` and `runner`.
+
+**Expected:** `untagged` follows every pill in every view. Your own groups do not move.
+
 ## AY. The unexpected-exit notice
 
-AX is held by sa68's branch. See `docs/unexpected-exit-wake.md`. The tests cover a crash, a planned stop, an idle
+See `docs/unexpected-exit-wake.md`. The tests cover a crash, a planned stop, an idle
 card, a self-queued wake winning, restarts in a row and the setting off:
 
 ```powershell
@@ -3228,3 +3248,48 @@ time.
 
 **Expected:** the card comes back and nothing is typed. With the box ticked again, the next crash mid-turn types the
 notice.
+
+## AZ. A card this window has not seen says so
+
+Run on a hub built from this branch with the board open on the stack. The headless section `newCard` covers AZ1 to
+AZ4 against a mocked hub.
+
+### AZ1. A new card
+
+1. Launch a session from a shell with `atrium launch`, and watch the stack.
+
+**Expected:** the new card pulses a teal ring three times over about three seconds, then keeps a teal `new` chip.
+If it lands below the fold of a list you are not scrolling, the list scrolls just far enough to show it. Focus
+stays where it was. Switch to the board and the terminals pane: it wears the chip there too.
+
+2. Launch another while scrolling the stack with the wheel.
+
+**Expected:** it pulses and gets its chip, and the list does not move under you.
+
+### AZ2. It clears
+
+1. Click the card, or rest the pointer on it for a second, or attach to it.
+
+**Expected:** the chip goes at once, in every view and in any other window of this browser. A chip nobody looks at
+goes on its own after five minutes.
+
+### AZ3. A reload and a hub restart are not new
+
+1. Reload the board.
+
+**Expected:** nothing pulses. A card whose chip you had not cleared keeps it, and no other card gets one.
+
+2. Do a hub-only restart and let the room reattach.
+
+**Expected:** nothing pulses and no chip appears, including when a second room is attached and every id changes
+its spelling.
+
+### AZ4. Motion and skins
+
+1. Turn on reduced motion in the OS, and launch a card.
+
+**Expected:** no pulse, and the chip still appears.
+
+2. Wear `daylight`, `website` and `noir`, and launch a card in each.
+
+**Expected:** the ring and the chip read clearly on each skin.

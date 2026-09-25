@@ -151,7 +151,29 @@ const AGDEAD = Object.assign({}, SUBLIVE, {
   status: "dead", supervised: false, pinned: true, pid: 0
 });
 
-let tasksMode = "first";   // first | hang | second | pinned | loop | worn
+// Four live untagged cards served in ADDRESS order, which is not name order and
+// not activity order, so a view that sorts on the wrong key is caught. The
+// shape of the screenshot: named cards whose dim second line is the path.
+const untaggedCard = (id, title, worktree, idle) => Object.assign({}, T1, {
+  id, display_title: title, worktree, repo: worktree.split("/").pop(), branch: "b",
+  idle_seconds: idle, supervised: true
+});
+const UNTAGGED_CARDS = [
+  untaggedCard("u-sa67", "sa67 stages", "/w/claude/atrium/one", 30),
+  untaggedCard("u-sa65", "sa65 merger", "/w/github/dovholuknf/atrium", 10),
+  untaggedCard("u-night", "nightly-fail", "/w/github/openziti/ziti-sdk-csharp", 20),
+  untaggedCard("u-disc", "discourse-6101", "/w/github/openziti/ziti", 40)
+];
+// Cards added under a page that is already open, a 503 while a hub has no room,
+// an empty answer while it has none yet, and the `room~` tag a second room puts
+// on every id.
+let untaggedExtra = [];
+let untaggedDown = false;
+let untaggedEmpty = false;
+let untaggedTag = "";
+const NEWC = untaggedCard("u-new", "brand new", "/w/github/openziti/fresh", 5);
+
+let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged
 // One card per shipped terminal theme, filled in from the page's own table by
 // the card-colours section, plus one with no theme that takes the repo default.
 let wornTasks = [];
@@ -367,6 +389,15 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
     if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
+    // Untagged cards in custom mode, for the sort and the new-card sections.
+    if (tasksMode === "untagged") {
+      if (untaggedDown) { res.writeHead(503); res.end("{}"); return; }
+      if (untaggedEmpty) { sendJSON(res, { tasks: [] }); return; }
+      const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
+      sendJSON(res, { tasks: untaggedTag
+        ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list });
+      return;
+    }
     // The hide strip: an alive idle subagent, an alive working subagent, a dead
     // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
     if (tasksMode === "doers") {
@@ -2028,6 +2059,229 @@ async function foldStillSection(browser, base) {
   }
 }
 
+// A context for the untagged sections: custom grouping with one group of yours,
+// every stack column shown, and a record of every storage write that changed
+// something.
+async function untaggedContext(browser, opts) {
+  const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 900 } }, opts || {}));
+  await ctx.addInitScript(() => {
+    if (!sessionStorage.getItem("primed")) {
+      sessionStorage.setItem("primed", "1");
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+      localStorage.setItem("atrium.stack.show", "[]");
+    }
+    window.__writes = [];
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (this.getItem(k) !== String(v)) window.__writes.push(k);
+      return set.call(this, k, v);
+    };
+  });
+  return ctx;
+}
+
+// The ids in the untagged group of each view, in the order they are drawn.
+async function untaggedOrder(p, view) {
+  await p.click('.tab[data-view="' + view + '"]');
+  await p.waitForTimeout(900);
+  return p.evaluate(view => {
+    const sel = {
+      stack: 'details.stackgroup[data-fold="proj:stack:untagged"] .stackrow[data-id]',
+      board: 'details.cardgroup[data-fold="proj:untagged"] .card[data-id]',
+      terms: '#term-list [data-ungroup="1"] .card.tab[data-id]'
+    }[view];
+    return [...document.querySelectorAll(sel)].map(e => e.dataset.id).join(",");
+  }, view);
+}
+
+// UNTAGGED FOLLOWS THE SORT in all three views. Named groups keep the order you
+// set, and `untagged` is the board's own heap, so it must read in the order the
+// sort pill says. The terminals pane sorted it on the address line.
+async function untaggedSortSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "untagged";
+  const ctx = await untaggedContext(browser);
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    const byName = "u-disc,u-night,u-sa65,u-sa67";
+    const byActivity = "u-sa65,u-night,u-sa67,u-disc";
+    // Name.
+    await p.evaluate(() => {
+      localStorage.setItem("atrium.boardsort", "name");
+      localStorage.setItem("atrium.termSort", "0");
+      sortByActivity = false;
+      setStackSort("name");
+    });
+    for (const v of ["stack", "board", "terms"]) {
+      const got = await untaggedOrder(p, v);
+      if (got !== byName) fail(`sorted by name, untagged on the ${v} read ${got}, expected ${byName}.`);
+    }
+    // Activity.
+    await p.evaluate(() => {
+      localStorage.setItem("atrium.boardsort", "activity");
+      localStorage.setItem("atrium.termSort", "1");
+      sortByActivity = true;
+      setStackSort("activity");
+    });
+    for (const v of ["stack", "board", "terms"]) {
+      const got = await untaggedOrder(p, v);
+      if (got !== byActivity) fail(`sorted by activity, untagged on the ${v} read ${got}, expected ${byActivity}.`);
+    }
+    // And the stack's other pills, which have their own keys.
+    const stackWant = { project: "u-sa67,u-sa65,u-disc,u-night", runner: byName };
+    for (const [pill, want] of Object.entries(stackWant)) {
+      await p.evaluate(k => setStackSort(k), pill);
+      const got = await untaggedOrder(p, "stack");
+      if (got !== want) fail(`sorted by ${pill}, untagged on the stack read ${got}, expected ${want}.`);
+    }
+    if (errors.length) fail("the untagged-sort page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+}
+
+// A CARD THIS WINDOW HAS NOT SEEN BEFORE says so: a pulse, then a `new` chip that
+// clears on a click. Nothing is marked on a first load, a reload, or a hub
+// restart that brings the same cards back, and nothing writes storage while idle.
+async function newCardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "untagged";
+  untaggedExtra = [];
+  const ctx = await untaggedContext(browser);
+  const errors = [];
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const marks = p => p.evaluate(() => ({
+    arrived: [...document.querySelectorAll(".arrived[data-id]")].map(e => e.dataset.id),
+    glow: [...document.querySelectorAll(".arrived.glow[data-id]")].map(e => e.dataset.id),
+    chips: document.querySelectorAll(".chip.arrived").length
+  }));
+  let live = 0;
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(800);
+    let m = await marks(p);
+    if (m.arrived.length) fail("a first load marked cards that were already there as new: " + m.arrived.join(","));
+
+    // A card arrives.
+    untaggedExtra = [NEWC];
+    poke();
+    await p.waitForSelector('#stack-list .stackrow.arrived.glow[data-id="u-new"]', { timeout: 10000 })
+      .catch(() => fail("a new card on the stack did not pulse."));
+    const anim = await p.evaluate(() => {
+      const el = document.querySelector('#stack-list .stackrow[data-id="u-new"]');
+      return el ? getComputedStyle(el).animationName : "";
+    });
+    if (anim !== "arrived") fail("the new stack row's animation is " + JSON.stringify(anim) + ", not arrived.");
+    // NEWCARD_SHOT=dir saves what the pulse looks like, for a human to judge.
+    if (process.env.NEWCARD_SHOT) {
+      await p.waitForTimeout(300);
+      await p.screenshot({ path: path.join(process.env.NEWCARD_SHOT, "newcard-stack.png") });
+    }
+    m = await marks(p);
+    if (m.arrived.join(",") !== "u-new") fail("only the new card should be marked, got " + m.arrived.join(","));
+    if (!m.chips) fail("the new card has no `new` chip on the stack.");
+    for (const [v, sel] of [["board", '.card.arrived[data-id="u-new"] .chip.arrived'],
+      ["terms", '#term-list .card.tab.arrived[data-id="u-new"] .chip.arrived']]) {
+      await p.click('.tab[data-view="' + v + '"]');
+      await p.waitForSelector(sel, { state: "attached", timeout: 8000 })
+        .catch(() => fail("the new card has no `new` chip on the " + v + "."));
+    }
+    await p.click('.tab[data-view="stack"]');
+
+    // Idle, with a repaint every second: nothing is written.
+    await p.waitForTimeout(1500);
+    await p.evaluate(() => { window.__writes = []; });
+    let tick = 0;
+    live = setInterval(() => { LOOSE.display_title = "loose " + (++tick); poke(); }, 1000);
+    await p.waitForTimeout(5000);
+    clearInterval(live); live = 0;
+    const idle = await p.evaluate(() => window.__writes);
+    if (idle.length) fail("the new-card cue wrote storage " + idle.length + " times while idle: " +
+      [...new Set(idle)].join(", "));
+
+    // A reload: nothing pulses. The card nobody has looked at keeps its chip,
+    // and no other card gets one.
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(1200);
+    m = await marks(p);
+    if (m.glow.length) fail("a reload pulsed " + m.glow.join(","));
+    if (m.arrived.join(",") !== "u-new") fail("after a reload the marked cards are " + m.arrived.join(",") +
+      ", expected only the unread u-new.");
+
+    // A click clears it, here and after another reload.
+    await p.click('#stack-list .stackrow[data-id="u-new"] .who b');
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(300);
+    m = await marks(p);
+    if (m.arrived.length || m.chips) fail("a click did not clear the new card: " + JSON.stringify(m));
+    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.newcards") || "{}")["u-new"]);
+    if (stored !== 0) fail("the cleared card is stored as " + JSON.stringify(stored) + ", not 0.");
+
+    // A hub restart: the rooms go, the hub answers 503 and then an empty list,
+    // then the same cards come back under a second room's tag. Nothing is new.
+    untaggedDown = true;
+    openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
+    await p.waitForTimeout(2500);
+    untaggedDown = false; untaggedEmpty = true;
+    poke();
+    await p.waitForTimeout(2000);
+    untaggedEmpty = false; untaggedTag = "sgg";
+    poke();
+    await p.waitForTimeout(3000);
+    m = await marks(p);
+    if (m.arrived.length) fail("a hub restart that brought the same cards back marked " + m.arrived.join(","));
+
+    // And a reload in the middle of one, which starts on an empty board.
+    untaggedEmpty = true;
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(2000);
+    untaggedEmpty = false;
+    poke();
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(1500);
+    m = await marks(p);
+    if (m.arrived.length) fail("a reload during a hub restart marked " + m.arrived.join(","));
+    if (errors.length) fail("the new-card page threw: " + errors.join(" | "));
+  } finally {
+    clearInterval(live);
+    LOOSE.display_title = "loose card";
+    untaggedExtra = []; untaggedDown = false; untaggedEmpty = false; untaggedTag = "";
+    await ctx.close();
+  }
+
+  // Reduced motion: the chip, and no animation.
+  const rctx = await untaggedContext(browser, { reducedMotion: "reduce" });
+  try {
+    const p = await rctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(800);
+    untaggedExtra = [NEWC];
+    poke();
+    await p.waitForSelector('#stack-list .stackrow.arrived[data-id="u-new"] .chip.arrived', { timeout: 10000 })
+      .catch(() => fail("under reduced motion the new card has no chip."));
+    const anim = await p.evaluate(() => {
+      const el = document.querySelector('#stack-list .stackrow[data-id="u-new"]');
+      return el ? getComputedStyle(el).animationName : "";
+    });
+    if (anim !== "none") fail("under reduced motion the new card still animates: " + anim);
+  } finally {
+    untaggedExtra = [];
+    await rctx.close();
+    tasksMode = was;
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -2038,7 +2292,8 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection };
+      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -4198,6 +4453,10 @@ async function main() {
     await idleRateSection(browser, base);
     // ── a group opened by hand stays put, and idle windows write nothing ───
     await foldStillSection(browser, base);
+    // ── untagged follows the sort pill in all three views ──────────────────
+    await untaggedSortSection(browser, base);
+    // ── a card this window has not seen says so, once ──────────────────────
+    await newCardSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

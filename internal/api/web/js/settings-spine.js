@@ -797,6 +797,8 @@ async function move(status) {
 }
 
 async function attachTask(id) {
+  // Attaching is looking at it, so a new card's mark goes. See js/newcard.js.
+  newCardClear(id);
   // Already in a window of its own. Raise that rather than attaching here.
   //
   // Two views onto one terminal both taking input is the situation

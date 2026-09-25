@@ -716,7 +716,7 @@ function cardHTML(t) {
   // selection never starts. `data-rank` stays because the menu's up and down
   // are computed from the ranks on screen.
   return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
-      t.auto_approve ? " autoon" : ""}${wear ? wear.cls : ""}"${
+      t.auto_approve ? " autoon" : ""}${wear ? wear.cls : ""}${newCardClass(t)}"${
       wear ? ` style="${wear.style}"` : ""}
     onclick="cardMenu(event, '${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}"
@@ -726,6 +726,7 @@ function cardHTML(t) {
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
+      ${newCardChip(t)}
       ${modelChip(t)}
       ${tagChips(t)}
       ${noteChip(t)}
@@ -1613,6 +1614,7 @@ async function renderBoard(signal) {
   const all = everything.filter(t => !t.offline);
   const offline = everything.filter(t => t.offline);
   lastTasks = everything;
+  newCardNote(everything);
   paintWorking(all);
   const g = grouper();
 

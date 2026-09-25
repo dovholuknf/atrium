@@ -189,6 +189,7 @@ async function renderStack(signal) {
   allStack = everything.filter(t => !t.offline);
   offlineStack = everything.filter(t => t.offline);
   lastTasks = everything;
+  newCardNote(everything);
   paintWorking(allStack);
   paintStack();
 }
@@ -442,7 +443,7 @@ function stackRow(t) {
   const dark = isOutOfContact(t);
   const wear = cardWear(t);
   return `<div class="row stackrow ${w ? "attn" : ""}${t.auto_approve ? " autoon" : ""}${
-      t.pinned ? " pinned" : ""}${wear ? wear.cls : ""}"${
+      t.pinned ? " pinned" : ""}${wear ? wear.cls : ""}${newCardClass(t)}"${
       wear ? ` style="${wear.style}"` : ""}
     data-id="${t.id}"
     onclick="cardMenu(event, '${t.id}')"
@@ -458,6 +459,7 @@ function stackRow(t) {
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
     <div class="chips">
+      ${newCardChip(t)}
       ${tagChips(t)}
       ${modelChip(t)}
       ${noteChip(t)}
