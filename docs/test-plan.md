@@ -4,7 +4,7 @@ Manual test scenarios for every shipped feature. Run end-to-end before tagging a
 daemon or hook code. Each scenario lists steps, expected behavior, and the most common failure mode.
 
 Sections A, B and D covered Mode A, the v1 hub and agent loop, and are retired with it. C covers the permission
-surface, which the daemon kept. E covers Mode B. F is the resilience sweep. G covers the daemon, which is where
+surface, which the daemon kept. E covered Mode B and is retired with it. F is the resilience sweep. G covers the daemon, which is where
 the work happens. H covers the overlays, I covers importing rules from Claude Code,
 and J covers what landed most recently, written the night it was built so the first person to run it is checking
 claims rather than remembering intent.
@@ -170,37 +170,10 @@ Retired with Mode A. Both tested the v1 terminal UI's banner. The board's own no
 Retired with Mode A. The `{choices}` block was a convention taught by the `atrium-agent` tool description and
 rendered by the v1 terminal UI, and both are gone.
 
-## E. Mode B (read-only aggregator)
+## E. Mode B (read-only aggregator): retired
 
-### E1. `atrium status`
-
-**Steps**
-
-1. With `gwt` having registered some sessions on this box, run `atrium status`.
-
-**Pass criteria**
-- Table prints with columns: STATE, BRANCH, WINDOW, PID, WORKTREE.
-- Filters `--needs-input` and `--alive` work.
-
-### E2. `atrium watch`
-
-**Steps**
-
-1. Run `atrium watch`.
-2. Trigger a state transition in any gwt-tracked claude session (prompt + stop).
-
-**Pass criteria**
-- The new lines stream into stdout. Matches `gwt watch`'s output line-for-line.
-
-### E3. MCP tools via `atrium serve`
-
-**Steps**
-
-1. Wire `atrium serve` as an MCP server in any claude session.
-2. Ask it: `Use the snapshot tool and tell me what sessions are known.`
-
-**Pass criteria**
-- Tool result is a JSON object with a `sessions` array. Each entry has the fields documented in the README.
+Retired with Mode B. `atrium serve`, `atrium status` and `atrium watch` no longer exist. `gwt watch` tails the same
+ledger, and the board shows every session.
 
 ## F. Resilience regression sweep
 

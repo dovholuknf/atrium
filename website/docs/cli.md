@@ -79,10 +79,3 @@ machine's hooks, `--accept-upgrades` to install builds the hub offers, and `--db
 | `ATRIUM_TASK_ID` | unset | Binds a launched runner to its card. Set for you. |
 | `ATRIUM_PRIORITY` | above normal | `normal` turns off the raised process priority on Windows. |
 | `WORKTREE_ROOT` | unset | A worktree tree root. The database lives under it. Unset means `~/.atrium`. |
-
-## The older mode
-
-One mode from atrium's first version still builds and still works, and shares no state with the daemon.
-
-- **`atrium serve`, `atrium status` and `atrium watch`**: read-only views over an external worktree ledger,
-  inert unless `WORKTREE_ROOT` points at one.

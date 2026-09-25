@@ -211,11 +211,6 @@ On the board, **perms** then **import rules from claude**. It previews what it w
 translating `Bash(go build:*)` into a prefix and `//c/temp/**` into a real path, and reporting anything it cannot
 map rather than dropping it silently.
 
-## One other mode
-
-**State aggregator.** `atrium serve`, `status` and `watch` read a session ledger written by an external worktree
-tool and expose it over MCP. Optional, and inert unless `WORKTREE_ROOT` points at a ledger it understands.
-
 ## Configuration
 
 | Var | Default | Meaning |
@@ -249,7 +244,6 @@ board having lost everything. The daemon says so loudly when the database is not
 | `atrium answer <handle>` | The reply to one of those, which also takes the question off that card. |
 | `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
-| `atrium serve` / `status` / `watch` | Read-only views over an external worktree ledger. |
 
 ## Scope, and what is not built
 

@@ -18,7 +18,7 @@ COMMIT   := $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
             -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT)
 
-.PHONY: build release run-status run-watch run-serve tidy test check clean
+.PHONY: build release tidy test check clean
 
 # Everything that is checked without running anything.
 #
@@ -42,15 +42,6 @@ build:
 # whose output leaves this machine. See `docs/packaging.md`.
 release:
 	bash scripts/release.sh $(VERSION)
-
-run-status: build
-	$(BINARY) status
-
-run-watch: build
-	$(BINARY) watch
-
-run-serve: build
-	$(BINARY) serve
 
 tidy:
 	go mod tidy

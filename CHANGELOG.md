@@ -5,6 +5,11 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Mode B is removed.** `atrium serve`, `atrium status` and `atrium watch` are gone, with `internal/server`,
+  `internal/state` and the `run-status`, `run-watch` and `run-serve` make targets. Nothing called them, no MCP
+  config registered `atrium serve`, and `gwt watch` already tails the same ledger. `docs/test-plan.md` section E is
+  retired. Plan: `docs/one-atrium-plan.md` stage 2. ROOM-SIDE, the hook binary only.
+
 - **The hub answers a read that a silent room holds.** See `docs/test-plan.md` section AU3.
 
   The hub's proxy has no response header timeout, because the event stream sends nothing until something happens.
