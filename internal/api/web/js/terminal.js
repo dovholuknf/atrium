@@ -449,6 +449,21 @@ function openTerm(task) {
     rlog("attach already in flight for", task.id, "- not re-entering openTerm");
     return;
   }
+  // ALREADY ATTACHED TO THIS CARD AND LIVE. Picking it again is a focus, not a
+  // re-attach: tearing the pane down to dial the same socket replays the whole
+  // scrollback (up to 4 MB) and loses the scroll position. Every way in lands
+  // here, so the row click, a toast, the switcher and a `#term=` window all get
+  // it. Only a different card, a socket that is not open, or a pane already torn
+  // down (a shell/runner switch and the resyncs close or redial first) go on to
+  // attach. By bare id, so a room flip's respelling is still the same card.
+  if (term && termTask && bareId(termTask.id) === bareId(task.id) &&
+      termSock && termSock.readyState === WebSocket.OPEN) {
+    rlog("already attached to", task.id, "- focusing, not re-attaching");
+    if (document.getElementById("terms").hidden) switchView("terms");
+    if (typeof termNarrow === "function" && termNarrow()) setTermListOpen(false);
+    term.focus();
+    return;
+  }
   // Switching sessions means tearing the old one down first, or two sockets
   // write into one screen.
   if (termSock || term) closeTerm(true);
