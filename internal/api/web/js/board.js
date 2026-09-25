@@ -1436,7 +1436,7 @@ function cardsHTML(cards, g, keyPrefix) {
     // rather than rewriting each one with the next one's contents.
     return `<details class="cardgroup project${cold}"${shut}
       style="--ghue:${groupHue(name)}" data-morph-key="${esc(key)}"
-      data-fold="${esc(fold)}">
+      data-fold="${esc(fold)}"${shutByDefault ? ` data-fold-shut="1"` : ""}>
       <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
@@ -1500,7 +1500,13 @@ addEventListener("toggle", e => {
   // comes shut, it means open. Without this line opening that group writes
   // nothing down and the next repaint closes it again, which reads as the
   // board refusing to let you look.
-  const inverted = key.startsWith("offline:");
+  //
+  // `untagged` in custom mode comes shut too, and the render says so with
+  // `data-fold-shut` because the key alone cannot. Read off the key, opening it
+  // wrote nothing, the next repaint shut it, shutting wrote the entry that the
+  // repaint draws as open, and the two went round with a refresh on every turn:
+  // a group expanding and collapsing on its own, in every window on the board.
+  const inverted = key.startsWith("offline:") || el.dataset.foldShut === "1";
   const shut = inverted ? !!el.open : !el.open;
   // NOTHING TO WRITE IS THE COMMON CASE AND IT HAS TO RETURN HERE. A repaint
   // re-asserts the `open` attribute, setting an attribute fires `toggle`, and

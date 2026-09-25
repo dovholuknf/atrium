@@ -3127,3 +3127,23 @@ queue that keeps growing. `/v1/health` still answers in the network tab.
 2. Wait for the room to reattach.
 
 **Expected:** within one poll every list repaints and the fetch counts go back to zero. Nothing needs a reload.
+
+## AV. A group opened by hand stays open in custom mode
+
+Run on a hub built from this branch with grouping set to custom, at least one group of your own, a card in none of
+them, and something working so cards change. Open the board in two tabs. The headless section `foldStill` covers
+AV1 and AV2.
+
+### AV1. Opening untagged
+
+1. On the board view, open the `untagged` group. Leave both tabs alone for a minute.
+
+**Expected:** it stays open in the tab you opened it in, and the other tab shows it open on its next repaint.
+Nothing expands or collapses on its own, and the network tab shows a pass every ten seconds or per event, not a
+stream of them.
+
+### AV2. Shutting it again
+
+1. Shut `untagged`. Leave both tabs alone for a minute, then reload one.
+
+**Expected:** it stays shut in both, and after the reload.
