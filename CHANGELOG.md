@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room that stops answering no longer fills the board's fetch cap.** See `docs/test-plan.md` section AU.
+
+  After a hub-only restart the room could sit attached and silent for minutes, and the hub holds a proxied read
+  open for as long as that lasts. The board capped itself at six fetches, but a held read kept its slot until the
+  room came back. Each refresh pass added more, so the queue grew to 7 in half a minute and 9 in a minute. The
+  browser also allows six connections per host across every tab and popped-out window on it, and each event
+  stream takes one of them. Once the held reads took the rest, nothing left the browser, not even `/v1/health`,
+  which the hub answers itself. That is the `fetches 6/6 in flight, N queued` line in the input-lag log. Every
+  board read now gives up after 15 seconds, counts as a failure so the refresh loop backs off, and frees its slot.
+  Writes are not bounded. The headless run has a new section, `idleRate`: a board, a second tab and a popped-out
+  window sit idle through a room-set flip, and then the room goes silent for 40 seconds. It fails if the idle rate
+  passes 12 requests a second, or if any window queues more than four fetches while the room is silent. HUB-SIDE.
+
 - **The popped-out window notice says what to do.** Clicking a card whose terminal is in a window this board cannot
   raise (one opened before a reload) now says "this terminal is open in another window: switch to that window, or
   close it and pop the card out again", instead of explaining which windows a page may raise. HUB-SIDE.

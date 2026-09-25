@@ -279,6 +279,11 @@ const hungResponses = [];   // held-open sockets, ended on teardown
 const openStreams = [];
 const hubStreams = [];       // hub event streams, used to push a `rooms` event
 
+// A room the hub still counts as attached but that does not answer: every
+// proxied read is held until this time, then refused. See idleRateSection.
+let roomStallUntil = 0;
+let stalledCount = 0;
+
 const HTML = wholeBoard();
 
 function sendJSON(res, obj) {
@@ -289,6 +294,13 @@ function sendJSON(res, obj) {
 
 const server = http.createServer((req, res) => {
   const url = req.url.split("?")[0];
+
+  if (roomStallUntil > Date.now() && url.startsWith("/v1/") && url !== "/v1/health" &&
+      !url.startsWith("/v1/events")) {
+    stalledCount++;
+    setTimeout(() => { res.writeHead(503); res.end("{}"); }, roomStallUntil - Date.now());
+    return;
+  }
 
   if (url === "/" || url === "/index.html") {
     res.writeHead(200, { "Content-Type": "text/html" });
@@ -1818,6 +1830,117 @@ async function popoutTagFlipSection(browser, base) {
   }
 }
 
+// AN IDLE BOARD IS NEAR IDLE, with a popped-out window and a second tab open.
+//
+// Nobody touches anything. A board polls every ten seconds and a popped-out
+// window heartbeats its claim, so a healthy browser makes a handful of requests
+// a second across all three documents and repaints about as often. A loop
+// between documents (a claim answered with a claim, a storage write answered
+// with a write) shows up as a rate many times that, and the browser's six
+// connections per host saturate behind it. Then the room goes silent: see below.
+async function idleRateSection(browser, base) {
+  const wasHub = hubMode, wasSgg = sggAttached;
+  hubMode = true;
+  sggAttached = true;
+  soloMode = "ok";
+  tasksMode = "first";
+  const secs = +(process.env.IDLE_RATE_SECONDS || 12);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  const counts = new Map();
+  ctx.on("request", r => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith("/vendor/") || u.pathname === "/") return;
+    let who = "sw";
+    try { who = r.frame().page().__who || "?"; } catch (e) {}
+    const k = who + " " + r.method() + " " + u.pathname;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  });
+  await ctx.addInitScript(() => {
+    window.__atriumMut = 0;
+    new MutationObserver(ms => { window.__atriumMut += ms.length; })
+      .observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+  });
+  const open = async (who, hash) => {
+    const p = await ctx.newPage();
+    p.__who = who;
+    p.on("pageerror", e => errors.push(who + ": " + e));
+    if (process.env.DEBUG_HEADLESS) p.on("console", m => console.error("[" + who + "] " + m.text()));
+    await p.goto(base + (hash || ""), { waitUntil: "domcontentloaded" });
+    return p;
+  };
+  try {
+    const board = await open("board");
+    await board.waitForTimeout(1500);
+    await board.click('.tab[data-view="terms"]').catch(() => {});
+    const solo = await open("solo", "#term=sgg~s1");
+    const tab2 = await open("tab2");
+    await board.waitForTimeout(3000);
+    // The spelling flip: sgg drops and comes back, so the board re-resolves
+    // `sgg~s1` to `s1` and back while the window keeps the spelling it opened on.
+    counts.clear();
+    const pages = [board, solo, tab2];
+    const mut0 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
+    for (let i = 0; i < secs; i++) {
+      if (i === 2 || i === 6) {
+        sggAttached = !sggAttached;
+        hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      }
+      await board.waitForTimeout(1000);
+    }
+    const mut1 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
+    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    const rate = total / secs;
+    const muts = pages.map((p, i) => (mut1[i] - mut0[i]) / secs);
+    if (process.env.IDLE_RATE_REPORT) {
+      console.log("requests/s " + rate.toFixed(1) + ", mutations/s board " + muts[0].toFixed(0) +
+        " solo " + muts[1].toFixed(0) + " tab2 " + muts[2].toFixed(0));
+      [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)
+        .forEach(([k, n]) => console.log("  " + n + "  " + k));
+    }
+    // Three documents, each polling a dozen endpoints every ten seconds, plus a
+    // room flip that re-reads everything twice. Around four a second is healthy.
+    if (rate > 12) {
+      fail("an idle board, a second tab and a popped-out window made " + rate.toFixed(1) +
+        " requests a second: " + [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
+          .map(([k, n]) => n + " " + k).join(", "));
+    }
+    // A ROOM THE HUB COUNTS AS ATTACHED THAT DOES NOT ANSWER, which is what a
+    // hub-only restart left for minutes. Every proxied read is held. Unbounded,
+    // the board's queue grew by a pass's worth every thirty seconds (7 by 33s,
+    // 9 by 54s) and nothing left the browser. Bounded, a held read gives its
+    // slot back and the queue stays within one pass.
+    const stall = +(process.env.IDLE_RATE_STALL || 40);
+    if (stall) {
+      stalledCount = 0;
+      roomStallUntil = Date.now() + stall * 1000;
+      let most = 0, where = "";
+      for (let i = 0; i < stall; i++) {
+        await board.waitForTimeout(1000);
+        const qs = await Promise.all(pages.map(p => p.evaluate(() => apiQueue.length)));
+        qs.forEach((n, j) => { if (n > most) { most = n; where = pages[j].__who + " at " + (i + 1) + "s"; } });
+        if (process.env.IDLE_RATE_REPORT && i % 5 === 4) {
+          console.log("  stall t+" + (i + 1) + "s queued " + qs.join(" ") + ", reads held " + stalledCount);
+        }
+      }
+      roomStallUntil = 0;
+      if (most > 4) {
+        fail("a room that stopped answering queued " + most + " board fetches (" + where +
+          "): a held read is keeping its slot instead of timing out.");
+      }
+      await board.waitForTimeout(5000);
+      const after = await Promise.all(pages.map(p => p.evaluate(() => apiInflight + apiQueue.length)));
+      if (after.some(n => n > 0)) fail("the board still had fetches out 5s after the room answered: " + after.join(" "));
+    }
+    if (errors.length) fail("the idle-rate pages threw: " + errors.join(" | "));
+  } finally {
+    roomStallUntil = 0;
+    await ctx.close();
+    hubMode = wasHub;
+    sggAttached = wasSgg;
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -1828,7 +1951,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection };
+      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -3984,6 +4107,8 @@ async function main() {
     await groupDragSection(browser, base);
     // ── a popped-out card stays spoken for across a room-set change ─────────
     await popoutTagFlipSection(browser, base);
+    // ── an idle board stays idle, and a silent room cannot fill the fetch cap ─
+    await idleRateSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

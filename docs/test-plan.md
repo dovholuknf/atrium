@@ -3103,3 +3103,27 @@ finger takes it down.
 
 **Expected:** no browser tooltip anywhere. A screen reader still names each icon-only button, from its
 `aria-label`.
+
+## AU. A room that stops answering does not fill the fetch cap
+
+Run on a hub built from this branch with one room attached, the board open in two tabs, one card popped out, and
+`log terminal input lag` on in settings. The headless section `idleRate` covers AU1 and AU2 against a mocked hub.
+
+### AU1. Idle
+
+1. Touch nothing for a minute. Watch the network tab of one board tab.
+
+**Expected:** a handful of reads every ten seconds per window, plus one pass after each event. The board does not
+repaint on its own between passes, and the console prints no `[inputlag]` stall lines.
+
+### AU2. The room goes silent
+
+1. Do a hub-only deploy, and keep the board open through the minutes before the room answers again.
+
+**Expected:** reads to the room fail after 15 seconds each rather than hanging. With a keystroke typed into the
+popped-out window, the `[inputlag]` warning reads `fetches 6/6 in flight` with at most a few queued, never a
+queue that keeps growing. `/v1/health` still answers in the network tab.
+
+2. Wait for the room to reattach.
+
+**Expected:** within one poll every list repaints and the fetch counts go back to zero. Nothing needs a reload.
