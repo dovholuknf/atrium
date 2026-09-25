@@ -27,7 +27,7 @@ import (
 //
 // This is that third party, as an MCP server. Held here rather than in the
 // daemon for the reason the whole problem exists: THE DAEMON IS THE THING
-// GOING AWAY. It is a stdio server like `atrium serve`, so
+// GOING AWAY. It is a stdio server, so
 // it can be a subprocess of a claude session, a backend of mcp-gateway, or
 // both, and none of those arrangements change what it does.
 //

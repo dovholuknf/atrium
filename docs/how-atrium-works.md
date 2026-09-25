@@ -156,12 +156,9 @@ is one handler on it. Atrium holds the name of a credential, never somebody else
 
 ## The older surface
 
-One v1 mode still builds and still works, and shares no state with the daemon.
-
-- **Mode B, read-only aggregator.** `atrium serve` reads the gwt session ledger and exposes it over MCP.
-
-Mode A, the v1 hub and agent loop, is removed. The permission long-poll it shared with the daemon lives in
-`internal/daemon/permwait.go`.
+Both v1 modes are removed. Mode A, the v1 hub and agent loop, went first, and the permission long-poll it shared
+with the daemon lives in `internal/daemon/permwait.go`. Mode B, the read-only aggregator (`atrium serve`, `status`
+and `watch`), went next: `gwt watch` tails the same ledger.
 
 ## Where to go next
 

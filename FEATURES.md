@@ -695,9 +695,9 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   board does everything the terminal UI did, and a supervised session takes a message without a loop. The
   `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/one-atrium-plan.md` stage 1.
 
-- **A read-only state aggregator.**
-  `atrium serve`, `status` and `watch` read an external worktree ledger. Docs: `README.md`. Landed with the v1
-  scaffold, commit not found.
+- **A read-only state aggregator: removed.**
+  `atrium serve`, `status` and `watch` are gone, with `internal/server` and `internal/state`. Nothing called them,
+  and `gwt watch` already tails the same ledger. Plan: `docs/one-atrium-plan.md` stage 2.
 
 ### The older v1 modes: removed, and why
 
