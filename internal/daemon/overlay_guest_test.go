@@ -131,7 +131,7 @@ func TestAGuestGetsTheWholeBoard(t *testing.T) {
 	task := sharedCard(t, d, "lent")
 	h := d.guestHandler(task.ID)
 
-	paths := []string{"/", "/sw.js", "/js/core.js", "/js/boot.js"}
+	paths := []string{"/", "/sw.js", "/down.html", "/js/core.js", "/js/boot.js"}
 	// Every stylesheet, found on disk rather than named here.
 	//
 	// The list used to say `/board.css`, which is a file that no longer

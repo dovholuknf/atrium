@@ -223,6 +223,11 @@ let gateBoot = "boot-a";
 let hubAway = false;
 // The board build `/v1/health` reports. A change makes the board reload.
 let healthBuild = "test";
+// Whether the service worker and its offline page are served, and whether the
+// page itself answers 502 the way a share in front of a stopped atrium does.
+// Off by default: every other section runs without a worker. See atriumDownSection.
+let serveSW = false;
+let page502 = false;
 const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
@@ -347,7 +352,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (serveSW && (url === "/sw.js" || url === "/down.html")) {
+    fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
+      if (err) { res.writeHead(404); res.end(""); return; }
+      res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html",
+        "Cache-Control": "no-store" });
+      res.end(body);
+    });
+    return;
+  }
   if (url === "/" || url === "/index.html") {
+    if (page502) { res.writeHead(502, { "Content-Type": "text/plain" }); res.end("bad gateway"); return; }
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(HTML);
     return;
@@ -1818,6 +1833,202 @@ async function restartStaysSection(browser, base) {
   }
 }
 
+// ATRIUM IS DOWN, AND NOBODY SAID IT WOULD BE. An open board that loses atrium
+// with no restart announced covers itself after five seconds and comes back by
+// itself. A planned restart never shows it, and neither does a blip. A reload
+// while atrium is down gets the service worker's `down.html` rather than the
+// browser's error page, and that page reloads onto the board once atrium is back.
+async function atriumDownSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) dp.on("console", m => console.error("[down] " + m.text()));
+  const wasHub = hubMode;
+  hubMode = true;
+  gateBoot = "boot-a";
+  const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
+  const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
+  const live = () => dp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
+    null, { timeout: 15000 });
+  // Whether the down cover opened at any frame since this was called.
+  const watchDown = () => dp.evaluate(() => {
+    window.__downSeen = false;
+    const tick = () => {
+      if (document.getElementById("atriumdown").open) window.__downSeen = true;
+      window.__downWatch = requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+    await dp.waitForTimeout(500);
+
+    // A blip is not atrium being down.
+    await watchDown();
+    drop();
+    await live().catch(() => fail("the stream did not come back after a blip."));
+    await dp.waitForTimeout(6000);
+    if (await dp.evaluate(() => window.__downSeen)) fail("a stream blip put the down cover up.");
+
+    // Atrium stops with nothing said: nothing for five seconds, then the cover.
+    hubAway = true;
+    drop();
+    await dp.waitForTimeout(3000);
+    if (await downUp()) fail("the down cover went up before five seconds.");
+    await dp.waitForFunction(() => document.getElementById("atriumdown").open, null, { timeout: 8000 })
+      .catch(() => fail("atrium stopping with nothing said put no down cover up."));
+    await dp.waitForTimeout(1200);
+    const card = await dp.evaluate(() => ({
+      clock: document.getElementById("atriumdown-el").textContent,
+      text: document.getElementById("atriumdown").textContent,
+      restart: document.getElementById("hubrestart").open,
+      edge: getComputedStyle(document.getElementById("atriumdown"), "::before").backgroundImage
+    }));
+    if (!/^down for [1-9]\d*s$/.test(card.clock)) fail("the down cover's clock said " + JSON.stringify(card.clock));
+    if (!/atrium is not running/.test(card.text) || !/atrium run/.test(card.text)) {
+      fail("the down cover said: " + card.text.replace(/\s+/g, " "));
+    }
+    if (card.restart) fail("an unplanned stop put the restart cover up.");
+    if (/0, 227, 176/.test(card.edge)) fail("the down cover wears the teal edge, not the warning one: " + card.edge);
+    await dp.keyboard.press("Escape");
+    await dp.evaluate(async () => { await closeOpenDialogs(); document.getElementById("atriumdown").close(); });
+    await dp.waitForTimeout(300);
+    if (!(await downUp())) fail("the down cover came down while atrium was still away.");
+
+    // Atrium answers: the cover comes down on its own.
+    hubAway = false;
+    await dp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+      .catch(() => fail("the down cover did not come down once atrium answered."));
+    await live().catch(() => fail("the stream did not come back after atrium did."));
+
+    // A planned restart is the restart cover's, however long the hub is away.
+    const say = state => {
+      const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
+      openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+    };
+    await dp.waitForTimeout(500);
+    await watchDown();
+    say({ state: "countdown", seconds: 1 });
+    await dp.waitForTimeout(1300);
+    say({ state: "restarting" });
+    await dp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+      .catch(() => fail("restarting drew no restart cover."));
+    hubAway = true;
+    drop();
+    await dp.waitForTimeout(8000);
+    if (await dp.evaluate(() => window.__downSeen)) fail("a planned restart put the down cover up.");
+    gateBoot = "boot-b";
+    hubAway = false;
+    await dp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+      .catch(() => fail("the restart cover did not clear on the new hub."));
+    if (await dp.evaluate(() => window.__downSeen)) fail("the down cover showed as the planned restart ended.");
+    await dp.evaluate(() => cancelAnimationFrame(window.__downWatch));
+  } finally {
+    await ctx.close();
+  }
+
+  // THE RELOAD. A worker has to be installed and holding the offline page first,
+  // which only a page with atrium up can do.
+  serveSW = true;
+  const sctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await sctx.newPage();
+  sp.on("pageerror", e => errors.push(String(e)));
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    const ready = await sp.waitForFunction(async () => {
+      if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return false;
+      return !!(await caches.match("/down.html"));
+    }, null, { timeout: 15000, polling: 250 }).then(() => true, () => false);
+    if (!ready) {
+      fail("the service worker did not take the page and keep down.html.");
+    } else {
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
+        { timeout: 15000 }).catch(() => {});
+      const card0 = await sp.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue("--card-0").trim());
+      hubAway = true;
+      drop();
+      await sp.reload({ waitUntil: "load", timeout: 15000 })
+        .catch(e => fail("a reload with atrium down did not load a page: " + e.message));
+      const down = await sp.evaluate(() => ({
+        title: document.title,
+        text: document.body ? document.body.textContent : "",
+        card0: getComputedStyle(document.documentElement).getPropertyValue("--card-0").trim(),
+        board: !!document.getElementById("hubrestart")
+      })).catch(e => ({ title: "", text: String(e) }));
+      if (down.title !== "atrium is not running" || down.board) {
+        fail("a reload with atrium down showed " + JSON.stringify(down.title) + ", not down.html.");
+      }
+      if (down.card0 && card0 && down.card0 !== card0) {
+        fail("down.html wore " + down.card0 + ", not the board's " + card0 + ".");
+      }
+      await sp.waitForTimeout(1200);
+      const clock = await sp.evaluate(() => document.getElementById("atriumdown-el").textContent).catch(() => "");
+      if (!/^down for \d+s$/.test(clock)) fail("down.html's clock said " + JSON.stringify(clock));
+      // Atrium comes back: the page reloads onto the board by itself.
+      hubAway = false;
+      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: 15000 })
+        .catch(() => fail("down.html did not reload onto the board once atrium answered."));
+      await sp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+        .catch(() => fail("the board came back from down.html with the down cover stuck up."));
+
+      // A share in front of a stopped atrium answers 502: the same page.
+      page502 = true;
+      await sp.reload({ waitUntil: "load", timeout: 15000 }).catch(() => {});
+      const title = await sp.evaluate(() => document.title).catch(() => "");
+      if (title !== "atrium is not running") fail("a 502 on reload showed " + JSON.stringify(title) + ", not down.html.");
+      page502 = false;
+      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: 15000 })
+        .catch(() => fail("down.html over a 502 did not reload onto the board once the page answered."));
+
+      // A reload during a PLANNED restart says restarting, not down, and the
+      // board it reloads onto puts the restart cover back until the new hub.
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
+        { timeout: 15000 }).catch(() => fail("the board after down.html never went live."));
+      await sp.waitForTimeout(500);
+      const say = state => {
+        const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
+        openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+      };
+      say({ state: "countdown", seconds: 1 });
+      await sp.waitForTimeout(1300);
+      say({ state: "restarting" });
+      await sp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+        .catch(() => fail("restarting drew no restart cover before the reload."));
+      hubAway = true;
+      drop();
+      await sp.reload({ waitUntil: "load", timeout: 15000 }).catch(() => {});
+      const planned = await sp.evaluate(() => ({
+        title: document.title, text: document.body.textContent.replace(/\s+/g, " ")
+      })).catch(() => ({ title: "", text: "" }));
+      if (planned.title !== "atrium is restarting" || /not running/.test(planned.text)) {
+        fail("a reload during a planned restart showed " + JSON.stringify(planned.title) + ": " + planned.text);
+      }
+      gateBoot = "boot-z";
+      hubAway = false;
+      const back = await sp.waitForFunction(() => {
+        const d = document.getElementById("hubrestart");
+        return d && d.open;
+      }, null, { timeout: 15000, polling: 50 }).then(() => true, () => false);
+      if (!back) fail("the board after a restart-time reload did not put the restart cover back.");
+      await sp.waitForFunction(() => !document.getElementById("hubrestart").open &&
+        !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+        .catch(() => fail("the restart cover did not clear after the restart-time reload."));
+    }
+    if (errors.length) fail("the atrium-down pages threw: " + errors.join(" | "));
+  } finally {
+    serveSW = false;
+    page502 = false;
+    hubAway = false;
+    hubMode = wasHub;
+    gateBoot = "boot-a";
+    await sctx.close();
+  }
+}
+
 // A TOAST STAYS FOR ITS WHOLE LIFE. An alert about something nobody answers (a
 // card arriving, a stuck step, a share that stopped) was keyed by its subject,
 // and the poll that raised it reaped every keyed toast not waiting or pending,
@@ -2881,7 +3092,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
-      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection,
+      groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection };
@@ -5033,6 +5244,7 @@ async function main() {
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
     await restartGateSection(browser, base);
     await restartStaysSection(browser, base);
+    await atriumDownSection(browser, base);
     await toastStaysSection(browser, base);
     // ── the styled tooltip, and no native title anywhere on the board ───────
     await tooltipSection(browser, base);

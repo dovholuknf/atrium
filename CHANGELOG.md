@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Atrium being down says so, on an open board and on a reload.** See `docs/test-plan.md` section BF.
+
+  When atrium stopped or crashed with no restart announced, an open board kept looking live apart from a small
+  `reconnecting`, and a reload got the browser's `can't reach this page`, which never came back by itself. Now an
+  open board that loses its stream and cannot reach atrium for five seconds puts up a red card in the restart
+  cover's shape: `atrium is not running`, how to start it, and how long it has been down. It asks again every two
+  seconds and comes down once atrium answers and the board has caught up, the same way the restart cover does. A
+  planned restart never shows it, and neither does a blip. The service worker now keeps `down.html`, a page that
+  stands on its own, and serves it when opening the board fails or a share in front of it answers 502 or 504. That
+  page wears the board's last skin, counts, and reloads onto the board once the page answers. The new headless
+  section `atriumDown` covers both. HUB-SIDE.
+
 - **The restart notice stays on screen until atrium is back.** See `docs/test-plan.md` section BE.
 
   The restarting cover came down on the first stream reopen, which could be the old hub's stream coming back before

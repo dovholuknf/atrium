@@ -872,6 +872,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="wc-foot"><span>nothing to do, this page reconnects on its own</span>
     <span id="hubrestart-el" class="wc-clock"></span></div>
 </dialog>
+<!-- ATRIUM IS DOWN, and nobody said it would be: the stream dropped with no
+     restart announced and atrium stopped answering. Up until atrium answers
+     again. See js/down.js. A reload while it is down gets `down.html` from the
+     service worker instead, which wears the same card. -->
+<dialog id="atriumdown" class="waitcard down" data-guard>
+  <div class="wc-ring"></div>
+  <div class="wc-eyebrow">not running</div>
+  <h2>atrium is not running</h2>
+  <div class="wc-say">start it with <code>atrium run</code> and this page comes back by itself.</div>
+  <div class="wc-bar"></div>
+  <div class="wc-foot"><span>trying again every few seconds</span>
+    <span id="atriumdown-el" class="wc-clock"></span></div>
+</dialog>
 
 <dialog id="toastlog">
   <div class="dlg-head">
@@ -2896,6 +2909,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
 <script src="/js/hubrestart.js"></script>
+<script src="/js/down.js"></script>
 <script src="/js/boot.js"></script>
 </body>
 </html>

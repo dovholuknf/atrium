@@ -3519,3 +3519,53 @@ board has its cards. At no point is the board bare with atrium still away.
 
 **Expected:** that window keeps the countdown at `0s` while it is offline. When it reaches the new hub, the cover
 takes over from the countdown and then comes down. The countdown is not left on screen.
+
+## BF. Atrium is down, and nobody said it would be
+
+Run on atrium built from this branch, opened on `http://localhost` or `127.0.0.1` (a service worker needs a secure
+origin, and loopback counts). Open the board once with atrium up first, so the service worker installs and keeps
+its offline page. The headless section `atriumDown` covers BF1 to BF4 against a mocked atrium.
+
+### BF1. An open board loses atrium
+
+1. With the board open, stop atrium from its terminal, or kill the process.
+
+**Expected:** for about five seconds the board shows only the red `reconnecting` pill. Then a card covers it, in the
+restart cover's shape but with a red and amber edge and ring: `NOT RUNNING`, `atrium is not running`, `start it with
+atrium run and this page comes back by itself.`, a moving bar, `trying again every few seconds` and `down for Ns`,
+counting from when atrium stopped. Escape and clicks do not take it down.
+
+2. Start atrium again with `atrium run`.
+
+**Expected:** within a few seconds the cover comes down and the board is current. Nothing needs a click or a reload.
+
+### BF2. A blip and a planned restart do not show it
+
+1. Stop and start atrium within two seconds.
+
+**Expected:** no down cover. Only the `reconnecting` pill shows, briefly.
+
+2. Run a hub-only deploy through `scripts/hub-restart-gate.ps1` and hold the new hub back for ten seconds.
+
+**Expected:** the countdown and the `atrium is restarting` cover, as in BE. The red down cover never shows.
+
+### BF3. A reload while atrium is down
+
+1. Stop atrium. Reload the board, and open a new tab on the board's address.
+
+**Expected:** both show the same red card, on the board's own background and skin, instead of the browser's `can't
+reach this page`. Its clock counts. It works with the network cable out.
+
+2. Start atrium.
+
+**Expected:** within a few seconds both tabs load the board by themselves.
+
+### BF4. Behind a share
+
+1. Open the board through a share or overlay, then stop atrium and reload.
+
+**Expected:** the red card, not the share's own `bad gateway` page. It loads the board once atrium is back.
+
+What is not covered: a browser that has never opened the board has no service worker yet and still gets its own
+error page. So does a board opened over plain `http://` on a LAN address, where the browser allows no service
+worker. The open-board cover in BF1 works in both.
