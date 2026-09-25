@@ -6,7 +6,7 @@ description: The tools a session uses to see the board, talk to other sessions, 
 # The control MCP server
 
 :::note Needs a hub
-The control server runs on the hub, so it needs `atrium2`. See [Rooms: start a hub](./rooms.md#start-a-hub).
+The control server runs on the hub, so it needs `atrium run`. See [Rooms: start a hub](./rooms.md#start-a-hub).
 :::
 
 The hub serves one MCP server at `/_hub/mcp`. Every session on the board connects to it from inside its own claude

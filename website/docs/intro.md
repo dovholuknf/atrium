@@ -21,7 +21,7 @@ loopback, and reaching it from somewhere else is a job for an overlay such as zr
 | Supervised terminals in the browser | Nothing more. Launch from the board. Any runner works, including a shell. |
 | Messages to a running session | Supervised terminals, or the reporting hooks. |
 | The permission gate, rules, auto mode | A `PreToolUse` gate hook you add. See [Hooks](./hooks.md#the-permission-gate). |
-| One board over many machines or accounts | The `atrium2` binary, built from source. See [Rooms](./rooms.md). |
+| One board over many machines or accounts | `atrium run`, built from source. See [Rooms](./rooms.md). |
 
 ## The name
 

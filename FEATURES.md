@@ -367,9 +367,16 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 ## Rooms and the hub
 
+- **One binary: `atrium run` starts the hub and this machine's room.**
+  `cmd/atrium2` moved into `internal/cli`, so the hub, the room and the hooks are one `atrium` binary. `atrium run`
+  serves the hub in the foreground and starts `atrium room` detached when no room answers, making and enrolling the
+  room over its own link the first time. A room runs the binary the hooks run, so the board's install-hooks button
+  writes lines that run. `cmd/atrium2` is a temporary shim for this machine's live scripts until the cutover. Docs:
+  `docs/one-atrium-plan.md` stage 3, `docs/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
+
 - **A hub serves the board and rooms run the agents.**
-  `atrium2 hub` serves the board and proxies to rooms, and holds no card state, so it restarts without costing a
-  session. `atrium2 room` owns the database, the ptys and the agents. A room dials the hub over mutual TLS after a
+  `atrium run` serves the board and proxies to rooms, and holds no card state, so it restarts without costing a
+  session. `atrium room` owns the database, the ptys and the agents. A room dials the hub over mutual TLS after a
   one-string join. Docs: `docs/hub-room-plan.md`, `docs/how-atrium-works.md`. Landed 2026-09-17 (`7dde248`).
 
 - **One board shows every room, and a room picker scopes it.**
@@ -378,7 +385,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   `docs/hub-room-requirements.md`. Landed 2026-09-17 (`44f65ff`, `7c175ab`), picker on 2026-09-19 (`53fc643`).
 
 - **The hub names its rooms, and adding a room writes it down.**
-  `atrium2 hub room add|ls|token|mark|rm|log`. The join string is bound to one name, and the room reads its name
+  `atrium rooms add|ls|token|mark|rm|log`. The join string is bound to one name, and the room reads its name
   from the certificate the hub signed. A room the hub has no record of cannot attach. Docs: `docs/decisions.md` 18.
   Landed 2026-09-17 (`d49d69d`, `153078c`).
 
@@ -396,7 +403,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   forget on 2026-09-21 (`3414839`, `0cdc0b9`).
 
 - **The hub snapshots its store and restores it in one command.**
-  Snapshots every ten minutes, kept in tiers over a month. `atrium2 hub backups` lists them and `atrium2 hub
+  Snapshots every ten minutes, kept in tiers over a month. `atrium backups` lists them and `atrium backups
   restore` moves the current store aside rather than deleting it. Docs: `CHANGELOG.md`. Landed 2026-09-17
   (`4dc0e03`).
 
@@ -405,7 +412,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   address in join tokens. Docs: `docs/hub-room-plan.md`. Landed 2026-09-18 (`48313e7`).
 
 - **A room joins over direct mTLS, a private zrok share, or OpenZiti.**
-  `atrium2 join` takes a transport flag and its material. Docs: `docs/ziti-zrok-flow-design.md`. Landed
+  `atrium room join` takes a transport flag and its material. Docs: `docs/ziti-zrok-flow-design.md`. Landed
   2026-09-17 (`97d4110`), join flags on 2026-09-19 (`6e978be`).
 
 - **A hub offers builds, and a room decides whether to take one.**

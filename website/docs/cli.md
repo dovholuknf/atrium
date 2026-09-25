@@ -1,12 +1,12 @@
 ---
 title: The CLI
-description: Every atrium and atrium2 subcommand, and what it is for.
+description: Every atrium subcommand, and what it is for.
 ---
 
 # The CLI
 
-Atrium ships two binaries. `atrium` is the single-process daemon and the commands sessions use. `atrium2` runs the
-[hub and rooms](./rooms.md).
+Atrium is one binary. `atrium run` starts the [hub and this machine's room](./rooms.md), and the same binary holds
+the commands sessions and hooks use.
 
 ## atrium: running it
 
@@ -14,7 +14,7 @@ Atrium ships two binaries. `atrium` is the single-process daemon and the command
 | --- | --- |
 | `atrium daemon` | The board, the API and the agent listener in one process. |
 | `atrium stop` | Ask a running daemon to wind down. Not the same as killing it. |
-| `atrium version` | The version this binary was built as. |
+| `atrium version` | The version this binary was built as, its commit, and the board it carries. `--short` for a script. |
 | `atrium preview` | A throwaway second board on a copy of your cards, for looking at a change before installing it. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
 
@@ -48,26 +48,36 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium peers` | The other sessions this one can address. |
 | `atrium tell <handle> <message>` | Say something to another session. Queued, never typed into a busy line. |
 
-## atrium2: hub and rooms
+## atrium: hub and rooms
 
 | Command | Purpose |
 | --- | --- |
-| `atrium2 hub` | Serve the board and the room link. Holds no card state. |
-| `atrium2 hub room add <name>` | Write a room down and print its one-time join string. |
-| `atrium2 hub room token <name>` | Mint a fresh join string, retiring the old one. |
-| `atrium2 hub room ls` | Every room the hub knows, connected or not. |
-| `atrium2 hub room log [name]` | What happened to the hub's rooms, newest first. |
-| `atrium2 hub room mark <name>` | Mark a room for deletion, or take the mark off. |
-| `atrium2 hub room rm <name>` | Remove a room once it holds nothing. |
-| `atrium2 hub backups` / `atrium2 hub restore <snapshot>` | List the hub's snapshots, or restore one. |
-| `atrium2 join <join string>` | Join a hub as a room and start it. |
-| `atrium2 room` | Start a room that has already joined. |
-| `atrium2 db compact` | Write a compacted copy of a database, offline. |
-| `atrium2 version` | The version this binary was built as. |
+| `atrium run` | Serve the board and the room link, and start this machine's room when none is running. |
+| `atrium run --no-room` | Serve the board and the room link alone. Holds no card state. |
+| `atrium rooms add <name>` | Write a room down and print its one-time join string. |
+| `atrium rooms token <name>` | Mint a fresh join string, retiring the old one. |
+| `atrium rooms ls` | Every room the hub knows, connected or not. |
+| `atrium rooms log [name]` | What happened to the hub's rooms, newest first. |
+| `atrium rooms mark <name>` | Mark a room for deletion, or take the mark off. |
+| `atrium rooms rm <name>` | Remove a room once it holds nothing. |
+| `atrium backups` / `atrium backups restore <snapshot>` | List the hub's snapshots, or restore one. |
+| `atrium room join <join string>` | Join a hub as a room and start it. |
+| `atrium room` | Start a room that has already joined. |
+| `atrium db compact` | Write a compacted copy of a database, offline. |
+| `atrium ledger` | The work ledger, read straight from a room's database. |
 
-`atrium2 hub` flags include `--addr` for the board (loopback), `--link` for the room link, and `--link-advertise`
-for the address written into join strings. `atrium2 join` and `atrium2 room` take `--isolated` to keep off the
-machine's hooks, `--accept-upgrades` to install builds the hub offers, and `--db`.
+`atrium run` flags include `--addr` for the board (loopback, default `127.0.0.1:7778`), `--link` for the room link
+(default `127.0.0.1:7779`), and `--link-advertise` for the address written into join strings. The hub's own
+directory, store and ziti identity are `--atrium-dir`, `--atrium-db`, `--atrium-identity` and `--atrium-service`,
+because `--dir`, `--db`, `--http` and `--agent` on `atrium run` are the room's, the same as `atrium room` takes them.
+`atrium room join` and `atrium room` take `--isolated` to keep off the machine's hooks, `--accept-upgrades` to
+install builds the hub offers, and `--db`.
+
+The first `atrium run` on a machine with no room makes one: it names it after the machine, mints it a join string,
+and enrols it over its own link, so one machine needs no join string at all. Stopping `atrium run` never stops the
+room.
+
+`atrium2` is a temporary shim for one machine's deploy scripts, with the old names, and goes at the cutover.
 
 ## Environment
 

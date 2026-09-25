@@ -5,6 +5,28 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One atrium binary.** See `docs/test-plan.md` section AW.
+
+  `cmd/atrium2` moved into `internal/cli`, so `atrium` now carries the hub and the room as well as the hooks and
+  every session command. The names: `atrium run [--no-room]` is the hub, and without `--no-room` it also starts
+  this machine's room detached when none answers, making and enrolling the room over its own link the first time.
+  `atrium room` runs a room with the flags it always took, `atrium room join <string>` is a room's first join,
+  `atrium rooms add/ls/token/mark/rm/log` and `atrium backups [restore]` are the hub's inventory and snapshots, and
+  `atrium db compact` and `atrium ledger` are unchanged. On `atrium run` the hub's own `--dir`, `--db`,
+  `--identity` and `--service` are `--atrium-*`, because the plain ones are the room's. `atrium join` stays the
+  session command. The v1 `atrium room --hub` client is gone. The defaults are this machine's layout: the board on
+  7778, the link on 7779, the room's board on 7781, its agent listener on 7777, and directories beside the
+  database. A builds directory may name binaries `atrium_<os>_<arch>` as well as `atrium2_<os>_<arch>`.
+
+  A room now runs the binary the hooks run, so its address file names a binary that answers `atrium hook`, and the
+  board's install-hooks button writes lines that work. Before, it named `atrium2.exe`, which had no `hook`.
+
+  `cmd/atrium2` stays as a temporary shim for this machine's live scripts: the same root with `hub`, `join` and
+  `room` under their old names, flags and defaults, and the old address file. It answers every line in
+  `~/.atrium2/scripts` unchanged, and `atrium2 hook` works too. The new scripts are in `scripts/live/`, and
+  `docs/one-atrium-cutover.md` is the window that switches this machine over. Plan: `docs/one-atrium-plan.md`
+  stage 3. ROOM-SIDE and HUB-SIDE, but nothing switches until the cutover.
+
 - **Mode B is removed.** `atrium serve`, `atrium status` and `atrium watch` are gone, with `internal/server`,
   `internal/state` and the `run-status`, `run-watch` and `run-serve` make targets. Nothing called them, no MCP
   config registered `atrium serve`, and `gwt watch` already tails the same ledger. `docs/test-plan.md` section E is
