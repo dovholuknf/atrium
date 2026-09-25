@@ -288,18 +288,46 @@ const api = async (path, opts) => {
   return apiFetch(path, opts);
 };
 
+// A READ THAT DOES NOT ANSWER GIVES ITS SLOT BACK.
+//
+// After a hub-only restart the room can sit attached and silent for minutes,
+// and the hub holds every proxied read open for as long as that lasts. Each of
+// those held a slot above until the room came back, so a board filled the cap
+// with them and queued everything behind: the watchdog aborts only what carries
+// its signal. Worse, the browser allows six connections per host across every
+// tab and popped-out window on it, each event stream takes one, and the held
+// reads took the rest, so even `/v1/health`, which the hub answers itself,
+// never left the browser. A read is bounded here, whoever made it. Writes are
+// not: an upload may take as long as it takes.
+const API_READ_TIMEOUT = 15000;
+
 const apiFetch = async (path, opts) => {
   await apiSlot();
+  const read = !opts || !opts.method || opts.method === "GET";
+  let timer = 0, timedOut = false;
+  if (read && typeof AbortController !== "undefined") {
+    const ctrl = new AbortController();
+    const outer = opts && opts.signal;
+    if (outer) {
+      if (outer.aborted) ctrl.abort();
+      else outer.addEventListener("abort", () => ctrl.abort(), { once: true });
+    }
+    timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, API_READ_TIMEOUT);
+    opts = Object.assign({}, opts, { signal: ctrl.signal });
+  }
   let res;
   try {
     res = await fetch(path, opts);
   } catch (err) {
+    clearTimeout(timer);
     // A network or resource error, not an HTTP status. This is where a socket
     // pool run dry shows up, and where an aborted superseded fetch lands too.
-    if (!(err && err.name === "AbortError")) apiFailStreak++;
+    // A read that timed out is the wire failing, not a pass being superseded.
+    if (timedOut || !(err && err.name === "AbortError")) apiFailStreak++;
     apiRelease();
-    throw err;
+    throw timedOut ? new Error(path + " did not answer in " + API_READ_TIMEOUT / 1000 + "s") : err;
   }
+  clearTimeout(timer);
   apiFailStreak = 0;
   try {
     return await apiFinish(res);
