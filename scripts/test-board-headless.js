@@ -173,7 +173,20 @@ let untaggedEmpty = false;
 let untaggedTag = "";
 const NEWC = untaggedCard("u-new", "brand new", "/w/github/openziti/fresh", 5);
 
-let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged
+// The cards the alert-landing section clicks through to, by id. `land-new` is
+// the race: listed before its terminal, and made supervised by the test a
+// moment after the click. `landList` is what the list answers on top of T1, and
+// `landPerms` the pending requests. See `landSection`.
+const LAND = {};
+function landCard(id, over) {
+  LAND[id] = Object.assign({}, T1, { id, display_title: id.replace("-", " "),
+    created_at: new Date().toISOString() }, over);
+  return LAND[id];
+}
+let landList = [];
+let landPerms = [];
+
+let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
 // One card per shipped terminal theme, filled in from the page's own table by
 // the card-colours section, plus one with no theme that takes the repo default.
 let wornTasks = [];
@@ -366,6 +379,12 @@ const server = http.createServer((req, res) => {
     // Ahead of the solo modes, which an earlier section can leave set: the
     // group sections read this card's tags for its menu.
     if (id === "filed1") { sendJSON(res, FILED); return; }
+    if (id.startsWith("land-") && !id.includes("/")) {
+      if (LAND[id]) { sendJSON(res, LAND[id]); return; }
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "no such card" }));
+      return;
+    }
     if (soloMode === "noroom") {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
@@ -392,6 +411,7 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
     if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
+    if (tasksMode === "land") { sendJSON(res, { tasks: [T1].concat(landList) }); return; }
     // Untagged cards in custom mode, for the sort and the new-card sections.
     if (tasksMode === "untagged") {
       if (untaggedDown) { res.writeHead(503); res.end("{}"); return; }
@@ -448,7 +468,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/v1/waiting") { sendJSON(res, { tasks: [] }); return; }
-  if (url === "/v1/permissions") { sendJSON(res, { permissions: [] }); return; }
+  if (url === "/v1/permissions") { sendJSON(res, { permissions: tasksMode === "land" ? landPerms : [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
   if (url === "/v1/health") {
@@ -2458,6 +2478,237 @@ async function themePreviewSection(browser, base) {
   }
 }
 
+// A CLICK ON AN ALERT LANDS WHERE IT IS ABOUT. One card with a live terminal:
+// that terminal attached. One card without one: its detail, or its request.
+// Nothing in particular: nowhere, and an open dialog stays open. From a toast,
+// the toast log, a plain desktop notification clicked while the board was
+// unfocused, the service worker's message, a `?land=` address, and a
+// popped-out window. The first case is the race that asked for this: a new
+// card listed a moment before its terminal, which landed on the stack.
+async function landContext(browser, unfocused) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript(unfocused => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    if (!unfocused) return;
+    // Nobody is looking and desktop notifications are allowed, so `notify`
+    // takes its third branch. The notification is kept to be clicked.
+    Document.prototype.hasFocus = () => false;
+    window.__notes = [];
+    window.Notification = function (title, o) { this.title = title; this.o = o; window.__notes.push(this); };
+    window.Notification.permission = "granted";
+    window.Notification.requestPermission = async () => "granted";
+    window.Notification.prototype.close = function () {};
+  }, !!unfocused);
+  return ctx;
+}
+
+// Records each attach at `openTerm`, which every landing on a terminal reaches.
+function spyAttach(p) {
+  return p.evaluate(() => {
+    window.__opened = [];
+    const real = openTerm;
+    openTerm = t => { window.__opened.push(t.id); return real(t); };
+  });
+}
+
+// Where the page is: the view showing, the last card attached, and whether the
+// card detail is open and on what.
+function landedAt(p) {
+  return p.evaluate(() => ({
+    view: VIEWS.find(v => !document.getElementById(v).hidden) || "",
+    opened: (window.__opened || []).slice(-1)[0] || "",
+    detail: document.getElementById("detail").open ? document.getElementById("d-title").textContent : "",
+    dialogs: [...document.querySelectorAll("dialog[open]")].map(d => d.id)
+  }));
+}
+
+async function landSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const reset = p => p.evaluate(() => {
+    closeTerm(true);
+    document.querySelectorAll("dialog[open]").forEach(d => d.close());
+    document.querySelectorAll("#toasts .toast").forEach(t => t.remove());
+    switchView("stack");
+    window.__opened = [];
+  });
+  const clickToast = (p, text) => p.click(`#toasts .toast:has-text("${text}") b`);
+  // Settles on a place, rather than asserting at a fixed moment: the race case
+  // lands after a wait, and a place asserted early is the wrong place.
+  const settle = async (p, want, ms) => {
+    const until = Date.now() + (ms || 6000);
+    let at;
+    do {
+      at = await landedAt(p);
+      if (want(at)) return at;
+      await p.waitForTimeout(200);
+    } while (Date.now() < until);
+    return at;
+  };
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-dead", { status: "dead", supervised: false, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-pc", { status: "needs-permission", supervised: false, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"], LAND["land-dead"]];
+  landPerms = [];
+  const errors = [];
+  let ctx = await landContext(browser);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) p.on("console", m => console.error("[land] " + m.text()));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(1200);
+    await spyAttach(p);
+
+    // 1. A new card whose terminal is not there yet, from its own toast.
+    landCard("land-new", { supervised: false });
+    landList = landList.concat(LAND["land-new"]);
+    poke();
+    await p.waitForSelector('#toasts .toast:has-text("land new is on the board")', { timeout: 10000 });
+    await clickToast(p, "land new is on the board");
+    setTimeout(() => { LAND["land-new"].supervised = true; }, 1500);
+    let at = await settle(p, a => a.opened === "land-new");
+    if (at.opened !== "land-new" || at.view !== "terms") {
+      fail("a new card's toast, clicked before its terminal opened, landed on " + JSON.stringify(at) +
+        ", not its terminal.");
+    }
+
+    // 2. The service worker's message, which is how a desktop notification
+    // clicked with the board in the background arrives. Same race.
+    await reset(p);
+    landCard("land-new2", { supervised: false });
+    landList = landList.concat(LAND["land-new2"]);
+    await p.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent("message",
+      { data: { type: "goTo", view: "stack", taskFor: "land-new2", key: "" } })));
+    setTimeout(() => { LAND["land-new2"].supervised = true; }, 1000);
+    at = await settle(p, a => a.opened === "land-new2");
+    if (at.opened !== "land-new2" || at.view !== "terms") {
+      fail("a desktop notification for a new card landed on " + JSON.stringify(at) + ", not its terminal.");
+    }
+
+    // 3. The toast log.
+    await reset(p);
+    await p.evaluate(() => { toast("land live is ready", "", "stack", null, "land-live"); });
+    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+    await p.evaluate(() => openToastLog());
+    await p.click('#toastlog-list .tlrow.clickable:has-text("land live is ready")');
+    at = await settle(p, a => a.opened === "land-live");
+    if (at.opened !== "land-live" || at.view !== "terms" || at.dialogs.includes("toastlog")) {
+      fail("a toast log row for a live card landed on " + JSON.stringify(at) + ", not its terminal.");
+    }
+
+    // 4. A card with no terminal: its detail, not the stack.
+    await reset(p);
+    await p.evaluate(() => { toast("land dead has stopped", "", "stack", null, "land-dead"); });
+    await clickToast(p, "land dead has stopped");
+    at = await settle(p, a => !!a.detail);
+    if (at.detail !== "land dead" || at.opened) {
+      fail("an alert for a card with no terminal landed on " + JSON.stringify(at) + ", not its detail.");
+    }
+
+    // 5. A request on a card with no terminal: the request, flashed.
+    await reset(p);
+    landPerms = [{ id: "perm-land", task_id: "land-pc", agent: "land pc", tool: "Bash", command: "ls",
+      requested_at: new Date().toISOString().replace("Z", "") }];
+    await p.evaluate(() => runRefresh());
+    await p.waitForTimeout(800);
+    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+    await p.evaluate(() => { toast("land pc needs permission", "Bash: ls", "perms", "perm-land", "land-pc"); });
+    await clickToast(p, "land pc needs permission");
+    await p.waitForTimeout(800);
+    at = await landedAt(p);
+    const flashed = await p.evaluate(() => {
+      const el = document.querySelector('#perms-list .perm[data-id="perm-land"]');
+      return !!el && el.classList.contains("flash");
+    });
+    if (at.view !== "perms" || !flashed || at.opened) {
+      fail("a request on a card with no terminal landed on " + JSON.stringify(at) +
+        (flashed ? "" : ", with the request not flashed") + ".");
+    }
+    landPerms = [];
+    await p.evaluate(() => runRefresh());
+
+    // 6. A toast about nothing: nowhere, and the dialog under it stays.
+    await reset(p);
+    await p.evaluate(() => { document.getElementById("toastlog").showModal(); toast("land nowhere", "copied"); });
+    await clickToast(p, "land nowhere");
+    await p.waitForTimeout(500);
+    at = await landedAt(p);
+    if (at.view !== "stack" || !at.dialogs.includes("toastlog")) {
+      fail("a toast about nothing took the board to " + JSON.stringify(at) + ".");
+    }
+
+    // 7. A popped-out window's alert about a card that is not its own: the
+    // board lands it. And one about its own card leaves the board alone.
+    await reset(p);
+    const solo = await ctx.newPage();
+    solo.on("pageerror", e => errors.push(String(e)));
+    await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.evaluate(() => { toast("land live is ready", "", "stack", null, "land-live"); });
+    await clickToast(solo, "land live is ready");
+    at = await settle(p, a => a.opened === "land-live");
+    if (at.opened !== "land-live") {
+      fail("a popped-out window's alert for another card did not land it on the board: " + JSON.stringify(at));
+    }
+    await reset(p);
+    await solo.evaluate(() => { toast("solo card is ready", "", "stack", null, "s1"); });
+    await clickToast(solo, "solo card is ready");
+    await p.waitForTimeout(800);
+    at = await landedAt(p);
+    if (at.opened) fail("a popped-out window's alert for its own card attached the board to " + at.opened);
+    await solo.close();
+
+    // 8. A board opened by a desktop notification with none open.
+    await p.goto(base + "/?land=land-live&view=stack", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openTerm === "function", { timeout: 10000 });
+    await spyAttach(p);
+    at = await settle(p, a => a.view === "terms");
+    const left = await p.evaluate(() => location.search);
+    const term = await p.evaluate(() => termTask && termTask.id);
+    if (at.view !== "terms" || term !== "land-live") {
+      fail("a board opened at ?land=land-live landed on " + JSON.stringify(at) + " holding " + term + ".");
+    }
+    if (left) fail("the landing query stayed on the address: " + left);
+  } finally {
+    await ctx.close();
+  }
+
+  // 9. A plain desktop notification, raised with the board unfocused and
+  // clicked: the terminal, and a line in the toast log that lands there too.
+  ctx = await landContext(browser, true);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForTimeout(1200);
+    await spyAttach(p);
+    landCard("land-new3", { supervised: false });
+    landList = landList.concat(LAND["land-new3"]);
+    poke();
+    await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"),
+      { timeout: 10000 }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
+    await p.evaluate(() => window.__notes.find(n => n.title === "land new3 is on the board").onclick());
+    setTimeout(() => { LAND["land-new3"].supervised = true; }, 1000);
+    const at = await settle(p, a => a.opened === "land-new3");
+    if (at.opened !== "land-new3" || at.view !== "terms") {
+      fail("a desktop notification for a new card, clicked, landed on " + JSON.stringify(at) + ".");
+    }
+    const logged = await p.evaluate(() => toastLog().find(t => t.title === "land new3 is on the board"));
+    if (!logged || logged.taskFor !== "land-new3") {
+      fail("the desktop notification's log line does not carry its card: " + JSON.stringify(logged));
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the landing pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -2469,7 +2720,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection };
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -4635,6 +4886,8 @@ async function main() {
     await newCardSection(browser, base);
     // ── a theme preview recolours the card everywhere it shows ─────────────
     await themePreviewSection(browser, base);
+    // ── a click on an alert lands where the alert is about ─────────────────
+    await landSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));
     if (process.env.DEBUG_HEADLESS) {

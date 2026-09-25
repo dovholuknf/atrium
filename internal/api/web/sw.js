@@ -76,6 +76,9 @@ self.addEventListener("message", event => {
     silent: true,
     data: {
       permId: m.permId || "", goTo: m.goTo || "",
+      // Where a click on the body lands: the card, and the request on it. See
+      // `landOnAlert` in js/toasts.js.
+      taskFor: m.taskFor || "", key: m.key || "",
       // What this notification is about: a request, or the card that went
       // ready. Carried so an open page can take it down once that has been
       // answered, which permId alone could not do for anything but a
@@ -115,16 +118,43 @@ async function decide(origin, permId, decision) {
   throw new Error(msg)
 }
 
-// Bring an existing tab forward rather than piling up new ones.
-async function openBoard(origin, goTo) {
+// The bare card id, as js/notify.js `bareId` reads it: a `room~` tag is how
+// the hub spells a card while more than one room is attached.
+const bareId = id => { const s = String(id || ""); const i = s.indexOf("~"); return i > 0 ? s.slice(i + 1) : s }
+
+// The card a popped-out window is showing, off its `#term=` address.
+function soloCard(url) {
+  const i = url.indexOf("#term=")
+  return i < 0 ? "" : decodeURIComponent(url.slice(i + "#term=".length))
+}
+
+// Bring an existing window forward rather than piling up new ones, and land
+// the click where `landOnAlert` says.
+//
+// A card popped out into a window of its own lands on that window: only a
+// click can bring a window forward, and this is the click. Otherwise a board,
+// never a popped-out window, since one of those cannot become a board. With no
+// board open, one is opened carrying where to land.
+async function openBoard(origin, goTo, taskFor, key) {
   const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
-  const mine = all.find(c => c.url.startsWith(origin))
-  if (mine) {
-    await mine.focus()
-    mine.postMessage({ type: "goTo", view: goTo || "perms" })
+  const mine = all.filter(c => c.url.startsWith(origin))
+  const solo = taskFor && mine.find(c => bareId(soloCard(c.url)) === bareId(taskFor))
+  if (solo) {
+    await solo.focus()
     return
   }
-  await self.clients.openWindow(origin + "/")
+  const board = mine.find(c => !soloCard(c.url))
+  if (board) {
+    await board.focus()
+    board.postMessage({ type: "goTo", view: goTo || "", taskFor: taskFor || "", key: key || "" })
+    return
+  }
+  const q = new URLSearchParams()
+  if (taskFor) q.set("land", taskFor)
+  if (goTo) q.set("view", goTo)
+  if (key) q.set("key", key)
+  const s = q.toString()
+  await self.clients.openWindow(origin + "/" + (s ? "?" + s : ""))
 }
 
 self.addEventListener("notificationclick", event => {
@@ -151,5 +181,5 @@ self.addEventListener("notificationclick", event => {
       }))
     return
   }
-  event.waitUntil(openBoard(origin, data.goTo))
+  event.waitUntil(openBoard(origin, data.goTo, data.taskFor, data.key || data.permId))
 })

@@ -1,32 +1,106 @@
 // ── toasts ──────────────────────────────────────────────
-// Attaches to a task's terminal when atrium owns its runner. Returns whether
-// the click was DEALT WITH, so a caller can fall back to the tab it would
-// otherwise have opened.
+// WHERE A CLICK ON AN ALERT LANDS. One function, and every alert reaches it: a
+// toast, a row in the toast log, a plain desktop notification, and the service
+// worker's, whether the board was in front, behind something, or not open.
 //
-// The popped-out guard is `attachTask`'s and it belongs here too. This is the
-// path a toast and a desktop notification land on, so without it clicking an
-// alert for a card that is in a window of its own pulled the terminal out of
-// that window and into the board's pane, silently, and answered `true` as
-// though attaching had been the right thing to do. Two views onto one terminal
-// is the situation `docs/supervision-design.md` says nothing arbitrates, which
-// is exactly why `attachTask` refuses it.
+//   - about one card with a live terminal: that terminal, attached and focused,
+//     in the window that has it if the card is popped out
+//   - about one card with no live terminal: a pending request on it lands on
+//     the request, and anything else on the card, with its detail open
+//   - about no one card: the view it names, on the request when there is one
+//   - about nothing: nowhere
 //
-// Dealt with covers the raise: you asked to be taken to the session and you
-// are being taken to it, in the window that has it.
-async function attachIfSupervised(taskID) {
-  try {
-    const t = await api(`/v1/tasks/${taskID}`);
-    if (!t.supervised) return false;
-    if (poppedOut(taskID)) {
-      // Nothing more is said. Raised, the window coming to the front says it.
-      // Opened, the new window does. Every other answer has already said what
-      // happened.
-      await popOutTask(taskID);
-      return true;
-    }
-    openTerm(t);
-    return true;
-  } catch (e) { return false; }
+// A permission lands on the terminal too, because a supervised session shows
+// the request in its own pane with the buttons that answer it.
+//
+// THE CARD CAN BE AHEAD OF ITS TERMINAL. "X is on the board" fires on the poll
+// that first lists the card, and a session atrium is launching is listed a
+// moment before its runner is. So a card that is new and not yet over is asked
+// again for a few seconds before the click settles for its detail. Landing on
+// the stack for that race was the bug that asked for this function.
+//
+// The popped-out guard is `attachTask`'s: an alert for a card in a window of
+// its own raises that window rather than pulling the terminal into the board.
+const landWaitMs = 8000;
+const landStepMs = 400;
+let landSeq = 0;
+async function landOnAlert(taskFor, goTo, key) {
+  // The latest click wins. A second click while the first is still waiting on
+  // a terminal must not have the first land on top of it later.
+  const seq = ++landSeq;
+  if (termOnly()) { landFromSolo(taskFor, goTo, key); return; }
+  const card = taskFor ? await landableCard(taskFor, () => seq !== landSeq) : null;
+  if (seq !== landSeq) return;
+  if (card && card.supervised && !card.offline) {
+    await attachTask(card.id);
+    if (term && !poppedOut(card.id)) term.focus();
+    return;
+  }
+  if (key && (goTo === "perms" || !card)) {
+    switchView("perms");
+    // The list may still be rendering, so wait a frame before hunting for the
+    // request.
+    setTimeout(() => focusPerm(key), 60);
+    return;
+  }
+  if (card) {
+    if (goTo) switchView(goTo);
+    if (typeof newCardClear === "function") newCardClear(card.id);
+    try { await openTask(card.id); } catch (e) { toast("could not open that card", e.message); }
+    return;
+  }
+  if (goTo) switchView(goTo);
+}
+
+// The card an alert is about, once it is worth landing on. Answers null when
+// it is gone.
+//
+// Waits while the card is new and its terminal may still be coming: missing
+// (the hub can list a card a room has not answered for yet), or not yet
+// supervised while it is fresh and not over. Anything else answers at once.
+async function landableCard(id, superseded) {
+  const until = Date.now() + landWaitMs;
+  for (;;) {
+    let t = null;
+    try { t = await api(`/v1/tasks/${id}`); } catch (e) {}
+    if (t && (t.supervised || !terminalComing(t))) return t;
+    if (Date.now() >= until || superseded()) return t;
+    await new Promise(r => setTimeout(r, landStepMs));
+  }
+}
+
+// Whether a card without a terminal is about to have one: seen in the last
+// minute, not over, not in the inbox, and not a card on another machine that
+// is offline.
+function terminalComing(t) {
+  if (t.offline || ["done", "dead", "shelved", "backlog"].includes(t.status)) return false;
+  const born = Date.parse(t.created_at || "");
+  return !isNaN(born) && Date.now() - born < 60000;
+}
+
+// A popped-out window is one card. An alert for that card lands on its own
+// terminal. An alert for anything else belongs to the board, which is asked to
+// land it, and brought forward if this window opened it.
+function landFromSolo(taskFor, goTo, key) {
+  if (!taskFor || sameCard(taskFor, soloID)) {
+    window.focus();
+    if (term) term.focus();
+    return;
+  }
+  if (soloBus) soloBus.postMessage({ type: "land", taskFor, goTo: goTo || "", key: key || "" });
+  try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (e) {}
+}
+
+// A desktop notification clicked with no board open. The service worker opens
+// one at `/?land=<card>&view=<view>&key=<request>`, and this lands it once the
+// board is back where it was, then takes the query off the address so a reload
+// does not land again.
+function landFromURL() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("land") && !q.has("view")) return;
+  const taskFor = q.get("land") || "", goTo = q.get("view") || "", key = q.get("key") || "";
+  history.replaceState(history.state, "", location.pathname + location.hash);
+  landOnAlert(taskFor, goTo, key);
 }
 
 // Which modal is on top. Modals stack by the order showModal was called, and
@@ -190,7 +264,7 @@ function toast(title, body, goTo, key, taskFor) {
   // case worth collapsing is a repeat, not a recurrence.
   const last = host.lastElementChild;
   if (last && !last.classList.contains("leaving") &&
-      last.dataset.sig === title + " " + (body || "")) {
+      last.dataset.sig === title + "\0" + (body || "")) {
     last.dataset.n = String(Number(last.dataset.n || 1) + 1);
     const n = last.querySelector(".ntimes");
     if (n) n.textContent = "×" + last.dataset.n;
@@ -200,7 +274,7 @@ function toast(title, body, goTo, key, taskFor) {
   }
 
   const el = document.createElement("div");
-  el.dataset.sig = title + " " + (body || "");
+  el.dataset.sig = title + "\0" + (body || "");
   el.className = "toast";
   // A toast tied to a pending item is cleared when that item is answered,
   // whether it was answered here or anywhere else.
@@ -231,6 +305,9 @@ function toast(title, body, goTo, key, taskFor) {
       return;
     }
     window.focus();
+    // A toast about nothing in particular goes nowhere, and must not take an
+    // open dialog down on its way out. See `landOnAlert`.
+    if (!taskFor && !goTo && !key) { dismiss(); return; }
     // A toast on top of an open dialog lives INSIDE that dialog, because the
     // top layer is the only place anything can draw over one. So a click that
     // navigates has to take the dialog with it: without this the view changes
@@ -241,13 +318,7 @@ function toast(title, body, goTo, key, taskFor) {
     // Dismissing it would leave nothing to click a second time.
     if (!await closeOpenDialogs()) return;
     dismiss();
-    // If atrium owns the runner, the terminal is where the work is. Landing
-    // in the perms tab would mean answering and then going to find it.
-    if (taskFor && await attachIfSupervised(taskFor)) return;
-    if (goTo) switchView(goTo);
-    // Land on the actual request, not just the right tab. The list may still
-    // be rendering, so wait a frame before hunting for the card.
-    if (key) setTimeout(() => focusPerm(key), 60);
+    landOnAlert(taskFor, goTo, key);
   });
   el.dismiss = dismiss;
   // Everything clears itself. A permission gets longer since it blocks an

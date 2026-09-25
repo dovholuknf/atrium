@@ -155,11 +155,7 @@ function openToastLog() {
   // requirement: this list exists because a toast went past before it could be
   // clicked, so a row has to do what clicking it would have done.
   //
-  // Written out rather than shared with `toasts.js`, which is the one thing
-  // worth being uncomfortable about here. It is three lines and a `return`,
-  // and the alternative is exporting the body of a click handler out of a file
-  // that git treats as binary. If a fourth step is ever added to the toast's
-  // click, it has to be added here too.
+  // Through the same `landOnAlert` the toast calls, so the two cannot drift.
   //
   // Through `data-` attributes rather than inline handlers. A card id is safe
   // and a permission key is not necessarily, and HTML escaping is not
@@ -173,14 +169,7 @@ function openToastLog() {
       // has unsaved edits. Refused means the row stays clickable rather than
       // the tray shutting on work somebody is in the middle of.
       if (!await closeOpenDialogs()) return;
-      // Atrium owning the runner means the terminal is where the work is.
-      // Landing on the perms tab would mean answering and then going to find
-      // it.
-      if (task && await attachIfSupervised(task)) return;
-      if (go) switchView(go);
-      // The actual request, not just the right tab. The list may still be
-      // rendering, so this waits a frame before hunting for the card.
-      if (key) setTimeout(() => focusPerm(key), 60);
+      landOnAlert(task || "", go || "", key || "");
     };
   });
 

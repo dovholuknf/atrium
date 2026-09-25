@@ -180,6 +180,14 @@ if (soloBus) {
       toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null);
       return;
     }
+    // A POPPED-OUT WINDOW WAS ASKED TO GO SOMEWHERE ONLY THE BOARD CAN: an
+    // alert it showed about a card that is not its own. See `landFromSolo`.
+    if (m.type === "land") {
+      if (!termOnly()) {
+        closeOpenDialogs().then(ok => { if (ok) landOnAlert(m.taskFor || "", m.goTo || "", m.key || ""); });
+      }
+      return;
+    }
     // A solo window alerts for its own card and nothing else, so it has no use
     // for other windows' claims as ALERTS, and answering its own roll call
     // would have it suppress itself.
@@ -469,11 +477,15 @@ const alerting = (() => {
     // stuck agent, a share that stopped and a fixture that failed all popped
     // and went in the same breath, and their desktop notifications with them.
     const key = permId || (opts.pending ? subject : "") || null;
+    // The card a click lands on, which is not the suppression key: a popped-out
+    // window leaves `taskFor` empty so as not to silence itself, and names its
+    // card in `artFor`. See `landOnAlert`.
+    const landOn = taskFor || artFor || null;
 
     // 1. YOU ARE LOOKING AT THIS WINDOW. The toast is the whole message, and a
     // second copy from the operating system is noise.
     if (focusIsHere()) {
-      if (!opts.quiet) toast(title, body, goTo, key, taskFor || null);
+      if (!opts.quiet) toast(title, body, goTo, key, landOn);
       return;
     }
 
@@ -484,7 +496,7 @@ const alerting = (() => {
     if (elsewhere && soloBus) {
       soloBus.postMessage({
         type: "win-toast", win: elsewhere, title, body: body || "",
-        goTo: goTo || "", key: key || "", taskFor: taskFor || ""
+        goTo: goTo || "", key: key || "", taskFor: landOn || ""
       });
       return;
     }
@@ -498,8 +510,8 @@ const alerting = (() => {
     // sibling window sharing this origin's localStorage, and the wrapper in
     // toast-log.js records those. Only this branch has to say so itself.
     if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
-      logNotification(title, body, goTo, key, taskFor || null);
-      showNotification(title, body, goTo, permId, subject, mark, artFor || taskFor, key);
+      logNotification(title, body, goTo, key, landOn);
+      showNotification(title, body, goTo, permId, subject, mark, landOn, key);
       return;
     }
 
@@ -507,7 +519,7 @@ const alerting = (() => {
     // toast is then a RECORD rather than a message, and it is worth one,
     // because the alternative is an event that happened and left no trace in
     // the log you would go looking through afterwards.
-    toast(title, body, goTo, key, taskFor || null);
+    toast(title, body, goTo, key, landOn);
   }
 
   btn.onclick = () => {
@@ -891,7 +903,7 @@ if ("serviceWorker" in navigator) {
     if (e.data && e.data.type === "goTo") {
       closeOpenDialogs().then(ok => {
         if (!ok) return;
-        switchView(e.data.view);
+        landOnAlert(e.data.taskFor || "", e.data.view || "", e.data.key || "");
         refresh();
       });
     }
@@ -941,6 +953,8 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor, ret
       // permId only exists for a permission, and a card that has gone ready
       // and then been replied to had nothing to retire it by.
       subject: retireBy || permId || "",
+      // Where a click on the body lands. See `landOnAlert`.
+      taskFor: taskFor || "", key: retireBy || permId || "",
       origin: location.origin
     });
     return null;
@@ -962,8 +976,8 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor, ret
     // Same reason as the toast: arriving at a tab that is hidden behind a
     // dialog you opened before the notification fired is not arriving.
     if (!await closeOpenDialogs()) return;
-    if (goTo) switchView(goTo);
     n.close();
+    landOnAlert(taskFor || "", goTo || "", retireBy || permId || "");
   };
   if (expiry > 0) setTimeout(() => n.close(), expiry * 1000);
   return n;
