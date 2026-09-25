@@ -22,6 +22,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
+| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
 
 ------------
 
@@ -402,6 +403,35 @@ reclaiming disk. Options to design for, in rough order of preference:
 
 The event sink makes this smaller either way: move the bulk (`output` and old audit rows) out to files or
 offsite, and the primary database plateaus low enough that shrinking it stops mattering.
+
+## 16. Reviews that remember (HIGH PRIORITY)
+
+Raised by clint 2026-09-25 during a `review-panel` run on openziti/ziti PR #4480 (a v2.0.x backport). Four
+reviewers (go-security-reviewer, codebase-steward, functional-tester, nonfunctional-tester) each ran for 5.5 minutes
+and read 104k to 133k tokens, mostly the same files: `context.go`, `controller.go`, `multi.go`, `router.go`.
+
+### Why it happens
+
+A Claude Code subagent starts with an empty conversation on every call. Only a `fork` inherits the caller's
+context. So every reviewer in a panel rediscovers the same diff and the same neighbours on its own, and nothing it
+learned survives to the next PR in the same repo.
+
+### Two separate fixes
+
+1. **Within one review: read once.** The conductor reads the diff and its neighbours once, writes a context digest,
+   and the reviewers start from it (or run as forks sharing one cached prefix) and open source only to verify a
+   finding. Size the panel to the diff: a small backport gets one or two reviewers, not four. This is a change to the
+   `review-panel` skill in dotfiles, not to atrium. Measure tokens on one PR before and after.
+2. **Across reviews: a resident reviewer per repo.** A standing atrium session whose folder follows clint's scm layout
+   (`<host>/<org>/<repo>`, subprojects inside), keeping what it learned in a persistent CLAUDE.md and state files
+   there. The next PR on that repo starts from that knowledge instead of from zero. This is the "personas that learn
+   per repo" idea parked in `docs/far-backlog.md`, and the reason to unpark it.
+
+### Open
+
+- Where the per-repo state lives (dotagents persona folder, the scm worktree, or atrium) and who reviews its edits.
+- How a resident reviewer keeps its knowledge current when the repo moves under it.
+- Whether fix 1 alone is enough for most PRs.
 
 
 ------------
