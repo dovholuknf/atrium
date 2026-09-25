@@ -24,6 +24,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
+| 18 | On the terminals tab, toasts sit top right, not over the input line | feature | not started |
 
 ------------
 
@@ -451,6 +452,22 @@ To find out first: which hook event the subagent's end arrives as (a `SubagentSt
 subagent's session or agent id), and which atrium path turns it into the alert (`atrium turn --event end`, the
 activity hook, or the post-every-Stop change from N11). The fix is to recognise a subagent's end and ignore it for
 status and notifications, with a fake-runner test that raises parent and subagent stops.
+
+## 18. On the terminals tab, toasts sit top right (feature)
+
+Raised by clint 2026-09-25 with a screenshot (`.atrium/incoming/20260925-124402-pasted.png`): a "sa65 ... is ready /
+finished its turn and wants your next instruction" toast in the bottom right covered the terminal's input line and
+status bar, exactly where he was typing.
+
+Wanted: while the terminals view is showing, the toast stack anchors top right. Other views keep bottom right.
+
+Watch for:
+- The paste indicator (`#t-pasting`, top right of `#term-pane`, from BB) and any other top-right terminal chrome. The
+  stack must not cover them, or they move.
+- The restart countdown and paused toasts (sticky, hubrestart.js) ride the same stack. They move with it.
+- A popped-out terminal window is a terminal too: same rule there.
+- Switching view while toasts are up moves the stack without dropping or re-animating them.
+- Stack order: newest nearest the anchor, so newest at the top when anchored top.
 
 
 ------------
