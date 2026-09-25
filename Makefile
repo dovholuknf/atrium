@@ -32,9 +32,12 @@ check: test
 	pwsh -NoProfile -File scripts/check-powershell.ps1 || \
 		powershell.exe -NoProfile -File scripts/check-powershell.ps1
 
+# atrium2.exe is the TEMPORARY shim the live scripts on this machine run until
+# the cutover (docs/one-atrium-cutover.md). It goes with cmd/atrium2 in stage 4.
 build:
 	@mkdir -p $(OUT)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
+	go build -ldflags "$(LDFLAGS)" -o $(OUT)/atrium2.exe ./cmd/atrium2
 
 # Every platform, named and hashed, ready for a package manifest to point at.
 #

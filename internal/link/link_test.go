@@ -296,7 +296,7 @@ func TestNoRoomSaysSoInWords(t *testing.T) {
 		t.Fatalf("got %d, expected 503", res.StatusCode)
 	}
 	body, _ := io.ReadAll(res.Body)
-	if !strings.Contains(string(body), "atrium2 join") {
+	if !strings.Contains(string(body), "atrium room join") {
 		t.Fatalf("the message does not say what to do: %s", body)
 	}
 }

@@ -116,7 +116,7 @@ func dispatchTo(o dispatchOpts) error {
 	// room checks in every twenty seconds, and one that is switched off holds
 	// the item until it is not.
 	fmt.Printf("  when  next time that room checks in, which is within %s if it is up\n",
-		roomBeat)
+		20*time.Second)
 	return nil
 }
 

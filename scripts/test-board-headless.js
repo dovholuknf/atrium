@@ -345,7 +345,7 @@ const server = http.createServer((req, res) => {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
         "serves the board and holds nothing, so until a room connects there is " +
-        "nothing to show. run `atrium2 join` on the machine your agents are on." }));
+        "nothing to show. run `atrium room join` on the machine your agents are on." }));
       return;
     }
     if (soloMode === "gone") {

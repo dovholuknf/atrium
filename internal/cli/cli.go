@@ -65,7 +65,11 @@ func Execute() int {
 // run is Execute for any argument list, so a test can run the exact command a
 // hooks file holds through the same exit-code rule.
 func run(args []string) int {
-	root := newRoot()
+	return runRoot(newRoot(), args)
+}
+
+// runRoot is run for any root, so the atrium2 shim shares the exit-code rule.
+func runRoot(root *cobra.Command, args []string) int {
 	root.SetArgs(args)
 	cmd, err := root.ExecuteC()
 	if err == nil {
@@ -79,7 +83,7 @@ func run(args []string) int {
 	}
 	// Still a failure, still exit 1. The command said why already.
 	if !errors.Is(err, errAlreadySaid) {
-		fmt.Fprintln(os.Stderr, "atrium:", err)
+		fmt.Fprintln(os.Stderr, root.Name()+":", err)
 	}
 	return 1
 }
@@ -104,8 +108,36 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newDaemon(),
 		newJoin(), newLeave(), newStop(), newLaunch(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newPeers(), newTell(), newControl(), newVersion(), newAsk(),
-		newAnswer(), newRoom(), newOpen(), newDispatch(), newReplayCmd())
+		newAnswer(), newOpen(), newDispatch(), newReplayCmd())
+	// The atrium and its rooms, which were `atrium2` until the two binaries
+	// became one. See docs/one-atrium-plan.md.
+	backups := hubBackupsCmd("atrium-")
+	backups.AddCommand(hubRestoreCmd("atrium-"))
+	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), backups, dbCmd(), ledgerCmd())
+	for _, c := range root.Commands() {
+		switch c.Name() {
+		case "run", "room":
+			quietUsage(c)
+		}
+	}
 	return root
+}
+
+// quietUsage keeps a long-running command's failure to the one line that says
+// why. `atrium room` failing to bind a port is not a flag mistake, and twenty
+// lines of usage after it push the reason off the screen. A flag that does not
+// parse still prints the usage, because cobra reports that before RunE runs.
+func quietUsage(c *cobra.Command) {
+	for _, sub := range append([]*cobra.Command{c}, c.Commands()...) {
+		if sub.RunE == nil {
+			continue
+		}
+		run := sub.RunE
+		sub.RunE = func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
+			return run(cmd, args)
+		}
+	}
 }
 
 // ── daemon ──────────────────────────────────────────────────────────────────

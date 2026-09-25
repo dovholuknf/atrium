@@ -9,24 +9,25 @@
 //
 // ── running it ──────────────────────────────────────────
 //
-//   go build -o build.claude/atrium2.exe ./cmd/atrium2
+//   go build -o build.claude/atrium.exe ./cmd/atrium
 //   npm i -D @playwright/test
 //   npx playwright install chromium
 //   npx playwright test --config scripts/walkthrough/playwright.config.js --headed
 //
 // It starts its own hub and its own room on their own ports, against a
 // throwaway database under D:/tmp, and stops both afterwards. It touches
-// nothing belonging to the atrium you have running.
+// nothing belonging to the atrium you have running: the room is --isolated and
+// its address file is under D:/tmp, so no hook on this machine is aimed at it.
 
 const { test, expect } = require("@playwright/test")
-const { spawn, execSync } = require("child_process")
+const { spawn, execFileSync } = require("child_process")
 const fs = require("fs")
 const path = require("path")
 
 const SLOW = Number(process.env.ATRIUM_SLOW || 600)
-const EXE = process.env.ATRIUM2_EXE ||
-  path.resolve(__dirname, "../../build.claude/atrium2.exe")
-const TREE = process.env.ATRIUM2_TREE || "D:/tmp/atrium2-demo"
+const EXE = process.env.ATRIUM_EXE ||
+  path.resolve(__dirname, "../../build.claude/atrium.exe")
+const TREE = process.env.ATRIUM_TREE || "D:/tmp/atrium-demo"
 const BOARD = "127.0.0.1:7900"
 const LINK = "127.0.0.1:7901"
 const ROOM_HTTP = "127.0.0.1:7910"
@@ -37,12 +38,14 @@ const beat = (page, n = 1) => page.waitForTimeout(SLOW * 2 * n)
 let hub = null
 let room = null
 
-// start runs atrium2 and collects its output, because the join string is
-// printed rather than returned and the test has to read it the way a person
-// would.
+// start runs atrium and collects its output in a file.
+//
+// ATRIUM_LOCATION IS THE DEMO'S OWN, because a room writes its address where
+// that names, and the session running this test inherited the live room's.
 function start(args, log) {
   const out = fs.openSync(log, "w")
-  const p = spawn(EXE, args, { stdio: ["ignore", out, out] })
+  const env = { ...process.env, ATRIUM_LOCATION: `${TREE}/room/daemon.json`, ATRIUM_SHARED_LOCATION: "-" }
+  const p = spawn(EXE, args, { stdio: ["ignore", out, out], env })
   p.on("error", e => { throw e })
   return p
 }
@@ -63,24 +66,25 @@ const get = async (url) => {
 
 test.beforeAll(async () => {
   if (!fs.existsSync(EXE)) {
-    throw new Error(`no atrium2 at ${EXE}. build it first:\n` +
-      `  go build -o build.claude/atrium2.exe ./cmd/atrium2`)
+    throw new Error(`no atrium at ${EXE}. build it first:\n` +
+      `  go build -o build.claude/atrium.exe ./cmd/atrium`)
   }
   fs.rmSync(TREE, { recursive: true, force: true })
   fs.mkdirSync(TREE, { recursive: true })
 
-  hub = start(["hub", "--addr", BOARD, "--link", LINK, "--dir", `${TREE}/hub`],
+  hub = start(["run", "--no-room", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
     `${TREE}/hub.log`)
   await until(async () => (await get(`http://${BOARD}/_hub/health`)).code === 200)
 
-  // The join string, read out of what the hub printed. Exactly what a person
-  // does: look at the terminal, select the line, paste it.
-  const printed = fs.readFileSync(`${TREE}/hub.log`, "utf8")
-  const token = (printed.match(/atrium2 join (\S+)/) || [])[1]
-  if (!token) throw new Error("the hub printed no join string:\n" + printed)
+  // The join string, read out of what `atrium rooms add` printed. Exactly what
+  // a person does: look at the terminal, select the line, paste it.
+  const printed = execFileSync(EXE, ["rooms", "add", "demo", "--atrium-dir", `${TREE}/hub`,
+    "--link", LINK], { encoding: "utf8" })
+  const token = (printed.match(/atrium room join (\S+)/) || [])[1]
+  if (!token) throw new Error("`atrium rooms add` printed no join string:\n" + printed)
 
-  room = start(["join", token, "--name", "demo", "--dir", `${TREE}/room`,
-    "--db", `${TREE}/room/atrium2.db`, "--http", ROOM_HTTP, "--agent", ROOM_AGENT],
+  room = start(["room", "join", token, "--isolated", "--dir", `${TREE}/room`,
+    "--db", `${TREE}/room/atrium.db`, "--http", ROOM_HTTP, "--agent", ROOM_AGENT],
     `${TREE}/room.log`)
   await until(async () => {
     const r = await get(`http://${BOARD}/_hub/rooms`)
@@ -100,8 +104,8 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(() => {
+  // By pid, never by image name: every hook on this machine is an atrium.exe.
   for (const p of [room, hub]) { try { p && p.kill() } catch (e) {} }
-  try { execSync(`taskkill /F /IM atrium2.exe`, { stdio: "ignore" }) } catch (e) {}
   fs.rmSync(TREE, { recursive: true, force: true })
 })
 
@@ -124,7 +128,7 @@ test("the board can be restarted without the agents noticing", async ({ page }) 
 
   // WHAT THE BOARD DRAWS IS THE DISPLAY TITLE, which is the one that was asked
   // for. The `title` field on the launch response is the derived wire name,
-  // `atrium2-demo-71500`, which appears nowhere on screen. Asserting on that
+  // `atrium-demo-71500`, which appears nowhere on screen. Asserting on that
   // one fails while everything works, which is the worst kind of test.
   const shown = "watch-me-survive"
 
@@ -157,7 +161,7 @@ test("the board can be restarted without the agents noticing", async ({ page }) 
   await beat(page, 3)
 
   // ── bring it back ──
-  hub = start(["hub", "--addr", BOARD, "--link", LINK, "--dir", `${TREE}/hub`],
+  hub = start(["run", "--no-room", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
     `${TREE}/hub2.log`)
   await until(async () => {
     const r = await get(`http://${BOARD}/_hub/rooms`)
@@ -185,7 +189,7 @@ test("the board can be restarted without the agents noticing", async ({ page }) 
 // alive asks Windows, not atrium.
 function alive(pid) {
   try {
-    const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf8" })
+    const out = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" })
     return out.includes(String(pid))
   } catch (e) {
     return false

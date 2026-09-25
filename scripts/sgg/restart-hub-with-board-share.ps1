@@ -9,6 +9,12 @@
 # the shell that ran this script. Run this from a shell atrium does not
 # supervise.
 #
+# AFTER THE CUTOVER ONLY (docs/one-atrium-cutover.md). The hub is
+# `atrium.exe run --no-room`, and atrium.exe is also the file every hook runs,
+# so the process is matched by path plus subcommand and the new binary goes in
+# by two renames, never a copy over the live name. Before the cutover this
+# refuses and names the old line.
+#
 # Blocked today: the zrok account returns 500 on any share create. When that is
 # fixed (free reserved-name capacity, or the hosted instance recovers), this
 # brings the share up. If the share still cannot be created the hub logs it and
@@ -20,10 +26,10 @@
 param(
   [ValidateSet('private', 'public')]
   [string]$ShareMode = 'private',
-  # The freshly built hub. Deployed over the canonical bin so a later plain
-  # restart also has the board-share flag available.
-  [string]$NewBinary = "$PSScriptRoot\..\..\build.claude\atrium2.exe",
-  [string]$Bin = 'C:\Users\claude\.atrium2\bin\atrium2.exe',
+  # The freshly built binary. Swapped in over the canonical one so a later
+  # plain restart also has the board-share flag available.
+  [string]$NewBinary = "$PSScriptRoot\..\..\build.claude\atrium.exe",
+  [string]$Bin = 'C:\Users\claude\.atrium\bin\atrium.exe',
   [string]$HubDir = 'C:\Users\claude\.atrium2\hub',
   [string]$HubAddr = '127.0.0.1:7778',
   [string]$Link = '127.0.0.1:7779',
@@ -32,16 +38,26 @@ param(
 $ErrorActionPreference = 'Stop'
 $board = "http://$HubAddr"
 
+$old = Get-CimInstance Win32_Process -Filter "Name='atrium2.exe'" |
+  Where-Object { $_.CommandLine -match ' hub ' } | Select-Object -First 1
+if ($old) {
+  Write-Host "the hub is still atrium2.exe (pid $($old.ProcessId)), so this machine is not cut over yet."
+  Write-Host "see docs/one-atrium-cutover.md. until then the hub line is:"
+  Write-Host ("  atrium2.exe hub --addr $HubAddr --link $Link --dir $HubDir " +
+    "--board-transport zrok --board-share $ShareMode")
+  exit 1
+}
+
 if ($ShareMode -eq 'public') {
   Write-Host "PUBLIC share: the board will have NO login in front of it. Anyone with the"
   Write-Host "URL can read every command and answer permission prompts. Ctrl-C now to stop."
   Start-Sleep -Seconds 4
 }
 
-# Stop the running hub (and ONLY the hub). Matched by the ' hub ' argument so the
-# room process is never in scope.
-$hub = Get-CimInstance Win32_Process -Filter "Name='atrium2.exe'" |
-  Where-Object { $_.CommandLine -match ' hub ' } | Select-Object -First 1
+# Stop the running hub (and ONLY the hub). Matched by path and the ' run '
+# argument: every hook in flight is also atrium.exe, and the room is ' room '.
+$hub = Get-CimInstance Win32_Process -Filter "Name='atrium.exe'" |
+  Where-Object { $_.ExecutablePath -eq $Bin -and $_.CommandLine -match ' run ' } | Select-Object -First 1
 if ($hub) {
   Write-Host "stopping hub pid $($hub.ProcessId)"
   Stop-Process -Id $hub.ProcessId -Force
@@ -50,18 +66,22 @@ if ($hub) {
   Write-Host "no hub running"
 }
 
-# Deploy the new binary now that the hub file is unlocked. The room keeps running
-# on the copy it already loaded, so this does not disturb it.
+# Stage the new binary beside the live one, then swap with two renames. The room
+# and every hook keep running the image they already loaded.
 if (Test-Path $NewBinary) {
-  Copy-Item $NewBinary $Bin -Force
-  Write-Host "deployed $NewBinary -> $Bin"
+  $next = Join-Path (Split-Path $Bin) 'atrium.next.exe'
+  $aside = Join-Path (Split-Path $Bin) "atrium.old-$(Get-Date -Format yyyyMMddHHmmss).exe"
+  Copy-Item $NewBinary $next -Force
+  Rename-Item $Bin $aside
+  Rename-Item $next (Split-Path $Bin -Leaf)
+  Write-Host "deployed $NewBinary -> $Bin (previous: $aside)"
 } else {
   Write-Host "no new binary at $NewBinary, using existing $Bin"
 }
 
 Write-Host "starting hub on $board (link $Link), board share: $ShareMode"
 Start-Process -FilePath $Bin `
-  -ArgumentList 'hub', '--addr', $HubAddr, '--link', $Link, '--dir', $HubDir, `
+  -ArgumentList 'run', '--no-room', '--addr', $HubAddr, '--link', $Link, '--atrium-dir', $HubDir, `
   '--board-transport', 'zrok', '--board-share', $ShareMode `
   -WindowStyle Hidden `
   -RedirectStandardOutput 'C:\Users\claude\.atrium2\hub.out' `
