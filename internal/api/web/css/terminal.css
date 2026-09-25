@@ -646,6 +646,9 @@
     color: var(--head); background: transparent;
     border-color: color-mix(in srgb, var(--room-ink) 75%, transparent);
   }
+  /* The `new` chip, the same way and for the same reason: its teal on a teal wash fell just under 4.5:1 on eight
+     terminal themes. Worn, the text is the title colour and the teal is the border. */
+  .worn .chip.arrived { color: var(--head); background: transparent; border-color: rgba(var(--teal-rgb),.75); }
   .stackrow.worn:hover { background: linear-gradient(var(--lift), var(--lift)), var(--card-0); }
   /* The attached card. Off, it is the one card in its terminal's colours. On, every card is, so the colour
      stops saying which one you are on. A frame says it instead: two pixels in the card's title colour, open on
