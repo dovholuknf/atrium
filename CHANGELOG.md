@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Selecting the attached terminal again focuses it instead of replaying its history.** See `docs/test-plan.md`
+  section BG.
+
+  Clicking the row of the terminal already attached tore the pane down and dialled the same socket again, so the
+  daemon replayed the whole scrollback (up to 4 MB) and the scroll position was lost. The same happened from a toast,
+  a card's `attach`, the switcher and a `#term=` window. `openTerm`, which every one of those reaches, now treats a
+  card that is already attached with its socket open as a focus: it shows the terminals pane and focuses the
+  terminal, with no new socket and nothing written. A different card, a closed socket, a runner/shell switch and the
+  cursor resyncs still attach as before. The new headless section `reselect` covers it. HUB-SIDE.
+
 - **Atrium being down says so, on an open board and on a reload.** See `docs/test-plan.md` section BF.
 
   When atrium stopped or crashed with no restart announced, an open board kept looking live apart from a small

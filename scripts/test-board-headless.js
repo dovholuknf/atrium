@@ -3084,6 +3084,95 @@ async function landSection(browser, base) {
   tasksMode = was;
 }
 
+// ── selecting the attached card again is a focus, not a re-attach ─────────
+// Backlog-2 item 20. Every way back onto the card the pane already has live
+// (the row, a toast, the switcher, a `#term=` window) goes through `openTerm`,
+// and it used to tear the pane down and dial the same socket again, which makes
+// the daemon replay the whole scrollback. The mocked attach socket replays a
+// line on every open, the way the daemon does, so a re-attach shows up both as
+// a second socket and as writes into xterm.
+async function reselectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-other", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"], LAND["land-other"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__attaches = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      window.__attaches.push(url);
+      const s = { url, readyState: 0, binaryType: "arraybuffer",
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => {
+        s.readyState = 1;
+        if (s.onopen) s.onopen({});
+        if (s.onmessage) s.onmessage({ data: "replayed history\r\n" });
+      }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+    // From here on nothing may reach xterm or dial a socket.
+    await p.evaluate(() => {
+      window.__writes = 0;
+      window.__term = term;
+      const real = Terminal.prototype.write;
+      Terminal.prototype.write = function () { window.__writes++; return real.apply(this, arguments); };
+      window.__attaches = [];
+    });
+    const check = async how => {
+      await p.waitForTimeout(400);
+      const got = await p.evaluate(() => ({ socks: window.__attaches.length, writes: window.__writes,
+        same: term === window.__term, card: termTask && termTask.id,
+        view: document.getElementById("terms").hidden ? "not terms" : "terms" }));
+      if (got.socks || got.writes || !got.same || got.card !== "land-live" || got.view !== "terms") {
+        fail("selecting the attached card again by " + how + " re-attached it: " + JSON.stringify(got) +
+          ". A second select of a live card must focus it, not open a socket or replay history.");
+      }
+    };
+    await p.waitForSelector('#term-list .card.tab[data-id="land-live"]', { timeout: 10000 });
+    await p.click('#term-list .card.tab[data-id="land-live"]');
+    await check("its row");
+    await p.evaluate(() => landOnAlert("land-live"));
+    await check("an alert");
+    await p.evaluate(() => { switchView("stack"); return attachTask("land-live"); });
+    await check("attach from another view");
+    await p.evaluate(() => openTerm(termTask));
+    await check("openTerm directly");
+
+    // The control: another card does attach, and so does the same card once its
+    // socket is gone.
+    await p.evaluate(() => attachTask("land-other"));
+    await p.waitForTimeout(400);
+    let socks = await p.evaluate(() => window.__attaches.length);
+    if (socks !== 1) fail("selecting a different card opened " + socks + " sockets, not 1.");
+    await p.evaluate(() => { window.__attaches = []; termSock.readyState = 3; return attachTask("land-other"); });
+    await p.waitForTimeout(400);
+    socks = await p.evaluate(() => window.__attaches.length);
+    if (socks !== 1) fail("selecting a card whose socket had closed opened " + socks + " sockets, not 1.");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the reselect page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3095,7 +3184,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection };
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5265,6 +5354,7 @@ async function main() {
     await themePreviewSection(browser, base);
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
+    await reselectSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

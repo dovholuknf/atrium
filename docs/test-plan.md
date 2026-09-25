@@ -3569,3 +3569,36 @@ reach this page`. Its clock counts. It works with the network cable out.
 What is not covered: a browser that has never opened the board has no service worker yet and still gets its own
 error page. So does a board opened over plain `http://` on a LAN address, where the browser allows no service
 worker. The open-board cover in BF1 works in both.
+
+## BG. Selecting the attached terminal again does not replay its history
+
+Run on the board, with a supervised card that has a long scrollback (a few screens at least). The headless section
+`reselect` covers BG1 and BG2 against a mocked attach socket.
+
+### BG1. The row, again
+
+1. Open the terminals pane and click the card's row. Scroll the terminal up a screen or two.
+2. Click the same row again.
+
+**Expected:** the terminal takes focus and stays where you scrolled it. It does not go blank and redraw its history,
+and the row stays selected. Typing goes to the terminal.
+
+### BG2. Every other way back onto it
+
+1. With the card still attached, go to the stack view and click its `attach`.
+2. Raise a toast for the card (for example let it finish a turn), then click the toast.
+3. Open the switcher (`ctrl-shift-k`) and pick the same card.
+
+**Expected:** each lands on the terminals pane with the terminal focused and scrolled where it was. None redraws the
+history.
+
+### BG3. What still re-attaches
+
+1. Click a different card's row, then the first card's row again.
+
+**Expected:** each switch attaches and draws that card's history, as before.
+
+2. Restart the card's room, or wait for its socket to drop and come back, then click its row.
+
+**Expected:** a card whose socket closed re-attaches and draws its history. Switching the pane between `runner` and
+`shell` also re-attaches, as before.
