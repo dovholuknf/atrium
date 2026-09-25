@@ -337,6 +337,7 @@ function clearTermPane(switching) {
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
+  dropThemePreview();
   // Nothing attached, so nothing for the bridge to span.
   placeTabBridge();
   // NOT FORGOTTEN HERE. This runs whenever the pane is torn down, and most of

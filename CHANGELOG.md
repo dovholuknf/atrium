@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A theme preview recolours the card.** See `docs/test-plan.md` section BA.
+
+  The theme picker on the terminal bar previewed a theme on the terminal alone. With card colours on, the attached
+  row, its bridge, the pane's frame and the stack and board card kept the saved theme, so the pane showed one theme
+  framed in another. Every surface that wears the card's theme now follows the preview, for that card only. Escape,
+  attaching to another card and closing the terminal put the saved colours back. `use it` saves the theme as before.
+  Nothing is written to the daemon or to localStorage while previewing. The new headless section `themePreview`
+  covers a preview, a second pick, cancel, detach, a card switch, zero writes, and `use it` across a reload.
+  HUB-SIDE.
+
 - **A new card says so.** See `docs/test-plan.md` section AZ.
 
   A card launched from a shell, adopted, or brought by a room landed mid-list with nothing to mark it. A card this
@@ -15,7 +25,8 @@ section heading is just "what landed in this iteration."
   remembered per browser in `atrium.newcards`, by bare id, and bounded. So the first list after a load or a
   reload is taken as already there, and a hub restart that brings the same cards back under a new `room~` tag
   marks nothing. Storage is written only when a card is first seen or cleared. Reduced motion drops the pulse and
-  keeps the chip. The new headless section `newCard` covers the pulse, the chip, a reload, a hub restart, a click,
+  keeps the chip. On a card wearing its terminal's colours the chip's text is the title colour on a teal border,
+  so it holds 4.5:1 on every terminal theme. The new headless section `newCard` covers the pulse, the chip, a reload, a hub restart, a click,
   reduced motion and zero writes while idle. HUB-SIDE.
 
 - **Untagged follows the sort on the terminals pane.** See `docs/test-plan.md` section AX.

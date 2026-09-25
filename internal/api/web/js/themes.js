@@ -195,9 +195,11 @@ async function loadThemes() {
 // A NAME NOBODY DEFINED FALLS BACK, and a theme deleted from the editor is
 // exactly that. The card keeps the name it was given, because a delete that
 // rewrites every card mentioning a theme is a delete that edits work.
+// `themePreview` is the theme picker's, below.
+let themePreview = null;
 function themeFor(t) {
   if (!t) return TERM_THEMES.atrium;
-  const named = themeNamed(t.theme);
+  const named = themeNamed(themePreview && t.id === themePreview.id ? themePreview.name : t.theme);
   if (named) return named;
 
   const project = String(t.repo || "").trim() || defaultProjectOf(t);
@@ -521,14 +523,44 @@ function pickTheme() {
   sel.focus();
 }
 
-// Applied to the running terminal and nowhere else. xterm takes a new theme on
-// a live instance, so nothing is torn down and the scrollback is untouched,
-// which is the whole point: you are judging it against real output.
+// Applied to the running terminal live. xterm takes a new theme on a live
+// instance, so nothing is torn down and the scrollback is untouched, which is
+// the whole point: you are judging it against real output.
+//
+// AND TO EVERYTHING ELSE THAT WEARS THE CARD'S THEME. With card colours on, the
+// row in the terminals list, its bridge, the pane's frame and the stack and
+// board card all wear it, and each asks `themeFor`. Recolouring the terminal
+// alone showed one theme framed in another, so the card never showed what "use
+// it" would give. So the name is held in `themePreview`, for this card only,
+// and `themeFor` answers it. In memory only: nothing reaches the daemon or
+// localStorage until "use it". The saved name clears it.
 function previewTheme(name) {
   if (!term || !termTask) return;
-  const t = themeFor(Object.assign({}, termTask, { theme: name }));
+  const was = themePreview;
+  themePreview = name === (termTask.theme || "") ? null : { id: termTask.id, name };
+  const t = themeFor(termTask);
   term.options.theme = t;
   paintPaneBg(t);
+  if ((was && was.name) !== (themePreview && themePreview.name)) repaintWearers();
+}
+
+// The lists redrawn from `themeFor`, then the bridge and the pane frame, which
+// copy the attached row's computed colours and would otherwise keep the old
+// ones until something moved.
+async function repaintWearers() {
+  await repaintLists();
+  placeTabBridge();
+}
+
+// The pane is going, or going to another card. A preview belongs to the card
+// it was started on, so it ends with it and the saved colours come back. Called
+// from inside a refresh, so the repaint is queued rather than run here.
+function dropThemePreview() {
+  const wrap = document.getElementById("t-theme-wrap");
+  if (wrap) wrap.hidden = true;
+  if (!themePreview) return;
+  themePreview = null;
+  refreshSoon();
 }
 
 // The pane takes the terminal's own background.
@@ -634,6 +666,10 @@ async function keepTheme() {
     return;
   }
   termTask.theme = name;
+  // Saved, so the card's own theme answers now. The repaint reads the lists
+  // back from the daemon, which has the new name.
+  themePreview = null;
+  repaintWearers();
   toast("theme set", name || "back to the project's own");
 }
 
