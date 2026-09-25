@@ -865,6 +865,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// and a hundred and twenty five rules appeared to be gone.
 	d.reportRunners()
 
+	// Cards a crash interrupted mid-turn, read before the reaper or a reopen
+	// moves their status. See unexpectedexit.go.
+	d.noteCrashMidTurn()
+
 	if d.st.Fresh() {
 		log.Printf("[atrium] ---------------------------------------------------------------")
 		log.Printf("[atrium] THIS IS A NEW DATABASE. There was no file at that path, so one")
@@ -1036,6 +1040,10 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	if d.pending != nil {
 		d.pending.stopAll()
 	}
+
+	// Which runners were mid-turn, read before they are stopped: a runner that
+	// exits files its card dead or done. See unexpectedexit.go.
+	d.noteStopMidTurn()
 
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be

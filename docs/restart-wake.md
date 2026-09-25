@@ -66,6 +66,9 @@ A wake is different. The session queues it for itself, or a human runs the scrip
 work the restart interrupted, and it lands in the session that asked for it, not in a peer's. It still goes through
 the same gate as every automated write, so it never merges into a half-typed line or lands mid-turn.
 
+The unexpected-exit notice (`docs/unexpected-exit-wake.md`) uses the same row and the same delivery, and it IS a
+forced turn: the room types it into a card whose turn the room's own exit interrupted. A card's own wake wins over it.
+
 ## Where it lives
 
 - `internal/store/restartwake.go`: the `restart_wake` table (migration `0059_restart_wake`) and its events.
