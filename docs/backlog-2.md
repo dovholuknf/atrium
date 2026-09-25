@@ -157,6 +157,16 @@ package metadata and the published one with one HTTP request.
 
 ------------
 
+### 12a. A resumed card keeps its old pid, and a live card reads done
+
+**Raised 2026-09-25.** Counting `claude.exe` against the board: all 22 were the room's children, but six cards
+resumed at the 17:08 room restart still recorded their OLD pid (aug-revisions, discourse-6087, sa58, sa59, sa60,
+win32crypto-e2e), and four of them (win32crypto-e2e, sa58, sa59, sa60) read status `done` while their runner was
+alive. Likely the same false `exited` event sa62 got at 16:23. The pid should update on every runner start, and a
+card with a live runner must not read done. Anything that judges liveness by pid is misled today.
+
+------------
+
 ## Housekeeping
 
 ### 13. Asked, not answered
