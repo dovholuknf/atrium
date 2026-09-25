@@ -17,7 +17,8 @@ import (
 // every hook reads as pointing elsewhere. Rebuilding puts the drift back.
 //
 // The identity is the running daemon's binary, which the daemon records in the
-// location file every hook already reads to find the port.
+// location file every hook already reads to find the port. A room is a daemon
+// for this purpose, and it runs the same `atrium` binary the hooks run.
 //
 // Resolution, in order:
 //

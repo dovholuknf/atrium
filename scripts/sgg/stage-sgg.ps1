@@ -1,4 +1,7 @@
-# Copy the atrium2 binary to sgg over the existing SSH path. Idempotent.
+# Copy the atrium binary to sgg over the existing SSH path. Idempotent.
+#
+# sgg keeps the file name atrium2.exe: its room was joined and is restarted under
+# that name, and the one binary answers `room` with the same flags.
 #
 # sgg is Windows amd64, same as SG4, so the binary built here runs there with no
 # cross-compile. This only stages the file. It starts nothing on sgg and opens
@@ -9,7 +12,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$LocalBinary = "$PSScriptRoot\..\..\build.claude\atrium2.exe",
+  [string]$LocalBinary = "$PSScriptRoot\..\..\build.claude\atrium.exe",
   [string]$SshHost = 'sgg',
   [string]$RemoteDir = 'C:\Users\localai\.atrium2\bin',
   [string]$RemoteBinary = 'C:\Users\localai\.atrium2\bin\atrium2.exe'
@@ -25,7 +28,7 @@ if (-not (Test-Path $sshExe)) { $sshExe = 'ssh' }
 if (-not (Test-Path $scpExe)) { $scpExe = 'scp' }
 
 if (-not (Test-Path $LocalBinary)) {
-  Write-Host "no binary at $LocalBinary. build it first: go build -o build.claude\atrium2.exe ./cmd/atrium2"
+  Write-Host "no binary at $LocalBinary. build it first: go build -o build.claude\atrium.exe ./cmd/atrium"
   exit 1
 }
 

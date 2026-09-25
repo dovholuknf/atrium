@@ -136,7 +136,8 @@ func isClaude(h *store.Harness) bool {
 //
 // Otherwise the program is taken from a hook the operator already has, since
 // that is a binary known to run from a claude session on this machine. The
-// room's own binary is the wrong answer: `atrium2` has no `turn` subcommand.
+// room's own binary was the wrong answer while rooms ran `atrium2`, which had
+// no `turn` subcommand, and a working hook's program is still the surer one.
 // A variable so a test can say what it wants without a settings file.
 var stopHookCommand = func() string {
 	rep, err := claudeconf.Inspect(daemonBinary())

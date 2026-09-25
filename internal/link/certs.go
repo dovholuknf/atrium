@@ -316,7 +316,7 @@ func ParseToken(s string) (Join, error) {
 	if !strings.HasPrefix(s, tokenPrefix) {
 		return j, errors.New(
 			"that does not look like a join string. it starts with " + tokenPrefix +
-				" and comes from `atrium2 hub` on the machine running the hub")
+				" and comes from `atrium rooms add` on the machine running the hub")
 	}
 	body, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, tokenPrefix))
 	if err != nil {
@@ -495,7 +495,7 @@ func (k Keys) Joined() (Saved, error) {
 	raw, err := os.ReadFile(k.path("room.json"))
 	if err != nil {
 		return s, errors.New(
-			"this machine has not joined a hub yet. run `atrium2 join <join string>`")
+			"this machine has not joined a hub yet. run `atrium room join <join string>`")
 	}
 	var m map[string]string
 	if err := json.Unmarshal(raw, &m); err != nil {

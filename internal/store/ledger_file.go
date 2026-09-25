@@ -16,7 +16,7 @@ import (
 // `work-ledger.md` beside the room's database is rewritten after every change
 // to the ledger. It is a PROJECTION: nothing ever reads it back, and a write
 // that fails is logged by the caller and ignored, the posture of a cold event
-// sink. When the daemon died between a change and the rename, `atrium2 ledger`
+// sink. When the daemon died between a change and the rename, `atrium ledger`
 // prints the same list from the database itself.
 
 // LedgerFileName is the snapshot's name, beside the database.
@@ -66,7 +66,7 @@ func RenderLedger(v *LedgerView) string {
 	b.WriteString("# Work ledger\n\n")
 	fmt.Fprintf(&b, "Written by atrium at %s. A projection of the room's database, rewritten on every change.\n",
 		v.At.Local().Format("2006-01-02 15:04:05"))
-	b.WriteString("Nothing reads this file back. `atrium2 ledger` prints the same list from the database.\n\n")
+	b.WriteString("Nothing reads this file back. `atrium ledger` prints the same list from the database.\n\n")
 
 	groups := []struct {
 		state, head string

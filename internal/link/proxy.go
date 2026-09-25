@@ -806,7 +806,7 @@ func (p *Proxy) oops(w http.ResponseWriter, r *http.Request, err error) {
 	} else if errors.Is(err, ErrNoRoom) {
 		code = http.StatusServiceUnavailable
 		msg = "no room is attached to this hub. the hub serves the board and holds nothing, " +
-			"so until a room connects there is nothing to show. run `atrium2 join` on the " +
+			"so until a room connects there is nothing to show. run `atrium room join` on the " +
 			"machine your agents are on."
 		// A REQUEST FOR A ROOM THE HUB KNOWS ABOUT SAYS SO BY NAME.
 		//

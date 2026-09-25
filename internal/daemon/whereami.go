@@ -80,8 +80,9 @@ func LocationPath() (string, error) {
 	// symptom is not an error: it is activity arriving at a board nobody is
 	// looking at. `docs/preview-design.md` says what that costs.
 	//
-	// A room started by `atrium2` sets this before it opens anything, so the
-	// ordinary atrium keeps its own file and its own hooks. A daemon spawns its
+	// A room sets this before it opens anything, and a second room started
+	// with `--isolated` names a private file, so the machine's room keeps its
+	// own file and its own hooks. A daemon spawns its
 	// runners with its own environment, so the hooks those agents fire inherit
 	// the variable and report to the room that started them, which is the
 	// behaviour that makes two atriums on one machine coherent rather than
@@ -89,6 +90,14 @@ func LocationPath() (string, error) {
 	if p := strings.TrimSpace(os.Getenv("ATRIUM_LOCATION")); p != "" {
 		return p, nil
 	}
+	return DefaultLocationPath()
+}
+
+// DefaultLocationPath is the machine's one place for the address file, the
+// answer `LocationPath` gives when `ATRIUM_LOCATION` names nothing. A room that
+// is the machine's only daemon records itself here, so a hook in a session
+// atrium did not start finds it without being told.
+func DefaultLocationPath() (string, error) {
 	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
 			return filepath.Join(d, "atrium", "daemon.json"), nil

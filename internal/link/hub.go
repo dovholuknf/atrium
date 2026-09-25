@@ -184,7 +184,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 	// read, so an unauthenticated connection cannot even claim one.
 	if h.Authenticated != nil && !h.Authenticated(conn) {
 		_ = writeJSON(conn, welcome{OK: false,
-			Error: "this connection presented no credential. run `atrium2 join` first"})
+			Error: "this connection presented no credential. run `atrium room join` first"})
 		conn.Close()
 		return
 	}

@@ -347,7 +347,7 @@ func (s *Store) WorkItem(taskID string) (*WorkItem, error) {
 	return out, err
 }
 
-// LedgerView is what the snapshot file and `atrium2 ledger` list: every item
+// LedgerView is what the snapshot file and `atrium ledger` list: every item
 // that is not closed, then those closed since the cutoff.
 type LedgerView struct {
 	At     time.Time   `json:"at"`
