@@ -119,7 +119,9 @@ async function bootBoard() {
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
   setTimeout(() => {
     runRefresh();
-    restoreWhereYouWere();
+    // A board opened by clicking a desktop notification lands where the click
+    // meant, after the restore has put it back where it was.
+    restoreWhereYouWere().finally(landFromURL);
     // AND THE COVER COMES OFF, on the view you were reading rather than on the
     // one the markup starts with. Here rather than earlier because this line
     // above is what puts the board back where it was, and uncovering before it

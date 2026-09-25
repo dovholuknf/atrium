@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A click on an alert lands where the alert is about.** See `docs/test-plan.md` section BD.
+
+  Clicking `X is on the board` landed on the stack, not on the terminal that had just opened. A desktop
+  notification only ever switched the tab, whether the service worker or the page raised it, and a toast for a new
+  card gave up if its terminal was not up yet. Every alert click now goes through one function, `landOnAlert`: a
+  toast, a toast log row, a desktop notification with the board in front, behind something or not open, and an
+  alert in a popped-out window. An alert about one card lands on its terminal, attached and focused, or raises its
+  own window if it is popped out. A card with no live terminal lands on its request if it has one, and otherwise on
+  its detail. An alert about no card goes to the view it names, and one about nothing goes nowhere and no longer
+  closes an open dialog. A new card whose terminal is not up yet is waited for, up to eight seconds. With no board
+  open, the service worker opens one at `/?land=<card>`. `toasts.js` now writes its two NUL bytes as `\0`, so git
+  diffs it as text. The new headless section `land` covers each destination. HUB-SIDE.
+
 - **The restart and wait screens look like atrium and say what is happening.** See `docs/test-plan.md` section BC.
 
   The restarting cover was a bare box with a heading, a rule and `the board comes back by itself when the new hub

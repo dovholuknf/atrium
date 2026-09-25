@@ -3401,3 +3401,76 @@ along the top. Nothing is white on a dark skin, and nothing is a bare box with a
 
 **Expected:** the header shows a red `reconnecting` pill with a breathing dot, and it goes when the board is live
 again.
+
+## BD. A click on an alert lands where the alert is about
+
+Run on a hub built from this branch with desktop notifications allowed. Try each step three ways: from the toast
+with the board in front, from the desktop notification with the board behind another window, and from the row in
+the toast log (the bell). The headless section `land` covers BD1 to BD6 against a mocked hub, including the service
+worker's message and a plain desktop notification.
+
+The rule: an alert about one card with a live terminal lands on that terminal, attached and focused, in its own
+window if it is popped out. An alert about one card with no live terminal lands on its request if it has one, and
+otherwise on the card with its detail open. An alert about no one card lands on the view it names, and an alert
+about nothing lands nowhere.
+
+### BD1. A new card
+
+1. With the board behind another window, launch a session from a shell with `atrium launch`. Click `X is on the
+   board` as soon as it appears.
+
+**Expected:** the board comes forward on the terminals pane with the new card attached and the cursor in it. It does
+not land on the stack, even when the click comes before the session's terminal is up: the board waits up to eight
+seconds for it.
+
+2. Put a card in the inbox from an intake source, and click its `is on the board`.
+
+**Expected:** the card's detail opens at once. An inbox card has no terminal coming, so there is no wait.
+
+### BD2. Ready, asked, stopped, stuck
+
+1. Let a supervised card finish its turn, ask a question, wait on a peer, stop without reporting, and run one tool
+   too long. Click each alert.
+
+**Expected:** each lands on that card's terminal. A card that has exited lands on its detail instead.
+
+### BD3. A permission
+
+1. Have a supervised card ask for a permission. Click `X needs permission`, and the `STUCK on a permission` nag a
+   minute later.
+
+**Expected:** each lands on the card's terminal, where the request shows with its buttons.
+
+2. Have an unsupervised session (a hook-only claude) ask, and click it.
+
+**Expected:** the permissions tab, scrolled to that request and flashing, with its command box focused.
+
+3. Let two agents ask at once, and click `2 agents need permission`.
+
+**Expected:** the permissions tab.
+
+### BD4. Board-wide notices
+
+1. Open the gear, and click a toast that is about nothing in particular, such as `copied`.
+
+**Expected:** the toast goes and the gear stays open.
+
+2. Break a fixture and restart the room. Click `1 fixture did not start`.
+
+**Expected:** the runners tab.
+
+### BD5. A popped-out window
+
+1. Pop a card out. Let it go ready while its window is behind the board, and click the desktop notification.
+
+**Expected:** its own window comes forward. The board does not attach it.
+
+2. With the popped-out window in front, let a different card go ready, and click the toast in that window.
+
+**Expected:** the board attaches the other card. The popped-out window keeps its own card.
+
+### BD6. No board open
+
+1. Close every atrium tab. Launch a session, and click the desktop notification.
+
+**Expected:** a board opens on the new card's terminal, and the address bar shows no `?land=` after it lands.
