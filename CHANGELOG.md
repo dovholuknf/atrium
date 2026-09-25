@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The restart and wait screens look like atrium and say what is happening.** See `docs/test-plan.md` section BC.
+
+  The restarting cover was a bare box with a heading, a rule and `the board comes back by itself when the new hub
+  answers.` It is now one card shared with the room-switch cover, in the skin's colours: a turning ring, a label, a
+  headline, a line saying how long and that there is nothing to do, a moving bar and a clock. After 30 seconds the
+  line says it is taking longer than usual. The countdown toast leads with `atrium restarts in 5s`, shows the
+  seconds in a ring and drains a bar over them. The paused toast is `restart on hold` with a pause mark. The
+  header's `reconnecting` is a red pill with a breathing dot, in smaller type than before. The words
+  say `atrium` rather than `the hub`. Nothing the gate does or waits for changed. HUB-SIDE.
+
 - **A big paste says it is on its way.** See `docs/test-plan.md` section BB.
 
   A paste of 2KB or more into an attached terminal shows a spinner and `pasting <size>` at the top right of the

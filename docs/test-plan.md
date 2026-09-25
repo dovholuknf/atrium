@@ -2718,8 +2718,8 @@ throwaway hub's board in two windows and pop one terminal out into a third.
 2. Run the script with `-Idle 5`.
 
 **Expected:** no toast while you type. Stop typing. About five seconds later every window, the popped-out one
-included, shows "the hub restarts in 5s unless you click this", counting down. At zero every window shows the
-"the hub is restarting" modal and the script prints `go`, exit 0.
+included, shows "atrium restarts in 5s", counting down. At zero every window shows the "atrium is restarting"
+modal and the script prints `go`, exit 0.
 
 ### AM3. Typing during the countdown starts the wait again
 
@@ -2732,7 +2732,7 @@ window.
 
 1. Run the script with `-Wait 120`. Click the countdown toast in the popped-out window.
 
-**Expected:** the countdown goes from every window and each shows "hub restart paused" with a resume button. The
+**Expected:** the countdown goes from every window and each shows "restart on hold" with a resume button. The
 paused toast stays past nine seconds and stays when other toasts fill the stack.
 
 2. Open a fourth board window.
@@ -3352,3 +3352,52 @@ after 20ms.
 **Expected:** each `[inputlag] ... key` line has no `socket had 18 bytes unsent` clause. It shows only when the
 socket was already backed up before the key, for example a key typed while a 200KB paste is still leaving, and
 then it reads `socket had N bytes unsent before this key`.
+
+## BC. The restart and wait screens wear the skin and say what is happening
+
+Run on a hub built from this branch, with the board open. The countdown, the pause and the restarting cover need a
+hub-only deploy through `scripts/hub-restart-gate.ps1`. The headless section `restartGate` covers BC1 to BC3
+against a mocked hub, and checks that the cover is not drawn while it is shut.
+
+### BC1. The countdown and the hold
+
+1. Leave the board idle and start a hub-only deploy.
+
+**Expected:** a toast says `atrium restarts in 5s`, with the seconds in a turning ring on its left and a teal bar
+along its foot that drains to nothing over the same five seconds. Its line reads `an update is ready. keep working
+and it waits, or pause it until you are done.`
+
+2. Start another deploy, and click the toast or its `pause` button during the countdown.
+
+**Expected:** the countdown goes and a toast says `restart on hold`, with a still pause mark in the warning colour
+and the line `atrium keeps running as it is until you press resume.` It stays until you press `resume`.
+
+### BC2. The restarting cover
+
+1. Let a countdown run out.
+
+**Expected:** a card covers the board, which blurs behind it: a turning ring, `INSTALLING AN UPDATE`,
+`atrium is restarting`, and `back in a few seconds. your agents keep running, and this page picks up where you
+left off.` Under that is a moving bar, `nothing to do, this page reconnects on its own`, and a clock counting the
+seconds. There is no focus ring round the card. It comes down when atrium answers.
+
+2. Hold the new hub back for more than 30 seconds.
+
+**Expected:** the line changes to `this is taking longer than usual. your agents keep running while atrium comes
+back.` The clock keeps counting.
+
+### BC3. Every skin, and the other waits
+
+1. Repeat BC1 and BC2 wearing `harbour`, `website`, `paper`, `daylight`, `noir` and `slate`.
+
+**Expected:** every card is in the skin's own colours, light cards on the light skins, with the teal-to-blue edge
+along the top. Nothing is white on a dark skin, and nothing is a bare box with a rule across it.
+
+2. Switch rooms from the room chip.
+
+**Expected:** the switch cover is the same card: `SWITCHING ROOMS`, `opening <room>`, `this takes a second or two.`
+
+3. Stop the hub for a few seconds with the board open.
+
+**Expected:** the header shows a red `reconnecting` pill with a breathing dot, and it goes when the board is live
+again.

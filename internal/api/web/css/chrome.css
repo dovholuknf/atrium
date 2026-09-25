@@ -67,6 +67,22 @@
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
   .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+  /* Down, the chip is a pill in the room chip's shape, in smaller type than the live chip: the header is
+     already full at a laptop's width, and `reconnecting` is a long word. The dot breathes, because something
+     is happening. */
+  .conn.down {
+    font-size: var(--fs-sm); color: var(--danger-text); white-space: nowrap;
+    padding: 6px 12px; border-radius: var(--r-pill);
+    border: 1px solid rgba(var(--danger-rgb),.55); background: rgba(var(--danger-rgb),.12);
+  }
+  .conn.down .dot {
+    width: 8px; height: 8px; box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.6);
+    animation: conn-breathe 1.6s ease-out infinite;
+  }
+  @keyframes conn-breathe {
+    0% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.6); }
+    100% { box-shadow: 0 0 0 7px rgba(var(--danger-rgb),0); }
+  }
 
   /* ── changing rooms ─────────────────────────────────────
      A reload shows the view the markup says (the stack) and then the script puts you back on the one you were
@@ -84,16 +100,7 @@
      arrives after the flash it was meant to hide. */
   html.switching body > header,
   html.switching body > main { visibility: hidden; }
-  #switching .s-card {
-    display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
-    color: var(--dim); font: 500 var(--fs-lg)/1 var(--mono);
-  }
-  #switching .s-spin {
-    width: 26px; height: 26px; border-radius: 50%;
-    border: 2px solid var(--stroke); border-top-color: var(--teal);
-    animation: s-turn .7s linear infinite;
-  }
-  @keyframes s-turn { to { transform: rotate(360deg); } }
+  /* The card itself is the wait family's. See `.waitcard` in css/dialogs.css. */
   #switching .s-what b { color: var(--teal); font-weight: 600; }
 
   /* ── which room ─────────────────────────────────────────

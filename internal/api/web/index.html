@@ -858,17 +858,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      Newest first, because the reason to open this is a toast that went past
      while you were reading something else. Rows that name a card open it, the
      same as clicking the toast would have. -->
-<!-- THE HUB IS RESTARTING.
+<!-- ATRIUM IS RESTARTING.
      Up from the hub saying go until this window's event stream comes back, so
      nothing typed while the hub is away lands half way. data-guard keeps a
-     click outside from dismissing it. See js/hubrestart.js. -->
-<dialog id="hubrestart" data-guard>
-  <div class="dlg-head">
-    <div class="grow"><h2>the hub is restarting</h2></div>
-  </div>
-  <div class="dlg-body">
-    <div id="hubrestart-t" class="asktext"></div>
-  </div>
+     click outside from dismissing it. See js/hubrestart.js. One of the wait
+     family with #switching: see `.waitcard` in css/dialogs.css. -->
+<dialog id="hubrestart" class="waitcard" data-guard>
+  <div class="wc-ring"></div>
+  <div class="wc-eyebrow">installing an update</div>
+  <h2>atrium is restarting</h2>
+  <div id="hubrestart-t" class="wc-say"></div>
+  <div class="wc-bar"></div>
+  <div class="wc-foot"><span>nothing to do, this page reconnects on its own</span>
+    <span id="hubrestart-el" class="wc-clock"></span></div>
 </dialog>
 
 <dialog id="toastlog">
@@ -2625,9 +2627,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- What is over the board while a room is being changed. Drawn from the
      attribute the head script set, so it names the room before any of this
      page's own JavaScript has run. -->
-<div id="switching"><div class="s-card">
-  <div class="s-spin"></div>
-  <div class="s-what">switching rooms</div>
+<div id="switching"><div class="s-card waitcard">
+  <div class="wc-ring"></div>
+  <div class="wc-eyebrow">switching rooms</div>
+  <h2 class="s-what">one moment</h2>
+  <div class="wc-say">this takes a second or two.</div>
 </div></div>
 
 <!-- Browsing the DAEMON's filesystem, not the browser's. The board is meant to

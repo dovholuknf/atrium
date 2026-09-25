@@ -8,8 +8,8 @@ the restart until somebody resumes it.
 ```
   deploy script                 hub                                  every board window
   ┌───────────────────┐  POST   ┌──────────────────────────┐   SSE   ┌──────────────────────────┐
-  │ hub-restart-gate  │ ──────> │ wait for idle            │ ──────> │ "restarts in 5s unless   │
-  │ .ps1              │         │ count down               │         │  you click this"         │
+  │ hub-restart-gate  │ ──────> │ wait for idle            │ ──────> │ "atrium restarts in 5s"  │
+  │ .ps1              │         │ count down               │         │  with a pause button     │
   │                   │ <────── │ answer go/paused/busy    │ <────── │ click: pause             │
   │ go: swap binary   │  answer └──────────────────────────┘  POST   │ input: keystroke, click  │
   └───────────────────┘                                              └──────────────────────────┘
@@ -44,7 +44,7 @@ The hub holds it. The script only learns the answer, and a board only shows what
 5. Input during the countdown takes the countdown down (`cancelled`) and the hub waits for idle again. That is not
    a pause, because nobody asked for one.
 6. A click on the countdown toast sends `POST /_hub/restart/pause`. The hub sends `paused` to every board. Each
-   board then shows a "hub restart paused" toast with a resume button.
+   board then shows a "restart on hold" toast with a resume button.
 7. At the end of an unpaused countdown, the hub sends `restarting` to every board and answers the script `go`.
 
 The script restarts the hub only on `go`. The gate stops nothing itself.
@@ -77,7 +77,7 @@ against later deploys: an ask made while paused waits, with no timeout, until th
 
 A pause made with no deploy waiting, because the script was already gone, holds for the next deploy the same way.
 
-Both of the gate's toasts are sticky: the countdown and "hub restart paused". Neither has a timer or a dismiss
+Both of the gate's toasts are sticky: the countdown and "restart on hold". Neither has a timer or a dismiss
 button. The toast cap does not count them and never evicts them, so the stack holds up to three ordinary toasts
 beside them, one on a phone. Anything else that takes one off the stack sees it put back. A toast comes down only
 when the hub says what comes next: the countdown goes on `restarting`, `cancelled` or `paused`, and the paused
@@ -121,7 +121,7 @@ sit under `/_hub/`, which the hub answers itself before it looks at a room.
 
 ## The restarting cover
 
-On `restarting`, the board opens a modal dialog, "the hub is restarting". Everything under it is inert, so a
+On `restarting`, the board opens a modal dialog, "atrium is restarting". Everything under it is inert, so a
 keystroke typed while the hub is away cannot land half way. Escape does not close it. Neither does a click
 outside it, or anything that closes every open dialog. The board also arms the terminal's restart wait, so the
 attached pane waits for its socket to come back rather than tearing down.
