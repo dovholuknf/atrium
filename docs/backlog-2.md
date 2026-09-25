@@ -23,6 +23,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
+| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
 
 ------------
 
@@ -432,6 +433,24 @@ learned survives to the next PR in the same repo.
 - Where the per-repo state lives (dotagents persona folder, the scm worktree, or atrium) and who reviews its edits.
 - How a resident reviewer keeps its knowledge current when the repo moves under it.
 - Whether fix 1 alone is enough for most PRs.
+
+## 17. A Claude subagent finishing tells clint the card is waiting on him (bug)
+
+Raised by clint 2026-09-25. A `review-panel` run starts 3 to 5 Claude Code subagents (the Task tool, not atrium
+sessions) inside one card. As each subagent finishes, the board tells clint the card is done and waiting on him,
+while the parent session is still mid-turn collecting the other reviewers. One review produces 3 to 5 false "waiting
+on you" alerts.
+
+Repro, live when filed: the card in `D:\worktrees\github\openziti\ziti\pr-4480`, branch
+`backport/v2.0.x-ctrl-heartbeat-reconnect`, during a review panel on PR #4480.
+
+Expected: a subagent ending is not the card's turn ending. Only the parent session's own Stop may move the card to
+waiting or raise the alert.
+
+To find out first: which hook event the subagent's end arrives as (a `SubagentStop`, or a `Stop` carrying the
+subagent's session or agent id), and which atrium path turns it into the alert (`atrium turn --event end`, the
+activity hook, or the post-every-Stop change from N11). The fix is to recognise a subagent's end and ignore it for
+status and notifications, with a fake-runner test that raises parent and subagent stops.
 
 
 ------------
