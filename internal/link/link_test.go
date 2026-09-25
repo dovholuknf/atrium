@@ -29,6 +29,12 @@ import (
 // pair stands a hub and a room up, attached, and hands back the proxy's URL.
 func pair(t *testing.T, handler http.Handler) (*httptest.Server, *Hub, func()) {
 	t.Helper()
+	return pairWith(t, handler, nil)
+}
+
+// pairWith is `pair` with a chance to adjust the proxy before it serves.
+func pairWith(t *testing.T, handler http.Handler, tune func(*Proxy)) (*httptest.Server, *Hub, func()) {
+	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -52,7 +58,11 @@ func pair(t *testing.T, handler http.Handler) (*httptest.Server, *Hub, func()) {
 	// than sleeping and hoping.
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("testroom") })
 
-	front := httptest.NewServer(NewProxy(hub, nil, "", nil))
+	px := NewProxy(hub, nil, "", nil)
+	if tune != nil {
+		tune(px)
+	}
+	front := httptest.NewServer(px)
 	return front, hub, func() {
 		front.Close()
 		stop()

@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The hub answers a read that a silent room holds.** See `docs/test-plan.md` section AU3.
+
+  The hub's proxy has no response header timeout, because the event stream sends nothing until something happens.
+  That left every other read unbounded too, so a room that sat attached and silent after a hub-only restart held
+  each board poll open for minutes. A proxied GET that is not a stream now waits 12 seconds for the room's headers,
+  then gets a 503 that names the room and says it may still be reconnecting. That is under the board's own
+  15-second bound, so the board shows the reason. The wait stops the moment headers arrive, so a large download
+  that starts promptly is not cut. Event streams and terminal websockets are untouched. HUB-SIDE.
+
 - **The untagged group stays the way you left it in custom mode.** See `docs/test-plan.md` section AV.
 
   In custom grouping the board's `untagged` group starts shut, so an entry for it in `atrium.folded` means open, the

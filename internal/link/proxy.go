@@ -67,6 +67,9 @@ type Proxy struct {
 	cardMu   sync.Mutex
 	cardRoom map[string]cardLoc
 
+	// readWaitOverride shortens `roomReadWait` for a test. Zero in a real hub.
+	readWaitOverride time.Duration
+
 	// control is the hub-side control MCP server, mounted at /_hub/mcp. Nil
 	// until SetControl wires it, and a hub without one answers that path 404.
 	// See control_mcp.go.
@@ -541,9 +544,48 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tagged, _ := splitTag(cardIDIn(r.URL.Path)); tagged != "" {
 		ctx = context.WithValue(ctx, taggedKey{}, tagged)
 	}
+	// A READ THAT A SILENT ROOM HOLDS IS ANSWERED, and not left open. See
+	// `roomReadWait`. The timer only covers the wait for the headers: `rewrite`
+	// stops it the moment they arrive, so a large download is not cut short.
+	if r.Method == http.MethodGet && !isStream(r) {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
+		wait := time.AfterFunc(p.readWait(), func() { cancel(errRoomSlow) })
+		defer wait.Stop()
+		ctx = context.WithValue(ctx, headerWaitKey{}, wait)
+	}
 	r = r.WithContext(ctx)
 	_ = named
 	p.proxy.ServeHTTP(w, r)
+}
+
+// roomReadWait is how long a proxied read waits for a room's headers.
+//
+// THE TRANSPORT HAS NO RESPONSE HEADER TIMEOUT, on purpose: the event stream
+// sends nothing until something happens. But that left every other read
+// unbounded too. After a hub-only restart a room can sit attached and silent
+// for minutes, and each board poll then held a request open here for as long
+// as that lasted. Six of them fill a browser's connections to the hub, shared
+// by every tab and popped-out window, and after that not even the hub's own
+// `/_hub/*` answers get through. So a read that hears nothing in this long is
+// answered with a 503 naming the room. That is under the board's own 15s bound
+// in `api()`, so the board sees the reason and not just its own give-up.
+const roomReadWait = 12 * time.Second
+
+// errRoomSlow is the cause a read is cancelled with when its room says nothing
+// for `roomReadWait`. `oops` reads it to say so, rather than calling it a
+// cancelled request.
+var errRoomSlow = errors.New("the room did not answer in time")
+
+type headerWaitKey struct{}
+
+// readWait is `roomReadWait`, or the test's override.
+func (p *Proxy) readWait() time.Duration {
+	if p.readWaitOverride > 0 {
+		return p.readWaitOverride
+	}
+	return roomReadWait
 }
 
 // asset decides whether the hub has this file.
@@ -630,6 +672,12 @@ func readAll(f fs.File) []byte {
 // else in the health payload is the room's and passes through untouched.
 // rewrite is everything the hub changes on the way back out.
 func (p *Proxy) rewrite(res *http.Response) error {
+	// The headers are here, so the wait for them is over. See `roomReadWait`.
+	if res.Request != nil {
+		if wait, ok := res.Request.Context().Value(headerWaitKey{}).(*time.Timer); ok {
+			wait.Stop()
+		}
+	}
 	if err := p.rewriteHealth(res); err != nil {
 		return err
 	}
@@ -745,7 +793,17 @@ func (p *Proxy) rewriteHealth(res *http.Response) error {
 func (p *Proxy) oops(w http.ResponseWriter, r *http.Request, err error) {
 	code := http.StatusBadGateway
 	msg := "the room did not answer: " + err.Error()
-	if errors.Is(err, ErrNoRoom) {
+	if errors.Is(context.Cause(r.Context()), errRoomSlow) {
+		room, _ := r.Context().Value(roomKey{}).(string)
+		code = http.StatusServiceUnavailable
+		msg = fmt.Sprintf("the room %s is attached but did not answer in %s. it may still be "+
+			"reconnecting after a restart. the board tries again on its next poll.", room, p.readWait())
+		if room == "" {
+			msg = fmt.Sprintf("the room is attached but did not answer in %s. it may still be "+
+				"reconnecting after a restart. the board tries again on its next poll.", p.readWait())
+		}
+		err = errRoomSlow
+	} else if errors.Is(err, ErrNoRoom) {
 		code = http.StatusServiceUnavailable
 		msg = "no room is attached to this hub. the hub serves the board and holds nothing, " +
 			"so until a room connects there is nothing to show. run `atrium2 join` on the " +
