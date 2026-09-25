@@ -17,7 +17,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | decided, not started |
-| 11 | Clicking `? N` or a question clears it | feature | not started |
+| 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
 | 12 | Keep codex up to date | feature | not started |
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
@@ -26,6 +26,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | not started |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
+| 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 
 ------------
 
@@ -141,6 +142,11 @@ turn to end (the N7 rule), so a "stop now" to four workers reached none of them.
 
 **Raised 2026-09-24.** clint expects open questions he has looked at and clicked to go away. Decide whether a
 click marks them answered or only seen, and do the same for `! N`.
+
+**2026-09-25, now a bug.** clint clicked the `? 1` chip on the `zrok-research` row in the terminals pane
+(`.atrium/incoming/20260925-141307-pasted.png`). It did not clear. The click fell through to the row and selected
+the terminal instead. The chip must take its own click (stopPropagation) and clear, without selecting the row. The
+wasted repaint that selecting caused is item 20.
 
 ### 12. Keep codex up to date
 
@@ -488,6 +494,18 @@ Then sweep the board for the same race on every button that fires a request: new
 shelve, rule save, settings save, `use it` on a theme, file upload, message send, the permission approve / deny
 buttons, source and harness saves, and anything else. One shared helper (busy state + in-flight guard) rather than
 per-button code. Headless tests that double-click each and assert one request.
+
+## 20. Selecting the attached terminal re-renders its whole history (bug)
+
+Raised by clint 2026-09-25 alongside item 11. Clicking a row in the terminals pane for the terminal that is ALREADY
+attached re-attaches it and replays the full scrollback (up to the newest 4 MB of pre-restart history, from N3).
+That is slow and wasteful, and it moves the scroll position.
+
+Wanted: a click on the row already attached and live is a focus, not a re-attach. Only a different card, a dead
+socket, or an explicit "reattach" should replay history. Check the other paths that can land on the same card too:
+the notification landing helper `landOnAlert` (item from sa73, `js/toasts.js`), a `#term=` hash, the theme preview
+`use it`, and the popped-out window's return. Headless test: a second select of the attached card opens no new
+socket and writes nothing to xterm.
 
 
 ------------
