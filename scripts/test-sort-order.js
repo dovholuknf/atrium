@@ -132,6 +132,21 @@ if (byName !== "alpha,mid,zed") {
     `delivered.`);
 }
 
+// THE NAME THE ROW LEADS WITH, not its address. A named card draws its name
+// first and the address dim under it, and the sort read the address, so the
+// untagged group came out in path order under a tray saying `sorted by name`.
+const titled = [
+  { id: "1", created_at: "2026-09-11T10:00:01Z", display_title: "sa67", label: "claude/atrium/x:y" },
+  { id: "2", created_at: "2026-09-11T10:00:02Z", display_title: "discourse", label: "github/openziti/ziti:d" },
+  { id: "3", created_at: "2026-09-11T10:00:03Z", display_title: "nightly", label: "github/openziti/csharp:n" },
+  { id: "4", created_at: "2026-09-11T10:00:04Z", display_title: "", label: "github/a:b" }
+];
+const byTitle = strip(titled.slice()).map(t => t.id).join(",");
+if (byTitle !== "2,4,3,1") {
+  fail(`the strip sorted by name came out ${byTitle}, expected 2,4,3,1: by the name ` +
+    `each row shows first, which is display_title and then the address when it has none.`);
+}
+
 // Pinned still wins, in either mode, and everything decided before it survives.
 mode.on = true;
 const pinned = tied(arrived);

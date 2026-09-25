@@ -5,6 +5,27 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A new card says so.** See `docs/test-plan.md` section AZ.
+
+  A card launched from a shell, adopted, or brought by a room landed mid-list with nothing to mark it. A card this
+  window has not seen before now pulses a teal ring three times over about three seconds, then wears a quiet `new`
+  chip. It does this on the stack, on the board and in the terminals pane. The chip clears when the card is
+  clicked, rested on for a second, or attached, and on its own after five minutes. If the card lands off screen in
+  a list nobody is scrolling, that list scrolls just far enough to show it, and focus never moves. Seen cards are
+  remembered per browser in `atrium.newcards`, by bare id, and bounded. So the first list after a load or a
+  reload is taken as already there, and a hub restart that brings the same cards back under a new `room~` tag
+  marks nothing. Storage is written only when a card is first seen or cleared. Reduced motion drops the pulse and
+  keeps the chip. The new headless section `newCard` covers the pulse, the chip, a reload, a hub restart, a click,
+  reduced motion and zero writes while idle. HUB-SIDE.
+
+- **Untagged follows the sort on the terminals pane.** See `docs/test-plan.md` section AX.
+
+  The pane sorted by name on the address line, but each row leads with its `display_title`. So `untagged` came
+  out in path order under a tray saying `sorted by name`. It now sorts on the name the row shows first, the same key
+  the board and the stack use. Pinned keeps its pin order, and your own groups keep their hand order. The new
+  headless section `untaggedSort` reads `untagged` on all three views under name and activity, and on the stack
+  under project and runner too. HUB-SIDE.
+
 - **The unexpected-exit notice.** See `docs/unexpected-exit-wake.md` and `docs/test-plan.md` section AY.
 
   When the room crashes, is killed or is stopped for a restart or a deploy while a supervised runner is mid-turn

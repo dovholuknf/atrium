@@ -133,10 +133,11 @@ const terminalParts = (t) => {
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
   "themeFor", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
+  "newCardClass", "newCardChip",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => ({ cls: "", style: "" }), () => "", () => false, null,
-  () => false, () => false, () => "");
+  () => false, () => false, () => "", () => "", () => "");
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────
