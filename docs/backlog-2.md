@@ -25,6 +25,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | not started |
+| 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
 
 ------------
 
@@ -468,6 +469,25 @@ Watch for:
 - A popped-out terminal window is a terminal too: same rule there.
 - Switching view while toasts are up moves the stack without dropping or re-animating them.
 - Stack order: newest nearest the anchor, so newest at the top when anchored top.
+
+## 19. Launch shows it is working and refuses a second click (bug)
+
+Raised by clint 2026-09-25 with a screenshot (`.atrium/incoming/20260925-141113-pasted.png`): the "resume claude code"
+dialog on a card in `D:/worktrees/github/openziti/desktop-edge-win/sec-report-sep`, "pick up where it left off"
+ticked. He clicked `launch`, saw nothing change, and clicked again. The first click launched. The second raised an
+error.
+
+Wanted:
+- The moment `launch` is pressed it shows a spinner and a working label, and it and the dialog's other actions are
+  disabled until the request answers. Success closes the dialog. Failure re-enables it and says why.
+- A second submit is refused in the board, not left for the daemon to reject. The daemon side should also be safe:
+  a second resume or launch of a card that is already starting answers with the first request's result rather than
+  an error (an idempotency key per dialog open, or "already starting" treated as success).
+
+Then sweep the board for the same race on every button that fires a request: new agent, resume, terminate, remove,
+shelve, rule save, settings save, `use it` on a theme, file upload, message send, the permission approve / deny
+buttons, source and harness saves, and anything else. One shared helper (busy state + in-flight guard) rather than
+per-button code. Headless tests that double-click each and assert one request.
 
 
 ------------
