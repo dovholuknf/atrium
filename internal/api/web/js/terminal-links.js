@@ -810,9 +810,11 @@ function connectTerm(taskID) {
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
       if (takeTermCaps(e.data) || takeTermSize(e.data)) return;
+      pasteSawOutput();
       term.write(e.data, lagOnOutput(followScroll));
       return;
     }
+    pasteSawOutput();
     writeRunnerOutput(term, new Uint8Array(e.data), lagOnOutput(followScroll));
   };
   termSock.onclose = async ev => {
@@ -1434,10 +1436,85 @@ const followScrollFor = 1200;
 // go to the runner like any other input and they must not move the view. See
 // `isAutoReport`, and the note on the `onData` handler for what this cost.
 function sendInput(text, quiet) {
-  send({ t: "in", d: String(text == null ? "" : text) });
+  const d = String(text == null ? "" : text);
+  send({ t: "in", d });
   if (quiet) return;
+  if (d.length >= pasteShowBytes) pasteBegin(d.length);
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
+}
+
+// ── a big paste, while it is on its way ─────────────────
+//
+// A paste is one frame (see above), so the board hands it off in a single call
+// and then has nothing to show until the runner answers. For a large one that is
+// seconds of a terminal that looks like it ignored you.
+//
+// LANDED MEANS TWO THINGS, in order. The socket has drained, `bufferedAmount` at
+// zero, so every byte has left this browser. Then the first output after that,
+// which is the runner having read the pty and redrawn. Output before the drain
+// does not count, because the runner cannot have read what has not left yet.
+// Output after it may be something the runner was printing anyway. That is the
+// accepted imprecision: the drain is exact and the echo is a good sign, and there
+// is nothing closer to "the runner has it" that the board can see.
+//
+// Capped, because a runner that prints nothing on a paste would leave it up for
+// good. At the cap it just goes: the bytes left, and waiting longer says nothing.
+
+// At least this many characters. Nothing typed reaches it: a key is one
+// character, an escape sequence under twenty, and a path from a dropped file a
+// few hundred. 2KB is about twenty-five lines, which is where a paste starts
+// taking long enough to wonder about.
+const pasteShowBytes = 2048;
+// Not drawn until the paste has been in flight this long, so one that lands at
+// once never flashes.
+const pasteShowAfterMs = 150;
+const pasteGiveUpMs = 20000;
+
+// The paste in flight, or null. A second paste replaces it, which is right:
+// the newer one is the one still to land.
+let pasteFlight = null;
+
+function pasteBegin(n) {
+  pasteEnd();
+  const f = { sock: termSock, t0: Date.now(), n, timer: 0, shown: false };
+  pasteFlight = f;
+  const tick = () => {
+    if (pasteFlight !== f) return;
+    if (termSock !== f.sock || !f.sock || Date.now() - f.t0 > pasteGiveUpMs) { pasteEnd(); return; }
+    if (!f.shown && Date.now() - f.t0 >= pasteShowAfterMs) { f.shown = true; pasteShow(f); }
+    f.timer = setTimeout(tick, 50);
+  };
+  tick();
+}
+
+// Called on every output frame. Ends the paste if its bytes have all left.
+// Read here rather than on the poll, so an echo that lands between two polls
+// is not missed.
+function pasteSawOutput() {
+  if (pasteFlight && pasteFlight.sock && pasteFlight.sock.bufferedAmount === 0) pasteEnd();
+}
+
+function pasteShow(f) {
+  const host = document.getElementById("term-pane");
+  if (!host) return;
+  let el = document.getElementById("t-pasting");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "t-pasting";
+    el.setAttribute("role", "status");
+    host.appendChild(el);
+  }
+  const kb = f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
+  setHTML(el, `<span class="shspin"></span><span>pasting ${esc(kb)}</span>`);
+  el.hidden = false;
+}
+
+function pasteEnd() {
+  if (pasteFlight) clearTimeout(pasteFlight.timer);
+  pasteFlight = null;
+  const el = document.getElementById("t-pasting");
+  if (el) el.hidden = true;
 }
 
 // Did xterm generate this by itself, rather than a person producing it.

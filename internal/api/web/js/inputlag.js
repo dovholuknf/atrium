@@ -40,6 +40,9 @@ let lagStalls = [];
 let lagTimer = 0;
 let lagObserver = null;
 let lagRaf = 0;
+// What the socket already held when the timed key arrived, read BEFORE the key
+// is sent. Read after, it always counts the key's own frame.
+let lagBacklog = 0;
 
 // Wall time with milliseconds, so a line here lines up with the hub and room
 // logs, which print the same shape.
@@ -63,6 +66,7 @@ function lagKeyDown(report) {
     lagPending = null;
   }
   if (lagPending) { lagPending.coalesced++; return 0; }
+  lagBacklog = termSock ? termSock.bufferedAmount : 0;
   return now;
 }
 
@@ -71,7 +75,7 @@ function lagKeySent(t0, bytes) {
   if (!t0) return;
   lagPending = {
     t0, sent: performance.now(), bytes, coalesced: 0,
-    buffered: termSock ? termSock.bufferedAmount : 0,
+    buffered: lagBacklog,
     fetches: lagFetches(),
   };
 }
@@ -105,7 +109,7 @@ function lagFinish(s) {
     ` paint ${f(s.paint - s.parsed)})` +
     (stalled ? ` | main thread blocked ${f(stalled)}ms of it` : "") +
     (s.coalesced ? ` | ${s.coalesced} more keys while waiting` : "") +
-    (s.buffered ? ` | socket had ${s.buffered} bytes unsent` : "");
+    (s.buffered ? ` | socket had ${s.buffered} bytes unsent before this key` : "");
   if (total >= LAG_SLOW_MS) {
     console.warn(line + ` | at send: ${s.fetches} | now: ${lagFetches()}`);
   } else {

@@ -3322,3 +3322,33 @@ saved: a reload shows the saved theme.
 1. Preview a theme and press `use it`. Reload the board.
 
 **Expected:** the card keeps the new theme on every surface, before and after the reload.
+
+## BB. A big paste says it is on its way, and the lag log stops counting the key's own frame
+
+No test covers either, because both are the board against a live socket. Run a board built from this branch against
+a throwaway room with one card, so a paste into a live card is not the test.
+
+### BB1. A big paste shows `pasting`
+
+1. Attach the card. Copy about 200KB of text, for example a large log file, and paste it with ctrl-v.
+
+**Expected:** a small box with a spinner and `pasting 200KB` appears at the top right of the terminal after a
+moment. It goes when the runner shows the paste, for example Claude Code's `[Pasted text #1 +N lines]`. The paste is
+still one paste, not several.
+
+2. Paste one line of text, and type a few words.
+
+**Expected:** no box, not even a flash. Only a paste of 2KB or more shows it, and only when it is still in flight
+after 150ms.
+
+3. Paste 200KB into a card's shell tab with `cat > /dev/null` running, so nothing echoes.
+
+**Expected:** the box goes after 20 seconds at most, and nothing else happens.
+
+### BB2. `socket had N bytes unsent` only when there was a backlog
+
+1. Tick `log terminal input lag` in the cog. Open the browser console and type a line into the card.
+
+**Expected:** each `[inputlag] ... key` line has no `socket had 18 bytes unsent` clause. It shows only when the
+socket was already backed up before the key, for example a key typed while a 200KB paste is still leaving, and
+then it reads `socket had N bytes unsent before this key`.

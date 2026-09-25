@@ -158,6 +158,16 @@
   #t-complete .candmore { color: var(--dimmest); }
   /* Pushed right. It is the same line every time, so it belongs where the eye stops. */
   #t-complete .candhint { margin-left: auto; color: var(--dimmest); }
+  /* A big paste on its way. Top right, clear of the prompt at the bottom and of the path candidates there. */
+  #t-pasting {
+    position: absolute; top: 8px; right: 8px; z-index: 30;
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: 4px 10px; border-radius: var(--r-md);
+    font-size: var(--fs-sm); color: var(--body);
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: var(--shadow-pop); pointer-events: none;
+  }
+  #t-pasting[hidden] { display: none; }
   /* Sharing, while it is happening. Creating a share is several seconds of somebody else's server, and with the
      button unchanged a failure arrives as a paragraph about something that never appeared to start. These are
      the real steps, in order, and the one in progress is the only moving thing on screen. */

@@ -53,7 +53,8 @@ One line per timed keystroke:
 - **main thread blocked Nms of it**: how much of the wait overlapped a long task or a frame gap. When this is
   most of the total, the board's own JavaScript is starving input and the network is not the cause.
 - **N more keys while waiting**: only the first unanswered key is timed. The rest are counted.
-- **socket had N bytes unsent**: the browser's own send buffer was backed up.
+- **socket had N bytes unsent before this key**: the browser's own send buffer was already backed up when the key
+  arrived. Read before the key is sent, so the key's own frame is not counted, and left out when it is zero.
 
 A key over 100ms prints as a warning and adds the fetch counts from `api()`, at send and now. A full
 `6/6 in flight` with a queue behind it means a refresh storm coincided with the typing.
