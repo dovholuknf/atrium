@@ -1210,6 +1210,7 @@ function runRefresh() {
     clearTimeout(watchdog);
     refreshInFlight = false;
     if (typeof onRefreshSettled === "function") onRefreshSettled(seq);
+    if (typeof onDownRefreshSettled === "function") onDownRefreshSettled(seq);
     if (refreshDirty) {
       refreshDirty = false;
       const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
@@ -1439,6 +1440,7 @@ function connect() {
     // A hub restart cover comes down on the stream coming back, and a pause is
     // re-read. See js/hubrestart.js.
     if (typeof onHubStreamOpen === "function") onHubStreamOpen();
+    if (typeof onBoardStreamUp === "function") onBoardStreamUp();
   };
   es.onerror = () => {
     conn.classList.remove("live");
@@ -1448,6 +1450,8 @@ function connect() {
     // The hub restart cover counts this as the old hub going. See
     // js/hubrestart.js.
     if (typeof onHubStreamDrop === "function") onHubStreamDrop();
+    // And the down cover, when nobody said atrium would go. See js/down.js.
+    if (typeof onBoardStreamDown === "function") onBoardStreamDown();
   };
   ["task", "task-removed", "permission", "halted"]
     .forEach(k => es.addEventListener(k, refreshSoon));

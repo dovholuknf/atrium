@@ -632,8 +632,9 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		// stylesheet would have left a guest with a page that fetched six
 		// files and was refused all of them. A guest board that renders as
 		// unstyled HTML is the failure, and nothing here would have said why.
-		if r.Method == http.MethodGet &&
-			(p == "/" || p == "/index.html" || p == "/sw.js" ||
+		// HEAD as well, which is how `down.html` asks whether the page is back.
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			(p == "/" || p == "/index.html" || p == "/sw.js" || p == "/down.html" ||
 				p == "/working.gif" ||
 				strings.HasPrefix(p, "/css/") ||
 				strings.HasPrefix(p, "/js/") || strings.HasPrefix(p, "/vendor/")) {

@@ -1,0 +1,176 @@
+<!doctype html>
+<!-- ATRIUM IS NOT RUNNING, for a reload or a fresh visit while it is down.
+     The service worker keeps a copy of this page and serves it when opening the
+     board fails, in place of the browser's own "can't reach this page". So it
+     has to stand on its own: no stylesheet, no script file, no font, nothing
+     fetched. It wears the skin the board last wore, which the board writes
+     down for it (see `downKeepSkin` in js/down.js), and it asks for the page
+     every two seconds and reloads onto the board once it answers. The card is #atriumdown
+     in index.html, and its rules copy `.waitcard` in css/dialogs.css. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atrium is not running</title>
+<style>
+  :root {
+    --sink-rgb: 4,11,20; --bg1-rgb: 7,19,34; --stroke-dim-rgb: 37,80,111;
+    --warn-rgb: 255,198,77; --danger-rgb: 255,107,107; --shadow-rgb: 2,6,9;
+    --bg-0: #0B1B2E; --grid: #1B3B5A; --card-0: #12293F; --card-1: #0A1A2B;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4; --dim: #5E819C;
+    --stroke: rgb(44,95,132); --danger-text: #FFC3C9;
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; color: var(--body); font: 18px/1.5 var(--sans);
+    display: flex; align-items: flex-start; justify-content: center;
+    background: linear-gradient(160deg, var(--bg-0) 0%, rgb(var(--bg1-rgb)) 55%, rgb(var(--sink-rgb)) 100%) fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 60px 60px; opacity: .32;
+    mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 40%, transparent 100%);
+  }
+  .waitcard {
+    position: relative; overflow: hidden; margin-top: 26vh;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    width: min(460px, 92vw); padding: 34px 32px 22px; color: var(--body);
+    background:
+      radial-gradient(ellipse 80% 55% at 50% 0%, rgba(var(--danger-rgb),.14), transparent 72%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: 12px;
+    box-shadow: 0 30px 70px rgba(var(--shadow-rgb),.8);
+    animation: wc-in .28s ease-out;
+  }
+  .waitcard::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+    background: linear-gradient(90deg, rgb(var(--warn-rgb)), rgb(var(--danger-rgb)));
+  }
+  @keyframes wc-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+  .wc-ring {
+    width: 52px; height: 52px; border-radius: 50%; flex: none; margin-bottom: 18px;
+    border: 3px solid rgba(var(--danger-rgb),.16);
+    border-top-color: rgb(var(--danger-rgb)); border-right-color: rgb(var(--warn-rgb));
+    box-shadow: 0 0 24px rgba(var(--danger-rgb),.2);
+    animation: wc-turn .9s linear infinite;
+  }
+  @keyframes wc-turn { to { transform: rotate(360deg); } }
+  .wc-eyebrow {
+    font: 600 10.5px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--danger-text); margin-bottom: 10px;
+  }
+  h2 { margin: 0 0 8px; font: 600 23px/1.2 var(--sans); color: var(--head); }
+  .wc-say { font: 14.5px/1.55 var(--sans); color: var(--body); max-width: 36ch; }
+  code {
+    font: 12.5px var(--mono); color: var(--head);
+    padding: 1px 6px; border-radius: 3px; background: rgba(var(--sink-rgb),.7);
+  }
+  .wc-bar {
+    position: relative; overflow: hidden; align-self: stretch;
+    height: 3px; margin-top: 24px; border-radius: 999px; background: rgba(var(--stroke-dim-rgb),.45);
+  }
+  .wc-bar::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%; border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgb(var(--warn-rgb)), rgb(var(--danger-rgb)), transparent);
+    animation: wc-slide 1.5s ease-in-out infinite;
+  }
+  @keyframes wc-slide { from { transform: translateX(-100%); } to { transform: translateX(265%); } }
+  .wc-foot {
+    align-self: stretch; display: flex; justify-content: space-between; gap: 13px;
+    margin-top: 12px; font: 11.5px/1.4 var(--sans); color: var(--dim); text-align: left;
+  }
+  .wc-clock { font-family: var(--mono); color: var(--label); white-space: nowrap; }
+  /* A reload during a planned restart: the restart cover's teal, not the warning colours. */
+  :root { --teal-rgb: 0,227,176; --blue: #28C2FF; --chip-accent-text: #8FE8D5; }
+  .waitcard.restart {
+    background:
+      radial-gradient(ellipse 80% 55% at 50% 0%, rgba(var(--teal-rgb),.14), transparent 72%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+  }
+  .waitcard.restart::before { background: linear-gradient(90deg, rgb(var(--teal-rgb)), var(--blue)); }
+  .waitcard.restart .wc-ring {
+    border-color: rgba(var(--teal-rgb),.16); border-top-color: rgb(var(--teal-rgb)); border-right-color: var(--blue);
+    box-shadow: 0 0 24px rgba(var(--teal-rgb),.18);
+  }
+  .waitcard.restart .wc-eyebrow { color: var(--chip-accent-text); }
+  .waitcard.restart .wc-bar::after {
+    background: linear-gradient(90deg, transparent, rgb(var(--teal-rgb)), var(--blue), transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wc-ring { animation-duration: 3s; }
+    .wc-bar::after { animation-duration: 4s; }
+    .waitcard { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="atriumdown" class="waitcard down">
+  <div class="wc-ring"></div>
+  <div class="wc-eyebrow">not running</div>
+  <h2>atrium is not running</h2>
+  <div class="wc-say">start it with <code>atrium run</code> and this page comes back by itself.</div>
+  <div class="wc-bar"></div>
+  <div class="wc-foot"><span>trying again every few seconds</span>
+    <span id="atriumdown-el" class="wc-clock"></span></div>
+</div>
+<script>
+(function () {
+  try {
+    const skin = JSON.parse(localStorage.getItem("atrium.downskin") || "{}");
+    for (const k in skin) if (/^--[a-z0-9-]+$/.test(k)) document.documentElement.style.setProperty(k, skin[k]);
+  } catch (e) {}
+  // A RELOAD DURING A PLANNED RESTART is not atrium being down. This tab had
+  // the restart cover up (see `HUB_RESTART_KEY` in js/hubrestart.js), so this
+  // page says what that cover says, and the board puts that cover back when it
+  // loads.
+  let restart = null;
+  try { restart = JSON.parse(sessionStorage.getItem("atrium.hubrestart") || "null"); } catch (e) {}
+  if (restart && !(restart.at && Date.now() - restart.at < 600000)) restart = null;
+  let since = 0;
+  if (restart) {
+    since = restart.at;
+    const card = document.getElementById("atriumdown");
+    card.className = "waitcard restart";
+    card.querySelector(".wc-eyebrow").textContent = "installing an update";
+    card.querySelector("h2").textContent = "atrium is restarting";
+    card.querySelector(".wc-say").textContent =
+      "back in a few seconds. your agents keep running, and this page picks up where you left off.";
+    card.querySelector(".wc-foot > span").textContent = "nothing to do, this page reconnects on its own";
+    document.title = "atrium is restarting";
+  } else {
+    // Down since the board's cover said so, when this tab had one up.
+    // Otherwise since this page opened, which is all it knows.
+    try { since = Number(sessionStorage.getItem("atrium.down")) || 0; } catch (e) {}
+    if (!since || Date.now() - since > 86400000) since = Date.now();
+    try { sessionStorage.setItem("atrium.down", String(since)); } catch (e) {}
+  }
+  const clock = document.getElementById("atriumdown-el");
+  const paint = () => {
+    const s = Math.floor((Date.now() - since) / 1000) + "s";
+    clock.textContent = restart ? s : "down for " + s;
+  };
+  paint();
+  setInterval(paint, 1000);
+  // The page itself, not the health check: behind a share, atrium can answer
+  // its health while the page still comes back as the share's error, and
+  // reloading onto that would bring this page straight back.
+  let asking = false;
+  setInterval(async () => {
+    if (asking) return;
+    asking = true;
+    try {
+      const r = await fetch(location.pathname, { method: "HEAD", cache: "no-store" });
+      if (r.ok) { location.reload(); return; }
+    } catch (e) {}
+    asking = false;
+  }, 2000);
+})();
+</script>
+</body>
+</html>

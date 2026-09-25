@@ -284,6 +284,25 @@
     margin-top: 12px; font: var(--fs-xs)/1.4 var(--sans); color: var(--dim); text-align: left;
   }
   .wc-clock { font-family: var(--mono); color: var(--label); white-space: nowrap; }
+  /* ATRIUM IS DOWN, with nobody having said it would be (#atriumdown, and the offline page `down.html`
+     copies this). The same card in the warning colours, because it is the one wait that needs you. */
+  .waitcard.down {
+    background:
+      radial-gradient(ellipse 80% 55% at 50% 0%, rgba(var(--danger-rgb),.14), transparent 72%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+  }
+  .waitcard.down::before { background: linear-gradient(90deg, var(--warn), var(--danger)); }
+  .waitcard.down .wc-ring {
+    border-color: rgba(var(--danger-rgb),.16);
+    border-top-color: var(--danger); border-right-color: var(--warn);
+    box-shadow: 0 0 24px rgba(var(--danger-rgb),.2);
+  }
+  .waitcard.down .wc-eyebrow { color: var(--danger-text); }
+  .waitcard.down .wc-bar::after { background: linear-gradient(90deg, transparent, var(--warn), var(--danger), transparent); }
+  .waitcard.down code {
+    font: var(--fs-sm) var(--mono); color: var(--head);
+    padding: 1px 6px; border-radius: var(--r-xs); background: rgba(var(--sink-rgb),.7);
+  }
   /* Slower, not stopped: the motion is the thing saying it has not hung. */
   @media (prefers-reduced-motion: reduce) {
     .wc-ring, .hg-icon, .hg-icon > i { animation-duration: 3s; }

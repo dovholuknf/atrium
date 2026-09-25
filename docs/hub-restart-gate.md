@@ -148,6 +148,10 @@ anything that closes every open dialog leaves it where it is, with no frame betw
 A window whose stream missed `restarting` keeps the countdown at `0s` while the hub is away. When its stream reopens
 onto a hub with a different name, the cover takes over from the countdown and comes down the same way.
 
+A stop nobody announced is not this cover's. The board covers that with `atrium is not running` instead, and a
+reload while atrium is down gets the service worker's `down.html`. Neither shows while the countdown or this cover
+is up. See `js/down.js`.
+
 If the stream is still live 90 seconds after `restarting` and the hub still gives the old name, the old hub never
 went. The cover comes down and a toast says the hub did not restart.
 

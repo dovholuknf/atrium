@@ -8,11 +8,43 @@
 // Editing the command or setting a rule needs the page, so clicking the body
 // opens it.
 
-self.addEventListener("install", () => self.skipWaiting())
+// THE PAGE FOR WHEN ATRIUM IS DOWN. A reload or a fresh visit with atrium not
+// running got the browser's own "can't reach this page", which says nothing
+// about atrium and never comes back by itself. So the worker keeps `down.html`
+// and answers with it when opening a page fails. That page stands on its own and
+// reloads onto the board once atrium answers. See js/down.js for the open board.
+const DOWN_CACHE = "atrium-down"
+const DOWN_PAGE = "/down.html"
+
+// Fetched past the HTTP cache, so the copy kept is the one atrium serves now.
+function keepDownPage() {
+  return caches.open(DOWN_CACHE)
+    .then(c => c.add(new Request(DOWN_PAGE, { cache: "reload" })))
+    .catch(() => {})
+}
+
+self.addEventListener("install", event => event.waitUntil(keepDownPage().then(() => self.skipWaiting())))
 // Activation claims open pages, and sweeps: a worker killed with notifications
 // on screen leaves overdue ones behind.
 self.addEventListener("activate", event => event.waitUntil(
   Promise.all([self.clients.claim(), sweepExpired()])))
+
+// Only page loads, and only when they fail. Everything else is left to the
+// browser, and a page that loads is passed through untouched. A load that works
+// refreshes the kept copy, so a new build's `down.html` replaces the old one
+// without waiting for this file to change.
+//
+// A 502 or 504 is a failure too: that is a proxy in front of atrium, a share or
+// an overlay, saying atrium behind it did not answer.
+self.addEventListener("fetch", event => {
+  if (event.request.mode !== "navigate") return
+  const down = async () => (await caches.match(DOWN_PAGE, { cacheName: DOWN_CACHE })) || Response.error()
+  event.respondWith(fetch(event.request).then(res => {
+    if (res.status === 502 || res.status === 504) return down()
+    event.waitUntil(keepDownPage())
+    return res
+  }, down))
+})
 
 // The page hands over what to show, since the worker has no view of state.
 const sleep = ms => new Promise(r => setTimeout(r, ms))
