@@ -570,11 +570,16 @@ addEventListener("keydown", e => {
 // Reloading a popped-out terminal costs the scrollback and nothing else: the
 // card id is in the URL, the runner is untouched, and it reattaches on load.
 let boardBuild = "";
+// Set once the reload is asked for. The page keeps running until it unloads, and
+// the hub restart cover must not come down in that gap. See js/hubrestart.js,
+// which also puts the cover back up on the reloaded page.
+let boardReloading = false;
 function checkBuild(build) {
   if (!build) return;
   if (!boardBuild) { boardBuild = build; return; }
   if (build === boardBuild) return;
   boardBuild = build;
+  boardReloading = true;
   // This is THE reload that matters for coming back to where you were, so
   // where you are is written down here rather than trusted to have been
   // written earlier.

@@ -169,6 +169,24 @@ func TestAGoWithNoBoardSaysSo(t *testing.T) {
 	}
 }
 
+// Each hub process names itself in the gate's state, and a restarted hub names
+// itself differently. A board holds its restarting cover until the name
+// changes, so the old hub can never be taken for the new one.
+func TestTheGateNamesTheHubProcess(t *testing.T) {
+	front, done := soloHub(t, "solo")
+	first, _ := gateState(t, front.URL)["boot"].(string)
+	again, _ := gateState(t, front.URL)["boot"].(string)
+	done()
+	if first == "" || first != again {
+		t.Fatalf("one hub named itself %q then %q", first, again)
+	}
+	front2, done2 := soloHub(t, "solo")
+	defer done2()
+	if next, _ := gateState(t, front2.URL)["boot"].(string); next == "" || next == first {
+		t.Fatalf("a second hub named itself %q after %q", next, first)
+	}
+}
+
 // A board scoped to a room reports input the same as any other: the board's
 // fetch wrapper puts the room on every request, and the gate is the hub's.
 func TestInputFromAScopedBoardReachesTheGate(t *testing.T) {
