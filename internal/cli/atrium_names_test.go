@@ -17,15 +17,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/link"
 )
 
-// asShim builds the atrium2 root the way `cmd/atrium2` does, and puts the one
-// binary back when the test ends.
-func asShim(t *testing.T) *cobra.Command {
-	t.Helper()
-	legacy = true
-	t.Cleanup(func() { legacy = false })
-	return newAtrium2Root()
-}
-
 // parses finds the command a line names and parses its flags the way cobra
 // would, without running it. Returns the command so a test can read values.
 func parses(t *testing.T, root *cobra.Command, line string) *cobra.Command {
@@ -50,64 +41,6 @@ func flag(t *testing.T, cmd *cobra.Command, name string) string {
 		t.Fatalf("`%s` has no --%s", cmd.CommandPath(), name)
 	}
 	return f.Value.String()
-}
-
-// THE LIVE SCRIPTS' EXACT LINES, as ~/.atrium2/scripts runs them today.
-//
-// Nothing may break between the merge and the cutover, and these are what
-// deploy-batch.ps1, deploy-hub-only.ps1, maintenance-window.ps1,
-// start-atrium-hub.ps1 and start-atrium-room.ps1 start. Each must land on the
-// command it always did, with every value where it always went.
-func TestTheShimAnswersTheLiveScriptsExactLines(t *testing.T) {
-	root := asShim(t)
-
-	hub := parses(t, root, `hub --addr 127.0.0.1:7778 --link 0.0.0.0:7779 --link-advertise 192.168.1.68:7779 `+
-		`--dir C:\Users\claude\.atrium2\hub`)
-	if hub.Name() != "hub" || hub.Parent() != root {
-		t.Fatalf("the hub line ran `%s`", hub.CommandPath())
-	}
-	for name, want := range map[string]string{
-		"addr": "127.0.0.1:7778", "link": "0.0.0.0:7779", "link-advertise": "192.168.1.68:7779",
-		"dir": `C:\Users\claude\.atrium2\hub`,
-	} {
-		if got := flag(t, hub, name); got != want {
-			t.Errorf("atrium2 hub --%s is %q, want %q", name, got, want)
-		}
-	}
-
-	room := parses(t, root, `room --dir C:\Users\claude\.atrium2\room --db C:\Users\claude\.atrium\atrium.db `+
-		`--http 127.0.0.1:7781 --agent 127.0.0.1:7777`)
-	if room.CommandPath() != "atrium2 room" {
-		t.Fatalf("the room line ran `%s`", room.CommandPath())
-	}
-	for name, want := range map[string]string{
-		"dir": `C:\Users\claude\.atrium2\room`, "db": `C:\Users\claude\.atrium\atrium.db`,
-		"http": "127.0.0.1:7781", "agent": "127.0.0.1:7777",
-	} {
-		if got := flag(t, room, name); got != want {
-			t.Errorf("atrium2 room --%s is %q, want %q", name, got, want)
-		}
-	}
-
-	// And the rest of what atrium2 answered: what a hub-triggered restart
-	// re-runs, sgg's join, the inventory, and the offline tools.
-	for line, path := range map[string]string{
-		`room --restart-after 4s --dir C:\r --http 127.0.0.1:7781 --agent 127.0.0.1:7777 --db C:\r.db --accept-upgrades`: "atrium2 room",
-		`join TOKEN --identity C:\s.json --dir C:\r --db C:\r.db --http 127.0.0.1:7781 --agent 127.0.0.1:7777`:           "atrium2 join",
-		`hub room add sgg --transport ziti --service atrium-hub`:                                                         "atrium2 hub room add",
-		`hub room ls --dir C:\h`:          "atrium2 hub room ls",
-		`hub backups --dir C:\h`:          "atrium2 hub backups",
-		`hub restore C:\h\backups\x.db`:   "atrium2 hub restore",
-		`db compact --in a.db --out b.db`: "atrium2 db compact",
-		`ledger --db C:\r.db --json`:      "atrium2 ledger",
-		`version`:                         "atrium2 version",
-		`hook --event tool-start`:         "atrium2 hook",
-		`room join TOKEN --dir C:\r`:      "atrium2 room join",
-	} {
-		if got := parses(t, root, line).CommandPath(); got != path {
-			t.Errorf("%q ran `%s`, want `%s`", line, got, path)
-		}
-	}
 }
 
 // The one binary's names for the same things, as docs/one-atrium-cutover.md
@@ -153,8 +86,7 @@ func TestTheOneBinaryAnswersTheNewNames(t *testing.T) {
 }
 
 // THE COLLISIONS, resolved. `atrium join` stays the session command the
-// /atrium-join skill runs, `atrium hub` is gone, and in the shim `join` is a
-// room's first join again.
+// /atrium-join skill runs, and `atrium hub` is gone.
 func TestTheCollidingNamesLandWhereThePlanSays(t *testing.T) {
 	root := newRoot()
 	join, _, _ := root.Find([]string{"join"})
@@ -167,19 +99,11 @@ func TestTheCollidingNamesLandWhereThePlanSays(t *testing.T) {
 	if f := parses(t, root, "room").Flags().Lookup("hub"); f != nil {
 		t.Error("`atrium room` still takes the v1 --hub flag")
 	}
-
-	shim := asShim(t)
-	sjoin, _, _ := shim.Find([]string{"join"})
-	if !strings.Contains(sjoin.Use, "join string") {
-		t.Errorf("`atrium2 join` is %q, want the room's first join", sjoin.Use)
-	}
 }
 
 // Every hook line in this machine's settings.json, character for character,
-// resolves to the same subcommand with every flag declared, in the one binary
-// and in the shim. The shim matters because the room still runs atrium2.exe
-// until the cutover, and its address file names it.
-func TestTheSettingsHookLinesRunOnBothBinaries(t *testing.T) {
+// resolves to the same subcommand with every flag declared.
+func TestTheSettingsHookLinesRun(t *testing.T) {
 	lines := []string{
 		"hook --event tool-start", "hook --event tool-end", "hook --event tool-failed",
 		"hook --event prompt", "hook --event notification", "hook --event subagent-start",
@@ -189,28 +113,25 @@ func TestTheSettingsHookLinesRunOnBothBinaries(t *testing.T) {
 	t.Setenv("ATRIUM_PERM_GATE", "off")
 	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:1")
 	t.Setenv("ATRIUM_LOCATION", filepath.Join(t.TempDir(), "none.json"))
-	for _, root := range []func() *cobra.Command{newRoot, func() *cobra.Command { return asShim(t) }} {
-		for _, line := range lines {
-			args := strings.Fields(line)
-			cmd, rest, err := root().Find(args)
-			if err != nil || cmd.Name() != args[0] || !isRunnerHook(cmd) {
-				t.Fatalf("%q resolved to %v (%v)", line, cmd.CommandPath(), err)
-			}
-			if err := cmd.ParseFlags(rest); err != nil {
-				t.Errorf("`%s` does not parse %q: %v", cmd.CommandPath(), line, err)
-			}
-			restore := withStdin(t, `{}`)
-			if code := runRoot(root(), args); code != 0 {
-				t.Errorf("%q exited %d on `%s`", line, code, root().Name())
-			}
-			restore()
+	for _, line := range lines {
+		args := strings.Fields(line)
+		cmd, rest, err := newRoot().Find(args)
+		if err != nil || cmd.Name() != args[0] || !isRunnerHook(cmd) {
+			t.Fatalf("%q resolved to %v (%v)", line, cmd.CommandPath(), err)
 		}
+		if err := cmd.ParseFlags(rest); err != nil {
+			t.Errorf("`%s` does not parse %q: %v", cmd.CommandPath(), line, err)
+		}
+		restore := withStdin(t, `{}`)
+		if code := runRoot(newRoot(), args); code != 0 {
+			t.Errorf("%q exited %d", line, code)
+		}
+		restore()
 	}
 }
 
-// The shim keeps atrium2's defaults and address file, the one binary takes
-// this machine's layout and the machine's one address file.
-func TestTheDefaultsDifferOnlyInTheShim(t *testing.T) {
+// The defaults are this machine's layout and the machine's one address file.
+func TestTheDefaults(t *testing.T) {
 	now := map[string]string{
 		"board": defaultBoardAddr(), "link": defaultLinkAddr(),
 		"http": defaultRoomHTTP(), "agent": defaultRoomAgent(),
@@ -233,45 +154,15 @@ func TestTheDefaultsDifferOnlyInTheShim(t *testing.T) {
 	if defaultRoomDB() != daemon.DefaultDBPath() {
 		t.Errorf("the one binary's room database is %q, want %q", defaultRoomDB(), daemon.DefaultDBPath())
 	}
-
-	asShim(t)
-	old := map[string]string{
-		"board": ":7800", "link": ":7801", "http": "127.0.0.1:7810", "agent": "127.0.0.1:7811",
-	}
-	got := map[string]string{
-		"board": defaultBoardAddr(), "link": defaultLinkAddr(),
-		"http": defaultRoomHTTP(), "agent": defaultRoomAgent(),
-	}
-	for k, v := range old {
-		if got[k] != v {
-			t.Errorf("the shim's %s default is %q, want atrium2's %q", k, got[k], v)
-		}
-	}
-	if !strings.HasSuffix(filepath.ToSlash(roomLocation()), "atrium2/room/daemon.json") {
-		t.Errorf("the shim's room records itself at %q, want atrium2's file", roomLocation())
-	}
-	if filepath.Base(defaultRoomDB()) != "atrium2.db" {
-		t.Errorf("the shim's room database is %q, want atrium2's", defaultRoomDB())
-	}
 }
 
-// A hint names the command the binary it came from has.
+// A hint names the command the binary has.
 func TestHintsNameTheBinarysOwnCommands(t *testing.T) {
 	for sub, want := range map[string]string{
 		"rooms add": "atrium rooms add", "room join": "atrium room join", "backups restore": "atrium backups restore",
 	} {
 		if got := atriumCmd(sub); got != want {
 			t.Errorf("atriumCmd(%q) = %q, want %q", sub, got, want)
-		}
-	}
-	asShim(t)
-	for sub, want := range map[string]string{
-		"rooms add": "atrium2 hub room add", "rooms ls": "atrium2 hub room ls", "room join": "atrium2 join",
-		"backups": "atrium2 hub backups", "backups restore": "atrium2 hub restore", "run": "atrium2 hub",
-		"room": "atrium2 room",
-	} {
-		if got := atriumCmd(sub); got != want {
-			t.Errorf("shim atriumCmd(%q) = %q, want %q", sub, got, want)
 		}
 	}
 }
