@@ -24,7 +24,7 @@ For each SHA a doer reported as HUB-ONLY and I have not yet landed:
 cd D:\worktrees\claude\atrium\orchestrator
 git cherry-pick -x <sha>
 bash scripts/check-board.sh        # exit 0 required; the skin-reconcile test is flaky, rerun once to confirm
-go build -o build.claude\atrium2.exe ./cmd/atrium2
+go build -o build.claude\atrium.exe ./cmd/atrium
 ```
 
 Then deploy hub-only (see step 3). ROOM-SIDE SHAs are NOT integrated-and-deployed here: they are recorded in step 4.

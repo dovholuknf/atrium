@@ -2,8 +2,8 @@
 #
 #   . "$PSScriptRoot\live-common.ps1"
 #
-# These are this machine's deploy scripts after the one-atrium cutover, kept in the repo so they are reviewed and
-# versioned. At cutover they are copied over C:\Users\claude\.atrium2\scripts\. See docs/one-atrium-cutover.md.
+# These are this machine's deploy scripts, kept in the repo so they are reviewed and versioned. They are deployed by
+# copying them over C:\Users\claude\.atrium2\scripts\. See docs/one-atrium-cutover.md.
 #
 # THE ONE BINARY IS ALSO THE HOOK BINARY. C:\Users\claude\.atrium\bin\atrium.exe is what every hook line in
 # settings.json runs, several times a second, as well as the atrium (`run --no-room`) and the room (`room`). Two rules
@@ -27,8 +27,7 @@ $HubHealth    = 'http://127.0.0.1:7778/_hub/health'
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 
-# The exact command lines. The hub's flags are what `atrium2 hub` took, with --dir renamed --atrium-dir. The room's
-# are unchanged.
+# The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
   '--link-advertise', '192.168.1.68:7779', '--atrium-dir', $HubDir)
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')

@@ -9,11 +9,9 @@
 # the shell that ran this script. Run this from a shell atrium does not
 # supervise.
 #
-# AFTER THE CUTOVER ONLY (docs/one-atrium-cutover.md). The hub is
-# `atrium.exe run --no-room`, and atrium.exe is also the file every hook runs,
-# so the process is matched by path plus subcommand and the new binary goes in
-# by two renames, never a copy over the live name. Before the cutover this
-# refuses and names the old line.
+# The hub is `atrium.exe run --no-room`, and atrium.exe is also the file every
+# hook runs, so the process is matched by path plus subcommand and the new
+# binary goes in by two renames, never a copy over the live name.
 #
 # Blocked today: the zrok account returns 500 on any share create. When that is
 # fixed (free reserved-name capacity, or the hosted instance recovers), this
@@ -37,16 +35,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $board = "http://$HubAddr"
-
-$old = Get-CimInstance Win32_Process -Filter "Name='atrium2.exe'" |
-  Where-Object { $_.CommandLine -match ' hub ' } | Select-Object -First 1
-if ($old) {
-  Write-Host "the hub is still atrium2.exe (pid $($old.ProcessId)), so this machine is not cut over yet."
-  Write-Host "see docs/one-atrium-cutover.md. until then the hub line is:"
-  Write-Host ("  atrium2.exe hub --addr $HubAddr --link $Link --dir $HubDir " +
-    "--board-transport zrok --board-share $ShareMode")
-  exit 1
-}
 
 if ($ShareMode -eq 'public') {
   Write-Host "PUBLIC share: the board will have NO login in front of it. Anyone with the"

@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The `atrium2` shim and the cutover rollback are gone.** `make build` writes only `build.claude/atrium.exe`, and
+  `cmd/atrium2`, `internal/cli/atrium2.go` and `scripts/live/cutover.ps1` are deleted. Start atrium with
+  `scripts/live/start-atrium.ps1` (deployed as `C:\Users\claude\.atrium2\scripts\start-atrium.ps1`): it starts the hub
+  with `atrium.exe run --no-room` and then the room with `atrium.exe room`, and leaves either alone when it already
+  runs. Its `-Switch` is accepted and ignored. sgg stages and joins with `atrium.exe` too. `.atrium2\` stays as the
+  state directory.
+
 - **`atrium_say` types immediately by default, even mid-turn.** See `docs/test-plan.md` section BI.
 
   A say waited for the target's turn to end (the N7 rule), so a "stop now" sent to four busy workers reached none of

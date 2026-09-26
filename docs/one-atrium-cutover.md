@@ -1,11 +1,16 @@
 # The one-atrium cutover on this machine
 
 Stage 4 of `docs/one-atrium-plan.md`, written out for SG4 (clint's desktop, room `claude-sg4`). The hub, the room and
-the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. Nothing here has
-run yet. The orchestrator runs it, detached, with every peer idle.
+the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. The window ran on
+2026-09-25.
 
-`scripts/live/cutover.ps1` is the window as one script. This file says what it does, why each step is shaped the way
-it is, what to check after, and how to go back.
+**2026-09-26: the rollback is gone.** Every `atrium2*.exe` on the machine was deleted, including
+`.atrium2\bin\atrium2.exe`, and `scripts/live/cutover.ps1` was deleted with it. This file is kept as the record of the
+window. Start atrium with `scripts\live\start-atrium.ps1`, deployed as
+`C:\Users\claude\.atrium2\scripts\start-atrium.ps1`.
+
+`scripts/live/cutover.ps1` was the window as one script. This file says what it did, why each step is shaped the way
+it is, and what to check after.
 
 ## Contents
 
@@ -163,6 +168,8 @@ pwsh -NoProfile -File D:\worktrees\claude\atrium\orchestrator\scripts\live\cutov
 The window also copied it to `C:\Users\claude\.atrium2\scripts\cutover.ps1`, which works the same. It does, in
 order:
 
+**Void, 2026-09-26.** `cutover.ps1` and `atrium2.exe` are both deleted, so step 16 cannot run. What it did:
+
 16. Stops whatever of the new pair is running (`atrium*.exe` in `.atrium\bin` running `run` or `room`). Renames
     `.atrium\bin\atrium.exe` to `atrium.failed-<ts>.exe` and `atrium.pre-cutover.exe` back to `atrium.exe`. Puts
     `.atrium2\scripts.pre-cutover` back as `.atrium2\scripts`. Removes `%LOCALAPPDATA%\atrium\daemon.json` if the new
@@ -181,13 +188,15 @@ move `atrium.db*` aside, and copy `atrium.db.pre-cutover*` back to `atrium.db*` 
 17. Retire the older scripts beside `.atrium2\scripts`, which nothing should run now: `start-atrium2.ps1`,
     `stop-atrium2.ps1`, `restart-room.ps1`, `cutover.ps1` and `deploy-orchestrator.ps1`. The last rewrites
     `~/.atrium/mcp.json` with a `/_hub/mcp` URL, which stays correct. Delete `.atrium2\scripts.pre-cutover`.
+    **Still open, 2026-09-26:** the five scripts, `.atrium2\scripts\cutover.ps1` and `scripts.pre-cutover` are still
+    on disk. None of them can start anything now that `atrium2.exe` is gone.
 18. Open Question 8, when it is decided: re-register the user-scope `atrium-control` at the HTTP URL and delete
     `.atrium\bin\atrium-control.exe`. Not part of this cutover.
 19. Delete `%LOCALAPPDATA%\atrium2\room\daemon.json`, `%APPDATA%\atrium2\` (the stale `sg4` test room),
     `.atrium2\bin\atrium2.exe.old-*` and `atrium2.revert-*.exe`, `.atrium\bin\atrium.pre-cutover.exe`, and
     `.atrium\atrium.db.pre-cutover*`. Keep `.atrium2\bin\atrium2.exe` one more week as the rollback binary.
 20. Delete `cmd/atrium2`, `internal/cli/atrium2.go` and its test, and the second output in `Makefile`. That is the
-    rest of stage 4, a code change of its own.
+    rest of stage 4, a code change of its own. **Done, 2026-09-26:** `make build` writes only `atrium.exe`.
 21. Owed outside this repo, for clint: a line in `claude/tuning-changelog.md`, and the orchestrator's memories that
     name `atrium2` (`atrium2-is-the-live-hub`, `throwaway-atrium2-needs-atrium-location`, `atrium-binary-not-on-path`,
     `throwaway-hub-room-recipe`, and the deploy-script paths). In this repo, `docs/cold-start.md` and `docs/wrapup.md`
