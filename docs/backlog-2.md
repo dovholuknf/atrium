@@ -16,7 +16,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 7 | The held-message `!` chip says the wrong reason | bug | not started |
 | 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
-| 10 | `atrium_say` types immediately by default | feature | decided, not started |
+| 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
 | 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
 | 12 | Keep codex up to date | feature | not started |
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
