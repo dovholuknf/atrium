@@ -54,14 +54,18 @@ A worker's `atrium_say` arrives typed into my terminal.
 
 ## 5. Deploy tooling (stable paths, survive a clear)
 
-The deploy scripts build from `D:\worktrees\claude\atrium\orchestrator\build.claude\atrium2.exe`. That worktree is
-on `claude/orchestrator`, which must be fast-forwarded to `claude/main` before building:
+The deploy scripts deploy `D:\worktrees\claude\atrium\orchestrator\build.claude\atrium.exe`. That worktree is on
+`claude/orchestrator`, which must be fast-forwarded to `claude/main` before building:
 
 ```
 cd D:\worktrees\claude\atrium\orchestrator
 git merge --ff-only claude/main
-go build -o build.claude\atrium2.exe ./cmd/atrium2
+go build -o build.claude\atrium.exe ./cmd/atrium
 ```
+
+- Cold start, nothing running: `pwsh -File C:\Users\claude\.atrium2\scripts\start-atrium.ps1`, from a shell atrium
+  does not supervise. It starts the hub (`atrium.exe run --no-room`) and then the room (`atrium.exe room`), and
+  leaves either one alone when it is already running. There is no rollback binary: `atrium2.exe` is gone.
 
 - Hub only: `pwsh -File C:\Users\claude\.atrium2\scripts\deploy-hub-only.ps1`. Safe while workers run, the room is
   never touched. Set `$env:ATRIUM_DEBUG_INPUTLAG='1'` first to keep hub lag logging on. It can outlive a 180s tool
@@ -74,11 +78,10 @@ go build -o build.claude\atrium2.exe ./cmd/atrium2
   may refuse to let me start the room directly. Then clint runs it.
 - `maintenance-window.ps1` is the older hub-and-room script. Prefer `deploy-batch.ps1`.
 - **A room deploy kills my own turn,** and the resumed session can be missing it, which is how one deploy ran twice.
-  Before starting one, write `C:\Users\claude\.atrium2\restart-marker.txt` with the sha and the built `atrium2.exe`
+  Before starting one, write `C:\Users\claude\.atrium2\restart-marker.txt` with the sha and the built `atrium.exe`
   hash. After any resume, compare the installed hash to it and never re-run a deploy that already landed.
-- **The hook binary is separate.** Hooks run `C:\Users\claude\.atrium\bin\atrium.exe`, built from `cmd/atrium`, and
-  neither deploy script touches it. When `internal/cli` changes, build it
-  (`go build -o build.claude\atrium.exe ./cmd/atrium`), move the old one to `atrium.old.exe`, and copy the new one in.
+- **The hook binary is the same file.** Hooks, the hub and the room all run `C:\Users\claude\.atrium\bin\atrium.exe`.
+  The deploy scripts swap it in with two renames, so a hook in flight keeps its image. Never copy over it by hand.
 - **If the atrium MCP tools are gone** (they fail to connect when this session starts before the hub), use the HTTP
   API on `127.0.0.1:7778`: `POST /v1/tasks/<room>~<id>/message {"text"}` types into a worker's terminal. A card
   whose runner died is resumed with `POST /v1/launch` and header `X-Atrium-Room: claude-sg4`, body `harness`,

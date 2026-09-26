@@ -1,8 +1,5 @@
 # Copy the atrium binary to sgg over the existing SSH path. Idempotent.
 #
-# sgg keeps the file name atrium2.exe: its room was joined and is restarted under
-# that name, and the one binary answers `room` with the same flags.
-#
 # sgg is Windows amd64, same as SG4, so the binary built here runs there with no
 # cross-compile. This only stages the file. It starts nothing on sgg and opens
 # no ports. Bringing the room up is bringup-sgg.md, and it needs an overlay
@@ -15,7 +12,7 @@ param(
   [string]$LocalBinary = "$PSScriptRoot\..\..\build.claude\atrium.exe",
   [string]$SshHost = 'sgg',
   [string]$RemoteDir = 'C:\Users\localai\.atrium2\bin',
-  [string]$RemoteBinary = 'C:\Users\localai\.atrium2\bin\atrium2.exe'
+  [string]$RemoteBinary = 'C:\Users\localai\.atrium2\bin\atrium.exe'
 )
 $ErrorActionPreference = 'Stop'
 
