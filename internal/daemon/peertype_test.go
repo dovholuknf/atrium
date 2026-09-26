@@ -53,7 +53,7 @@ func TestAPeerMessageIsTypedAndSentWhenNobodyIsTyping(t *testing.T) {
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
-	typed, how := d.tellByTyping(target, "sg4/builder", "the migration is ready")
+	typed, how := d.tellByTyping(target, "sg4/builder", "the migration is ready", false)
 	if !typed {
 		t.Fatal("queued it when the terminal was free")
 	}
@@ -79,7 +79,7 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 
-	typed, _ := d.tellByTyping(target, "sg4/builder", "stop what you are doing")
+	typed, _ := d.tellByTyping(target, "sg4/builder", "stop what you are doing", false)
 	if typed {
 		t.Fatalf("typed into a half written command: %q", f.written())
 	}
@@ -234,7 +234,7 @@ func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
 	// was touched inside peerGateIdle, so the gate stays shut.
 	r.noteOperatorTyped([]byte("ls\r"))
 
-	typed, _ := d.tellByTyping(target, "sg4/builder", "have a look at this")
+	typed, _ := d.tellByTyping(target, "sg4/builder", "have a look at this", false)
 	if typed {
 		t.Fatalf("typed into a terminal the operator just touched: %q", f.written())
 	}
@@ -255,7 +255,7 @@ func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
 
-	typed, how := d.tellByTyping(target, "sg4/builder", "have a look at this")
+	typed, how := d.tellByTyping(target, "sg4/builder", "have a look at this", false)
 	if !typed {
 		t.Fatalf("refused an empty, idle line: %q", f.written())
 	}
@@ -284,7 +284,7 @@ func TestACardCanRefusePeerTyping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if typed, _ := d.tellByTyping(off, "sg4/builder", "anything"); typed {
+	if typed, _ := d.tellByTyping(off, "sg4/builder", "anything", false); typed {
 		t.Fatalf("typed into a card that refuses it: %q", f.written())
 	}
 }
@@ -294,7 +294,7 @@ func TestACardCanRefusePeerTyping(t *testing.T) {
 func TestACardWithNoTerminalFallsBackToTheQueue(t *testing.T) {
 	d := testDaemon(t)
 	target := cardFor(t, d, "elsewhere")
-	if typed, _ := d.tellByTyping(target, "sg4/builder", "anything"); typed {
+	if typed, _ := d.tellByTyping(target, "sg4/builder", "anything", false); typed {
 		t.Fatal("claimed to type into a card with no runner")
 	}
 }
@@ -306,13 +306,13 @@ func TestAtriumTypingDoesNotCountAsTheOperatorTyping(t *testing.T) {
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
-	if typed, _ := d.tellByTyping(target, "sg4/builder", "first"); !typed {
+	if typed, _ := d.tellByTyping(target, "sg4/builder", "first", false); !typed {
 		t.Fatal("the first message did not go")
 	}
 	if r.howBusy() == peerMidLine {
 		t.Fatal("atrium's own typing left the terminal looking mid-line")
 	}
-	if typed, how := d.tellByTyping(target, "sg4/builder", "second"); !typed {
+	if typed, how := d.tellByTyping(target, "sg4/builder", "second", false); !typed {
 		t.Fatalf("the second message deferred behind the first: %q", how)
 	}
 }

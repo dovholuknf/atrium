@@ -64,6 +64,13 @@ import (
 // typed into. See `tellByTyping` for the three states and what each does about
 // Enter.
 //
+// MID-TURN IS NOT A REASON TO WAIT, unless the sender asks. A message is typed
+// the moment the line is empty and no dialog is open, whether or not the
+// runner is working, because Claude Code queues a line typed mid-turn and
+// reads it at its next step. `when: "done"` holds one message for the turn to
+// end, and a runner set not to take input mid-turn holds all of them. See
+// saywhen.go.
+//
 // `CLAUDE.md` still lists injecting prompts into a running session as out of
 // scope and names this bus. It is a symlink into another repository and is not
 // ours to edit, so it disagrees with this file until somebody there fixes it.
@@ -293,8 +300,15 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 		To   string `json:"to"`
 		Text string `json:"text"`
+		// When is `immediate` (the default) or `done`. See saywhen.go.
+		When string `json:"when"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	when, err := parseWhen(in.When)
+	if err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
@@ -336,13 +350,15 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// THE QUEUE STAYS. It is the fallback for everything not typed, and a
 	// message that is typed is written to the timeline instead so the traffic
 	// is still auditable. Both, and the agent would receive it twice.
-	typed, err := d.deliverPeer(target, from, text)
+	waitTurn := d.waitsForTurn(target.ID, when)
+	typed, err := d.deliverPeerWhen(target, from, text, waitTurn)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.peerSaid(from, target, text)
-	log.Printf("[atrium] %s told %s something (%d chars, typed %v)", from, to, len(text), typed)
+	log.Printf("[atrium] %s told %s something (%d chars, typed %v, waits for the turn %v)",
+		from, to, len(text), typed, waitTurn)
 
 	w.Header().Set("Content-Type", "application/json")
 	if typed {
@@ -354,13 +370,31 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// The same warning `handleMessage` gives when the card has no way to
 	// drain its queue. See reachability in a2a.go.
 	note := queuedNote
+	if waitTurn {
+		note = turnQueuedNote
+	}
 	reach, why := d.reachability(target)
+	if why == "" && waitTurn {
+		why = d.turnReachWarning(target)
+	}
 	if why != "" {
 		note = why
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queued": true, "to": to, "note": note, "reachable": reach,
+		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn),
 	})
+}
+
+// turnQueuedNote is queuedNote for a message that waits for the turn to end.
+const turnQueuedNote = "queued until that session's turn ends, then typed in when its terminal is " +
+	"free, or carried by the Stop hook."
+
+// whenWord is what a sender is told its message will wait for.
+func whenWord(waitTurn bool) string {
+	if waitTurn {
+		return WhenDone
+	}
+	return WhenImmediate
 }
 
 // typedNote is what a sender is told when its words went straight in.
@@ -372,17 +406,32 @@ const typedNote = "typed into the terminal and sent."
 // Typed when the terminal's gate is open. Otherwise queued for the hooks AND
 // held for the on-screen retry, so it lands the moment the operator's line
 // clears rather than waiting for the target's next tool call.
+//
+// Immediate, as far as the target's runner allows. See saywhen.go.
 func (d *Daemon) deliverPeer(target *store.Task, from, text string) (bool, error) {
-	if typed, _ := d.tellByTyping(target, from, text); typed {
+	return d.deliverPeerWhen(target, from, text, d.waitsForTurn(target.ID, WhenImmediate))
+}
+
+// deliverPeerWhen is deliverPeer with the turn rule already resolved.
+func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn bool) (bool, error) {
+	if typed, _ := d.tellByTyping(target, from, text, waitTurn); typed {
 		d.publishTask(target.ID)
 		return true, nil
 	}
-	m, err := d.st.QueueFromPeer(target.ID, text, from)
+	var (
+		m   *store.Message
+		err error
+	)
+	if waitTurn {
+		m, err = d.st.QueueAfterTurn(target.ID, text, from)
+	} else {
+		m, err = d.st.QueueFromPeer(target.ID, text, from)
+	}
 	if err != nil {
 		return false, err
 	}
 	d.publishTask(target.ID)
-	d.deferPeerInjection(target.ID, m.ID, from, text)
+	d.deferPeerInjection(target.ID, m.ID, from, text, waitTurn)
 	return false, nil
 }
 
@@ -426,7 +475,7 @@ func atriumLabel(what string) string {
 //   - A part written line. Never typed. This is what the old refusal was
 //     protecting and it stays protected, because there is no way to insert
 //     into a line somebody is halfway through without wrecking it.
-func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, string) {
+func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bool) (bool, string) {
 	// A card can refuse on its own account. A lent card is the case this was
 	// built for: the guest holds that terminal and was handed exactly one
 	// session, so another session's words have no business appearing in it.
@@ -446,8 +495,9 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	if d.act.dialogOpen(target.ID) {
 		return false, ""
 	}
-	// A FIFTH, and it waits rather than refuses. See peerMustWait.
-	if d.peerMustWait(target.ID, from) {
+	// A FIFTH, and it waits rather than refuses: a message that asked to wait
+	// for the turn, while the runner is mid-turn. See saywhen.go.
+	if d.turnHolds(target.ID, waitTurn) {
 		return false, ""
 	}
 	// Bracketed paste when supported, so a long report stays together even if
@@ -469,23 +519,6 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string) (bool, stri
 	}
 	d.notePeerTyped(target.ID, from, text, "typed and sent")
 	return true, typedNote
-}
-
-// peerMustWait reports whether a peer's text has to wait for the runner's turn
-// to end before it is typed.
-//
-// The line gate alone is not enough. It is checked at the instant of the write,
-// and a runner that is mid-turn does not submit what arrives then: Claude Code
-// holds it until the turn ends and sends it with whatever the operator typed in
-// between, as one prompt. So a peer message is typed only when the line is empty
-// AND the turn is over, and until both hold it waits in `pendingInjector`. The
-// hooks leave it alone while it waits (see takeMessages). See
-// docs/typing-race.md.
-//
-// Peer text only. The operator's own channel (notes, actions, the board's box)
-// keeps today's rule.
-func (d *Daemon) peerMustWait(taskID, from string) bool {
-	return from != "" && d.act.midTurn(taskID)
 }
 
 // notePeerTyped records a typed message on the timeline.

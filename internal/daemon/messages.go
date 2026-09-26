@@ -115,6 +115,20 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 			return nil, nil
 		}
 	}
+	// A message that waits for the turn is the Stop hook's. The permission hook
+	// fires mid-turn, and carrying it there is the interruption `when: "done"`
+	// asked not to have. See saywhen.go.
+	if via != "stop" {
+		kept := msgs[:0:0]
+		for _, m := range msgs {
+			if !m.WaitTurn {
+				kept = append(kept, m)
+			}
+		}
+		if msgs = kept; len(msgs) == 0 {
+			return nil, nil
+		}
+	}
 	ids := messageIDs(msgs)
 	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
 		return nil, err
@@ -338,6 +352,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		// rather than as a broken "from ": this endpoint carries both, and a
 		// missing sender means the operator, never a failed send.
 		From string `json:"from"`
+		// When is `immediate` (the default) or `done`. See saywhen.go.
+		When string `json:"when"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -347,8 +363,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("a message needs some text"))
 		return
 	}
+	when, err := parseWhen(body.When)
+	if err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
 	taskID := r.PathValue("id")
 	from := strings.TrimSpace(body.From)
+	waitTurn := d.waitsForTurn(taskID, when)
 
 	// A message from a session is peer traffic whichever door it came in by, so
 	// it gets the peer bus's bounds. `atrium_say` arrives here rather than at
@@ -390,7 +412,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// into the middle of a line clint was writing. `typeThroughGate` types only into
 	// an empty, idle line under the input lock, and a closed gate falls to the
 	// queue below, which retries on screen until the line clears.
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.peerMustWait(taskID, from) {
+	//
+	// AND THROUGH THE TURN RULE, whoever sent it. Immediate is typed mid-turn.
+	// Done, or a runner that does not take input mid-turn, waits for the turn to
+	// end. See saywhen.go.
+	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -414,12 +440,12 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			d.publishTask(taskID)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"delivered":"terminal"}`))
+			_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "terminal", "when": whenWord(waitTurn)})
 			return
 		}
 		// A part written line or a keystroke in the last two seconds: nothing
-		// was written. Fall through to the queue. A peer's text mid-turn skips
-		// the write and lands here too.
+		// was written. Fall through to the queue. A message that waits for the
+		// turn skips the write mid-turn and lands here too.
 	}
 
 	// A peer message carries its sender so the delivery banner can attribute it
@@ -427,13 +453,13 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// on purpose: a message that claims the operator's authority when a peer sent
 	// it is the one mistake the envelope exists to prevent. Empty from stays the
 	// operator's own channel.
-	var (
-		m   *store.Message
-		err error
-	)
-	if from != "" {
+	var m *store.Message
+	switch {
+	case waitTurn:
+		m, err = d.st.QueueAfterTurn(taskID, body.Text, from)
+	case from != "":
 		m, err = d.st.QueueFromPeer(taskID, body.Text, from)
-	} else {
+	default:
 		m, err = d.st.QueueMessage(taskID, body.Text)
 	}
 	if err != nil {
@@ -460,7 +486,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
-	d.deferPeerInjection(taskID, m.ID, from, body.Text)
+	d.deferPeerInjection(taskID, m.ID, from, body.Text, waitTurn)
 
 	// SAY WHETHER IT WILL EVER ARRIVE. A queued message is only as good as the
 	// hook that drains it, and a card whose runner has none (a gemini session
@@ -468,7 +494,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// message forever while the sender is told `queued`. It is still queued,
 	// because the card may be relaunched under atrium, but the sender hears
 	// the truth and what to do instead. See docs/a2a-reliability-design.md.
-	out := map[string]any{"delivered": "queued", "id": m.ID}
+	out := map[string]any{"delivered": "queued", "id": m.ID, "when": whenWord(waitTurn)}
 	if target, err := d.st.Get(taskID); err == nil {
 		d.peerSaid(from, target, body.Text)
 		reach, why := d.reachability(target)
@@ -476,6 +502,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		out["reachable"] = reach
 		if why != "" {
 			out["warning"] = why
+		} else if waitTurn {
+			if why := d.turnReachWarning(target); why != "" {
+				out["warning"] = why
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -504,11 +534,30 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An optional body naming `when`, the same as a message. No body is the
+	// default, immediate.
+	var body struct {
+		When string `json:"when"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil && err != io.EOF {
+			writeJSONErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	when, err := parseWhen(body.When)
+	if err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	waitTurn := d.waitsForTurn(taskID, when)
+
 	delivered := "queued"
 	// Queued rather than typed while a dialog is on that screen, or while the
-	// operator's line is part written. Same gate as `handleMessage` above.
+	// operator's line is part written, or mid-turn for a note that waits for
+	// the turn. Same gate as `handleMessage` above.
 	typed := false
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) {
+	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		var err error
 		if typed, err = d.typeThroughGate(run, taskID, "", note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -524,12 +573,16 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		}
 		delivered = "terminal"
 	} else {
-		m, err := d.st.QueueMessage(taskID, note)
+		queue := d.st.QueueMessage
+		if waitTurn {
+			queue = func(id, text string) (*store.Message, error) { return d.st.QueueAfterTurn(id, text, "") }
+		}
+		m, err := queue(taskID, note)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		d.deferPeerInjection(taskID, m.ID, "", note)
+		d.deferPeerInjection(taskID, m.ID, "", note, waitTurn)
 	}
 
 	// The note reached the session, so a question it had outstanding has been
@@ -547,7 +600,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	d.publishTask(taskID)
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered})
+	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered, "when": whenWord(waitTurn)})
 }
 
 // typeThroughGate types text into a runner's terminal and submits it, but only

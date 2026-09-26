@@ -67,6 +67,8 @@ type pendingMsg struct {
 	text   string // the clean text, for the timeline record
 	banner string
 	body   string // text plus any bracketed-paste markers, what actually types
+	// waitTurn holds it while the runner is mid-turn. See saywhen.go.
+	waitTurn bool
 }
 
 // heldTell is everything waiting to be typed into one card's terminal, and
@@ -92,7 +94,7 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 // deferPeerInjection hands a just-queued peer message to the injector to retry
 // on screen. The banner and body are rebuilt the same way tellByTyping does, so
 // a retry types exactly what an immediate injection would have.
-func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string) {
+func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn bool) {
 	if d.pending == nil {
 		return
 	}
@@ -114,11 +116,12 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string) {
 		banner = peerBanner(from)
 	}
 	d.pending.hold(taskID, pendingMsg{
-		msgID:  msgID,
-		from:   from,
-		text:   text,
-		banner: banner,
-		body:   body,
+		msgID:    msgID,
+		from:     from,
+		text:     text,
+		banner:   banner,
+		body:     body,
+		waitTurn: waitTurn,
 	})
 }
 
@@ -141,6 +144,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		pi.by[taskID] = ht
 	}
 	ht.entries = append(ht.entries, m)
+	oldest, count := ht.entries[0], len(ht.entries)
 	if first {
 		// A keystroke on this terminal re-arms the backoff to the front, so an
 		// operator who is back gets an early retry. Cleared in drop.
@@ -151,12 +155,44 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 	pi.mu.Unlock()
 	// The live board signal: this card is holding a message. Named by the first
 	// sender, aged from when the first message was held. See activityTracker.
-	who := m.from
+	who := oldest.from
 	if who == "" {
 		who = "you"
 	}
-	pi.d.act.setHeld(taskID, who)
+	pi.d.act.setHeld(taskID, who, pi.heldFor(taskID, oldest), count)
 	pi.d.publishTask(taskID)
+}
+
+// heldFor says which condition is holding a message right now. Checked in the
+// order the retry checks them, so the chip names the one that has to clear
+// first.
+func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
+	switch {
+	case pi.d.act.dialogOpen(taskID):
+		return HeldForDialog
+	case pi.d.turnHolds(taskID, m.waitTurn):
+		return HeldForTurn
+	}
+	return HeldForLine
+}
+
+// noteHeld refreshes the board signal after a retry that left messages held,
+// and publishes only when the reason or the count moved.
+func (pi *pendingInjector) noteHeld(taskID string, why string) {
+	pi.mu.Lock()
+	ht := pi.by[taskID]
+	if ht == nil || len(ht.entries) == 0 {
+		pi.mu.Unlock()
+		return
+	}
+	who, count := ht.entries[0].from, len(ht.entries)
+	pi.mu.Unlock()
+	if who == "" {
+		who = "you"
+	}
+	if pi.d.act.setHeld(taskID, who, why, count) {
+		pi.d.publishTask(taskID)
+	}
 }
 
 // attempt is one retry: reconcile against the store, try to drain what is still
@@ -236,6 +272,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 			ht.timer.Reset(backoffSteps[step])
 		}
 		pi.mu.Unlock()
+		pi.noteHeld(taskID, HeldForDialog)
 		return
 	}
 
@@ -244,13 +281,14 @@ func (pi *pendingInjector) attempt(taskID string) {
 	// gate only shuts here if the operator starts typing between two of them,
 	// which leaves the rest for the next tick.
 	//
-	// A peer's entry also waits for the runner's turn to end. That is not the
+	// An entry that waits for the turn (`when: "done"`, or a runner that does not
+	// take input mid-turn) waits for the runner's turn to end. That is not the
 	// operator's line either, so it is a silent wait at the same interval, and the
-	// turn ending re-arms the retry. See peerMustWait.
+	// turn ending re-arms the retry. See saywhen.go.
 	delivered := map[string]bool{}
 	turnWait := false
 	for _, e := range entries {
-		if pi.d.peerMustWait(taskID, e.from) {
+		if pi.d.turnHolds(taskID, e.waitTurn) {
 			turnWait = true
 			break
 		}
@@ -295,6 +333,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 			ht.timer.Reset(backoffSteps[ht.step])
 		}
 		pi.mu.Unlock()
+		pi.noteHeld(taskID, HeldForTurn)
 		return
 	}
 	// Still blocked. Widen the backoff, warn once for this tick, and reschedule.
@@ -309,6 +348,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 		ht.timer.Reset(next)
 	}
 	pi.mu.Unlock()
+	pi.noteHeld(taskID, HeldForLine)
 
 	// Not in the first minute. The front of the backoff is seconds apart, and a
 	// message held that briefly is the gate working, not something to announce.

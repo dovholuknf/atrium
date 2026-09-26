@@ -44,6 +44,18 @@ type Profile struct {
 	// runner in `internal/cli/fakerunner_test.go` checks for each one.
 	Hooks string
 
+	// MidTurnInput says a line typed while the runner is mid-turn is read at
+	// its next step rather than lost or merged, so a message can be typed in
+	// without waiting for the turn to end. It seeds the harness row's
+	// `mid_turn_input`, which the operator can change on the runners page.
+	//
+	// Claude Code queues typed input mid-turn and reads it at its next step.
+	// Codex steers it into the active turn: codex-cli 0.156.1 says "new user
+	// input is steered into the active turn" and tells its model "the user may
+	// send a new message while you are still working". Gemini and ollama are
+	// unmeasured, and ollama has no hooks, so it is never seen mid-turn.
+	MidTurnInput bool
+
 	// Unmeasured lists what this runner probably needs and nobody has
 	// confirmed against a live session, so the next person starts from it.
 	Unmeasured []string
@@ -51,8 +63,8 @@ type Profile struct {
 
 // Profiles are the runners atrium has a view on.
 var Profiles = []Profile{
-	{ID: "claude", Cmds: []string{"claude"}, Hooks: "claude"},
-	{ID: "codex", Cmds: []string{"codex"}, Hooks: "codex",
+	{ID: "claude", Cmds: []string{"claude"}, Hooks: "claude", MidTurnInput: true},
+	{ID: "codex", Cmds: []string{"codex"}, Hooks: "codex", MidTurnInput: true,
 		// Three times the 90th percentile, and under half the 85ms a real
 		// cursor position typically holds for, so the prompt's cursor still
 		// shows between frames while codex animates.

@@ -135,6 +135,10 @@ type Activity struct {
 	// `pendingInjector`.
 	HeldPeer    string `json:"held_peer,omitempty"`
 	HeldSeconds int64  `json:"held_seconds,omitempty"`
+	// HeldFor is what is holding the oldest message: one of the HeldFor
+	// constants. HeldCount is how many are held, which the chip shows.
+	HeldFor   string `json:"held_for,omitempty"`
+	HeldCount int    `json:"held_count,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -163,11 +167,29 @@ type activityTracker struct {
 	held map[string]heldPeer
 }
 
-// heldPeer is a queued injection waiting on the operator's line to clear.
+// heldPeer is a queued injection waiting on the operator's line to clear, on
+// the turn to end, or on a dialog.
 type heldPeer struct {
 	from  string
 	since time.Time
+	why   string
+	count int
 }
+
+// What is holding a message, as HeldFor says it. Three conditions and each is
+// cleared by something different, which is why the board names the one that
+// applies rather than blaming the line for all of them.
+const (
+	// HeldForLine is the operator's input line: text in it, or a keystroke in
+	// the last `peerGateIdle`. Clearing or submitting the line lets it through.
+	HeldForLine = "line"
+	// HeldForTurn is the runner's turn. The message asked for `when: "done"`,
+	// or the runner does not take input mid-turn. It goes when the turn ends.
+	HeldForTurn = "turn"
+	// HeldForDialog is a prompt the runner drew on its own screen, which an
+	// Enter would answer. It goes once the dialog is answered.
+	HeldForDialog = "dialog"
+)
 
 func newActivityTracker() *activityTracker {
 	return &activityTracker{
@@ -263,19 +285,32 @@ func (a *activityTracker) withHeld(taskID string, out *Activity) *Activity {
 	}
 	out.HeldPeer = h.from
 	out.HeldSeconds = int64(a.now().Sub(h.since).Seconds())
+	out.HeldFor = h.why
+	out.HeldCount = h.count
 	return out
 }
 
 // setHeld records that a peer message is waiting to be typed into this card's
 // terminal, keeping the first sender's clock so the age is how long the OLDEST
 // held message has waited.
-func (a *activityTracker) setHeld(taskID, from string) {
+//
+// `why` and `count` are replaced on every call, because what holds the oldest
+// message changes as the turn ends or the line clears, and the board says the
+// current reason. See the HeldFor constants.
+//
+// Reports whether anything the board shows changed, so a retry every few
+// seconds does not repaint it every few seconds.
+func (a *activityTracker) setHeld(taskID, from, why string, count int) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if _, ok := a.held[taskID]; ok {
-		return
+	h, ok := a.held[taskID]
+	if !ok {
+		h = heldPeer{from: from, since: a.now()}
 	}
-	a.held[taskID] = heldPeer{from: from, since: a.now()}
+	changed := !ok || h.why != why || h.count != count
+	h.why, h.count = why, count
+	a.held[taskID] = h
+	return changed
 }
 
 // clearHeld says nothing is waiting any more, because it landed, was delivered

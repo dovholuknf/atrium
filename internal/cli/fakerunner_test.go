@@ -183,6 +183,90 @@ func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 	}
 }
 
+// A peer's say with `when: "done"` waits out the turn and is carried by that
+// runner's real Stop hook, which continues the turn with it. See
+// internal/daemon/saywhen.go.
+func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
+	for _, r := range runnerShapes {
+		t.Run(r.target.ID, func(t *testing.T) {
+			agentAddr, humanAddr := startTestDaemon(t)
+			for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
+				t.Setenv(k, "")
+			}
+			t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
+
+			commands := installedCommands(t, r.target)
+			cwd := filepath.Join(t.TempDir(), "done-"+r.target.ID)
+			if err := os.MkdirAll(cwd, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			base := func(hook string, extra map[string]any) map[string]any {
+				m := map[string]any{"session_id": "done-" + r.target.ID, "cwd": cwd, "hook_event_name": hook}
+				for k, v := range extra {
+					m[k] = v
+				}
+				return m
+			}
+			fire := func(s step) {
+				t.Helper()
+				raw, _ := json.Marshal(s.payload)
+				for _, c := range commands[s.hook] {
+					if code := runHookLine(t, c, string(raw)); code != 0 {
+						t.Fatalf("%s: %q exited %d", s.hook, c, code)
+					}
+				}
+				assertCard(t, humanAddr, filepath.Base(cwd), r.target.ID, s)
+			}
+			pending := func(id string) int {
+				t.Helper()
+				resp, err := http.Get("http://" + humanAddr + "/v1/tasks/" + id + "/messages")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				var out struct {
+					Messages []json.RawMessage `json:"messages"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+					t.Fatal(err)
+				}
+				return len(out.Messages)
+			}
+
+			fire(step{hook: "SessionStart", payload: base("SessionStart", map[string]any{"source": "startup"}),
+				status: store.StatusNeedsInput, activity: "-"})
+			fire(step{hook: "UserPromptSubmit", payload: base("UserPromptSubmit", map[string]any{r.prompt: "go"}),
+				status: store.StatusRunning, activity: daemon.ActivityThinking})
+			card, _ := findCard(t, humanAddr, filepath.Base(cwd))
+			resp, err := http.Post("http://"+humanAddr+"/v1/tasks/"+card.ID+"/message", "application/json",
+				strings.NewReader(`{"text":"rebase when you are done","from":"sg4/doer","when":"done"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var said struct {
+				When string `json:"when"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&said)
+			resp.Body.Close()
+			if said.When != "done" {
+				t.Fatalf("the answer says when %q, want done", said.When)
+			}
+			fire(step{hook: "PreToolUse", payload: base("PreToolUse", map[string]any{
+				"tool_name": "Bash", "tool_input": map[string]any{"command": "ls"}, "tool_use_id": "call-1"}),
+				status: store.StatusRunning, activity: daemon.ActivityTool, tool: "Bash"})
+			if n := pending(card.ID); n != 1 {
+				t.Fatalf("%d messages waiting mid-turn, want the done one still there", n)
+			}
+			// The Stop carries it, so the turn goes on.
+			fire(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": false}),
+				status: store.StatusRunning, activity: daemon.ActivityThinking})
+			if n := pending(card.ID); n != 0 {
+				t.Fatalf("%d messages still waiting after the Stop hook", n)
+			}
+		})
+	}
+}
+
 // Every runner profile that names a hooks target has payloads here, and every
 // hooks target belongs to a profile. Gemini and ollama have none, so there is
 // nothing of theirs to fire, and the day one gets a target this fails until it

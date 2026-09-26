@@ -14,10 +14,10 @@ import (
 // resume, which is why adding a new one is configuration rather than a change
 // here.
 type Harness struct {
-	ID      string            `json:"id"`
-	Label   string            `json:"label"`
-	Enabled bool              `json:"enabled"`
-	Cmd     string            `json:"cmd"`
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Enabled bool   `json:"enabled"`
+	Cmd     string `json:"cmd"`
 	// BinPath is an explicit path to this runner's binary on THIS room, used
 	// instead of resolving Cmd against the room process PATH.
 	//
@@ -90,6 +90,11 @@ type Harness struct {
 	// the board also needs this configuration. Shells use stream detection
 	// because they toggle the mode around each prompt.
 	BracketedPaste bool `json:"bracketed_paste"`
+	// MidTurnInput says this runner reads a line typed while it is mid-turn at
+	// its next step, so a message can be typed in without waiting for the turn
+	// to end. Off means every message to it waits for the turn to end, as
+	// `when: "done"` asks for one. Seeded from `runnerprofile`.
+	MidTurnInput bool `json:"mid_turn_input"`
 	// Package is where this runner is installed from, so atrium can ask
 	// whether a newer one is published without running the runner to find out.
 	//
@@ -139,7 +144,7 @@ func DefaultHarnesses() []Harness {
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:  []string{"{prompt}"},
 			ModelArgs:   []string{"--model", "{model}"},
-			RulesSource: "claude", Sort: 10, BracketedPaste: true,
+			RulesSource: "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true,
 			Package: "@anthropic-ai/claude-code",
 			Notes:   "resume needs a session id, which only a runner that reports one can supply",
 		},
@@ -158,7 +163,7 @@ func DefaultHarnesses() []Harness {
 			ResumeArgs:     []string{"resume", "{resume}"},
 			PromptArgs:     []string{"{prompt}"},
 			ModelArgs:      []string{"--model", "{model}"},
-			BracketedPaste: true, Package: "@openai/codex",
+			BracketedPaste: true, MidTurnInput: true, Package: "@openai/codex",
 			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
@@ -197,15 +202,16 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		args, env, resume, exit, prompt, model string
 		created                                string
 		enabled                                int
-		bracketed                              int
+		bracketed, midTurn                     int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
 	h.BracketedPaste = bracketed != 0
+	h.MidTurnInput = midTurn != 0
 	if err := json.Unmarshal([]byte(orDefault(args, "[]")), &h.Args); err != nil {
 		return nil, err
 	}
@@ -240,7 +246,7 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args, bracketed_paste, package, bin_path`
+	model_args, bracketed_paste, package, bin_path, mid_turn_input`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -344,8 +350,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 		if h.BracketedPaste {
 			bracketed = 1
 		}
+		midTurn := 0
+		if h.MidTurnInput {
+			midTurn = 1
+		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -355,11 +365,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				sort = excluded.sort, prompt_args = excluded.prompt_args,
 				model_args = excluded.model_args,
 				bracketed_paste = excluded.bracketed_paste,
-				package = excluded.package, bin_path = excluded.bin_path`,
+				package = excluded.package, bin_path = excluded.bin_path,
+				mid_turn_input = excluded.mid_turn_input`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
-			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath))
+			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn)
 		return err
 	})
 	if err != nil {

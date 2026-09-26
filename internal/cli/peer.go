@@ -64,14 +64,17 @@ func newPeers() *cobra.Command {
 }
 
 func newTell() *cobra.Command {
-	var name, hubURL string
+	var name, hubURL, when string
 	c := &cobra.Command{
 		Use:   "tell <handle> <message>",
 		Short: "Say something to another session.",
-		Long: "Says something to another session. It is typed into that session's terminal when " +
-			"the terminal is free, and otherwise queued: it then lands as soon as the terminal " +
-			"frees up, or on that session's next tool call or at the end of its turn. This is not " +
-			"a conversation and there is no reply to wait for.\n\n" +
+		Long: "Says something to another session. It is typed into that session's terminal as " +
+			"soon as its input line is empty and no dialog is open, even mid-turn, and otherwise " +
+			"queued: it then lands as soon as the line clears, or on that session's next tool " +
+			"call or at the end of its turn. This is not a conversation and there is no reply to " +
+			"wait for.\n\n" +
+			"`--when done` waits for that session's turn to end instead, for something that " +
+			"should not disturb it mid-thought.\n\n" +
 			"The message is labeled with who sent it, and the receiving session is told it " +
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
 			"not know the handle.",
@@ -82,11 +85,13 @@ func newTell() *cobra.Command {
 			if strings.TrimSpace(text) == "" {
 				text = pipedRecap()
 			}
-			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text)
+			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text, when)
 		}),
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
+	c.Flags().StringVar(&when, "when", "",
+		"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for the turn to end")
 	return c
 }
 
@@ -332,7 +337,7 @@ type peerAnswer struct {
 // `verb` is what the caller was trying to do, so a handle that does not
 // resolve offers the list under the right heading rather than under a generic
 // one.
-func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb string) (*peerAnswer, error) {
+func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string) (*peerAnswer, error) {
 	from := whoAmI(name)
 	if from == "" {
 		return nil, fmt.Errorf("could not work out which session this is. pass --name")
@@ -341,7 +346,11 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb string) (*pee
 		return nil, fmt.Errorf("there is nothing to say. put the message after the handle")
 	}
 
-	body, err := json.Marshal(map[string]string{"from": from, "to": to, "text": text})
+	fields := map[string]string{"from": from, "to": to, "text": text}
+	if when != "" {
+		fields["when"] = when
+	}
+	body, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
@@ -377,8 +386,8 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb string) (*pee
 	return &answer, nil
 }
 
-func tellPeer(out io.Writer, hubURL, name, to, text string) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell")
+func tellPeer(out io.Writer, hubURL, name, to, text, when string) error {
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell", when)
 	if err != nil {
 		return err
 	}
@@ -390,7 +399,7 @@ func tellPeer(out io.Writer, hubURL, name, to, text string) error {
 }
 
 func answerPeer(out io.Writer, hubURL, name, to, text string) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer")
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer", "")
 	if err != nil {
 		return err
 	}

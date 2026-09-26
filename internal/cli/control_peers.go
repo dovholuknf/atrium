@@ -56,11 +56,14 @@ func addPeerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_say",
 		Description: "Say something to another session on the board.\n\n" +
-			"DELIVERY IS NOT TYPING. Where atrium owns the terminal the text is typed in and " +
-			"the answer says `terminal`. Where it does not, the message is QUEUED and reaches " +
-			"that session at its next tool call or at the end of its turn, and the answer says " +
-			"`queued`. Neither is instant and neither is a reply: if you want one, ask for it " +
-			"and then look, or wait to be told.\n\n" +
+			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal the text is typed in as soon " +
+			"as that session's input line is empty and no dialog is open, EVEN MID-TURN, and " +
+			"the answer says `terminal`. Where it does not, or the line is not clear yet, the " +
+			"message is QUEUED and the answer says `queued`: it reaches that session at its " +
+			"next tool call, at the end of its turn, or when the line clears. Neither is a " +
+			"reply: if you want one, ask for it and then look, or wait to be told.\n\n" +
+			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
+			"should not disturb it mid-thought.\n\n" +
 			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
 			"agent talking to another. Say who you are: the receiving session is not told.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
@@ -269,6 +272,8 @@ type SayInput struct {
 	To string `json:"to" jsonschema:"the handle or card id to say it to"`
 	// Text is what to say, as one agent to another.
 	Text string `json:"text" jsonschema:"what to say. say who you are: the other session is not told"`
+	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
+	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 }
 
 type SayOutput struct {
@@ -278,6 +283,7 @@ type SayOutput struct {
 	Delivered string `json:"delivered"`
 	To        string `json:"to"`
 	Card      string `json:"card"`
+	When      string `json:"when,omitempty"`
 	Note      string `json:"note,omitempty"`
 }
 
@@ -296,15 +302,24 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 
 	var res struct {
 		Delivered string `json:"delivered"`
+		When      string `json:"when"`
+	}
+	body := map[string]string{"text": in.Text}
+	if w := strings.TrimSpace(in.When); w != "" {
+		body["when"] = w
 	}
 	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message",
-		map[string]string{"text": in.Text}, &res); err != nil {
+		body, &res); err != nil {
 		return nil, out, err
 	}
-	out.Delivered = res.Delivered
-	if res.Delivered == "queued" {
-		out.Note = "queued, not typed. it arrives at that session's next tool call or at the " +
-			"end of its turn, which may be a while if it is idle."
+	out.Delivered, out.When = res.Delivered, res.When
+	switch {
+	case res.Delivered == "queued" && res.When == "done":
+		out.Note = "queued until that session's turn ends. it is typed in then, or carried by " +
+			"its Stop hook."
+	case res.Delivered == "queued":
+		out.Note = "queued, not typed yet. it is typed in as soon as that session's line clears, " +
+			"or arrives at its next tool call or the end of its turn."
 	}
 	return nil, out, nil
 }

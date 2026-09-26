@@ -39,3 +39,15 @@ func TestClaudeNeedsNoTerminalHelp(t *testing.T) {
 		t.Fatal("codex writes its cursor straight through, so it jumps across the input box")
 	}
 }
+
+// The seeded runner rows agree with the profile about taking input mid-turn.
+// The store cannot import this package, so the seed is written twice and this
+// keeps the two from drifting.
+func TestTheSeedAgreesAboutMidTurnInput(t *testing.T) {
+	for _, h := range store.DefaultHarnesses() {
+		p := For(&h)
+		if h.MidTurnInput != p.MidTurnInput {
+			t.Fatalf("%s: seeded mid_turn_input %v, profile says %v", h.ID, h.MidTurnInput, p.MidTurnInput)
+		}
+	}
+}
