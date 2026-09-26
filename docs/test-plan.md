@@ -3602,3 +3602,42 @@ history.
 
 **Expected:** a card whose socket closed re-attaches and draws its history. Switching the pane between `runner` and
 `shell` also re-attaches, as before.
+
+## BH. Over a terminal the toasts hang from the top right
+
+Run on the board with a supervised card attached on the terminals pane. The headless section `toastsTop` covers BH1
+to BH4 against mocked endpoints.
+
+### BH1. Top right on the terminals view, bottom right everywhere else
+
+1. On the stack view, raise two toasts (for example copy a card's id twice with different cards, or let two cards
+   finish a turn).
+2. Switch to the terminals view while they are up.
+
+**Expected:** on the stack view they sit bottom right. On the terminals view the same toasts sit top right, just
+under the terminal's bar and inside the pane's right edge. They move without fading in again. The newest is the top
+one. The terminal's input line and status bar at the bottom are clear. Back on the stack view they return bottom
+right.
+
+### BH2. Nothing at the top of the terminal is covered
+
+1. On the terminals view, paste a large block (over 256 KB) so `pasting …` shows at the top right of the pane.
+2. Raise a toast while it shows. Then press `ctrl-f` to open the find bar and raise another.
+
+**Expected:** the toasts sit below the paste indicator and the find bar. Neither is covered. The `pop out` and other
+buttons on the terminal's bar are clear too.
+
+### BH3. The restart notices move with them
+
+1. On the terminals view, let the hub announce a restart so the countdown toast shows, then hold it so the paused
+   toast shows.
+
+**Expected:** both sit top right with the other toasts. On the stack view they are bottom right.
+
+### BH4. A popped-out window, and every skin
+
+1. Pop a card out and raise a toast for it in that window.
+2. On the board, switch skins (harbour, daylight, website, noir, paper) on the terminals view with a toast up.
+
+**Expected:** the popped-out window's toast sits top right, under its bar. In every skin the board's toasts stay top
+right on the terminals view.

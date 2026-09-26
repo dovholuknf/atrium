@@ -438,6 +438,7 @@ function switchView(name) {
   // a size. Cheap enough to sit on every scroll of the list, so it is cheap
   // enough to sit here.
   if (name === "terms") requestAnimationFrame(placeTabBridge);
+  placeToasts();
   // Fetched on the way in, like history: a feed you go looking for, not one
   // worth polling while you are reading something else. It also refreshes on an
   // `audit` delta and on stream reconnect. See js/audit.js.

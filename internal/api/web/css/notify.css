@@ -292,6 +292,7 @@
   body.solo #toasts {
     left: auto; right: 14px; bottom: 14px; max-width: min(320px, 70vw);
   }
+  body.solo #toasts.top { top: var(--toast-top, 14px); bottom: auto; right: var(--toast-right, 14px); }
   body.solo .toast { padding: 10px 12px; }
 
   /* Getting a file back out. A fold, because most of the time you are not after one. */
