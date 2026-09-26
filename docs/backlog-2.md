@@ -24,7 +24,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
-| 18 | On the terminals tab, toasts sit top right, not over the input line | feature | not started |
+| 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
