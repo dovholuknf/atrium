@@ -108,8 +108,7 @@ func roomLogCmd(prefix string) *cobra.Command {
 type hubStoreFlags struct{ dir, db string }
 
 // bind declares them. `prefix` is `atrium-` under `atrium rooms` and `atrium
-// backups`, where a bare `--dir` would read as the room's, and empty under the
-// shim's `atrium2 hub`, which keeps the names the scripts pass.
+// backups`, where a bare `--dir` would read as the room's.
 func (f *hubStoreFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.dir, prefix+"dir", "", "where this hub keeps its certificates")
 	c.Flags().StringVar(&f.db, prefix+"db", "", "the hub's own store (default: under --"+prefix+"dir)")

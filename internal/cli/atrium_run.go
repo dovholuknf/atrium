@@ -23,7 +23,7 @@ import (
 // The hub: serve the board, hold nothing, hand everything else to a room.
 //
 // `atrium run --no-room` is this, and `atrium run` is this plus a room for the
-// machine it runs on. The shim's `atrium2 hub` is this with the old flag names.
+// machine it runs on.
 
 // atriumFlags is everything the central process takes on its command line.
 type atriumFlags struct {
@@ -53,8 +53,8 @@ type atriumFlags struct {
 }
 
 // bind declares the flags. `prefix` goes on the four a room also has, `dir`,
-// `db`, `identity` and `service`: empty for `atrium2 hub`, which must keep its
-// names, and `atrium-` for `atrium run`, which takes the room's flags as well.
+// `db`, `identity` and `service`: `atrium-` for `atrium run`, which takes the
+// room's flags as well.
 func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.board, "addr", defaultBoardAddr(),
 		"where the browser reaches the board (loopback only, no login)")
@@ -95,24 +95,6 @@ const hubLong = "Serves the board on a port your browser opens, and listens on a
 	"On first run it makes itself a certificate authority. `atrium rooms add <name>`\n" +
 	"prints a join string for a room, and `atrium room join` on the machine your\n" +
 	"agents are on takes it."
-
-// hubCmd is `atrium2 hub`, the shim's name for `atrium run --no-room`, with
-// the flag names the live scripts pass.
-func hubCmd() *cobra.Command {
-	var f atriumFlags
-	c := &cobra.Command{
-		Use:   "hub",
-		Short: "Serve the board. Holds nothing and can be restarted at will",
-		Long:  hubLong,
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serveAtrium(f, nil)
-		},
-	}
-	f.bind(c, "")
-	c.AddCommand(hubRoomsCmd("room", ""), hubBackupsCmd(""), hubRestoreCmd(""))
-	return c
-}
 
 // atriumUp is called once the atrium is listening on both ports, before it
 // starts serving the board. `atrium run` uses it to make sure this machine has

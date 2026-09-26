@@ -68,7 +68,7 @@ func run(args []string) int {
 	return runRoot(newRoot(), args)
 }
 
-// runRoot is run for any root, so the atrium2 shim shares the exit-code rule.
+// runRoot is run for any root.
 func runRoot(root *cobra.Command, args []string) int {
 	root.SetArgs(args)
 	cmd, err := root.ExecuteC()
