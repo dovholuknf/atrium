@@ -1442,20 +1442,24 @@ const followScrollFor = 1200;
 // For the reports xterm generates on its own: focus, blur and the mouse. They
 // go to the runner like any other input and they must not move the view. See
 // `isAutoReport`, and the note on the `onData` handler for what this cost.
-function sendInput(text, quiet) {
+//
+// `pasted` says the bytes came from a paste gesture (the paste event, the paste
+// box, right click, a drop or a pasted file's path) and starts the spinner's
+// clock. Typed keys never pass it, whatever their length.
+function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   send({ t: "in", d });
   if (quiet) return;
-  if (d.length >= pasteShowBytes) pasteBegin(d.length);
+  if (pasted) pasteBegin(d.length);
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
 }
 
-// ── a big paste, while it is on its way ─────────────────
+// ── a paste, while it is on its way ─────────────────────
 //
 // A paste is one frame (see above), so the board hands it off in a single call
-// and then has nothing to show until the runner answers. For a large one that is
-// seconds of a terminal that looks like it ignored you.
+// and then has nothing to show until the runner answers. Over a slow link even a
+// short one can be a terminal that looks like it ignored you.
 //
 // LANDED MEANS TWO THINGS, in order. The socket has drained, `bufferedAmount` at
 // zero, so every byte has left this browser. Then the first output after that,
@@ -1468,13 +1472,9 @@ function sendInput(text, quiet) {
 // Capped, because a runner that prints nothing on a paste would leave it up for
 // good. At the cap it just goes: the bytes left, and waiting longer says nothing.
 
-// At least this many characters. Nothing typed reaches it: a key is one
-// character, an escape sequence under twenty, and a path from a dropped file a
-// few hundred. 2KB is about twenty-five lines, which is where a paste starts
-// taking long enough to wonder about.
-const pasteShowBytes = 2048;
-// Not drawn until the paste has been in flight this long, so one that lands at
-// once never flashes.
+// Any size. What starts it is where the bytes came from, not how many there are
+// (see `sendInput`). Not drawn until the paste has been in flight this long, so
+// one that lands at once never flashes.
 const pasteShowAfterMs = 20;
 const pasteGiveUpMs = 20000;
 
@@ -1513,7 +1513,7 @@ function pasteShow(f) {
     el.setAttribute("role", "status");
     host.appendChild(el);
   }
-  const kb = f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
+  const kb = f.n < 1024 ? f.n + "B" : f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
   setHTML(el, `<span class="shspin"></span><span>pasting ${esc(kb)}</span>`);
   el.hidden = false;
   placeToasts();

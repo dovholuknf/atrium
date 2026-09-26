@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Any paste still on its way after 20ms shows the `pasting` spinner.** See `docs/test-plan.md` section BB.
+
+  The spinner showed only for a paste of 2KB or more, so a short paste over a slow link sat in a terminal that looked
+  like it ignored you. Now what starts it is the paste gesture (ctrl-v, right click, the paste box, a dropped or pasted
+  file's path), not the size. Typed keys and escape sequences never start it, however long. The 20ms delay, the
+  drain-then-echo end and the 20s cap are unchanged. A paste under 1KB names its size in bytes. The new headless
+  section `pasteSpinner` covers a held one-line paste, a paste that lands inside 20ms and typed input. HUB-SIDE.
+
 - **The `atrium2` shim and the cutover rollback are gone.** `make build` writes only `build.claude/atrium.exe`, and
   `cmd/atrium2`, `internal/cli/atrium2.go` and `scripts/live/cutover.ps1` are deleted. Start atrium with
   `scripts/live/start-atrium.ps1` (deployed as `C:\Users\claude\.atrium2\scripts\start-atrium.ps1`): it starts the hub
