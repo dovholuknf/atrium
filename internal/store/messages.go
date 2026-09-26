@@ -39,6 +39,10 @@ type Message struct {
 	// does not have, and the only thing standing between those two readings is
 	// what the envelope says.
 	FromPeer string `json:"from_peer,omitempty"`
+	// WaitTurn is `when: "done"`: this message waits for the session's turn to
+	// end, so the permission hook leaves it and the Stop hook carries it. Set
+	// too when the runner does not take input mid-turn.
+	WaitTurn bool `json:"wait_turn,omitempty"`
 }
 
 // FromHuman reports whether the operator wrote this, as opposed to another
@@ -48,7 +52,13 @@ func (m *Message) FromHuman() bool { return m.FromPeer == "" }
 // QueueMessage stores something to say to a session the next time it is
 // reachable. From the operator.
 func (s *Store) QueueMessage(taskID, text string) (*Message, error) {
-	return s.queueMessage(taskID, text, "")
+	return s.queueMessage(taskID, text, "", false)
+}
+
+// QueueAfterTurn stores a message that waits for the session's turn to end.
+// fromPeer is empty for the operator. See Message.WaitTurn.
+func (s *Store) QueueAfterTurn(taskID, text, fromPeer string) (*Message, error) {
+	return s.queueMessage(taskID, text, strings.TrimSpace(fromPeer), true)
 }
 
 // QueueFromPeer stores something one session said to another.
@@ -60,23 +70,29 @@ func (s *Store) QueueFromPeer(taskID, text, fromPeer string) (*Message, error) {
 	if strings.TrimSpace(fromPeer) == "" {
 		return nil, errors.New("a peer message has to say which session sent it")
 	}
-	return s.queueMessage(taskID, text, fromPeer)
+	return s.queueMessage(taskID, text, fromPeer, false)
 }
 
-func (s *Store) queueMessage(taskID, text, fromPeer string) (*Message, error) {
+func (s *Store) queueMessage(taskID, text, fromPeer string, waitTurn bool) (*Message, error) {
 	m := &Message{
 		ID: newID(), TaskID: taskID, Text: text,
-		CreatedAt: now(), FromPeer: fromPeer,
+		CreatedAt: now(), FromPeer: fromPeer, WaitTurn: waitTurn,
+	}
+	wait := 0
+	if waitTurn {
+		wait = 1
 	}
 	err := s.guard(func() error {
 		if _, err := s.db.Exec(
-			`INSERT INTO message (id, task_id, text, created_at, from_peer) VALUES (?,?,?,?,?)`,
-			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer); err != nil {
+			`INSERT INTO message (id, task_id, text, created_at, from_peer, wait_turn) VALUES (?,?,?,?,?,?)`,
+			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer, wait); err != nil {
 			return err
 		}
-		return s.appendEvent(taskID, EventPrompted, map[string]any{
-			"queued": true, "text": text, "from_peer": fromPeer,
-		})
+		ev := map[string]any{"queued": true, "text": text, "from_peer": fromPeer}
+		if waitTurn {
+			ev["when"] = "done"
+		}
+		return s.appendEvent(taskID, EventPrompted, ev)
 	})
 	if err != nil {
 		return nil, err
@@ -90,7 +106,7 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 	err := s.guard(func() error {
 		out = nil
 		rows, err := s.db.Query(
-			`SELECT id, task_id, text, created_at, from_peer FROM message
+			`SELECT id, task_id, text, created_at, from_peer, wait_turn FROM message
 			 WHERE task_id = ? AND delivered_at IS NULL ORDER BY created_at ASC`, taskID)
 		if err != nil {
 			return err
@@ -100,10 +116,12 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 			var (
 				m       Message
 				created string
+				wait    int
 			)
-			if err := rows.Scan(&m.ID, &m.TaskID, &m.Text, &created, &m.FromPeer); err != nil {
+			if err := rows.Scan(&m.ID, &m.TaskID, &m.Text, &created, &m.FromPeer, &wait); err != nil {
 				return err
 			}
+			m.WaitTurn = wait != 0
 			if m.CreatedAt, err = parseTS(created); err != nil {
 				return err
 			}

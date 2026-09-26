@@ -3294,6 +3294,126 @@ async function toastsTopSection(browser, base) {
   if (errors.length) fail("the toasts-top page threw: " + errors.join(" | "));
 }
 
+// ── say immediately, or when the turn is done ─────────────────────────────
+// Backlog-2 item 10. Beside send on both composers (say something, and the
+// note) sits an "immediately" button: send posts `when: "done"`, which waits
+// for the turn to end, and immediately posts `when: "immediate"`. The held `!`
+// chip names what is holding a message (the line, the turn, or a dialog) and
+// counts them, `! 2`. The runner form carries the mid-turn setting.
+async function sayWhenSection(browser, base) {
+  const errors = [];
+  const ctx = await browser.newContext();
+  const posted = [];
+  await ctx.route("**/v1/tasks/*/message", async route => {
+    posted.push({ kind: "message", body: JSON.parse(route.request().postData() || "{}") });
+    await route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ delivered: "queued", when: posted[posted.length - 1].body.when }) });
+  });
+  await ctx.route("**/v1/tasks/*/note/send", async route => {
+    posted.push({ kind: "note", body: JSON.parse(route.request().postData() || "{}") });
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: "queued" }) });
+  });
+  await ctx.route("**/v1/tasks/*/messages", route =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ messages: [] }) }));
+  await ctx.route("**/v1/tasks/*", route => route.request().method() === "PATCH"
+    ? route.fulfill({ contentType: "application/json", body: "{}" }) : route.fallback());
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+
+    // The buttons sit beside send, in the same toolbar, and wear a styled tip.
+    const layout = await p.evaluate(() => {
+      const beside = (a, b) => {
+        const x = document.getElementById(a), y = document.getElementById(b);
+        return !!(x && y && x.parentElement === y.parentElement);
+      };
+      const now = document.getElementById("d-say-now");
+      return { say: beside("d-say-send", "d-say-now"), note: beside("d-note-send", "d-note-now"),
+        label: now && now.textContent.trim(), tip: !!(now && now.dataset.tip),
+        form: !!document.getElementById("h-midturn") };
+    });
+    if (!layout.say) fail("the say box has no immediately button beside send: " + JSON.stringify(layout));
+    if (!layout.note) fail("the note has no immediately button beside send it: " + JSON.stringify(layout));
+    if (layout.label !== "immediately" || !layout.tip) {
+      fail("the immediately button is not labelled or has no styled tip: " + JSON.stringify(layout));
+    }
+    if (!layout.form) fail("the runner form has no mid-turn input checkbox.");
+
+    // Send waits for the turn, immediately does not, and each says so.
+    await p.evaluate(async () => {
+      current = { id: "t1", status: "running", note: "" };
+      const box = document.getElementById("d-say");
+      box.value = "stop now";
+      await sayToCurrent("immediate");
+      box.value = "rebase after";
+      await sayToCurrent("done");
+    });
+    const sayWhens = posted.filter(x => x.kind === "message").map(x => x.body.when);
+    if (sayWhens.join(",") !== "immediate,done") {
+      fail("the say buttons posted when " + JSON.stringify(sayWhens) + ", not immediate then done.");
+    }
+    const hint = await p.evaluate(() => document.getElementById("d-say-how").textContent);
+    if (!/turn to end/.test(hint)) fail("a done say did not say it waits for the turn: " + JSON.stringify(hint));
+    // Enter is send, ctrl-enter is immediately.
+    await p.evaluate(() => {
+      const box = document.getElementById("d-say");
+      box.value = "via ctrl-enter";
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    });
+    await p.waitForTimeout(300);
+    const last = posted.filter(x => x.kind === "message").pop();
+    if (!last || last.body.text !== "via ctrl-enter" || last.body.when !== "immediate") {
+      fail("ctrl-enter in the say box did not send immediately: " + JSON.stringify(last));
+    }
+
+    await p.evaluate(async () => {
+      document.getElementById("d-note").value = "three things";
+      await sendNote("immediate");
+    });
+    const note = posted.filter(x => x.kind === "note").pop();
+    if (!note || note.body.when !== "immediate") {
+      fail("the note's immediately button did not post when immediate: " + JSON.stringify(note));
+    }
+
+    // The form carries the setting on save.
+    const saved = await p.evaluate(() => {
+      document.getElementById("h-midturn").checked = true;
+      return harnessFromForm().mid_turn_input;
+    });
+    if (saved !== true) fail("the runner form does not send mid_turn_input: " + JSON.stringify(saved));
+
+    // The chip names the condition, and counts.
+    const chips = await p.evaluate(() => {
+      const one = (act) => {
+        const d = document.createElement("div");
+        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
+        const s = d.querySelector(".chip.held");
+        return s ? { text: s.textContent, tip: s.dataset.tip } : null;
+      };
+      return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
+        dialog: one({ held_for: "dialog" }), old: one({}) };
+    });
+    if (!chips.turn || chips.turn.text !== "! 2" || !/turn to end/.test(chips.turn.tip) ||
+        /input line/.test(chips.turn.tip)) {
+      fail("a message held for the turn did not draw `! 2` naming the turn: " + JSON.stringify(chips.turn));
+    }
+    if (!chips.line || chips.line.text !== "!" || !/input line/.test(chips.line.tip)) {
+      fail("a message held by the line did not name the line: " + JSON.stringify(chips.line));
+    }
+    if (!chips.dialog || !/dialog/.test(chips.dialog.tip)) {
+      fail("a message held by a dialog did not name the dialog: " + JSON.stringify(chips.dialog));
+    }
+    if (!chips.old || !/input line/.test(chips.old.tip)) {
+      fail("a room older than held_for lost the line wording: " + JSON.stringify(chips.old));
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the say-when page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3306,7 +3426,7 @@ async function main() {
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
-      toastsTop: toastsTopSection };
+      toastsTop: toastsTopSection, sayWhen: sayWhenSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5479,6 +5599,8 @@ async function main() {
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
+    // ── say immediately, or when the turn is done ──────────────────────────
+    await sayWhenSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

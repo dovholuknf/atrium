@@ -1112,15 +1112,37 @@ function termRoomChip(t) {
 // with the injector raises. Against a daemon without it the field is never set
 // and this draws nothing, the same way the multi-pane echo toggle shows nothing
 // until its half ships.
+//
+// THE TIP NAMES WHAT IS HOLDING IT, because there are three things and each is
+// cleared by something different: the line (`held_for` "line"), the turn
+// ("turn": the message asked to wait for it, or the runner does not take input
+// mid-turn), or a dialog. Blaming the line for a turn wait told the operator
+// to clear a line that was already empty. A room older than `held_for` gets
+// the line wording it always had. The chip counts, `! 2`, like `? N`.
 function termHeldChip(t) {
   const a = t && t.activity;
   if (!a || !a.held_peer) return "";
   const from = String(a.held_peer);
   const secs = Number(a.held_seconds) || 0;
+  const count = Number(a.held_count) || 1;
   const waited = secs > 0 ? ` waiting ${termHeldAge(secs)}` : "";
-  const title = `message from ${from}${waited} - delivers when your input line ` +
-    `is clear and idle. clear or submit your line to receive it now`;
-  return `<span class="chip held" data-tip="${esc(title)}">!</span>`;
+  const what = count > 1 ? `${count} messages, the oldest from ${from},` : `message from ${from}`;
+  const title = `${what}${waited} - ${termHeldWhy(a.held_for)}`;
+  const label = count > 1 ? `! ${count}` : "!";
+  return `<span class="chip held" data-tip="${esc(title)}">${label}</span>`;
+}
+
+// What clears a held message, by what is holding it.
+function termHeldWhy(why) {
+  if (why === "turn") {
+    return "waits for the session's turn to end, because it was sent to arrive when the turn " +
+      "is done or this runner does not take input mid-turn. it goes in once the turn ends";
+  }
+  if (why === "dialog") {
+    return "a dialog is open on this terminal, and typing would answer it. " +
+      "it goes in once the dialog is answered";
+  }
+  return "delivers when your input line is clear and idle. clear or submit your line to receive it now";
 }
 
 // A coarse age for the held tooltip, in the largest unit that is not zero.

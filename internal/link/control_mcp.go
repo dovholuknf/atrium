@@ -133,11 +133,17 @@ func (c *controlMCP) server() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_say",
 		Description: "Say something to another session on the board.\n\n" +
-			"DELIVERY IS NOT TYPING. Where atrium owns the terminal the text is typed in and " +
-			"the answer says `terminal`. Where it does not, the message is QUEUED and reaches " +
-			"that session at its next tool call or at the end of its turn, and the answer says " +
-			"`queued`. Neither is instant and neither is a reply: if you want one, ask for it " +
-			"and then look, or wait to be told.\n\n" +
+			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal the text is typed in as soon " +
+			"as that session's input line is empty and no dialog is open, EVEN MID-TURN, and " +
+			"the answer says `terminal`. The session reads it at its next step, so this is how " +
+			"to tell a busy worker to stop. Where atrium does not own the terminal, or the line " +
+			"is not clear yet, the message is QUEUED and the answer says `queued`: it reaches " +
+			"that session at its next tool call, at the end of its turn, or when the line " +
+			"clears. Neither is a reply: if you want one, ask for it and then look, or wait to " +
+			"be told.\n\n" +
+			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
+			"should not disturb it mid-thought. A runner set not to take input mid-turn always " +
+			"waits, and the answer's `when` says which one happened.\n\n" +
 			"`undeliverable` means that session has no way to receive a queued message (its " +
 			"runner has no atrium hook and atrium does not own its terminal), and " +
 			"`queued-unconfirmed` means it has never shown one. The note says what to do instead.\n\n" +
@@ -546,6 +552,8 @@ type sayInput struct {
 	To string `json:"to" jsonschema:"the handle or card id to say it to"`
 	// Text is what to say, as one agent to another.
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
+	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
+	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 }
 
 type sayOutput struct {
@@ -555,7 +563,10 @@ type sayOutput struct {
 	Delivered string `json:"delivered"`
 	To        string `json:"to"`
 	Card      string `json:"card"`
-	Note      string `json:"note,omitempty"`
+	// When is what it waits for: `immediate`, or `done` when it was asked for
+	// or the runner does not take input mid-turn.
+	When string `json:"when,omitempty"`
+	Note string `json:"note,omitempty"`
 }
 
 func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, in sayInput) (
@@ -584,21 +595,29 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	var res struct {
 		Delivered string `json:"delivered"`
 		Warning   string `json:"warning"`
+		When      string `json:"when"`
+	}
+	body := map[string]string{"text": in.Text, "from": from}
+	if w := strings.TrimSpace(in.When); w != "" {
+		body["when"] = w
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
-		map[string]string{"text": in.Text, "from": from}, &res); err != nil {
+		body, &res); err != nil {
 		return nil, out, err
 	}
-	out.Delivered = res.Delivered
+	out.Delivered, out.When = res.Delivered, res.When
 	switch {
 	case res.Warning != "":
 		// The room knows whether that card can drain its queue, and says so
 		// when it cannot. Passed through, so the sender hears it now rather
 		// than finding out an hour later that nothing arrived.
 		out.Note = res.Warning
+	case res.Delivered == "queued" && res.When == "done":
+		out.Note = "queued until that session's turn ends. it is typed in then, or carried by " +
+			"its Stop hook."
 	case res.Delivered == "queued":
-		out.Note = "queued, not typed. it arrives at that session's next tool call or at the " +
-			"end of its turn, which may be a while if it is idle."
+		out.Note = "queued, not typed yet. it is typed in as soon as that session's line clears, " +
+			"or arrives at its next tool call or the end of its turn."
 	}
 	return nil, out, nil
 }

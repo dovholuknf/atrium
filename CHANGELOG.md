@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium_say` types immediately by default, even mid-turn.** See `docs/test-plan.md` section BH.
+
+  A say waited for the target's turn to end (the N7 rule), so a "stop now" sent to four busy workers reached none of
+  them. Now a say is typed in as soon as the target's input line is empty, the keyboard is quiet and no dialog is
+  open, whether or not the runner is working. Claude Code queues a line typed mid-turn and reads it at its next step.
+  The old rule is an option: `when: "done"` on `atrium_say`, `atrium tell --when done`, and `"when": "done"` on
+  `/tell`, `/v1/tasks/{id}/message` and `/v1/tasks/{id}/note/send`. A done message is typed once the turn ends, and
+  the permission hook leaves it for the Stop hook. A sender is warned when a done message has nothing to carry it
+  (no terminal atrium owns and no Stop hook seen). Answers carry `when`. Each runner has a new setting on the runners
+  page, `this runner takes typed input mid-turn`, seeded yes for claude and codex. A runner set to no falls back to
+  done for every message. On the board, the say box and the note each get an `immediately` button beside send (and
+  ctrl-enter in the say box). `send` now waits for the turn to end. The held `!` chip names what is holding a message
+  (your line, the turn, or a dialog) and counts them, `! 2`. Migration `0060_say_when` adds `message.wait_turn` and
+  `harness.mid_turn_input`. ROOM-SIDE and HUB-SIDE: the room must be restarted for the delivery rule, the migration
+  and the runner setting. The hub restart carries the `atrium_say` `when` field and the board.
+
 - **On the terminals view the toasts sit top right, clear of the input line.** See `docs/test-plan.md` section BH.
 
   A toast in the bottom right covered the terminal's input line and status bar, where you were typing. While the

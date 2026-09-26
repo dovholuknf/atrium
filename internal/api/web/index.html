@@ -2327,6 +2327,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         than as a line per newline, however long the session has been going. leave it off for a
         shell, and for anything that would print <code>200~</code> on screen instead.</span>
     </div>
+    <!-- Whether a message may be typed in while the runner is working. Seeded
+         from the runner profile. Off means every message waits for the turn. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="h-midturn">
+        <span>this runner takes typed input mid-turn</span>
+      </label>
+      <span class="hintline">tick it for a runner that reads a line typed while it is working at its
+        next step, which claude and codex both do. a message sent <b>immediately</b> is then typed in
+        as soon as the input line is empty, even mid-turn. leave it off and every message to this
+        runner waits for its turn to end.</span>
+    </div>
     <div class="field">
       <label class="eyebrow" for="h-cwd">default working directory</label>
       <div class="picker">
@@ -2801,16 +2813,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <!-- A note is for YOU. Sending it is a second, separate act.
 
-         The box below this one fires immediately, reaching the session on its
-         next tool call. This one does not go anywhere until you say. What that
-         buys is ordering: three things thought of during a long turn, sent as
-         one instruction at the end rather than three interruptions. -->
+         This one does not go anywhere until you say. What that buys is
+         ordering: three things thought of during a long turn, sent as one
+         instruction at the end rather than three interruptions.
+
+         SEND WAITS FOR THE TURN TO END, and immediately does not: it is typed
+         in as soon as the input line is empty, mid-turn or not. The same two
+         buttons the box below has. See internal/daemon/saywhen.go. -->
     <div class="field">
       <label class="eyebrow" for="d-note">notes to self</label>
       <textarea id="d-note" rows="3" spellcheck="false"
         placeholder="what you want next, while it is still working. nothing is sent until you press send."></textarea>
       <div class="toolbar">
-        <button class="go" id="d-note-send" onclick="sendNote()">send it</button>
+        <button class="go" id="d-note-send" onclick="sendNote('done')"
+          data-tip="send it when the session's turn ends">send it</button>
+        <button id="d-note-now" onclick="sendNote('immediate')"
+          data-tip="type it in as soon as the input line is empty, even mid-turn">immediately</button>
         <button id="d-note-clear" onclick="clearNote()">clear</button>
         <span class="hintline grow" id="d-note-state"></span>
       </div>
@@ -2830,13 +2848,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          ways: typed straight into the terminal when atrium owns one, or
          queued to ride the next hook when it does not. The dialog says which
          happened, because the second one can take minutes and would otherwise
-         read as nothing happening. -->
+         read as nothing happening.
+
+         Send waits for the turn to end (enter). Immediately types it in as soon
+         as the input line is empty, mid-turn or not (ctrl-enter). -->
     <div class="field">
       <label class="eyebrow" for="d-say">say something to it</label>
       <textarea id="d-say" rows="2" spellcheck="false"
         placeholder="stop what you are doing and run the tests first"></textarea>
       <div class="toolbar">
-        <button class="go" id="d-say-send" onclick="sayToCurrent()">send</button>
+        <button class="go" id="d-say-send" onclick="sayToCurrent('done')"
+          data-tip="send it when the session's turn ends (enter)">send</button>
+        <button id="d-say-now" onclick="sayToCurrent('immediate')"
+          data-tip="type it in as soon as the input line is empty, even mid-turn (ctrl-enter)">immediately</button>
         <span class="hintline" id="d-say-how"></span>
       </div>
       <div class="queued" id="d-say-queue"></div>

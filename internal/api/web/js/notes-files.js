@@ -14,6 +14,7 @@ function paintNote() {
   box.value = (current && current.note) || "";
   noteState("");
   document.getElementById("d-note-send").disabled = !box.value.trim();
+  document.getElementById("d-note-now").disabled = !box.value.trim();
   document.getElementById("d-note-clear").disabled = !box.value.trim();
 }
 
@@ -24,6 +25,7 @@ function noteState(text) {
 document.getElementById("d-note").addEventListener("input", e => {
   const empty = !e.target.value.trim();
   document.getElementById("d-note-send").disabled = empty;
+  document.getElementById("d-note-now").disabled = empty;
   document.getElementById("d-note-clear").disabled = empty;
   noteState("saving...");
   clearTimeout(noteTimer);
@@ -42,7 +44,10 @@ document.getElementById("d-note").addEventListener("input", e => {
 
 // One message, not one per line. The whole reason a note exists is that three
 // things thought of during a long turn should arrive as one instruction.
-async function sendNote() {
+//
+// `when` is "done" for send it, which waits for the turn to end, or
+// "immediate" for the button beside it. See sayToCurrent.
+async function sendNote(when = "done") {
   if (!current) return;
   const box = document.getElementById("d-note");
   if (!box.value.trim()) return;
@@ -55,18 +60,19 @@ async function sendNote() {
 
   let res;
   try {
-    res = await api(`/v1/tasks/${current.id}/note/send`, { method: "POST" });
+    res = await api(`/v1/tasks/${current.id}/note/send`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ when })
+    });
   } catch (e) { noteState("did not send: " + e.message); return; }
 
   box.value = "";
   document.getElementById("d-note-send").disabled = true;
+  document.getElementById("d-note-now").disabled = true;
   document.getElementById("d-note-clear").disabled = true;
-  // The same two words the message box uses, because they are the same two
-  // promises: typed means it has already landed, queued means it has not and
-  // will not until the session's next tool call or the end of its turn.
-  toast("sent", res.delivered === "terminal"
-    ? "typed into its terminal."
-    : "queued. it arrives on the session's next tool call or at the end of its turn.");
+  // The same words the message box uses, because they are the same promises:
+  // typed means it has already landed, queued means it has not.
+  toast("sent", sayOutcome(res));
   refresh();
 }
 
@@ -79,6 +85,7 @@ async function clearNote() {
   current.note = "";
   document.getElementById("d-note").value = "";
   document.getElementById("d-note-send").disabled = true;
+  document.getElementById("d-note-now").disabled = true;
   document.getElementById("d-note-clear").disabled = true;
   noteState("");
 }

@@ -91,6 +91,18 @@ From the room store, `main:atrium`, 2026-09-24 local:
 - Tests in `internal/daemon/typing_race_test.go`: mid-turn waits for the turn to end and the hooks do not carry
   it; a line with text waits, and a cleared line lets it through; the operator's text is not held for the turn.
 
+## Superseded: immediate by default (backlog-2 item 10)
+
+- clint, 2026-09-24: a say lands mid-turn the way his own typing does. The rule above held a "stop now" to four
+  workers until each turn ended, so it reached none of them.
+- A message is now typed as soon as the line is empty and no dialog is open, mid-turn or not. Claude Code queues a
+  line typed mid-turn and reads it at its next step.
+- The rule above survives as `when: "done"`, per message. `peerMustWait` is gone. `waitsForTurn` and `turnHolds` in
+  `internal/daemon/saywhen.go` replace it, and apply to the operator's channel too.
+- A done message is written with `message.wait_turn`, so the permission hook leaves it for the Stop hook even after
+  a restart.
+- A runner set not to take input mid-turn (`harness.mid_turn_input`) falls back to done for every message.
+
 ## Hazards left
 
 - A runner that dies mid-turn with its pty still open keeps `midTurn` true, and the message waits until the

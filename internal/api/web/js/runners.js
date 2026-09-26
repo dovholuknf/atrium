@@ -551,6 +551,9 @@ async function renderRunners() {
         ? `<span class="by found" data-tip="${esc(h.found)}">on PATH</span>`
         : `<span class="by missing" data-tip="${esc(h.cmd)} is not on the daemon's PATH, so starting this would fail">not found</span>`}
       <span class="by">${esc(h.launch_mode)}</span>
+      ${h.mid_turn_input
+        ? `<span class="by midturn" data-tip="a message sent immediately is typed in mid-turn, as soon as the input line is empty">mid-turn</span>`
+        : `<span class="by midturn off" data-tip="every message waits for this runner's turn to end. edit to change">turn end</span>`}
       <span class="hookcell">${hooksChip(h)}</span>
       ${h.setup ? `<span class="setupcell">${setupChip(h)}</span>` : ""}
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>

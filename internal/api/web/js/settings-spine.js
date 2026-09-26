@@ -499,30 +499,40 @@ async function openTask(id) {
 // of reporting it: a message typed into a terminal has already landed, and a
 // queued one has not and might not for minutes. One button doing two very
 // different things in silence is how you end up sending it four times.
-async function sayToCurrent() {
+//
+// `when` is "done" for send, which waits for the turn to end, or "immediate"
+// for the button beside it, typed in as soon as the input line is empty.
+async function sayToCurrent(when = "done") {
   if (!current) return;
   const box = document.getElementById("d-say");
   const text = box.value.trim();
   if (!text) return;
-  const send = document.getElementById("d-say-send");
+  const buttons = ["d-say-send", "d-say-now"].map(id => document.getElementById(id));
   const how = document.getElementById("d-say-how");
-  send.disabled = true;
+  buttons.forEach(b => { if (b) b.disabled = true; });
   how.textContent = "";
   try {
     const res = await api(`/v1/tasks/${current.id}/message`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, when })
     });
     box.value = "";
-    how.textContent = res.delivered === "terminal"
-      ? "typed into its terminal."
-      : `queued. it arrives on the session's next tool call${turnEndReach()}`;
+    how.textContent = sayOutcome(res);
     await paintQueued();
   } catch (e) {
     how.textContent = `not sent: ${e.message || e}`;
   } finally {
-    send.disabled = false;
+    buttons.forEach(b => { if (b) b.disabled = false; });
   }
+}
+
+// What happened to a message, from the room's answer. A room without the
+// `when` field answers as it always did.
+function sayOutcome(res) {
+  if (res.delivered === "terminal") return "typed into its terminal.";
+  if (res.warning) return res.warning;
+  if (res.when === "done") return "waiting for its turn to end, then typed in or carried by its Stop hook.";
+  return `queued. it is typed in when the input line clears, or arrives on the session's next tool call${turnEndReach()}`;
 }
 
 // Whether the end of a turn is a second way in, said only when it is true.
@@ -920,10 +930,11 @@ patchOnChange("d-icon", v => ({ icon: v.trim() }));
 // Enter sends, shift-enter is a newline. The chat convention, because this is
 // one: short things said to somebody, in a row. Escape would close the dialog
 // out from under a half-typed message, so it is caught and only clears the box.
+// Ctrl-enter is the immediately button.
 document.getElementById("d-say").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    sayToCurrent();
+    sayToCurrent(e.ctrlKey || e.metaKey ? "immediate" : "done");
   } else if (e.key === "Escape" && e.target.value) {
     e.preventDefault();
     e.stopPropagation();

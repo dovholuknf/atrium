@@ -1562,6 +1562,25 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// A MESSAGE CAN ASK TO WAIT FOR THE TURN TO END, and a runner says
+		// whether it takes typed input mid-turn at all.
+		//
+		// `atrium_say` types as soon as the input line is empty, mid-turn or
+		// not. `when: "done"` keeps the old rule for one message, and
+		// `wait_turn` is that choice written down, so the permission hook
+		// leaves it for the Stop hook even after a restart. A runner with
+		// `mid_turn_input` off falls back to done for every message.
+		//
+		// DefaultHarnesses only seeds new databases, so the two runners known
+		// to take input mid-turn are switched on here as well.
+		name: "0060_say_when",
+		stmts: []string{
+			`ALTER TABLE message ADD COLUMN wait_turn INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE harness ADD COLUMN mid_turn_input INTEGER NOT NULL DEFAULT 0`,
+			`UPDATE harness SET mid_turn_input = 1 WHERE id IN ('claude', 'codex')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
