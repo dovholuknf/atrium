@@ -5,7 +5,7 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
-- **`atrium_say` types immediately by default, even mid-turn.** See `docs/test-plan.md` section BH.
+- **`atrium_say` types immediately by default, even mid-turn.** See `docs/test-plan.md` section BI.
 
   A say waited for the target's turn to end (the N7 rule), so a "stop now" sent to four busy workers reached none of
   them. Now a say is typed in as soon as the target's input line is empty, the keyboard is quiet and no dialog is

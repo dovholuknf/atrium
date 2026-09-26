@@ -3642,14 +3642,14 @@ buttons on the terminal's bar are clear too.
 **Expected:** the popped-out window's toast sits top right, under its bar. In every skin the board's toasts stay top
 right on the terminals view.
 
-## BH. A say is typed in mid-turn, unless it asks to wait for the turn
+## BI. A say is typed in mid-turn, unless it asks to wait for the turn
 
 Run on the board with two supervised claude cards, one as the sender (A) and one as the worker (B). Give B something
 that takes a minute or more (for example "run the whole test suite and summarise it"). Go tests in
-`internal/daemon/typing_race_test.go` cover BH1 to BH5. The headless section `sayWhen` covers BH5 and BH6. The fake
-runner test `TestFakeRunnerDoneSayRidesTheStopHook` covers the Stop hook half of BH2.
+`internal/daemon/typing_race_test.go` cover BI1 to BI5. The headless section `sayWhen` covers BI5 and BI6. The fake
+runner test `TestFakeRunnerDoneSayRidesTheStopHook` covers the Stop hook half of BI2.
 
-### BH1. Immediate is the default
+### BI1. Immediate is the default
 
 1. While B is working, with B's input line empty, have A call `atrium_say` to B with "stop now and say what you
    were doing". Do not pass `when`.
@@ -3657,7 +3657,7 @@ runner test `TestFakeRunnerDoneSayRidesTheStopHook` covers the Stop hook half of
 **Expected:** the text appears in B's terminal within a few seconds, mid-turn, with A's grey `[atrium] ... says:`
 label. The answer says `terminal` and `when: immediate`. B reads it at its next step and stops.
 
-### BH2. `when: "done"` waits for the turn
+### BI2. `when: "done"` waits for the turn
 
 1. Start B working again. Have A call `atrium_say` to B with `when: "done"` and "when you finish, rebase".
 
@@ -3666,33 +3666,33 @@ the `!` chip, and its tip says the message waits for the session's turn to end. 
 line. B's next tool calls are not interrupted. About two seconds after B's turn ends the text is typed in and sent,
 and the chip goes.
 
-### BH3. A runner set to no falls back to done
+### BI3. A runner set to no falls back to done
 
 1. Under rooms, runners, the claude row says `mid-turn`. Edit it, untick `this runner takes typed input mid-turn`,
    and save. The row now says `turn end`.
-2. Repeat BH1.
+2. Repeat BI1.
 
-**Expected:** the say waits for B's turn to end, as in BH2, and the answer says `when: done`. Tick the box again
+**Expected:** the say waits for B's turn to end, as in BI2, and the answer says `when: done`. Tick the box again
 afterwards.
 
-### BH4. The gate still holds
+### BI4. The gate still holds
 
-1. While B works, type half a line into B's terminal and leave it. Repeat BH1.
+1. While B works, type half a line into B's terminal and leave it. Repeat BI1.
 
 **Expected:** nothing is typed into your half line. The chip's tip says the message delivers when your input line is
 clear. Clear the line and wait two seconds: the message goes in, mid-turn.
 
-2. Get B to raise a permission dialog of its own (not atrium's gate), then repeat BH1.
+2. Get B to raise a permission dialog of its own (not atrium's gate), then repeat BI1.
 
 **Expected:** nothing is typed, and the chip's tip says a dialog is open. Answer the dialog and the message goes in.
 
-### BH5. The chip counts
+### BI5. The chip counts
 
-1. With your line part written as in BH4, have A send B two messages.
+1. With your line part written as in BI4, have A send B two messages.
 
 **Expected:** the chip reads `! 2`, and its tip names the oldest sender.
 
-### BH6. The board's two buttons
+### BI6. The board's two buttons
 
 1. Open B's card. Under "say something to it" there are two buttons, `send` and `immediately`. The note has
    `send it` and `immediately`.
