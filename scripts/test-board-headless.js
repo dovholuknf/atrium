@@ -3173,6 +3173,127 @@ async function reselectSection(browser, base) {
   tasksMode = was;
 }
 
+// ── over a terminal the toasts hang from the top right ─────────────────────
+// Backlog-2 item 18. A toast in the bottom right sat on the terminal's input
+// line and status bar, where clint was typing. On the terminals view (and in a
+// popped-out window) the stack anchors below the pane's bar, clear of the
+// paste indicator, and every other view keeps bottom right. A switch with
+// toasts up moves the same elements and does not replay their entrance.
+async function toastsTopSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  // Where the stack is, and each toast's box, oldest first as in the DOM.
+  const where = pg => pg.evaluate(() => {
+    const host = document.getElementById("toasts");
+    const boxes = [...host.querySelectorAll(".toast:not(.leaving)")].map(el => {
+      const r = el.getBoundingClientRect();
+      return { title: el.querySelector("b").textContent, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+    });
+    const bar = document.querySelector("#term-pane .term-bar").getBoundingClientRect();
+    const pane = document.getElementById("term-pane").getBoundingClientRect();
+    return { top: host.classList.contains("top"), boxes, barBottom: bar.bottom, paneRight: pane.right,
+      h: innerHeight, starts: window.__starts || 0 };
+  });
+  const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => {
+      switchView("stack");
+      document.getElementById("toasts").innerHTML = "";
+      window.__starts = 0;
+      document.getElementById("toasts").addEventListener("animationstart", e => {
+        if (e.animationName === "toastin") window.__starts++;
+      });
+      toast("older toast", "first");
+      toast("newer toast", "second");
+    });
+    await p.waitForTimeout(400);
+
+    // 1. Off the terminals view: bottom right, as before.
+    let w = await where(p);
+    if (w.top || !w.boxes.length || w.boxes.some(b => b.bottom < w.h - 200)) {
+      fail("off the terminals view the toasts are not bottom right: " + JSON.stringify(w));
+    }
+    const born = w.starts;
+
+    // 2. Onto the terminals view with them up: top right, under the bar, the
+    // same two toasts, not animated in again, newest on top.
+    await p.evaluate(() => {
+      document.querySelectorAll("#toasts .toast").forEach(el => { el.__mark = 1; });
+      switchView("terms");
+    });
+    await p.waitForTimeout(400);
+    w = await where(p);
+    const kept = await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].every(el => el.__mark));
+    if (!w.top || w.boxes.length !== 2 || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
+      fail("on the terminals view the toasts do not hang below the terminal's bar: " + JSON.stringify(w));
+    }
+    if (w.boxes.some(b => b.right > w.paneRight + 1)) {
+      fail("on the terminals view a toast pokes past the terminal's right edge: " + JSON.stringify(w));
+    }
+    if (!kept) fail("switching to the terminals view rebuilt the toasts instead of moving them.");
+    if (w.starts !== born) fail("switching to the terminals view replayed the toasts' entrance.");
+    const older = w.boxes.find(b => b.title === "older toast"), newer = w.boxes.find(b => b.title === "newer toast");
+    if (!older || !newer || newer.top > older.top) {
+      fail("anchored top, the newest toast is not the top one: " + JSON.stringify(w.boxes));
+    }
+
+    // 3. A paste on its way: the indicator is not under a toast.
+    await p.evaluate(() => { pasteShow({ n: 300 * 1024 }); toast("during a paste", "third"); });
+    await p.waitForTimeout(400);
+    w = await where(p);
+    const paste = await p.evaluate(() => {
+      const r = document.getElementById("t-pasting").getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, h: r.height };
+    });
+    if (!paste.h) fail("the paste indicator did not show, so the test did not exercise it.");
+    if (w.boxes.some(b => overlaps(b, paste))) {
+      fail("a toast covers the paste indicator: " + JSON.stringify({ paste, boxes: w.boxes }));
+    }
+    await p.evaluate(() => pasteEnd());
+
+    // 4. And back off it: bottom right again, still not re-animated.
+    const before = (await where(p)).starts;
+    await p.evaluate(() => switchView("stack"));
+    await p.waitForTimeout(400);
+    w = await where(p);
+    if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
+      fail("back off the terminals view the toasts did not return bottom right: " + JSON.stringify(w));
+    }
+    if (w.starts !== before) fail("switching away from the terminals view replayed the toasts' entrance.");
+
+    // 5. Every skin: the anchor is layout, so none of them may move it.
+    await p.evaluate(() => switchView("terms"));
+    for (const skin of ["harbour", "daylight", "website", "noir", "paper"]) {
+      await p.evaluate(s => applySkin(s), skin);
+      await p.waitForTimeout(150);
+      w = await where(p);
+      if (!w.top || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
+        fail("in " + skin + " the terminals view's toasts are not top right: " + JSON.stringify(w));
+      }
+    }
+
+    // 6. A popped-out window is a terminal too.
+    const solo = await ctx.newPage();
+    solo.on("pageerror", e => errors.push(String(e)));
+    await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
+    await solo.waitForTimeout(400);
+    w = await where(solo);
+    if (!w.top || !w.boxes.length || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
+      fail("in a popped-out window the toasts are not top right: " + JSON.stringify(w));
+    }
+    await solo.close();
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the toasts-top page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3184,7 +3305,8 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection };
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
+      toastsTop: toastsTopSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5355,6 +5477,8 @@ async function main() {
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
     await reselectSection(browser, base);
+    // ── over a terminal the toasts hang from the top right ─────────────────
+    await toastsTopSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

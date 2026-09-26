@@ -154,7 +154,38 @@ function raiseToasts() {
     const host = document.getElementById(id);
     if (host && host.parentElement !== parent) parent.appendChild(host);
   });
+  placeToasts();
 }
+
+// OVER A TERMINAL THE STACK HANGS FROM THE TOP. Bottom right is where a
+// terminal keeps its input line and its status bar, so a toast there sat on
+// exactly what was being typed. Everywhere else keeps bottom right.
+//
+// Just under the terminal's bar and inside the pane's right edge, rather than
+// the window's top corner, which is the header's. Anything floating over the
+// top of the pane (the paste indicator, the find bar) pushes it further down,
+// so the stack never covers them.
+//
+// A class and two variables, not a new element or a rebuilt stack, so a view
+// switch with toasts up moves them without replaying their entrance.
+function placeToasts() {
+  const host = document.getElementById("toasts");
+  const pane = document.getElementById("term-pane");
+  if (!host) return;
+  const onTerm = !!pane && (termOnly() || isViewing("terms"));
+  host.classList.toggle("top", onTerm);
+  if (!onTerm) return;
+  const r = pane.getBoundingClientRect();
+  let below = r.top;
+  pane.querySelectorAll(".term-bar, #t-pasting, #t-find").forEach(el => {
+    if (el.hidden) return;
+    const b = el.getBoundingClientRect();
+    if (b.height) below = Math.max(below, b.bottom);
+  });
+  host.style.setProperty("--toast-top", Math.round(below + 12) + "px");
+  host.style.setProperty("--toast-right", Math.max(8, Math.round(innerWidth - r.right + 12)) + "px");
+}
+addEventListener("resize", placeToasts);
 
 // Typing in a guarded dialog marks it as holding something not yet saved.
 //

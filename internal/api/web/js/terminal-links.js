@@ -423,6 +423,7 @@ function openFind() {
   const q = document.getElementById("t-find-q");
   if (!bar || !q) return;
   bar.hidden = false;
+  placeToasts();
   // Selected rather than cleared, so pressing ctrl-f again and typing replaces
   // the last search, and pressing it to look at the old one still works.
   q.focus();
@@ -433,6 +434,7 @@ function openFind() {
 function closeFind() {
   const bar = document.getElementById("t-find");
   if (bar) bar.hidden = true;
+  placeToasts();
   // THE SEARCH HAS TO BE FORGOTTEN, not just undecorated, and this is the
   // whole of the terminal-jumps-to-the-bottom bug.
   //
@@ -1514,6 +1516,7 @@ function pasteShow(f) {
   const kb = f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
   setHTML(el, `<span class="shspin"></span><span>pasting ${esc(kb)}</span>`);
   el.hidden = false;
+  placeToasts();
 }
 
 function pasteEnd() {
@@ -1521,6 +1524,7 @@ function pasteEnd() {
   pasteFlight = null;
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
+  placeToasts();
 }
 
 // Did xterm generate this by itself, rather than a person producing it.

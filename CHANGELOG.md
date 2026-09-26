@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **On the terminals view the toasts sit top right, clear of the input line.** See `docs/test-plan.md` section BH.
+
+  A toast in the bottom right covered the terminal's input line and status bar, where you were typing. While the
+  terminals view shows, and in a popped-out window, the toast stack now hangs from the top right, just under the
+  terminal's bar and below the paste indicator and the find bar when they show. Every other view keeps bottom right.
+  The restart countdown and paused toasts ride the same stack and move with it. A view switch with toasts up moves
+  them without fading them in again, and the newest is the top one either way. The new headless section `toastsTop`
+  covers it. HUB-SIDE.
+
 - **Selecting the attached terminal again focuses it instead of replaying its history.** See `docs/test-plan.md`
   section BG.
 

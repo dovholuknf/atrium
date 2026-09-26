@@ -118,8 +118,8 @@
   #held:hover { border-color: var(--teal); }
 
   /* Bottom right, and click-through everywhere except the toasts themselves,
-     so a dialog underneath stays usable. column-reverse keeps the newest
-     nearest the corner and pushes older ones up, so the stack does not shift
+     so a dialog underneath stays usable. column-reverse draws the oldest
+     nearest the corner and each new one above it, so the stack does not shift
      under the pointer as one arrives. */
   #toasts {
     position: fixed; right: 20px; bottom: 20px;
@@ -127,6 +127,13 @@
     margin: 0; padding: 0; border: none; background: none; overflow: visible;
     max-width: min(420px, 88vw); pointer-events: none;
     display: flex; flex-direction: column-reverse; gap: var(--sp-3);
+  }
+  /* Over a terminal the stack hangs from the top, below the pane's bar and whatever floats over it, because the
+     bottom is the terminal's input line. `placeToasts` sets the class and measures the two offsets. Same
+     column-reverse, so the newest is the top one, nearest the edge it now hangs from. */
+  #toasts.top {
+    top: var(--toast-top, 20px); bottom: auto; right: var(--toast-right, 20px);
+    --toast-dy: -14px;
   }
   #toasts:empty { display: none; }
   #toasts .toast { pointer-events: auto; }
@@ -140,7 +147,7 @@
   }
   .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
   .toast.leaving { animation: toastout .2s ease-in forwards; }
-  @keyframes toastin { from { transform: translateY(14px); opacity: 0; } }
+  @keyframes toastin { from { transform: translateY(var(--toast-dy, 14px)); opacity: 0; } }
   @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
   .toast .body { flex: 1; min-width: 0; }
   .toast b { display: block; color: var(--head); font-size: var(--fs-base); margin-bottom: 3px; }
