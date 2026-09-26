@@ -937,7 +937,7 @@ function sendPasteText(text) {
   if (bracketed) body = "\x1b[200~" + body + "\x1b[201~";
   // ONE FRAME. Splitting it is what makes a paste look like typing, which is
   // the thing the brackets exist to deny.
-  sendInput(body);
+  sendInput(body, false, true);
 }
 
 // The fallback, for a paste that did not arrive as an event: right click, or
@@ -1164,7 +1164,7 @@ async function uploadIntoTerm(files) {
   // The preamble says what the path is for. A bare path is what a person types
   // when they mean "look at this", and it is not what they say.
   const pre = preambleOf(await pasteSettings());
-  if (paths) sendInput(pre + paths + " ");
+  if (paths) sendInput(pre + paths + " ", false, true);
   toast(pastePrefs && pastePrefs.paste_keep === "scrap"
     ? "in the scratch folder" : "in the working directory", paths);
 }

@@ -3414,6 +3414,100 @@ async function sayWhenSection(browser, base) {
   if (errors.length) fail("the say-when page threw: " + errors.join(" | "));
 }
 
+// ── any paste still in flight after 20ms shows the spinner ────────────────
+// Test plan BB. What starts it is a paste gesture, not a size: a one-line paste
+// held on the socket shows it, one that drains and echoes inside 20ms never
+// flashes, and a typed key or escape sequence never shows it however long it is.
+async function pasteSpinnerSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      const real = pasteShow;
+      pasteShow = f => { window.__shown++; real(f); };
+    });
+
+    // 1. A one-line paste held on the socket for 50ms shows, then goes on the echo.
+    const heldGot = await p.evaluate(() => new Promise(done => {
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      pasteEnd();
+      window.__shown = 0;
+      termSock.bufferedAmount = 5;
+      sendPasteText("one line");
+      const got = {};
+      setTimeout(() => { got.during = vis(); got.text = (document.getElementById("t-pasting") || {}).textContent; }, 40);
+      setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
+      setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
+    }));
+    if (!heldGot.during || heldGot.shown !== 1) {
+      fail("a one-line paste held on the socket for 50ms did not show the spinner: " + JSON.stringify(heldGot));
+    }
+    if (heldGot.during && !/pasting \d+B/.test(heldGot.text || "")) {
+      fail("a small paste's spinner does not name its size in bytes: " + JSON.stringify(heldGot.text));
+    }
+    if (heldGot.after) fail("the spinner stayed up after the paste drained and echoed: " + JSON.stringify(heldGot));
+
+    // 2. A paste that drains and echoes inside 20ms never flashes.
+    const quick = await p.evaluate(() => new Promise(done => {
+      pasteEnd();
+      window.__shown = 0;
+      termSock.bufferedAmount = 0;
+      sendPasteText("x");
+      setTimeout(() => termSock.onmessage({ data: "x" }), 5);
+      setTimeout(() => done({ shown: window.__shown, flight: !!pasteFlight }), 150);
+    }));
+    if (quick.shown || quick.flight) {
+      fail("a paste that landed inside 20ms flashed the spinner: " + JSON.stringify(quick));
+    }
+
+    // 3. Typed input never shows it: a key, an escape sequence, or a long burst.
+    const typed = await p.evaluate(() => new Promise(done => {
+      pasteEnd();
+      window.__shown = 0;
+      termSock.bufferedAmount = 5;
+      term.input("a", true);
+      term.input("\x1b[A", true);
+      term.input("x".repeat(3000), true);
+      setTimeout(() => {
+        const got = { shown: window.__shown, flight: !!pasteFlight };
+        termSock.bufferedAmount = 0;
+        done(got);
+      }, 150);
+    }));
+    if (typed.shown || typed.flight) fail("typed input started the paste spinner: " + JSON.stringify(typed));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the paste spinner page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3426,7 +3520,7 @@ async function main() {
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
-      toastsTop: toastsTopSection, sayWhen: sayWhenSection };
+      toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5601,6 +5695,8 @@ async function main() {
     await toastsTopSection(browser, base);
     // ── say immediately, or when the turn is done ──────────────────────────
     await sayWhenSection(browser, base);
+    // ── any paste still in flight after 20ms shows the spinner ─────────────
+    await pasteSpinnerSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

@@ -263,7 +263,7 @@ if (!/function isAutoReport\(/.test(html)) {
     fail("the onData handler does not check `isAutoReport`. A mouse or focus report reaching " +
       "sendInput as ordinary input is what makes a click jump to the bottom.");
   }
-  if (!/function sendInput\(text, quiet\)/.test(html)) {
+  if (!/function sendInput\(text, quiet[,)]/.test(html)) {
     fail("sendInput cannot be told the input was not typed, so it scrolls for xterm's own " +
       "focus and mouse reports.");
   }

@@ -3327,12 +3327,13 @@ saved: a reload shows the saved theme.
 
 **Expected:** the card keeps the new theme on every surface, before and after the reload.
 
-## BB. A big paste says it is on its way, and the lag log stops counting the key's own frame
+## BB. A paste says it is on its way, and the lag log stops counting the key's own frame
 
-No test covers either, because both are the board against a live socket. Run a board built from this branch against
-a throwaway room with one card, so a paste into a live card is not the test.
+The headless section `pasteSpinner` covers BB1 steps 1 and 2 against a mocked socket: a one-line paste held for 50ms
+shows the spinner, a paste that drains and echoes inside 20ms does not, and typed input never does. Run the rest on a
+board built from this branch against a throwaway room with one card, so a paste into a live card is not the test.
 
-### BB1. A big paste shows `pasting`
+### BB1. A paste shows `pasting`
 
 1. Attach the card. Copy about 200KB of text, for example a large log file, and paste it with ctrl-v.
 
@@ -3342,8 +3343,9 @@ still one paste, not several.
 
 2. Paste one line of text, and type a few words.
 
-**Expected:** no box, not even a flash. Only a paste of 2KB or more shows it, and only when it is still in flight
-after 20ms.
+**Expected:** a paste of any size shows the box if it is still in flight after 20ms, for example `pasting 9B` over a
+slow share. On loopback a one-line paste usually lands inside 20ms and shows nothing, not even a flash. Typing never
+shows it. Right click, ctrl-shift-v and a dropped file show it the same way. So does a popped-out window.
 
 3. Paste 200KB into a card's shell tab with `cat > /dev/null` running, so nothing echoes.
 
