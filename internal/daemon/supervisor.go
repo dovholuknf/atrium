@@ -900,8 +900,6 @@ var (
 // bare newline) and a carriage return inside a bracketed paste are newlines IN
 // the prompt, not a send: reading them as a submit once opened the gate on a
 // half-written message.
-//
-// Esc Esc clears a Claude prompt, which 	ypedLine.escape follows. See escclear.go.
 func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return

@@ -28,11 +28,11 @@ section heading is just "what landed in this iteration."
 
 - **Esc Esc on a Claude prompt releases held messages.** See `docs/test-plan.md` BY4.
 
-  The gate counts the operator's keystrokes to know the line is empty. Enter, control-c and control-u reset the
-  count, and a lone Esc matched nothing, so a line Claude Code cleared on Esc Esc still read as full and held
-  messages until a control-c. Two lone Escs within 2 seconds now clear the count on a Claude runner. A shell is left
-  alone, where Esc is a meta prefix. Clearing the scrollback empties no line and still releases nothing. ROOM-SIDE,
-  needs a room restart.
+  The gate follows the operator's line from their keystrokes (`typedLine`). Enter, control-c and control-u empty
+  it, and a lone Esc edited nothing, so a line Claude Code cleared on Esc Esc still read as written and held messages
+  until a control-c. Two lone Escs within 2 seconds now empty it on a Claude runner. A shell is left alone, where Esc
+  is a meta prefix. Clearing the scrollback empties no line and still releases nothing. ROOM-SIDE, needs a room
+  restart.
 
 - **The held chip's tooltip says how many, how long, what blocks them and what to do.** For example "2 messages have
   been waiting to be delivered to this agent for 1h 2m 3s and are blocked by input in this terminal. Submit your

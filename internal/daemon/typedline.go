@@ -44,10 +44,8 @@ type typedLine struct {
 	// inPaste is inside a bracketed paste, where every byte is text and a
 	// carriage return is a newline rather than Enter.
 	inPaste bool
-	// escClears is a runner whose prompt a second lone Esc clears, which is
-	// Claude Code ("Esc again to clear"), and escAt is when the last lone Esc
-	// landed. A shell reads Esc as a meta prefix and clears nothing, so it never
-	// sets escClears. See `loneEsc`.
+	// escClears is a runner whose prompt a second Esc clears, and escAt is when
+	// the last lone Esc landed. See `loneEsc`.
 	escClears bool
 	escAt     time.Time
 }
@@ -179,16 +177,11 @@ func (l *typedLine) feed(p []byte) (keyed bool) {
 				i += n
 			}
 			keyed = true
-			l.escAt = time.Time{}
 			continue
 		}
 		b := p[i]
 		if b == 0x1b {
-			lone := len(p)-i == 1 || p[i+1] == 0x1b
 			n, key := l.escape(p[i:])
-			if key && !lone {
-				l.escAt = time.Time{}
-			}
 			i += n
 			keyed = keyed || key
 			continue
@@ -240,10 +233,38 @@ func (l *typedLine) control(b byte) {
 // bytes it took and whether it was a keystroke. False means the terminal sent
 // it on its own account.
 func (l *typedLine) escape(p []byte) (int, bool) {
-	if len(p) == 1 {
+	if len(p) == 1 || p[1] == 0x1b {
+		// Escape pressed, then whatever follows.
 		l.loneEsc()
 		return 1, true
 	}
+	n, key := l.escapeSeq(p)
+	if key {
+		l.escAt = time.Time{}
+	}
+	return n, key
+}
+
+// loneEsc is the Esc key on its own.
+//
+// ESC ESC CLEARS A CLAUDE PROMPT ("Esc again to clear"), and was read as editing
+// nothing, so a line cleared that way stayed written here and held every say
+// until a control-c. Two in a row within `escAgainWithin` empty the line on a
+// runner that clears on them. Only that runner: in a shell Esc is a meta prefix
+// and clears nothing, and reading it as a clear there would type into a half
+// written command. Clearing the scrollback sends no byte and empties no line, so
+// it rightly releases nothing.
+func (l *typedLine) loneEsc() {
+	if l.escClears && !l.escAt.IsZero() && time.Since(l.escAt) < escAgainWithin {
+		l.clear()
+		l.escAt = time.Time{}
+		return
+	}
+	l.escAt = time.Now()
+}
+
+// escapeSeq is `escape` for a sequence longer than the Esc key alone.
+func (l *typedLine) escapeSeq(p []byte) (int, bool) {
 	switch p[1] {
 	case '[':
 		return l.csi(p)
@@ -271,25 +292,8 @@ func (l *typedLine) escape(p []byte) (int, bool) {
 	case 0x7f, 0x08: // alt-backspace, control-alt-backspace
 		l.wordDelete()
 		return 2, true
-	case 0x1b:
-		l.loneEsc() // escape pressed, then whatever follows
-		return 1, true
 	}
 	return l.meta(p)
-}
-
-// loneEsc is escape pressed on its own. It edits nothing, except that a second
-// one within `escAgainWithin` clears a Claude prompt, so the line is empty
-// then. A lone Esc used to match nothing, and the gate held messages behind a
-// line Claude Code had already cleared until a control-c. Clearing the
-// scrollback sends no byte and empties no line, so it rightly releases nothing.
-func (l *typedLine) loneEsc() {
-	if l.escClears && !l.escAt.IsZero() && time.Since(l.escAt) < escAgainWithin {
-		l.clear()
-		l.escAt = time.Time{}
-		return
-	}
-	l.escAt = time.Now()
 }
 
 // meta is alt with a key: ESC and the key's own bytes.
