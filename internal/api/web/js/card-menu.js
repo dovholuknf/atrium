@@ -533,6 +533,9 @@ async function cardMenu(e, id) {
   if (selectionTouches(e.target.closest(".card, .stackrow"))) return;
   e.preventDefault();
   e.stopPropagation();
+  // Where "details" pops up: beside the card that was clicked, found now
+  // because the board may redraw it while the menu is being built.
+  const anchor = e.target.closest(".card, .stackrow");
 
   // A CARD ON A MACHINE THAT IS NOT ANSWERING OPENS NO MENU.
   //
@@ -595,6 +598,15 @@ async function cardMenu(e, id) {
   ];
 
   const items = [
+    // The compact details: context now and the token totals. The same view a
+    // two-second hover opens. See js/peek.js.
+    {
+      label: "details",
+      act: () => openPeek(id, anchor && anchor.isConnected ? anchor
+        : document.querySelector(`.card[data-id="${CSS.escape(id)}"], .stackrow[data-id="${CSS.escape(id)}"]`) ||
+          { x: e.clientX, y: e.clientY }, "menu")
+    },
+    { sep: true },
     // One entry, two ways to open it. Attaching and popping out are the same
     // intention with a different destination, so they are one row that says
     // where rather than two rows that both say attach.

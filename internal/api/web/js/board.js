@@ -625,6 +625,22 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
+// PAST THE CONTEXT THRESHOLD, a mark and no number. Every turn re-reads the
+// whole context, so a card past the gear's line is costing on every turn. The
+// number itself is in the card's details (js/peek.js), asked for by opening
+// them. The daemon decides `warn`, so the mark and the launcher's notice
+// cannot disagree. Never stored.
+function ctxWarnMark(t) {
+  const c = t.context_size;
+  if (!c || !c.warn || over(t) || t.status === "shelved") return "";
+  const tip = `past ${c.threshold_k}k tokens of context, and every turn re-reads all of it. ` +
+    `hover the card for its details`;
+  return `<span class="chip warn icon ctxwarn" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+    ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+      ><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h6"/><path d="M12 10.5v3M12 15.2v.1"/></svg></span>`;
+}
+
 // What is behind the percentage, for the tooltip. Tokens where the statusline
 // reported them, because the same percentage is a different amount of room on
 // a different window, and the model name is what says which window it is.
@@ -735,6 +751,7 @@ function cardHTML(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${ctxWarnMark(t)}
       ${contextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact"

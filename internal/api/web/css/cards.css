@@ -656,3 +656,91 @@
   .rev-row .rep { font: var(--fs-xs) var(--mono); color: var(--dimmest); }
   .rev-row .by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
   .rev-row .by .auto { color: var(--warn); }
+
+  /* ── a card's details, small ──────────────────────────────
+     The popover a two-second hover or the menu's "details" opens, and the drawer on the terminal's shortcut
+     strip. One body, js/peek.js. Only palette variables, so every skin draws it in its own colours. */
+  .peek {
+    position: fixed; z-index: 80; width: 300px; left: 0; top: 0;
+    opacity: 0; visibility: hidden; transform: translateY(6px) scale(.985); transform-origin: top left;
+    transition: opacity .16s ease, transform .2s cubic-bezier(.2,.8,.2,1), visibility 0s linear .2s;
+    pointer-events: none;
+  }
+  .peek.on {
+    opacity: 1; visibility: visible; transform: none; pointer-events: auto;
+    transition: opacity .16s ease, transform .2s cubic-bezier(.2,.8,.2,1), visibility 0s;
+  }
+  .peek-body {
+    padding: 14px 16px 11px; border-radius: var(--r-lg);
+    background: linear-gradient(180deg, rgba(var(--bg1-rgb),.94), rgba(var(--bg1-rgb),.88));
+    -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+    border: 1px solid rgba(var(--stroke-rgb),.5);
+    box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,.04);
+    color: var(--body); font: var(--fs-sm)/1.4 var(--sans); cursor: default; text-align: left;
+  }
+  .peek-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; min-width: 0; }
+  .peek-title {
+    font: 600 var(--fs-md)/1.25 var(--sans); color: var(--head);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .peek-sub, .peek-scale, .peek-cell span, .peek-num span, .peek-foot {
+    font-family: var(--mono); letter-spacing: .08em;
+  }
+  .peek-sub { font-size: var(--fs-xxs); color: var(--dim); text-transform: uppercase; }
+  .peek-num { display: flex; align-items: baseline; gap: 8px; }
+  .peek-num b {
+    font: 600 var(--fs-3xl)/1 var(--mono); color: var(--head); letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; min-width: 2.2em;
+  }
+  .peek-num span { font-size: var(--fs-xxs); color: var(--dim); text-transform: uppercase; }
+  .peek-ctx.warn .peek-num b { color: var(--warn); }
+  .peek-bar {
+    position: relative; height: 4px; margin: 11px 0 5px; border-radius: var(--r-pill);
+    background: rgba(var(--stroke-rgb),.35);
+  }
+  .peek-bar i {
+    position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit;
+    background: linear-gradient(90deg, rgba(var(--teal-rgb),.45), var(--teal));
+    box-shadow: 0 0 10px rgba(var(--teal-rgb),.35);
+    transition: width .5s cubic-bezier(.2,.8,.2,1);
+  }
+  .peek-ctx.warn .peek-bar i {
+    background: linear-gradient(90deg, rgba(var(--warn-rgb),.45), var(--warn));
+    box-shadow: 0 0 10px rgba(var(--warn-rgb),.4);
+  }
+  .peek-bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--dim); opacity: .7; }
+  .peek-scale {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: var(--fs-xxs); color: var(--dimmest); letter-spacing: .04em;
+  }
+  .peek-scale span { white-space: nowrap; }
+  .peek-ctx.warn .peek-scale span:first-child { color: var(--warn); }
+  .peek-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 12px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(var(--stroke-rgb),.3);
+  }
+  .peek-cell { min-width: 0; }
+  .peek-cell b {
+    display: block; font: 600 var(--fs-base)/1.2 var(--mono); color: var(--head);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .peek-cell span { font-size: var(--fs-xxs); color: var(--dim); text-transform: uppercase; }
+  .peek-foot {
+    display: flex; justify-content: space-between; gap: 10px; margin-top: 12px;
+    font-size: var(--fs-xxs); color: var(--dimmest); letter-spacing: .04em;
+  }
+  .peek-foot span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-none { color: var(--dim); font-size: var(--fs-sm); }
+  /* While the read is under way the numbers are bars that shimmer, the size the numbers will be. */
+  .peek-body.loading .peek-num b, .peek-body.loading .peek-cell b {
+    border-radius: var(--r-xs); color: transparent;
+    background: linear-gradient(90deg, rgba(var(--stroke-rgb),.2), rgba(var(--stroke-rgb),.45),
+      rgba(var(--stroke-rgb),.2));
+    background-size: 200% 100%; animation: peek-shimmer 1.1s linear infinite;
+  }
+  .peek-body.loading .peek-cell b { width: 70%; }
+  @keyframes peek-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .peek, .peek.on, .peek-bar i { transition: none; }
+    .peek-body.loading .peek-num b, .peek-body.loading .peek-cell b { animation: none; }
+  }

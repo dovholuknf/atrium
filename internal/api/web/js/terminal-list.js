@@ -1011,8 +1011,7 @@ function termRow(t, deep) {
   // waiting said something the board already says better and cost the one
   // signal that is actually per session.
   const th = themeFor(t);
-  const on = termTask && t.id === termTask.id;
-  const wear = termWear(t, on, termCold(t));
+  const on = termTask && t.id === termTask.id;  const wear = termWear(t, on, termCold(t));
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}` +
     (wear.style ? ";" + wear.style : "");
   const full = terminalLabel(t) || t.display_title;
