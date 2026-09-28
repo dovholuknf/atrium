@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card has an alias you mention it by, like `@dotfiles` or `@sa89`.** See `docs/backlog-2.md` item 35 and
+  `docs/test-plan.md` section BS.
+
+  Handles are made up by the board (`dotfiles-41800`) and nobody types them. Now each card can carry a short alias,
+  drawn on the card as an `@name` chip and set from "alias…" in the card menu or the terminal list. `atrium_say`,
+  `atrium tell`, `atrium ask --peer` and `atrium answer` take it wherever they take a handle, with or without the `@`,
+  and `atrium_peers` and `atrium peers` show it. A launched card whose title has a prefix with a digit (`sa89: ...`)
+  starts with that prefix as its alias. Anything else has none until it is set. An alias is unique among live cards:
+  taking one in use is refused and the refusal names the card holding it, and so is an alias equal to another live
+  card's handle, since a handle is matched first. An ended card keeps its alias but no longer answers to it. Schema:
+  migration `0063_task_alias` adds `task.alias`, and tolerates the column already being there. `internal/store`,
+  `internal/daemon`, `internal/api`: ROOM RESTART (runs the migration). `internal/link` (`atrium_say`, `atrium_peers`):
+  HUB RESTART. `internal/cli`: a new binary on the PATH.
+
 - **Clicking into a terminal no longer holds every say to it, and a readout shows what the gate thinks.** See
   `docs/backlog-2.md` item 33 and `docs/test-plan.md` section BR.
 
