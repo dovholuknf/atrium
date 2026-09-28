@@ -3986,3 +3986,242 @@ notice is not. Switch to another card and back: the notice is back, and only the
 **Expected:** the guest's terminal shows the old notice, which names the cog, with no links. A guest request for
 `/v1/tasks/<id>/attach?carry=all` is refused with 403. The popped-out window shows both links, and BO1 and BO2 work
 there.
+
+## BP. A launched worker starts lean, keeps its hooks, and reports
+
+BP1 to BP3 need the hub and the room built from this change, and a room restart. Go tests `TestLeanArgs*`,
+`TestLeanSettings*` and `TestLeanOptionsComeFromTheRequestOrTheCard` in `internal/daemon/lean_test.go`, and
+`TestLaunchIsLeanByDefaultAndForwardsTheMCPList` in `internal/link/control_mcp_test.go`, cover the flags, the MCP list
+and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 29.
+
+### BP1. A default launch is lean
+
+1. From a session, `atrium_launch` a worker into a worktree with a brief that says: run `git status`, then report
+   done.
+2. When it reports, run `/context` in its terminal.
+
+**Expected:** the report reaches the launcher. The permission history shows its `git status` decided through the
+gate. `/context` lists no custom agents, no skills, and no memory files in a worktree. MCP tools are
+`atrium-control` and `mercurius` only. The card carries the tag `atrium:lean`.
+
+### BP2. Asking for one more server
+
+1. Launch a second worker the same way, with `mcp` naming one more server from the runner's MCP config.
+
+**Expected:** `/context` lists that server's tools beside `atrium-control` and `mercurius`. The card carries
+`atrium:mcp:<name>`. A launch with `mcp: ["nosuch"]` is refused, and the error names the servers the runner has.
+
+### BP3. Lean survives a restart, and can be turned off
+
+1. With the BP1 worker idle, restart the room.
+2. Run `/context` in its terminal again.
+3. Launch a third worker with `lean: false`.
+
+**Expected:** after the restart the BP1 worker is still lean: no skills, no agents, `atrium-control` and
+`mercurius` only. The third worker has the operator's whole setup, as before this change.
+
+## BQ. A big paste shows `pasting` too, and one over 4MB is refused
+
+The headless section `pasteBig` covers BQ1 and BQ2 against a socket that holds the main thread and drains the way
+Chromium's does over loopback, with a runner that keeps printing after the drain. It runs ctrl-v, right click, the
+paste box and a dropped block of text at 1MB and 3MB, a bracketed runner, a key typed straight after a big paste,
+a 10MB paste and a popped-out window. Run the rest on a board built from this branch against a throwaway room with
+one card, so a paste into a live card is not the test.
+
+### BQ1. A 1MB paste shows the box at once and keeps it up
+
+1. Attach the card. Copy about 1MB of text and paste it with ctrl-v.
+
+**Expected:** the box with a spinner and `pasting 1.0MB` appears at the top right of the terminal at once, not after
+a delay. It stays up at least about a second, and goes once the runner shows the paste, for example Claude Code's
+`[Pasted text #1 +N lines]`. The paste is still one paste.
+
+2. Do the same with right click, the paste box (right click on a share that has not been granted the clipboard),
+   and by dragging a block of selected text from another window onto the terminal. Repeat in a popped-out window.
+
+**Expected:** the same box every time. The dropped text lands in the runner as a paste. It used to go nowhere.
+
+3. Paste 1MB and press Enter straight after it.
+
+**Expected:** the Enter lands after the paste, not ahead of it.
+
+### BQ2. A paste over 4MB is refused out loud
+
+1. Copy about 10MB of text and paste it with ctrl-v.
+
+**Expected:** an alert `that paste is too big` naming its size and the 4MB limit. Nothing is sent. The terminal
+stays attached. It does not say `detached` or reconnect, which is what a frame over the daemon's limit used to do.
+
+## BR. The launch cap counts only `atrium:subagent` workers
+
+BR1 needs the hub built from this change and a hub restart. The room is untouched. Go tests
+`TestLaunchCapCountsOnlyRunningSubagents`, `TestLaunchRefusesAtTheCap` and `TestLaunchCapCountsOnlyAgentSessions` in
+`internal/link/control_mcp_test.go` cover the count.
+
+### BR1. Orchestrators and the merger do not use up the cap
+
+1. Start the hub with `ATRIUM_LAUNCH_CAP=2`.
+2. From a session, `atrium_launch` two workers with tags `atrium:subagent`, each with a brief that says: wait for a
+   message, then report done.
+3. Launch a third the same way.
+4. Launch a fourth with no `atrium:subagent` tag.
+5. Tell one of the first two to finish, wait for its card to go done, then launch another tagged worker.
+
+**Expected:** the third launch is refused with `at the launch cap of 2 running sessions`. The fourth proceeds even
+though every card carries `origin:agent`, and the board still hides all of them as doers. The last launch proceeds,
+because a done card does not count.
+
+## BS. A launched worker's approvals go through atrium's gate
+
+Go tests: `TestLaunchGatesTheRunnerByDefault`, `TestLaunchHonorsAHarnessGateSetting` and
+`TestLaunchedSessionUnderGlobalAuto` in `internal/daemon/launch_permgate_test.go`. Run the rest on a throwaway room
+with the dotfiles permission hook installed, so a live worker is not the test.
+
+### BS1. Board-wide auto covers a launched worker
+
+1. Turn board-wide auto on. Launch a claude worker with `atrium_launch` and a prompt that runs `git status` and
+   calls `atrium_peers`.
+
+**Expected:** both run with no prompt in the worker's terminal and no card in `needs-permission`. The review lists
+both as `global-auto`, the MCP call included.
+
+2. Turn board-wide auto off. Tell the worker to run `git log -1`.
+
+**Expected:** the card moves to `needs-permission` and the request is on the board. Claude Code's own prompt does
+not appear in the worker's terminal. Approve it and the command runs.
+
+### BS2. A runner set to off stays ungated
+
+1. On a claude harness row, set `ATRIUM_PERM_GATE=off` in its environment. Launch a worker from it, with board-wide
+   auto on, and tell it to run `git status`.
+
+**Expected:** Claude Code's own permission flow runs in the worker's terminal. Nothing reaches the board and the
+review has no row for it.
+
+## BT. Token use is on record for every Claude turn, and shown only in a card's details
+
+BT1 to BT3 need the room built from this change and a room restart, and on a hub board the hub rebuilt and
+restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and `TestKeepaliveRefreshIsAUsageRow` in
+`internal/daemon/usage_test.go`, and `TestSessionUsage*` in `internal/store/usage_test.go`, cover the row per turn,
+dedupe by message id, subagent replies left out, the turn a blocked Stop continued, counting on from the last row
+after a restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
+
+### BT1. A turn is one row, with its cause
+
+1. Open a Claude card's details. Open the `token use` fold.
+2. Type a prompt into the card's terminal and let the turn end. Close and reopen the fold.
+
+**Expected:** one new row at the top, cause `you`, with in, out, write 5m, write 1h, read, the context and an
+estimate. `context now` matches the row's context. The totals grew by that row. Hovering the row names the model and
+how many requests the turn made.
+
+3. `atrium_say` to the card from another session and let that turn end.
+
+**Expected:** a row with cause `a say`. A message the Stop hook delivers into a finished turn starts a row of its
+own, `a say`, or `you` when every message came from the board.
+
+4. Leave a card idle on the 1h cache until keep-alive refreshes it (section BL).
+
+**Expected:** a row with cause `keep-alive`, its read about the card's context and its write near zero.
+
+### BT2. Nothing outside the details
+
+1. Look at the card face, the stack, the terminals list and the toasts while BT1 runs.
+
+**Expected:** no token figures anywhere but the details fold.
+
+### BT3. A restart keeps the record and flags the resumed turn
+
+1. Note the rows on one card. Restart the room. Let the after-restart wake, or a prompt of yours, run one turn.
+
+**Expected:** the old rows are all still there, nothing counted twice. The new row reads `restart wake · resumed`,
+or `resume` when you prompted it yourself, and is shaded.
+
+### BT4. Does a room restart miss the cache? A procedure, not a test to run casually
+
+This is what item 37's data was built to answer. It needs a restart that was going to happen anyway. Do not restart a
+room only to try it.
+
+1. Before the restart, write down the time. Every Claude card that took a turn or a keep-alive refresh inside the last
+   hour still has a warm cache.
+2. After the restart, let each resumed card run one turn: the wake, or a prompt.
+3. Read the rows from the room's `atrium.db`, where `:restart` is the time from step 1:
+
+   ```sql
+   SELECT u.task_id, u.cause, u.context,
+          u.cache_write_5m + u.cache_write_1h AS written, u.cache_read,
+          (SELECT p.context FROM session_usage p WHERE p.task_id = u.task_id AND p.ended_at < u.started_at
+             AND p.cause <> 'keepalive' ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
+          (SELECT MAX(p.ended_at) FROM session_usage p WHERE p.task_id = u.task_id
+             AND p.ended_at < u.started_at) AS last_warm
+   FROM session_usage u
+   WHERE u.after_resume = 1 AND u.started_at > :restart
+   ORDER BY u.started_at
+   ```
+
+   Or open each card's `token use` fold and read the shaded row and the row under it.
+4. Keep only the cards whose `last_warm` is less than the cache TTL (an hour for keep-alive cards) before the new
+   row's start. The rest would have missed with no restart at all.
+5. For each card kept: `written` about equal to `context_before` (90% or more) is a MISS, the whole prefix written
+   again. `written` small next to the context (5% or less, the new prompt and the reply) with `cache_read` at or
+   above `context_before` is a HIT.
+
+**Reading it:** mostly hits means a resume reads the cache and the restart's cost is the new turn. Mostly misses
+means every restart pays about one full write per card, `written` times the model's write price, and that total is
+the number item 38 decides on. Mixed: compare the models, the 1M variant (`[1m]`), and the Claude Code versions before
+and after the restart, which change the prefix.
+
+## BU. A machine becomes a room of this hub from one command over ssh
+
+Go test: `TestRoomJoinNoRunSavesAndReturns` in `internal/cli/roomjoin_norun_test.go`. Run the rest from the hub
+machine against a machine you can wipe, reached by `ssh <target>` with a key and no password. The hub has to be
+running with `--link` bound wide and `--link-advertise` set, since a room on another machine cannot dial loopback.
+
+### BU1. A fresh machine is provisioned and attaches
+
+1. `pwsh -File scripts\provision-room.ps1 <target> -Runners claude`
+
+**Expected:** one `provision <step> <status> <detail>` line per step, in the order ssh, os, hub, state, build,
+binary, scripts, join, autostart, start, attached, then one `runner:<name>` line each. binary, join, autostart and
+start say `done`. attached names a connection made after the start. The last line is `provision done ok` and the
+exit code is 0, or `provision done fail 5` and exit 5 when a runner is missing. The board shows the new room.
+
+2. On the target, check the install is the user's own.
+
+**Expected:** Windows has `~\.atrium\bin\atrium.exe` and a logon task `atrium` with RunLevel Limited running
+`atrium room`. Linux has `~/.local/bin/atrium` and `~/.config/systemd/user/atrium.service` running `atrium room`.
+macOS has the LaunchAgent plist, loaded if someone is logged in at the desktop. Nothing is under Program Files,
+`/usr` or `/Library`.
+
+### BU2. Running it again changes nothing
+
+1. Run the same command again.
+
+**Expected:** binary, join, autostart and start say `ok`. No new join string is minted and the room keeps its
+connection.
+
+2. Change the build (any commit) and run it again.
+
+**Expected:** binary says `done`, start says `done`, and attached shows a connection time after this run started.
+
+### BU3. Guards
+
+1. Point it at a machine that already runs an atrium this script did not install.
+
+**Expected:** `provision state fail` naming what is there, exit 6, and nothing changed. `-Force` goes ahead.
+
+2. Provision a second machine with `-Name` set to a room that has already connected from somewhere else.
+
+**Expected:** `provision join fail`, exit 4, and the hub's room is untouched.
+
+3. Point it at a host ssh cannot reach, or one that wants a password.
+
+**Expected:** `provision ssh fail` at once with ssh's own reason, exit 2. No prompt waits.
+
+### BU4. -Remove undoes it
+
+1. `pwsh -File scripts\provision-room.ps1 <target> -Remove`, then run it a second time.
+
+**Expected:** the first run stops the room, removes the autostart, the binary, the room's key, its database and
+ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
+target before the first provision is still there. The second run says `provision state skip` and exits 0.

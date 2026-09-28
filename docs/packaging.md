@@ -695,6 +695,36 @@ nothing was written to Program Files or the system PATH. Uninstall removed the t
 other no-admin route and is already written as `packaging/scoop-atrium.json`: it shims the binary onto the user
 PATH and needs no administrator either.
 
+### Provisioning a room over ssh, from the hub
+
+`scripts/provision-room.ps1` does the no-admin install above on another machine, from the hub, and joins it:
+
+```
+pwsh -File scripts\provision-room.ps1 user@host -Runners claude,codex
+pwsh -File scripts\provision-room.ps1 user@host -Remove
+```
+
+It reads the running hub's `--link`, `--link-advertise` and `--atrium-dir` from its process, finds the remote OS and
+arch with `uname` or PowerShell, builds a matching binary from this checkout (`CGO_ENABLED=0`, into
+`build.claude/provision/`), and copies it to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere. It copies the
+service scripts to `~/.atrium/provision` and installs autostart through them with the new `room` verb
+(`atrium-service.ps1 -Verb room`, `ATRIUM_SERVICE_VERB=room atrium-service.sh`), so the logon task, user unit or
+LaunchAgent runs `atrium room` instead of `atrium daemon`. It mints a join string with `atrium rooms add` and
+`atrium rooms token`, and the remote spends it with `atrium room join <string> --no-run`, which enrols and exits so
+the service runs the room rather than the ssh session. Then it waits for the hub's live `/_hub/rooms` list to show a
+connection made after the start, and runs each runner's `--version` on the remote.
+
+ssh runs with `BatchMode=yes` and whatever the operator's ssh config and agent say. The script holds no key. The join
+string is single-use, good for an hour, and not stored. `~/.atrium/provision/manifest.json` records what was on the
+machine before the first run, so `-Remove` takes away only what this added and then removes the room from the hub.
+Every step prints `provision <step> <ok|done|skip|warn|fail> <detail>` and the exit code says which class of step
+failed, which is what the board dialog in backlog-2 item 46 will read.
+
+Proven on claudevm (Windows 11, Windows PowerShell 5.1 as the ssh shell) on 2026-09-28: fresh install, a rerun that
+changed nothing, a rerun with a new build that stopped the room, swapped the binary and saw it reattach, and
+`-Remove` twice. Linux and macOS are written against the same service script paths proven above but have not been
+run through this script.
+
 ---
 
 ## Publishing for the first time, in order

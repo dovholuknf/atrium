@@ -52,10 +52,10 @@ function keepaliveMenuItem(t, refresh) {
   const on = k.state === "on";
   return {
     label: "keep its cache warm", on,
-    help: "When this card has been idle for nearly an hour, atrium refreshes its prompt cache with a " +
-      "throwaway copy of the conversation that answers OK and is discarded, so coming back costs a " +
-      "cache read instead of rewriting the whole context. It stops by itself once the refreshes have " +
-      "cost an eighth of one rewrite." +
+    help: "When this card has been idle for nearly an hour, atrium refreshes its prompt cache. It " +
+      "sends one word from a copy of the conversation and throws the copy away. The card's own " +
+      "conversation is never touched. Coming back costs a cache read instead of rewriting the whole " +
+      "context. It stops by itself once the refreshes have cost an eighth of one rewrite." +
       (KEEPALIVE_STOPPED[k.state] ? " Now: " + KEEPALIVE_STOPPED[k.state] + "." : ""),
     act: () => setCardKeepalive(t.id, !on).then(refresh)
   };

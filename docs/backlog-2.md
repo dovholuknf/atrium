@@ -35,6 +35,24 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 26 | Toasts pop and disappear in the same second | bug | not started |
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
 | 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
+| 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221` `ac59568` `764e2a8`, the room half needs a room restart |
+| 30 | Peer review on the mercurius protocol, run in an atrium session | design | not started, 2 open questions |
+| 31 | STUCK fires on a worker whose turn ended while it waits on background runs | bug | not started |
+| 32 | A queued say from http-support never produced a backlog entry, and nothing can say why | bug | not started |
+| 33 | Watching a terminal holds every message to it, word deletes miscount, a gate debug readout | bug | sa89, started 2026-09-28 |
+| 34 | Every MCP tool call skips atrium's permission gate | bug | DONE 2026-09-28 in dotfiles, uncommitted, live through the hooks symlink |
+| 35 | A card has a name you mention it by, like `@dotfiles` | feature | sa89, started 2026-09-28 |
+| 36 | A finished worker stays up until somebody closes it | bug | not started |
+| 37 | Token and context use on record for every session, shown only in a card's details | feature | sa90, started 2026-09-28 |
+| 38 | A restart resumes only the cards that were working | feature | waits on 37 |
+| 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
+| 40 | The launch cap counts only `atrium:subagent` cards | bug | sa91, started 2026-09-28 |
+| 41 | A resident session owes its launcher a report for every prompt, from anybody | bug | not started |
+| 42 | A running card wears the `!` chip for a message held until its turn ends | bug | not started |
+| 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
+| 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
+| 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it, conflicts with 37 |
+| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
 
 ------------
 
@@ -691,6 +709,269 @@ history load did not go back to one page".
 
 A check that fails most runs hides real failures. Find the wait that times out, name it, move main-flow checks into
 named sections so each can run alone, and make the flaky waits wait on a condition rather than a clock.
+
+## 29. Lean workers: a launched worker starts with only what it needs (feature)
+
+Raised 2026-09-28 by clint. A worker started by `atrium_launch` inherits none of its launcher's conversation, yet it
+booted with the operator's whole setup, and its first request was ~40k tokens. sa85 measured every lever in Claude
+Code 2.1.283 and built a lean launch: `atrium_launch` now starts a claude worker with the user settings source
+dropped, a filtered copy of the user settings (permissions, env and hooks kept), atrium-control and mercurius as its
+only MCP servers, 22 tools disallowed, a short worker system prompt and auto-memory off. `mcp: [...]` adds servers,
+and `lean: false` launches as before. The same `-p` probe drops from 35,970 to 11,029 tokens in a worktree.
+
+See `docs/lean-workers-design.md` for the numbers and what a lean worker loses, and `docs/test-plan.md` section BP.
+Left: the end-to-end check through `atrium_launch` after a room restart, and the ~5.9k of system tools that
+dropping the user source adds for no reason found yet.
+
+## 30. Peer review on the mercurius protocol, run in an atrium session (design)
+
+Raised 2026-09-28 by clint, brief written by the mercurius `http-support` session and copied to
+`docs/peer-review-brief.md`. A mercurius reviewer is structured, bounded, calibrated and logged per round, but it sees
+only a snapshot and cannot read neighbours or run `go test`. An atrium session has tools and is watchable, but its
+review output is free-form and unrecorded. The brief lists six mercurius pieces to adopt: the JSON output contract, the
+finding budget, calibration from `mercurius.yaml`, the code-review prompt, per-round records with dispositions, and a
+fresh read-only reviewer.
+
+The recommended shape is option A: mercurius adds an `atrium` reviewer beside `codex`, `claude` and `pi`, and owns the
+protocol. Atrium owns the runner. Atrium must provide a non-interactive launch with model, cwd, a read-only tool policy
+and a prompt, a completion signal, the final output as raw text, and a session id to link. Option B, atrium
+re-implements the protocol, duplicates it and drifts. Related: item 16, reviews that remember.
+
+Open:
+
+- Does the reviewer see a worktree pinned at a SHA, or the live tree?
+- Does a failed schema validation get one repair turn in the session, or fail the round as mercurius does today?
+
+The brief cites `prompt.BuildCodeReview` in mercurius `internal/prompt/prompt.go`, which exists only on the uncommitted
+`http-support` branch as of 2026-09-28.
+
+## 31. STUCK fires on a worker whose turn ended while it waits on background runs (bug)
+
+Raised 2026-09-28 by clint, from a screenshot. sa83 ended its turn at 09:55 with five headless runs going in the
+background, and the board marked it STUCK three minutes later: "it stopped without reporting". It was not stuck. It
+reported progress when asked. A turn that ends with background work still running is waiting, not stopped. Find
+whether atrium can see background tasks, from the Stop hook payload or the runner's process tree, and hold the alert
+while they run.
+
+## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
+
+Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
+"the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
+say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by
+hand later, after clint pasted the sender's own summary into the atrium session.
+
+What is known:
+
+- The atrium session's handle today is `atrium-87300`, not `atrium`. Whether `atrium` resolved to this card, to another
+  card, or to nothing is not recorded anywhere the receiver can read.
+- The atrium session ran `/clear` between the send and clint's question. If the say arrived before the clear, the
+  model read it and the clear erased it, which is a lost message from the operator's point of view.
+- `atrium_task` events on the receiving card reach back only a few minutes, so they cannot show whether the say was
+  delivered or when.
+
+What is wanted:
+
+- A say's lifecycle on record: sent, the handle it resolved to, queued, delivered, and the channel (terminal, hook, end
+  of turn). Both the sender and the receiver can look it up afterwards.
+- A handle that no longer matches exactly answers with the candidates, as `atrium tell` already does, instead of
+  queuing to a guess.
+- A request that asks for a reply shows as owed on the receiving card until it is answered, so a `/clear` or a compact
+  cannot drop it without a mark.
+
+## 33. Watching a terminal holds every message to it, and nothing shows why (bug)
+
+Raised 2026-09-28 by clint, from a screenshot. Two says to saorch sat queued for minutes behind "delivers when your
+input line is clear and idle". Its input line was empty. clint had only clicked into the terminal.
+
+The cause is in `runner.noteOperatorTyped` (`internal/daemon/supervisor.go`). It counts every byte the attach socket
+carries as operator typing. Claude Code turns on focus reporting, so focusing or leaving the terminal makes xterm.js
+send `ESC [ I` or `ESC [ O`. The counter skips `ESC` and counts `[` and `I` as two typed characters. Only Enter,
+control-c or control-u zero it. Mouse reports and terminal query replies very likely count the same way.
+
+What is wanted:
+
+- Only keystrokes count. Sequences the terminal sends on its own account (focus, mouse, device and cursor reports)
+  count nothing.
+- A word delete is a word delete. Ctrl+Backspace sends `0x08` and is counted as one character, so deleting a word
+  leaves the line reading as part written. Keep the line's text rather than a count, and apply the word rules for
+  Ctrl+Backspace, Alt+Backspace and Ctrl+W. Arrow keys, history recall and tab completion can still make the model
+  drift. The readout below is how that drift gets seen.
+- A debug readout in the terminal view, behind a toggle, on the line above "ctrl-c copies a selection, interrupts
+  otherwise ...". It shows what atrium thinks is in the line, the count, time since the last keystroke, and whether the
+  gate is open or closed and why. It is for clint and an agent debugging together.
+
+An earlier report very likely has the same cause (was item 36 on `claude/backlog-0928`). sa85's turn ended at 09:45
+and it sat idle at its prompt. Three messages were due to it: one `when: done` from about 09:10, and two immediate
+ones from about 09:46 and 09:50, both answered `queued, not typed yet`. None was typed until clint typed `u waiting?`
+about 09:55. Then all three went in mid-turn and sat in Claude Code's own queue, so sa85 did nothing for about 9
+minutes. clint typing and pressing Enter zeroes the count, which fits. The room log for card
+`01a0e80e-b80b-7b81-874b-0d1dde930bba` between 09:45 and 09:56 can confirm it. Also check that a `when: done`
+message is delivered at the turn end it waited for.
+
+## 34. Every MCP tool call skips atrium's permission gate (bug)
+
+Raised 2026-09-28. The dotfiles `atrium-perm-hook.ps1` exits early for every `mcp__*` tool, which was there so Mode A's
+own `submit` was not gated. Mode A is gone, so `atrium_exit` and `atrium_say` fell to Claude Code's own prompt, or to
+its auto-mode classifier, which refused both. The dotfiles session is removing the skip. The fix lives in dotfiles,
+not here. This entry is so the reason is findable.
+
+## 35. A card has a name you mention it by, like `@dotfiles` (feature)
+
+Raised 2026-09-28 by clint: "a 'how this llm is referenced' type of field on each of the atrium owned sessions so that
+i can mention @dotfiles in the same sort of way i would @ mention a custom agent".
+
+Handles today are made up by the board: `dotfiles-41800`, `sa84-merger-owns-claude-main-workers-rep`. Nobody types
+those. What is wanted:
+
+- A short alias on each card, chosen by the operator and shown on the card. `atrium_say`, `atrium peers` and
+  `atrium tell` accept it wherever they accept a handle.
+- A worker's alias defaults from its title prefix (`sa89`), and a resident's from what it was named (`saorch`).
+- An alias is unique among live cards. Taking one that is in use is refused and names the holder.
+- Mentioning `@alias` in a prompt to a session is enough for that session to address the card. Whether the board also
+  routes a typed `@alias ...` line on its own is an open question.
+
+Item 32's handle mismatch (`atrium` versus `atrium-87300`) is the same gap seen from the sending side.
+
+## 36. A finished worker stays up until somebody closes it (bug)
+
+Raised 2026-09-28 by clint: "once a job is done the worker should be culled. plain and simple". sa82, sa85, sa86 and
+sa88 sat idle at needs-input after their branches were merged, and filled the launch cap of 10 so a new worker could
+not start. When the merger lands a worker's branch and the work is accepted, the worker is asked to leave and its
+worktree and branch are removed.
+
+## 37. Token and context use on record for every session, shown only in a card's details (feature)
+
+Raised 2026-09-28 by clint: "i definitely want to keep track of claude sessions and token use and context use and
+all that ... don't show me unless i click on the details of the card but i want atrium to be able to track it for
+history's sake".
+
+clint runs about 21 Claude cards holding 2 to 4 million tokens of context between them, and a restart, a resume or a
+keep-alive round can spend a lot without anything saying so. What is wanted:
+
+- Per session, over time: input, output, cache write (5m and 1h), cache read, and context size, from the runner's
+  own transcript usage records. `keepalive.go` already reads these for the cache TTL. Reuse that reader.
+- Every spend is attributed to what caused it where atrium can tell: the operator, a say, a restart wake, a keep-alive
+  refresh, a resume. That attribution is what makes items 38 and 39 decidable.
+- Kept with the card's history, so it outlives the card and the daemon.
+- Shown ONLY in the card's details. Nothing on the card face, the list or a toast. sa87 (context size on every card)
+  conflicts with this and has to be reconciled.
+- The first use: measure one room restart, cache writes per card before and after, to learn whether a resume misses
+  the cache.
+
+## 38. A restart resumes only the cards that were working (feature)
+
+Raised 2026-09-28. A room restart resumes every supervised card. Cards that were mid-turn or have queued prompts need
+that. An idle card could stay parked until the operator attaches or types. Decide after item 37 shows what a resume
+costs.
+
+## 39. Keep-alive warms the cards you mark, not every idle card (feature)
+
+Raised 2026-09-28. Keep-alive (item 23) refreshes every idle Claude card on the 1-hour cache, 5 minutes before
+expiry, until break-even. With about 21 cards that is about 21 full-context cache reads an hour, including cards
+nobody returns to. Decide after item 37 shows what keep-alive spends.
+
+## 40. The launch cap counts only `atrium:subagent` cards (bug)
+
+Raised 2026-09-28 by clint: "it should be only atrium:subagent". `runningForCap` in `internal/link/control_mcp.go`
+counts every running supervised card carrying the `origin:agent` tag, which every `atrium_launch` stamps. So one cap
+of 10 covered every orchestrator's launches and the resident merger together, and a launch was refused while only
+seven workers were up. The cap counts running cards tagged `atrium:subagent` and nothing else. `origin:agent` stays
+as the doer signal it already is.
+
+Also wanted, from an earlier report of the same refusal (was item 33 on `claude/backlog-0928`): the refusal lists what
+it counted, with title, launcher and status, so the caller and clint can see what to free. On 2026-09-28 saorch had
+`origin:agent` removed from its tags as a workaround, which also stops its silent-stop notices (item 41), because
+`agentLaunched` reads that tag.
+
+## 41. A resident session owes its launcher a report for every prompt, from anybody (bug)
+
+Raised 2026-09-28. saorch (sa84) is a resident merger that the orchestrator launched. sa81 sent it a report, and
+the orchestrator sent it a copy. Each is a prompt, saorch ended both turns without saying anything to the
+orchestrator, and the orchestrator got two `ended its turn without reporting` notices seven seconds apart. Each
+notice is a full orchestrator turn over a large context, and neither said anything the orchestrator needed.
+
+The notice is keyed on `PromptKey()` in `silentStop` (`internal/daemon/a2a.go`), so every prompt from any sender
+makes a launched card owe a report. That fits a one-shot worker and does not fit a resident session whose prompts
+come from its own workers.
+
+The same happens to a worker that waits on its own background job. At 09:34 sa83 ran five headless runs under a
+monitor. Each monitor event woke it for a turn that ended "still waiting", and the orchestrator got a notice for
+each one, 23 seconds apart.
+
+Expected: a card owes its launcher a report only for a prompt the launcher sent (its first prompt, or an
+`atrium_say` from the launcher). A message from any other session, or a turn the session's own background task or
+monitor woke, does not make it owe one. Test plan AB2 grows a case: a message from a third session, then a silent
+stop, gives the launcher no notice.
+
+## 42. A running card wears the `!` chip for a message held until its turn ends (bug)
+
+Raised by clint 2026-09-28 with a screenshot (`.atrium/incoming/20260928-092222-pasted.png`). sa83 was running,
+with its spinner on the card and Claude working in the terminal, and the card showed the warn-coloured `!` chip.
+The tooltip: "message from atrium-87300 waiting 37m - waits for the session's turn to end, because it was sent to
+arrive when the turn is done". The chip is accurate and reads as "this needs you", which is wrong: nothing on that
+card needs clint, and the card is working.
+
+Expected: the `!` is reserved for something that needs the human. A message held for a running card's turn end
+shows as a quiet queued mark in the card's own colour, not the warn colour, and the tooltip keeps its wording.
+Decide whether a `when: done` message held longer than some bound falls back to the next tool call.
+
+## 43. A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report (bug)
+
+Raised by clint 2026-09-28 with a screenshot (`.atrium/incoming/20260928-092324-pasted.png`). sa82's card shows the
+unseen dot: "this session's last turn ended and nobody has looked at it since". sa82 is an agent-launched worker
+(`origin:agent`), and its report went to its launcher. Nobody human needs to look, so the dot asks clint for
+attention the work does not need.
+
+Expected: on a card launched by an agent, a turn that ends with a report or a message to the launcher counts as
+seen. A turn that ends silently still shows the dot, alongside the stuck mark from item 25.
+
+## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
+
+Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
+launcher, so its turn ends, waits and stuck alerts reach clint as noise. The workers' own launcher already hears
+through `notifyLauncher`.
+
+Expected: a checkbox under `notifications` in the gear, "don't notify me about cards an agent launched", ticked by
+default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop notification and no sound. Its
+marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
+still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
+
+## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
+
+Raised by clint 2026-09-28 (was item 32 on `claude/backlog-0928`). sa87 built it on `claude/context-size` (ee68bc8),
+not merged. Workers grow to 200k and 300k tokens of context, and every turn past that re-reads all of it.
+
+As built: every Claude card shows its context size on the card and in the terminal header, in the warn colour past a
+gear threshold (default 150k), read from the transcript like activity. An agent-launched card's launcher gets one
+notice through `notifyLauncher` the first time it crosses the threshold.
+
+CONFLICT with item 37: later the same day clint said usage is shown "only in a card's details". The launcher notice
+fits. The number on the card face does not. sa90 reports what should change when both land.
+
+## 46. Provision a machine as a room over ssh, from one command and later from the board (feature)
+
+Raised 2026-09-28 by clint, replacing `claude/sgg-provision` (77241f0, a `start-claude-sgg.ps1` that ssh'd to sgg and
+ran `atrium2.exe room`): "i want it to be made 1000% fucking generic ... slick, simple, easy. optionally even doable
+FROM ATRIUM ITSELF.... that'd be my ideal situation... i provide claude (or whatever agent) ssh access and atrium
+provisions the agent."
+
+Stage 1, sa92: one generic script. Given `user@host` it detects the OS and puts the matching atrium binary on the
+machine without admin, using the no-admin paths in `docs/packaging.md`. It installs autostart, joins that room to
+this hub, and checks the runners it asked for (claude first, then codex and others) are present and can start. It
+can be run again, prints one line per step, and has an `-Remove`. It is proven on claudevm first, then on clint's
+other machine by clint.
+
+Stage 2, later: the same thing from the board. An "add a machine" dialog takes an ssh target, and atrium runs
+stage 1 and shows each step. Credentials follow the overlays rule: atrium names the ssh command, it never holds the
+key.
+
+**Status, 2026-09-28, sa92: stage 1 built, proven on claudevm (Windows).** `scripts/provision-room.ps1 user@host`
+does the whole of stage 1, with `-Name`, `-Runners`, `-Remove` and `-Force`. It adds `atrium room join --no-run`
+and a `room` verb to both service scripts. See `docs/packaging.md` "Provisioning a room over ssh, from the hub" and
+`docs/test-plan.md` section BU. Linux and macOS paths are written but not yet run, so the first run on clint's
+other machine is also their first proof. Joins direct rooms only: a hub linked over ziti or zrok is refused with the
+reason. For stage 2 the step lines are `provision <step> <status> <detail>` and the exit codes are listed at the
+top of the script.
 
 
 ------------

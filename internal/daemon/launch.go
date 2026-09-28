@@ -127,6 +127,11 @@ type LaunchRequest struct {
 	// board's dialog sends nothing and is recorded as `@human`. See
 	// store.SetLineage.
 	SpawnedBy string `json:"spawned_by,omitempty"`
+	// Lean starts a claude session with only what a worker needs, and MCP names
+	// the servers from the runner's MCP config it keeps beside atrium-control.
+	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
+	Lean bool     `json:"lean,omitempty"`
+	MCP  []string `json:"mcp,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -761,7 +766,32 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// turn ends are reported even where the operator never installed it. The
 	// marker is on the request for a new launch and on the card for a reopen.
 	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task)
-	args = withStopHook(h, args, agent)
+	lean, leanMCP := leanOptions(req, task)
+	if lean && !isClaude(h) {
+		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
+	}
+	// finishArgs adds the Stop hook, or for a lean launch the whole lean set,
+	// which carries the Stop hook itself.
+	finishArgs := func(a []string) ([]string, error) {
+		if !lean {
+			return withStopHook(h, a, agent), nil
+		}
+		stop := ""
+		if agent {
+			stop = stopHookCommand()
+		}
+		return leanArgs(a, readUserSettings(), stop, leanMCP, os.ReadFile)
+	}
+	if args, err = finishArgs(args); err != nil {
+		return nil, err
+	}
+	if req.Lean {
+		base := req.Tags
+		if len(base) == 0 && task != nil {
+			base = task.Tags
+		}
+		req.Tags = mergeTags(base, leanTags(leanMCP))
+	}
 	prompt := wanted
 
 	title := strings.TrimSpace(req.Title)
@@ -857,6 +887,33 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// The cache keep-alive's switch for a new Claude card, from the room default,
 	// and the 1h cache pin when it is on. See keepalive.go.
 	d.keepaliveAtLaunch(task.ID, h, atrium)
+	// The usage record flags the first turn of a resumed runner. See usage.go.
+	d.usage.launched(task.ID, req.Resume != "")
+	if lean {
+		leanEnv(atrium)
+	}
+	// ROUTE A LAUNCHED SESSION'S OWN PERMISSION PROMPTS THROUGH ATRIUM'S GATE.
+	//
+	// A launched runner is a claude session that never ran `atrium join`, so
+	// with the gate unset the permission hook lets it through and its Bash and
+	// edit approvals are claude's OWN prompts, in a terminal nobody is sitting in
+	// front of. The board-wide switch lives in atrium's gate and only reaches
+	// requests that arrive there, so those prompts sit unanswered while "accept
+	// everything" is on and the operator wonders why a session he turned loose
+	// is still asking.
+	//
+	// `on` makes the runner's PreToolUse gate post every tool call to
+	// /permission, where the same chain every joined session runs decides it: a
+	// standing rule, a shelved card, per-session auto and board-wide auto all
+	// apply. With auto off it still gates to the operator exactly as a joined
+	// session does, so this routes the approvals without weakening them.
+	//
+	// A DEFAULT, not an override. The harness's own env wins, so an operator can
+	// set ATRIUM_PERM_GATE=off on a runner that should never gate, and only the
+	// default is supplied here.
+	if gate, ok := permGateDefault(h.Env); ok {
+		atrium["ATRIUM_PERM_GATE"] = gate
+	}
 	env := childEnvFrom(base, h.Env, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
@@ -870,7 +927,12 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			fresh = &launchSpec{cmd: h.Exe(), args: withStopHook(h, h.Args, agent), cwd: cwd, env: env}
+			freshArgs, err := finishArgs(h.Args)
+			if err != nil {
+				d.launchFailed(task.ID, err.Error())
+				return nil, err
+			}
+			fresh = &launchSpec{cmd: h.Exe(), args: freshArgs, cwd: cwd, env: env}
 		}
 		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
@@ -995,6 +1057,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
+		// `cmd` is the command before the lean flags, which carry the whole
+		// settings copy. These two say what was added.
+		"lean": lean, "mcp": leanMCP,
 	}); err != nil {
 		return nil, err
 	}
@@ -1162,6 +1227,24 @@ func inheritedTaint(key string) bool {
 		return true
 	}
 	return false
+}
+
+// permGateDefault is the ATRIUM_PERM_GATE value a launch supplies, and whether
+// to supply one at all.
+//
+// A launched session should route its tool approvals through atrium's gate so
+// the one board-wide switch controls them. `on` is that default. It is skipped
+// only when the harness already names the variable, so an operator who set
+// ATRIUM_PERM_GATE=off on a runner keeps that runner ungated. Matched
+// case-insensitively because it is a shell variable and its name is the only
+// thing that decides which env entry wins.
+func permGateDefault(harnessEnv map[string]string) (string, bool) {
+	for k := range harnessEnv {
+		if strings.EqualFold(k, "ATRIUM_PERM_GATE") {
+			return "", false
+		}
+	}
+	return "on", true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.

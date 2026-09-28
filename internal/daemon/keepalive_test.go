@@ -239,6 +239,54 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 }
 
 // Each rule blocks a refresh on its own.
+// A paid fork whose row will not save must not fork again on the next ticks,
+// though the saved rows still show the old expiry. A real turn lifts the hold.
+func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
+	f := newKAFix(t)
+	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	f.tick()
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d, want 1", f.forks())
+	}
+	for i := 0; i < 3; i++ {
+		f.now = f.now.Add(time.Minute)
+		f.tick()
+	}
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d after three more ticks, want 1", f.forks())
+	}
+	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	if v == nil || !strings.Contains(v.Why, "could not be saved") {
+		t.Fatalf("view = %+v, want the unsaved reason", v)
+	}
+	f.k.record = f.st.AddKeepaliveRefresh
+	f.reply(f.now, replyOpt{})
+	f.now = f.now.Add(56 * time.Minute)
+	f.tick()
+	if f.forks() != 2 {
+		t.Fatalf("forks = %d after a real turn, want 2", f.forks())
+	}
+}
+
+// Turning the switch on by hand lifts the hold from an unsaved refresh.
+func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
+	f := newKAFix(t)
+	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	f.tick()
+	f.k.record = f.st.AddKeepaliveRefresh
+	f.now = f.now.Add(time.Minute)
+	d := &Daemon{st: f.st, ka: f.k}
+	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	if f.forks() != 2 {
+		t.Fatalf("forks = %d after a hand re-enable, want 2", f.forks())
+	}
+}
+
 func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
 	cases := []struct {
 		name  string

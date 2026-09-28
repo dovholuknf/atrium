@@ -1242,7 +1242,15 @@ function wireTerminalDrops(screen) {
     screen.classList.remove("dropping");
     if (!termTask) return;
     const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
-    if (!files.length) return;
+    if (!files.length) {
+      // A DROPPED BLOCK OF TEXT IS A PASTE. Left to the browser it went
+      // nowhere: xterm has no drop handler, so the text was never sent.
+      const text = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+      if (!text) return;
+      e.preventDefault();
+      sendPasteText(text);
+      return;
+    }
     e.preventDefault();
     if (isGuest()) { toast("files are not part of this link", guestWord); return; }
     uploadIntoTerm(files);

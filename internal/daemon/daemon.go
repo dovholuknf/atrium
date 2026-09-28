@@ -152,6 +152,9 @@ type Daemon struct {
 	// See contextsize.go.
 	ctx *contextSizes
 
+	// usage records every Claude card's token use, a row per turn. See usage.go.
+	usage *usageTracker
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -444,6 +447,9 @@ func New(opts Options) (*Daemon, error) {
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
 	api.ContextSizeOf = d.contextSizeFor
+	// Token use on record, read only by a card's details. See usage.go.
+	d.usage = newUsageTracker(st)
+	d.ap.UsageOf = d.usageFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
