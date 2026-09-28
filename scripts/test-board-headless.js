@@ -3508,6 +3508,104 @@ async function pasteSpinnerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── copy on select answers the pointer, not the find bar ──────────────────
+// Test plan BJ. The search addon shows a match by selecting it, so copy on
+// select used to copy every find keystroke, step and re-search. Typing in the
+// find bar, stepping, and output arriving while it is open leave the clipboard
+// alone; a drag, a double-click and a triple-click still copy.
+async function copySelectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__clip = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: t => { window.__clip.push(t); return Promise.resolve(); },
+      readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      copyOnSelect = true;
+      termSock.onmessage({ data: "alpha beta gamma\r\nalpha delta\r\nalpha epsilon\r\n" });
+    });
+    await p.waitForTimeout(200);
+
+    // 1. Typing, stepping both ways, and output while the bar is open.
+    await p.evaluate(() => openFind());
+    await p.click("#t-find-q");
+    await p.keyboard.type("alpha", { delay: 20 });
+    await p.evaluate(() => { runFind(true); runFind(true); runFind(true, true); });
+    await p.evaluate(() => termSock.onmessage({ data: "alpha zeta\r\n" }));
+    await p.waitForTimeout(500);
+    const find = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
+    if (find.sel !== "alpha") fail("the find bar did not select its match, so this proves nothing: " + JSON.stringify(find));
+    if (find.clip.length) fail("copy on select copied from the find bar: " + JSON.stringify(find.clip));
+    await p.evaluate(() => closeFind());
+
+    // 2. A drag across the first row copies what it selected.
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const y = box.y + cell.h / 2;
+    await p.mouse.move(box.x + 1, y);
+    await p.mouse.down();
+    await p.mouse.move(box.x + cell.w * 5, y, { steps: 5 });
+    await p.mouse.move(box.x + cell.w * 10.5, y, { steps: 5 });
+    await p.mouse.up();
+    await p.waitForTimeout(100);
+    const drag = await p.evaluate(() => window.__clip.slice());
+    if (drag.length !== 1 || !/^alpha be/.test(drag[0] || "")) fail("a drag did not copy its selection: " + JSON.stringify(drag));
+
+    // 3. A double-click copies the word, a triple-click the line.
+    await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
+    await p.mouse.dblclick(box.x + cell.w * 7.5, y + cell.h);
+    await p.waitForTimeout(100);
+    const word = await p.evaluate(() => window.__clip.slice());
+    if (!word.includes("delta")) fail("a double-click did not copy the word: " + JSON.stringify(word));
+    await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
+    await p.mouse.click(box.x + cell.w * 2.5, y + cell.h * 2, { clickCount: 3 });
+    await p.waitForTimeout(100);
+    const line = await p.evaluate(() => window.__clip.slice());
+    if (!line.some(t => /^alpha epsilon\s*$/.test(t))) fail("a triple-click did not copy the line: " + JSON.stringify(line));
+
+    // 4. A plain click that changes nothing copies nothing.
+    await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
+    await p.mouse.click(box.x + cell.w * 3, y);
+    await p.waitForTimeout(100);
+    const still = await p.evaluate(() => window.__clip.slice());
+    if (still.length) fail("a plain click copied: " + JSON.stringify(still));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the copy on select page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3520,7 +3618,8 @@ async function main() {
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
-      toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection };
+      toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
+      copySelect: copySelectSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5697,6 +5796,8 @@ async function main() {
     await sayWhenSection(browser, base);
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
+    // ── copy on select answers the pointer, not the find bar ───────────────
+    await copySelectSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

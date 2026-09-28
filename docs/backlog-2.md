@@ -28,7 +28,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | not started |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
-| 22 | Copy on select copies every find match (ctrl-shift-f) | bug | not started, cause found |
+| 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE on `claude/copy-select-pointer`, not deployed |
 
 ------------
 

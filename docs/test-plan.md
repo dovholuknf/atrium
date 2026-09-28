@@ -3718,3 +3718,40 @@ clear. Clear the line and wait two seconds: the message goes in, mid-turn.
 
 **Expected:** the hint warns that nothing carries the message at the turn end, and says to send it immediately or
 wire the Stop hook.
+
+## BJ. Copy on select answers the pointer, not the find bar
+
+Run on the board with copy on select on (the terminal's settings menu) and any card attached whose screen holds a
+word that appears more than once. Put some other text on the clipboard first and check it with a paste somewhere. The
+headless section `copySelect` covers BJ1 to BJ3.
+
+### BJ1. Find leaves the clipboard alone
+
+1. Press ctrl-shift-f and type the repeated word one letter at a time.
+2. Press enter a few times, then shift-enter.
+3. Leave the bar open while the runner prints a few lines.
+4. Press escape and paste.
+
+**Expected:** the find bar highlights each match, and the paste is still the text you put there before step 1.
+
+### BJ2. The pointer still copies
+
+1. Drag across some text, then paste.
+2. Double-click a word, then paste.
+3. Triple-click a line, then paste.
+4. Drag, then shift-click further along, then paste.
+
+**Expected:** each paste is what that gesture selected: the dragged text, the word, the line, the extended range.
+
+### BJ3. A click that changes nothing copies nothing
+
+1. Put a known text on the clipboard. Click once in the terminal without dragging, then paste.
+
+**Expected:** the paste is still the known text.
+
+### BJ4. ctrl-a, and a popped-out window
+
+1. Press ctrl-a in the terminal, then paste somewhere.
+2. Pop the card out into its own window and repeat BJ1 and BJ2 there.
+
+**Expected:** ctrl-a copies the whole buffer. The popped-out window behaves as the board does.

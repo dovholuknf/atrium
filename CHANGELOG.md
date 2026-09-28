@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Copy on select no longer copies what the find bar matches.** See `docs/test-plan.md` section BJ.
+
+  The search addon shows a match by selecting it, and copy on select copied every selection change, so each keystroke
+  in the find bar (ctrl-shift-f), each step, and each re-search on new output overwrote the clipboard. Now copy on
+  select copies on the mouseup that ends a press in the terminal, and only when that press changed the selection: a
+  drag, a double-click word, a triple-click line or a shift-click extend. A plain click copies nothing. ctrl-a still
+  copies the whole buffer. A popped-out window runs the same code. The new headless section `copySelect` covers it.
+  HUB-SIDE.
+
 - **Any paste still on its way after 20ms shows the `pasting` spinner.** See `docs/test-plan.md` section BB.
 
   The spinner showed only for a paste of 2KB or more, so a short paste over a slow link sat in a terminal that looked
