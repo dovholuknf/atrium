@@ -388,6 +388,16 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Nobody there to read it. See sessionGone.
+	if t, err := d.st.Get(taskID); err == nil && sessionGone(t) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"delivered": "undeliverable", "reachable": ReachNo, "warning": goneNote(t),
+			"when": whenWord(waitTurn),
+		})
+		return
+	}
+
 	// A supervised runner has a terminal atrium owns, so the message is typed
 	// straight in rather than waiting for a hook to carry it.
 	//

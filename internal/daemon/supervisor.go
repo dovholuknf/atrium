@@ -1853,7 +1853,13 @@ func (d *Daemon) awaitExit(r *runner) {
 	tail := lastOutput(r.buf.Tail(tailBytes), 12)
 	r.closePTY()
 	d.sup.remove(r.taskID)
-	// The process is gone, so nothing it was doing is still true.
+	// The process is gone, so nothing it was doing is still true. That includes
+	// a message held for its terminal: the retry is dropped now rather than at a
+	// backoff tick hours out, and the message stays queued for a resumed
+	// session's hooks.
+	if d.pending != nil {
+		d.pending.drop(r.taskID)
+	}
 	d.act.forget(r.taskID)
 
 	code := 0
