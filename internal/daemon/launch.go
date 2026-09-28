@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -753,6 +755,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// resumed session reports back to the same card rather than splitting
 		// the work in two.
 		t, err := d.st.Get(req.TaskID)
+		if errors.Is(err, sql.ErrNoRows) {
+			// Named, with the room, rather than "sql: no rows". A start that lands
+			// here reached the wrong room. See backlog-2 item 63.
+			return nil, fmt.Errorf("could not start onto it: %w", api.NotOnRoom(req.TaskID, d.opts.Room))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("no card %s to start onto: %w", req.TaskID, err)
 		}

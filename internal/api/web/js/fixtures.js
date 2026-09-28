@@ -1230,7 +1230,9 @@ async function launchRunnerHereNow(harnessID, cwd, ontoTask, room) {
     task = await api("/v1/launch", {
       method: "POST",
       headers,
-      body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: bareId(ontoTask || "") })
+      // AS HELD, tag and all. The hub routes by the tag and strips it on the
+      // way into the room. See docs/card-room-routing.md.
+      body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
   if (task && task.supervised) {
@@ -1513,13 +1515,11 @@ async function launchNow() {
     document.getElementById("l-throwaway-on").checked;
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
-    // BARE, never the aggregate `room~id`. The card this starts onto is looked
-    // up in the room's own store, which keys by the plain id. The tag is a
-    // routing artifact of the ALL view and the room header already carries the
-    // routing, so a tagged id here only misses (`sql: no rows`). Same class as
-    // the writeRoom leak in js/rooms.js: an aggregate tag reaching an operation
-    // that wants bare.
-    task_id: bareId(launchTarget.task_id || ""),
+    // AS HELD, `room~id` and all. The room's store keys by the plain id, and
+    // the hub is what strips the tag, on the way in, after routing by it. The
+    // header alone could name the wrong room (backlog-2 item 63). See
+    // docs/card-room-routing.md.
+    task_id: launchTarget.task_id || "",
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
     throwaway,

@@ -270,6 +270,7 @@ func New(opts Options) (*Daemon, error) {
 	st.OnLedgerNotice = d.ledgerNotice
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
+	d.ap.Room = opts.Room
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow

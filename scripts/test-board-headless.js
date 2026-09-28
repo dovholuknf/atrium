@@ -5310,6 +5310,62 @@ async function contextSizeSection(browser, base) {
   if (errors.length) fail("the context size page threw: " + errors.join(" | "));
 }
 
+// A write that names a card never carries `writeRoom`, the room of the last
+// editor that was open. With three rooms, a start (`POST /v1/launch` with a
+// `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
+// wrong room and came back "sql: no rows". See docs/backlog-2.md item 63 and
+// docs/card-room-routing.md. A write that names no card still carries it.
+async function cardRouteSection(browser, base) {
+  hubMode = true;
+  sggAttached = true;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  const seen = [];
+  const caught = ["/v1/launch", "/v1/tasks/alpha~c1", "/v1/tasks/prune", "/v1/tasks/alpha~c1/message"];
+  await page.route(u => caught.includes(new URL(u).pathname), (route, req) => {
+    seen.push({ path: new URL(req.url()).pathname, body: req.postData() || "",
+      room: req.headers()["x-atrium-room"] || "" });
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof namesACard === "function", null, { timeout: 15000 });
+    await page.evaluate(async () => {
+      writeRoom = "sgg";
+      const post = (u, method, body) => fetch(u, { method, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) });
+      await post("/v1/tasks/alpha~c1", "PATCH", { group: "g" });
+      await post("/v1/tasks/alpha~c1/message", "POST", { text: "hi" });
+      await post("/v1/launch", "POST", { harness: "claude", task_id: "alpha~c1" });
+      await post("/v1/launch", "POST", { harness: "claude", cwd: "/tmp" });
+      await post("/v1/tasks/prune", "POST", {});
+    });
+    const want = [
+      ["/v1/tasks/alpha~c1", ""], ["/v1/tasks/alpha~c1/message", ""], ["/v1/launch", ""],
+      ["/v1/launch", "sgg"], ["/v1/tasks/prune", "sgg"]
+    ];
+    if (seen.length !== want.length) fail("the card-route writes were not all sent: " + JSON.stringify(seen));
+    want.forEach(([path, room], i) => {
+      const got = seen[i] || {};
+      if (got.path !== path || got.room !== room) {
+        fail("write " + i + " went to " + JSON.stringify(got) + ", want " + path + " with room " +
+          JSON.stringify(room));
+      }
+    });
+    // The launch onto a card sends the id as held, tag and all, for the hub to route by.
+    if (seen[2] && JSON.parse(seen[2].body).task_id !== "alpha~c1") {
+      fail("a launch onto a card stripped its room: " + seen[2].body);
+    }
+  } finally {
+    await ctx.close();
+    hubMode = false;
+    sggAttached = false;
+  }
+  if (errors.length) fail("the card-route page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -5326,7 +5382,7 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection };
+      history: historySection, contextSize: contextSizeSection, cardRoute: cardRouteSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -6937,6 +6993,9 @@ async function main() {
 
     // ── a persisted skin heals when a room attaches, with no reload ──────────
     await skinHealSection(browser, base);
+
+    // ── a write that names a card goes by the card, not writeRoom ──────────
+    await cardRouteSection(browser, base);
 
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read
