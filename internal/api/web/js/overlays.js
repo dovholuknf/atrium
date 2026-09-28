@@ -783,9 +783,12 @@ async function setupOverlay(kind) {
     toast("nothing to use", "paste the token first");
     return;
   }
-  const btn = event && event.target;
-  if (btn) { btn.disabled = true; btn.textContent = "working..."; }
+  // The press shows and a second one is refused. See busyWhile in js/core.js.
+  const btn = event && event.target && event.target.closest && event.target.closest("button");
+  return busyWhile(btn, () => setupOverlayNow(kind, token, name));
+}
 
+async function setupOverlayNow(kind, token, name) {
   let res;
   try {
     res = await api(`/v1/overlays/${kind}/setup`, {
@@ -796,7 +799,6 @@ async function setupOverlay(kind) {
     // A refusal comes back as a body, not a throw, so this is the transport
     // having failed rather than the command.
     toast("could not run it", e.message);
-    if (btn) { btn.disabled = false; }
     loadOverlays();
     return;
   }
@@ -816,7 +818,10 @@ async function setupOverlay(kind) {
 
 // Undoing setup. Confirmed, because for zrok this asks the account side to
 // forget this machine and there is no undo that does not need the token again.
-async function teardownOverlay(kind) {
+// One at a time: see oneAtATime in js/core.js.
+function teardownOverlay(kind) { return oneAtATime("overlay:" + kind, () => teardownOverlayNow(kind)); }
+
+async function teardownOverlayNow(kind) {
   const what = kind === "zrok"
     ? "This removes the zrok environment from this machine. Enabling it again needs your " +
       "account token, and any reserved share belonging to it goes."
@@ -1187,7 +1192,10 @@ async function saveOverlay(kind) {
 // arrives over the event stream from `overlayStep`.
 const overlayBusy = {};
 
-async function startOverlay(kind) {
+// One at a time: see oneAtATime in js/core.js.
+function startOverlay(kind) { return oneAtATime("overlay:" + kind, () => startOverlayNow(kind)); }
+
+async function startOverlayNow(kind) {
   const o = overlays.find(x => x.kind === kind);
   const publicShare = kind === "zrok" && o && (o.config || {}).mode === "public";
   if (publicShare && !await confirmUser("share this publicly?",
@@ -1214,7 +1222,10 @@ async function startOverlay(kind) {
   setTimeout(loadOverlays, 4000);
 }
 
-async function stopOverlay(kind) {
+// One at a time: see oneAtATime in js/core.js.
+function stopOverlay(kind) { return oneAtATime("overlay:" + kind, () => stopOverlayNow(kind)); }
+
+async function stopOverlayNow(kind) {
   try {
     overlays = (await api(`/v1/overlays/${kind}/stop`, { method: "POST" })).overlays || overlays;
   } catch (e) {

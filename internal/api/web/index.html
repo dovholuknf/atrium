@@ -357,7 +357,7 @@ Exports honor whatever filter is applied.">?</span>
               onchange="previewTheme(this.value)"
               onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelTheme(); }
                          else if (event.key === 'Enter') { event.preventDefault(); keepTheme(); }"></select>
-            <button class="go" onclick="keepTheme()" data-tip="keep this one">use it</button>
+            <button class="go" onclick="busyWhile(this, keepTheme, 'saving…')" data-tip="keep this one">use it</button>
             <!-- The colours of whatever is selected, opened where you are
                  already looking at them. Nothing about the terminal changes
                  until the editor is saved, so this is not a second way to set
@@ -435,7 +435,7 @@ Exports honor whatever filter is applied.">?</span>
               <button id="t-edit-tab" onclick="openFileTab()"
                 data-tip="read it in a browser tab, served by atrium">new tab</button>
               <button id="t-edit-there" onclick="openFileThere()"></button>
-              <button class="go" onclick="saveEditor()">save</button>
+              <button class="go" onclick="busyWhile(this, saveEditor, 'saving…')">save</button>
               <button onclick="closeEditor()">close</button>
             </div>
             <!-- ctrl-s saves, because that is the reflex and the browser's own
@@ -971,8 +971,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <button class="lab-step" onclick="stepSkin(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
     </div>
     <div class="lab-row lab-answers">
-      <button class="go" onclick="keepSkin()" data-tip="keep this one">use it</button>
-      <button onclick="useDefaultSkin()" data-tip="back to the one it came with">use the default</button>
+      <button class="go" onclick="busyWhile(this, keepSkin, 'saving…')" data-tip="keep this one">use it</button>
+      <button onclick="busyWhile(this, useDefaultSkin, 'saving…')" data-tip="back to the one it came with">use the default</button>
       <button onclick="cancelSkin()" data-tip="put back what was there">cancel</button>
     </div>
     <span class="lab-hint">Arrow keys walk the list. Nothing is saved until you press
@@ -1511,7 +1511,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body">
     <div class="field" id="rc-facts-field">
       <table class="kv" id="rc-facts"></table>
-      <div class="picker"><button id="rc-mark" onclick="markFromCog()" hidden></button></div>
+      <div class="picker"><button id="rc-mark" onclick="busyWhile(this, markFromCog)" hidden></button></div>
       <span class="hintline" id="rc-state"></span>
     </div>
 
@@ -1716,8 +1716,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveAction()">save</button>
-    <button class="no" id="a-delete" onclick="deleteAction()">delete</button>
+    <button class="go" onclick="busyWhile(this, saveAction, 'saving…')">save</button>
+    <button class="no" id="a-delete" onclick="busyWhile(this, deleteAction, 'removing…')">delete</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('action').close()">cancel</button>
   </div>
@@ -1837,9 +1837,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveSource()">save</button>
-    <button id="s-run" onclick="runSourceNow()">run it now</button>
-    <button class="no" id="s-delete" onclick="deleteSource()">delete</button>
+    <button class="go" onclick="busyWhile(this, saveSource, 'saving…')">save</button>
+    <button id="s-run" onclick="busyWhile(this, runSourceNow)">run it now</button>
+    <button class="no" id="s-delete" onclick="busyWhile(this, deleteSource, 'removing…')">delete</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('source').close()">cancel</button>
   </div>
@@ -1962,7 +1962,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="r-try">try a url</label>
       <div class="picker">
         <input type="text" id="r-try" spellcheck="false" placeholder="paste one and see what it resolves to">
-        <button onclick="tryRecogniser()">try it</button>
+        <button onclick="busyWhile(this, tryRecogniser)">try it</button>
       </div>
       <span class="hintline">Asks the whole table as it is saved, and names the row that
         answered. Save your edits first.</span>
@@ -1970,8 +1970,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveRecogniser()">save</button>
-    <button class="no" id="r-delete" onclick="deleteRecogniser()">delete</button>
+    <button class="go" onclick="busyWhile(this, saveRecogniser, 'saving…')">save</button>
+    <button class="no" id="r-delete" onclick="busyWhile(this, deleteRecogniser, 'removing…')">delete</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('recogniser').close()">cancel</button>
   </div>
@@ -2019,7 +2019,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
         <button onclick="browseInto('pv-worktree-root')">browse</button>
-        <button onclick="checkWorktreeRoot()">check</button>
+        <button onclick="busyWhile(this, checkWorktreeRoot)">check</button>
       </div>
       <span class="hintline">Worktrees land at <code>folder/org/repo/branch</code>. The check
         button asks whether it is empty enough to turn the toggle off, without saving anything.</span>
@@ -2058,9 +2058,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveProvider()">save</button>
-    <button id="pv-discover" onclick="discoverNow()">look again</button>
-    <button class="no" id="pv-delete" onclick="deleteProvider()">delete</button>
+    <button class="go" onclick="busyWhile(this, saveProvider, 'saving…')">save</button>
+    <button id="pv-discover" onclick="busyWhile(this, discoverNow)">look again</button>
+    <button class="no" id="pv-delete" onclick="busyWhile(this, deleteProvider, 'removing…')">delete</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('provider').close()">cancel</button>
   </div>
@@ -2091,7 +2091,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="text" id="pk-org" spellcheck="false" placeholder="org" list="pk-orgs">
         <input type="text" id="pk-repo" spellcheck="false" placeholder="repo">
-        <button onclick="addPickRepo()">add</button>
+        <button onclick="busyWhile(this, addPickRepo)">add</button>
       </div>
       <datalist id="pk-orgs"></datalist>
       <span class="hintline">Adds the row and works out the path. If the directory is not there
@@ -2114,7 +2114,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow">make a worktree</label>
       <div class="picker">
         <input type="text" id="pw-branch" spellcheck="false" placeholder="branch name">
-        <button class="go" onclick="makeWorktree()">make</button>
+        <button class="go" onclick="busyWhile(this, makeWorktree)">make</button>
       </div>
       <span class="hintline">Runs <code>git worktree add</code> and nothing else. A branch that
         does not exist yet is created off the repository's own HEAD. It makes a directory and
@@ -2183,8 +2183,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveFixture()">save</button>
-    <button class="no" id="f-delete" onclick="deleteFixture()">delete</button>
+    <button class="go" onclick="busyWhile(this, saveFixture, 'saving…')">save</button>
+    <button class="no" id="f-delete" onclick="busyWhile(this, deleteFixture, 'removing…')">delete</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('fixture').close()">cancel</button>
   </div>
@@ -2213,7 +2213,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="file" id="th-file" accept=".json,application/json"
           onchange="themeFilePicked(this)">
-        <button class="go" onclick="bringThemes()">import</button>
+        <button class="go" onclick="busyWhile(this, bringThemes)">import</button>
         <label class="check"><input type="checkbox" id="th-force"> replace ones already here</label>
       </div>
       <span class="hintline">Paste your whole <b>settings.json</b>, or just its <b>schemes</b> array,
@@ -2230,8 +2230,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <label class="eyebrow" for="th-name">saved as</label>
         <input type="text" id="th-name" spellcheck="false" style="max-width:220px"
           placeholder="my-dracula">
-        <button class="go" onclick="saveTheme()">save</button>
-        <button class="no" id="th-delete" onclick="removeTheme()">delete</button>
+        <button class="go" onclick="busyWhile(this, saveTheme, 'saving…')">save</button>
+        <button class="no" id="th-delete" onclick="busyWhile(this, removeTheme, 'removing…')">delete</button>
       </div>
       <!-- The one thing about this that surprises people, said where they are
            about to do it. Saving under a shipped theme's name is allowed
@@ -2250,7 +2250,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
   </div>
   <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
-    <button class="go" onclick="saveTheme()">save</button>
+    <button class="go" onclick="busyWhile(this, saveTheme, 'saving…')">save</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('theme').close()">cancel</button>
   </div>
@@ -2390,8 +2390,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <input type="text" id="h-notes" spellcheck="false">
     </div>
     <div class="toolbar">
-      <button class="go big" onclick="saveHarness()">save</button>
-      <button class="no" id="h-delete" onclick="deleteHarness()">delete</button>
+      <button class="go big" onclick="busyWhile(this, saveHarness, 'saving…')">save</button>
+      <button class="no" id="h-delete" onclick="busyWhile(this, deleteHarness, 'removing…')">delete</button>
     </div>
   </div>
 </dialog>
@@ -2503,7 +2503,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input type="text" id="l-url" spellcheck="false"
           placeholder="a pull request, an issue, a ticket">
-        <button id="l-recognise" onclick="recogniseLink()">recognise</button>
+        <button id="l-recognise" onclick="busyWhile(this, recogniseLink)">recognise</button>
       </div>
       <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
         below, and nothing starts until you press launch.</span>
@@ -2633,7 +2633,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <textarea id="dp-prompt" rows="4" spellcheck="false"
         placeholder="what it should start on over there"></textarea>
     </div>
-    <div class="toolbar"><button class="go big" onclick="doDispatch()">queue it</button></div>
+    <div class="toolbar"><button class="go big" onclick="busyWhile(this, doDispatch, 'queueing…')">queue it</button></div>
   </div>
 </dialog>
 
@@ -2785,7 +2785,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           onchange="uploadIcon(this)">
         <button onclick="document.getElementById('d-icon-file').click()"
           data-tip="png, jpeg, gif, webp or svg">use a picture</button>
-        <button class="no" id="d-icon-clear" onclick="clearIcon()" hidden>back to a glyph</button>
+        <button class="no" id="d-icon-clear" onclick="busyWhile(this, clearIcon, 'removing…')" hidden>back to a glyph</button>
       </div>
       <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
         Windows renders it small, so a single bold glyph reads and a word does not.</span>

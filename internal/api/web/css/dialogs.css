@@ -104,6 +104,16 @@
   .matchcount { font: var(--fs-xs)/1 var(--mono); color: var(--dimmest); margin-left: auto; }
   button.big { font-size: var(--fs-base); padding: 10px 18px; }
   button.go.big { box-shadow: 0 0 18px rgba(var(--teal-rgb),.14); }
+  /* A request in flight, set by `busyWhile` in js/core.js. The button keeps its width so the row does not
+     jump when the label changes, and stays full strength while disabled: it is working, not unavailable. */
+  button[aria-busy="true"] { opacity: 1; cursor: progress; }
+  .busy-spin {
+    display: inline-block; width: .9em; height: .9em; margin-right: 6px; vertical-align: -1px;
+    border-radius: 50%; border: 2px solid rgba(var(--teal-rgb),.25); border-top-color: var(--teal);
+    animation: wc-turn .8s linear infinite;
+  }
+  /* Why the last press failed, drawn in the dialog above the row that pressed it. */
+  .busy-why { margin: 8px 0; color: var(--danger-text); font-size: var(--fs-sm); }
 
   /* Toast: the in-page counterpart to a desktop notification, for when the
      tab is visible and a browser notification would be suppressed. */

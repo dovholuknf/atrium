@@ -933,23 +933,14 @@ function permCard(p) {
     el.dataset.chosen = "1";
     setScope(b.dataset.v, b, b.dataset.kind);
   }));
-  // Wrapped so a fault in one handler cannot leave a button looking dead, and
-  // latched so a slow answer cannot be sent four times. Silence is the worst
-  // possible feedback for a click, and a second click on a request already
-  // being answered can only ever produce a conflict.
-  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", async () => {
-    if (el.dataset.deciding === "1") return;
-    el.dataset.deciding = "1";
-    el.querySelectorAll(".actions button").forEach(x => { x.disabled = true; });
-    try {
-      await decide(p.id, b.dataset.do, b.dataset.forever === "1");
-    } catch (err) {
-      console.error(err);
-      toast("that did not work", String(err && err.message || err));
-      el.dataset.deciding = "";
-      el.querySelectorAll(".actions button").forEach(x => { x.disabled = false; });
-    }
-  }));
+  // Through `busyWhile`, so a slow answer shows and cannot be sent four times.
+  // Silence is the worst possible feedback for a click, and a second click on a
+  // request already being answered can only ever produce a conflict. Keyed on
+  // the request as well, so the terminal pane's approve on the same request is
+  // refused while this one is in flight. See js/core.js.
+  el.querySelectorAll(".actions button").forEach(b => b.addEventListener("click", () =>
+    oneAtATime("decide:" + p.id, () =>
+      busyWhile(b, () => decide(p.id, b.dataset.do, b.dataset.forever === "1"), "sending…"))));
   return el;
 }
 
