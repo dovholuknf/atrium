@@ -769,10 +769,10 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 // ── launch ──────────────────────────────────────────────────────────────────────
 
 // OriginTag marks a card that atrium_launch created, as opposed to a session a
-// human started at a terminal or through the board's launch dialog. The launch
-// cap counts only cards carrying it, so the operator's hand-started sessions
-// never consume the agent cap: the cap exists to stop agent proliferation, not
-// to count human work.
+// human started at a terminal or through the board's launch dialog. It is the
+// doer signal the board hides agent-launched cards by. The launch cap does NOT
+// count it: every atrium_launch stamps it, orchestrators and the resident merger
+// included, so counting it charged them all against one cap. See SubagentTag.
 //
 // HUB-SIDE, SO IT STAYS HUB-ONLY. launchHandler adds it to the tags it forwards
 // on /v1/launch, and the room persists it as an ordinary tag (see
@@ -785,10 +785,20 @@ const OriginTag = "origin:agent"
 const reportLine = "When you finish, get blocked, or need an answer, call atrium_report " +
 	"(or atrium_say your launcher) before you end your turn."
 
+// SubagentTag marks a worker an orchestrator launched to do one piece of work.
+// The launch cap counts only running cards carrying it. The launcher puts it on
+// through `tags`; the hub does not stamp it, so an orchestrator, the resident
+// merger or any other long-lived agent launched without it does not consume the
+// cap its workers share.
+const SubagentTag = "atrium:subagent"
+
 // hasOriginTag reports whether a card carries the agent-launch marker.
-func hasOriginTag(tags []string) bool {
+func hasOriginTag(tags []string) bool { return hasTag(tags, OriginTag) }
+
+// hasTag reports whether tags holds want, trimmed and case-insensitively.
+func hasTag(tags []string, want string) bool {
 	for _, t := range tags {
-		if strings.EqualFold(strings.TrimSpace(t), OriginTag) {
+		if strings.EqualFold(strings.TrimSpace(t), want) {
 			return true
 		}
 	}
@@ -824,15 +834,15 @@ func launchCap() int {
 }
 
 // runningForCap counts the sessions that count against the launch cap: live
-// supervised runners that atrium_launch itself started, aggregated across every
-// room the hub can see because the machine load they put on the box is shared.
+// supervised runners tagged SubagentTag, aggregated across every room the hub
+// can see because the machine load they put on the box is shared.
 //
-// ONLY AGENT-LAUNCHED SESSIONS. A card carries OriginTag when atrium_launch made
-// it; a session a human started at a terminal or through the board's launch
-// dialog does not, so it never consumes the agent cap. A done/dead/shelved card
-// has no running runner and a backlog card has not started one, so none of them
-// count, and the launch being attempted is not present yet so it is never
-// counted.
+// ONLY SUBAGENTS. OriginTag is on every atrium_launch card, orchestrators and
+// the resident merger as much as their workers, so it is not what the cap
+// counts. A card without SubagentTag never consumes the cap, whoever started
+// it. A done/dead/shelved card has no running runner and a backlog card has not
+// started one, so none of them count, and the launch being attempted is not
+// present yet so it is never counted.
 func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
@@ -851,7 +861,7 @@ func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 		case "done", "dead", "shelved", "backlog":
 			continue
 		}
-		if !hasOriginTag(t.Tags) {
+		if !hasTag(t.Tags, SubagentTag) {
 			continue
 		}
 		n++
@@ -973,9 +983,9 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// it starts. The hub has no such directory to write to, which is why this is
 	// a field on the request rather than a file this side writes.
 	// The origin marker rides along as a tag, added here on the hub so the room
-	// stores it without knowing what it is (see OriginTag). It is what the launch
-	// cap counts, which is how an agent launch is told apart from a human's
-	// hand-started session.
+	// stores it without knowing what it is (see OriginTag). It is how an agent
+	// launch is told apart from a human's hand-started session. The cap counts
+	// SubagentTag instead, which the caller supplies in its own tags.
 	tags := append(append([]string{}, in.Tags...), OriginTag)
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
