@@ -437,11 +437,17 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	defer run.unsubscribe(updates)
 	// WITH WHAT THE CARD HELD BEFORE THE RESTART in front, cut where the
 	// resumed runner's reprint picks it up. See `withCarried`.
+	//
+	// `?carry=all` is the notice's "load it in": all of it, not the newest
+	// `carryReplayMax`. `?link=` is the board's nonce for the notice's links.
+	// See `carryLinkNotice`.
+	var held int
 	if !shell {
 		var trimmed bool
 		var joined bool
 		before := len(backlog)
-		backlog, cuts, trimmed = run.withCarried(backlog, cuts, wantCols, api.ScrollbackBytes(d.st))
+		backlog, cuts, trimmed, held = run.withCarried(backlog, cuts, wantCols,
+			api.ScrollbackBytes(d.st), r.URL.Query().Get("carry") == "all")
 		joined = len(backlog) != before
 		if joined {
 			// The ring's own "overwritten" answer was about the ring, and the
@@ -499,6 +505,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					"holds %s and this session has produced more than that, so older output "+
 					"has been overwritten. raise it in settings, scrollback ----\x1b[0m\r\n",
 				humanBytes(int64(api.ScrollbackBytes(d.st))))))
+		}
+		if held > 0 {
+			if err := c.Write(ctx, websocket.MessageBinary,
+				carryNotice(r.URL.Query().Get("link"), held)); err != nil {
+				return
+			}
 		}
 		// REPLAYED THROUGH A SCREEN, not stripped of everything that moves.
 		//
