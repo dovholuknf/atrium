@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +190,40 @@ func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
 	}
 	if gotTheme != "tangent" {
 		t.Errorf("the room got theme %q, want it forwarded", gotTheme)
+	}
+}
+
+func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
+	type sent struct {
+		Lean bool     `json:"lean"`
+		MCP  []string `json:"mcp"`
+	}
+	var got sent
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = sent{}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "card1", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	off := false
+	for _, tc := range []struct {
+		name string
+		in   launchInput
+		want sent
+	}{
+		{"default claude", launchInput{Cwd: "/w"}, sent{Lean: true}},
+		{"mercurius", launchInput{Cwd: "/w", MCP: []string{"mercurius"}}, sent{Lean: true, MCP: []string{"mercurius"}}},
+		{"turned off", launchInput{Cwd: "/w", Lean: &off}, sent{}},
+		{"other runner", launchInput{Cwd: "/w", Runner: "codex"}, sent{}},
+	} {
+		if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), tc.in); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.Lean != tc.want.Lean || strings.Join(got.MCP, ",") != strings.Join(tc.want.MCP, ",") {
+			t.Errorf("%s: room got %+v, want %+v", tc.name, got, tc.want)
+		}
 	}
 }
 

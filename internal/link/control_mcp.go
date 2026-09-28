@@ -904,6 +904,20 @@ type launchInput struct {
 	// it to the board, which colours a themeless card from its repo, so an
 	// agent-driven launch looks the same as a board-dialog one without this.
 	Theme string `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
+	// Lean is on unless the caller turns it off. See leanLaunch.
+	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills, agents or extra MCP servers, only its brief, the repo, atrium's hooks and atrium-control. default true. false starts it with the operator's whole setup"`
+	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control, by name from the runner's MCP config, e.g. [\"mercurius\"]"`
+}
+
+// leanLaunch is whether an atrium_launch starts lean. On by default for the
+// claude runner, because a launched worker is handed its context in the brief
+// and pays ~27k tokens a start for the operator's setup otherwise. Another
+// runner has no lean mode, so it is only on when asked, and the room refuses.
+func leanLaunch(in launchInput, harness string) bool {
+	if in.Lean != nil {
+		return *in.Lean
+	}
+	return harness == "claude"
 }
 
 type launchOutput struct {
@@ -979,6 +993,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		"why": in.Why, "prompt": prompt,
 		"brief": strings.TrimSpace(in.Brief), "tags": tags,
 		"theme": strings.TrimSpace(in.Theme), "spawned_by": agentOf(req),
+		"lean": leanLaunch(in, harness), "mcp": in.MCP,
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
