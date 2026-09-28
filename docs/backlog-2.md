@@ -35,6 +35,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 26 | Toasts pop and disappear in the same second | bug | not started |
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
 | 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
+| 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | built on `claude/lean-workers`, needs a room restart |
 
 ------------
 
@@ -673,6 +674,19 @@ history load did not go back to one page".
 
 A check that fails most runs hides real failures. Find the wait that times out, name it, move main-flow checks into
 named sections so each can run alone, and make the flaky waits wait on a condition rather than a clock.
+
+## 29. Lean workers: a launched worker starts with only what it needs (feature)
+
+Raised 2026-09-28 by clint. A worker started by `atrium_launch` inherits none of its launcher's conversation, yet it
+booted with the operator's whole setup, and its first request was ~40k tokens. sa85 measured every lever in Claude
+Code 2.1.283 and built a lean launch: `atrium_launch` now starts a claude worker with the user settings source
+dropped, a filtered copy of the user settings (permissions, env and hooks kept), atrium-control as its only MCP server,
+22 tools disallowed, a short worker system prompt and auto-memory off. `mcp: ["mercurius"]` adds a server, and
+`lean: false` launches as before. The same `-p` probe drops from 35,970 to 11,029 tokens in a worktree.
+
+See `docs/lean-workers-design.md` for the numbers and what a lean worker loses, and `docs/test-plan.md` section BO.
+Left: the end-to-end check through `atrium_launch` after a room restart, and the ~5.9k of system tools that
+dropping the user source adds for no reason found yet.
 
 
 ------------
