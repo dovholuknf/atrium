@@ -61,6 +61,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
+| 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | sa55, started 2026-09-28 |
 
 ------------
 
@@ -1140,6 +1141,14 @@ Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Part 2 was p
 differential test that feeds the same trace fixtures to `screen.go` and to xterm.js and compares the screens, run
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
+
+## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
+
+Raised 2026-09-28. The live scripts `start-atrium-room.ps1`, `start-atrium-hub.ps1` and `deploy-batch.ps1` set
+`ATRIUM_DEBUG_INPUTLAG=1` unless `-NoLagLog`, which is meant for atrium's own logging. Every runner the room launches
+inherits it, so a worker's `go test` fails `internal/link` TestLagConnTimesNothingWhenOff, and any atrium binary a
+worker runs logs lag too. Also measure what the logging costs per keystroke, because clint says input has been slow
+lately.
 
 
 ------------
