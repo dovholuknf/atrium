@@ -1500,7 +1500,11 @@ async function settingsOnceSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
   settingsDelay = 135;
-  settingsReads = 0;
+  // This page's reads, not the server's. In the full run the main page is still
+  // open and reads settings on its own clock, which the server count took for a
+  // second read by this load.
+  let settingsReads = 0;
+  sp.on("request", r => { if (new URL(r.url()).pathname === "/v1/settings") settingsReads++; });
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForTimeout(2500);
