@@ -4686,3 +4686,28 @@ never says `sql`.
 1. Scope the board to one room with the picker, and start, rename and message a card on it.
 
 **Expected:** all three work as before. The scoped board still shows the room's own ids, with no `room~` tag.
+
+### CD5. A tagged launch comes back tagged
+
+CD5 needs the stage 2 hub (board and `internal/link`) and a hub restart, with two or more rooms attached. The Go test
+for the tagged launch in `internal/link/cardroute_test.go` and the headless section `cardRoute` in
+`scripts/test-board-headless.js` cover it too.
+
+1. Open a per-machine editor for one room and close it, as in CD1.
+2. In the ALL view, open the browser's network tab and resume a done card that lives on a different room.
+
+**Expected:** the `POST /v1/launch` carries no `X-Atrium-Room` header and its body's `task_id` is `room~id`. The
+answer's `id` is the same `room~id`, and the card goes to running on its own room.
+
+### CD6. A room names the card it does not hold
+
+CD6 needs a room built from stage 2 and a room restart. A Go test in `internal/api/notonroom_test.go` covers the patch.
+
+1. Straight at a room's own port, run
+   `curl -s -X PATCH -d "{}" http://127.0.0.1:7781/v1/tasks/nosuchcard`.
+2. Then run
+   `curl -s -X POST -d "{\"task_id\":\"nosuchcard\"}" http://127.0.0.1:7781/v1/launch`.
+
+**Expected:** the patch is a 404 with `card nosuchcard is not on room <the room>`. The launch fails with `could not
+start onto it: card nosuchcard is not on room <the room>`. Neither says `sql`. A room not attached to a hub says
+`is not on this atrium`.
