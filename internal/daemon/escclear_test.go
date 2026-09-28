@@ -14,6 +14,13 @@ func quiet(r *runner) {
 	r.typeMu.Unlock()
 }
 
+// lineEmpty reads the typed line under typeMu.
+func lineEmpty(r *runner) (bool, int) {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	return r.line.empty(), r.line.count()
+}
+
 // Esc Esc clears a Claude prompt, so it empties the line and a held message
 // goes in on the next retry. It used to stay held until a control-c.
 func TestEscEscClearsTheLineAndReleasesAHeldMessage(t *testing.T) {
@@ -33,7 +40,8 @@ func TestEscEscClearsTheLineAndReleasesAHeldMessage(t *testing.T) {
 	r.noteOperatorTyped([]byte("\x1b"))
 	quiet(r)
 	if !r.peerGateOpen() {
-		t.Fatalf("Esc Esc left the line counted as %d characters", r.line.count())
+		_, n := lineEmpty(r)
+		t.Fatalf("Esc Esc left the line counted as %d characters", n)
 	}
 	d.pending.attempt(target.ID)
 	if !strings.Contains(f.written(), "the build is green") {
@@ -51,8 +59,8 @@ func TestEscEscInOneWriteClearsTheLine(t *testing.T) {
 	r.line.escClears = true
 	r.noteOperatorTyped([]byte("half a command"))
 	r.noteOperatorTyped([]byte("\x1b\x1b"))
-	if !r.line.empty() {
-		t.Fatalf("Esc Esc in one write left %d characters", r.line.count())
+	if empty, n := lineEmpty(r); !empty {
+		t.Fatalf("Esc Esc in one write left %d characters", n)
 	}
 }
 
@@ -75,13 +83,13 @@ func TestOnlyEscEscOnAClaudePromptClearsTheLine(t *testing.T) {
 		r.typeMu.Lock()
 		r.line.clear()
 		r.line.escAt = time.Time{}
-		r.typeMu.Unlock()
 		r.line.escClears = c.clears
+		r.typeMu.Unlock()
 		r.noteOperatorTyped([]byte("abc"))
 		for _, k := range c.keys {
 			r.noteOperatorTyped([]byte(k))
 		}
-		if r.line.empty() {
+		if empty, _ := lineEmpty(r); empty {
 			t.Errorf("%s: the line was read as cleared", c.name)
 		}
 	}

@@ -6,7 +6,7 @@ import (
 )
 
 // escAgainWithin is how soon a second lone Esc has to follow the first to clear
-// a prompt. See typedLine.loneEsc.
+// a prompt. See noteOperatorTyped.
 const escAgainWithin = 2 * time.Second
 
 // clearsOnEsc is a runner whose prompt a second Esc clears.
