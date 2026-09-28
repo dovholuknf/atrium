@@ -26,7 +26,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | sa82 building |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
-| 20 | Selecting the terminal that is already attached re-renders its whole history | bug | DONE, `c57b550` |
+| 20 | Selecting the terminal that is already attached re-renders its whole history | bug | DONE, `cf2fc2b` |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
