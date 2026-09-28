@@ -613,6 +613,15 @@
        terminal to say them. */
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* The typing gate readout, a debug line directly above the shortcut strip. Same surface and type as the strip,
+     full strength rather than faded, since somebody who switched it on is reading it. See js/typing.js. */
+  .term-typing {
+    padding: 4px 14px; border-top: 1px solid var(--term-line, var(--stroke-dim));
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
+    flex: 0 0 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .term-typing.open { border-left: 3px solid var(--teal); }
+  .term-typing.shut { border-left: 3px solid var(--warn); }
   /* A request while attached. The runner is blocked and the terminal shows nothing, so the question has to
      appear where you are looking. */
   .term-perm {

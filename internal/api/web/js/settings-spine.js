@@ -119,6 +119,7 @@ function paintSettings() {
   for (const k of ["selected", "idle", "exited"])
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];
   document.getElementById("s-inputlag").checked = lagOn;
+  document.getElementById("s-typing").checked = typingOn;
   // The two housekeeping timers. Held by the daemon rather than the browser,
   // because they are about the machine's data and not about this screen, so
   // they are read here rather than assumed.
