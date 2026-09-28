@@ -212,6 +212,17 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		}
 		return nil, out, nil
 	}
+	if errors.As(err, &be) {
+		switch be.code {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			// THE SENDER'S ROOM TOOK IT AND DID NOT ANSWER IN TIME. It may still
+			// relay it, so this is not a failure to try again.
+			out.Delivered, out.To = "unconfirmed", name+"@"+target
+			out.Note = "your room did not answer in time (" + be.msg + "). it may still deliver this, so ask " +
+				"whether it arrived before sending it again."
+			return nil, out, nil
+		}
+	}
 	if err != nil {
 		return nil, out, err
 	}

@@ -390,15 +390,19 @@ func (d *Daemon) holdRelay(sender *store.Task, wire, name, room, card, text, whe
 
 // drainRelays sends what is owed. One at a time, and a kick that arrives
 // during one runs it again rather than being lost.
+//
+// THE FLAG IS READ AFTER THE UNLOCK, not before. A kick that lands between
+// the last pass and the unlock finds the lock held and sets the flag, and this
+// sees it. One that lands after the unlock takes the lock and drains itself.
 func (d *Daemon) drainRelays() {
-	if !d.relays.draining.TryLock() {
-		d.relays.again.Store(true)
-		return
-	}
-	defer d.relays.draining.Unlock()
 	for {
+		if !d.relays.draining.TryLock() {
+			d.relays.again.Store(true)
+			return
+		}
 		d.relays.again.Store(false)
 		d.drainOnce()
+		d.relays.draining.Unlock()
 		if !d.relays.again.Load() {
 			return
 		}
