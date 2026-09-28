@@ -25,6 +25,10 @@ const (
 	// UsageUnknown is a turn with no prompt atrium saw: a subagent's report
 	// waking the session, or a hook older than the prompt event.
 	UsageUnknown = "unknown"
+	// UsageSubagent is what the card's Claude Code subagents (the Task tool)
+	// spent. Never folded into the turn that started them. An atrium worker is
+	// a card of its own and is not this.
+	UsageSubagent = "subagent"
 )
 
 // SessionUsage is one turn's spend, or one refresh's.
@@ -177,16 +181,28 @@ func (s *Store) SessionUsageTotals(taskID string) (*UsageTotals, map[string]*Usa
 	return all, byCause, err
 }
 
-// LastTranscriptUsage is a session's newest row read from its transcript, or
-// nil. Keep-alive rows are not from the transcript and are left out. The daemon
-// starts its first read after a restart from here, so nothing is counted twice.
+// LastTranscriptUsage is a session's newest row read from its main transcript,
+// or nil. Keep-alive rows are not from the transcript and subagent rows are
+// from their own files, so both are left out. The daemon starts its first read
+// after a restart from here, so nothing is counted twice.
 func (s *Store) LastTranscriptUsage(taskID, resumeID string) (*SessionUsage, error) {
+	return s.lastUsage(`cause NOT IN (?, ?)`, taskID, resumeID, UsageKeepalive, UsageSubagent)
+}
+
+// LastSubagentUsage is a session's newest subagent row, or nil. The subagent
+// read after a restart starts from here.
+func (s *Store) LastSubagentUsage(taskID, resumeID string) (*SessionUsage, error) {
+	return s.lastUsage(`cause = ?`, taskID, resumeID, UsageSubagent)
+}
+
+func (s *Store) lastUsage(where, taskID, resumeID string, causes ...any) (*SessionUsage, error) {
 	var out *SessionUsage
+	args := append([]any{taskID, resumeID}, causes...)
 	err := s.guard(func() error {
 		out = nil
 		rows, err := s.db.Query(`SELECT `+usageColumns+` FROM session_usage
-			WHERE task_id = ? AND resume_id = ? AND cause <> ?
-			ORDER BY ended_at DESC, id DESC LIMIT 1`, taskID, resumeID, UsageKeepalive)
+			WHERE task_id = ? AND resume_id = ? AND `+where+`
+			ORDER BY ended_at DESC, id DESC LIMIT 1`, args...)
 		if err != nil {
 			return err
 		}

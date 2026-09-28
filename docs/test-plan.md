@@ -4101,10 +4101,11 @@ review has no row for it.
 ## BT. Token use is on record for every Claude turn, and shown only in a card's details
 
 BT1 to BT3 need the room built from this change and a room restart, and on a hub board the hub rebuilt and
-restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and `TestKeepaliveRefreshIsAUsageRow` in
-`internal/daemon/usage_test.go`, and `TestSessionUsage*` in `internal/store/usage_test.go`, cover the row per turn,
-dedupe by message id, subagent replies left out, the turn a blocked Stop continued, counting on from the last row
-after a restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
+restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and
+`TestKeepaliveRefreshIsAUsageRow` in `internal/daemon/usage_test.go`, and `TestSessionUsage*` in
+`internal/store/usage_test.go`, cover the row per turn, dedupe by message id, subagent replies left out of the turn
+and kept in a row of their own (BT5), the turn a blocked Stop continued, counting on from the last row after a
+restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
 
 ### BT1. A turn is one row, with its cause
 
@@ -4151,9 +4152,9 @@ room only to try it.
    SELECT u.task_id, u.cause, u.context,
           u.cache_write_5m + u.cache_write_1h AS written, u.cache_read,
           (SELECT p.context FROM session_usage p WHERE p.task_id = u.task_id AND p.ended_at < u.started_at
-             AND p.cause <> 'keepalive' ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
+             AND p.cause NOT IN ('keepalive', 'subagent') ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
           (SELECT MAX(p.ended_at) FROM session_usage p WHERE p.task_id = u.task_id
-             AND p.ended_at < u.started_at) AS last_warm
+             AND p.ended_at < u.started_at AND p.cause <> 'subagent') AS last_warm
    FROM session_usage u
    WHERE u.after_resume = 1 AND u.started_at > :restart
    ORDER BY u.started_at
@@ -4170,6 +4171,30 @@ room only to try it.
 means every restart pays about one full write per card, `written` times the model's write price, and that total is
 the number item 38 decides on. Mixed: compare the models, the 1M variant (`[1m]`), and the Claude Code versions before
 and after the restart, which change the prefix.
+
+### BT5. A Claude subagent's spend is a row of its own, counted once
+
+Needs the room built from this change and a room restart. `TestUsageCountsSubagentsOnceInTheirOwnRow` in
+`internal/daemon/usage_test.go` covers both transcript layouts, a workflow's agents a level down, dedupe by message
+id, the reconcile against per-file sums, a subagent still working past the Stop, and a restarted daemon.
+
+1. On a Claude card, ask for something that uses the Task tool, for example "use an Explore subagent to list the Go
+   packages here". Let the turn end. Open the `token use` fold.
+
+**Expected:** two new rows ending about together: the turn itself (`you`), and one `subagent` row. The subagent row's
+tooltip counts the subagent's requests and names its model. The turn's row does not hold them: its requests are only
+the card's own.
+
+2. Reconcile it. The session's transcript is `~/.claude/projects/<project>/<session>.jsonl` and its subagents are
+   `<session>/subagents/agent-*.jsonl` (a workflow's a level down). Sum the output tokens of each file's assistant
+   lines, one per `message.id`.
+
+**Expected:** the card's rows since the prompt add up to the main file's sum, and the `subagent` row to the sum of
+the subagent files over the same time. Nothing is in both.
+
+3. `atrium_launch` a worker from the card and let it run a turn.
+
+**Expected:** the worker's spend is on the worker's own card. The launcher gets no `subagent` row for it.
 
 ## BU. A machine becomes a room of this hub from one command over ssh
 

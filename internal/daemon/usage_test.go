@@ -3,8 +3,10 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,15 +62,26 @@ func (f *usageFix) tracker() *usageTracker {
 // line appends one transcript line. Blocks of one reply repeat its id and usage.
 func (f *usageFix) line(at time.Time, id string, w5, w1, read, out int64, sidechain bool) {
 	f.t.Helper()
+	f.lineTo(f.path, "claude-opus-5-5", at, id, w5, w1, read, out, sidechain)
+}
+
+// lineTo appends one line to any transcript, a subagent's among them, and
+// stamps the file with the line's time as Claude Code writing it would.
+func (f *usageFix) lineTo(path, model string, at time.Time, id string, w5, w1, read, out int64, sidechain bool) {
+	f.t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	defer os.Chtimes(path, at, at)
 	b, _ := json.Marshal(map[string]any{
 		"type": "assistant", "timestamp": at.Format(time.RFC3339Nano), "isSidechain": sidechain,
-		"message": map[string]any{"id": id, "model": "claude-opus-5-5", "usage": map[string]any{
+		"message": map[string]any{"id": id, "model": model, "usage": map[string]any{
 			"input_tokens": 2, "cache_creation_input_tokens": w5 + w1, "cache_read_input_tokens": read,
 			"output_tokens": out,
 			"cache_creation": map[string]any{"ephemeral_5m_input_tokens": w5, "ephemeral_1h_input_tokens": w1},
 		}},
 	})
-	fh, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	fh, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -217,4 +230,133 @@ func TestKeepaliveRefreshIsAUsageRow(t *testing.T) {
 	if r.Cause != store.UsageKeepalive || r.CacheRead != 297_000 || r.CacheWrite1h != 1_000 || r.Cost <= 0 {
 		t.Fatalf("row %+v", r)
 	}
+}
+
+// Claude Code subagents are a row of their own, from both layouts: files
+// beside the transcript and lines inline marked isSidechain. Nothing is counted
+// twice: the card's row and the subagent row add up to the per-file sums, a
+// second Stop and a restarted daemon count nothing again, and a reply id the
+// card's row holds is never also a subagent's.
+func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
+	f := newUsageFix(t)
+	b := f.base
+	dir := strings.TrimSuffix(f.path, ".jsonl")
+	a1 := filepath.Join(dir, "subagents", "agent-a1.jsonl")
+	a2 := filepath.Join(dir, "subagents", "workflows", "wf_1", "agent-a2.jsonl")
+	f.u.prompted(f.task.ID, store.UsageOperator)
+	// The card: m1 in two blocks, then m2 after the subagents report.
+	f.line(b, "m1", 0, 1000, 9000, 50, false)
+	f.line(b.Add(10*time.Millisecond), "m1", 0, 1000, 9000, 50, false)
+	// An older runner's subagent, inline.
+	f.line(b.Add(time.Second), "s0", 0, 3000, 0, 30, true)
+	// A newer runner's two subagents, one on another model, one in a workflow.
+	f.lineTo(a1, "claude-opus-5-5", b.Add(2*time.Second), "s1", 0, 7000, 0, 70, true)
+	f.lineTo(a1, "claude-opus-5-5", b.Add(2100*time.Millisecond), "s1", 0, 7000, 0, 70, true)
+	f.lineTo(a1, "claude-opus-5-5", b.Add(3*time.Second), "s2", 0, 100, 7000, 20, true)
+	f.lineTo(a2, "claude-haiku-4-5-20251001", b.Add(4*time.Second), "s3", 500, 0, 0, 10, true)
+	// A reply the card's row already has, in a subagent file, is the card's.
+	f.lineTo(a2, "claude-opus-5-5", b.Add(5*time.Second), "m2", 200, 0, 10000, 80, true)
+	f.line(b.Add(5*time.Second), "m2", 200, 0, 10000, 80, false)
+	// Not a subagent transcript.
+	f.lineTo(filepath.Join(dir, "subagents", "workflows", "wf_1", "journal.jsonl"), "claude-opus-5-5",
+		b.Add(5*time.Second), "j1", 0, 99999, 0, 1, false)
+	stop := b.Add(10 * time.Second)
+
+	row := f.record(f.u.endSegment(f.task.ID, stop))
+	if row == nil || row.Cause != store.UsageOperator || row.Replies != 2 || row.CacheWrite1h != 1000 ||
+		row.CacheWrite5m != 200 || row.CacheRead != 19000 || row.Output != 130 || row.LastMessage != "m2" {
+		t.Fatalf("card row %+v", row)
+	}
+	subs := f.rowsOf(store.UsageSubagent)
+	if len(subs) != 1 {
+		t.Fatalf("%d subagent rows", len(subs))
+	}
+	sub := subs[0]
+	if sub.Replies != 4 || sub.CacheWrite1h != 10100 || sub.CacheWrite5m != 500 || sub.CacheRead != 7000 ||
+		sub.Output != 130 || sub.Input != 8 || sub.LastMessage != "s3" || sub.AfterResume {
+		t.Fatalf("subagent row %+v", sub)
+	}
+	// Each reply priced on its own model: the opus ones, and the unpriced one
+	// at $0.
+	opus := keepalivePrices["claude-opus-5-5"]
+	want := usageCost(&store.SessionUsage{Input: 6, CacheWrite1h: 10100, CacheRead: 7000, Output: 120}, opus)
+	if math.Abs(sub.Cost-want) > 1e-9 {
+		t.Fatalf("subagent cost %v, want %v", sub.Cost, want)
+	}
+
+	// Reconciled: every file summed on its own, one per id, is the two rows.
+	var fileSum store.UsageTotals
+	for _, p := range []string{f.path, a1, a2} {
+		fh, err := os.Open(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]bool{}
+		scanReplies(fh, func(r *mainReply) {
+			if seen[r.MessageID] || (p == a2 && r.MessageID == "m2") {
+				return
+			}
+			seen[r.MessageID] = true
+			fileSum.Replies++
+			fileSum.CacheWrite1h += r.Write1h
+			fileSum.CacheWrite5m += r.Write5m
+			fileSum.CacheRead += r.CacheRead
+			fileSum.Output += r.Output
+		})
+		fh.Close()
+	}
+	all, byCause, err := f.st.SessionUsageTotals(f.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Replies != fileSum.Replies || all.CacheWrite1h != fileSum.CacheWrite1h ||
+		all.CacheWrite5m != fileSum.CacheWrite5m || all.CacheRead != fileSum.CacheRead ||
+		all.Output != fileSum.Output {
+		t.Fatalf("totals %+v, files %+v", all, fileSum)
+	}
+	if byCause[store.UsageSubagent] == nil || byCause[store.UsageSubagent].Replies != 4 {
+		t.Fatalf("by cause %+v", byCause)
+	}
+
+	// Nothing new: nothing written.
+	if again := f.record(f.u.endSegment(f.task.ID, b.Add(20*time.Second))); again != nil {
+		t.Fatalf("an empty turn wrote %+v", again)
+	}
+	if n := len(f.rowsOf(store.UsageSubagent)); n != 1 {
+		t.Fatalf("%d subagent rows after an empty turn", n)
+	}
+
+	// A subagent still at work past the Stop is counted at the next one.
+	f.lineTo(a1, "claude-opus-5-5", b.Add(30*time.Second), "s4", 0, 0, 7100, 5, true)
+	f.lineTo(a1, "claude-opus-5-5", b.Add(50*time.Second), "s5", 0, 0, 7200, 6, true)
+	f.record(f.u.endSegment(f.task.ID, b.Add(40*time.Second)))
+	if s := f.rowsOf(store.UsageSubagent); len(s) != 2 || s[0].Replies != 1 || s[0].LastMessage != "s4" {
+		t.Fatalf("subagent rows %+v", s)
+	}
+	// A restarted daemon counts s5 once, and none of what came before it.
+	f.u = f.tracker()
+	f.record(f.u.endSegment(f.task.ID, b.Add(time.Minute)))
+	s := f.rowsOf(store.UsageSubagent)
+	if len(s) != 3 || s[0].Replies != 1 || s[0].LastMessage != "s5" {
+		t.Fatalf("subagent rows after a restart %+v", s)
+	}
+	if n := len(f.rowsOf(store.UsageOperator)) + len(f.rowsOf(store.UsageUnknown)); n != 1 {
+		t.Fatalf("%d card rows", n)
+	}
+}
+
+// rowsOf is a card's rows of one cause, newest first.
+func (f *usageFix) rowsOf(cause string) []*store.SessionUsage {
+	f.t.Helper()
+	rows, err := f.st.SessionUsageOf(f.task.ID, 0)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var out []*store.SessionUsage
+	for _, r := range rows {
+		if r.Cause == cause {
+			out = append(out, r)
+		}
+	}
+	return out
 }

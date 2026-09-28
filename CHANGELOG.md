@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card's Claude Code subagents (the Task tool) are on its token-use record, as their own `subagent` rows.** See
+  `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT5.
+
+  At each Stop the room also reads the session's subagent transcripts, `<session>/subagents/agent-*.jsonl` beside
+  the main one and a workflow's agents a level down, and the `isSidechain` lines older Claude Code wrote inline. What
+  they spent since the last read is one `subagent` row, each file on its own cursor, one per message id, and a reply
+  the card's own row holds is never counted again. Each reply is priced on its own model, so a subagent on another
+  model is not priced as the card's. The main-turn row now does the same. An atrium-launched worker is a card of its
+  own and is not counted into its launcher. The details fold shows `subagent` like any other cause. No migration.
+  `internal/store`, `internal/daemon`: ROOM RESTART. `internal/api/web/js/usage.js`: HUB RESTART for a hub's board.
+
 - **One command makes another machine a room of this hub, over ssh and with no admin or sudo.** See
   `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.
 
