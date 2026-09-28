@@ -269,10 +269,14 @@ func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
 
 	case hubstore.TransportZrok:
 		// The share token belongs to the hub that reserved it, and this
-		// command is not that process. Refused with the reason rather than
-		// reserving a second share nobody asked for.
-		return "", errors.New("a zrok join string carries the share the running hub " +
-			"reserved, so it has to come from that hub rather than from here")
+		// command is not that process. It reads the share the running hub
+		// wrote down rather than reserving a second one nobody asked for. See
+		// zrokShareFile.
+		share, err := readZrokShare(keys)
+		if err != nil {
+			return "", err
+		}
+		return link.MintOverlayToken("zrok", r.Name, "", share)
 	}
 	return "", fmt.Errorf("no transport called %q", transport)
 }

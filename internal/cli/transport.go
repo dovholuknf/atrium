@@ -2,8 +2,12 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link"
@@ -103,6 +107,11 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		if err != nil {
 			return nil, err
 		}
+		// WRITTEN DOWN FOR `atrium rooms token`, which runs beside this hub and
+		// cannot reserve the share itself. See zrokShareFile.
+		if err := writeZrokShare(keys, shareToken); err != nil {
+			log.Printf("[hub] could not write the share down for `rooms token`: %v", err)
+		}
 		return &hubSide{
 			listen: z.Listen,
 			enrol:  nil,
@@ -110,12 +119,46 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			joinString: func(name, _ string) (string, error) {
 				return link.MintOverlayToken("zrok", name, "", shareToken)
 			},
-			release: z.Release,
+			release: func() {
+				clearZrokShare(keys)
+				z.Release()
+			},
 			says:    "a private zrok share",
 		}, nil
 	}
 	return nil, fmt.Errorf("no transport called %q. one of: %s",
 		kind, strings.Join(transports, ", "))
+}
+
+// zrokShareFile is where a hub running over zrok writes the private share it
+// reserved, so `atrium rooms token` can mint a zrok join string from beside it.
+//
+// THE HUB'S OWN SHARE, not somebody else's credential. The hub made it and
+// releases it on the way out, and this file goes with it. It sits in the hub's
+// key directory, 0600, beside the CA key that is already the more valuable
+// secret there. A hub that was killed rather than stopped leaves it naming a
+// share that may be gone, and a join string minted from that fails at dial.
+func zrokShareFile(keys link.Keys) string { return filepath.Join(keys.Dir, "zrok-share") }
+
+func writeZrokShare(keys link.Keys, token string) error {
+	if err := os.MkdirAll(keys.Dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(zrokShareFile(keys), []byte(token), 0o600)
+}
+
+func clearZrokShare(keys link.Keys) { _ = os.Remove(zrokShareFile(keys)) }
+
+// readZrokShare is the share a running zrok hub wrote down, or an error saying
+// there is none.
+func readZrokShare(keys link.Keys) (string, error) {
+	raw, err := os.ReadFile(zrokShareFile(keys))
+	if err != nil || strings.TrimSpace(string(raw)) == "" {
+		return "", errors.New("no hub is running over zrok from " + keys.Dir +
+			". a zrok join string carries the share the running hub reserved, so start the hub " +
+			"with --transport zrok first")
+	}
+	return strings.TrimSpace(string(raw)), nil
 }
 
 // roomDialer is the room's half, chosen by what the join string says.
