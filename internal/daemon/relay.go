@@ -102,6 +102,18 @@ type relayState struct {
 	// during one, so it runs once more rather than being lost.
 	draining sync.Mutex
 	again    atomic.Bool
+	// kick starts a drain. Nil is `go drainRelays`, and a test sets it to do
+	// nothing so it can drain when it chooses.
+	kick func()
+}
+
+// kickRelays starts a drain in the background.
+func (d *Daemon) kickRelays() {
+	if k := d.relays.kick; k != nil {
+		k()
+		return
+	}
+	go d.drainRelays()
 }
 
 // SetRelay wires this room to its hub. Called once the link is built.
@@ -118,7 +130,7 @@ func (d *Daemon) relay() Relay {
 }
 
 // RelayAttached is the link saying it is back. What is owed goes now.
-func (d *Daemon) RelayAttached() { go d.drainRelays() }
+func (d *Daemon) RelayAttached() { d.kickRelays() }
 
 // ── the doors ───────────────────────────────────────────────────────────────
 
@@ -384,7 +396,7 @@ func (d *Daemon) holdRelay(sender *store.Task, wire, name, room, card, text, whe
 	if err != nil {
 		return nil, err
 	}
-	go d.drainRelays()
+	d.kickRelays()
 	return held, nil
 }
 

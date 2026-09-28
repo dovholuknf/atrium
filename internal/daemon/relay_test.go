@@ -56,6 +56,7 @@ func roomDaemon(t *testing.T) (*Daemon, *fakeRelay) {
 	t.Helper()
 	d := testDaemon(t)
 	d.opts.Room = "m1mini"
+	d.relays.kick = func() {}
 	f := &fakeRelay{}
 	d.SetRelay(f)
 	return d, f
@@ -80,11 +81,9 @@ func owed(t *testing.T, d *Daemon) []store.RelayRow {
 	return rows
 }
 
-// settle waits for any drain a hold started, so a test reads a quiet outbox.
-func settle(d *Daemon) {
-	d.relays.draining.Lock()
-	d.relays.draining.Unlock()
-}
+// settle runs the drain a hold would have started. roomDaemon turns the
+// background kick off, so every drain in these tests runs here, in order.
+func settle(d *Daemon) { d.drainRelays() }
 
 // THE FEATURE, ROOM SIDE. `name@room` is relayed with this room's handle for
 // the sender, and the answer names the target as `name@room`.
