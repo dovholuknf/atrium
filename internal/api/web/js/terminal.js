@@ -877,7 +877,13 @@ function openTerm(task) {
 
   // Fit after the pane has a size, or the first resize is computed against a
   // hidden element and the runner is told a nonsense width.
+  //
+  // Only for the terminal this opened. One closed or replaced before the frame
+  // (a click on an alert that lands somewhere else) has nothing to connect, and
+  // connecting it anyway threw on the null `term`.
+  const opened = term;
   requestAnimationFrame(() => {
+    if (!term || term !== opened) return;
     fitTerm();
     // Size the host to the fitted grid so the terminal sits on the footer with
     // no remainder band above it. See `sizeTermHost`.
