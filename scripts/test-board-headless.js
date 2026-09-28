@@ -3536,6 +3536,136 @@ async function pasteSpinnerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the not-replayed notice opens or loads the pre-restart history ────────
+// Test plan BO. The daemon draws the notice's `open` and `load` as OSC 8
+// `atrium:` links carrying the nonce this socket sent as `?link=`. Clicking
+// open calls the cog's viewer, clicking load re-attaches with carry=all under
+// the paste spinner, and an `atrium:` link a program printed does nothing.
+async function carryLinkSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__socks = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+
+    // The notice the way the daemon writes it, then three forgeries a program
+    // printed: no nonce, a wrong nonce, and a scheme xterm would never link.
+    const setup = await p.evaluate(() => new Promise(done => {
+      window.__opened = [];
+      openOlderScrollback = id => { window.__opened.push(id); };
+      const s = window.__socks[window.__socks.length - 1];
+      const nonce = new URL(s.url, location.href).searchParams.get("link") || "";
+      const link = (uri, text) => "\x1b]8;;" + uri + "\x1b\\" + text + "\x1b]8;;\x1b\\";
+      const notice = "\x1b[38;5;244m[atrium] ---- " + link("atrium:carry/open?n=" + nonce, "OPENREAL") + " or " +
+        link("atrium:carry/load?n=" + nonce + "&b=5242880", "LOADREAL") + " ----\x1b[0m\r\n";
+      const forged = link("atrium:carry/open", "FORGEDBARE") + "\r\n" +
+        link("atrium:carry/open?n=deadbeefdeadbeefdeadbeefdeadbeef", "FORGEDNONCE") + "\r\n" +
+        link("atrium:carry/load?n=deadbeefdeadbeefdeadbeefdeadbeef", "FORGEDLOAD") + "\r\n";
+      const enc = new TextEncoder();
+      s.onmessage({ data: enc.encode(notice).buffer });
+      s.onmessage({ data: enc.encode(forged).buffer });
+      term.write("", () => done({ nonce, socks: window.__socks.length }));
+    }));
+    if (!setup.nonce || !/^[0-9a-f]{32}$/.test(setup.nonce)) {
+      fail("the attach sent no usable ?link= nonce: " + JSON.stringify(setup));
+    }
+
+    // Where a word is on screen, in page pixels.
+    const at = word => p.evaluate(w => {
+      const buf = term.buffer.active;
+      const rect = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const cw = rect.width / term.cols, ch = rect.height / term.rows;
+      for (let y = 0; y < term.rows; y++) {
+        const line = buf.getLine(buf.viewportY + y);
+        const x = line ? line.translateToString(true).indexOf(w) : -1;
+        if (x >= 0) return { x: rect.left + (x + 2.5) * cw, y: rect.top + (y + 0.5) * ch };
+      }
+      return null;
+    }, word);
+    const click = async word => {
+      const pt = await at(word);
+      if (!pt) { fail("the word " + word + " is not on screen"); return; }
+      await p.mouse.move(pt.x, pt.y);
+      await p.waitForTimeout(150);
+      await p.mouse.click(pt.x, pt.y);
+      await p.waitForTimeout(150);
+    };
+    const state = () => p.evaluate(() => ({
+      opened: window.__opened.slice(), socks: window.__socks.length,
+      last: window.__socks[window.__socks.length - 1].url
+    }));
+
+    // 1. A forged link does nothing: no viewer, no second socket.
+    for (const w of ["FORGEDBARE", "FORGEDNONCE", "FORGEDLOAD"]) await click(w);
+    const forged = await state();
+    if (forged.opened.length || forged.socks !== setup.socks) {
+      fail("an atrium: link a program printed did something: " + JSON.stringify(forged));
+    }
+
+    // 2. open calls the cog's viewer for this card.
+    await click("OPENREAL");
+    const opened = await state();
+    if (opened.opened.join() !== "land-live") {
+      fail("the notice's open did not call the history viewer: " + JSON.stringify(opened));
+    }
+
+    // 3. load re-attaches with carry=all, under the spinner, which goes once the
+    // replay has landed.
+    await click("LOADREAL");
+    const loaded = await p.evaluate(() => {
+      const el = document.getElementById("t-pasting");
+      return { socks: window.__socks.length, last: window.__socks[window.__socks.length - 1].url,
+        spin: !!(el && !el.hidden), text: el ? el.textContent : "" };
+    });
+    if (loaded.socks !== setup.socks + 1 || !/[?&]carry=all(&|$)/.test(loaded.last)) {
+      fail("the notice's load did not re-attach with carry=all: " + JSON.stringify(loaded));
+    }
+    if (!loaded.spin || !/loading 5\.0MB/.test(loaded.text)) {
+      fail("the load shows no spinner naming its size: " + JSON.stringify(loaded));
+    }
+    await p.waitForFunction(() => termSock && termSock.readyState === 1, { timeout: 5000 });
+    const landed = await p.evaluate(() => new Promise(done => {
+      termSock.onmessage({ data: new TextEncoder().encode("old line\r\n".repeat(1000)).buffer });
+      term.write("", () => setTimeout(() => {
+        const el = document.getElementById("t-pasting");
+        done({ spin: !!(el && !el.hidden), next: (() => { connectTerm("land-live"); return termSock.url; })() });
+      }, 50));
+    }));
+    if (landed.spin) fail("the load's spinner stayed up after the replay landed");
+    if (/carry=all/.test(landed.next)) fail("carry=all stuck to the next attach: " + landed.next);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the carry link page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -4088,7 +4218,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      stuck: stuckSection };
+      stuck: stuckSection, carryLink: carryLinkSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -6267,6 +6397,8 @@ async function main() {
     await pasteSpinnerSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
+    // ── the not-replayed notice opens or loads the pre-restart history ─────
+    await carryLinkSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────
     await busyGuardSection(browser, base);
     // ── a stuck card wears a mark, and the gear decides whether it rings ───

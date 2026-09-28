@@ -3946,3 +3946,43 @@ after it has sat idle for more than a minute. After the last report the card mov
 1. In a Claude card, ask it to start `npm run dev` or any long command in the background and end its turn.
 
 **Expected:** the card moves to `needs input` and rings as usual. Only subagents hold the card.
+
+## BO. The not-replayed notice opens or loads the pre-restart history
+
+Needs a room restart first: the notice and `?carry=all` are in the room
+daemon. Run on the board with a card whose saved pre-restart history is over 4 MB (a card that has lived through
+many restarts). Its `.scrollback` file, in the `scrollback` directory beside the database, gives the size. The
+headless section `carryLink` covers BO1 to BO3 against a mocked socket. The Go tests in
+`internal/daemon/carry_notice_test.go` cover the attach parameter and BO4.
+
+### BO1. open shows the whole history
+
+1. Attach the card. Scroll to the top of the terminal.
+2. Click `open all of it` in the grey `older output from before the restart is not replayed here` line.
+
+**Expected:** the history opens in a tab, the same as the cog's `history from before the restart…` entry.
+
+### BO2. load it in replays everything
+
+1. Click `load all NMB in here` on the same line.
+
+**Expected:** a spinner reading `loading N.NMB of history` shows over the terminal. The terminal resets and fills,
+and the spinner goes once the history has landed. Scrolled to the top, the oldest saved line is there and the grey
+notice is not. Switch to another card and back: the notice is back, and only the newest 4 MB is replayed.
+
+### BO3. A link a program prints does nothing
+
+1. In the card's shell (bash), print a forged link:
+   `printf '\e]8;;atrium:carry/open\e\\FORGED\e]8;;\e\\\n'`
+2. Click `FORGED`.
+
+**Expected:** `FORGED` is plain text. The click opens nothing and does not re-attach.
+
+### BO4. A guest gets the line and no links, and a popped-out window gets both
+
+1. Lend the card (the cog's share entry) and open the guest link in a private window.
+2. Pop the card out into its own window on the board.
+
+**Expected:** the guest's terminal shows the old notice, which names the cog, with no links. A guest request for
+`/v1/tasks/<id>/attach?carry=all` is refused with 403. The popped-out window shows both links, and BO1 and BO2 work
+there.
