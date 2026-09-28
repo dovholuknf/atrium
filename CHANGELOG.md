@@ -16,6 +16,17 @@ section heading is just "what landed in this iteration."
   two or more. A card no attached room holds is a 404 from the hub naming the card and every room it asked, plus the
   offline room it was last seen on. `internal/link`: HUB RESTART. Nothing on the room.
 
+- **A card id keeps its room from the board to the room, so a write naming a card cannot follow a stale room.** See
+  `docs/backlog-2.md` item 63, `docs/card-room-routing.md` and `docs/test-plan.md` section CD.
+
+  The board no longer puts the last editor's room on any write that names a card, `PATCH /v1/tasks/<id>` and a
+  launch onto a card included. A start or resume from the ALL view sends the card's `room~id` as held, and the hub
+  strips the tag on the way in and puts it back on the launch's answer, so the board sees the id it sent. A room
+  asked about a card it does not hold now answers `card X is not on room R` (a 404 on a patch, `could not start onto
+  it: ...` on a launch) in place of `sql: no rows in result set`. `internal/api/web` and `internal/link`: HUB
+  RESTART, since the hub serves the board. `internal/api` and `internal/daemon`: ROOM RESTART, only for the wording,
+  and it can wait for the next room deploy.
+
 - **A message queued on purpose wears a quiet envelope, and the `!` is kept for one held against its sender.** See
   `docs/backlog-2.md` item 42 and `docs/test-plan.md` section CC.
 
