@@ -334,6 +334,8 @@ type keepalive struct {
 	hookFile string
 	// baseEnv is the environment a fork starts from.
 	baseEnv func() []string
+	// record saves one refresh's ledger row.
+	record func(*store.KeepaliveRefresh) error
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -343,6 +345,17 @@ type keepalive struct {
 	why map[string]string
 	// inFlight stops a slow fork from being started twice.
 	inFlight map[string]bool
+	// unsaved holds back a card whose last refresh row could not be saved. The
+	// warm window and the budget come from saved rows, so without it the next
+	// tick would see the old expiry and fork again.
+	unsaved map[string]unsavedRefresh
+}
+
+// unsavedRefresh holds a card's refreshes back until its cache would expire, or
+// until the card takes a real turn after the fork.
+type unsavedRefresh struct {
+	at, until time.Time
+	why       string
 }
 
 func newKeepalive(st *store.Store) *keepalive {
@@ -357,6 +370,8 @@ func newKeepalive(st *store.Store) *keepalive {
 		baseEnv:    os.Environ,
 		why:        map[string]string{},
 		inFlight:   map[string]bool{},
+		unsaved:    map[string]unsavedRefresh{},
+		record:     st.AddKeepaliveRefresh,
 	}
 }
 
@@ -565,6 +580,13 @@ func (k *keepalive) tick(ctx context.Context) {
 		card = k.clearOnRealTurn(t, card)
 		v := k.decide(t, card)
 		k.mu.Lock()
+		if u, held := k.unsaved[t.ID]; held {
+			if !k.now().Before(u.until) || (v.reply != nil && v.reply.At.After(u.at)) {
+				delete(k.unsaved, t.ID)
+			} else if v.act != "skip" || v.why == "not due" {
+				v = verdict{act: "skip", why: u.why}
+			}
+		}
 		k.why[t.ID] = v.why
 		busy := k.inFlight[t.ID]
 		k.mu.Unlock()
@@ -648,8 +670,19 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 			row.Input, row.Output = rec.Usage.Input, rec.Usage.Output
 		}
 	}
-	if err := k.st.AddKeepaliveRefresh(row); err != nil {
+	if err := k.record(row); err != nil {
 		log.Printf("[atrium] keep-alive: could not record a refresh of %s: %v", t.ID, err)
+		// The fork may have warmed the cache, so hold until that cache would expire.
+		until := sent.Add(v.reply.TTL)
+		if v.expiry.After(until) {
+			until = v.expiry
+		}
+		u := unsavedRefresh{at: sent, until: until,
+			why: "a refresh could not be saved, paused until " + until.Local().Format("15:04")}
+		k.mu.Lock()
+		k.unsaved[t.ID] = u
+		k.why[t.ID] = u.why
+		k.mu.Unlock()
 	}
 	if runErr != nil {
 		log.Printf("[atrium] keep-alive: fork for %s: %v", t.ID, runErr)
@@ -819,5 +852,9 @@ func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
 	if _, err := d.st.SetKeepaliveStateAt(taskID, state, d.ka.now()); err != nil {
 		return nil, err
 	}
+	// A hand on the switch also lifts a hold from an unsaved refresh.
+	d.ka.mu.Lock()
+	delete(d.ka.unsaved, taskID)
+	d.ka.mu.Unlock()
 	return d.ka.view(taskID), nil
 }
