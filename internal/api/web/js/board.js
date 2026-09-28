@@ -625,30 +625,20 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
-// HOW BIG THE CARD'S CONTEXT IS, in tokens, read by the daemon from the card's
-// transcript. Every turn re-reads all of it, so the size is what a turn costs.
-// Every Claude card has it, statusline or not, and it turns the warn colour at
-// the gear's threshold, the line past which a launcher is told. The daemon
-// decides `warn`, so the mark and the notice cannot disagree. Never stored.
-function sizeChip(t) {
+// PAST THE CONTEXT THRESHOLD, a mark and no number. Every turn re-reads the
+// whole context, so a card past the gear's line is costing on every turn. The
+// number itself is in the card's details (js/peek.js), asked for by opening
+// them. The daemon decides `warn`, so the mark and the launcher's notice
+// cannot disagree. Never stored.
+function ctxWarnMark(t) {
   const c = t.context_size;
-  if (!c || !c.tokens || over(t) || t.status === "shelved") return "";
-  return `<span class="chip ctxsize${c.warn ? " warn" : ""}" data-tip="${esc(
-    `${fmtTokens(c.tokens)} tokens of context, re-read every turn. marked from ${c.threshold_k}k, set in the gear`)}"
-    >${fmtTokens(c.tokens)}</span>`;
-}
-
-// The terminal header's copy of the mark. The rest of the header is drawn once
-// as the terminal opens, and the size moves every turn, so it has its own slot.
-// Written only when it changed: the strip calls this on every render, and a
-// rewrite reflows the header, which re-renders the strip.
-function paintTermSize(t) {
-  const el = document.getElementById("t-ctxsize");
-  const html = t ? sizeChip(t) : "";
-  if (el && el.dataset.painted !== html) {
-    el.innerHTML = html;
-    el.dataset.painted = html;
-  }
+  if (!c || !c.warn || over(t) || t.status === "shelved") return "";
+  const tip = `past ${c.threshold_k}k tokens of context, and every turn re-reads all of it. ` +
+    `hover the card for its details`;
+  return `<span class="chip warn icon ctxwarn" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+    ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+      ><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h6"/><path d="M12 10.5v3M12 15.2v.1"/></svg></span>`;
 }
 
 // What is behind the percentage, for the tooltip. Tokens where the statusline
@@ -760,7 +750,7 @@ function cardHTML(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
-      ${sizeChip(t)}
+      ${ctxWarnMark(t)}
       ${contextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact"

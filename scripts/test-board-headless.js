@@ -4415,21 +4415,52 @@ async function stuckSection(browser, base) {
 // Three Claude cards: one under the context threshold, one past it, and one
 // the room has no size for.
 const CTX_CARDS = [
-  Object.assign({}, T1, { id: "cx-small", display_title: "small context",
+  Object.assign({}, T1, { id: "cx-small", display_title: "small context", resume_id: "sess-small",
     context_size: { tokens: 90000, warn: false, threshold_k: 150 } }),
-  Object.assign({}, T1, { id: "cx-big", display_title: "big context",
+  Object.assign({}, T1, { id: "cx-big", display_title: "big context", resume_id: "sess-big",
     context_size: { tokens: 212000, warn: true, threshold_k: 150 } }),
   Object.assign({}, T1, { id: "cx-none", display_title: "no size yet" }),
 ];
+const CTX_USAGE = {
+  "cx-small": { context_now: 90000, model: "claude-opus-5-5",
+    totals: { rows: 7, input: 4100, output: 18200, cache_write_5m: 0, cache_write_1h: 96000, cache_read: 512000,
+      cost: 1.84 } },
+  "cx-big": { context_now: 212000, model: "claude-opus-5-5",
+    totals: { rows: 41, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
+      cache_read: 6100000, cost: 7.62 } },
+};
 
-// EVERY CLAUDE CARD SHOWS ITS CONTEXT SIZE, and past the gear's threshold in
-// the warn colour: on the stack, on the board card and in the terminal header.
-// The gear holds the threshold, 150k by default, and saves it to the room.
+// PAST THE GEAR'S CONTEXT THRESHOLD, A CARD WEARS A MARK AND NO NUMBER, on the
+// stack and the board. The number is in its details, one compact view reached
+// three ways: two seconds on the card, "details" on its menu, and the expando
+// on the terminal's shortcut strip, which slides it up as a drawer. The details
+// read the card's usage when they open and never before. The gear holds the
+// threshold, 150k by default, and saves it to the room.
 async function contextSizeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const sp = await ctx.newPage();
   const errors = [];
   sp.on("pageerror", e => errors.push(String(e)));
+  const usageReads = [];
+  await ctx.route("**/v1/tasks/*/usage*", async route => {
+    const id = decodeURIComponent(route.request().url().split("/v1/tasks/")[1].split("/")[0]);
+    usageReads.push(id);
+    await route.fulfill({ json: CTX_USAGE[id] || { context_now: 0, totals: {}, rows: [] } });
+  });
+  const shots = process.env.CTX_SHOTS || "";
+  const shoot = async (name, clip) => {
+    if (!shots) return;
+    await new Promise(r => setTimeout(r, 350));
+    await sp.screenshot({ path: `${shots}/${name}.png`, clip });
+  };
+  const peekState = () => sp.evaluate(() => {
+    const p = document.querySelector(".peek");
+    if (!p) return null;
+    const r = p.getBoundingClientRect();
+    return { on: p.classList.contains("on"), pinned: p.classList.contains("pinned"), id: p.dataset.id,
+      text: p.textContent.replace(/\s+/g, " ").trim(), warn: !!p.querySelector(".peek-ctx.warn"),
+      title: p.querySelector("[title]") !== null, x: r.left, y: r.top, w: r.width, h: r.height };
+  });
   const posts = [];
   await ctx.route("**/v1/settings", async route => {
     const r = route.request();
@@ -4451,50 +4482,122 @@ async function contextSizeSection(browser, base) {
     await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: 15000 });
     await sp.evaluate(() => runRefresh());
     await new Promise(r => setTimeout(r, 400));
+    // CTX_SKIN=noir draws it all in another skin, for the screenshots.
+    if (process.env.CTX_SKIN) await sp.evaluate(s => applySkin(s), process.env.CTX_SKIN);
 
+    // The mark: on the card past the line only, in the warn colour, and no
+    // number anywhere on a card face, a stack row or the terminal bar.
     const got = await sp.evaluate(cards => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--warn)";
+      document.body.appendChild(probe);
+      const warnColour = getComputedStyle(probe).color;
+      probe.remove();
       const read = root => {
-        const m = root && root.querySelector(".chip.ctxsize");
-        if (!m) return null;
-        const probe = document.createElement("span");
-        probe.style.color = "var(--warn)";
-        document.body.appendChild(probe);
-        const warnColour = getComputedStyle(probe).color;
-        probe.remove();
-        return { text: m.textContent.trim(), warn: m.classList.contains("warn"),
-          warnColour: getComputedStyle(m).color === warnColour, tip: m.getAttribute("data-tip") || "" };
+        const m = root && root.querySelector(".chip.ctxwarn");
+        return { mark: m ? { warnColour: getComputedStyle(m).color === warnColour, text: m.textContent.trim(),
+          tip: m.getAttribute("data-tip") || "", svg: !!m.querySelector("svg") } : null,
+          number: /\b(90|212)k\b/.test(root ? root.textContent : "") };
       };
-      const box = html => { const b = document.createElement("div"); b.innerHTML = html; return b; };
       const row = id => read(document.querySelector(`#stack-list .stackrow[data-id="${id}"]`));
       const board = card => {
-        const b = box(cardHTML(card));
+        const b = document.createElement("div");
+        b.innerHTML = cardHTML(card);
         document.body.appendChild(b);
         const out = read(b);
         b.remove();
         return out;
       };
-      const paint = typeof paintTermSize === "function" ? paintTermSize : () => {};
-      paint(cards[1]);
-      const header = read(document.getElementById("t-ctxsize"));
-      paint(cards[2]);
-      const headerNone = read(document.getElementById("t-ctxsize"));
+      const bar = document.querySelector(".term-bar");
       return { small: row("cx-small"), big: row("cx-big"), none: row("cx-none"),
-        boardBig: board(cards[1]), boardSmall: board(cards[0]), header, headerNone };
+        boardBig: board(cards[1]), boardSmall: board(cards[0]),
+        barSlot: !!document.getElementById("t-ctxsize"), barNumber: /\b(90|212)k\b/.test(bar ? bar.textContent : "") };
     }, CTX_CARDS);
-    if (!got.small || got.small.text !== "90k") fail("a card under the threshold does not show 90k: " + JSON.stringify(got.small));
-    else if (got.small.warn || got.small.warnColour) fail("a card under the threshold is in the warn colour.");
-    if (!got.big || got.big.text !== "212k") fail("a card past the threshold does not show 212k: " + JSON.stringify(got.big));
+    if (!got.big.mark) fail("a card past the context threshold has no mark on its stack row.");
     else {
-      if (!got.big.warn || !got.big.warnColour) fail("a card past the threshold is not in the warn colour: " + JSON.stringify(got.big));
-      if (!/150k/.test(got.big.tip)) fail("the size mark's tooltip does not name the threshold: " + got.big.tip);
+      if (!got.big.mark.warnColour || !got.big.mark.svg) fail("the context mark is not a warn-coloured icon: " + JSON.stringify(got.big.mark));
+      if (got.big.mark.text) fail("the context mark carries text: " + got.big.mark.text);
+      if (!/150k/.test(got.big.mark.tip)) fail("the context mark's tooltip does not name the threshold: " + got.big.mark.tip);
     }
-    if (got.none) fail("a card with no size wears a size mark.");
-    if (!got.boardBig || !got.boardBig.warn || got.boardBig.text !== "212k") fail("the board card has no warned size mark.");
-    if (!got.boardSmall || got.boardSmall.warn) fail("the board card under the threshold is not a quiet size mark.");
-    if (!got.header || got.header.text !== "212k" || !got.header.warn) {
-      fail("the terminal header has no warned size mark: " + JSON.stringify(got.header));
+    if (got.small.mark || got.none.mark) fail("a card under the threshold, or with no size, wears the context mark.");
+    if (!got.boardBig.mark) fail("a board card past the threshold has no context mark.");
+    if (got.boardSmall.mark) fail("a board card under the threshold wears the context mark.");
+    for (const [where, r] of [["stack", got.small], ["stack", got.big], ["board", got.boardBig], ["board", got.boardSmall]]) {
+      if (r.number) fail("the context number is on the " + where + " face.");
     }
-    if (got.headerNone) fail("the terminal header kept a size for a card with none.");
+    if (got.barSlot || got.barNumber) fail("the terminal bar still carries the context number.");
+    if (usageReads.length) fail("the board read a card's usage before anything was opened: " + usageReads.join(","));
+
+    // Two seconds on a stack row opens the details, and not one second.
+    await sp.hover('#stack-list .stackrow[data-id="cx-big"] .title, #stack-list .stackrow[data-id="cx-big"]');
+    await new Promise(r => setTimeout(r, 1000));
+    let pk = await peekState();
+    if (pk && pk.on) fail("the details opened after one second of hover, not two.");
+    await sp.waitForFunction(() => { const p = document.querySelector(".peek"); return p && p.classList.contains("on"); },
+      null, { timeout: 4000 }).catch(() => fail("two seconds on a card did not open its details."));
+    await sp.waitForFunction(() => /212k/.test((document.querySelector(".peek") || {}).textContent || ""),
+      null, { timeout: 4000 }).catch(() => {});
+    pk = await peekState();
+    if (pk) {
+      if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
+      if (!/41/.test(pk.text) || !/\$7\.62/.test(pk.text)) fail("the hover details do not carry the totals: " + pk.text);
+      if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
+      if (pk.pinned) fail("a hover opened the pinned details.");
+      if (pk.title) fail("the details use a native title tooltip.");
+      if (pk.x < 0 || pk.y < 0 || pk.x + pk.w > 1400 || pk.y + pk.h > 900) fail("the details are off the screen: " + JSON.stringify(pk));
+    }
+    if (usageReads.filter(x => x === "cx-big").length !== 1) fail("opening the details read the usage " + usageReads.length + " times, not once.");
+    await shoot("hover-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
+    // Off the card and off the popover: it goes.
+    await sp.mouse.move(1390, 890);
+    await sp.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: 3000 })
+      .catch(() => fail("the hover details stayed after the pointer left."));
+
+    // The menu's "details": the same view, pinned until a click elsewhere.
+    await sp.click('#stack-list .stackrow[data-id="cx-small"]', { button: "right" });
+    const item = sp.locator("#cardmenu button", { hasText: /^details$/ }).first();
+    await item.waitFor({ state: "visible", timeout: 5000 }).catch(() => fail("the card menu has no details entry."));
+    if (await item.count()) {
+      await item.click();
+      await sp.waitForFunction(() => /90k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: 4000 }).catch(() => fail("the menu's details did not open on 90k."));
+      pk = await peekState();
+      if (pk && (!pk.pinned || pk.warn)) fail("the menu's details are not pinned, or warn under the line: " + JSON.stringify(pk));
+      await sp.mouse.move(1390, 890);
+      await new Promise(r => setTimeout(r, 600));
+      if (!(await peekState()).on) fail("the menu's details closed when the pointer left.");
+      await shoot("menu-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
+      await sp.keyboard.press("Escape");
+      if ((await peekState()).on) fail("escape did not close the details.");
+    }
+
+    // The shortcut strip's expando slides the drawer up for the attached card.
+    await sp.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    await new Promise(r => setTimeout(r, 500));
+    // Attached, as far as the strip is concerned: no socket in a mocked room.
+    await sp.evaluate(card => { termTask = card; }, CTX_CARDS[1]);
+    await sp.waitForSelector("#t-expando", { state: "visible", timeout: 5000 })
+      .catch(() => fail("the shortcut strip has no details expando."));
+    const reads = usageReads.length;
+    await sp.click("#t-expando").catch(e => fail("the expando could not be clicked: " + e.message));
+    await sp.waitForFunction(() => /212k/.test(document.getElementById("t-drawer-body").textContent),
+      null, { timeout: 4000 }).catch(() => fail("the drawer did not open on the attached card's details."));
+    await new Promise(r => setTimeout(r, 400));
+    const dr = await sp.evaluate(() => {
+      const d = document.getElementById("t-drawer"), help = document.querySelector(".term-help");
+      const r = d.getBoundingClientRect(), h = help.getBoundingClientRect();
+      return { open: d.classList.contains("open"), above: r.bottom <= h.top + 1, visible: getComputedStyle(d).visibility,
+        expanded: document.getElementById("t-expando").getAttribute("aria-expanded") };
+    });
+    if (!dr.open || dr.visible !== "visible" || !dr.above || dr.expanded !== "true") {
+      fail("the drawer is not open above the strip: " + JSON.stringify(dr));
+    }
+    if (usageReads.length !== reads + 1) fail("opening the drawer did not read the usage exactly once.");
+    await shoot("drawer-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
+    // The line itself closes it.
+    await sp.click(".term-help-keys");
+    const shut = await sp.evaluate(() => document.getElementById("t-drawer").classList.contains("open"));
+    if (shut) fail("clicking the strip did not close the drawer.");
 
     // The gear: 150k by default, and a typed value is saved to the room.
     const gear = await sp.evaluate(async () => {

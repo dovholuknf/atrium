@@ -535,6 +535,8 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  // An open details drawer follows the terminal to this card. See js/peek.js.
+  if (typeof termDrawerFollow === "function") termDrawerFollow(task);
   // Picking a session closes the phone switcher, so the terminal you just chose
   // is what you land on rather than the list you chose it from. No-op on a
   // desktop, where the list is not a dropdown. See `setTermListOpen`.
@@ -582,9 +584,7 @@ function openTerm(task) {
   // The runner as its mark, in front of the name, the way a card carries it.
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.
-  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);
-  paintTermSize(task);
-  // What is left is what changes: the process, and where it is. The theme
+  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);  // What is left is what changes: the process, and where it is. The theme
   // moved into the cog, with the rest of how this terminal behaves.
   // The path copies itself. It is the thing most often wanted somewhere else,
   // and reading it off a screen to retype it is the worst way to spend a

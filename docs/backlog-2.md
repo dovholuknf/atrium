@@ -51,7 +51,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 42 | A running card wears the `!` chip for a message held until its turn ends | bug | not started |
 | 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
-| 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it, conflicts with 37 |
+| 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
 | 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
 
 ------------
@@ -947,6 +947,15 @@ notice through `notifyLauncher` the first time it crosses the threshold.
 
 CONFLICT with item 37: later the same day clint said usage is shown "only in a card's details". The launcher notice
 fits. The number on the card face does not. sa90 reports what should change when both land.
+
+**Status, 2026-09-28, sa87: built on `claude/context-size` to clint's decision, not merged.** The number is off the
+card face, the stack, the terminal bar and the terminals list. A card past the gear threshold wears a small warn
+mark, no number. The gear threshold (`context_threshold_k`, default 150) and the one notice per crossing to an
+agent-launched card's launcher stay: keyed on the session id and stored, so a restart does not send it again, and
+re-armed when the card is seen back under the line. The number is in a compact details view, one body in
+`js/peek.js`, reached three ways: two seconds on a card or stack row, `details` on the card menu, and a `details`
+expando on the terminal's shortcut strip that slides a drawer up. It reads item 37's `GET /v1/tasks/{id}/usage`
+when it opens and never otherwise. See `docs/test-plan.md` section BV.
 
 ## 46. Provision a machine as a room over ssh, from one command and later from the board (feature)
 
