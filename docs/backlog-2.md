@@ -7,10 +7,10 @@ larger designs. Inside each group, the item closest to landing comes first.
 
 | # | Item | Group | State |
 | - | ---- | ----- | ----- |
-| 1 | sa58: popped-out terminal also attached on the main board | paused | DONE, `7b62aa3` `7e85a80`, deployed |
-| 2 | sa60: process registry design, revised | paused | DONE, `eb887da`, Mercurius ready_to_build |
-| 3 | sa59: restart gate says why it went | paused | DONE, `8872505`, deployed |
-| 4 | sa61: terminals pane group drag and group colours | paused | DONE, `b12b323`, deployed |
+| 1 | Popped-out terminal also attached on the main board | paused | by sa58, DONE, `7b62aa3` `7e85a80`, deployed |
+| 2 | Process registry design, revised | paused | by sa60, DONE, `eb887da`, Mercurius ready_to_build |
+| 3 | Restart gate says why it went | paused | by sa59, DONE, `8872505`, deployed |
+| 4 | Terminals pane group drag and group colours | paused | by sa61, DONE, `b12b323`, deployed |
 | 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
 | 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
 | 7 | The held-message `!` chip says the wrong reason | bug | DONE with item 10, `1ff7503` |
@@ -29,13 +29,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | DONE, `cf2fc2b` |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
-| 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
-| 24 | sa81: the "not replayed here" notice opens or loads the pre-restart history | feature | DONE, `ddbeb9c` `cda7ae5`, the daemon half needs a room restart |
-| 25 | sa80: false STUCK alert after a slash command and a restart; stuck mark on the card; gear setting | bug | DONE, `d4803aa` `42258ef` `2a4ae89`, the fix needs a room restart |
+| 23 | Keep idle Claude cards' prompt caches warm, stop at break-even | feature | by sa78, DONE, merged `a917535`, deployed 2026-09-28 |
+| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | by sa81, DONE, `ddbeb9c` `cda7ae5`, the daemon half needs a room restart |
+| 25 | False STUCK alert after a slash command and a restart; stuck mark on the card; gear setting | bug | by sa80, DONE, `d4803aa` `42258ef` `2a4ae89`, the fix needs a room restart |
 | 26 | Toasts pop and disappear in the same second | bug | DONE by sa83, `c843139`, not merged |
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | DONE by sa83, `04bad69`, Esc Esc `d1c2454`, chip tip `dc06056`, not merged |
 | 28 | The full headless board run fails most of the time on `claude/main` | bug | DONE by sa83, `39c76dc` `a74c95e` `2d47379`, not merged |
-| 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221` `ac59568` `764e2a8`, the room half needs a room restart |
+| 29 | Lean workers, a launched worker starts with only what it needs | feature | by sa85, DONE, `1043e35` `42b2221` `ac59568` `764e2a8`, the room half needs a room restart |
 | 30 | Peer review on the mercurius protocol, run in an atrium session | design | not started, 2 open questions |
 | 31 | STUCK fires on a worker whose turn ended while it waits on background runs | bug | not started |
 | 32 | A queued say from http-support never produced a backlog entry, and nothing can say why | bug | not started |
@@ -70,7 +70,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 **Raised 2026-09-24.** Paused to save tokens. Each worker was told to commit what it had and stop. Their cards,
 branches and worktrees are kept (do not cull). Nothing here is on `claude/main` unless it says so.
 
-### 1. sa58: a popped-out terminal also attached on the main board
+### 1. A popped-out terminal also attached on the main board
 
 `claude/popout-double-attach`, **fix done at `c26ba01`, not merged.** clint saw win32crypto-e2e live in a
 popped-out window and in the main board's terminals pane at once. Cause: the hub spells a card `room~id` with
@@ -79,7 +79,7 @@ the pop-out claim code compared raw ids. Fixed by keying on the bare id. The pop
 `check-board.sh` rerun (the last failure looked like the load flake) and the manual AP checks on a two-room
 throwaway hub.
 
-### 2. sa60: process registry design, revised
+### 2. Process registry design, revised
 
 `claude/process-registry-design`, **doc done at `00f8c4e`, not merged.** sa56's design
 (`docs/process-registry-design.md`, on `claude/main`) revised with clint's answers: long-running services only,
@@ -90,7 +90,7 @@ section on the Windows firewall prompts (new exe paths listening on all interfac
 before it spawns. No second round ran. Open: processes on window-mode and joined cards (default: allow while the
 reaper watches the pid), and gate as Bash or as a tool of its own (default: Bash). Build after One atrium.
 
-### 3. sa59: the restart gate says why it went
+### 3. The restart gate says why it went
 
 `claude/gate-counts-every-board`, **WIP `e4052a2`.** At 12:57 a gated hub-only deploy printed "nobody is using a
 board" with clint's board open. The first diagnosis (the gate misses single-room streams) was wrong: the hub audit
@@ -99,7 +99,7 @@ script printed the same line for every go. The WIP makes a go answer say why and
 stream route. Left: docs, CHANGELOG, test-plan AQ, AM1's expected text, a non-WIP subject, and removing
 `D:\tmp\gate59\old`.
 
-### 4. sa61: terminals pane group drag and group colours
+### 4. Terminals pane group drag and group colours
 
 `claude/term-groups-drag-color`, **WIP `a6a9d3f`, a diagnostic probe only.** Found: the terminals-pane group
 headings never wear `--ghue`, so they show a grey name with no hue. The stack, the board and tag chips recolour
@@ -831,7 +831,7 @@ What is wanted:
   otherwise ...". It shows what atrium thinks is in the line, the count, time since the last keystroke, and whether the
   gate is open or closed and why. It is for clint and an agent debugging together.
 
-An earlier report very likely has the same cause (was item 36 on `claude/backlog-0928`). sa85's turn ended at 09:45
+An earlier report very likely has the same cause. sa85's turn ended at 09:45
 and it sat idle at its prompt. Three messages were due to it: one `when: done` from about 09:10, and two immediate
 ones from about 09:46 and 09:50, both answered `queued, not typed yet`. None was typed until clint typed `u waiting?`
 about 09:55. Then all three went in mid-turn and sat in Claude Code's own queue, so sa85 did nothing for about 9
@@ -949,7 +949,7 @@ of 10 covered every orchestrator's launches and the resident merger together, an
 seven workers were up. The cap counts running cards tagged `atrium:subagent` and nothing else. `origin:agent` stays
 as the doer signal it already is.
 
-Also wanted, from an earlier report of the same refusal (was item 33 on `claude/backlog-0928`): the refusal lists what
+Also wanted, from an earlier report of the same refusal: the refusal lists what
 it counted, with title, launcher and status, so the caller and clint can see what to free. On 2026-09-28 saorch had
 `origin:agent` removed from its tags as a workaround, which also stops its silent-stop notices (item 41), because
 `agentLaunched` reads that tag.
@@ -1009,7 +1009,7 @@ still notifies, because it blocks until a human answers. A card's own notificati
 
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
-Raised by clint 2026-09-28 (was item 32 on `claude/backlog-0928`). sa87 built it on `claude/context-size` (ee68bc8),
+Raised by clint 2026-09-28. sa87 built it on `claude/context-size` (ee68bc8),
 not merged. Workers grow to 200k and 300k tokens of context, and every turn past that re-reads all of it.
 
 As built: every Claude card shows its context size on the card and in the terminal header, in the warn colour past a
