@@ -119,7 +119,8 @@ checks the card the room returns: asked for effort, args or env and the card doe
 result says so plainly ("the room is older than launch options: effort, args and env were NOT applied, the session
 is running on the runner's defaults"). The session is not killed, because an exit is the caller's call.
 
-`model` has been on `/v1/launch` since 0047, so it works against any room of that age.
+`model` has been on `/v1/launch` since 0047, so it works against any room of that age, and is checked the same way
+for a room older still (diff review s_HaATnRW7EdRC, A1).
 
 ## Schema
 

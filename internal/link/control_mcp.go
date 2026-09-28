@@ -1095,6 +1095,11 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 // that ignored them shows. See docs/launch-options-design.md "Version skew".
 func launchOptionsDropped(in launchInput, t ctlCard) []string {
 	var missed []string
+	// Model has been on /v1/launch since 0047, so only a very old room drops
+	// it, and it is checked the same way for completeness.
+	if strings.TrimSpace(in.Model) != "" && t.Model == "" {
+		missed = append(missed, "model")
+	}
 	if strings.TrimSpace(in.Effort) != "" && t.Effort == "" {
 		missed = append(missed, "effort")
 	}
