@@ -154,8 +154,14 @@ func (c *controlMCP) peersElsewhere(ctx context.Context, besides string, all boo
 			if (!all && !live) || t.Wire == "" {
 				continue
 			}
+			// The alias named across too, since a bare one means the caller's
+			// own room.
+			alias := ""
+			if t.Alias != "" {
+				alias = t.Alias + "@" + a.Name
+			}
 			out = append(out, RelayPeer{
-				Handle: t.Wire + "@" + a.Name, Alias: t.Alias, Card: tagFor(a.Name, t.ID), Room: a.Name,
+				Handle: t.Wire + "@" + a.Name, Alias: alias, Card: tagFor(a.Name, t.ID), Room: a.Name,
 				Title: t.Title, Status: t.Status, Doing: t.Activity.What, Where: t.Worktree,
 				Waiting: t.Wait, Owned: t.Superv,
 			})

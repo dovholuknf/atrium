@@ -236,3 +236,6 @@ Mercurius diff review, session `s_ocCmLXd1z8er`.
   sentence that was now wrong: folded in, the sentence lists relay and the room's test requires relay to be absent.
   A1 (advisory), `$Bin` in the provisioning here-strings: rejected, `Invoke-Remote` defines `$Bin` in its prelude on
   both Windows and Unix, the same as every other remote block in the script uses.
+- Round 2, in session `s_tILzmCAa9PQa` because the server lost the first, ready_to_build. A1, a remote peer's bare
+  alias could be sent to the caller's own room: folded in, it is now `alias@room`. A2, no hub-side test of a held
+  answer: folded in, `TestAHubSideSayPassesAHeldAnswerOn`.
