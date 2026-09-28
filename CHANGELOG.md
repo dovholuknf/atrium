@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card past a context threshold wears a mark, its launcher hears once, and a card's details are a hover away.**
+  See `docs/backlog-2.md` item 45 and `docs/test-plan.md` section BZ.
+
+  The room reads every live Claude card's context size from its transcript on the reaper's tick, with the
+  keep-alive's own reader, and holds it in memory only. Past the gear's threshold (`context threshold`, default 150k)
+  the card and its stack row wear a small warn mark, no number. An agent-launched card's launcher gets one notice
+  the first time it crosses: `<worker> is at <N>k context. Tell it to report what it has and stop, or hand off.` The
+  claim is stored, so a restart does not send it again, and a card seen back under the line is re-armed. A card a
+  human started is marked and nobody is told. The number is in a compact details view: context now against the
+  threshold, and item 37's token totals. Two seconds on a card opens it, `details` on the card menu pins it, and a
+  `details` expando on the terminal's shortcut strip slides it up as a drawer. It reads the card's usage when it
+  opens and never otherwise. `internal/daemon`, `internal/store`, `internal/api`: ROOM RESTART. `internal/api/web`:
+  HUB RESTART for the board a hub serves, and the room restart for the room's own board.
 - **A card's Claude Code subagents (the Task tool) are on its token-use record, as their own `subagent` rows.** See
   `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT5.
 

@@ -148,6 +148,10 @@ type Daemon struct {
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
+	// ctx is each live Claude card's context size, read from its transcript.
+	// See contextsize.go.
+	ctx *contextSizes
+
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
 
@@ -441,6 +445,9 @@ func New(opts Options) (*Daemon, error) {
 	}
 	api.KeepaliveOf = d.ka.view
 	d.ap.SetKeepalive = d.keepaliveSet
+	// Each card's context size, held the same way. See contextsize.go.
+	d.ctx = newContextSizes()
+	api.ContextSizeOf = d.contextSizeFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
 	d.ap.UsageOf = d.usageFor

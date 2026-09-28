@@ -864,6 +864,7 @@ async function loadHousekeeping() {
   fillShareAuth(s);
   syncInputLag(s);
   fillMinCols(s);
+  fillContextK(s);
   if (typeof paintKeepaliveSettings === "function") paintKeepaliveSettings(s);
 }
 
@@ -1561,6 +1562,46 @@ async function saveMinCols(value) {
 }
 
 function resetMinCols() { saveMinCols(""); }
+
+// The context threshold's box, the same shape as the width floor's.
+function fillContextK(s) {
+  const box = document.getElementById("s-ctxk");
+  const reset = document.getElementById("s-ctxk-reset");
+  if (!box || !s) return;
+  const def = Number(s.context_threshold_k_default) || 150;
+  box.value = s.context_threshold_k || "";
+  box.placeholder = def;
+  if (s.context_threshold_k_min) box.min = s.context_threshold_k_min;
+  if (s.context_threshold_k_max) box.max = s.context_threshold_k_max;
+  if (reset) {
+    reset.textContent = `reset to default (${def})`;
+    reset.hidden = (Number(s.context_threshold_k_now) || def) === def;
+  }
+}
+
+async function saveContextK(value) {
+  const box = document.getElementById("s-ctxk");
+  if (!box) return;
+  const want = value !== undefined ? value : String(box.value || "").trim();
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ context_threshold_k: want })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    fillContextK(pastePrefs || {});
+    return;
+  }
+  fillContextK(pastePrefs);
+  flashSaved(box);
+  refresh();
+  toast("context threshold saved",
+    `a card is marked from ${pastePrefs.context_threshold_k_now}k tokens of context`);
+}
+
+function resetContextK() { saveContextK(""); }
 
 // pastePrefs is the last answer from the daemon, kept so that a paste does not
 // have to ask first. Null until something has looked, which pasteSettings does
