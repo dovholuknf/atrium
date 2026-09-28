@@ -57,7 +57,8 @@ param(
     # Take over an atrium on the remote that this script did not install.
     [switch] $Force,
 
-    # The ssh and scp commands and any extra options for both (-i, -p, -J ...).
+    # The ssh and scp commands and any extra options for both (-i, -J, -o ...).
+    # A port goes as `-o Port=2222`, because scp reads -p as something else.
     [string] $Ssh = 'ssh',
     [string] $Scp = 'scp',
     [string[]] $SshOption = @(),
@@ -199,7 +200,10 @@ function Find-Hub {
     }
     $flag = {
         param($n)
-        if ($cmd -and $cmd -match "--$n[ =]`"?([^`"\s]+)") { $Matches[1] } else { $null }
+        # A quoted value may hold spaces. An unquoted one ends at the first.
+        if ($cmd -and $cmd -match "--$n[ =](?:`"([^`"]*)`"|(\S+))") {
+            if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+        } else { $null }
     }
     [pscustomobject]@{
         Found     = [bool] $cmd

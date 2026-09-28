@@ -965,5 +965,13 @@ Stage 2, later: the same thing from the board. An "add a machine" dialog takes a
 stage 1 and shows each step. Credentials follow the overlays rule: atrium names the ssh command, it never holds the
 key.
 
+**Status, 2026-09-28, sa92: stage 1 built, proven on claudevm (Windows).** `scripts/provision-room.ps1 user@host`
+does the whole of stage 1, with `-Name`, `-Runners`, `-Remove` and `-Force`. It adds `atrium room join --no-run`
+and a `room` verb to both service scripts. See `docs/packaging.md` "Provisioning a room over ssh, from the hub" and
+`docs/test-plan.md` section BU. Linux and macOS paths are written but not yet run, so the first run on clint's
+other machine is also their first proof. Joins direct rooms only: a hub linked over ziti or zrok is refused with the
+reason. For stage 2 the step lines are `provision <step> <status> <detail>` and the exit codes are listed at the
+top of the script.
+
 
 ------------
