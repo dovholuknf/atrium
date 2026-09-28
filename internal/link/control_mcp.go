@@ -98,7 +98,16 @@ type reservation struct {
 // tools read who is calling from the per-request header, never from the server,
 // so there is nothing per session to build. `getServer` returns the same one.
 func newControlHandler(board string, hub *Hub, audit func(room, kind, detail string)) http.Handler {
-	c := &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub, audit: audit}
+	return newControl(board, hub, audit).handler()
+}
+
+// newControl builds the tools' state, which the relay shares. See control_relay.go.
+func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *controlMCP {
+	return &controlMCP{board: board, client: &http.Client{Timeout: controlTimeout}, hub: hub, audit: audit}
+}
+
+// handler is the MCP server over HTTP.
+func (c *controlMCP) handler() http.Handler {
 	srv := c.server()
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
@@ -129,7 +138,9 @@ func (c *controlMCP) server() *mcp.Server {
 			"Call this before saying anything to anybody. The handle is what `atrium_say` " +
 			"takes, and a handle read off a card title rather than from here is usually wrong. " +
 			"A peer's `alias`, when it has one, is a short name the operator gave it (`sa89`, " +
-			"`dotfiles`), and `atrium_say` takes that too, with or without the `@`.",
+			"`dotfiles`), and `atrium_say` takes that too, with or without the `@`.\n\n" +
+			"`rooms: true` adds the sessions on other rooms. Their handle is `name@room`, and " +
+			"`atrium_say` takes that, as it takes `alias@room`. A bare name always means your own room.",
 	}, c.peersHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -153,7 +164,12 @@ func (c *controlMCP) server() *mcp.Server {
 			"agent talking to another. The receiving session is told who you are " +
 			"automatically, so do not announce yourself.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
-			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.",
+			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.\n\n" +
+			"ANOTHER ROOM is `name@room` (or `alias@room`). It goes by way of the hub and is " +
+			"delivered the same way. The recipient sees you as `you@yourroom` and answers to that. " +
+			"`held` means the hub or that room is not answering: it is kept on your room and sent " +
+			"when they are, for up to a day. `unconfirmed` means it may or may not have arrived, " +
+			"so ask before sending it again.",
 	}, c.sayHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -289,7 +305,10 @@ func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, o
 	}
 	res, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("could not reach the board at %s: %w", c.board, err)
+		// A 502 in all but name, kept as one so the relay reads it as a hub
+		// that is not answering rather than a refusal.
+		return &boardError{code: http.StatusBadGateway,
+			msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
@@ -298,15 +317,28 @@ func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, o
 		}
 		_ = json.NewDecoder(res.Body).Decode(&e)
 		if strings.TrimSpace(e.Error) != "" {
-			return fmt.Errorf("%s", e.Error)
+			return &boardError{code: res.StatusCode, msg: e.Error}
 		}
-		return fmt.Errorf("the board answered %s", res.Status)
+		return &boardError{code: res.StatusCode, msg: "the board answered " + res.Status, bare: true}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(res.Body).Decode(out)
 }
+
+// boardError is a refusal from the board, with its status kept. The sentence
+// is the whole of what a tool shows. The code is what the relay reads to tell
+// a room that is not answering from a refusal that will never succeed.
+type boardError struct {
+	code int
+	msg  string
+	// bare is an answer with no sentence in it, which is what a route the room
+	// does not have looks like. A room older than an endpoint answers a bare 404.
+	bare bool
+}
+
+func (e *boardError) Error() string { return e.msg }
 
 // agentOf and roomOf read the per-request identity headers the go-sdk hands a
 // tool on `Extra`. Absent when the caller is not one of atrium's sessions,
@@ -453,10 +485,14 @@ type peersInput struct {
 	// All includes cards with no session on them. Off by default: the question
 	// this tool answers is who can be spoken to.
 	All bool `json:"all,omitempty" jsonschema:"include cards that have no running session"`
+	// Rooms adds the sessions on every other attached room. See control_relay.go.
+	Rooms bool `json:"rooms,omitempty" jsonschema:"also list sessions on other rooms. their handles are name@room, which atrium_say takes"`
 }
 
 type peer struct {
 	Handle string `json:"handle"`
+	// Room is set on a peer from another room, whose handle is `name@room`.
+	Room string `json:"room,omitempty"`
 	// Alias is the short name the operator gave it, `sa89` or `dotfiles`.
 	// Accepted anywhere the handle is, with or without the `@`.
 	Alias  string `json:"alias,omitempty"`
@@ -518,6 +554,20 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 			Waiting: t.Wait, Owned: t.Superv,
 			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.openCount(),
 		})
+	}
+	// OTHER ROOMS, marked, when asked. Only for a caller with a room: without one
+	// the list above is already every room's.
+	if in.Rooms && room != "" {
+		elsewhere, quiet := c.peersElsewhere(ctx, room, in.All)
+		for _, p := range elsewhere {
+			out.Peers = append(out.Peers, peer{
+				Handle: p.Handle, Room: p.Room, Alias: p.Alias, Card: p.Card, Title: p.Title,
+				Status: p.Status, Doing: p.Doing, Where: p.Where, Waiting: p.Waiting, Owned: p.Owned,
+			})
+		}
+		if len(quiet) > 0 {
+			out.Note = "not answering, so not listed: " + strings.Join(quiet, ", ")
+		}
 	}
 	if out.Me == "" {
 		out.Note = "this session is not on the board, so it has no handle. a peer cannot " +
@@ -621,6 +671,19 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		return nil, out, fmt.Errorf("nothing to say")
 	}
 	room := roomOf(req)
+	// ANOTHER ROOM, named as `name@room`. Only for a caller with a room: one
+	// without keeps the aggregate list, where `room~id` already reaches
+	// anywhere. See docs/cross-room-say-design.md.
+	if room != "" {
+		name, target, err := SplitAddress(in.To)
+		if err != nil {
+			return nil, out, err
+		}
+		if other := otherRoom(target, room); other != "" {
+			return c.sayAcross(ctx, req, room, name, other, in)
+		}
+		in.To = name
+	}
 	id, handle, err := c.resolvePeer(ctx, room, in.To)
 	if err != nil {
 		return nil, out, err
@@ -967,6 +1030,8 @@ type launchInput struct {
 	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, passed in the shape its runner row declares (claude: --effort, codex: -c model_reasoning_effort=). not checked: whatever the runner accepts, such as low, medium or high for claude. empty is the runner's default. a runner with no way to take one refuses"`
 	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, one per element, added after the model and effort and before the prompt. used as given. shown on the card, so keep secrets out"`
 	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. ATRIUM_ names are refused. the values stay on the room and the card shows the names only"`
+	// Room launches on another room. The worker's reports come back across.
+	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. its reports and notices still reach you, as your-handle@your-room"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
@@ -1009,6 +1074,19 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		harness = "claude"
 	}
 	room := roomOf(req)
+	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
+	// card as `myroom~id`, so the worker's reports and notices come back across
+	// to exactly this card. See docs/cross-room-say-design.md.
+	spawnedBy, spawnedByID := agentOf(req), ""
+	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
+		if room != "" && spawnedBy != "" {
+			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
+				spawnedByID = tagFor(room, id)
+			}
+			spawnedBy += "@" + room
+		}
+		room = r
+	}
 
 	// THE HARD CAP. Count the live sessions already running plus the launches
 	// already admitted but not yet showing as cards, and refuse before forwarding
@@ -1056,10 +1134,13 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": prompt,
 		"brief": strings.TrimSpace(in.Brief), "tags": tags,
-		"theme": strings.TrimSpace(in.Theme), "spawned_by": agentOf(req),
+		"theme": strings.TrimSpace(in.Theme), "spawned_by": spawnedBy,
 		"lean": leanLaunch(in, harness), "mcp": in.MCP,
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"args": in.Args, "env": in.Env,
+	}
+	if spawnedByID != "" {
+		reqBody["spawned_by_id"] = spawnedByID
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
@@ -1067,6 +1148,10 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	}
 	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
+	if room != roomOf(req) && room != "" {
+		// Named the way atrium_say takes it from here.
+		out.Card, out.Handle = tagFor(room, t.ID), t.Wire+"@"+room
+	}
 	if strings.TrimSpace(in.Brief) != "" {
 		// The room wrote it; name it back in the same slash form the rest of
 		// atrium carries, so the caller can add to the file it already reads.

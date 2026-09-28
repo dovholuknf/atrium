@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -50,7 +52,9 @@ func addPeerTools(s *mcp.Server) {
 		Description: "The other sessions on this board: what each is called, what it is doing, " +
 			"where it is working, and how long it has been waiting.\n\n" +
 			"Call this before saying anything to anybody. The handle is what `atrium_say` " +
-			"takes, and a handle read off a card title rather than from here is usually wrong.",
+			"takes, and a handle read off a card title rather than from here is usually wrong.\n\n" +
+			"`rooms: true` adds the sessions on other rooms, asked of this room's hub. Their " +
+			"handle is `name@room`, which `atrium_say` takes. A bare name always means this room.",
 	}, peersHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -65,10 +69,32 @@ func addPeerTools(s *mcp.Server) {
 			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
 			"should not disturb it mid-thought.\n\n" +
 			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
-			"agent talking to another. Say who you are: the receiving session is not told.\n\n" +
+			"agent talking to another. The receiving session is told who you are " +
+			"automatically, so do not announce yourself.\n\n" +
 			"Ask for a reply explicitly, and say how. The other session answers by calling " +
-			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.",
+			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.\n\n" +
+			"ANOTHER ROOM is `name@room` (or `alias@room`), carried by this room's hub. The " +
+			"recipient sees you as `you@thisroom` and answers to that. `held` means the hub or " +
+			"that room is not answering: it is kept here and sent when they are, for up to a " +
+			"day. `unconfirmed` means it may or may not have arrived, so ask before sending it " +
+			"again.",
 	}, sayHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_report",
+		Description: "Report on your work to the session that launched you, on this room or another.\n\n" +
+			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN WITH THIS, or with an `atrium_say` " +
+			"to your launcher. A turn that ends with neither is a silent stop: your launcher is " +
+			"told you went quiet, and the human's board is told after that.\n\n" +
+			"status is one of:\n" +
+			"- `done`: the work is finished. Give `sha`, the commit it landed as, or `no_commit` " +
+			"saying why there is none.\n" +
+			"- `blocked`: you cannot go on. Give `ask`: what you need, and from whom.\n" +
+			"- `question`: you need an answer to go on. Give `ask`.\n" +
+			"- `progress`: you are stopping on purpose while something runs.\n\n" +
+			"`summary` is what happened, in your words. It reaches your launcher verbatim. An " +
+			"incomplete report is refused with what is missing, so fix it and call again.",
+	}, reportHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
@@ -164,14 +190,31 @@ func ask(ctx context.Context, method, path string, body any, out any) error {
 		}
 		_ = json.NewDecoder(res.Body).Decode(&e)
 		if strings.TrimSpace(e.Error) != "" {
-			return fmt.Errorf("%s", e.Error)
+			return &peerToolErr{code: res.StatusCode, msg: e.Error}
 		}
-		return fmt.Errorf("the board answered %s", res.Status)
+		return &peerToolErr{code: res.StatusCode, msg: "the board answered " + res.Status, bare: true}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(res.Body).Decode(out)
+}
+
+// peerToolErr is a refusal from the board with its status kept. `bare` is an
+// answer with no sentence, which is how a room older than an endpoint says it
+// does not have one.
+type peerToolErr struct {
+	code int
+	msg  string
+	bare bool
+}
+
+func (e *peerToolErr) Error() string { return e.msg }
+
+// olderRoom is whether an error is the room not having the endpoint at all.
+func olderRoom(err error) bool {
+	var pe *peerToolErr
+	return errors.As(err, &pe) && pe.code == http.StatusNotFound && pe.bare
 }
 
 // card is the part of a task these tools report. The board's own shape is much
@@ -200,10 +243,14 @@ type PeersInput struct {
 	// All includes cards with no session on them. Off by default: the question
 	// this tool answers is who can be spoken to.
 	All bool `json:"all,omitempty" jsonschema:"include cards that have no running session"`
+	// Rooms adds the sessions on other rooms, through this room's hub.
+	Rooms bool `json:"rooms,omitempty" jsonschema:"also list sessions on other rooms. their handles are name@room, which atrium_say takes"`
 }
 
 type Peer struct {
 	Handle string `json:"handle"`
+	// Room is set on a peer from another room, whose handle is `name@room`.
+	Room string `json:"room,omitempty"`
 	// Alias is the short name the operator gave it, accepted in place of the
 	// handle.
 	Alias  string `json:"alias,omitempty"`
@@ -261,6 +308,23 @@ func peersHandler(ctx context.Context, _ *mcp.CallToolRequest, in PeersInput) (
 			Waiting: t.Wait, Owned: t.Superv,
 		})
 	}
+	if in.Rooms {
+		var more struct {
+			Peers []Peer `json:"peers"`
+			Note  string `json:"note"`
+		}
+		switch err := ask(ctx, http.MethodGet, peersRoomsPath(in.All), nil, &more); {
+		case olderRoom(err):
+			out.Note = "this room is older than cross-room say, so it cannot list other rooms."
+		case err != nil:
+			out.Note = "other rooms could not be listed: " + err.Error()
+		default:
+			out.Peers = append(out.Peers, more.Peers...)
+			if more.Note != "" {
+				out.Note = more.Note
+			}
+		}
+	}
 	if out.Me == "" {
 		out.Note = "this session is not on the board, so it has no handle. a peer cannot " +
 			"answer you: ask it to leave its reply somewhere you can read instead."
@@ -276,7 +340,7 @@ type SayInput struct {
 	// happens to be holding is a puzzle rather than a rule.
 	To string `json:"to" jsonschema:"the handle, alias or card id to say it to"`
 	// Text is what to say, as one agent to another.
-	Text string `json:"text" jsonschema:"what to say. say who you are: the other session is not told"`
+	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 }
@@ -299,18 +363,68 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	if strings.TrimSpace(in.Text) == "" {
 		return nil, out, fmt.Errorf("nothing to say")
 	}
-	id, handle, err := resolvePeer(ctx, in.To)
+	// WHO IS SAYING IT, from the environment the room launched this session
+	// with. It used to send nobody, which the room reads as the operator, so a
+	// peer's words were typed as though the human had typed them.
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+	body := map[string]string{"text": in.Text, "from": me, "to": in.To}
+	if w := strings.TrimSpace(in.When); w != "" {
+		body["when"] = w
+	}
+
+	// BY ADDRESS, so `name@room` reaches another room through this room's link
+	// to its hub. See internal/daemon/relay.go.
+	var res struct {
+		Delivered string `json:"delivered"`
+		To        string `json:"to"`
+		Card      string `json:"card"`
+		When      string `json:"when"`
+		Warning   string `json:"warning"`
+		Note      string `json:"note"`
+	}
+	err := ask(ctx, http.MethodPost, "/v1/say", body, &res)
+	if olderRoom(err) {
+		// A ROOM OLDER THAN THIS BINARY. A bare name takes the old way, now
+		// with the sender. Another room cannot be reached from it at all.
+		name, room, perr := daemon.SplitAddress(in.To)
+		if perr != nil {
+			return nil, out, perr
+		}
+		if room != "" && !strings.EqualFold(room, strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))) {
+			return nil, out, fmt.Errorf("this room is older than cross-room say, so it cannot reach %s", in.To)
+		}
+		return sayByCard(ctx, name, me, in.Text, in.When)
+	}
+	if err != nil {
+		return nil, out, err
+	}
+	out.Delivered, out.To, out.Card, out.When = res.Delivered, res.To, res.Card, res.When
+	if res.Note != "" {
+		out.Note = res.Note
+	}
+	if res.Warning != "" {
+		out.Note = res.Warning
+	}
+	if out.Note != "" {
+		return nil, out, nil
+	}
+	return nil, sayNote(out), nil
+}
+
+// sayByCard is the old way: the card's own message endpoint.
+func sayByCard(ctx context.Context, to, from, text, when string) (*mcp.CallToolResult, SayOutput, error) {
+	out := SayOutput{}
+	id, handle, err := resolvePeer(ctx, to)
 	if err != nil {
 		return nil, out, err
 	}
 	out.To, out.Card = handle, id
-
 	var res struct {
 		Delivered string `json:"delivered"`
 		When      string `json:"when"`
 	}
-	body := map[string]string{"text": in.Text}
-	if w := strings.TrimSpace(in.When); w != "" {
+	body := map[string]string{"text": text, "from": from}
+	if w := strings.TrimSpace(when); w != "" {
 		body["when"] = w
 	}
 	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message",
@@ -318,7 +432,18 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 		return nil, out, err
 	}
 	out.Delivered, out.When = res.Delivered, res.When
+	return nil, sayNote(out), nil
+}
+
+// sayNote is what a sender reads next, by what was promised.
+func sayNote(out SayOutput) SayOutput {
+	res := out
 	switch {
+	case res.Delivered == "held":
+		out.Note = "the hub or that room is not answering. held on this room and sent when it answers, " +
+			"for up to 24 hours."
+	case res.Delivered == "unconfirmed":
+		out.Note = "it may or may not have arrived. ask before sending it again."
 	case res.Delivered == "queued" && res.When == "done":
 		out.Note = "queued until that session's turn ends. it is typed in then, or carried by " +
 			"its Stop hook."
@@ -326,7 +451,7 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 		out.Note = "queued, not typed yet. it is typed in as soon as that session's line clears, " +
 			"or arrives at its next tool call or the end of its turn."
 	}
-	return nil, out, nil
+	return out
 }
 
 // resolvePeer turns a handle or a card id into both.

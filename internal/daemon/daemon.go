@@ -135,6 +135,10 @@ type Daemon struct {
 	// outlive the daemon either.
 	peerLimit *peerLimiter
 
+	// relays is the way to other rooms, through the hub, and the drain of what
+	// is owed to them. Empty on a daemon that is not a room. See relay.go.
+	relays relayState
+
 	// pending retries the on-screen delivery of peer messages the gate would not
 	// take right now, on a widening backoff. In memory, because the durable copy
 	// is the queued message row and the hooks deliver that whatever this does.
@@ -288,6 +292,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.TypingState = d.handleTypingState
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
+	d.ap.Say = d.handleSay
+	d.ap.RoomPeers = d.handleRoomPeers
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.SendNote = d.handleSendNote

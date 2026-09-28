@@ -267,10 +267,17 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 			Key:  time.Now().UTC().Format(time.RFC3339Nano),
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
+	} else {
+		// A launcher on another room hears it the same way, held in the relay
+		// outbox inside the same transaction. See relay.go.
+		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	res, err := d.st.RecordReport(write)
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
+	}
+	if res.Relayed {
+		d.kickRelays()
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// Whatever it was doing, it is not doing now. Not for a worker's
@@ -278,7 +285,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		d.act.forget(task.ID)
 	}
 	d.publishTask(task.ID)
-	told := res.Notice != nil
+	told := res.Notice != nil || res.Relayed
 
 	// The room announces the session handing its work over, which the hub reads
 	// as a card changing column without knowing the session declared it done. See

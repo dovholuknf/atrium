@@ -1,0 +1,193 @@
+package link
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"strings"
+	"time"
+)
+
+// The relay: a room asking its hub to carry one message, or one question, to
+// another room. See docs/cross-room-say-design.md.
+//
+// ── dialled by the room, like everything else ───────────
+//
+// The hub never reaches into a room of its own accord, and this does not change
+// that. A room with something to say dials a `relay` connection, says hello,
+// sends one request and reads one answer. The hub answers by asking the target
+// room over the link it already holds, exactly the way the board does.
+//
+// ── and the hub holds nothing ───────────────────────────
+//
+// The answer is the target room's answer, and the hub forgets the request the
+// moment it has written it. A target that is not answering is said to be
+// unreachable, and the SENDER'S room decides whether to keep the message. See
+// the outbox in internal/daemon/relay.go.
+
+// relayKind is the connection kind. An older hub refuses it with the sentence
+// in hearHello, which is how a room finds out the hub cannot carry this.
+const relayKind = "relay"
+
+// relayWait bounds one relay exchange. The hub resolves the name and posts the
+// message, two loopback calls into a proxied room, each bounded by
+// controlTimeout.
+const relayWait = 3 * controlTimeout
+
+// Relay ops.
+const (
+	RelaySay   = "say"
+	RelayPeers = "peers"
+)
+
+// RelayRequest is what a room asks its hub to carry.
+type RelayRequest struct {
+	Op string `json:"op"`
+	// From is the sender's handle ON THE ASKING ROOM. The hub adds the room from
+	// the connection, never from here, so a room cannot speak for another.
+	From string `json:"from,omitempty"`
+	// Room and To are the target: a room other than the asking one, and a
+	// handle, alias or card id on it.
+	Room string `json:"room,omitempty"`
+	To   string `json:"to,omitempty"`
+	Text string `json:"text,omitempty"`
+	When string `json:"when,omitempty"`
+	// All includes cards with no session, for `peers`.
+	All bool `json:"all,omitempty"`
+}
+
+// RelayAnswer is the hub's answer.
+type RelayAnswer struct {
+	OK bool `json:"ok"`
+	// Code and Error are a refusal, in the target room's words where it gave
+	// some. Unreachable marks one the sender's room may hold and try again,
+	// rather than one that will never succeed.
+	Code        int    `json:"code,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Unreachable bool   `json:"unreachable,omitempty"`
+	// Unconfirmed is a failure AFTER the message may have reached the target,
+	// so sending it again could deliver it twice. Never held for a say.
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
+	// What the target room said about a delivered message.
+	Delivered string `json:"delivered,omitempty"`
+	When      string `json:"when,omitempty"`
+	Warning   string `json:"warning,omitempty"`
+	// To is the resolved `handle@room` and Card the tagged `room~id`.
+	To    string      `json:"to,omitempty"`
+	Card  string      `json:"card,omitempty"`
+	Peers []RelayPeer `json:"peers,omitempty"`
+}
+
+// RelayPeer is one session on another room.
+type RelayPeer struct {
+	Handle  string `json:"handle"`
+	Alias   string `json:"alias,omitempty"`
+	Card    string `json:"card"`
+	Room    string `json:"room"`
+	Title   string `json:"title,omitempty"`
+	Status  string `json:"status"`
+	Doing   string `json:"doing,omitempty"`
+	Where   string `json:"where,omitempty"`
+	Waiting int    `json:"waiting_seconds,omitempty"`
+	Owned   bool   `json:"atrium_owns_terminal"`
+}
+
+// ErrRelayOld is a hub older than the relay. Nothing held for it would ever go.
+var ErrRelayOld = errors.New("the hub is older than cross-room say, so it cannot carry this. update the hub")
+
+// ErrRelayDown is a hub this room cannot reach right now, found out before the
+// request was written. Worth holding for.
+var ErrRelayDown = errors.New("the hub is not answering")
+
+// ErrRelayUnconfirmed is the request written and no answer read. The hub may
+// have delivered it, so it must not be sent again as though it had not.
+var ErrRelayUnconfirmed = errors.New("the hub took the message and did not say what became of it")
+
+// ── the room's side ─────────────────────────────────────
+
+// Relay asks the hub to carry one request, and answers what it said.
+//
+// An error is ErrRelayOld, or wraps ErrRelayDown or ErrRelayUnconfirmed. A refusal from the target is
+// not an error: it is an answer with OK false, which the caller reads.
+func (r *Room) Relay(ctx context.Context, req RelayRequest) (RelayAnswer, error) {
+	var ans RelayAnswer
+	r.mu.Lock()
+	up, session := r.up, r.session
+	r.mu.Unlock()
+	if !up {
+		return ans, fmt.Errorf("%w: this room is not attached to it", ErrRelayDown)
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
+	conn, err := r.Dial.Dial(dialCtx)
+	cancel()
+	if err != nil {
+		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
+	}
+	defer conn.Close()
+
+	br := bufio.NewReader(conn)
+	w, err := sayHello(conn, br, hello{Kind: relayKind, Room: r.Name, Session: session})
+	if err != nil {
+		// THE ONE REFUSAL THAT IS NOT WORTH WAITING OUT. An older hub names the
+		// kinds it knows, and relay is not one of them. A hub that names relay
+		// among them is not older, whatever else it refused.
+		if !w.OK && strings.Contains(w.Error, "a connection is control") && !strings.Contains(w.Error, relayKind) {
+			return ans, ErrRelayOld
+		}
+		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
+	}
+	if err := conn.SetDeadline(time.Now().Add(relayWait)); err != nil {
+		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
+	}
+	if err := writeJSON(conn, req); err != nil {
+		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
+	}
+	// NOT `readJSON`: a peers answer from a busy hub is more than one frame.
+	// Bounded all the same, the way an announcement is.
+	if err := json.NewDecoder(io.LimitReader(br, announceMax)).Decode(&ans); err != nil {
+		return ans, fmt.Errorf("%w: %v", ErrRelayUnconfirmed, err)
+	}
+	return ans, nil
+}
+
+// ── the hub's side ──────────────────────────────────────
+
+// serveRelay reads one request from an attached room and answers it.
+func (h *Hub) serveRelay(ctx context.Context, name string, conn net.Conn, br *bufio.Reader) {
+	if h.Relay == nil {
+		_ = writeJSON(conn, welcome{OK: false, Error: "this hub carries nothing between rooms"})
+		return
+	}
+	// ONLY FROM A ROOM THAT IS HERE. A certificate that is not attached right
+	// now could be anything, including a room forced out of the inventory.
+	if !h.Has(name) {
+		_ = writeJSON(conn, welcome{OK: false, Error: "attach to this hub before asking it to carry anything"})
+		return
+	}
+	// The welcome first, then the body, the same two frames as an announcement.
+	if err := writeJSON(conn, welcome{OK: true}); err != nil {
+		return
+	}
+	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+		return
+	}
+	var req RelayRequest
+	if err := readJSON(br, &req); err != nil {
+		log.Printf("[hub] could not read %q's relay: %v", name, err)
+		return
+	}
+	if err := conn.SetDeadline(time.Now().Add(relayWait)); err != nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, relayWait)
+	defer cancel()
+	// THE ASKING ROOM COMES FROM THE CONNECTION, which came from the
+	// certificate. See `take`.
+	ans := h.Relay(cctx, name, req)
+	_ = json.NewEncoder(conn).Encode(ans)
+}

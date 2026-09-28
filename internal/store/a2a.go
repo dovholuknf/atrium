@@ -30,7 +30,10 @@ func (s *Store) SetLineage(id, handle, parentID string) error {
 	if handle == "" && parentID == "" {
 		return nil
 	}
-	if handle != "" && handle != HumanLauncher {
+	// A launcher on another room, `name@room`, is named the way THAT room
+	// names it, so it is not qualified with this one's tenant. See
+	// docs/cross-room-say-design.md.
+	if handle != "" && handle != HumanLauncher && !strings.Contains(handle, "@") {
 		handle = s.Qualify(handle)
 	}
 	return s.guard(func() error {

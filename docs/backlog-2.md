@@ -64,7 +64,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
 | 57 | The live room leaks memory | bug, HIGH | not started |
-| 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | not started |
+| 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
@@ -1230,6 +1230,11 @@ The reply path has to work both ways. A card on m1mini must be able to reach `at
 known to be needed: the hub's `/v1/tasks/m1mini~<id>/message` typed the orchestrator's question into an m1mini card,
 and the card answered, but the answer could not come back.
 
+**Status, 2026-09-28, sa58: built on `claude/cross-room-say`, merged, not deployed.** Design in
+`docs/cross-room-say-design.md`, reviewed by mercurius (`s_H1ILoNvxloBH`, ready_to_build). Test plan CE. Migration 0066. Needs a hub restart and a
+restart of every room, and atrium-control on m1mini (the provisioning script now registers it) before an m1mini card
+can answer. Not carried across rooms: the ledger's `ended` notice, and a remote launcher's verdict on a worker's work.
+
 ## 59. Spike on m1mini: more than one room per machine, and a blocked room that drains (design, spike)
 
 Raised 2026-09-28 by clint. Run it on m1mini. Two ideas:
@@ -1276,6 +1281,10 @@ The same happened to sa58 at 17:12:34 on 2026-09-28: it ended its turn with no r
 The context-size notice (item 45) misses too. It is claimed once per CARD. sa58 got it at 151k, was cleared and
 resumed on the same card, and reached 336k with no second notice until about 17:1x. The claim has to re-arm when
 the card's session or resume id changes, or when its context drops below the line.
+
+Across rooms (item 58, per sa58): the ledger's `ended` notice, a remote launcher's verdict on a worker's work, and
+the ledger's say entry are not carried from one room to another yet. A worker on one room with its launcher on
+another can end silently with nothing reaching the launcher.
 
 Related: item 36 (a finished worker stays up), and the work ledger, `docs/work-ledger-design.md` and
 `docs/work-ledger-plan.md`.

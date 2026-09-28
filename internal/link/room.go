@@ -46,6 +46,10 @@ type Room struct {
 	// restarter wired: a hub cannot make a room restart, it can only ask. See
 	// RestartAsk and cmd/atrium2's wiring.
 	OnRestart func(RestartAsk)
+	// OnAttach is told each time this room attaches, in its own goroutine. It is
+	// how held cross-room messages go the moment the hub is back rather than at
+	// the next tick. Nil does nothing. See relay.go.
+	OnAttach func()
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -245,6 +249,9 @@ func (r *Room) attach(ctx context.Context) error {
 	// thing and announcing at it would be a failure logged on every change.
 	if w.Caches {
 		go r.announce(ctx, w.Session)
+	}
+	if r.OnAttach != nil {
+		go r.OnAttach()
 	}
 
 	for {

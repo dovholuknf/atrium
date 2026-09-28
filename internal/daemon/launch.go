@@ -138,6 +138,11 @@ type LaunchRequest struct {
 	// board's dialog sends nothing and is recorded as `@human`. See
 	// store.SetLineage.
 	SpawnedBy string `json:"spawned_by,omitempty"`
+	// SpawnedByID is the launcher's card on ANOTHER room, as `room~id`, sent by
+	// the hub when it launches here for a session on another room. Taken only
+	// in that tagged form, so it can never name a card on this room. See
+	// docs/cross-room-say-design.md.
+	SpawnedByID string `json:"spawned_by_id,omitempty"`
 	// Lean starts a claude session with only what a worker needs, and MCP names
 	// the servers from the runner's MCP config it keeps beside atrium-control.
 	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
@@ -1152,6 +1157,13 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if by != store.HumanLauncher {
 			if p, err := d.st.GetByWireName(d.st.Qualify(by)); err == nil && p.ID != created.ID {
 				parentID = p.ID
+			}
+		}
+		// A launcher on another room, named by its tagged card, so a notice
+		// held for it reaches that card and not a later one with its handle.
+		if _, room, err := SplitAddress(by); err == nil && d.otherRoom(room) != "" {
+			if tag := strings.TrimSpace(req.SpawnedByID); strings.Contains(tag, "~") {
+				parentID = tag
 			}
 		}
 		if err := d.st.SetLineage(created.ID, by, parentID); err != nil {
