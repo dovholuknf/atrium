@@ -1320,6 +1320,8 @@ async function saveSkin(name) {
   skinSaving = "";
   applySkin(want);
   rememberSkin(want);
+  // The daemon took it, so the skin is as settled as a read would leave it.
+  skinSettled = true;
   // Every popped-out terminal is a separate window with its own body, and a
   // skin is board-wide by definition, so they repaint now rather than at their
   // next reload.

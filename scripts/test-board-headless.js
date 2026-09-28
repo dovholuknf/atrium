@@ -4111,6 +4111,10 @@ async function skinScopeSection(browser, base) {
     ]);
     const ok = await wears(want, "scoped to " + (room || "ALL"));
     await settled("scoped to " + (room || "ALL"));
+    // And the board says so itself. Until it has, a room attaching re-reads the
+    // skin, which is the heal, and would read whatever the mock holds by then.
+    await skin.waitForFunction(() => skinHasSettled(), null, { timeout: 15000 })
+      .catch(() => fail("scoped to " + (room || "ALL") + ": the skin never settled."));
     return ok;
   };
   try {
