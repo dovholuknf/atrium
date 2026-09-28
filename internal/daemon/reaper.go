@@ -192,6 +192,11 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.watchWorkers(time.Now()); err != nil {
 			log.Printf("[atrium] watching launched sessions: %v", err)
 		}
+		// Every Claude card's context size, and the launcher's one notice
+		// when a worker passes the threshold. See contextsize.go.
+		if err := d.watchContext(); err != nil {
+			log.Printf("[atrium] reading context sizes: %v", err)
+		}
 		// Work items whose session is gone with no end recorded. Same tick,
 		// after liveness, for the same reason. See ledger.go.
 		if err := d.sweepLedger(); err != nil {

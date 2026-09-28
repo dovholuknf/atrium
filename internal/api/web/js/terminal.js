@@ -583,6 +583,7 @@ function openTerm(task) {
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.
   document.getElementById("t-mark").innerHTML = runnerMark(task.runner);
+  paintTermSize(task);
   // What is left is what changes: the process, and where it is. The theme
   // moved into the cog, with the rest of how this terminal behaves.
   // The path copies itself. It is the thing most often wanted somewhere else,

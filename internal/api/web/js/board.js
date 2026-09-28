@@ -625,6 +625,32 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
+// HOW BIG THE CARD'S CONTEXT IS, in tokens, read by the daemon from the card's
+// transcript. Every turn re-reads all of it, so the size is what a turn costs.
+// Every Claude card has it, statusline or not, and it turns the warn colour at
+// the gear's threshold, the line past which a launcher is told. The daemon
+// decides `warn`, so the mark and the notice cannot disagree. Never stored.
+function sizeChip(t) {
+  const c = t.context_size;
+  if (!c || !c.tokens || over(t) || t.status === "shelved") return "";
+  return `<span class="chip ctxsize${c.warn ? " warn" : ""}" data-tip="${esc(
+    `${fmtTokens(c.tokens)} tokens of context, re-read every turn. marked from ${c.threshold_k}k, set in the gear`)}"
+    >${fmtTokens(c.tokens)}</span>`;
+}
+
+// The terminal header's copy of the mark. The rest of the header is drawn once
+// as the terminal opens, and the size moves every turn, so it has its own slot.
+// Written only when it changed: the strip calls this on every render, and a
+// rewrite reflows the header, which re-renders the strip.
+function paintTermSize(t) {
+  const el = document.getElementById("t-ctxsize");
+  const html = t ? sizeChip(t) : "";
+  if (el && el.dataset.painted !== html) {
+    el.innerHTML = html;
+    el.dataset.painted = html;
+  }
+}
+
 // What is behind the percentage, for the tooltip. Tokens where the statusline
 // reported them, because the same percentage is a different amount of room on
 // a different window, and the model name is what says which window it is.
@@ -734,6 +760,7 @@ function cardHTML(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${sizeChip(t)}
       ${contextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact"

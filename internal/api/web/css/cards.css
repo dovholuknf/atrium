@@ -381,6 +381,9 @@
   /* How much context a session has burned, from its statusline. Most of a session's life is spent under half a
      window, so the colour only arrives when the number starts deciding something. */
   .chip.ctx { background: var(--hairline); color: var(--dim); }
+  /* The context size in tokens, from the transcript. Quiet until the gear's threshold, then the warn colour. */
+  .chip.ctxsize { background: var(--hairline); color: var(--dim); font-variant-numeric: tabular-nums; }
+  .chip.ctxsize.warn { background: var(--warn-bg); color: var(--warn); }
   .chip.ctx.warm { background: var(--warn-bg); color: var(--warn); }
   .chip.ctx.hot {
     background: rgba(var(--danger-rgb),.16); border-color: var(--danger);

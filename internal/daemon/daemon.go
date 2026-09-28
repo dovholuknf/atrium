@@ -148,6 +148,10 @@ type Daemon struct {
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
+	// ctx is each live Claude card's context size, read from its transcript.
+	// See contextsize.go.
+	ctx *contextSizes
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -437,6 +441,9 @@ func New(opts Options) (*Daemon, error) {
 	}
 	api.KeepaliveOf = d.ka.view
 	d.ap.SetKeepalive = d.keepaliveSet
+	// Each card's context size, held the same way. See contextsize.go.
+	d.ctx = newContextSizes()
+	api.ContextSizeOf = d.contextSizeFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
