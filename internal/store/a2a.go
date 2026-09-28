@@ -1,6 +1,9 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -117,6 +120,30 @@ func (t *Task) OwesReport() bool {
 		return false
 	}
 	return t.ReportedAt == nil || t.ReportedAt.Before(*t.PromptedAt)
+}
+
+// TurnEndedAt is when a card last went from working to waiting, or nil when no
+// turn has ended on it. See 0062_turn_end.
+func (s *Store) TurnEndedAt(id string) (*time.Time, error) {
+	var out *time.Time
+	err := s.guard(func() error {
+		out = nil
+		var raw string
+		err := s.db.QueryRow(`SELECT ended_at FROM turn_end WHERE task_id = ?`, id).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		at, err := parseTS(raw)
+		if err != nil {
+			return fmt.Errorf("turn_end %s: %w", id, err)
+		}
+		out = &at
+		return nil
+	})
+	return out, err
 }
 
 // Launched reports whether this card was started by another session, as
