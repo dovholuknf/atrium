@@ -239,6 +239,61 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 	}
 }
 
+// A fork carries the card's launch env and effort, as a launch does, because a
+// fork without the card's env can reach a different endpoint or account. The
+// atrium overrides still win, and the card's extra args are not carried.
+func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
+	f := newKAFix(t)
+	if err := f.st.SetLaunchOptions(f.task.ID, "low", []string{"--verbose"},
+		map[string]string{"ANTHROPIC_BASE_URL": "https://gw.example", keepaliveTTLVar: "5m"}); err != nil {
+		t.Fatal(err)
+	}
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	f.tick()
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d, want 1", f.forks())
+	}
+	spec := f.specs[0]
+	args := strings.Join(spec.Args, " ")
+	if !strings.HasSuffix(args, "--output-format json --effort low") {
+		t.Fatalf("the fork does not run at the card's effort: %q", args)
+	}
+	if strings.Contains(args, "--verbose") {
+		t.Fatalf("the card's extra args reached the fork: %q", args)
+	}
+	env := strings.Join(spec.Env, "\n")
+	for _, must := range []string{"ANTHROPIC_BASE_URL=https://gw.example", keepaliveTTLVar + "=5m",
+		"ATRIUM_PERM_GATE=off"} {
+		if !strings.Contains(env, must) {
+			t.Fatalf("fork env lacks %s:\n%s", must, env)
+		}
+	}
+	if strings.Contains(env, keepaliveTTLVar+"=1h") {
+		t.Fatalf("the 1h pin overrode the card's own TTL:\n%s", env)
+	}
+}
+
+// A card whose effort its runner cannot take is not forked at a different one.
+func TestKeepaliveRefusesAForkItCannotGiveTheCardsEffort(t *testing.T) {
+	f := newKAFix(t)
+	h, err := f.st.Harness("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.EffortArgs = nil
+	if _, err := f.st.SaveHarness(*h); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.SetLaunchOptions(f.task.ID, "low", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	f.tick()
+	if f.forks() != 0 {
+		t.Fatalf("forked %d times at the runner's default effort", f.forks())
+	}
+}
+
 // Each rule blocks a refresh on its own.
 // A paid fork whose row will not save must not fork again on the next ticks,
 // though the saved rows still show the old expiry. A real turn lifts the hold.
