@@ -80,6 +80,39 @@ type turnInput struct {
 	// Claude Code puts in the Stop payload. Read for its Open Questions block
 	// and nothing else. See turnquestions.go.
 	LastAssistantMessage string `json:"last_assistant_message"`
+	// BackgroundTasks is what this session still has running as its turn ends.
+	//
+	// A SUBAGENT STARTED IN THE BACKGROUND OUTLIVES THE TURN THAT STARTED IT. The
+	// parent launches three reviewers, says "waiting on them", and its own Stop
+	// fires with all three still working. Each one's report then wakes the
+	// parent, which reads it and stops again. Every one of those Stops is the
+	// parent's, named `Stop`, so HookEventName lets them through, and each used
+	// to ring the board to say the card wanted you. Claude Code lists the ones
+	// still going here, which is the only place that says the turn is not the
+	// end of the work.
+	BackgroundTasks []backgroundTask `json:"background_tasks"`
+}
+
+// backgroundTask is one entry of a Stop payload's `background_tasks`.
+type backgroundTask struct {
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+// runningSubagents counts the subagents a turn ended with still at work.
+//
+// Subagents only. A background shell is a dev server as often as a build, and a
+// session that left one up and stopped is waiting on you. A subagent is going
+// to report back to this session, which is going to carry on.
+func runningSubagents(tasks []backgroundTask) int {
+	n := 0
+	for _, t := range tasks {
+		if strings.EqualFold(t.Type, "subagent") && strings.EqualFold(t.Status, "running") {
+			n++
+		}
+	}
+	return n
 }
 
 // keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
@@ -189,6 +222,8 @@ func turnEnded(hubURL, event, name, runner string) string {
 		// Sent so the room hears this turn end, and knows not to answer it
 		// with a block. What it answers is ignored anyway. See below.
 		"stop_hook_active": in.StopHookActive,
+		// How many of its subagents are still working. See BackgroundTasks.
+		"subagents_running": runningSubagents(in.BackgroundTasks),
 	})
 	if err != nil {
 		return keepGoing

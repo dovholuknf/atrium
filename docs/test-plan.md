@@ -3922,3 +3922,27 @@ Type anything into the card: the mark goes when its turn starts.
 3. Change it to `off`.
 
 **Expected:** the mark goes at once, and nothing rings. Reload: the setting holds. Set it back afterwards.
+
+## BN. A Claude card with subagents out is not waiting on you
+
+Needs a hook binary rebuild and a room restart first: the Stop hook reads the new field and the room acts on it.
+The Go test `TestFakeRunnerSubagentsDoNotEndTheTurn` in `internal/cli/fakerunner_test.go` covers BN1 with the
+payloads a live Claude Code sent on 2026-09-28. Backlog-2 item 17.
+
+**Re-run BN1 after any Claude Code upgrade** that changes subagents or the Stop hook. The fix rests on the Stop
+payload's `background_tasks` field, which is not documented.
+
+### BN1. A review panel rings once, at the end
+
+1. In a Claude card, run `/review-panel` on any PR, or ask for three background subagents that each take a minute.
+2. Watch the card and the board's toasts while the subagents run.
+
+**Expected:** the card stays in `running` the whole time. Between reports its badge reads idle with the subagent
+count. No toast, chime or desktop notification says the card is ready while any subagent is still out, including
+after it has sat idle for more than a minute. After the last report the card moves to `needs input` and rings once.
+
+### BN2. A card that leaves a background shell up still rings
+
+1. In a Claude card, ask it to start `npm run dev` or any long command in the background and end its turn.
+
+**Expected:** the card moves to `needs input` and rings as usual. Only subagents hold the card.

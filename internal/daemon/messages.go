@@ -176,6 +176,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// so nothing is taken off the queue for it. False from a hook older
 		// than the field, which never posted such a Stop at all.
 		StopHookActive bool `json:"stop_hook_active,omitempty"`
+		// How many subagents the session left running in the background as this
+		// turn ended. Zero from a hook older than the field, which is the old
+		// behaviour. See turnPaused.
+		SubagentsRunning int `json:"subagents_running,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -226,7 +230,16 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	//
 	// Recorded whatever happens next, including when a message is about to send
 	// the model back to work, since the message path sets it running again.
-	d.turnEnded(task.ID)
+	//
+	// Unless its subagents are still working, in which case the session is
+	// waiting on them and not on the operator. See turnPaused.
+	d.act.setBackground(task.ID, in.SubagentsRunning)
+	waitingOnSubagents := in.SubagentsRunning > 0
+	if waitingOnSubagents {
+		d.turnPaused(task.ID)
+	} else {
+		d.turnEnded(task.ID)
+	}
 	// This card has a Stop hook, so a message queued to it will arrive. Best
 	// effort: a turn must not fail over bookkeeping.
 	if task.StopHookSeenAt == nil {
@@ -243,6 +256,12 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		msgs, err = d.takeMessages(task.ID, "stop")
 	}
 	if err != nil || len(msgs) == 0 {
+		// Not over while a subagent is out. The Stop that follows its report
+		// is the one that says the work ended.
+		if waitingOnSubagents {
+			nothing()
+			return
+		}
 		// The turn really is over. An agent-launched card that said nothing
 		// to its launcher is a silent stop, and the launcher hears about it
 		// now. NEVER A BLOCK: this reports, it does not send the model back to
@@ -317,6 +336,21 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, reason); err != nil {
 		log.Printf("[atrium] turn ended for %s: %v", taskID, err)
 		return
+	}
+	d.act.set(taskID, ActivityIdle, "")
+	d.publishTask(taskID)
+}
+
+// turnPaused is a turn that ended with the session's own subagents still out.
+//
+// The runner is idle, so the badge says so and a peer message waiting on the
+// turn may go. The CARD STAYS WHERE IT IS: each subagent's report wakes the
+// session, and the Stop after the last one is the end of the work. Moving it
+// to needs-input here rang the board once per reviewer in a review panel, all
+// while the session was collecting the others.
+func (d *Daemon) turnPaused(taskID string) {
+	if d.pending != nil {
+		d.pending.reset(taskID)
 	}
 	d.act.set(taskID, ActivityIdle, "")
 	d.publishTask(taskID)

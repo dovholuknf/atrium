@@ -267,6 +267,108 @@ func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 	}
 }
 
+// A review panel: the parent starts two subagents in the background and its
+// turn ends with both still working. Each report wakes the parent, which reads
+// it and stops again. Only the Stop that leaves nothing running moves the card
+// to needs-input, which is what rings the board.
+//
+// Claude only. The payloads are the ones a live Claude Code sent on 2026-09-28:
+// the parent's Stop lists `background_tasks`. Codex sends no such field.
+func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
+	r := runnerShapes[0]
+	agentAddr, humanAddr := startTestDaemon(t)
+	for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
+
+	commands := installedCommands(t, r.target)
+	cwd := filepath.Join(t.TempDir(), "panel-"+r.target.ID)
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Base(cwd)
+	base := func(hook string, extra map[string]any) map[string]any {
+		m := map[string]any{"session_id": "panel", "cwd": cwd, "hook_event_name": hook}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	fire := func(s step) {
+		t.Helper()
+		raw, _ := json.Marshal(s.payload)
+		for _, c := range commands[s.hook] {
+			if code := runHookLine(t, c, string(raw)); code != 0 {
+				t.Fatalf("%s: %q exited %d", s.hook, c, code)
+			}
+		}
+		assertCard(t, humanAddr, name, r.target.ID, s)
+	}
+	// A card that must NOT move is checked for a while, not once: the activity
+	// hooks land after the command returns.
+	stays := func(s step) {
+		t.Helper()
+		fire(s)
+		time.Sleep(300 * time.Millisecond)
+		assertCard(t, humanAddr, name, r.target.ID, s)
+	}
+	bg := func(ids ...string) []map[string]any {
+		out := []map[string]any{}
+		for _, id := range ids {
+			out = append(out, map[string]any{"id": id, "type": "subagent", "status": "running",
+				"description": "review", "agent_type": "general-purpose"})
+		}
+		return out
+	}
+	subStop := func(id string) step {
+		return step{hook: "SubagentStop", payload: base("SubagentStop", map[string]any{
+			"agent_id": id, "agent_type": "general-purpose", "stop_hook_active": false,
+			"last_assistant_message": "no findings"}),
+			status: store.StatusRunning, activity: daemon.ActivityIdle}
+	}
+
+	fire(step{hook: "SessionStart", payload: base("SessionStart", map[string]any{"source": "startup"}),
+		status: store.StatusNeedsInput, activity: "-"})
+	fire(step{hook: "UserPromptSubmit", payload: base("UserPromptSubmit", map[string]any{r.prompt: "review it"}),
+		status: store.StatusRunning, activity: daemon.ActivityThinking})
+	for _, id := range []string{"ag-1", "ag-2"} {
+		fire(step{hook: "SubagentStart", payload: base("SubagentStart", map[string]any{
+			"agent_id": id, "agent_type": "general-purpose"}),
+			status: store.StatusRunning, activity: daemon.ActivityThinking})
+	}
+	// "Waiting on the reviewers." The parent's own Stop, both still out.
+	stays(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": false,
+		"last_assistant_message": "waiting on the reviewers", "background_tasks": bg("ag-1", "ag-2")}),
+		status: store.StatusRunning, activity: daemon.ActivityIdle})
+	// Sat idle on purpose, so the idle notification is not a question either.
+	stays(step{hook: "Notification", payload: base("Notification", map[string]any{
+		"notification_type": "idle_prompt", "message": "Claude is waiting for your input"}),
+		status: store.StatusRunning, activity: daemon.ActivityIdle})
+	stays(subStop("ag-1"))
+	// The report wakes the parent, which reads it and stops again.
+	fire(step{hook: "PreToolUse", payload: base("PreToolUse", map[string]any{
+		"tool_name": "Read", "tool_input": map[string]any{"file_path": "x.go"}, "tool_use_id": "call-1"}),
+		status: store.StatusRunning, activity: daemon.ActivityTool, tool: "Read"})
+	fire(step{hook: "PostToolUse", payload: base("PostToolUse", map[string]any{
+		"tool_name": "Read", "tool_use_id": "call-1", r.result: "package x"}),
+		status: store.StatusRunning, activity: daemon.ActivityThinking})
+	stays(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": false,
+		"last_assistant_message": "one to go", "background_tasks": bg("ag-2")}),
+		status: store.StatusRunning, activity: daemon.ActivityIdle})
+	stays(subStop("ag-2"))
+	// The last report read, nothing left running: now it wants you.
+	fire(step{hook: "Stop", payload: base("Stop", map[string]any{"stop_hook_active": false,
+		"last_assistant_message": "the panel is done", "background_tasks": []any{}}),
+		status: store.StatusNeedsInput, activity: daemon.ActivityIdle})
+	// And an idle notification now is one.
+	fire(step{hook: "UserPromptSubmit", payload: base("UserPromptSubmit", map[string]any{r.prompt: "thanks"}),
+		status: store.StatusRunning, activity: daemon.ActivityThinking})
+	fire(step{hook: "Notification", payload: base("Notification", map[string]any{
+		"notification_type": "idle_prompt", "message": "Claude is waiting for your input"}),
+		status: store.StatusNeedsInput, activity: daemon.ActivityIdle})
+}
+
 // Every runner profile that names a hooks target has payloads here, and every
 // hooks target belongs to a profile. Gemini and ollama have none, so there is
 // nothing of theirs to fire, and the day one gets a target this fails until it
