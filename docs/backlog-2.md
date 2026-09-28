@@ -1150,8 +1150,8 @@ inherits it, so a worker's `go test` fails `internal/link` TestLagConnTimesNothi
 worker runs logs lag too. Also measure what the logging costs per keystroke, because clint says input has been slow
 lately.
 
-Done by sa55. `inheritedTaint` drops every `ATRIUM_DEBUG_` variable, which covers a launch, a restart, a
-keep-alive fork, a source and a recogniser, and `shellEnv` drops them from a card's shell. The whole prefix, because
+Done by sa55. `inheritedTaint` drops every `ATRIUM_DEBUG_` variable. A launch, a restart, a keep-alive
+fork, a source and a recogniser all build their environment through `childEnvFrom`, which applies it, and `shellEnv` drops them from a card's shell. The whole prefix, because
 each switch under it is a readout for the process it was set on. A runner's own `environment` field still passes
 one on. ROOM-SIDE only (`internal/daemon`). Nothing on the hub changes. See `docs/test-plan.md` section CB.
 
