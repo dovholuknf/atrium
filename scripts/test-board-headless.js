@@ -6107,6 +6107,10 @@ async function main() {
     try {
       await ga3.goto(base, { waitUntil: "domcontentloaded" });
       await gautoHeals("before the stream reopen", ga3, "approving everything");
+      // The page's stream has to be open before it is cut. Cut before it
+      // reached the server, it was never ended, so it never reopened.
+      await ga3.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
+        { timeout: 15000 });
       hubHasRoom = false;
       const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: 15000 });
       const settingsAfter = reopened.then(() => ga3.waitForResponse(r =>
