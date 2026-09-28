@@ -53,7 +53,11 @@ func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request
 		return r, true
 	}
 	room, bare := splitTag(id)
-	if room == "" {
+	if room != "" {
+		// A tag came in, so a tag goes back out on the answer, the launch's as
+		// well as a tagged path's. See `retagCard`.
+		r = r.WithContext(context.WithValue(r.Context(), taggedKey{}, room))
+	} else {
 		rooms := p.hub.Rooms()
 		if len(rooms) < 2 {
 			// One room or none is nothing to choose between. The dial goes to the
