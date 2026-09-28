@@ -799,6 +799,17 @@ async function chooseWriteRoom(row, what) {
 
 // ── scoping every request this page makes ───────────────────────────────────
 
+// Whether a request names a card, so the card and not `writeRoom` routes it.
+// `prune` and `pin-order` sit under `/v1/tasks/` and are not cards.
+function namesACard(url, init) {
+  const m = /\/v1\/tasks\/([^/?#]+)/.exec(url);
+  if (m) return m[1] !== "prune" && m[1] !== "pin-order";
+  if (!/\/v1\/launch(?:[?#]|$)/.test(url)) return false;
+  const body = init && init.body;
+  if (typeof body !== "string") return false;
+  try { return !!(JSON.parse(body) || {}).task_id; } catch (e) { return false; }
+}
+
 const plainFetch = window.fetch.bind(window);
 window.fetch = function (input, init) {
   // The room being looked at, or, for a CHANGE made while looking at all of
@@ -813,9 +824,14 @@ window.fetch = function (input, init) {
   // it. So `writeRoom` reaches only the writes with no card of their own to
   // route by (a launch, a per-machine editor save). A card-scoped write uses
   // the explicit board scope or nothing, and the hub reads the card id.
+  //
+  // A WRITE NAMES A CARD if its url is `/v1/tasks/<id>` or deeper, or it is a
+  // launch onto a card. `PATCH /v1/tasks/<id>` counts: a drag into a group
+  // carried `writeRoom` to the wrong room and came back "no rows" (backlog-2
+  // item 63). See docs/card-room-routing.md.
   const how = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
   const url = (input && input.url) ? input.url : String(input);
-  const cardScoped = /\/v1\/tasks\/[^/?]+\/[^/?]+/.test(url);
+  const cardScoped = namesACard(url, init);
   const write = how !== "GET" && how !== "HEAD";
   const room = roomNow() || (write && !cardScoped ? writeRoom : "");
   if (!room) return plainFetch(input, init);

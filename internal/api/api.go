@@ -7,6 +7,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,9 @@ import (
 type Server struct {
 	st  *store.Store
 	bus *bus
+	// Room is the name this daemon is known by on a hub, or empty. It only
+	// words a not-found. See NotOnRoom.
+	Room string
 	// Decide resolves a permission. This must go through the daemon rather
 	// than straight to the store, because the agent is blocked on an in-memory
 	// reply channel that only the daemon can signal. Writing the decision without
@@ -276,6 +280,15 @@ func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 // New builds a server over a store.
 func New(st *store.Store) *Server {
 	return &Server{st: st, bus: newBus()}
+}
+
+// NotOnRoom words a card this room does not hold, naming the card and the room,
+// so nobody reads the store's "sql: no rows" and has to guess. Backlog-2 item 63.
+func NotOnRoom(id, room string) error {
+	if room == "" {
+		return fmt.Errorf("card %s is not on this atrium", id)
+	}
+	return fmt.Errorf("card %s is not on room %s", id, room)
 }
 
 // Broadcast publishes a change to every connected client.
@@ -934,10 +947,14 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	// One read up front so the ordering log lines below can say old→new. Kept
-	// nil-safe: an unknown id still lands in the store writes below, which
-	// return their own error.
-	before, _ := s.st.Get(id)
+	// One read up front so the ordering log lines below can say old→new, and
+	// so a card this room does not hold is a 404 that says so, not the store's
+	// "sql: no rows" from whichever write below tried first.
+	before, err := s.st.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, NotOnRoom(id, s.Room))
+		return
+	}
 	logOrderPatch(id, before, &body)
 	canceled := 0
 	// Whether unshelving started the runner again, and why not when it did not.
