@@ -23,7 +23,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
-| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
+| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | fixed on `claude/subagent-stop`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
@@ -463,6 +463,17 @@ To find out first: which hook event the subagent's end arrives as (a `SubagentSt
 subagent's session or agent id), and which atrium path turns it into the alert (`atrium turn --event end`, the
 activity hook, or the post-every-Stop change from N11). The fix is to recognise a subagent's end and ignore it for
 status and notifications, with a fake-runner test that raises parent and subagent stops.
+
+Found 2026-09-28: it is the parent's own `Stop`, not a subagent's. The review panel starts its subagents in the
+background, so the parent's turn ends with them still working, and each report wakes the parent, which reads it and
+stops again. The pr-4480 transcript shows five parent Stops during the panel (16:34:06Z to 16:41:31Z), each after a
+subagent hand-back. `atrium turn` already ignored `SubagentStop`. A probe with a live Claude Code showed the parent's
+Stop payload lists the running subagents in `background_tasks`, and that `SubagentStop` fires for more than the
+agents started: the pr-4480 run logged four within a second, a minute before any reviewer finished.
+
+Fixed: the Stop hook sends the count of running subagents, and while it is above zero the room keeps the card
+running and silent, and ignores an `idle_prompt` notification. The Stop that leaves none running moves the card. Codex
+has no `background_tasks` in its Stop payload, so it is unchanged.
 
 ## 18. On the terminals tab, toasts sit top right (feature)
 
