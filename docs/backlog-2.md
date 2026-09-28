@@ -1246,6 +1246,11 @@ Evidence from 2026-09-28. sa48 ended its turn at 15:03 without a report, and the
 notice reached the orchestrator. sa42 ended at 19:31:31Z, at needs-input with no report, and no notice reached the
 orchestrator. clint saw it first.
 
+sa42's report did not come before its turn ended. Its card shows the turn end at 19:31:31Z with no report, a
+prompt (the orchestrator's nudge) at 19:32:33Z, and its report to the merger, saorch, sent about 19:33:27Z. So this is a
+missed notice, and the report came only because of the nudge. A separate gap sits beside it: a worker that reports
+to the merger instead of its launcher leaves the orchestrator with no sign that it reported.
+
 Find out why one fired and the other did not. Candidates: a delay threshold, the launcher link on the card, or the
 card's origin tag (`agentLaunched` reads `origin:agent`, see item 40). Then make the notice certain.
 
