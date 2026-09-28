@@ -1032,13 +1032,38 @@ Stage 2, later: the same thing from the board. An "add a machine" dialog takes a
 stage 1 and shows each step. Credentials follow the overlays rule: atrium names the ssh command, it never holds the
 key.
 
-**Status, 2026-09-28, sa92: stage 1 built, proven on claudevm (Windows).** `scripts/provision-room.ps1 user@host`
-does the whole of stage 1, with `-Name`, `-Runners`, `-Remove` and `-Force`. It adds `atrium room join --no-run`
-and a `room` verb to both service scripts. See `docs/packaging.md` "Provisioning a room over ssh, from the hub" and
-`docs/test-plan.md` section BU. Linux and macOS paths are written but not yet run, so the first run on clint's
-other machine is also their first proof. Joins direct rooms only: a hub linked over ziti or zrok is refused with the
-reason. For stage 2 the step lines are `provision <step> <status> <detail>` and the exit codes are listed at the
-top of the script.
+**Status, 2026-09-28, sa92: stage 1 built and proven on Windows, Linux and macOS.** `scripts/provision-room.ps1
+user@host` does the whole of stage 1. See `docs/packaging.md` "Provisioning a room over ssh, from the hub" and
+`docs/test-plan.md` section BU. For stage 2 the step lines are `provision <step> <status> <detail>` and the exit
+codes are listed at the top of the script.
+
+clint's answers, and what the script does with them:
+
+- **Ziti and zrok hubs are joined.** Ziti: the operator gives the remote's enrollment JWT (`-ZitiJwt` or
+  `-ZitiJwtCommand`). It travels as a file and is enrolled on the remote with a key made there, in process when the
+  remote has no `ziti` CLI. zrok: the running hub writes its share to `zrok-share` in its key folder so `atrium rooms
+  token` can mint a zrok join string. The remote's own `zrok2 enable` takes the account token, so the script names
+  that command and stops with exit 7.
+- **Runners are report only by default.** `-Install claude,codex` fetches from the vendor after a trust warning, puts
+  `~/.local/bin` on the user's PATH if needed, and `-Remove` takes both back out.
+- **Linger is off by default** in `scripts/atrium-service.sh`. `ATRIUM_LINGER=1` or `-Linger` turns it on.
+- **The binary is the GitHub release by default**, checked against its `checksums.txt`. There are no releases yet, so
+  that fails with the reason. `-FromCheckout` is the dev path and is what every proof so far used.
+- **One room per machine.** A machine that is already a room, or runs an atrium this did not install, is refused
+  with exit 6.
+- **No autostart by default.** The room starts with the new `atrium room --detach` and runs until restart or
+  logout. `-Autostart` keeps the service path.
+
+Still open under this item:
+
+- **Autostart as the default.** Decide when it comes back on, and whether a Windows logon task or a detached room is
+  the better default there, given the detached room survives the ssh session.
+- **systemd PATH.** The user unit does not get the login shell's PATH, so a runner in `~/.local/bin` can pass the
+  check and still not be found by a room run by systemd. A detached room is started through a login shell and does
+  not have this. Fix in `packaging/atrium.service` with `Environment=PATH` or a login-shell `ExecStart`.
+- **The board half of stage 2.** A room with no runner shows on the hub's board as "this room is here but has no
+  agents, configure one?", offering the `-Install` above. Not built: it needs the hub to know a room's runners and to
+  run this script over ssh, which is the stage 2 dialog itself.
 
 ## 47. A resident session's alias defaults from its name (feature)
 

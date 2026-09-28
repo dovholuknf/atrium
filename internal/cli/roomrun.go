@@ -67,6 +67,14 @@ func joinCmd() *cobra.Command {
 			identity = ident
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
 
+			// A PATH TO A .jwt IS READ, so a provisioner can hand the token over
+			// as a file rather than as an argument anything on the machine can
+			// list. The flag's help always said a path was fine.
+			if jwt != "" {
+				if raw, err := os.ReadFile(jwt); err == nil {
+					jwt = strings.TrimSpace(string(raw))
+				}
+			}
 			if jwt != "" {
 				// ENROLLING A JWT IN PLACE, the design's room-link ziti path. The
 				// token is turned into an identity `.json` kept on THIS room's own
@@ -182,7 +190,7 @@ func isolatedFlag(c *cobra.Command, isolated *bool) {
 
 func roomCmd() *cobra.Command {
 	var dir, db, human, agent string
-	var isolated bool
+	var isolated, detach bool
 	c := &cobra.Command{
 		Use:   "room",
 		Short: "Run the agents here, attached to the hub this machine already joined",
@@ -193,6 +201,12 @@ func roomCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			if detach {
+				return detachRoom(roomLaunch{
+					dir: keys.Dir, db: db, human: human, agent: agent,
+					isolated: isolated, upgrades: acceptUpgrades,
+				})
+			}
 			err := runRoom(keys, db, human, agent, restartAfter, isolated)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
@@ -207,6 +221,8 @@ func roomCmd() *cobra.Command {
 	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
 	isolatedFlag(c, &isolated)
+	c.Flags().BoolVar(&detach, "detach", false,
+		"start the room in the background, logging to room.log beside --dir, and return once it answers")
 	// Hidden: how a hub-triggered restart re-invokes this room detached. It waits
 	// for the old process to release its ports, then starts as usual. Running it
 	// by hand just adds a pointless pause. See restart.go.
