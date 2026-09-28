@@ -1033,6 +1033,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
+		// `cmd` is the command before the lean flags, which carry the whole
+		// settings copy. These two say what was added.
 		"lean": lean, "mcp": leanMCP,
 	}); err != nil {
 		return nil, err
