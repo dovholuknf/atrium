@@ -1210,6 +1210,11 @@ claude processes.
 The room has no profiling endpoint, so nothing could say what holds the memory. First add a pprof endpoint to the
 room, on the loopback human listener only. Then take heap profiles across a growth burst and find the cause.
 
+After the room-only deploy of `06b87c9` at 15:55:54 on 2026-09-28, the new room (pid 48064) held 7.0GB private
+memory at +6 minutes and 13.2GB at +7 minutes. It then stayed flat at 13.6GB private and a 3.3GB working set for a
+minute. So most of it is allocated at startup, probably while reopening the saved cards and their scrollback, and
+it is not a slow leak. The hub reported rooms=3 and the room answered ok, not halted.
+
 ## 58. `atrium_say` reaches cards on other rooms, `name@room` (feature, HIGH)
 
 Raised 2026-09-28 by clint: "atrium say needs to be cross room for sure". Today `atrium_say` refuses `m1mini~<id>`
