@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card launched lean can be started with the full setup.** See `docs/backlog-2.md` item 64 and
+  `docs/test-plan.md` section CF.
+
+  A lean launch tags its card `atrium:lean`, so every resume and restart came back lean. `/v1/launch` now tells an
+  absent `lean` from `"lean": false`. Absent leaves it to the card. False starts the card with the user CLAUDE.md,
+  memory, skills and every MCP server, and takes `atrium:lean` and `atrium:mcp:*` off it, so the restart after is
+  not lean either. A tag edit that drops `atrium:lean` clears it too. On the board, `resume` on a lean card is noted
+  `lean` and offers `with my full setup`, and a lean terminal's menu says `restart this session` comes back lean and
+  offers `restart with my full setup`. `internal/daemon`: ROOM RESTART. `internal/api/web`: HUB RESTART for the board
+  a hub serves, and the room restart for the room's own board. The board's full-setup resume against an older room
+  starts lean as before, and its full-setup restart works on any room, because it edits the tags first.
+
 - **`atrium_say` reaches a card on another room as `name@room`, and it can answer.** See
   `docs/cross-room-say-design.md`, `docs/test-plan.md` section CE and `docs/backlog-2.md` item 58.
 

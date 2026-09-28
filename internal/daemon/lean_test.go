@@ -194,7 +194,8 @@ func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 	if lean, _ := leanOptions(LaunchRequest{}, nil); lean {
 		t.Fatal("a plain launch is not lean")
 	}
-	lean, mcp := leanOptions(LaunchRequest{Lean: true, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil)
+	on, off := true, false
+	lean, mcp := leanOptions(LaunchRequest{Lean: &on, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil)
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("got %v %q", lean, mcp)
 	}
@@ -202,5 +203,22 @@ func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 	lean, mcp = leanOptions(LaunchRequest{}, card)
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("a reopen of a lean card should start lean with its servers, got %v %q", lean, mcp)
+	}
+	// Backlog-2 item 64: false wins over the card.
+	if lean, mcp = leanOptions(LaunchRequest{Lean: &off, MCP: []string{"ziti"}}, card); lean || len(mcp) != 0 {
+		t.Fatalf("lean: false on a lean card should start it with the full setup, got %v %q", lean, mcp)
+	}
+}
+
+func TestWithoutLeanTagsKeepsTheRest(t *testing.T) {
+	got, cut := withoutLeanTags([]string{"origin:agent", LeanTag, "atrium:mcp:ziti", "docs"})
+	if !cut || strings.Join(got, ",") != "origin:agent,docs" {
+		t.Fatalf("got %q %v", got, cut)
+	}
+	if got, cut = withoutLeanTags([]string{LeanTag}); !cut || got == nil || len(got) != 0 {
+		t.Fatalf("a card whose only tag was lean should come out empty, got %q %v", got, cut)
+	}
+	if _, cut = withoutLeanTags([]string{"docs"}); cut {
+		t.Fatal("a card that was never lean has nothing to take out")
 	}
 }
