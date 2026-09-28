@@ -679,6 +679,7 @@ async function termMenu(e, id) {
       ]
     } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
+    typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
     // Beside rename because they are the same kind of act: both write an
     // override, both survive the runner reconnecting and reporting for itself.
     // Rename decides what the row says, this decides where it sits.
@@ -1121,37 +1122,42 @@ function termRoomChip(t) {
 // mid-turn), or a dialog. Blaming the line for a turn wait told the operator
 // to clear a line that was already empty. A room older than `held_for` gets
 // the line wording it always had. The chip counts, `! 2`, like `? N`.
+//
+// ONE SHAPE FOR EVERY REASON: how many, how long, what blocks them, and what
+// to do. The sender is not in it: the count and the reason are what decide
+// whether to act, and the timeline says who sent what.
 function termHeldChip(t) {
   const a = t && t.activity;
   if (!a || !a.held_peer) return "";
-  const from = String(a.held_peer);
   const secs = Number(a.held_seconds) || 0;
   const count = Number(a.held_count) || 1;
-  const waited = secs > 0 ? ` waiting ${termHeldAge(secs)}` : "";
-  const what = count > 1 ? `${count} messages, the oldest from ${from},` : `message from ${from}`;
-  const title = `${what}${waited} - ${termHeldWhy(a.held_for)}`;
   const label = count > 1 ? `! ${count}` : "!";
-  return `<span class="chip held" data-tip="${esc(title)}">${label}</span>`;
+  return `<span class="chip held" data-tip="${esc(termHeldTip(count, secs, a.held_for))}">${label}</span>`;
 }
 
-// What clears a held message, by what is holding it.
-function termHeldWhy(why) {
-  if (why === "turn") {
-    return "waits for the session's turn to end, because it was sent to arrive when the turn " +
-      "is done or this runner does not take input mid-turn. it goes in once the turn ends";
-  }
-  if (why === "dialog") {
-    return "a dialog is open on this terminal, and typing would answer it. " +
-      "it goes in once the dialog is answered";
-  }
-  return "delivers when your input line is clear and idle. clear or submit your line to receive it now";
+// The held chip's tooltip, singular or plural throughout.
+function termHeldTip(count, secs, why) {
+  const one = count === 1;
+  const these = one ? "this message" : "these messages";
+  const blocked = {
+    turn: ["the session's turn, which has to end first",
+      "They go in when the turn ends", "It goes in when the turn ends"],
+    dialog: ["a dialog open in this terminal, which typing would answer",
+      "Answer the dialog to dequeue " + these],
+  }[why] || ["input in this terminal", "Submit your text to dequeue " + these];
+  const todo = one && blocked[2] ? blocked[2] : blocked[1];
+  return `${count} ${one ? "message has" : "messages have"} been waiting to be delivered to this agent ` +
+    `for ${termHeldAge(secs)} and ${one ? "is" : "are"} blocked by ${blocked[0]}. ${todo}`;
 }
 
-// A coarse age for the held tooltip, in the largest unit that is not zero.
+// The held age in full, hours, minutes and seconds, with the leading zero units
+// left off: 16s, 2m 5s, 1h 0m 3s.
 function termHeldAge(secs) {
-  if (secs >= 3600) return Math.floor(secs / 3600) + "h";
-  if (secs >= 60) return Math.floor(secs / 60) + "m";
-  return secs + "s";
+  secs = Math.max(0, Math.floor(secs));
+  const h = Math.floor(secs / 3600), m = Math.floor(secs % 3600 / 60), s = secs % 60;
+  if (h) return `${h}h ${m}m ${s}s`;
+  if (m) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 // The whole strip, everything under where it lives.

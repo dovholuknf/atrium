@@ -508,6 +508,9 @@ Exports honor whatever filter is applied.">?</span>
           </div>
         </div>
         <div id="t-screen"></div>
+        <!-- What atrium thinks is on the input line, and whether a say may be
+             typed in. A debug readout, off unless switched on. See js/typing.js. -->
+        <div class="term-typing" id="t-typing" role="status" hidden></div>
         <!-- Keep the shortcut strip to one line, listing keys and actions. -->
         <div class="term-help">
           ctrl-c copies a selection, interrupts otherwise &middot;
@@ -1176,6 +1179,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on the
         machine, so the hub and the room log as that says and this box reaches this browser
         only.</span>
+    </div>
+
+    <!-- The typing gate readout is a diagnostic, off by default. See js/typing.js. -->
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-typing" onchange="toggleTypingReadout(this.checked)">
+        <span>show the typing gate readout</span>
+      </label>
+      <span class="hintline">A line above the terminal's shortcut strip showing what atrium thinks
+        is on the session's input line, how long since the last keystroke, and whether a message
+        from another session may be typed in now or why it is held. For when a say waits behind a
+        line that looks empty. This browser only.</span>
     </div>
 
     <!-- Grouping. The rule is the operator's, because their worktree layout
@@ -2859,6 +2874,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </label>
       <div id="d-usage" hidden>
         <div class="usagesum" id="d-usage-sum"></div>
+        <div class="usagecauses" id="d-usage-causes"></div>
         <div class="usagelist" id="d-usage-list"></div>
         <span class="hintline" id="d-usage-note"></span>
       </div>
@@ -2962,6 +2978,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      and the real definition would replace the wrapper. -->
 <script src="/js/toast-log.js"></script>
 <script src="/js/keepalive.js"></script>
+<script src="/js/alias.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
@@ -2978,6 +2995,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/terminal-links.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/inputlag.js"></script>
+<script src="/js/typing.js"></script>
 <script src="/js/termtrace.js"></script>
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>

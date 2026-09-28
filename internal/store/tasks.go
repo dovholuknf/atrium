@@ -16,7 +16,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
 	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
 	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
-	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at`
+	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -49,7 +49,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
 		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
 		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
-		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt); err != nil {
+		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias); err != nil {
 		return nil, err
 	}
 	t.Throwaway = throwaway != 0
@@ -343,7 +343,7 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -368,7 +368,10 @@ func (s *Store) insertTask(t *Task) error {
 		// No lineage and no report. Lineage is written once by `SetLineage`
 		// after the card exists, and a report is something a session says once
 		// it has run. No hook has been heard from yet.
-		"", "", "", "", 0, "", "", "")
+		"", "", "", "", 0, "", "", "",
+		// No alias. One is set by `SetAlias` once the card exists, so the
+		// uniqueness check runs in one place. See alias.go.
+		"")
 	return err
 }
 

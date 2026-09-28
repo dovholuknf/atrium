@@ -3,8 +3,12 @@ package daemon
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +38,14 @@ import (
 // Keep-alive refreshes are forks and never reach the card's transcript. Their
 // rows come from the fork's receipt in keepalive.go.
 //
+// Claude Code subagents (the Task tool) are read at the same Stop, and what
+// they spent since the last read is a row of its own, cause `subagent`. Newer
+// Claude Code writes each to <session>/subagents/agent-<id>.jsonl, older wrote
+// them into the main transcript marked `isSidechain`. Both are read, each file
+// with its own cursor, one per message id, and no reply counted in the card's
+// row is counted again. An atrium worker is a card of its own, with its own
+// rows, and is never counted here.
+//
 // BEST EFFORT, like every hook path. A read or a write that fails is logged,
 // and the turn goes on.
 
@@ -43,7 +55,39 @@ import (
 const usageSettle = 1500 * time.Millisecond
 
 // usagePricesVersion names the price table a row's cost was worked out on.
-const usagePricesVersion = keepalivePricesVersion
+const usagePricesVersion = "usageprices-2026-09-28"
+
+// usageOnlyPrices are the models a usage row prices that keep-alive must not
+// refresh, because keepalivePrices is also the list of models keep-alive may
+// refresh. Per million tokens, from
+// https://platform.claude.com/docs/en/about-claude/pricing, fetched 2026-09-28.
+// A 5m write is 1.25 times input, a read 0.1 times, on both.
+var usageOnlyPrices = map[string]keepalivePrice{
+	"claude-haiku-4-5": {In: 1, Cw1h: 2, Cr: 0.10, Out: 5},
+	"claude-sonnet-5":  {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+}
+
+// usagePriceFor prices a reply for a usage row: keep-alive's models, then the
+// others. An id matches its name alone or with a date stamp, so Sonnet 5's
+// price is not taken for a Sonnet 5.5.
+func usagePriceFor(model string) (keepalivePrice, bool) {
+	if p, ok := keepalivePriceFor(model); ok {
+		return p, true
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	if i := strings.IndexByte(m, '['); i >= 0 {
+		m = m[:i]
+	}
+	for k, p := range usageOnlyPrices {
+		if m == k {
+			return p, true
+		}
+		if date, ok := strings.CutPrefix(m, k+"-"); ok && len(date) == 8 && strings.Trim(date, "0123456789") == "" {
+			return p, true
+		}
+	}
+	return keepalivePrice{}, false
+}
 
 // usageSegment is what is known about a turn when its Stop arrives.
 type usageSegment struct {
@@ -77,6 +121,7 @@ type usageTracker struct {
 	// same replies twice.
 	readMu sync.Mutex
 	cursor map[string]*usageCursor
+	subs   map[string]*subagentCursors
 }
 
 func newUsageTracker(st *store.Store) *usageTracker {
@@ -92,6 +137,7 @@ func newUsageTracker(st *store.Store) *usageTracker {
 		cause:   map[string]string{},
 		resumed: map[string]bool{},
 		cursor:  map[string]*usageCursor{},
+		subs:    map[string]*subagentCursors{},
 	}
 }
 
@@ -166,8 +212,9 @@ func (u *usageTracker) stopped(t *store.Task) {
 }
 
 // record reads a card's transcript from where the last read stopped, and writes
-// one row for the replies stamped before the Stop. It returns the row, or nil
-// when the turn made no request.
+// one row for the replies stamped before the Stop, and one `subagent` row for
+// what its subagents spent in the same time. It returns the main row, or nil
+// when the turn made no request of its own.
 func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUsage, error) {
 	u.readMu.Lock()
 	defer u.readMu.Unlock()
@@ -190,6 +237,10 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		}
 		u.cursor[t.ID] = cur
 	}
+	subs, err := u.subagentsOf(t, path)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -203,28 +254,22 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		return nil, err
 	}
 	var (
-		order  []string
-		byID   = map[string]*mainReply{}
+		main   = newReplySet()
+		side   = newReplySet()
 		beyond bool
 	)
-	read, err := scanMainReplies(f, func(r *mainReply) {
+	read, err := scanReplies(f, func(r *mainReply) {
 		if r.At.After(seg.stop) {
 			beyond = true
 			return
 		}
-		if r.MessageID == "" {
-			r.MessageID = r.At.Format(time.RFC3339Nano)
-		}
-		// A reply counted by an earlier read is skipped, and so is every later
-		// line of it. Lines of one reply read here all count as that reply.
-		_, seen := byID[r.MessageID]
-		if !seen && (r.MessageID == cur.lastMsg || !r.At.After(cur.lastAt)) {
+		if r.Sidechain {
+			// A subagent written inline, as older Claude Code did. It has its
+			// own cursor, since its replies are not the card's.
+			side.take(r, subs.inline)
 			return
 		}
-		if !seen {
-			order = append(order, r.MessageID)
-		}
-		byID[r.MessageID] = r
+		main.take(r, cur)
 	})
 	if err != nil {
 		return nil, err
@@ -234,39 +279,215 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 	if !beyond {
 		cur.offset += read
 	}
-	if len(order) == 0 {
-		u.unspent(t.ID, seg)
-		return nil, nil
+	if err := readSubagentFiles(subs, seg.stop, side); err != nil {
+		log.Printf("[atrium] could not read the subagents of %s: %v", t.ID, err)
 	}
-	first, last := byID[order[0]], byID[order[len(order)-1]]
+	var row *store.SessionUsage
+	if len(main.order) == 0 {
+		u.unspent(t.ID, seg)
+	} else {
+		row = main.row(t)
+		row.Cause, row.AfterResume = seg.cause, seg.afterResume
+		if err := u.st.AddSessionUsage(row); err != nil {
+			// The next read starts again from the last row on record.
+			delete(u.cursor, t.ID)
+			delete(u.subs, t.ID)
+			return nil, err
+		}
+		main.advance()
+	}
+	// A reply is the card's or a subagent's, never both.
+	side.drop(main)
+	if len(side.order) > 0 {
+		sub := side.row(t)
+		sub.Cause = store.UsageSubagent
+		if err := u.st.AddSessionUsage(sub); err != nil {
+			delete(u.subs, t.ID)
+			return row, err
+		}
+		side.advance()
+	}
+	return row, nil
+}
+
+// subagentCursors is how far a session's subagent transcripts have been read.
+type subagentCursors struct {
+	session string
+	// from is where a file seen for the first time is read from: the last
+	// subagent row, or the daemon's start.
+	from   usageCursor
+	inline *usageCursor
+	files  map[string]*usageCursor
+}
+
+func (u *usageTracker) subagentsOf(t *store.Task, path string) (*subagentCursors, error) {
+	if s := u.subs[t.ID]; s != nil && s.session == path {
+		return s, nil
+	}
+	s := &subagentCursors{session: path, from: usageCursor{lastAt: u.started}, files: map[string]*usageCursor{}}
+	last, err := u.st.LastSubagentUsage(t.ID, t.ResumeID)
+	if err != nil {
+		return nil, err
+	}
+	if last != nil {
+		s.from.lastAt, s.from.lastMsg = last.Ended, last.LastMessage
+	}
+	inline := s.from
+	s.inline = &inline
+	u.subs[t.ID] = s
+	return s, nil
+}
+
+// subagentDir is where Claude Code writes a session's subagent transcripts:
+// <session>/subagents/agent-<id>.jsonl beside <session>.jsonl, and a workflow's
+// agents a level down.
+func subagentDir(session string) string {
+	return filepath.Join(strings.TrimSuffix(session, ".jsonl"), "subagents")
+}
+
+// readSubagentFiles reads every subagent transcript of the session from where
+// its last read stopped, into set. A subagent is one conversation per file, so
+// a file's times say what of it was counted, as the main file's do.
+func readSubagentFiles(subs *subagentCursors, stop time.Time, set *replySet) error {
+	dir := subagentDir(subs.session)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "agent-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		cur := subs.files[p]
+		if cur == nil {
+			cur = &usageCursor{path: p, lastAt: subs.from.lastAt, lastMsg: subs.from.lastMsg}
+			subs.files[p] = cur
+			if !info.ModTime().After(cur.lastAt) {
+				// Last written before what was counted, so nothing in it is
+				// new.
+				cur.offset = info.Size()
+				return nil
+			}
+		}
+		if info.Size() < cur.offset {
+			cur.offset = 0
+		}
+		if info.Size() == cur.offset {
+			return nil
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		if _, err := f.Seek(cur.offset, io.SeekStart); err != nil {
+			return nil
+		}
+		beyond := false
+		read, err := scanReplies(f, func(r *mainReply) {
+			if r.At.After(stop) {
+				beyond = true
+				return
+			}
+			set.take(r, cur)
+		})
+		if err != nil {
+			return err
+		}
+		if !beyond {
+			cur.offset += read
+		}
+		return nil
+	})
+}
+
+// replySet is the replies one read counts, one per message id, and the last
+// one taken past each cursor.
+type replySet struct {
+	order []string
+	byID  map[string]*mainReply
+	from  map[*usageCursor]*mainReply
+}
+
+func newReplySet() *replySet {
+	return &replySet{byID: map[string]*mainReply{}, from: map[*usageCursor]*mainReply{}}
+}
+
+// take counts a reply read past cur. A reply counted by an earlier read is
+// skipped, and so is every later line of it. Lines of one reply read here all
+// count as that reply.
+func (s *replySet) take(r *mainReply, cur *usageCursor) {
+	if r.MessageID == "" {
+		r.MessageID = r.At.Format(time.RFC3339Nano)
+	}
+	_, seen := s.byID[r.MessageID]
+	if !seen && (r.MessageID == cur.lastMsg || !r.At.After(cur.lastAt)) {
+		return
+	}
+	if !seen {
+		s.order = append(s.order, r.MessageID)
+	}
+	s.byID[r.MessageID] = r
+	if last := s.from[cur]; last == nil || !r.At.Before(last.At) {
+		s.from[cur] = r
+	}
+}
+
+// drop leaves out every reply the other set counts.
+func (s *replySet) drop(other *replySet) {
+	kept := s.order[:0]
+	for _, id := range s.order {
+		if _, dup := other.byID[id]; !dup {
+			kept = append(kept, id)
+		}
+	}
+	s.order = kept
+}
+
+// advance moves each cursor past the last reply taken through it.
+func (s *replySet) advance() {
+	for cur, r := range s.from {
+		cur.lastAt, cur.lastMsg = r.At, r.MessageID
+	}
+}
+
+// row sums the set in time order, each reply priced on its own model, since a
+// subagent often runs on a cheaper one.
+func (s *replySet) row(t *store.Task) *store.SessionUsage {
+	sort.SliceStable(s.order, func(i, j int) bool { return s.byID[s.order[i]].At.Before(s.byID[s.order[j]].At) })
+	first, last := s.byID[s.order[0]], s.byID[s.order[len(s.order)-1]]
 	row := &store.SessionUsage{
 		TaskID: t.ID, ResumeID: t.ResumeID, Started: first.At, Ended: last.At,
-		Cause: seg.cause, AfterResume: seg.afterResume, Model: last.Model, Replies: len(order),
-		Context: last.Context(), LastMessage: last.MessageID,
+		Model: last.Model, Replies: len(s.order), Context: last.Context(), LastMessage: last.MessageID,
 	}
-	for _, id := range order {
-		r := byID[id]
-		row.Input += r.Input
-		row.Output += r.Output
-		row.CacheRead += r.CacheRead
+	for _, id := range s.order {
+		r := s.byID[id]
 		w5, w1 := r.Write5m, r.Write1h
 		if w5+w1 < r.CacheWrite {
 			// A reply with no split says nothing about the TTL. Claude Code's
 			// own default is five minutes.
 			w5 += r.CacheWrite - w5 - w1
 		}
+		one := &store.SessionUsage{Input: r.Input, Output: r.Output, CacheRead: r.CacheRead,
+			CacheWrite5m: w5, CacheWrite1h: w1}
+		row.Input += one.Input
+		row.Output += one.Output
+		row.CacheRead += one.CacheRead
 		row.CacheWrite5m += w5
 		row.CacheWrite1h += w1
+		if p, ok := usagePriceFor(r.Model); ok {
+			row.Cost += usageCost(one, p)
+			row.Prices = usagePricesVersion
+		}
 	}
-	if p, ok := keepalivePriceFor(last.Model); ok {
-		row.Cost = usageCost(row, p)
-		row.Prices = usagePricesVersion
-	}
-	cur.lastAt, cur.lastMsg = last.At, last.MessageID
-	if err := u.st.AddSessionUsage(row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return row
 }
 
 // usageCost prices a row. A 5m write is 1.25 times input, the 1h rate is in

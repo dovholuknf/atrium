@@ -728,6 +728,7 @@ function cardHTML(t) {
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
       ${newCardChip(t)}
+      ${typeof aliasChip === "function" ? aliasChip(t) : ""}
       ${modelChip(t)}
       ${tagChips(t)}
       ${noteChip(t)}
