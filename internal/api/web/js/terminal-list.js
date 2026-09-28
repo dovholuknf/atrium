@@ -678,6 +678,7 @@ async function termMenu(e, id) {
       ]
     } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
+    typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
     // Beside rename because they are the same kind of act: both write an
     // override, both survive the runner reconnecting and reporting for itself.
     // Rename decides what the row says, this decides where it sits.

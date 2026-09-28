@@ -188,6 +188,8 @@ let landPerms = [];
 // What the typing readout's endpoint answers, and every request it got.
 let typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
 let typingPolls = [];
+// Every PATCH that set a card's alias. See `aliasSection`.
+let aliasWrites = [];
 
 let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
 // One card per shipped terminal theme, filled in from the page's own table by
@@ -421,6 +423,7 @@ const server = http.createServer((req, res) => {
         let body = {};
         try { body = JSON.parse(raw || "{}"); } catch (e) {}
         if (id === "pin1" && typeof body.pinned === "boolean") PIN.pinned = body.pinned;
+        if ("alias" in body) aliasWrites.push({ id, body });
         // A theme kept from the picker, saved on the worn list so a reload reads it back.
         const worn = tasksMode === "worn" && wornTasks.find(t => t.id === id);
         if (worn && typeof body.theme === "string") { worn.theme = body.theme; sendJSON(res, worn); return; }
@@ -3653,6 +3656,54 @@ async function typingSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a card's alias ────────────────────────────────────────────────────────
+// A card with an alias wears it as an `@name` chip, one without draws none, the
+// card menu and the terminal list both offer "alias…", and setting one PATCHes
+// the card with what was typed. See js/alias.js and docs/test-plan.md BS.
+async function aliasSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const ap = await ctx.newPage();
+  const errors = [];
+  ap.on("pageerror", e => errors.push(String(e)));
+  aliasWrites = [];
+  try {
+    await ap.goto(base, { waitUntil: "domcontentloaded" });
+    await ap.waitForFunction(() => typeof cardHTML === "function" && typeof aliasMenuItem === "function",
+      null, { timeout: 15000 });
+    const got = await ap.evaluate(t1 => {
+      const draw = t => { const box = document.createElement("div"); box.innerHTML = cardHTML(t); return box; };
+      const withAlias = draw(Object.assign({}, t1, { id: "al1", alias: "sa89" }));
+      const without = draw(Object.assign({}, t1, { id: "al2" }));
+      const chip = withAlias.querySelector(".chip.alias");
+      const item = aliasMenuItem(Object.assign({}, t1, { id: "al1", alias: "sa89" }));
+      return {
+        chip: chip ? chip.textContent.trim() : "", tip: chip ? chip.getAttribute("data-tip") : "",
+        title: chip ? chip.hasAttribute("title") : false,
+        none: !!without.querySelector(".chip.alias"),
+        label: item && item.label, note: item && item.note,
+      };
+    }, T1);
+    if (got.chip !== "@sa89") fail("a card with an alias does not wear it: " + JSON.stringify(got));
+    if (!/atrium_say/.test(got.tip || "")) fail("the alias chip's tooltip does not say what it is for: " + got.tip);
+    if (got.title) fail("the alias chip carries a native title tooltip.");
+    if (got.none) fail("a card with no alias drew an alias chip.");
+    if (got.label !== "alias…" || got.note !== "@sa89") fail("the alias menu item reads wrong: " + JSON.stringify(got));
+
+    // Setting it PATCHes the card with what was typed, `@` and all: the room
+    // normalizes it.
+    await ap.evaluate(() => { window.__aliasDone = setTaskAlias("t1", ""); });
+    await ap.waitForSelector("#ask[open] #ask-input", { timeout: 5000 });
+    await ap.fill("#ask-input", "@dotfiles");
+    await ap.click("#ask-actions button.go, #ask-actions button:last-child");
+    await ap.evaluate(() => window.__aliasDone);
+    const w = aliasWrites.find(x => x.id === "t1");
+    if (!w || w.body.alias !== "@dotfiles") fail("setting an alias did not PATCH it: " + JSON.stringify(aliasWrites));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the alias page threw: " + errors.join(" | "));
+}
+
 // ── a big paste shows the spinner too ─────────────────────────────────────
 // Test plan BQ. The socket here behaves like Chromium's over loopback: `send`
 // holds the main thread about 7ms per MB and the frame drains about 25ms per MB
@@ -4541,7 +4592,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, typing: typingSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -6722,6 +6773,8 @@ async function main() {
     await pasteBigSection(browser, base);
     // ── the typing gate readout, off until switched on ─────────────────────
     await typingSection(browser, base);
+    // ── a card wears its alias, and the menu sets it ────────────────────────
+    await aliasSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
     // ── the not-replayed notice opens or loads the pre-restart history ─────
