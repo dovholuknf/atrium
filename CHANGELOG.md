@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A keep-alive refresh whose ledger row fails to save no longer forks again every minute.** Mercurius finding C1
+  of session s_GqkzdtBKudfM.
+
+  The warm window and the budget come from saved `keepalive_refresh` rows, so a paid fork whose row did not save
+  left the next tick seeing the old expiry. Now the room holds that card's refreshes in memory until the cache the
+  fork may have warmed would expire, a real turn, or a hand on the switch, and the card's keep-alive `why` says so.
+  The design doc says what is built and that skips are not ledger rows. The gear and card-menu text say that a
+  refresh sends one word from a copy of the conversation, the copy is thrown away, and the card's own conversation
+  is never touched. `internal/daemon/keepalive.go`: ROOM RESTART. `internal/api/web/index.html` and
+  `internal/api/web/js/keepalive.js`: ROOM RESTART (the room serves the board). `docs/cache-keepalive-design.md`:
+  doc only.
+
 - **A launched claude worker starts lean: ~25k fewer tokens on its first request.** See
   `docs/lean-workers-design.md`, `docs/backlog-2.md` item 29 and `docs/test-plan.md` section BP.
 
