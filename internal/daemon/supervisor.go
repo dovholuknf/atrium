@@ -734,6 +734,10 @@ type runner struct {
 	// inPaste is inside a bracketed paste, where a carriage return is text
 	// being pasted and not the operator pressing Enter.
 	inPaste bool
+	// escClears is a runner whose prompt clears on a second Esc, and escAt is
+	// when the last lone Esc landed. See `noteOperatorTyped`.
+	escClears bool
+	escAt     time.Time
 	// onKey is called after every operator keystroke is recorded, outside
 	// typeMu. It is how a deferred peer message learns the operator is back at
 	// the keyboard and re-arms its retry to the front of the backoff. Nil when
@@ -915,6 +919,15 @@ var (
 // Other escape sequences count their bytes. An up arrow on an empty prompt
 // recalls a line, so treating it as text is closer to the truth than not.
 //
+// ESC ESC CLEARS A CLAUDE PROMPT, and was read as nothing at all. A lone Esc
+// matched no case, so the count stayed where the text had left it and the gate
+// held messages for a line that was already empty, until a control-c. Two lone
+// Escs in a row clear the count on a runner that clears on them, which is Claude
+// Code ("Esc again to clear"). Only that runner: in a shell Esc is a meta prefix
+// and clears nothing, and reading it as a clear there would type into a half
+// written command. Clearing the scrollback sends no byte and empties no line, so
+// it rightly releases nothing.
+//
 // A UTF-8 lead or continuation byte counts as one each, so a multi-byte glyph
 // over-counts and a backspace after it clears only the last byte. The count
 // then floors at empty on a submit or a cancel, and a mid-line injection was
@@ -946,8 +959,18 @@ func (r *runner) noteOperatorTyped(p []byte) {
 				r.unsent++
 				i++
 				continue
+			case len(rest) == 1 || rest[1] == 0x1b: // a lone Esc, not the start of a sequence
+				if r.escClears && !r.escAt.IsZero() && time.Since(r.escAt) < escAgainWithin {
+					r.unsent = 0
+					r.inPaste = false
+					r.escAt = time.Time{}
+				} else {
+					r.escAt = time.Now()
+				}
+				continue
 			}
 		}
+		r.escAt = time.Time{}
 		switch {
 		case b == '\r' && !r.inPaste:
 			r.unsent = 0
@@ -1758,6 +1781,9 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// BEFORE `add`, which is the moment an attach can find this runner. A
 	// viewer that arrived between the two would be sent the new terminal's
 	// first bytes and nothing before them, which is the bug being fixed.
+	if t, err := d.st.Get(taskID); err == nil {
+		r.escClears = clearsOnEsc(t.Runner)
+	}
 	d.adoptCarryover(r)
 	d.sup.add(r)
 
