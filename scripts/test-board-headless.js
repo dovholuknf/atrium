@@ -3510,20 +3510,32 @@ async function sayWhenSection(browser, base) {
         return s ? { text: s.textContent, tip: s.dataset.tip } : null;
       };
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
-        dialog: one({ held_for: "dialog" }), old: one({}) };
+        lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
+        dialog: one({ held_for: "dialog" }), old: one({}),
+        ages: [16, 125, 3603].map(termHeldAge) };
     });
-    if (!chips.turn || chips.turn.text !== "! 2" || !/turn to end/.test(chips.turn.tip) ||
-        /input line/.test(chips.turn.tip)) {
-      fail("a message held for the turn did not draw `! 2` naming the turn: " + JSON.stringify(chips.turn));
+    const want = {
+      turn: "2 messages have been waiting to be delivered to this agent for 1m 30s and are blocked by " +
+        "the session's turn, which has to end first. They go in when the turn ends",
+      line: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
+        "input in this terminal. Submit your text to dequeue this message",
+      lines: "2 messages have been waiting to be delivered to this agent for 1h 2m 3s and are blocked by " +
+        "input in this terminal. Submit your text to dequeue these messages",
+      dialog: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
+        "a dialog open in this terminal, which typing would answer. Answer the dialog to dequeue this message",
+    };
+    want.old = want.line;
+    for (const k of Object.keys(want)) {
+      if (!chips[k] || chips[k].tip !== want[k]) {
+        fail("the held chip's tip for " + k + " reads " + JSON.stringify(chips[k] && chips[k].tip) +
+          ", wanted " + JSON.stringify(want[k]));
+      }
     }
-    if (!chips.line || chips.line.text !== "!" || !/input line/.test(chips.line.tip)) {
-      fail("a message held by the line did not name the line: " + JSON.stringify(chips.line));
+    if (chips.turn.text !== "! 2" || chips.line.text !== "!") {
+      fail("the held chip does not count: " + JSON.stringify(chips));
     }
-    if (!chips.dialog || !/dialog/.test(chips.dialog.tip)) {
-      fail("a message held by a dialog did not name the dialog: " + JSON.stringify(chips.dialog));
-    }
-    if (!chips.old || !/input line/.test(chips.old.tip)) {
-      fail("a room older than held_for lost the line wording: " + JSON.stringify(chips.old));
+    if (chips.ages.join(",") !== "16s,2m 5s,1h 0m 3s") {
+      fail("the held age is not full h/m/s: " + JSON.stringify(chips.ages));
     }
   } finally {
     await ctx.close();
