@@ -400,6 +400,8 @@ type keepalive struct {
 	baseEnv func() []string
 	// record saves one refresh's ledger row.
 	record func(*store.KeepaliveRefresh) error
+	// spent saves one refresh's row in the card's usage record. See usage.go.
+	spent func(*store.SessionUsage) error
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -436,6 +438,7 @@ func newKeepalive(st *store.Store) *keepalive {
 		inFlight:   map[string]bool{},
 		unsaved:    map[string]unsavedRefresh{},
 		record:     st.AddKeepaliveRefresh,
+		spent:      st.AddSessionUsage,
 	}
 }
 
@@ -732,6 +735,13 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		if rec.Usage != nil {
 			row.CacheRead, row.CacheWrite = rec.Usage.CacheRead, rec.Usage.CacheWrite
 			row.Input, row.Output = rec.Usage.Input, rec.Usage.Output
+		}
+	}
+	// The card's usage record too, where it sits beside the turns. A fork that
+	// never reached the API spent nothing and is not a row there.
+	if rec != nil && rec.Usage != nil {
+		if err := k.spent(usageOfRefresh(row)); err != nil {
+			log.Printf("[atrium] keep-alive: could not record the token use of a refresh of %s: %v", t.ID, err)
 		}
 	}
 	if err := k.record(row); err != nil {

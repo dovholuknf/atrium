@@ -234,6 +234,13 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Unless its subagents are still working, in which case the session is
 	// waiting on them and not on the operator. See turnPaused.
 	d.act.setBackground(task.ID, in.SubagentsRunning)
+	// What the turn spent, read off its transcript once it settles. Every Stop
+	// ends a row, the one a message is about to continue included. See usage.go.
+	spent := *task
+	if in.Resume != "" {
+		spent.ResumeID = in.Resume
+	}
+	d.usage.stopped(&spent)
 	waitingOnSubagents := in.SubagentsRunning > 0
 	if waitingOnSubagents {
 		d.turnPaused(task.ID)
@@ -287,6 +294,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// A blocked Stop sends the model back to work with the message as its
 	// instruction, so the turn is not over after all.
 	d.turnResumed(task.ID)
+	d.usage.prompted(task.ID, messagesCause(msgs))
 	d.publishTask(task.ID)
 	_, _ = w.Write(out)
 }
