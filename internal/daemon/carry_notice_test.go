@@ -29,7 +29,7 @@ func cutSession(t *testing.T, d *Daemon, id string) []byte {
 	if err := d.st.SetSetting(store.SettingReplayMode, "raw"); err != nil {
 		t.Fatal(err)
 	}
-	narrowSession(t, d, id, "● live line from the new process, long enough\r\n")
+	narrowSession(t, d, id, "● "+liveLine+", long enough\r\n")
 	old := savedLines(carryReplayMax/80 + 2000)
 	r := d.sup.get(id)
 	r.mu.Lock()
@@ -39,6 +39,9 @@ func cutSession(t *testing.T, d *Daemon, id string) []byte {
 }
 
 const firstSaved = "saved line 0000000 "
+
+// liveLine is the new process's output, replayed after everything carried.
+const liveLine = "live line from the new process"
 
 // attachUntil is attachVia that reads until `want` has arrived, or ten seconds.
 // A replay of megabytes under a loaded `go test ./...` can outlast attachVia's
@@ -73,7 +76,7 @@ func attachUntil(t *testing.T, h http.Handler, path, want string) string {
 func TestTheNoticeCarriesTheBoardsNonceInItsLinks(t *testing.T) {
 	d := testDaemon(t)
 	old := cutSession(t, d, "cut")
-	got := attachPath(t, d, "/v1/tasks/cut/attach?link=n0nce", 120, 40)
+	got := attachUntil(t, d.ap.Handler(), "/v1/tasks/cut/attach?link=n0nce", liveLine)
 	for _, want := range []string{
 		"\x1b]8;;atrium:carry/open?n=n0nce\x1b\\",
 		"\x1b]8;;atrium:carry/load?n=n0nce&b=" + strconv.Itoa(len(old)) + "\x1b\\",
@@ -94,7 +97,7 @@ func TestWithoutAUsableNonceTheNoticeHasNoLinks(t *testing.T) {
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
 	for _, q := range []string{"", "?link=", "?link=a%1b%5D8%3B%3Bx", "?link=" + strings.Repeat("a", 65)} {
-		got := attachPath(t, d, "/v1/tasks/cut/attach"+q, 120, 40)
+		got := attachUntil(t, d.ap.Handler(), "/v1/tasks/cut/attach"+q, liveLine)
 		if strings.Contains(got, "atrium:") {
 			t.Fatalf("%q: a link without a usable nonce", q)
 		}
