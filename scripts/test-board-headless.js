@@ -2297,11 +2297,11 @@ async function popoutTagFlipSection(browser, base) {
     await bp.evaluate(() => { if (window.__flipSolo) window.__flipSolo.close(); window.__flipSolo = null; });
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(async () => openTerm(await api("/v1/tasks/sgg~s1")));
-    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", { timeout: 5000 });
+    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", null, { timeout: 5000 });
     await standIn("s1");
     let yielded = false;
     try {
-      await bp.waitForFunction(() => !termTask, { timeout: 3000 });
+      await bp.waitForFunction(() => !termTask, null, { timeout: 3000 });
       yielded = true;
     } catch (e) {}
     if (!yielded) {
@@ -3048,7 +3048,7 @@ async function landSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
     await solo.evaluate(() => { toast("land live is ready", "", "stack", null, "land-live"); });
     await clickToast(solo, "land live is ready");
     at = await settle(p, a => a.opened === "land-live");
@@ -3065,7 +3065,7 @@ async function landSection(browser, base) {
 
     // 8. A board opened by a desktop notification with none open.
     await p.goto(base + "/?land=land-live&view=stack", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openTerm === "function", { timeout: 10000 });
+    await p.waitForFunction(() => typeof openTerm === "function", null, { timeout: 10000 });
     await spyAttach(p);
     at = await settle(p, a => a.view === "terms");
     const left = await p.evaluate(() => location.search);
@@ -3091,7 +3091,7 @@ async function landSection(browser, base) {
     landCard("land-new3", { supervised: false });
     landList = landList.concat(LAND["land-new3"]);
     poke();
-    await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"),
+    await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"), null,
       { timeout: 10000 }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
     await p.evaluate(() => window.__notes.find(n => n.title === "land new3 is on the board").onclick());
     setTimeout(() => { LAND["land-new3"].supervised = true; }, 1000);
@@ -3151,7 +3151,7 @@ async function reselectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     // From here on nothing may reach xterm or dial a socket.
@@ -3307,7 +3307,7 @@ async function toastsTopSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
     await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
     await solo.waitForTimeout(400);
     w = await where(solo);
@@ -3471,7 +3471,7 @@ async function pasteSpinnerSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -3570,7 +3570,7 @@ async function copySelectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -3945,6 +3945,237 @@ async function keepaliveSection(browser, base) {
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
 }
 
+// ── the board skin follows the room-picker scope ────────────────────────
+// THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
+// and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
+// three different skins back. Then: a save in one scope reaches only that
+// scope and leaks into no other, switching scope re-applies each
+// independently, and a room attaching does not clobber the ALL skin. A fresh
+// context keeps this test's per-scope localStorage out of the others'.
+// Both rooms live, so all three scopes are pickable.
+async function skinScopeSection(browser, base) {
+  hubMode = true;
+  sggAttached = true;
+  resetSkins();
+  const skinCtx = await browser.newContext();
+  const skin = await skinCtx.newPage();
+  const skinErrors = [];
+  skin.on("pageerror", e => skinErrors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) {
+    skin.on("console", m => console.error("[skin] " + m.type() + ": " + m.text()));
+  }
+  const dataSkin = () =>
+    skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
+  // wears waits for the board to wear a skin (null is the default) and names
+  // the step that did not, with what it wore instead. Returns whether it did.
+  const wears = (want, what) => skin.waitForFunction(w =>
+    document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 })
+    .then(() => true, async () => {
+      fail(what + ": the board wore " + JSON.stringify(await dataSkin()) + ", wanted " +
+        JSON.stringify(want) + ". The mock holds " + JSON.stringify(skinFor));
+      return false;
+    });
+  // THE LOAD'S OWN SETTINGS READS HAVE TO LAND BEFORE A SAVE. The remembered
+  // skin paints at once, so the right skin on screen does not mean the board has
+  // finished reading. A save made then was painted over by a read answered
+  // before it, and the wait for the new skin ran out: the flaky main-flow
+  // timeout. Counted per request, so this waits on the reads, not a clock.
+  // A reload abandons the old page's reads without always saying so, so the set
+  // starts over when the page does.
+  const settingsOut = new Set();
+  const isSettings = r => new URL(r.url()).pathname === "/v1/settings";
+  skin.on("request", r => { if (isSettings(r)) settingsOut.add(r); });
+  skin.on("requestfinished", r => settingsOut.delete(r));
+  skin.on("requestfailed", r => settingsOut.delete(r));
+  skin.on("framenavigated", f => { if (f === skin.mainFrame()) settingsOut.clear(); });
+  const settled = async what => {
+    for (const end = Date.now() + 15000; settingsOut.size && Date.now() < end;) {
+      await skin.waitForTimeout(50);
+    }
+    if (settingsOut.size) fail(what + ": the settings reads never finished.");
+    // One more turn of the page, so the last answer has been painted.
+    await skin.evaluate(() => new Promise(r => setTimeout(r, 0)));
+  };
+  // scopeTo reloads the board into a scope (null for ALL) and waits for the
+  // skin that scope wears to land and the reads behind it to finish.
+  const scopeTo = async (room, want) => {
+    await Promise.all([
+      skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      skin.evaluate(r => pickRoom(r), room)
+    ]);
+    const ok = await wears(want, "scoped to " + (room || "ALL"));
+    await settled("scoped to " + (room || "ALL"));
+    return ok;
+  };
+  try {
+    // ALL scope: the hub's own skin, not the alphabetically-first room's.
+    await skin.goto(base, { waitUntil: "domcontentloaded" });
+    await wears("noir", "the ALL view on load");
+
+    // Scope to each room in turn: three scopes, three different skins, at once.
+    // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
+    await scopeTo("alpha", "moss");
+    await scopeTo("sgg", "ember");
+    const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
+    const distinct = new Set(Object.values(held));
+    if (distinct.size !== 3) {
+      fail("the three scopes did not hold three different skins at once: " +
+        JSON.stringify(held));
+    }
+    if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
+      fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
+    }
+
+    // A skin saved from the ALL view lands on the hub (skinFor[""]) and leaves
+    // both rooms alone. A 409 would have made saveSkin revert the paint.
+    await scopeTo(null, "noir");
+    await skin.evaluate(() => saveSkin("vapor"));
+    await wears("vapor", "a skin saved from the ALL view");
+    if (skinFor[""] !== "vapor") {
+      fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
+        JSON.stringify(skinFor[""]) + ", wanted vapor.");
+    }
+    if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
+      fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
+    }
+
+    // A skin saved while scoped to alpha lands on alpha alone, and leaves the
+    // hub's ALL skin and sgg's untouched.
+    await scopeTo("alpha", "moss");
+    await skin.evaluate(() => saveSkin("sandstone"));
+    await wears("sandstone", "a skin saved while scoped to alpha");
+    if (skinFor.alpha !== "sandstone") {
+      fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
+        JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
+    }
+    if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
+      fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
+    }
+
+    // A skin saved while scoped to sgg lands on sgg alone.
+    await scopeTo("sgg", "ember");
+    await skin.evaluate(() => saveSkin("harbour"));
+    await wears(null, "a skin saved while scoped to sgg");
+    if (skinFor.sgg !== "harbour") {
+      fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
+        JSON.stringify(skinFor.sgg) + ", wanted harbour.");
+    }
+    if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
+      fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
+    }
+
+    // Switching scope re-applies each saved skin independently: ALL is vapor,
+    // alpha is sandstone, sgg is the default harbour (drawn by removing the
+    // attribute), and each is read fresh on its own reload.
+    await scopeTo(null, "vapor");
+    await scopeTo("alpha", "sandstone");
+    await Promise.all([
+      skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      skin.evaluate(() => pickRoom("sgg"))
+    ]);
+    await wears(null, "scoped back to sgg");
+
+    // Back to ALL: the hub skin is what it was, and a room attaching or
+    // leaving does not change it. This is the bug clint hit on a deploy: a
+    // room connecting swapped his theme to its own skin and its leaving
+    // reverted it, though he never changed scope off ALL.
+    //
+    // To catch it, the answer a re-read WOULD give is moved out from under the
+    // settled skin: skinFor[""] is changed to a different skin, so any re-fetch
+    // of the ALL scope now returns `ember`. A room attaching or detaching must
+    // still leave the applied `vapor` alone, because the skin has settled and
+    // ALL is not the scope of the room that changed. The old code re-read the
+    // skin on every attached-set flip and would repaint to `ember` here.
+    await scopeTo(null, "vapor");
+    const allWas = skinFor[""];
+    skinFor[""] = "ember";
+    // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
+    // its body rather than being coalesced away. Then a room leaves and one
+    // attaches: two changes to the attached set, neither of which is the ALL
+    // scope the operator is on, so the settled skin must not move.
+    await skin.waitForTimeout(2200);
+    sggAttached = false;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await skin.waitForTimeout(2200);
+    sggAttached = true;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await skin.waitForTimeout(500);
+    if ((await dataSkin()) !== "vapor") {
+      fail("a room attaching or leaving clobbered the settled ALL skin: it " +
+        "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
+    }
+    skinFor[""] = allWas;
+    if (skinErrors.length) {
+      fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
+    }
+  } finally {
+    await skin.close();
+    await skinCtx.close();
+    hubMode = false;
+    sggAttached = false;
+    resetSkins();
+  }
+}
+
+// ── a persisted skin heals when a room attaches, with no reload ──────────
+// The board loads against a hub that has no room to borrow settings from
+// yet, the window right after a hub restart. The ALL-view `/v1/settings`
+// read is a 409, so the load-time skin read fails and the board is on the
+// default dark. This is exactly what clint saw: a deploy restarts the hub,
+// he reloads before a room is back, and the paper skin never paints. When a
+// room attaches the read succeeds, and the skin must heal there rather than
+// waiting for another manual reload.
+async function skinHealSection(browser, base) {
+  hubMode = true;
+  hubHasRoom = false;
+  sggAttached = false;
+  // The hub wears paper, a light skin, which is the one clint set and did not
+  // see paint. resetSkins in the finally puts the default back.
+  skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
+  const healCtx = await browser.newContext();
+  const heal = await healCtx.newPage();
+  const healErrors = [];
+  heal.on("pageerror", e => healErrors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) {
+    heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
+  }
+  try {
+    await heal.goto(base, { waitUntil: "domcontentloaded" });
+    // No room to borrow from: the load-time read 409s and the board is dark.
+    await heal.waitForTimeout(1500);
+    const dark = await heal.evaluate(() =>
+      document.documentElement.getAttribute("data-skin"));
+    if (dark !== null) {
+      fail("with the hub unable to answer settings, the board should be on the " +
+        "default, but data-skin was " + JSON.stringify(dark));
+    }
+    // Past loadHubRooms' 2s throttle, then a room attaches: the read now
+    // succeeds and the skin heals to the hub's paper without a reload.
+    await heal.waitForTimeout(2200);
+    hubHasRoom = true;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await heal.waitForFunction(() =>
+      document.documentElement.getAttribute("data-skin") === "paper", null, { timeout: 15000 });
+    if (healErrors.length) {
+      fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
+    }
+  } finally {
+    await heal.close();
+    await healCtx.close();
+    hubMode = false;
+    hubHasRoom = true;
+    resetSkins();
+  }
+}
+
+// Where in this file a throw came from. A bare "Timeout 30000ms exceeded" names
+// no wait, so a failure nobody can run alone could not even be found.
+function threwAt(e) {
+  const at = String((e && e.stack) || "").split("\n")
+    .find(l => /test-board-headless\.js:\d+/.test(l));
+  return at ? " (at " + at.trim().replace(/^at /, "") + ")" : "";
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3958,10 +4189,11 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection };
+      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      skinScope: skinScopeSection, skinHeal: skinHealSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
-    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
+    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
     await browser.close();
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await new Promise(r => server.close(r));
@@ -4048,11 +4280,11 @@ async function main() {
     histMany = true;
     await page.evaluate(() => renderHistory(false));
     await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100,
+      document.querySelectorAll("#history-list .row.line").length === 100, null,
       { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
     await page.evaluate(() => moreHistory());
     await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 200,
+      document.querySelectorAll("#history-list .row.line").length === 200, null,
       { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
     for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
       await page.setViewportSize(vp);
@@ -4094,7 +4326,7 @@ async function main() {
     histManyLive = true;
     await page.evaluate(() => repaintLists());
     await page.waitForFunction(() =>
-      document.querySelector("#history-list .row.line").dataset.id === "hm251",
+      document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
       { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
     const hLate = await page.evaluate((id) => {
       const list = document.getElementById("history-list");
@@ -4113,7 +4345,7 @@ async function main() {
     // ── a new search starts at the top ────────────────────────────────────
     await page.evaluate(() => renderHistory(false));
     await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100,
+      document.querySelectorAll("#history-list .row.line").length === 100, null,
       { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
     const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
     if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
@@ -4176,7 +4408,7 @@ async function main() {
         const m = document.getElementById("cardmenu");
         return m && m.classList.contains("on") &&
           [...m.querySelectorAll(":scope > button")].some(b => /^dismiss\b/.test(b.textContent.trim()));
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
     } catch (e) {
       fail("a terminated pinned terminal's right-click menu offered no dismiss " +
         "action, so the operator has no way to remove it.");
@@ -4964,7 +5196,7 @@ async function main() {
       window.__attachAttempts = 0;
     });
     // Wait past the capped backoff for a pending retry to fire and open.
-    await page.waitForFunction(() => window.__attachAttempts > 0, { timeout: 20000 });
+    await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: 20000 });
     await page.waitForTimeout(1500);
     const opensAfter = await page.evaluate(() => window.__openTermCount);
     const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
@@ -5202,7 +5434,7 @@ async function main() {
       window.__fakeSolo.postMessage({ type: "solo-claim", task: "s1" });
     });
     // The board heard the claim: the card reads as popped out.
-    await page.waitForFunction(() => poppedOut("s1"), { timeout: 15000 });
+    await page.waitForFunction(() => poppedOut("s1"), null, { timeout: 15000 });
 
     // The window's OWN poll lapses past soloClaimFor without re-claiming, which
     // a reconnect/backoff through a hub restart causes. Simulated by ageing the
@@ -5217,7 +5449,7 @@ async function main() {
     let reheard = false;
     try {
       await page.waitForFunction(
-        () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000),
+        () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000), null,
         { timeout: 15000 });
       reheard = true;
     } catch (e) {}
@@ -5237,7 +5469,7 @@ async function main() {
     await page.evaluate(() => runRefresh());
     let dropped = false;
     try {
-      await page.waitForFunction(() => !poppedOut("s1"), { timeout: 15000 });
+      await page.waitForFunction(() => !poppedOut("s1"), null, { timeout: 15000 });
       dropped = true;
     } catch (e) {}
     if (!dropped) {
@@ -5316,7 +5548,7 @@ async function main() {
         const b = document.getElementById("t-wait");
         return b && !b.hidden && /reconnect/i.test(
           (document.getElementById("t-wait-say") || {}).textContent || "");
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // And the dead-end modal is NOT up while the hub is a moment from
       // answering. That modal is the bug: a transient restart used to pop it.
@@ -5334,7 +5566,7 @@ async function main() {
       // title carries the card's name once soloFetchCard returns.
       soloMode = "ok";
       await solo.waitForFunction(() =>
-        /solo card/.test(document.title), { timeout: 20000 });
+        /solo card/.test(document.title), null, { timeout: 20000 });
 
       // The reconnecting line comes down, and the dead-end modal never appeared.
       const afterRecover = await solo.evaluate(() => {
@@ -5368,7 +5600,7 @@ async function main() {
         const d = document.getElementById("ask");
         return !!(d && d.open &&
           (document.getElementById("ask-title") || {}).textContent === "nothing to attach to");
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
     } catch (e) {
       fail("a genuine 404 did not show the dead-end 'nothing to attach to' modal: " +
         (e && e.message ? e.message : e));
@@ -5398,12 +5630,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const el = document.getElementById("rooms");
         return el && !el.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       await hub.evaluate(() => openRooms());
       await hub.waitForFunction(() => {
         const m = document.getElementById("rooms-menu");
         return m && !m.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // sgg starts disconnected in the open menu, and its placement is recorded
       // so the live update can be proven not to move it. The row is found by its
@@ -5446,7 +5678,7 @@ async function main() {
         });
         return !!(sgg && sgg.querySelector(".dot.live") &&
           !/disconnect/i.test(sgg.textContent));
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // The menu held its placement: only the rows changed under the user.
       const after = await hub.evaluate(() => {
@@ -5471,12 +5703,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const tab = document.querySelector('.tab[data-view="audit"]');
         return tab && !tab.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       await hub.evaluate(() => switchView("audit"));
       await hub.waitForFunction(() => {
         const rows = document.querySelectorAll("#audit-list .aud-row");
         return rows.length >= 2;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       const audit = await hub.evaluate(() => {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         const first = rows[0];
@@ -5522,7 +5754,7 @@ async function main() {
           const rm = r.querySelector(".aud-room");
           return rm && rm.textContent === "sgg";
         });
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not filter to the sgg room."));
 
       // ── the audit pane filters by kind ────────────────────────────────────
@@ -5535,7 +5767,7 @@ async function main() {
         sel.dispatchEvent(new Event("change"));
       });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        document.querySelectorAll("#audit-list .aud-row").length === 4, null,
         { timeout: 15000 }).catch(() => fail(
           "clearing the room filter did not restore the full audit feed."));
       await hub.evaluate(() => {
@@ -5547,7 +5779,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 1 &&
           rows[0].querySelector(".aud-kind").textContent === "hub-started";
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not filter to the hub-started kind."));
 
       // ── a new event arrives live, no reload ───────────────────────────────
@@ -5560,7 +5792,7 @@ async function main() {
         sel.dispatchEvent(new Event("change"));
       });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        document.querySelectorAll("#audit-list .aud-row").length === 4, null,
         { timeout: 15000 }).catch(() => fail(
           "clearing the kind filter did not restore the full audit feed."));
       auditLive = true;
@@ -5569,7 +5801,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 5 &&
           rows[0].querySelector(".aud-kind").textContent === "session-exit";
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not pick up a live event on the `audit` delta."));
 
       // ── a long feed scrolls in its own box, filters stay put ──────────────
@@ -5579,7 +5811,7 @@ async function main() {
       auditMany = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 150,
+        document.querySelectorAll("#audit-list .aud-row").length === 150, null,
         { timeout: 15000 }).catch(() => fail("the audit pane did not draw the long feed."));
       for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
         await hub.setViewportSize(vp);
@@ -5620,7 +5852,7 @@ async function main() {
       auditManyLive = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 151,
+        document.querySelectorAll("#audit-list .aud-row").length === 151, null,
         { timeout: 15000 }).catch(() => fail("the audit pane did not pick up the live line on the long feed."));
       const late = await hub.evaluate((id) => {
         const list = document.getElementById("audit-list");
@@ -5647,197 +5879,10 @@ async function main() {
     }
 
     // ── the board skin follows the room-picker scope ────────────────────────
-    // THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
-    // and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
-    // three different skins back. Then: a save in one scope reaches only that
-    // scope and leaks into no other, switching scope re-applies each
-    // independently, and a room attaching does not clobber the ALL skin. A fresh
-    // context keeps this test's per-scope localStorage out of the others'.
-    // Both rooms live, so all three scopes are pickable.
-    hubMode = true;
-    sggAttached = true;
-    resetSkins();
-    const skinCtx = await browser.newContext();
-    const skin = await skinCtx.newPage();
-    const skinErrors = [];
-    skin.on("pageerror", e => skinErrors.push(String(e)));
-    if (process.env.DEBUG_HEADLESS) {
-      skin.on("console", m => console.error("[skin] " + m.type() + ": " + m.text()));
-    }
-    const dataSkin = () =>
-      skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
-    // scopeTo reloads the board into a scope (null for ALL) and waits for the
-    // skin that scope wears to land.
-    const scopeTo = async (room, want) => {
-      await Promise.all([
-        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(r => pickRoom(r), room)
-      ]);
-      await skin.waitForFunction(w =>
-        document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 });
-    };
-    try {
-      // ALL scope: the hub's own skin, not the alphabetically-first room's.
-      await skin.goto(base, { waitUntil: "domcontentloaded" });
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "noir", { timeout: 15000 });
-
-      // Scope to each room in turn: three scopes, three different skins, at once.
-      // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
-      await scopeTo("alpha", "moss");
-      await scopeTo("sgg", "ember");
-      const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
-      const distinct = new Set(Object.values(held));
-      if (distinct.size !== 3) {
-        fail("the three scopes did not hold three different skins at once: " +
-          JSON.stringify(held));
-      }
-      if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
-        fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
-      }
-
-      // A skin saved from the ALL view lands on the hub (skinFor[""]) and leaves
-      // both rooms alone. A 409 would have made saveSkin revert the paint.
-      await scopeTo(null, "noir");
-      await skin.evaluate(() => saveSkin("vapor"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
-      if (skinFor[""] !== "vapor") {
-        fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
-          JSON.stringify(skinFor[""]) + ", wanted vapor.");
-      }
-      if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
-        fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
-      }
-
-      // A skin saved while scoped to alpha lands on alpha alone, and leaves the
-      // hub's ALL skin and sgg's untouched.
-      await scopeTo("alpha", "moss");
-      await skin.evaluate(() => saveSkin("sandstone"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "sandstone", { timeout: 15000 });
-      if (skinFor.alpha !== "sandstone") {
-        fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
-          JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
-      }
-      if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
-        fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
-      }
-
-      // A skin saved while scoped to sgg lands on sgg alone.
-      await scopeTo("sgg", "ember");
-      await skin.evaluate(() => saveSkin("harbour"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
-      if (skinFor.sgg !== "harbour") {
-        fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
-          JSON.stringify(skinFor.sgg) + ", wanted harbour.");
-      }
-      if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
-        fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
-      }
-
-      // Switching scope re-applies each saved skin independently: ALL is vapor,
-      // alpha is sandstone, sgg is the default harbour (drawn by removing the
-      // attribute), and each is read fresh on its own reload.
-      await scopeTo(null, "vapor");
-      await scopeTo("alpha", "sandstone");
-      await Promise.all([
-        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(() => pickRoom("sgg"))
-      ]);
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
-
-      // Back to ALL: the hub skin is what it was, and a room attaching or
-      // leaving does not change it. This is the bug clint hit on a deploy: a
-      // room connecting swapped his theme to its own skin and its leaving
-      // reverted it, though he never changed scope off ALL.
-      //
-      // To catch it, the answer a re-read WOULD give is moved out from under the
-      // settled skin: skinFor[""] is changed to a different skin, so any re-fetch
-      // of the ALL scope now returns `ember`. A room attaching or detaching must
-      // still leave the applied `vapor` alone, because the skin has settled and
-      // ALL is not the scope of the room that changed. The old code re-read the
-      // skin on every attached-set flip and would repaint to `ember` here.
-      await scopeTo(null, "vapor");
-      const allWas = skinFor[""];
-      skinFor[""] = "ember";
-      // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
-      // its body rather than being coalesced away. Then a room leaves and one
-      // attaches: two changes to the attached set, neither of which is the ALL
-      // scope the operator is on, so the settled skin must not move.
-      await skin.waitForTimeout(2200);
-      sggAttached = false;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await skin.waitForTimeout(2200);
-      sggAttached = true;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await skin.waitForTimeout(500);
-      if ((await dataSkin()) !== "vapor") {
-        fail("a room attaching or leaving clobbered the settled ALL skin: it " +
-          "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
-      }
-      skinFor[""] = allWas;
-      if (skinErrors.length) {
-        fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
-      }
-    } finally {
-      await skin.close();
-      await skinCtx.close();
-      hubMode = false;
-      sggAttached = false;
-      resetSkins();
-    }
+    await skinScopeSection(browser, base);
 
     // ── a persisted skin heals when a room attaches, with no reload ──────────
-    // The board loads against a hub that has no room to borrow settings from
-    // yet, the window right after a hub restart. The ALL-view `/v1/settings`
-    // read is a 409, so the load-time skin read fails and the board is on the
-    // default dark. This is exactly what clint saw: a deploy restarts the hub,
-    // he reloads before a room is back, and the paper skin never paints. When a
-    // room attaches the read succeeds, and the skin must heal there rather than
-    // waiting for another manual reload.
-    hubMode = true;
-    hubHasRoom = false;
-    sggAttached = false;
-    // The hub wears paper, a light skin, which is the one clint set and did not
-    // see paint. resetSkins in the finally puts the default back.
-    skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
-    const healCtx = await browser.newContext();
-    const heal = await healCtx.newPage();
-    const healErrors = [];
-    heal.on("pageerror", e => healErrors.push(String(e)));
-    if (process.env.DEBUG_HEADLESS) {
-      heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
-    }
-    try {
-      await heal.goto(base, { waitUntil: "domcontentloaded" });
-      // No room to borrow from: the load-time read 409s and the board is dark.
-      await heal.waitForTimeout(1500);
-      const dark = await heal.evaluate(() =>
-        document.documentElement.getAttribute("data-skin"));
-      if (dark !== null) {
-        fail("with the hub unable to answer settings, the board should be on the " +
-          "default, but data-skin was " + JSON.stringify(dark));
-      }
-      // Past loadHubRooms' 2s throttle, then a room attaches: the read now
-      // succeeds and the skin heals to the hub's paper without a reload.
-      await heal.waitForTimeout(2200);
-      hubHasRoom = true;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await heal.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "paper", { timeout: 15000 });
-      if (healErrors.length) {
-        fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
-      }
-    } finally {
-      await heal.close();
-      await healCtx.close();
-      hubMode = false;
-      hubHasRoom = true;
-      resetSkins();
-    }
+    await skinHealSection(browser, base);
 
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read
@@ -6139,8 +6184,11 @@ async function main() {
     await copySelectSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────
     await busyGuardSection(browser, base);
+    // ── keep-alive chips, the card switch, and the break-even toast ────────
+    await keepaliveSection(browser, base);
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
+    fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    if (process.env.DEBUG_HEADLESS) {
       try {
         const diag = await page.evaluate(() => ({
           bodyClass: document.body.className,
