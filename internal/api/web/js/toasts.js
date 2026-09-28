@@ -367,7 +367,6 @@ function toast(title, body, goTo, key, taskFor) {
   // that waited its turn still gets its whole life.
   let timer = 0, end = 0, left = life;
   let hovered = false;
-  el.hovered = () => hovered;
   const arm = ms => {
     clearTimeout(timer);
     end = Date.now() + ms;
@@ -394,7 +393,6 @@ function toast(title, body, goTo, key, taskFor) {
   el.addEventListener("mouseleave", () => {
     hovered = false;
     if (el.born) arm(Math.max(left, 2000));
-    makeToastRoom();
   });
 
   // Never let the stack grow past what fits on screen. Three, not four: the
@@ -410,17 +408,18 @@ function toast(title, body, goTo, key, taskFor) {
   // are the only place to act on what they say, so the oldest ordinary toast
   // goes instead.
   //
-  // A FULL STACK QUEUES, IT DOES NOT EVICT ON THE SPOT. Taking the oldest down
-  // the moment a fourth arrived made a burst of alerts a blink: each one gone as
-  // the next came in. The newcomer waits, and the oldest makes room once it has
-  // been up long enough to read. See `makeToastRoom`.
+  // A FULL STACK QUEUES, IT DOES NOT EVICT. Taking the oldest down the moment a
+  // fourth arrived made a burst of alerts a blink: each one gone as the next
+  // came in. The newcomer waits for a toast to leave, and every one is in the
+  // toast log meanwhile.
   //
   // More up than the cap allows is a window that got narrower, a desktop stack
   // on a phone-sized screen. That excess goes at once, oldest first, as it did.
   for (let s = shownToasts(); s.length > toastCap(); s = shownToasts()) s[0].remove();
+  // Room left by a toast taken down some other way goes to the ones waiting.
+  showQueuedToasts();
   if (shownToasts().length >= toastCap()) {
     toastQueue.push(el);
-    makeToastRoom();
   } else {
     el.show();
   }
@@ -432,9 +431,6 @@ function toast(title, body, goTo, key, taskFor) {
 
 // Toasts raised while the stack was full, oldest first.
 const toastQueue = [];
-// How long a toast is up before a queued one may take its place.
-const TOAST_READ_MS = 6000;
-let toastRoomTimer = 0;
 
 function toastCap() { return innerWidth <= PHONE ? 1 : 3; }
 
@@ -445,27 +441,11 @@ function shownToasts() {
     !c.classList.contains("sticky") && !c.classList.contains("leaving")) : [];
 }
 
+// Into whatever room there is, oldest waiting first.
 function showQueuedToasts() {
+  if (!toastQueue.length) return;
   while (toastQueue.length && shownToasts().length < toastCap()) toastQueue.shift().show();
   raiseToasts();
-  makeToastRoom();
-}
-
-// With toasts waiting, the oldest one that has been read long enough and is not
-// under the pointer goes. Otherwise this looks again when the next one will be.
-function makeToastRoom() {
-  clearTimeout(toastRoomTimer);
-  if (!toastQueue.length) return;
-  if (shownToasts().length < toastCap()) { showQueuedToasts(); return; }
-  const now = Date.now();
-  let soonest = Infinity;
-  for (const el of shownToasts()) {
-    if (!el.born || el.hovered()) continue;
-    const due = el.born + TOAST_READ_MS;
-    if (due <= now) { el.dismiss(); return; }
-    soonest = Math.min(soonest, due);
-  }
-  if (soonest < Infinity) toastRoomTimer = setTimeout(makeToastRoom, soonest - now);
 }
 
 // Whether a pending request's own row is in front of you right now.
