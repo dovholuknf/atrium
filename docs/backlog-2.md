@@ -57,7 +57,10 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 48 | `atrium_launch` takes a model and a thinking effort | feature | sa48, started 2026-09-28 |
 | 49 | The orchestrator can appear on every room | design | not started |
 | 50 | Views of agents, beyond groups | design | not started |
-| 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | sa51, started 2026-09-28 |
+| 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
+| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
+| 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 
 ------------
 
@@ -1105,7 +1108,29 @@ Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 4
 match on `claude/main`: sa06 reconcile, sa07 board-fixes-2, sa10 launch-garble, sa11 notif-tray and sa12
 terminal-suite. Compare each with `claude/main` and report what, if anything, is missing.
 
-**Status, 2026-09-28:** sa51, started.
+**Status, 2026-09-28: DONE.** sa51 found all five safe, and they were deleted 2026-09-28. Its review of their old
+HANDOFF files raised items 52 to 54. Copies of those files are in `D:/tmp/handoffs`.
+
+## 52. A pinned strip with cards from two rooms orders only one room (bug)
+
+Raised 2026-09-28 from sa51's review of the old HANDOFF files. `POST /v1/tasks/pin-order` is one call and names no
+room, so a pinned strip that holds cards from two rooms saves the order of only one of them.
+
+Also, unverified and a design question for clint: in any sort other than manual, the board has no way to reorder
+pins.
+
+## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
+
+Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work out the new viewport while holding
+`r.mu` and apply it after letting go, so two resizes close together could apply in the wrong order. Never
+reproduced. See `D:/tmp/handoffs/terminal-suite-HANDOFF.md`.
+
+## 54. Terminal test suite part 2: `screen.go` against xterm.js (feature)
+
+Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Part 2 was planned and never started: a
+differential test that feeds the same trace fixtures to `screen.go` and to xterm.js and compares the screens, run
+with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
+tools are in `D:/tmp/handoffs/terminal-suite-tw`.
 
 
 ------------
