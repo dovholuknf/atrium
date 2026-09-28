@@ -134,15 +134,17 @@ linux_install() {
 
     systemctl --user daemon-reload
 
-    # LINGER FIRST, for the same reason the package postinstall does it first:
-    # it starts the user manager if it is not up, and everything after this
-    # needs that manager. ATRIUM_NO_LINGER=1 opts out, and then atrium stops
-    # when you log out.
-    if [ "${ATRIUM_NO_LINGER:-}" = "1" ]; then
-        say "ATRIUM_NO_LINGER=1: atrium will stop when you log out."
-    else
+    # LINGER IS OFF UNLESS ASKED FOR, clint's call (2026-09-28): a daemon that
+    # keeps running after you log out is a decision about your machine, so
+    # ATRIUM_LINGER=1 opts in and nothing else does. When asked for it goes
+    # first, because it starts the user manager if it is not up and
+    # everything after this needs that manager. The package postinstall makes
+    # its own choice and is not changed by this.
+    if [ "${ATRIUM_LINGER:-}" = "1" ]; then
         loginctl enable-linger "$USER" 2>/dev/null || \
             say "could not enable lingering (continuing). atrium will stop at logout."
+    else
+        say "lingering is off: atrium stops when you log out. ATRIUM_LINGER=1 keeps it running."
     fi
 
     # `enable --now` is idempotent in both halves: enabling an enabled unit

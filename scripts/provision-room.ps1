@@ -2,13 +2,29 @@
 #
 #   pwsh -File scripts\provision-room.ps1 user@host
 #   pwsh -File scripts\provision-room.ps1 user@host -Name lab1 -Runners claude,codex
+#   pwsh -File scripts\provision-room.ps1 user@host -Install claude
 #   pwsh -File scripts\provision-room.ps1 user@host -Remove
 #
 # Run it on the machine that runs the hub. It finds the hub from the running
 # `atrium run` process, detects the remote OS and arch, puts a matching atrium in
-# the remote home folder, joins that machine's room to the hub, installs
-# autostart as that user, and checks the runners asked for. Run it again and it
-# changes only what is not already right. `-Remove` undoes what it did.
+# the remote home folder, joins that machine's room to the hub over whatever the
+# hub links over (direct, ziti or zrok), starts the room, and checks the runners
+# asked for. Run it again and it changes only what is not already right.
+# `-Remove` undoes what it did.
+#
+# ONE ROOM PER MACHINE. A machine that is already a room, of this hub or any
+# other, or that already runs an atrium this script did not put there, is
+# refused. `-Remove` first.
+#
+# WHERE THE BINARY COMES FROM. By default the release on GitHub
+# (dovholuknf/atrium) that matches the remote, checked against the release's
+# checksums.txt. There are no releases yet, so today that fails and says so.
+# `-FromCheckout` builds one from this checkout instead, which is the dev path.
+#
+# NO AUTOSTART BY DEFAULT. The room is started in the background with
+# `atrium room --detach` and runs until the machine restarts or the user logs
+# out. `-Autostart` installs the logon task, systemd user unit or LaunchAgent as
+# well. `-Linger` (Linux, with -Autostart) keeps it running after logout.
 #
 # ONE LINE PER STEP, for a person and for the board dialog that will call this
 # later (backlog-2 item 46, stage 2). Every step line is
@@ -21,26 +37,35 @@
 #
 # EXIT CODES
 #   0  provisioned, attached, every runner starts
-#   1  a local problem: bad arguments, no hub found, the build failed
+#   1  a local problem: bad arguments, no hub found, no release, the build failed
 #   2  ssh could not reach the target, or its OS is not one this covers
-#   3  a remote install step failed: binary, scripts, autostart or start
+#   3  a remote install step failed: binary, autostart or start
 #   4  the join failed, or the room did not attach to the hub
-#   5  installed and attached, but a runner asked for is missing or does not start
-#   6  refused: the remote already has an atrium this script did not install
+#   5  installed and attached, but a runner is missing, does not start, or would not install
+#   6  refused: the remote is already a room, or runs an atrium this script did not install
+#   7  the overlay needs a credential only the operator can give: see the fail line
 #
-# CREDENTIALS FOLLOW THE OVERLAYS RULE. This names the ssh command and holds no
-# key: ssh uses whatever the operator's own ssh config and agent say. It runs ssh
-# with BatchMode, so a target that wants a password fails at once rather than
-# waiting at a prompt nobody can see. The one secret it handles is the room's
-# single-use join string, minted for this run, good for an hour, and spent by the
-# join. Nothing stores it.
+# CREDENTIALS FOLLOW THE OVERLAYS RULE: atrium names the command that holds a
+# credential and never holds somebody else's.
+#   ssh    this names the ssh command and holds no key. ssh runs with BatchMode, so
+#          a target that wants a password fails at once rather than at a prompt.
+#   direct the room's single-use join string, minted for this run, good for an hour.
+#   ziti   an enrollment JWT for the remote, from the operator's own network: a file
+#          (-ZitiJwt) or a command the operator names (-ZitiJwtCommand). It goes to
+#          the remote, is enrolled there with the key made there, and is deleted.
+#   zrok   the remote needs its own `zrok2 enable`, which takes the operator's
+#          account token. This never carries that token. It says what to run.
 #
 # WHAT GOES WHERE ON THE REMOTE
-#   Windows  ~\.atrium\bin\atrium.exe, a logon task named atrium (RunLevel Limited)
-#   Linux    ~/.local/bin/atrium, a systemd user unit atrium.service
-#   macOS    ~/.local/bin/atrium, a LaunchAgent io.github.dovholuknf.atrium
-#   all      ~/.atrium/room (the room's key and certificate), ~/.atrium/atrium.db,
-#            ~/.atrium/provision (the service scripts and manifest.json)
+#   Windows  ~\.atrium\bin\atrium.exe
+#   Linux    ~/.local/bin/atrium
+#   macOS    ~/.local/bin/atrium
+#   all      ~/.atrium/room (key, certificate or ziti identity, room.log),
+#            ~/.atrium/atrium.db, ~/.atrium/provision/manifest.json
+#   -Autostart adds a logon task `atrium` (RunLevel Limited), a systemd user unit
+#            atrium.service, or a LaunchAgent io.github.dovholuknf.atrium, and
+#            their scripts under ~/.atrium/provision
+#   -Install  adds the runner where its own installer puts it, usually ~/.local
 #
 # The manifest records what was already there before the first run, so -Remove
 # deletes only what this script created and leaves anything older alone.
@@ -52,10 +77,28 @@ param(
     [string] $Name,
     # The runners that must be present on the remote and answer --version.
     [string[]] $Runners = @('claude'),
+    # Runners to fetch from their vendor and install on the remote, if missing.
+    # Opt in only: see the trust warning it prints. Knows claude and codex.
+    [string[]] $Install = @(),
     # Undo everything a previous run did, on the remote and on the hub.
     [switch] $Remove,
-    # Take over an atrium on the remote that this script did not install.
-    [switch] $Force,
+
+    # Build the binary from this checkout instead of fetching a release.
+    [switch] $FromCheckout,
+    # The release to fetch. Default: the latest.
+    [string] $Version,
+    # A prebuilt atrium for the remote's OS and arch, instead of either.
+    [string] $Binary,
+
+    # Install autostart as well as starting the room now.
+    [switch] $Autostart,
+    # Linux with -Autostart: turn on lingering so the room survives logout.
+    [switch] $Linger,
+
+    # Ziti hubs: the remote's enrollment JWT, as a file, or as a command that
+    # prints one. `{name}` in the command becomes the room's name.
+    [string] $ZitiJwt,
+    [string] $ZitiJwtCommand,
 
     # The ssh and scp commands and any extra options for both (-i, -J, -o ...).
     # A port goes as `-o Port=2222`, because scp reads -p as something else.
@@ -63,12 +106,8 @@ param(
     [string] $Scp = 'scp',
     [string[]] $SshOption = @(),
 
-    # A prebuilt atrium for the remote's OS and arch. Default: built from this
-    # checkout into build.claude/provision/<os>_<arch>/. It must know
-    # `room join --no-run`.
-    [string] $Binary,
-
-    # The hub. Default: read from the running `atrium run` process.
+    # The hub. Default: read from the running `atrium run` process. -HubAddr
+    # picks one hub when more than one is running.
     [string] $HubExe,
     [string] $HubDir,
     [string] $Link,
@@ -82,6 +121,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = Split-Path -Parent $PSScriptRoot
+$inCheckout = Test-Path (Join-Path $repo 'go.mod')
+$work = if ($inCheckout) { Join-Path $repo 'build.claude/provision' } else { Join-Path ([IO.Path]::GetTempPath()) 'atrium-provision' }
+
+# `pwsh -File` hands `-Runners claude,codex` over as one string, so commas split.
+function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+$Runners = Split-List $Runners
+$Install = Split-List $Install
 
 # ── output ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +155,7 @@ function Fail {
 }
 
 if (-not $Target) {
-    Write-Host 'usage: provision-room.ps1 <user@host> [-Name room] [-Runners claude,codex] [-Remove]'
+    Write-Host 'usage: provision-room.ps1 <user@host> [-Name room] [-Runners claude,codex] [-Install claude] [-Remove]'
     exit 1
 }
 
@@ -131,7 +177,7 @@ if (-not $PSBoundParameters.ContainsKey('Scp')) {
 }
 
 # Remote results come back as key=value lines, so they are read the same way
-# on every OS.
+# on every OS. A key that repeats keeps its last value.
 function ConvertFrom-KeyValue {
     param($lines)
     $h = @{}
@@ -152,14 +198,19 @@ function ConvertFrom-KeyValue {
 # or Windows PowerShell writes CLIXML progress records to a redirected stderr.
 #
 # UNIX GETS THE SCRIPT ON STDIN to `sh -s`, so nothing in it passes through the
-# login shell's quoting either.
+# login shell's quoting either, and nothing in it is on a command line.
 function Invoke-Remote {
     param([string] $script)
     if ($script:remoteOS -eq 'windows') {
         $full = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n" +
             "`$A = Join-Path `$HOME '.atrium'; `$Bin = Join-Path `$A 'bin\atrium.exe'`n" +
             "`$P = Join-Path `$A 'provision'; `$M = Join-Path `$P 'manifest.json'`n" +
-            "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" + $script
+            "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" +
+            # PATH FROM THE REGISTRY, so a Path entry this run added is seen by the
+            # room it starts and the runner check, whatever the ssh server's
+            # session inherited.
+            "`$env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), " +
+            "[Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { `$_ }) -join ';'`n" + $script
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
         if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
         $out = & $Ssh @sshBase $Target "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
@@ -169,7 +220,9 @@ function Invoke-Remote {
             # Where the room writes its address and lastdb.json. internal/daemon/whereami.go.
             "if [ `"`$(uname -s)`" = Darwin ]; then L=`"`$HOME/Library/Caches/atrium`"; " +
             "else L=`"`${XDG_RUNTIME_DIR:-`${XDG_STATE_HOME:-`$HOME/.local/state}}/atrium`"; fi`n" + $script
-        $full = $full -replace "`r", ''
+        # A COMMENT LAST, because PowerShell ends what it pipes to a native
+        # command with CRLF, and `fi` followed by a carriage return is not `fi`.
+        $full = ($full -replace "`r", '') + "`n#"
         $out = $full | & $Ssh @sshBase $Target 'sh -s' 2>&1
     }
     [pscustomobject]@{ Out = @($out | ForEach-Object { "$_" }); Code = $LASTEXITCODE }
@@ -181,39 +234,45 @@ function Copy-ToRemote {
     [pscustomobject]@{ Out = @($out | ForEach-Object { "$_" }); Code = $LASTEXITCODE }
 }
 
+# Quote-Ps and Quote-Sh put a value inside a remote script as a literal.
+function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
+
 # ── the hub, which is this machine ──────────────────────────────────────────
 
 # Find-Hub reads the running hub's own command line, so the join string names the
 # address rooms really dial and the store the hub really uses. Any of it can be
 # overridden by a parameter.
 function Find-Hub {
-    $cmd = $null
-    $exe = $null
+    $lines = @()
     if ($IsWindows -or $env:OS -eq 'Windows_NT') {
-        $p = Get-CimInstance Win32_Process -Filter "Name='atrium.exe'" |
-            Where-Object { $_.CommandLine -match '\s+run(\s|$)' } | Select-Object -First 1
-        if ($p) { $cmd = $p.CommandLine; $exe = $p.ExecutablePath }
+        $lines = @(Get-CimInstance Win32_Process -Filter "Name='atrium.exe'" |
+            Where-Object { $_.CommandLine -match '\s+run(\s|$)' } |
+            ForEach-Object { [pscustomobject]@{ Cmd = $_.CommandLine; Exe = $_.ExecutablePath } })
     } else {
-        $line = & ps -eo args 2>$null | Where-Object { $_ -match '(^|/)atrium\s+run(\s|$)' } |
-            Select-Object -First 1
-        if ($line) { $cmd = $line; $exe = ($line -split '\s+')[0] }
+        $lines = @(& ps -eo args 2>$null | Where-Object { $_ -match '(^|/)atrium\s+run(\s|$)' } |
+            ForEach-Object { [pscustomobject]@{ Cmd = $_; Exe = ($_ -split '\s+')[0] } })
     }
     $flag = {
-        param($n)
+        param($cmd, $n)
         # A quoted value may hold spaces. An unquoted one ends at the first.
         if ($cmd -and $cmd -match "--$n[ =](?:`"([^`"]*)`"|(\S+))") {
             if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
         } else { $null }
     }
-    [pscustomobject]@{
-        Found     = [bool] $cmd
-        Exe       = $exe
-        Dir       = & $flag 'atrium-dir'
-        Link      = & $flag 'link'
-        Advertise = & $flag 'link-advertise'
-        Addr      = & $flag 'addr'
-        Transport = & $flag 'transport'
-    }
+    $hubs = @($lines | ForEach-Object {
+        [pscustomobject]@{
+            Exe       = $_.Exe
+            Dir       = & $flag $_.Cmd 'atrium-dir'
+            Link      = & $flag $_.Cmd 'link'
+            Advertise = & $flag $_.Cmd 'link-advertise'
+            Addr      = & $flag $_.Cmd 'addr'
+            Transport = & $flag $_.Cmd 'transport'
+            Service   = & $flag $_.Cmd 'atrium-service'
+        }
+    })
+    if ($HubAddr) { $hubs = @($hubs | Where-Object { $_.Addr -eq $HubAddr }) }
+    $hubs | Select-Object -First 1
 }
 
 function Invoke-Hub {
@@ -251,7 +310,7 @@ if ($probeCode -eq 0 -and $probeText -match '^(Linux|Darwin)\s+(\S+)') {
     $os = if ($Matches[1] -eq 'Linux') { 'linux' } else { 'darwin' }
     $arch = $Matches[2]
     $script:remoteOS = $os
-    $hn = Invoke-Remote 'hostname'
+    $hn = Invoke-Remote 'uname -n'
     $remoteHost = ($hn.Out | Select-Object -First 1)
 } else {
     $script:remoteOS = 'windows'
@@ -276,33 +335,45 @@ Step 'os' 'ok' "$os $goarch $remoteHost"
 # ── 2. the hub ──────────────────────────────────────────────────────────────
 
 $hub = Find-Hub
-if (-not $HubExe)        { $HubExe = if ($hub.Exe) { $hub.Exe } else { (Get-Command atrium -ErrorAction SilentlyContinue).Source } }
-if (-not $HubDir)        { $HubDir = $hub.Dir }
-if (-not $Link)          { $Link = if ($hub.Link) { $hub.Link } else { '127.0.0.1:7779' } }
-if (-not $LinkAdvertise) { $LinkAdvertise = $hub.Advertise }
-if (-not $HubAddr)       { $HubAddr = if ($hub.Addr) { $hub.Addr } else { '127.0.0.1:7778' } }
+if (-not $hub) { $hub = [pscustomobject]@{} }
+if (-not $HubExe) { $HubExe = if ($hub.Exe) { $hub.Exe } else { (Get-Command atrium -ErrorAction SilentlyContinue).Source } }
+if (-not $HubDir) { $HubDir = $hub.Dir }
+if (-not $HubAddr) { $HubAddr = if ($hub.Addr) { $hub.Addr } else { '127.0.0.1:7778' } }
 if (-not $HubExe) { Fail 'hub' 1 'no running hub and no atrium on PATH. pass -HubExe' }
-if ($hub.Transport -and $hub.Transport -ne 'direct') {
-    Fail 'hub' 1 "the hub links over $($hub.Transport). this script joins direct rooms only so far"
-}
-if (-not $LinkAdvertise) {
-    if ($Link -match '^(127\.|localhost|\[::1\])') {
-        Fail 'hub' 1 "the hub's link is on loopback ($Link), which no other machine can dial. start it with --link and --link-advertise"
+$transport = if ($hub.Transport) { $hub.Transport } else { 'direct' }
+$zitiService = if ($hub.Service) { $hub.Service } else { 'atrium-hub' }
+if (-not $Link) { $Link = if ($hub.Link) { $hub.Link } else { '127.0.0.1:7779' } }
+if (-not $LinkAdvertise) { $LinkAdvertise = $hub.Advertise }
+
+switch ($transport) {
+    'direct' {
+        if (-not $LinkAdvertise) {
+            if ($Link -match '^(127\.|localhost|\[::1\])') {
+                Fail 'hub' 1 "the hub's link is on loopback ($Link), which no other machine can dial. start it with --link and --link-advertise"
+            }
+            $LinkAdvertise = $Link
+        }
+        $hubId = "direct:$LinkAdvertise"
+        $says = "direct, rooms dial $LinkAdvertise"
     }
-    $LinkAdvertise = $Link
+    'ziti' { $hubId = "ziti:$zitiService"; $says = "ziti, rooms dial the service $zitiService" }
+    'zrok' { $hubId = 'zrok'; $says = 'zrok, rooms dial its private share' }
+    default { Fail 'hub' 1 "the hub links over $transport, which this script does not know" }
 }
+# zrok takes most of a minute to let a new access dial a share, measured
+# 2026-09-28, so its default wait is doubled.
+if ($transport -eq 'zrok' -and -not $PSBoundParameters.ContainsKey('AttachTimeout')) { $AttachTimeout = 120 }
 try {
     $h = Invoke-RestMethod -Uri "http://$HubAddr/_hub/health" -TimeoutSec 5
-    Step 'hub' 'ok' "rooms dial $LinkAdvertise, $($h.rooms) attached now"
+    Step 'hub' 'ok' "$says, $($h.rooms) attached now"
 } catch {
-    Step 'hub' 'warn' "rooms dial $LinkAdvertise, but http://$HubAddr/_hub/health did not answer"
+    Step 'hub' 'warn' "$says, but http://$HubAddr/_hub/health did not answer"
 }
 
 # ── 3. what the remote already has ──────────────────────────────────────────
 
 $stateScript = if ($os -eq 'windows') {
 @'
-"home=$HOME"
 "atriumdir=$(Test-Path $A)"
 "bindir=$(Test-Path (Split-Path -Parent $Bin))"
 "locdir=$(Test-Path $L)"
@@ -311,15 +382,20 @@ if (Test-Path $Bin) { "binsha=$((Get-FileHash $Bin -Algorithm SHA256).Hash.ToLow
 "db=$(Test-Path (Join-Path $A 'atrium.db'))"
 "roomdir=$(Test-Path (Join-Path $A 'room'))"
 $rj = Join-Path $A 'room\room.json'
-if (Test-Path $rj) { $j = Get-Content $rj -Raw | ConvertFrom-Json; "joinedroom=$($j.room)"; "joinedhub=$($j.hub)" }
+if (Test-Path $rj) {
+    $j = Get-Content $rj -Raw | ConvertFrom-Json
+    "joinedroom=$($j.room)"; "joinedhub=$($j.hub)"; "joinedtransport=$($j.transport)"; "joinedservice=$($j.service)"
+}
 $t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
 if ($t) { "service=$($t.Actions[0].Execute) $($t.Actions[0].Arguments)" }
 if (Test-Path $M) { "manifest=$((Get-Content $M -Raw) -replace '\r?\n', ' ')" }
-try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 3; "up=True" } catch { "up=False" }
+"zrokenv=$(Test-Path (Join-Path $HOME '.zrok2\environment.json'))"
+foreach ($port in 7781, 7778) {
+    try { $null = Invoke-RestMethod "http://127.0.0.1:$port/v1/health" -TimeoutSec 3; "up$port=True" } catch { "up$port=False" }
+}
 '@
 } else {
 @'
-echo "home=$HOME"
 tf() { if [ -e "$1" ]; then echo True; else echo False; fi; }
 echo "atriumdir=$(tf "$A")"
 echo "bindir=$(tf "$(dirname "$Bin")")"
@@ -331,28 +407,52 @@ if [ -f "$Bin" ]; then
 fi
 echo "db=$(tf "$A/atrium.db")"
 echo "roomdir=$(tf "$A/room")"
-if [ -f "$A/room/room.json" ]; then
-  echo "joinedroom=$(sed -n 's/.*"room": *"\([^"]*\)".*/\1/p' "$A/room/room.json")"
-  echo "joinedhub=$(sed -n 's/.*"hub": *"\([^"]*\)".*/\1/p' "$A/room/room.json")"
+rj="$A/room/room.json"
+if [ -f "$rj" ]; then
+  for k in room hub transport service; do
+    v=$(sed -n 's/.*"'"$k"'": *"\([^"]*\)".*/\1/p' "$rj")
+    echo "joined$k=$v"
+  done
 fi
 u="$HOME/.config/systemd/user/atrium.service"
 p="$HOME/Library/LaunchAgents/io.github.dovholuknf.atrium.plist"
 if [ -f "$u" ]; then echo "service=$(grep '^ExecStart=' "$u")"; fi
-if [ -f "$p" ]; then echo "service=$(grep -A0 'exec ' "$p" | head -1)"; fi
+if [ -f "$p" ]; then echo "service=$(grep 'exec ' "$p" | head -1)"; fi
 if [ -f "$M" ]; then echo "manifest=$(tr '\n' ' ' < "$M")"; fi
-if [ "$(uname -s)" = Linux ]; then
-  if systemctl --user is-active --quiet atrium 2>/dev/null; then echo up=True; else echo up=False; fi
-else
-  if launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1; then echo up=True; else echo up=False; fi
-fi
+echo "zrokenv=$(tf "$HOME/.zrok2/environment.json")"
+for port in 7781 7778; do
+  if command -v curl >/dev/null 2>&1 && curl -fsS -m 3 "http://127.0.0.1:$port/v1/health" >/dev/null 2>&1; then
+    echo "up$port=True"; else echo "up$port=False"; fi
+done
 '@
 }
 $st = Invoke-Remote $stateScript
 if ($st.Code -ne 0) { Fail 'state' 3 'could not read what the remote has' $st.Out }
 $state = ConvertFrom-KeyValue $st.Out
+$manifest = if ($state.manifest) { $state.manifest | ConvertFrom-Json } else { $null }
 # What the manifest records as already there before the first run.
 $preKeys = @('atriumdir', 'bindir', 'bin', 'db', 'roomdir', 'locdir', 'service')
-$manifest = if ($state.manifest) { $state.manifest | ConvertFrom-Json } else { $null }
+
+# What the remote's room.json says it joined, in the same form as $hubId.
+$joinedId = $null
+if ($state.joinedroom) {
+    $jt = if ($state.joinedtransport) { $state.joinedtransport } else { 'direct' }
+    $joinedId = switch ($jt) { 'direct' { "direct:$($state.joinedhub)" } 'ziti' { "ziti:$($state.joinedservice)" } default { $jt } }
+}
+
+# Save-Manifest writes the manifest as it now stands, and makes the folders
+# every later step writes into.
+function Save-Manifest {
+    $json = $script:manifest | ConvertTo-Json -Compress -Depth 5
+    $s = if ($os -eq 'windows') {
+        "New-Item -ItemType Directory -Force -Path (Split-Path -Parent `$Bin), `$P | Out-Null`n" +
+        "[IO.File]::WriteAllText(`$M, $(Quote-Ps $json))"
+    } else {
+        "mkdir -p `"`$(dirname `"`$Bin`")`" `"`$P`"`ncat > `"`$M`" <<'EOF'`n$json`nEOF"
+    }
+    $r = Invoke-Remote $s
+    if ($r.Code -ne 0) { Fail 'state' 3 'could not write the manifest' $r.Out }
+}
 
 # ── -Remove ─────────────────────────────────────────────────────────────────
 
@@ -362,17 +462,36 @@ if ($Remove) {
         Finish 0
     }
     $room = if ($Name) { $Name } else { $manifest.name }
+    # THE HUB IT JOINED, NOT JUST THE FIRST ONE FOUND, checked before anything
+    # is removed. With two hubs running the wrong one could have a room of the
+    # same name, and the right one would keep a row nobody can clear.
+    if ($manifest.hub -and $manifest.hub -ne $hubId) {
+        Fail 'hub' 1 "$room is a room of $($manifest.hub), and the hub found is $hubId. rerun with -HubAddr for that hub"
+    }
     Step 'state' 'ok' "provisioned as $room"
+
     # WHAT WAS THERE BEFORE IS KEPT. A flag the manifest does not have, from an
     # older run, reads as "was there", so the doubt falls on keeping.
     $pre = $manifest.pre
     $was = @{}
     foreach ($k in $preKeys) { $was[$k] = if ($null -eq $pre.$k) { $true } else { [bool] $pre.$k } }
+    # A manifest from before autostart was optional had it on.
+    $hadAutostart = if ($null -eq $manifest.autostart) { $true } else { [bool] $manifest.autostart }
+    $installed = @($manifest.installed | Where-Object { $_ })
 
     $rmScript = if ($os -eq 'windows') {
-        (($preKeys | ForEach-Object { "`$pre_$_ = `$$($was[$_])" }) -join "`n") + "`n" + @'
+        (($preKeys | ForEach-Object { "`$pre_$_ = `$$($was[$_])" }) -join "`n") + "`n" +
+        "`$auto = `$$hadAutostart`n" +
+        "`$installed = @($((@($installed | ForEach-Object { Quote-Ps $_ })) -join ', '))`n" +
+        "`$pathadded = $(Quote-Ps "$($manifest.pathadded)")`n" + @'
+if ($pathadded -eq 'registry') {
+    $d = Join-Path $HOME '.local\bin'
+    $cur = [Environment]::GetEnvironmentVariable('Path', 'User')
+    [Environment]::SetEnvironmentVariable('Path', ((@($cur -split ';') | Where-Object { $_ -and $_ -ne $d }) -join ';'), 'User')
+    "path=removed ~\.local\bin from the user's Path"
+}
 if (Test-Path $Bin) { try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {} }
-if (-not $pre_service -and (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) {
+if ($auto -and -not $pre_service -and (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) {
     Stop-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName atrium -Confirm:$false
     "service=removed"
@@ -381,6 +500,9 @@ $deadline = (Get-Date).AddSeconds(20)
 while ((Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
 Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin | Stop-Process -Force
 Start-Sleep -Milliseconds 500
+foreach ($i in $installed) {
+    if ($i.StartsWith($HOME) -and (Test-Path -LiteralPath $i)) { Remove-Item -LiteralPath $i -Recurse -Force; "runner=removed $i" }
+}
 if (-not $pre_locdir) { Remove-Item -LiteralPath $L -Recurse -Force -ErrorAction SilentlyContinue }
 if (-not $pre_atriumdir) { Remove-Item -LiteralPath $A -Recurse -Force; "files=removed $A" }
 else {
@@ -394,12 +516,30 @@ else {
 }
 '@
     } else {
-        (($preKeys | ForEach-Object { "pre_$_=$($was[$_])" }) -join "`n") + "`n" + @'
+        (($preKeys | ForEach-Object { "pre_$_=$($was[$_])" }) -join "`n") + "`n" +
+        "auto=$hadAutostart`n" +
+        "installed=$(Quote-Sh (($installed) -join "`n"))`n" +
+        "pathadded=$(Quote-Sh "$($manifest.pathadded)")`n" + @'
+case "$pathadded" in "$HOME"/*)
+  if [ -f "$pathadded" ]; then
+    grep -v '# added by atrium provision-room$' "$pathadded" > "$pathadded.atrium-tmp" || true
+    cat "$pathadded.atrium-tmp" > "$pathadded"; rm -f "$pathadded.atrium-tmp"
+    # A profile holding nothing else was made by the line this added.
+    if [ -z "$(tr -d ' \t\n' < "$pathadded")" ]; then rm -f "$pathadded"; fi
+    echo "path=removed the line this added to $pathadded"
+  fi;;
+esac
 if [ -x "$Bin" ]; then "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1 || true; fi
-if [ "$pre_service" = False ] && [ -f "$P/scripts/atrium-service.sh" ]; then
+if [ "$auto" = True ] && [ "$pre_service" = False ] && [ -f "$P/scripts/atrium-service.sh" ]; then
   ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room bash "$P/scripts/atrium-service.sh" uninstall >/dev/null 2>&1 || true
   echo "service=removed"
 fi
+n=0
+while pgrep -f "$Bin room" >/dev/null 2>&1 && [ $n -lt 40 ]; do sleep 0.5; n=$((n+1)); done
+pkill -9 -f "$Bin room" 2>/dev/null || true
+printf '%s\n' "$installed" | while IFS= read -r i; do
+  case "$i" in "$HOME"/*) if [ -e "$i" ] || [ -L "$i" ]; then rm -rf "$i"; echo "runner=removed $i"; fi;; esac
+done
 if [ "$pre_locdir" = False ]; then rm -rf "$L"; fi
 if [ "$pre_atriumdir" = False ]; then rm -rf "$A"; echo "files=removed $A"
 else
@@ -415,7 +555,12 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     $rm = Invoke-Remote $rmScript
     if ($rm.Code -ne 0) { Fail 'remove' 3 'the remote clean-up failed' $rm.Out }
     $kv = ConvertFrom-KeyValue $rm.Out
-    if ($kv.service) { Step 'autostart' 'done' 'removed' } else { Step 'autostart' 'skip' 'it was there before this script' }
+    if ($kv.service) { Step 'autostart' 'done' 'removed' }
+    elseif ($hadAutostart) { Step 'autostart' 'skip' 'it was there before this script' }
+    else { Step 'autostart' 'skip' 'none was installed' }
+    $gone = @($rm.Out | Where-Object { $_ -like 'runner=removed *' } | ForEach-Object { $_.Substring(15) })
+    if ($gone) { Step 'runners' 'done' "removed $($gone -join ', ')" }
+    if ($kv.path) { Step 'path' 'done' ($kv.path -replace '^removed', 'removed') }
     Step 'files' 'done' $kv.files
 
     # A ROOM HEARD FROM IN THE LAST TWENTY SECONDS IS NOT REMOVED, even forced,
@@ -432,61 +577,127 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     } else {
         Step 'hub' 'skip' "the hub has no room called $room"
     }
+    # THE NETWORK'S HALF IS THE OPERATOR'S, the same way it was given.
+    if ($manifest.transport -eq 'ziti') {
+        Step 'overlay' 'warn' "the ziti identity for $room is still on your network. delete it there, for example: ziti edge delete identity $room"
+    }
     Finish 0
 }
 
-# ── 4. the room's name, and whether the remote belongs to someone else ───────
+# ── 4. one room per machine ─────────────────────────────────────────────────
 
 if (-not $Name) {
     $Name = if ($manifest) { $manifest.name } else { ($remoteHost.ToLower() -replace '[^a-z0-9._-]', '-') }
 }
-if (-not $manifest -and ($state.service -or $state.joinedroom) -and -not $Force) {
-    Fail 'state' 6 "this machine already has an atrium ($($state.service)$($state.joinedroom)) that this script did not install. -Force takes it over"
+if (-not $manifest) {
+    $what = @()
+    if ($state.joinedroom) { $what += "it is already the room $($state.joinedroom)" }
+    if ($state.service) { $what += "it has an atrium autostart ($($state.service))" }
+    if ($state.up7781 -eq 'True') { $what += 'a room answers on 7781' }
+    if ($state.up7778 -eq 'True') { $what += 'an atrium daemon answers on 7778' }
+    if ($what) {
+        Fail 'state' 6 "one room per machine, and $($what -join ', '), which this script did not put there. stop or remove that first"
+    }
+} elseif ($manifest.name -ne $Name -or ($joinedId -and $joinedId -ne $hubId)) {
+    $was = if ($joinedId) { "$($manifest.name) of $joinedId" } else { $manifest.name }
+    Fail 'state' 6 "one room per machine, and this one is already the room $was. -Remove it first to make it $Name of $hubId"
 }
+
 if (-not $manifest) {
     $pre = [ordered]@{}
     foreach ($k in $preKeys) { $pre[$k] = if ($k -eq 'service') { [bool] $state.service } else { $state.$k -eq 'True' } }
-    $manifest = [pscustomobject]@{ name = $Name; hub = $LinkAdvertise; pre = [pscustomobject] $pre }
+    $manifest = [pscustomobject]@{
+        name = $Name; hub = $hubId; transport = $transport; autostart = $false
+        installed = @(); pre = [pscustomobject] $pre
+    }
     Step 'state' 'ok' "fresh, will be room $Name"
 } else {
+    foreach ($f in 'autostart', 'installed', 'transport') {
+        if ($null -eq $manifest.$f) {
+            $v = switch ($f) { 'autostart' { $true } 'installed' { @() } 'transport' { $transport } }
+            $manifest | Add-Member -NotePropertyName $f -NotePropertyValue $v
+        }
+    }
     Step 'state' 'ok' "provisioned before as $($manifest.name)"
 }
-$manifest.name = $Name
-$manifest.hub = $LinkAdvertise
-$manifestJson = $manifest | ConvertTo-Json -Compress
-
-$mk = if ($os -eq 'windows') {
-    "New-Item -ItemType Directory -Force -Path (Join-Path `$A 'bin'), (Join-Path `$P 'scripts') | Out-Null`n" +
-    "[IO.File]::WriteAllText(`$M, '$($manifestJson -replace "'", "''")')"
-} else {
-    "mkdir -p `"`$HOME/.local/bin`" `"`$P/scripts`" `"`$P/packaging`"`ncat > `"`$M`" <<'EOF'`n$manifestJson`nEOF"
-}
-$r = Invoke-Remote $mk
-if ($r.Code -ne 0) { Fail 'state' 3 'could not write the manifest' $r.Out }
+$manifest.hub = $hubId
+$manifest.transport = $transport
+# Autostart, once installed, stays until -Remove.
+$hadAutostartBefore = [bool] $manifest.autostart
+$useAutostart = $Autostart -or $hadAutostartBefore
+$manifest.autostart = $useAutostart
+Save-Manifest
 
 # ── 5. the binary ───────────────────────────────────────────────────────────
 
 $ext = if ($os -eq 'windows') { '.exe' } else { '' }
-if (-not $Binary) {
-    if (-not (Test-Path (Join-Path $repo 'go.mod'))) { Fail 'build' 1 'not in an atrium checkout. pass -Binary' }
-    $outDir = Join-Path $repo "build.claude/provision/${os}_$goarch"
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+# Get-Release fetches the release archive for the remote, checks it against
+# the release's own checksums.txt, and returns the binary inside it.
+function Get-Release {
+    $api = if ($Version) { "https://api.github.com/repos/dovholuknf/atrium/releases/tags/$Version" }
+           else { 'https://api.github.com/repos/dovholuknf/atrium/releases/latest' }
+    try {
+        $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'atrium-provision' } -TimeoutSec 30
+    } catch {
+        $code = $_.Exception.Response.StatusCode.value__
+        if ($code -eq 404) {
+            $which = if ($Version) { "no release called $Version" } else { 'no release yet' }
+            Fail 'fetch' 1 "dovholuknf/atrium has $which on GitHub. -FromCheckout builds the binary from this checkout instead"
+        }
+        Fail 'fetch' 1 "could not ask GitHub for the release: $($_.Exception.Message)"
+    }
+    $v = $rel.tag_name
+    $base = "atrium_${v}_${os}_$goarch"
+    $file = if ($os -eq 'windows') { "$base.zip" } else { "$base.tar.gz" }
+    $asset = $rel.assets | Where-Object name -eq $file | Select-Object -First 1
+    $sums = $rel.assets | Where-Object name -eq 'checksums.txt' | Select-Object -First 1
+    if (-not $asset) { Fail 'fetch' 1 "release $v has no $file for this machine" }
+    if (-not $sums) { Fail 'fetch' 1 "release $v has no checksums.txt, so $file cannot be checked" }
+    $dir = Join-Path $work "release/$v"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $archive = Join-Path $dir $file
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive -UseBasicParsing
+    $sumText = (Invoke-WebRequest -Uri $sums.browser_download_url -UseBasicParsing).Content
+    if ($sumText -is [byte[]]) { $sumText = [Text.Encoding]::UTF8.GetString($sumText) }
+    $want = ($sumText -split "`n" | Where-Object { $_ -match "\s\*?$([regex]::Escape($file))\s*$" } |
+        ForEach-Object { ($_ -split '\s+')[0] } | Select-Object -First 1)
+    $got = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLower()
+    if (-not $want -or $want.ToLower() -ne $got) { Fail 'fetch' 1 "$file does not match the release's checksums.txt" }
+    $out = Join-Path $dir $base
+    if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+    if ($os -eq 'windows') { Expand-Archive -LiteralPath $archive -DestinationPath $dir -Force }
+    else { & tar -xzf $archive -C $dir; if ($LASTEXITCODE -ne 0) { Fail 'fetch' 1 "could not unpack $file" } }
+    $bin = Join-Path $out "atrium$ext"
+    if (-not (Test-Path $bin)) { Fail 'fetch' 1 "$file has no atrium$ext in it" }
+    Step 'fetch' 'ok' "release $v, $file, checksum matches"
+    $bin
+}
+
+if ($Binary) {
+    if (-not (Test-Path -LiteralPath $Binary)) { Fail 'build' 1 "no binary at $Binary" }
+} elseif ($FromCheckout) {
+    if (-not $inCheckout) { Fail 'build' 1 '-FromCheckout needs an atrium checkout around this script' }
+    $outDir = Join-Path $work "${os}_$goarch"
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     $Binary = Join-Path $outDir "atrium$ext"
-    $version = (git -C $repo describe --tags --exact-match 2>$null)
-    if (-not $version) { $version = 'dev' }
+    $ver = (git -C $repo describe --tags --exact-match 2>$null)
+    if (-not $ver) { $ver = 'dev' }
     $commit = (git -C $repo rev-parse HEAD 2>$null)
     $env:CGO_ENABLED = '0'; $env:GOOS = $os; $env:GOARCH = $goarch
     try {
-        $b = & go -C $repo build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$version -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" -o $Binary ./cmd/atrium 2>&1
+        $b = & go -C $repo build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$ver -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" -o $Binary ./cmd/atrium 2>&1
         $bc = $LASTEXITCODE
     } finally {
         Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
     }
     if ($bc -ne 0) { Fail 'build' 1 "go build for $os/$goarch failed" $b }
+} else {
+    $Binary = Get-Release
 }
-if (-not (Test-Path -LiteralPath $Binary)) { Fail 'build' 1 "no binary at $Binary" }
 $sha = (Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLower()
-Step 'build' 'ok' "$os/$goarch $($sha.Substring(0, 12))"
+if ($FromCheckout -or $PSBoundParameters.ContainsKey('Binary')) { Step 'build' 'ok' "$os/$goarch $($sha.Substring(0, 12))" }
 
 $binChanged = $false
 if ($state.binsha -eq $sha) {
@@ -495,8 +706,8 @@ if ($state.binsha -eq $sha) {
     $remoteNew = if ($os -eq 'windows') { '.atrium/bin/atrium.exe.new' } else { '.local/bin/atrium.new' }
     $c = Copy-ToRemote $Binary $remoteNew
     if ($c.Code -ne 0) { Fail 'binary' 3 'scp failed' $c.Out }
-    # ON WINDOWS A RUNNING EXE CANNOT BE REPLACED, so the room is wound down
-    # first and started again by step 8.
+    # A RUNNING ROOM IS WOUND DOWN FIRST, so the new build is what runs next.
+    # On Windows a running exe cannot be replaced at all. Step 7 starts it.
     $swap = if ($os -eq 'windows') {
 @'
 if (Test-Path $Bin) {
@@ -511,7 +722,14 @@ Move-Item -Force "$Bin.new" $Bin
 & $Bin version
 '@
     } else {
-        "chmod +x `"`$Bin.new`" && mv -f `"`$Bin.new`" `"`$Bin`" && `"`$Bin`" version"
+@'
+if [ -x "$Bin" ]; then
+  "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1 || true
+  n=0; while pgrep -f "$Bin room" >/dev/null 2>&1 && [ $n -lt 40 ]; do sleep 0.5; n=$((n+1)); done
+  pkill -9 -f "$Bin room" 2>/dev/null || true
+fi
+chmod +x "$Bin.new" && mv -f "$Bin.new" "$Bin" && "$Bin" version
+'@
     }
     $r = Invoke-Remote $swap
     if ($r.Code -ne 0) { Fail 'binary' 3 'could not put the binary in place' $r.Out }
@@ -520,34 +738,42 @@ Move-Item -Force "$Bin.new" $Bin
     Step 'binary' 'done' "$where, $((($r.Out | Select-Object -First 1) -replace '\s+', ' ').Trim())"
 }
 
-# ── 6. the service scripts ──────────────────────────────────────────────────
+# ── 6. join this hub ────────────────────────────────────────────────────────
 
-# UNIX FILES GO OVER WITH LF ENDINGS whatever this checkout has, because a
-# shell script with a carriage return on every line does not run.
-$files = if ($os -eq 'windows') {
-    @(@('scripts/atrium-service.ps1', 'scripts'), @('scripts/atrium-autostart.ps1', 'scripts'))
+if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
+    Step 'join' 'ok' "already joined as $Name over $transport"
 } else {
-    @(@('scripts/atrium-service.sh', 'scripts'), @('packaging/atrium.service', 'packaging'),
-      @('packaging/atrium.plist', 'packaging'))
-}
-$stage = Join-Path $repo "build.claude/provision/${os}_$goarch/files"
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-foreach ($f in $files) {
-    $src = Join-Path $PSScriptRoot "../$($f[0])"
-    $dst = Join-Path $stage (Split-Path -Leaf $f[0])
-    $text = [IO.File]::ReadAllText($src)
-    if ($os -ne 'windows') { $text = $text -replace "`r`n", "`n" }
-    [IO.File]::WriteAllText($dst, $text)
-    $c = Copy-ToRemote $dst ".atrium/provision/$($f[1])/$(Split-Path -Leaf $f[0])"
-    if ($c.Code -ne 0) { Fail 'scripts' 3 "scp of $($f[0]) failed" $c.Out }
-}
-Step 'scripts' 'done' "$($files.Count) files in ~/.atrium/provision"
+    # THE OVERLAY'S CREDENTIAL FIRST, before anything is minted, because it is
+    # the one thing this script cannot make.
+    $jwt = $null
+    if ($transport -eq 'ziti') {
+        if ($ZitiJwt) {
+            if (-not (Test-Path -LiteralPath $ZitiJwt)) { Fail 'overlay' 7 "no JWT at $ZitiJwt" }
+            $jwt = (Get-Content -LiteralPath $ZitiJwt -Raw).Trim()
+            $from = $ZitiJwt
+        } elseif ($ZitiJwtCommand) {
+            $cmd = $ZitiJwtCommand.Replace('{name}', $Name)
+            $o = & pwsh -NoProfile -NonInteractive -Command $cmd 2>&1
+            $jwt = $o | ForEach-Object { "$_".Trim() } |
+                Where-Object { $_ -match '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' } | Select-Object -Last 1
+            if (-not $jwt) { Fail 'overlay' 7 'the -ZitiJwtCommand printed no JWT' $o }
+            $from = 'the -ZitiJwtCommand'
+        } else {
+            Fail 'overlay' 7 ("the hub links over ziti, so $Name needs its own identity on your network. " +
+                "issue an enrollment JWT for it, for example ``ziti edge create identity $Name -a atrium-rooms -o $Name.jwt``, " +
+                "then pass -ZitiJwt $Name.jwt, or name that command with -ZitiJwtCommand")
+        }
+        Step 'overlay' 'ok' "an enrollment JWT for $Name from $from"
+    }
+    if ($transport -eq 'zrok') {
+        if ($state.zrokenv -ne 'True') {
+            Fail 'overlay' 7 ("the hub links over zrok, and $Target has no zrok environment. " +
+                "zrok is an account before it is a share, and enabling one takes your account token, which this does not carry. " +
+                "run it there yourself: ssh $Target zrok2 enable <your account token>")
+        }
+        Step 'overlay' 'ok' "$Target has a zrok environment"
+    }
 
-# ── 7. join this hub ────────────────────────────────────────────────────────
-
-if ($state.joinedroom -eq $Name -and $state.joinedhub -eq $LinkAdvertise) {
-    Step 'join' 'ok' "already joined as $Name"
-} else {
     # A NAME ALREADY IN USE ON THE HUB is reused only when nothing ever joined
     # with it. One that has connected belongs to some machine, and a second
     # machine under the same name would be two rooms the hub thinks are one.
@@ -555,31 +781,283 @@ if ($state.joinedroom -eq $Name -and $state.joinedhub -eq $LinkAdvertise) {
     if ($line -and $line -notmatch 'never connected') {
         Fail 'join' 4 "the hub already has a room called $Name that has connected before. pass -Name, or remove it: atrium rooms rm $Name --force" @($line)
     }
+    $mintFlags = @('--link', $Link)
+    if ($LinkAdvertise) { $mintFlags += @('--link-advertise', $LinkAdvertise) }
+    if ($transport -eq 'ziti') { $mintFlags += @('--service', $zitiService) }
     if (-not $line) {
-        $a = Invoke-Hub @('rooms', 'add', $Name, '--link', $Link, '--link-advertise', $LinkAdvertise)
+        $a = Invoke-Hub (@('rooms', 'add', $Name, '--transport', $transport) + $mintFlags)
         if ($a.Code -ne 0) { Fail 'join' 4 "the hub would not add $Name" $a.Out }
     }
     # `rooms token` prints the string alone, so it is what is read. The one
     # `rooms add` printed is retired by it.
-    $t = Invoke-Hub @('rooms', 'token', $Name, '--link', $Link, '--link-advertise', $LinkAdvertise)
+    $t = Invoke-Hub (@('rooms', 'token', $Name) + $mintFlags)
     $token = ($t.Out | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
     if ($t.Code -ne 0 -or -not $token) { Fail 'join' 4 "the hub would not mint a join string for $Name" $t.Out }
 
-    $js = if ($os -eq 'windows') {
-        "& `$Bin room join '$token' --no-run"
+    # THE JWT TRAVELS AS A FILE, never as an argument. On Unix it goes on the
+    # script's stdin into a 0600 file; on Windows it is copied with scp. The
+    # join reads it, enrolls it with a key made on the remote, and it is
+    # deleted there whatever happened.
+    if ($os -eq 'windows') {
+        $zflag = ''
+        if ($jwt) {
+            $tmp = Join-Path ([IO.Path]::GetTempPath()) ("atrium-" + [guid]::NewGuid().ToString('N') + '.jwt')
+            try {
+                [IO.File]::WriteAllText($tmp, $jwt)
+                $c = Copy-ToRemote $tmp '.atrium/provision/enroll.jwt'
+            } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+            if ($c.Code -ne 0) { Fail 'join' 4 'could not copy the JWT over' $c.Out }
+            $zflag = " --openziti (Join-Path `$P 'enroll.jwt')"
+        }
+        # CONTINUE, because Windows PowerShell with Stop turns the first line
+        # a native command writes to stderr, here the join's own log, into a
+        # terminating error.
+        $js = "`$ErrorActionPreference = 'Continue'`n" +
+              "`$rc = 1`n" +
+              "try { & `$Bin room join $(Quote-Ps $token)$zflag --no-run 2>&1 | ForEach-Object { `"`$_`" }; `$rc = `$LASTEXITCODE } " +
+              "finally { Remove-Item (Join-Path `$P 'enroll.jwt') -Force -ErrorAction SilentlyContinue }`n" +
+              # THE BINARY'S OWN EXIT CODE. Windows PowerShell would otherwise exit 1
+              # for any stderr line, which is where the join logs.
+              "exit `$rc"
     } else {
-        "`"`$Bin`" room join '$token' --no-run"
+        $js = ''
+        $zflag = ''
+        if ($jwt) {
+            $js = "( umask 077; cat > `"`$P/enroll.jwt`" <<'EOF'`n$jwt`nEOF`n)`n"
+            $zflag = " --openziti `"`$P/enroll.jwt`""
+        }
+        $js += "`"`$Bin`" room join $(Quote-Sh $token)$zflag --no-run 2>&1`nrc=`$?`nrm -f `"`$P/enroll.jwt`"`nexit `$rc"
     }
     $j = Invoke-Remote $js
     $token = $null
+    $jwt = $null
     if ($j.Code -ne 0) { Fail 'join' 4 "the remote could not join as $Name" $j.Out }
-    Step 'join' 'done' "joined $LinkAdvertise as $Name"
+    $detail = "joined as $Name over $transport"
+    if ($transport -eq 'direct') { $detail += " to $LinkAdvertise" }
+    if ($transport -eq 'ziti') { $detail += ", identity enrolled on the remote" }
+    Step 'join' 'done' $detail
 }
 
-# ── 8. autostart, and running now ───────────────────────────────────────────
+# ── 7. install the runners asked for ────────────────────────────────────────
 
-if ($os -eq 'windows') {
-    $as = @'
+# Where each runner comes from: its vendor's own published installer or
+# release, nothing else. A runner not listed here is not installed by this.
+$triple = switch ("$os/$goarch") {
+    'windows/amd64' { 'x86_64-pc-windows-msvc' }  'windows/arm64' { 'aarch64-pc-windows-msvc' }
+    'linux/amd64'   { 'x86_64-unknown-linux-musl' } 'linux/arm64' { 'aarch64-unknown-linux-musl' }
+    'darwin/amd64'  { 'x86_64-apple-darwin' }     'darwin/arm64'  { 'aarch64-apple-darwin' }
+}
+$sources = @{
+    claude = if ($os -eq 'windows') { 'https://claude.ai/install.ps1' } else { 'https://claude.ai/install.sh' }
+    codex  = "https://github.com/openai/codex/releases/latest/download/codex-$triple$(if ($os -eq 'windows') { '.exe' } else { '.tar.gz' })"
+}
+function Get-InstallScript {
+    param([string] $runner)
+    $url = $sources[$runner]
+    if ($os -eq 'windows') {
+        switch ($runner) {
+            'claude' { return @"
+`$b = Join-Path `$HOME '.local\bin\claude.exe'; `$s = Join-Path `$HOME '.local\share\claude'
+`$preb = Test-Path `$b; `$pres = Test-Path `$s
+`$o = powershell -NoProfile -ExecutionPolicy Bypass -Command "```$ProgressPreference='SilentlyContinue'; irm $url | iex" *>&1
+if (-not (Test-Path `$b)) { `$o; exit 1 }
+if (-not `$preb) { "installed=`$b" }; if (-not `$pres -and (Test-Path `$s)) { "installed=`$s" }
+"path=`$b"
+"@ }
+            'codex' { return @"
+`$d = Join-Path `$HOME '.local\bin'; New-Item -ItemType Directory -Force `$d | Out-Null
+`$b = Join-Path `$d 'codex.exe'; `$preb = Test-Path `$b
+Invoke-WebRequest '$url' -OutFile `$b -UseBasicParsing
+if (-not `$preb) { "installed=`$b" }
+"path=`$b"
+"@ }
+        }
+    } else {
+        switch ($runner) {
+            'claude' { return @"
+b="`$HOME/.local/bin/claude"; s="`$HOME/.local/share/claude"
+if [ -e "`$b" ]; then preb=1; else preb=0; fi; if [ -e "`$s" ]; then pres=1; else pres=0; fi
+if command -v curl >/dev/null 2>&1; then o=`$(curl -fsSL '$url' | bash 2>&1); else o=`$(wget -qO- '$url' | bash 2>&1); fi
+if [ ! -e "`$b" ]; then echo "`$o"; exit 1; fi
+if [ `$preb = 0 ]; then echo "installed=`$b"; fi
+if [ `$pres = 0 ] && [ -e "`$s" ]; then echo "installed=`$s"; fi
+echo "path=`$b"
+"@ }
+            'codex' { return @"
+d="`$HOME/.local/bin"; b="`$d/codex"; mkdir -p "`$d"
+if [ -e "`$b" ]; then preb=1; else preb=0; fi
+t=`$(mktemp -d)
+if command -v curl >/dev/null 2>&1; then curl -fsSL '$url' | tar -xz -C "`$t" || exit 1; else wget -qO- '$url' | tar -xz -C "`$t" || exit 1; fi
+f=`$(ls "`$t" | grep '^codex' | head -1)
+[ -n "`$f" ] || { echo "the archive had no codex binary"; exit 1; }
+mv -f "`$t/`$f" "`$b" && chmod +x "`$b"; rm -rf "`$t"
+if [ `$preb = 0 ]; then echo "installed=`$b"; fi
+echo "path=`$b"
+"@ }
+        }
+    }
+    $null
+}
+
+# Test-Runner finds a runner the way the room will: on Windows the user's PATH,
+# which a room started over ssh or by the logon task shares, and elsewhere a
+# login shell's PATH.
+function Test-Runner {
+    param([string] $runner)
+    $rs = if ($os -eq 'windows') {
+@"
+`$c = Get-Command '$runner' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not `$c) { `$c = Get-Command '$runner' -ErrorAction SilentlyContinue | Select-Object -First 1 }
+if (-not `$c) {
+    `$h = Join-Path `$HOME '.local\bin\$runner.exe'
+    if (Test-Path `$h) { "home=`$h" }
+    'runner=missing'; exit 0
+}
+"path=`$(`$c.Source)"
+`$job = Start-Job { param(`$n) & `$n --version 2>&1 } -ArgumentList `$c.Source
+if (Wait-Job `$job -Timeout 30) { "version=`$((Receive-Job `$job | Select-Object -First 1))"; 'runner=ok' }
+else { Stop-Job `$job; 'runner=hung' }
+"@
+    } else {
+@"
+sh_=`${SHELL:-/bin/sh}
+out=`$("`$sh_" -lc 'command -v $runner' 2>/dev/null)
+if [ -z "`$out" ]; then
+  if [ -x "`$HOME/.local/bin/$runner" ]; then echo "home=`$HOME/.local/bin/$runner"; fi
+  echo runner=missing; exit 0
+fi
+echo "path=`$out"
+v=`$("`$sh_" -lc '$runner --version' </dev/null 2>&1)
+rc=`$?
+echo "version=`$(printf '%s\n' "`$v" | head -1)"
+if [ "`$rc" = 0 ]; then echo runner=ok; else echo runner=broken; fi
+"@
+    }
+    ConvertFrom-KeyValue (Invoke-Remote $rs).Out
+}
+
+$bad = 0
+foreach ($runner in $Install) {
+    if (-not $sources.ContainsKey($runner)) {
+        Step "install:$runner" 'fail' "no vendor installer this script knows for $runner. install it yourself"
+        $bad++; continue
+    }
+    $have = Test-Runner $runner
+    if ($have.runner -eq 'ok') { Step "install:$runner" 'ok' "already there at $($have.path)"; continue }
+    if ($have.home) { Step "install:$runner" 'ok' "already there at $($have.home)"; $installedNow = $true; continue }
+    # THE TRUST WARNING, before anything is fetched. -Install is the consent,
+    # and this says what it was consent to.
+    Step "install:$runner" 'warn' ("trusting atrium to fetch $($sources[$runner]) and run it on $Target. " +
+        "if you do not trust that, install $runner yourself and leave -Install off")
+    $r = Invoke-Remote (Get-InstallScript $runner)
+    $got = @($r.Out | Where-Object { $_ -like 'installed=*' } | ForEach-Object { $_.Substring(10) })
+    if ($got) {
+        $script:manifest.installed = @(@($script:manifest.installed) + $got | Where-Object { $_ } | Select-Object -Unique)
+        Save-Manifest
+    }
+    if ($r.Code -ne 0) { Fail "install:$runner" 5 "the $runner installer failed" $r.Out }
+    Step "install:$runner" 'done' ((ConvertFrom-KeyValue $r.Out).path)
+    $installedNow = $true
+}
+
+# ~/.local/bin ON THE USER'S PATH, when -Install put something there and it is
+# not. Both installers land there, and a runner the room cannot find on PATH is
+# not a runner the room can start. Windows gets it in the user's own Path in
+# the registry, Unix gets one marked line in the login profile. No admin, and
+# -Remove takes either back out. A room already running is restarted, because
+# it read its PATH when it started.
+$pathChanged = $false
+if ($installedNow -and -not $script:manifest.pathadded) {
+    $ps = if ($os -eq 'windows') {
+@'
+$d = Join-Path $HOME '.local\bin'
+$cur = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (@($cur -split ';') -contains $d) { 'pathadded=' } else {
+    $new = if ($cur) { "$cur;$d" } else { $d }
+    [Environment]::SetEnvironmentVariable('Path', $new, 'User')
+    'pathadded=registry'
+}
+'@
+    } else {
+@'
+d="$HOME/.local/bin"
+lp=$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' 2>/dev/null)
+case ":$lp:" in *":$d:"*) echo pathadded=; exit 0;; esac
+case "${SHELL##*/}" in
+  zsh) f="$HOME/.zprofile";;
+  bash) if [ -f "$HOME/.bash_profile" ]; then f="$HOME/.bash_profile"; else f="$HOME/.profile"; fi;;
+  *) f="$HOME/.profile";;
+esac
+printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH" # added by atrium provision-room' >> "$f"
+echo "pathadded=$f"
+'@
+    }
+    $r = Invoke-Remote $ps
+    $kv = ConvertFrom-KeyValue $r.Out
+    if ($r.Code -ne 0) { Fail 'path' 5 'could not put ~/.local/bin on PATH' $r.Out }
+    if ($kv.pathadded) {
+        $script:manifest | Add-Member -NotePropertyName pathadded -NotePropertyValue $kv.pathadded -Force
+        Save-Manifest
+        $where = if ($kv.pathadded -eq 'registry') { "the user's Path" } else { $kv.pathadded }
+        Step 'path' 'done' "~/.local/bin added to $where"
+        $pathChanged = $true
+    } else {
+        Step 'path' 'ok' '~/.local/bin is already on PATH'
+    }
+}
+# A ROOM STARTED WITH --detach IS STOPPED before autostart takes over, or the
+# service's room would find the ports taken and exit.
+if (($pathChanged -or ($useAutostart -and -not $hadAutostartBefore)) -and -not $binChanged) {
+    $stop = if ($os -eq 'windows') {
+        "`$ErrorActionPreference = 'Continue'; if (Test-Path `$Bin) { & `$Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null }; Start-Sleep -Seconds 3"
+    } else {
+        "if [ -x `"`$Bin`" ]; then `"`$Bin`" stop --url http://127.0.0.1:7781 >/dev/null 2>&1; sleep 3; fi"
+    }
+    $null = Invoke-Remote $stop
+}
+
+# ── 8. run it: in the background, or through autostart ───────────────────────
+
+$startedAt = Get-Date
+if (-not $useAutostart) {
+    # THROUGH A LOGIN SHELL ON UNIX, so the room gets the PATH a person's
+    # terminal has rather than the bare one a non-interactive ssh command gets,
+    # and so finds the same runners the runner check finds.
+    $ds = if ($os -eq 'windows') { "`$ErrorActionPreference = 'Continue'`n& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE" }
+          else { "`"`${SHELL:-/bin/sh}`" -lc 'exec `"`$0`" room --detach' `"`$Bin`" 2>&1" }
+    $r = Invoke-Remote $ds
+    if ($r.Code -ne 0) { Fail 'start' 3 'the room would not start' $r.Out }
+    $said = ($r.Out -join ' ')
+    if ($said -match 'already answers') { $startWord = 'ok'; Step 'start' 'ok' 'already running, no autostart' }
+    else { $startWord = 'done'; Step 'start' 'done' 'in the background with room --detach, no autostart. it stops at restart or logout' }
+} else {
+    # THE SERVICE SCRIPTS GO OVER FIRST, with LF endings for Unix whatever this
+    # checkout has, because a shell script with a carriage return on every line
+    # does not run.
+    $files = if ($os -eq 'windows') {
+        @(@('scripts/atrium-service.ps1', 'scripts'), @('scripts/atrium-autostart.ps1', 'scripts'))
+    } else {
+        @(@('scripts/atrium-service.sh', 'scripts'), @('packaging/atrium.service', 'packaging'),
+          @('packaging/atrium.plist', 'packaging'))
+    }
+    $stage = Join-Path $work "${os}_$goarch/files"
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    $mk = if ($os -eq 'windows') { "New-Item -ItemType Directory -Force -Path (Join-Path `$P 'scripts') | Out-Null" }
+          else { "mkdir -p `"`$P/scripts`" `"`$P/packaging`"" }
+    $null = Invoke-Remote $mk
+    foreach ($f in $files) {
+        $src = Join-Path $PSScriptRoot "../$($f[0])"
+        if (-not (Test-Path $src)) { Fail 'autostart' 3 "$($f[0]) is not beside this script" }
+        $dst = Join-Path $stage (Split-Path -Leaf $f[0])
+        $text = [IO.File]::ReadAllText($src)
+        if ($os -ne 'windows') { $text = $text -replace "`r`n", "`n" }
+        [IO.File]::WriteAllText($dst, $text)
+        $c = Copy-ToRemote $dst ".atrium/provision/$($f[1])/$(Split-Path -Leaf $f[0])"
+        if ($c.Code -ne 0) { Fail 'autostart' 3 "scp of $($f[0]) failed" $c.Out }
+    }
+
+    if ($os -eq 'windows') {
+        $as = @'
 $t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
 if ($t -and $t.Actions[0].Arguments -like "*$Bin*room --db*") { "autostart=ok" }
 else {
@@ -602,16 +1080,15 @@ if ($up) { "start=ok" } else {
     }
 }
 '@
-} else {
-    $as = @'
+    } else {
+        $as = "LINGER=$(if ($Linger) { '1' } else { '' })`n" + @'
 S="$P/scripts/atrium-service.sh"
 u="$HOME/.config/systemd/user/atrium.service"
 p="$HOME/Library/LaunchAgents/io.github.dovholuknf.atrium.plist"
 if { [ -f "$u" ] && grep -q "^ExecStart=$Bin room" "$u"; } || { [ -f "$p" ] && grep -q "$Bin\" room" "$p"; }; then
   echo autostart=ok
-  if [ "$CHANGED" = 1 ]; then ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room bash "$S" restart >/dev/null 2>&1 || true; fi
 else
-  o=$(ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room bash "$S" install 2>&1) || { echo "$o"; exit 1; }
+  o=$(ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room ATRIUM_LINGER="$LINGER" bash "$S" install 2>&1) || { echo "$o"; exit 1; }
   echo autostart=done
   case "$o" in *"not loaded now"*) echo "start=warn the LaunchAgent loads at the next desktop login, there is no GUI session now";; esac
 fi
@@ -623,85 +1100,66 @@ elif launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1;
 else echo "start=warn the LaunchAgent is not loaded. it needs a desktop login"
 fi
 '@
-    $as = "CHANGED=$([int]$binChanged)`n" + $as
+    }
+    $r = Invoke-Remote $as
+    $kv = ConvertFrom-KeyValue $r.Out
+    if ($r.Code -ne 0 -or -not $kv.autostart) { Fail 'autostart' 3 'the service install failed' $r.Out }
+    Step 'autostart' $kv.autostart $(if ($os -eq 'windows') { 'logon task atrium, RunLevel Limited' } elseif ($os -eq 'linux') { 'systemd user unit atrium.service' } else { 'LaunchAgent io.github.dovholuknf.atrium' })
+    $startStatus = ($kv.start -split ' ', 2)
+    $startWord = $startStatus[0]
+    Step 'start' $startWord $(if ($startStatus.Count -gt 1) { $startStatus[1] } else { '' })
+    if ($startWord -eq 'fail') { Finish 3 }
 }
-$startedAt = Get-Date
-$r = Invoke-Remote $as
-$kv = ConvertFrom-KeyValue $r.Out
-if ($r.Code -ne 0 -or -not $kv.autostart) { Fail 'autostart' 3 'the service install failed' $r.Out }
-Step 'autostart' $kv.autostart $(if ($os -eq 'windows') { 'logon task atrium, RunLevel Limited' } elseif ($os -eq 'linux') { 'systemd user unit atrium.service' } else { 'LaunchAgent io.github.dovholuknf.atrium' })
-
-# A Windows room stopped for a new binary comes back through the task, and
-# the check above already started it. Say so rather than "ok".
-$startStatus = ($kv.start -split ' ', 2)
-$startWord = $startStatus[0]
-if ($startWord -eq 'ok' -and $binChanged) { $startWord = 'done'; $startStatus = @('done', 'restarted on the new build') }
-Step 'start' $startWord $(if ($startStatus.Count -gt 1) { $startStatus[1] } else { '' })
-if ($startWord -eq 'fail') { Finish 3 }
 
 # ── 9. attached to the hub ──────────────────────────────────────────────────
 
 # THE HUB'S OWN CONNECTION LIST, not `rooms ls`, which infers "attached" from
 # the last twenty seconds and would still say so about the room that was just
 # stopped for a new binary. A room started by this run has to show a
-# connection made after it started.
+# connection made after it started, and still be there a few seconds later,
+# which is what catches a room that died with the ssh session that started it.
 $needSince = if ($startWord -eq 'done') { $startedAt } else { [datetime]::MinValue }
+function Get-Live {
+    try {
+        $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
+        $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } |
+            Select-Object -First 1
+    } catch { $null }
+}
 $deadline = (Get-Date).AddSeconds($AttachTimeout)
 $seen = $null
 do {
-    try {
-        $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
-        $seen = $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } |
-            Select-Object -First 1
-    } catch { $seen = $null }
+    $seen = Get-Live
     if ($seen) { break }
     Start-Sleep -Seconds 2
 } while ((Get-Date) -lt $deadline)
+if ($seen) {
+    Start-Sleep -Seconds 5
+    $still = Get-Live
+    if (-not $still -or $still.since -ne $seen.since) { $seen = $null; $dropped = $true }
+}
 if (-not $seen) {
-    Fail 'attached' 4 "the hub has no live connection from $Name after ${AttachTimeout}s" @(Get-HubRoom $Name)
+    $why = if ($dropped) { "$Name attached and then went away. it may have died with the ssh session: try -Autostart" }
+           else { "the hub has no live connection from $Name after ${AttachTimeout}s" }
+    Fail 'attached' 4 $why @(Get-HubRoom $Name)
 }
 Step 'attached' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version)"
 
 # ── 10. the runners ─────────────────────────────────────────────────────────
 
-# PRESENT AND ANSWERS --version, found the way the room will find it: on
-# Windows the user's PATH, which the logon task shares, and elsewhere a login
-# shell's PATH.
-$missing = 0
-# `pwsh -File` hands `-Runners claude,codex` over as one string, so commas split.
-$Runners = @($Runners | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-foreach ($runner in $Runners) {
-    if ($runner -notmatch '^[A-Za-z0-9._-]+$') { Step "runner:$runner" 'fail' 'not a command name'; $missing++; continue }
-    $rs = if ($os -eq 'windows') {
-@"
-`$c = Get-Command '$runner' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not `$c) { `$c = Get-Command '$runner' -ErrorAction SilentlyContinue | Select-Object -First 1 }
-if (-not `$c) { 'runner=missing'; exit 0 }
-"path=`$(`$c.Source)"
-`$job = Start-Job { param(`$n) & `$n --version 2>&1 } -ArgumentList `$c.Source
-if (Wait-Job `$job -Timeout 30) { "version=`$((Receive-Job `$job | Select-Object -First 1))"; 'runner=ok' }
-else { Stop-Job `$job; 'runner=hung' }
-"@
-    } else {
-@"
-sh_=`${SHELL:-/bin/sh}
-out=`$("`$sh_" -lc 'command -v $runner' 2>/dev/null)
-if [ -z "`$out" ]; then echo runner=missing; exit 0; fi
-echo "path=`$out"
-v=`$("`$sh_" -lc '$runner --version' </dev/null 2>&1)
-rc=`$?
-echo "version=`$(printf '%s\n' "`$v" | head -1)"
-if [ "`$rc" = 0 ]; then echo runner=ok; else echo runner=broken; fi
-"@
-    }
-    $r = Invoke-Remote $rs
-    $kv = ConvertFrom-KeyValue $r.Out
+foreach ($runner in @($Runners + $Install | Select-Object -Unique)) {
+    if ($runner -notmatch '^[A-Za-z0-9._-]+$') { Step "runner:$runner" 'fail' 'not a command name'; $bad++; continue }
+    $kv = Test-Runner $runner
     switch ($kv.runner) {
         'ok'      { Step "runner:$runner" 'ok' "$($kv.version) at $($kv.path)" }
-        'missing' { Step "runner:$runner" 'fail' 'not on PATH'; $missing++ }
-        'hung'    { Step "runner:$runner" 'fail' "found at $($kv.path), --version did not return in 30s"; $missing++ }
-        default   { Step "runner:$runner" 'fail' "found at $($kv.path), --version failed"; $missing++ }
+        'missing' {
+            if ($kv.home) { Step "runner:$runner" 'fail' "installed at $($kv.home), but that folder is not on PATH" }
+            else { Step "runner:$runner" 'fail' 'not on PATH. -Install fetches it from its vendor, if you trust that' }
+            $bad++
+        }
+        'hung'    { Step "runner:$runner" 'fail' "found at $($kv.path), --version did not return in 30s"; $bad++ }
+        default   { Step "runner:$runner" 'fail' "found at $($kv.path), --version failed"; $bad++ }
     }
 }
-if ($missing -gt 0) { Finish 5 }
+if ($bad -gt 0) { Finish 5 }
 Finish 0
