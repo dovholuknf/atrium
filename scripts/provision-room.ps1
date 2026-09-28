@@ -355,6 +355,9 @@ switch ($transport) {
     'zrok' { $hubId = 'zrok'; $says = 'zrok, rooms dial its private share' }
     default { Fail 'hub' 1 "the hub links over $transport, which this script does not know" }
 }
+# zrok takes most of a minute to let a new access dial a share, measured
+# 2026-09-28, so its default wait is doubled.
+if ($transport -eq 'zrok' -and -not $PSBoundParameters.ContainsKey('AttachTimeout')) { $AttachTimeout = 120 }
 try {
     $h = Invoke-RestMethod -Uri "http://$HubAddr/_hub/health" -TimeoutSec 5
     Step 'hub' 'ok' "$says, $($h.rooms) attached now"
@@ -454,6 +457,12 @@ if ($Remove) {
         Finish 0
     }
     $room = if ($Name) { $Name } else { $manifest.name }
+    # THE HUB IT JOINED, NOT JUST THE FIRST ONE FOUND, checked before anything
+    # is removed. With two hubs running the wrong one could have a room of the
+    # same name, and the right one would keep a row nobody can clear.
+    if ($manifest.hub -and $manifest.hub -ne $hubId) {
+        Fail 'hub' 1 "$room is a room of $($manifest.hub), and the hub found is $hubId. rerun with -HubAddr for that hub"
+    }
     Step 'state' 'ok' "provisioned as $room"
 
     # WHAT WAS THERE BEFORE IS KEPT. A flag the manifest does not have, from an
@@ -510,6 +519,8 @@ case "$pathadded" in "$HOME"/*)
   if [ -f "$pathadded" ]; then
     grep -v '# added by atrium provision-room$' "$pathadded" > "$pathadded.atrium-tmp" || true
     cat "$pathadded.atrium-tmp" > "$pathadded"; rm -f "$pathadded.atrium-tmp"
+    # A profile holding nothing else was made by the line this added.
+    if [ -z "$(tr -d ' \t\n' < "$pathadded")" ]; then rm -f "$pathadded"; fi
     echo "path=removed the line this added to $pathadded"
   fi;;
 esac
