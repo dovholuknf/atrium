@@ -53,6 +53,8 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it, conflicts with 37 |
 | 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
+| 47 | A resident session's alias defaults from its name | feature | not started |
+| 48 | `atrium_launch` takes a model and a thinking effort | feature | not started |
 
 ------------
 
@@ -1034,6 +1036,25 @@ and a `room` verb to both service scripts. See `docs/packaging.md` "Provisioning
 other machine is also their first proof. Joins direct rooms only: a hub linked over ziti or zrok is refused with the
 reason. For stage 2 the step lines are `provision <step> <status> <detail>` and the exit codes are listed at the
 top of the script.
+
+## 47. A resident session's alias defaults from its name (feature)
+
+Raised 2026-09-28 by clint. Item 35 gives a card an alias by default only from a title prefix that holds a digit,
+so a worker titled `sa89: ...` wears `@sa89` and a resident session such as saorch wears none until one is set by
+hand.
+
+Expected: a resident session's alias defaults from the name it was given, so saorch wears `@saorch`. The same
+uniqueness rule as item 35 holds: a default that clashes with a live card's alias is not taken, and the card says
+why.
+
+## 48. `atrium_launch` takes a model and a thinking effort (feature)
+
+Raised 2026-09-28 by clint. Every launch runs at the runner's default model and effort (medium today). A cheap agent,
+an interviewer for example, costs as much per turn as a full worker.
+
+Expected: `atrium_launch` takes an optional model and an optional thinking effort (`low`, `medium` or `high`), and
+the runner starts with them. Left out, the runner's defaults hold, as today. The card shows the model and effort it
+runs with.
 
 
 ------------
