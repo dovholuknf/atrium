@@ -4051,3 +4051,22 @@ a delay. It stays up at least about a second, and goes once the runner shows the
 
 **Expected:** an alert `that paste is too big` naming its size and the 4MB limit. Nothing is sent. The terminal
 stays attached. It does not say `detached` or reconnect, which is what a frame over the daemon's limit used to do.
+
+## BR. The launch cap counts only `atrium:subagent` workers
+
+BR1 needs the hub built from this change and a hub restart. The room is untouched. Go tests
+`TestLaunchCapCountsOnlyRunningSubagents`, `TestLaunchRefusesAtTheCap` and `TestLaunchCapCountsOnlyAgentSessions` in
+`internal/link/control_mcp_test.go` cover the count.
+
+### BR1. Orchestrators and the merger do not use up the cap
+
+1. Start the hub with `ATRIUM_LAUNCH_CAP=2`.
+2. From a session, `atrium_launch` two workers with tags `atrium:subagent`, each with a brief that says: wait for a
+   message, then report done.
+3. Launch a third the same way.
+4. Launch a fourth with no `atrium:subagent` tag.
+5. Tell one of the first two to finish, wait for its card to go done, then launch another tagged worker.
+
+**Expected:** the third launch is refused with `at the launch cap of 2 running sessions`. The fourth proceeds even
+though every card carries `origin:agent`, and the board still hides all of them as doers. The last launch proceeds,
+because a done card does not count.
