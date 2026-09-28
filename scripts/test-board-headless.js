@@ -3558,6 +3558,85 @@ async function sayWhenSection(browser, base) {
     if (chips.ages.join(",") !== "16s,2m 5s,1h 0m 3s") {
       fail("the held age is not full h/m/s: " + JSON.stringify(chips.ages));
     }
+
+    // Backlog-2 item 42. A hold the room calls quiet is the envelope, not the
+    // `!`, and its tip names the one rule that holds it. A loud turn wait
+    // names whose rule it is too.
+    const quiet = await p.evaluate(() => {
+      const one = (act) => {
+        const d = document.createElement("div");
+        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
+        const s = d.querySelector(".chip");
+        return s ? { cls: s.className, text: s.textContent, tip: s.dataset.tip } : null;
+      };
+      return {
+        asked: one({ held_for: "turn", held_turn: "asked", held_quiet: true }),
+        runner: one({ held_for: "turn", held_turn: "runner", held_quiet: true, held_count: 2 }),
+        overdue: one({ held_for: "turn", held_turn: "asked", held_seconds: 3723 }),
+        byRunner: one({ held_for: "turn", held_turn: "runner" }),
+      };
+    });
+    const wantQuiet = {
+      asked: ["chip queued", "✉︎",
+        "1 message queued for this agent for 1m 30s, sent to arrive when the session's turn ends. " +
+        "It goes in when the turn ends"],
+      runner: ["chip queued", "✉︎ 2",
+        "2 messages queued for this agent for 1m 30s, because this runner does not take input mid-turn. " +
+        "They go in when the turn ends"],
+      overdue: ["chip held", "!",
+        "1 message has been waiting to be delivered to this agent for 1h 2m 3s and is blocked by " +
+        "the session's turn, which it was sent to wait for. It goes in when the turn ends"],
+      byRunner: ["chip held", "!",
+        "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
+        "the session's turn, because this runner does not take input mid-turn. It goes in when the turn ends"],
+    };
+    for (const k of Object.keys(wantQuiet)) {
+      const got = quiet[k];
+      const [cls, text, tip] = wantQuiet[k];
+      if (!got || got.cls !== cls || got.text !== text || got.tip !== tip) {
+        fail("the held chip for " + k + " reads " + JSON.stringify(got) + ", wanted " +
+          JSON.stringify({ cls, text, tip }));
+      }
+    }
+    if (/\bor\b/.test(quiet.asked.tip + quiet.runner.tip)) {
+      fail("a quiet hold's tip offers a choice of reasons: " + quiet.asked.tip + " | " + quiet.runner.tip);
+    }
+
+    // For checking by eye: HELD_SHOTS=<dir> writes each chip with its tip open
+    // in a dark and a light skin. `before` is a room older than `held_quiet`,
+    // which draws what every board drew for a done message.
+    if (process.env.HELD_SHOTS) {
+      const shots = {
+        before: { held_for: "turn" },
+        asked: { held_for: "turn", held_turn: "asked", held_quiet: true },
+        runner: { held_for: "turn", held_turn: "runner", held_quiet: true, held_count: 2 },
+        overdue: { held_for: "turn", held_turn: "asked", held_seconds: 3723 },
+      };
+      for (const skin of ["midnight", "paper"]) {
+        await p.evaluate(s => applySkin(s), skin);
+        for (const [name, act] of Object.entries(shots)) {
+          await p.evaluate(act => {
+            let box = document.getElementById("held-shot");
+            if (!box) {
+              box = document.createElement("div");
+              box.id = "held-shot";
+              box.className = "chips";
+              box.style.cssText = "position:fixed;left:420px;top:120px;z-index:9;display:flex;gap:4px;" +
+                "padding:8px;background:var(--card);border:1px solid var(--line)";
+              document.body.appendChild(box);
+            }
+            box.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "atrium-87300",
+              held_seconds: 245 }, act) }) + `<span class="chip room" style="--rhue:160">claude-sg4</span>`;
+          }, act);
+          await p.mouse.move(0, 0);
+          await p.hover("#held-shot .chip");
+          await p.waitForTimeout(900);
+          await p.screenshot({ path: path.join(process.env.HELD_SHOTS, skin + "-" + name + ".png"),
+            clip: { x: 300, y: 60, width: 620, height: 200 } });
+        }
+      }
+      await p.evaluate(() => document.getElementById("held-shot").remove());
+    }
   } finally {
     await ctx.close();
   }

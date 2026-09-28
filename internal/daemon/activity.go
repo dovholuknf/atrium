@@ -139,6 +139,15 @@ type Activity struct {
 	// constants. HeldCount is how many are held, which the chip shows.
 	HeldFor   string `json:"held_for,omitempty"`
 	HeldCount int    `json:"held_count,omitempty"`
+	// HeldTurn says whose rule a turn wait is, when HeldFor is the turn: one of
+	// the HeldTurn constants. The board names that one reason.
+	HeldTurn string `json:"held_turn,omitempty"`
+	// HeldQuiet is a hold that is only the message waiting as it was meant to:
+	// every held message waits for the turn, and none has waited past
+	// `heldTurnPatience`. The board draws a quiet queued mark for it and not the
+	// `!`, which is kept for a message held against what its sender asked for.
+	// Decided here and not on the board, so there is one rule. See heldPeer.quiet.
+	HeldQuiet bool `json:"held_quiet,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -177,6 +186,27 @@ type heldPeer struct {
 	since time.Time
 	why   string
 	count int
+	// turn is the HeldTurn constant when why is the turn.
+	turn string
+	// intended is every held message waiting for the turn, so nothing is held
+	// against what its sender asked for. An immediate message queued behind one
+	// that waits is not intended: it asked to go in now.
+	intended bool
+	// shownQuiet is what the board was last told, so the change from quiet to
+	// overdue publishes once. See setHeld.
+	shownQuiet bool
+}
+
+// heldTurnPatience is how long a message may wait for a turn before its mark
+// turns from the quiet queued one to the `!`. A worker's turn runs for tens of
+// minutes as a matter of course, so the bound is past that: a turn still going
+// after an hour is worth a look, and a message waiting on one is not news before.
+const heldTurnPatience = time.Hour
+
+// quiet reports whether this hold is only the message waiting as it was meant
+// to. See Activity.HeldQuiet.
+func (h heldPeer) quiet(now time.Time) bool {
+	return h.intended && h.why == HeldForTurn && now.Sub(h.since) < heldTurnPatience
 }
 
 // What is holding a message, as HeldFor says it. Three conditions and each is
@@ -192,6 +222,16 @@ const (
 	// HeldForDialog is a prompt the runner drew on its own screen, which an
 	// Enter would answer. It goes once the dialog is answered.
 	HeldForDialog = "dialog"
+)
+
+// Whose rule a turn wait is, as HeldTurn says it. The board names the one that
+// applies rather than offering both.
+const (
+	// HeldTurnAsked is the sender's own `when: "done"`.
+	HeldTurnAsked = "asked"
+	// HeldTurnRunner is a runner that does not take input mid-turn, which holds
+	// every message for the turn whatever its sender asked.
+	HeldTurnRunner = "runner"
 )
 
 func newActivityTracker() *activityTracker {
@@ -316,6 +356,8 @@ func (a *activityTracker) withHeld(taskID string, out *Activity) *Activity {
 	out.HeldSeconds = int64(a.now().Sub(h.since).Seconds())
 	out.HeldFor = h.why
 	out.HeldCount = h.count
+	out.HeldTurn = h.turn
+	out.HeldQuiet = h.quiet(a.now())
 	return out
 }
 
@@ -323,21 +365,27 @@ func (a *activityTracker) withHeld(taskID string, out *Activity) *Activity {
 // terminal, keeping the first sender's clock so the age is how long the OLDEST
 // held message has waited.
 //
-// `why` and `count` are replaced on every call, because what holds the oldest
-// message changes as the turn ends or the line clears, and the board says the
-// current reason. See the HeldFor constants.
+// The reason and the count in `r` are replaced on every call, because what
+// holds the oldest message changes as the turn ends or the line clears, and the
+// board says the current reason. See the HeldFor constants. Its `from` counts
+// only for the first call, and its `since` is not read.
 //
 // Reports whether anything the board shows changed, so a retry every few
-// seconds does not repaint it every few seconds.
-func (a *activityTracker) setHeld(taskID, from, why string, count int) bool {
+// seconds does not repaint it every few seconds. That includes a quiet hold
+// passing `heldTurnPatience`, which no event marks: the retry that notices it
+// publishes it.
+func (a *activityTracker) setHeld(taskID string, r heldPeer) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	h, ok := a.held[taskID]
 	if !ok {
-		h = heldPeer{from: from, since: a.now()}
+		h = heldPeer{from: r.from, since: a.now()}
 	}
-	changed := !ok || h.why != why || h.count != count
-	h.why, h.count = why, count
+	changed := !ok || h.why != r.why || h.count != r.count || h.turn != r.turn || h.intended != r.intended
+	h.why, h.count, h.turn, h.intended = r.why, r.count, r.turn, r.intended
+	quiet := h.quiet(a.now())
+	changed = changed || quiet != h.shownQuiet
+	h.shownQuiet = quiet
 	a.held[taskID] = h
 	return changed
 }

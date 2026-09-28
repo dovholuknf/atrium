@@ -3668,8 +3668,8 @@ label. The answer says `terminal` and `when: immediate`. B reads it at its next 
 1. Start B working again. Have A call `atrium_say` to B with `when: "done"` and "when you finish, rebase".
 
 **Expected:** nothing is typed while B works, and the answer says `queued` and `when: done`. B's terminal row shows
-the `!` chip, and its tip says the message waits for the session's turn to end. It does not tell you to clear your
-line. B's next tool calls are not interrupted. About two seconds after B's turn ends the text is typed in and sent,
+the quiet envelope (see CA), and its tip says the message waits for the session's turn to end. It does not tell you
+to clear your line. B's next tool calls are not interrupted. About two seconds after B's turn ends the text is typed in and sent,
 and the chip goes.
 
 ### BI3. A runner set to no falls back to done
@@ -4521,3 +4521,48 @@ change size. It follows the terminal to the second card. Clicking the strip agai
 **Expected:** the orchestrator gets one message: `<worker> is at <N>k context. Tell it to report what it has and
 stop, or hand off.` Nothing after the later turns, and nothing after the restart. A card you started yourself, past
 the same line, has the mark and sends nobody anything.
+
+## CA. A message queued on purpose wears a quiet envelope, and the `!` is kept for one held against its sender
+
+CA1 to CA4 need the room built from this change and a room restart (the room decides which mark a hold wears), and
+on a hub board the hub rebuilt and restarted too (the board draws it). A new board against an older room still shows
+the `!` for every hold. Go tests in `internal/daemon/held_intent_test.go` cover a done message mid-turn as a quiet
+hold that names the sender, a runner that takes no mid-turn input as a quiet hold that names the runner, a line hold
+that is never quiet, an immediate message queued behind a done one that is not quiet, and a quiet hold turning into
+the `!` past an hour, told to the board once. The headless section `sayWhen` in `scripts/test-board-headless.js`
+(`HEADLESS_ONLY=sayWhen`) covers the envelope, the count, and each tooltip. `HELD_SHOTS=<dir>` writes the chips with
+their tips open in two skins. See `docs/backlog-2.md` item 42.
+
+### CA1. A done message to a working card
+
+1. Give a Claude card a task long enough to keep it working for a few minutes.
+2. From another session, `atrium_say` it with `when: "done"`.
+3. Hover the mark on its terminals-list row.
+
+**Expected:** the row wears a small envelope in the neutral chip colour, not the pulsing amber `!`. The tip reads
+`1 message queued for this agent for <age>, sent to arrive when the session's turn ends. It goes in when the turn
+ends`. No toast, no sound. When the turn ends the message is typed and the envelope goes.
+
+### CA2. A runner that takes no input mid-turn
+
+1. On rooms > runners, untick the mid-turn input setting for a runner. Start a card on it and set it working.
+2. `atrium_say` it twice with no `when`.
+
+**Expected:** the envelope shows `2`, and the tip names only the runner: `because this runner does not take input
+mid-turn`. It does not also offer "sent to arrive when the turn ends".
+
+### CA3. The `!` for a message held against its sender
+
+1. Type some text into a card's input line and leave it there.
+2. `atrium_say` it with no `when`.
+
+**Expected:** the amber `!` pulses as before, and the tip says it is blocked by input in this terminal. The same
+with a dialog open on the card. On a working card, a done message followed by an immediate one while the line has text
+shows `! 2`, because the immediate one asked to go in now.
+
+### CA4. A turn that runs past an hour
+
+1. Send a done message to a card whose turn keeps going for more than an hour.
+
+**Expected:** for the first hour the envelope. After it the `!`, with the tip `blocked by the session's turn, which
+it was sent to wait for`. The message still waits for the turn to end.
