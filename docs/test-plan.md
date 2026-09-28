@@ -3986,3 +3986,36 @@ notice is not. Switch to another card and back: the notice is back, and only the
 **Expected:** the guest's terminal shows the old notice, which names the cog, with no links. A guest request for
 `/v1/tasks/<id>/attach?carry=all` is refused with 403. The popped-out window shows both links, and BO1 and BO2 work
 there.
+
+## BP. A launched worker starts lean, keeps its hooks, and reports
+
+BP1 to BP3 need the hub and the room built from this change, and a room restart. Go tests `TestLeanArgs*`,
+`TestLeanSettings*` and `TestLeanOptionsComeFromTheRequestOrTheCard` in `internal/daemon/lean_test.go`, and
+`TestLaunchIsLeanByDefaultAndForwardsTheMCPList` in `internal/link/control_mcp_test.go`, cover the flags, the MCP list
+and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 29.
+
+### BP1. A default launch is lean
+
+1. From a session, `atrium_launch` a worker into a worktree with a brief that says: run `git status`, then report
+   done.
+2. When it reports, run `/context` in its terminal.
+
+**Expected:** the report reaches the launcher. The permission history shows its `git status` decided through the
+gate. `/context` lists no custom agents, no skills, and no memory files in a worktree. MCP tools are
+`atrium-control` only. The card carries the tag `atrium:lean`.
+
+### BP2. Asking for mercurius
+
+1. Launch a second worker the same way, with `mcp: ["mercurius"]`.
+
+**Expected:** `/context` lists the `mercurius` tools beside `atrium-control`. The card carries
+`atrium:mcp:mercurius`. A launch with `mcp: ["nosuch"]` is refused, and the error names the servers the runner has.
+
+### BP3. Lean survives a restart, and can be turned off
+
+1. With the BP1 worker idle, restart the room.
+2. Run `/context` in its terminal again.
+3. Launch a third worker with `lean: false`.
+
+**Expected:** after the restart the BP1 worker is still lean: no skills, no agents, `atrium-control` only. The third
+worker has the operator's whole setup, as before this change.
