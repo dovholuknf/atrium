@@ -1044,8 +1044,13 @@ function fillSkins(s) {
   const now = s.board_skin || names[0];
   sel.innerHTML = names.map(n =>
     `<option value="${esc(n)}"${n === now ? " selected" : ""}>${esc(n)}</option>`).join("");
-  applySkin(now);
+  if (!skinSaving) applySkin(now);
 }
+
+// A SAVE IN FLIGHT OWNS THE SKIN. A settings read answered before the save
+// reached the daemon carries the old skin, and painting it put the old colours
+// back over the one just picked, for good. Set for the length of the write.
+let skinSaving = "";
 
 // Wearing it. One attribute on `body`, which every skin rule keys off.
 //
@@ -1298,18 +1303,22 @@ async function saveSkin(name) {
   // second of the old colours while you are staring at the control you just
   // moved.
   applySkin(want);
+  skinSaving = want;
   try {
     pastePrefs = await api("/v1/settings", {
       method: "POST",
       body: JSON.stringify({ board_skin: want })
     });
   } catch (e) {
+    skinSaving = "";
     // Put it back. A skin that did not save and stayed on screen is a board
     // that changes colour by itself at the next reload.
     toast("that did not save", e.message);
     fillSkins(pastePrefs || {});
     return;
   }
+  skinSaving = "";
+  applySkin(want);
   rememberSkin(want);
   // Every popped-out terminal is a separate window with its own body, and a
   // skin is board-wide by definition, so they repaint now rather than at their
@@ -1379,6 +1388,7 @@ function applyResolvedSkin(s) {
   if (!s) return;
   const lab = document.getElementById("skinlab");
   if (lab && !lab.hidden) return;
+  if (skinSaving) return;
   const names = s.board_skins || [];
   const now = s.board_skin || names[0] || "";
   if (now && names.length && now !== names[0]) {

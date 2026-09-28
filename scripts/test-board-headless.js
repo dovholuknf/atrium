@@ -1618,9 +1618,17 @@ async function restartGateSection(browser, base) {
     if (!(await hasCountdown())) fail("the countdown toast stayed gone after something removed it.");
     await gp.waitForTimeout(9500);
     if (!(await hasCountdown())) fail("the countdown toast went away on a timer.");
+    // Every stream back, not only the one `#conn` watches. The hub's own stream
+    // reopens on its own clock, and an event said before it is back is said to
+    // nobody: the "cancelled countdown stayed on screen" flake.
+    const streamsWere = openStreams.filter(r => !r.destroyed).length;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
       { timeout: 15000 }).catch(() => fail("the stream did not come back."));
+    for (const end = Date.now() + 15000;
+      openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
+      await gp.waitForTimeout(50);
+    }
     await gp.waitForTimeout(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
@@ -4168,6 +4176,107 @@ async function skinHealSection(browser, base) {
   }
 }
 
+// ── the history view paints rows ──────────────────────────────────────
+async function historySection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  try {
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+  await page.click('.tab[data-view="history"]');
+  await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
+  const histRows = await page.locator("#history-list .row.line").count();
+  if (histRows < 1) fail("the history view painted no rows from /v1/history.");
+
+  // ── a long history scrolls in its own box, filters stay put ───────────
+  // main clips, so a view that is not a scroll box of its own can never show
+  // the rows below the window. Two pages loaded, then checked at desktop and
+  // phone widths.
+  histMany = true;
+  await page.evaluate(() => renderHistory(false));
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 100, null,
+    { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
+  await page.evaluate(() => moreHistory());
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 200, null,
+    { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
+  for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
+    await page.setViewportSize(vp);
+    const sc = await page.evaluate(() => {
+      const list = document.getElementById("history-list");
+      const bar = document.querySelector("#history > .toolbar");
+      list.scrollTop = 0;
+      const before = bar.getBoundingClientRect().top;
+      const tall = { sh: list.scrollHeight, ch: list.clientHeight };
+      list.scrollTop = 600;
+      return Object.assign(tall, {
+        moved: list.scrollTop,
+        barMoved: bar.getBoundingClientRect().top - before,
+        barOnScreen: bar.getBoundingClientRect().bottom <= window.innerHeight
+      });
+    });
+    if (!(sc.sh > sc.ch) || sc.moved <= 0) {
+      fail("the history list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
+    }
+    if (sc.barMoved !== 0 || !sc.barOnScreen) {
+      fail("the history search bar moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  // ── a live repaint keeps the pages and the reader's row ───────────────
+  // A board event repaints the open view. It re-reads both pages rather than
+  // cutting back to one, and a new run on top does not move the row a reader
+  // who has scrolled down is on.
+  const hHeld = await page.evaluate(() => {
+    const list = document.getElementById("history-list");
+    list.scrollTop = 3000;
+    const top = list.getBoundingClientRect().top;
+    const row = [...list.querySelectorAll(".row.line")]
+      .find(r => r.getBoundingClientRect().bottom > top);
+    return { scrollTop: list.scrollTop, id: row.dataset.id,
+      offset: row.getBoundingClientRect().top - top };
+  });
+  histManyLive = true;
+  await page.evaluate(() => repaintLists());
+  await page.waitForFunction(() =>
+    document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
+    { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
+  const hLate = await page.evaluate((id) => {
+    const list = document.getElementById("history-list");
+    const row = list.querySelector('.row.line[data-id="' + id + '"]');
+    return { rows: list.querySelectorAll(".row.line").length, scrollTop: list.scrollTop,
+      offset: row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null };
+  }, hHeld.id);
+  if (hLate.rows < 200) {
+    fail("a live history repaint cut the list back to one page: " + JSON.stringify(hLate));
+  }
+  if (hLate.scrollTop < hHeld.scrollTop || hLate.offset === null ||
+      Math.abs(hLate.offset - hHeld.offset) > 1) {
+    fail("a live history repaint moved the reader: " + JSON.stringify({ hHeld, hLate }));
+  }
+
+  // ── a new search starts at the top ────────────────────────────────────
+  await page.evaluate(() => renderHistory(false));
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 100, null,
+    { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
+  const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
+  if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
+  histMany = false; histManyLive = false;
+  await page.evaluate(() => renderHistory(false));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // Where in this file a throw came from. A bare "Timeout 30000ms exceeded" names
 // no wait, so a failure nobody can run alone could not even be found.
 function threwAt(e) {
@@ -4190,7 +4299,8 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      skinScope: skinScopeSection, skinHeal: skinHealSection };
+      skinScope: skinScopeSection, skinHeal: skinHealSection,
+      history: historySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -4268,89 +4378,7 @@ async function main() {
     await page.evaluate(() => runRefresh());
 
     // ── the history view paints rows ──────────────────────────────────────
-    await page.click('.tab[data-view="history"]');
-    await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
-    const histRows = await page.locator("#history-list .row.line").count();
-    if (histRows < 1) fail("the history view painted no rows from /v1/history.");
-
-    // ── a long history scrolls in its own box, filters stay put ───────────
-    // main clips, so a view that is not a scroll box of its own can never show
-    // the rows below the window. Two pages loaded, then checked at desktop and
-    // phone widths.
-    histMany = true;
-    await page.evaluate(() => renderHistory(false));
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100, null,
-      { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
-    await page.evaluate(() => moreHistory());
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 200, null,
-      { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
-    for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
-      await page.setViewportSize(vp);
-      const sc = await page.evaluate(() => {
-        const list = document.getElementById("history-list");
-        const bar = document.querySelector("#history > .toolbar");
-        list.scrollTop = 0;
-        const before = bar.getBoundingClientRect().top;
-        const tall = { sh: list.scrollHeight, ch: list.clientHeight };
-        list.scrollTop = 600;
-        return Object.assign(tall, {
-          moved: list.scrollTop,
-          barMoved: bar.getBoundingClientRect().top - before,
-          barOnScreen: bar.getBoundingClientRect().bottom <= window.innerHeight
-        });
-      });
-      if (!(sc.sh > sc.ch) || sc.moved <= 0) {
-        fail("the history list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
-      }
-      if (sc.barMoved !== 0 || !sc.barOnScreen) {
-        fail("the history search bar moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
-      }
-    }
-    await page.setViewportSize({ width: 1280, height: 800 });
-
-    // ── a live repaint keeps the pages and the reader's row ───────────────
-    // A board event repaints the open view. It re-reads both pages rather than
-    // cutting back to one, and a new run on top does not move the row a reader
-    // who has scrolled down is on.
-    const hHeld = await page.evaluate(() => {
-      const list = document.getElementById("history-list");
-      list.scrollTop = 3000;
-      const top = list.getBoundingClientRect().top;
-      const row = [...list.querySelectorAll(".row.line")]
-        .find(r => r.getBoundingClientRect().bottom > top);
-      return { scrollTop: list.scrollTop, id: row.dataset.id,
-        offset: row.getBoundingClientRect().top - top };
-    });
-    histManyLive = true;
-    await page.evaluate(() => repaintLists());
-    await page.waitForFunction(() =>
-      document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
-      { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
-    const hLate = await page.evaluate((id) => {
-      const list = document.getElementById("history-list");
-      const row = list.querySelector('.row.line[data-id="' + id + '"]');
-      return { rows: list.querySelectorAll(".row.line").length, scrollTop: list.scrollTop,
-        offset: row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null };
-    }, hHeld.id);
-    if (hLate.rows < 200) {
-      fail("a live history repaint cut the list back to one page: " + JSON.stringify(hLate));
-    }
-    if (hLate.scrollTop < hHeld.scrollTop || hLate.offset === null ||
-        Math.abs(hLate.offset - hHeld.offset) > 1) {
-      fail("a live history repaint moved the reader: " + JSON.stringify({ hHeld, hLate }));
-    }
-
-    // ── a new search starts at the top ────────────────────────────────────
-    await page.evaluate(() => renderHistory(false));
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100, null,
-      { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
-    const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
-    if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
-    histMany = false; histManyLive = false;
-    await page.evaluate(() => renderHistory(false));
+    await historySection(browser, base);
 
     // ── changing runners pane goes back to the top ────────────────────────
     // `#runners` is the scroll box, not main. A short window so the page has
