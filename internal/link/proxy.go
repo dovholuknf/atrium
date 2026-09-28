@@ -215,15 +215,21 @@ func hostFor(room string) string {
 // An id of the form `room~card` names a room too, and that is what makes an
 // aggregate board clickable: the board got the id from a merged list and hands
 // it straight back in the next url without knowing what it means.
+//
+// THE CARD BEATS THE HEADER. A card lives on one room, so a header naming
+// another can only be wrong about it. See cardroute.go.
 func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
+	if v, _ := r.Context().Value(cardRoomKey{}).(string); v != "" {
+		return v, true
+	}
+	if room, _ := splitTag(cardIDIn(r.URL.Path)); room != "" {
+		return room, true
+	}
 	if v := strings.TrimSpace(r.Header.Get(RoomHeader)); v != "" {
 		return v, true
 	}
 	if v := strings.TrimSpace(r.URL.Query().Get(RoomParam)); v != "" {
 		return v, true
-	}
-	if room, _ := splitTag(cardIDIn(r.URL.Path)); room != "" {
-		return room, true
 	}
 	// Exactly one room needs no choosing. The operator was explicit: do not
 	// ask when there is nothing to ask about.
@@ -293,19 +299,19 @@ type cardLoc struct {
 	at   time.Time
 }
 
-// cardRoomTTL is how long a resolved card->room answer is trusted. Short: a card
-// does not move between rooms, so the only thing this can get wrong is a room
+// cardRoomTTL is how long a resolved card->room answer is trusted. A card does
+// not move between rooms, so the only thing this can get wrong is a room
 // detaching, and cachedCardRoom rechecks the live attachment before it trusts a
-// cached answer anyway.
-const cardRoomTTL = 5 * time.Second
+// cached answer anyway. Minutes rather than seconds since item 63, because every
+// request naming a card now resolves, including the board's scoped polls.
+const cardRoomTTL = 2 * time.Minute
 
 // roomHolding finds which attached room holds a bare card id.
 //
 // A card id is globally unique, so at most one attached room owns it. This asks
 // each room for the card - a bounded GET `/v1/tasks/<id>` per room - and takes
-// the first that answers 200. It runs on a card-scoped write with a bare id
-// under more than one room, which is an upload or a message rather than the hot
-// poll, so a small fan-out is acceptable. The answer is cached briefly.
+// the first that answers 200. It runs on every request that names a bare card,
+// header or not (see cardroute.go), so the answer is cached. See cardRoomTTL.
 //
 // A quiet room contributes nothing, exactly as the aggregate fan-out treats one:
 // it is skipped rather than failing the whole resolution.
@@ -390,15 +396,6 @@ func (p *Proxy) rememberCardRoom(bare, room string) {
 	p.cardRoom[bare] = cardLoc{room: room, at: time.Now()}
 }
 
-// cardGone is the 404 for a card-scoped request whose bare id no attached room
-// holds. A card that resolves nowhere has been removed, which is a not-found
-// rather than a room prompt or a server error.
-func cardGone(w http.ResponseWriter, id string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprintf(w, `{"error":%q}`, "no card "+id+" is held by any attached room")
-}
-
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
@@ -428,6 +425,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, `{"error":"a hub cannot stop a room. `+
 			`run atrium stop on the machine the room is on."}`)
+		return
+	}
+	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
+	// says. Ahead of startsNothing so that sees the room the work would land on.
+	// See cardroute.go.
+	var placed bool
+	if r, placed = p.placeCard(w, r); !placed {
 		return
 	}
 	// A ROOM ON ITS WAY OUT STARTS NOTHING NEW.
@@ -509,31 +513,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// A write, or a read nothing knows how to merge, with more than one room
-		// attached and no room named. Usually a question - EXCEPT for a
-		// card-scoped request carrying a bare id.
+		// attached and no room named. A question.
 		//
-		// A card id is globally unique, so exactly one attached room owns it. A
-		// terminal that attached while one room was live holds a bare id, and its
-		// upload, message, exit and every other per-card op post
-		// `/v1/tasks/<bare-id>/...` with no tag and no header. Refusing those with
-		// `needsARoom` was the paste-into-a-terminal 409: the hub can RESOLVE the
-		// owning room instead of asking. Only a request with NO card id (a
-		// genuinely machine-shaped write like `/v1/settings`) still falls through.
+		// Never for a request that names a card: `placeCard` already resolved a
+		// bare id to its owning room, which is what fixed the paste-into-a-terminal
+		// 409. Only a genuinely machine-shaped write like `/v1/settings` gets here.
 		if room == "" {
 			if rooms := p.hub.Rooms(); len(rooms) > 1 {
-				if bare := cardIDIn(r.URL.Path); bare != "" {
-					owner, ok := p.roomHolding(r, bare, rooms)
-					if !ok {
-						// No attached room holds it: the card is gone, which is a
-						// 404, not a 500 and not a room prompt.
-						cardGone(w, bare)
-						return
-					}
-					room = owner
-				} else {
-					needsARoom(w, rooms)
-					return
-				}
+				needsARoom(w, rooms)
+				return
 			}
 		}
 	}
