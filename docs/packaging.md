@@ -701,29 +701,72 @@ PATH and needs no administrator either.
 
 ```
 pwsh -File scripts\provision-room.ps1 user@host -Runners claude,codex
+pwsh -File scripts\provision-room.ps1 user@host -Install claude          # fetch it from Anthropic, after a warning
+pwsh -File scripts\provision-room.ps1 user@host -FromCheckout            # dev: build instead of a release
 pwsh -File scripts\provision-room.ps1 user@host -Remove
 ```
 
-It reads the running hub's `--link`, `--link-advertise` and `--atrium-dir` from its process, finds the remote OS and
-arch with `uname` or PowerShell, builds a matching binary from this checkout (`CGO_ENABLED=0`, into
-`build.claude/provision/`), and copies it to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere. It copies the
-service scripts to `~/.atrium/provision` and installs autostart through them with the new `room` verb
-(`atrium-service.ps1 -Verb room`, `ATRIUM_SERVICE_VERB=room atrium-service.sh`), so the logon task, user unit or
-LaunchAgent runs `atrium room` instead of `atrium daemon`. It mints a join string with `atrium rooms add` and
-`atrium rooms token`, and the remote spends it with `atrium room join <string> --no-run`, which enrols and exits so
-the service runs the room rather than the ssh session. Then it waits for the hub's live `/_hub/rooms` list to show a
-connection made after the start, and runs each runner's `--version` on the remote.
+**The hub.** It reads the running hub's `--transport`, `--link`, `--link-advertise`, `--atrium-dir` and
+`--atrium-service` from its process. `-HubAddr` picks one when more than one hub is running.
+
+**The binary.** By default it fetches the GitHub release of dovholuknf/atrium for the remote's OS and arch and checks
+it against the release's `checksums.txt`. There are no releases yet, so this stops with `provision fetch fail` and
+the reason. `-FromCheckout` builds from the checkout (`CGO_ENABLED=0`, into `build.claude/provision/`). The binary
+goes to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere.
+
+**The join.** It mints a join string with `atrium rooms add` and `atrium rooms token`, and the remote spends it with
+`atrium room join <string> --no-run`, which enrols and exits.
+
+- Direct: the string carries the one-time secret and the hub's fingerprint.
+- Ziti: the operator gives an enrollment JWT for the remote from their own network, as `-ZitiJwt <file>` or as
+  `-ZitiJwtCommand '<command that prints one>'`. It reaches the remote as a file (stdin on Unix, scp on Windows),
+  `room join --openziti <file>` enrols it with a key made there, and the file is deleted. A remote with no `ziti` CLI
+  is enrolled in process with the embedded SDK. With no JWT the script stops with exit 7 and names the command.
+- zrok: a hub running over zrok writes its private share to `zrok-share` in its key folder, 0600, and removes it at
+  shutdown, so `rooms token` can mint a zrok join string from beside it. The remote needs its own `zrok2 enable`,
+  which takes the operator's account token, so when the remote has no environment the script stops with exit 7 and
+  names that command.
+
+**Running it.** By default the room starts with `atrium room --detach`, through a login shell on Unix so it has the
+PATH a terminal has. It runs until the machine restarts or the user logs out, and has no autostart. `-Autostart`
+also installs the logon task, user unit or LaunchAgent through the service scripts, with the `room` verb
+(`atrium-service.ps1 -Verb room`, `ATRIUM_SERVICE_VERB=room atrium-service.sh`). `atrium-service.sh` now leaves
+lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package postinstall is unchanged.
+
+**Checking it.** It waits for the hub's live `/_hub/rooms` list to show a connection made after the start, and still
+there five seconds later, then runs each runner's `--version` on the remote.
+
+**Runners.** Report only by default. `-Install claude,codex` fetches from the vendor: `https://claude.ai/install.sh`
+or `install.ps1` for claude, the `openai/codex` GitHub release for codex. It prints a trust warning first. If
+`~/.local/bin` is not on PATH it adds it: the user's Path in the registry on Windows, one marked line in the login
+profile on Unix.
+
+**One room per machine.** A remote that is already a room of any hub, or runs an atrium this did not install, is
+refused with exit 6.
 
 ssh runs with `BatchMode=yes` and whatever the operator's ssh config and agent say. The script holds no key. The join
 string is single-use, good for an hour, and not stored. `~/.atrium/provision/manifest.json` records what was on the
-machine before the first run, so `-Remove` takes away only what this added and then removes the room from the hub.
-Every step prints `provision <step> <ok|done|skip|warn|fail> <detail>` and the exit code says which class of step
-failed, which is what the board dialog in backlog-2 item 46 will read.
+machine before the first run, so `-Remove` takes away only what this added. That covers runners it installed, the
+PATH entry, and the room's row on the hub it joined, and it refuses to start if the hub found is a different one.
+For ziti it says which identity to delete from the network. Every step prints
+`provision <step> <ok|done|skip|warn|fail> <detail>` and the exit code says which class of step failed, which is
+what the board dialog in backlog-2 item 46 will read.
 
-Proven on claudevm (Windows 11, Windows PowerShell 5.1 as the ssh shell) on 2026-09-28: fresh install, a rerun that
-changed nothing, a rerun with a new build that stopped the room, swapped the binary and saw it reattach, and
-`-Remove` twice. Linux and macOS are written against the same service script paths proven above but have not been
-run through this script.
+What was proven on 2026-09-28, all with `-FromCheckout` since there is no release:
+
+- Windows (claudevm, Windows PowerShell 5.1 over ssh): install, rerun, new build, detached room surviving the ssh
+  session, `-Install claude` with the PATH entry, `-Remove` of all of it.
+- Linux (WSL Ubuntu over `ssh localhost`): install, rerun, `-Autostart` taking over a detached room with lingering
+  off, `-Remove`.
+- macOS (m1mini, arm64): install, `-Install claude,codex` with a `.zprofile` line, `-Remove` of all of it, then
+  install again.
+- Ziti: a throwaway `ziti edge quickstart` network and a throwaway hub on its own ports. claudevm joined with
+  `-ZitiJwtCommand` and in-process enrolment, and WSL with `-ZitiJwt` and the `ziti` CLI. Both attached over the
+  service.
+- zrok: a throwaway hub on the operator's zrok account reserved a share and wrote it down. `rooms token` minted from
+  it, an isolated room on the hub machine joined and attached over the share after about 45 seconds, and the share
+  was deleted afterwards. A remote with no zrok environment stopped at exit 7. No remote was attached over zrok,
+  because none has an environment and enabling one is the operator's.
 
 ---
 
