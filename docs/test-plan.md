@@ -4096,3 +4096,40 @@ ctrl-u.
 1. Untick the setting.
 
 **Expected:** the readout line goes. The browser's network panel shows no more requests to `/typing`.
+
+## BS. A card has an alias you mention it by
+
+Needs a room built from this change (it runs migration `0063_task_alias`) and a hub built from it for `atrium_say`
+and `atrium_peers`. Go tests in `internal/store/alias_test.go`, `internal/daemon/alias_test.go` and
+`TestResolvePeerAcceptsAnAlias` in `internal/link/control_mcp_test.go` cover the uniqueness, the refusal, the launch
+default and resolution. The headless section `alias` covers the chip and the menu's PATCH. See `docs/backlog-2.md`
+item 35.
+
+### BS1. A worker starts with its prefix
+
+1. From a session, `atrium_launch` a worker titled `sa99: alias check` with a brief that says to report done.
+
+**Expected:** its card wears an `@sa99` chip. `atrium_peers` from another session lists it with `"alias": "sa99"`.
+`atrium_say` to `@sa99` (and to `sa99`) reaches it.
+
+### BS2. Setting one by hand, and a clash
+
+1. Right click a resident card, such as dotfiles, and choose "alias…". Type `@dotfiles` and press ok.
+
+**Expected:** the card wears `@dotfiles`. `atrium tell dotfiles "ping"` from a session's shell reaches it, and
+`atrium peers` prints `dotfiles-NNNNN @dotfiles`.
+
+2. On a second card choose "alias…" and type `dotfiles`.
+
+**Expected:** a toast "that did not stick" that says `@dotfiles is already the alias of dotfiles-NNNNN (...)`. The
+second card's alias is unchanged.
+
+3. Choose "alias…" on the first card, empty the box and press ok.
+
+**Expected:** the chip goes, and `atrium_say` to `@dotfiles` answers "no session called ..." with the list.
+
+### BS3. An ended card lets go
+
+1. Exit the BS1 worker so its card goes to finished, then launch another worker titled `sa99: again`.
+
+**Expected:** the new card wears `@sa99`, and `atrium_say` to `@sa99` reaches the new one.
