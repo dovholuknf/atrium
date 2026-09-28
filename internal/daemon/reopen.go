@@ -168,6 +168,8 @@ func (d *Daemon) reopenSaved() {
 			// another file and a future edit there would take this with it
 			// without anybody noticing.
 			Model: t.Model,
+			// The effort and the extras, for the same reason.
+			Effort: t.Effort, Args: t.LaunchArgs, Env: t.LaunchEnv,
 		}
 		_, err := d.Launch(req)
 		// Back, or never coming. Both end the wait on this card: a worktree

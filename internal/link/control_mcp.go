@@ -205,6 +205,15 @@ func (c *controlMCP) server() *mcp.Server {
 			"still there when a human takes the card over. Put in it what you would tell a " +
 			"colleague joining: what the job is, what has been tried, what the constraints are, " +
 			"and what NOT to do.\n\n" +
+			"WHAT IT RUNS ON. `model` and `effort` pick the model and the thinking effort, for " +
+			"a cheap agent such as an interviewer: a small model at low effort. Each runner's " +
+			"row says how it takes them (claude: `--model`, `--effort`. codex: `--model`, " +
+			"`-c model_reasoning_effort=`), and atrium checks neither against any list, so use " +
+			"whatever names and levels that runner accepts. A runner with no way to take one " +
+			"refuses the launch rather than starting on its default. `args` is extra argv and " +
+			"`env` extra environment, passed as given for anything the two fields do not cover. " +
+			"Empty means the runner's default. The card keeps all four, so a restart comes back " +
+			"the same, and shows them in its details (env by name only).\n\n" +
 			"Returns the card id. Use it with `atrium_task` and `atrium_say`.",
 	}, c.launchHandler)
 
@@ -332,7 +341,12 @@ type ctlCard struct {
 	Wait     int      `json:"wait_seconds"`
 	Superv   bool     `json:"supervised"`
 	Tags     []string `json:"tags"`
-	Activity struct {
+	// What the card was launched with. See docs/launch-options-design.md.
+	Model         string   `json:"model"`
+	Effort        string   `json:"effort"`
+	LaunchArgs    []string `json:"launch_args"`
+	LaunchEnvKeys []string `json:"launch_env_keys"`
+	Activity      struct {
 		What string `json:"what"`
 	} `json:"activity"`
 	Seen *ctlSeen `json:"seen,omitempty"`
@@ -947,6 +961,12 @@ type launchInput struct {
 	// Lean is on unless the caller turns it off. See leanLaunch.
 	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. default true. false starts it with the operator's whole setup"`
 	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
+	// Model and Effort are mapped by the runner's harness row, Args and Env are
+	// passed as given. See docs/launch-options-design.md.
+	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`
+	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, passed in the shape its runner row declares (claude: --effort, codex: -c model_reasoning_effort=). not checked: whatever the runner accepts, such as low, medium or high for claude. empty is the runner's default. a runner with no way to take one refuses"`
+	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, one per element, added after the model and effort and before the prompt. used as given. shown on the card, so keep secrets out"`
+	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. ATRIUM_ names are refused. the values stay on the room and the card shows the names only"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
@@ -970,7 +990,11 @@ type launchOutput struct {
 	// Returned so the caller can add to it later: a peer that turns out to need
 	// one more fact should be given it in the file it already reads.
 	Brief string `json:"brief,omitempty"`
-	Note  string `json:"note,omitempty"`
+	// Model and Effort are what the card says it was started with, read back
+	// from the room rather than echoed from the request.
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest, in launchInput) (
@@ -1034,11 +1058,14 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		"brief": strings.TrimSpace(in.Brief), "tags": tags,
 		"theme": strings.TrimSpace(in.Theme), "spawned_by": agentOf(req),
 		"lean": leanLaunch(in, harness), "mcp": in.MCP,
+		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
+		"args": in.Args, "env": in.Env,
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
 		return nil, out, err
 	}
+	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
 	if strings.TrimSpace(in.Brief) != "" {
 		// The room wrote it; name it back in the same slash form the rest of
@@ -1050,7 +1077,34 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."
+	if missed := launchOptionsDropped(in, t); len(missed) > 0 {
+		// A room older than launch options drops the fields without a word.
+		// The session is running, and exiting it is the caller's call.
+		verb := " were"
+		if len(missed) == 1 {
+			verb = " was"
+		}
+		out.Note = "WARNING: the room is older than launch options, so " + strings.Join(missed, ", ") +
+			verb + " NOT applied and the session is running on the runner's defaults. " + out.Note
+	}
 	return nil, out, nil
+}
+
+// launchOptionsDropped names the launch options that were asked for and that
+// the card the room handed back does not carry, which is how an older room
+// that ignored them shows. See docs/launch-options-design.md "Version skew".
+func launchOptionsDropped(in launchInput, t ctlCard) []string {
+	var missed []string
+	if strings.TrimSpace(in.Effort) != "" && t.Effort == "" {
+		missed = append(missed, "effort")
+	}
+	if len(in.Args) > 0 && len(t.LaunchArgs) == 0 {
+		missed = append(missed, "args")
+	}
+	if len(in.Env) > 0 && len(t.LaunchEnvKeys) == 0 {
+		missed = append(missed, "env")
+	}
+	return missed
 }
 
 // ── exit ────────────────────────────────────────────────────────────────────────

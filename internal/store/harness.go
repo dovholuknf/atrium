@@ -63,6 +63,17 @@ type Harness struct {
 	// the argument. Which models exist changes every few months, and a list
 	// held here would ship out of date.
 	ModelArgs []string `json:"model_args"`
+	// EffortArgs name a thinking effort for one launch, with {effort} where the
+	// level goes. The same rules as ModelArgs: empty means this runner cannot be
+	// asked for one and a launch that does is refused, and it is the shape of
+	// the argument, never a list of levels. Claude takes `--effort <level>`,
+	// codex takes it as a config override.
+	EffortArgs []string `json:"effort_args"`
+	// ModelEnv and EffortEnv name an environment variable that carries the
+	// value, for a runner that takes it that way rather than as a flag. Empty
+	// on every seeded row. A runner may map a field by args, by env or both.
+	ModelEnv  string `json:"model_env"`
+	EffortEnv string `json:"effort_env"`
 	// ExitKeys is what to send to ask this runner to exit, in order.
 	//
 	// There is no common answer: a shell takes `exit` and a newline, claude
@@ -144,6 +155,7 @@ func DefaultHarnesses() []Harness {
 			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:  []string{"{prompt}"},
 			ModelArgs:   []string{"--model", "{model}"},
+			EffortArgs:  []string{"--effort", "{effort}"},
 			RulesSource: "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true,
 			Package: "@anthropic-ai/claude-code",
 			Notes:   "resume needs a session id, which only a runner that reports one can supply",
@@ -163,6 +175,9 @@ func DefaultHarnesses() []Harness {
 			ResumeArgs:     []string{"resume", "{resume}"},
 			PromptArgs:     []string{"{prompt}"},
 			ModelArgs:      []string{"--model", "{model}"},
+			// A config override, because codex has no effort flag. The key is
+			// in codex-cli 0.156.1.
+			EffortArgs:     []string{"-c", "model_reasoning_effort={effort}"},
 			BracketedPaste: true, MidTurnInput: true, Package: "@openai/codex",
 			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
@@ -200,13 +215,15 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	var (
 		h                                      Harness
 		args, env, resume, exit, prompt, model string
+		effort                                 string
 		created                                string
 		enabled                                int
 		bracketed, midTurn                     int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
-		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn); err != nil {
+		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
+		&effort, &h.ModelEnv, &h.EffortEnv); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -222,6 +239,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(model, "[]")), &h.ModelArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(effort, "[]")), &h.EffortArgs); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(exit, "[]")), &h.ExitKeys); err != nil {
@@ -246,7 +266,8 @@ func orDefault(s, def string) string {
 
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
-	model_args, bracketed_paste, package, bin_path, mid_turn_input`
+	model_args, bracketed_paste, package, bin_path, mid_turn_input,
+	effort_args, model_env, effort_env`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -320,6 +341,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	effort, err := json.Marshal(orEmptySlice(h.EffortArgs))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -355,7 +380,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			midTurn = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -366,11 +391,14 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				model_args = excluded.model_args,
 				bracketed_paste = excluded.bracketed_paste,
 				package = excluded.package, bin_path = excluded.bin_path,
-				mid_turn_input = excluded.mid_turn_input`,
+				mid_turn_input = excluded.mid_turn_input,
+				effort_args = excluded.effort_args, model_env = excluded.model_env,
+				effort_env = excluded.effort_env`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
-			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn)
+			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
+			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv))
 		return err
 	})
 	if err != nil {

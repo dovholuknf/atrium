@@ -16,7 +16,8 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
 	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
 	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
-	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias`
+	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias,
+	effort, launch_args, launch_env`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -40,6 +41,8 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		toolSeen     string
 		stopSeen     string
 		promptedAt   string
+		launchArgs   string
+		launchEnv    string
 	)
 	if err := sc.Scan(&t.ID, &t.Title, &t.Why, &t.Repo, &t.Worktree, &t.Runner, &t.Hostname,
 		&t.PID, &t.Status, &created, &act, &waiting, &wire, &overrides, &t.Rank,
@@ -49,7 +52,11 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
 		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
 		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
-		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias); err != nil {
+		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias,
+		&t.Effort, &launchArgs, &launchEnv); err != nil {
+		return nil, err
+	}
+	if err := t.setLaunchExtras(launchArgs, launchEnv); err != nil {
 		return nil, err
 	}
 	t.Throwaway = throwaway != 0
@@ -343,7 +350,7 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -371,7 +378,10 @@ func (s *Store) insertTask(t *Task) error {
 		"", "", "", "", 0, "", "", "",
 		// No alias. One is set by `SetAlias` once the card exists, so the
 		// uniqueness check runs in one place. See alias.go.
-		"")
+		"",
+		// No effort and no extras. The launch writes them with
+		// `SetLaunchOptions` once the runner is up.
+		"", "[]", "{}")
 	return err
 }
 
@@ -710,6 +720,46 @@ func (s *Store) SetModel(id, model string) error {
 			strings.TrimSpace(model), id)
 		return err
 	})
+}
+
+// SetLaunchOptions records the effort and the extra argv and environment this
+// card was launched with, beside SetModel and with the same rule: an empty value
+// clears it, and the launch path passes the card's own value as the fallback so
+// a relaunch that named nothing keeps what it started with.
+func (s *Store) SetLaunchOptions(id, effort string, args []string, env map[string]string) error {
+	a, err := json.Marshal(orEmptySlice(args))
+	if err != nil {
+		return err
+	}
+	if env == nil {
+		env = map[string]string{}
+	}
+	e, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET effort = ?, launch_args = ?, launch_env = ? WHERE id = ?`,
+			strings.TrimSpace(effort), string(a), string(e), id)
+		return err
+	})
+}
+
+// setLaunchExtras decodes the two JSON columns and derives the key names the
+// card's JSON carries in place of the values.
+func (t *Task) setLaunchExtras(args, env string) error {
+	if err := json.Unmarshal([]byte(orDefault(args, "[]")), &t.LaunchArgs); err != nil {
+		return fmt.Errorf("task %s launch_args: %w", t.ID, err)
+	}
+	if err := json.Unmarshal([]byte(orDefault(env, "{}")), &t.LaunchEnv); err != nil {
+		return fmt.Errorf("task %s launch_env: %w", t.ID, err)
+	}
+	t.LaunchEnvKeys = nil
+	for k := range t.LaunchEnv {
+		t.LaunchEnvKeys = append(t.LaunchEnvKeys, k)
+	}
+	sort.Strings(t.LaunchEnvKeys)
+	return nil
 }
 
 // ModelsUsed is every model name this board has been asked for, most recently
