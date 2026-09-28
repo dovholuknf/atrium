@@ -611,6 +611,15 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 		status, waiting, ts(n), archived, why, id); err != nil {
 		return err
 	}
+	// A turn ends when a working card starts waiting on its prompt. A resume
+	// comes up from done or dead and a slash command changes nothing, so
+	// neither lands here. See 0062_turn_end.
+	if status == StatusNeedsInput && (prev.Status == StatusRunning || prev.Status == StatusNeedsPermission) {
+		if _, err := q.Exec(`INSERT INTO turn_end (task_id, ended_at) VALUES (?, ?)
+			ON CONFLICT(task_id) DO UPDATE SET ended_at = excluded.ended_at`, id, ts(n)); err != nil {
+			return err
+		}
+	}
 	_, err = s.appendEventOn(q, id, EventStatusChanged, map[string]any{
 		"from": prev.Status, "to": status,
 	})
