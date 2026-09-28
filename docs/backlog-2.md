@@ -1271,6 +1271,12 @@ to the merger instead of its launcher leaves the orchestrator with no sign that 
 Find out why one fired and the other did not. Candidates: a delay threshold, the launcher link on the card, or the
 card's origin tag (`agentLaunched` reads `origin:agent`, see item 40). Then make the notice certain.
 
+The same happened to sa58 at 17:12:34 on 2026-09-28: it ended its turn with no report, the same pattern as sa42.
+
+The context-size notice (item 45) misses too. It is claimed once per CARD. sa58 got it at 151k, was cleared and
+resumed on the same card, and reached 336k with no second notice until about 17:1x. The claim has to re-arm when
+the card's session or resume id changes, or when its context drops below the line.
+
 Related: item 36 (a finished worker stays up), and the work ledger, `docs/work-ledger-design.md` and
 `docs/work-ledger-plan.md`.
 
