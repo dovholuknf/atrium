@@ -111,6 +111,7 @@ function paintSettings() {
   document.getElementById("s-perm").innerHTML = soundOptions(p.perm);
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
+  document.getElementById("s-stuck").value = p.stuck || "alert";
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
@@ -188,6 +189,11 @@ document.getElementById("s-expiry").addEventListener("change", e => {
 });
 document.getElementById("s-debounce").addEventListener("change", e => {
   alerting.set({ debounce: Number(e.target.value) });
+});
+// Repainted at once, so turning it off takes the marks down without a poll.
+document.getElementById("s-stuck").addEventListener("change", e => {
+  alerting.set({ stuck: e.target.value });
+  if (typeof repaintLists === "function") repaintLists();
 });
 document.getElementById("s-vol").addEventListener("input", e => {
   alerting.set({ volume: Number(e.target.value) / 100 });
@@ -416,6 +422,8 @@ async function openTask(id) {
   filesField.hidden = !current.worktree;
   document.getElementById("d-files").hidden = true;
   document.getElementById("d-files-toggle").classList.remove("open");
+  // Token use on record, folded the same way. See js/usage.js.
+  paintUsageField();
   // The question, when there is one, named the way the row names it: a card
   // stopped on another SESSION reads differently from one stopped on you, and
   // that difference is the whole reason `ask_peer` exists.
@@ -1364,14 +1372,19 @@ async function refresh(signal) {
       // operator's backoff (1m, 2m, 5m, 10m, 30m, 1h ... 24h), and steps
       // `escalation.count` each time. Keyed on the count, so each step rings
       // once and a card that moves starts over. See internal/daemon/a2a.go.
-      alerting.check("stuck", lastTasks
-        .filter(t => t.escalation && t.escalation.count > 0 && !over(t))
-        .map(t => Object.assign({}, t, {
-          id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
-        })), t => ({
-        title: t.escalation.text,
-        body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
-      }));
+      //
+      // Only when the gear's setting says to ring. "mark" leaves the card's
+      // own mark (see `stuckMark`) as the whole signal.
+      if (alerting.get().stuck === "alert") {
+        alerting.check("stuck", lastTasks
+          .filter(t => isStuck(t))
+          .map(t => Object.assign({}, t, {
+            id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
+          })), t => ({
+          title: t.escalation.text,
+          body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
+        }));
+      }
     }
     if (perms) {
       badge("c-perm", perms.length);

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -120,7 +121,13 @@ func attachAs(t *testing.T, d *Daemon, taskID string, cols, rows int) string {
 // attachPath is attachAs for any attach URL, so a shell can be reached too.
 func attachPath(t *testing.T, d *Daemon, path string, cols, rows int) string {
 	t.Helper()
-	srv := httptest.NewServer(d.ap.Handler())
+	return attachVia(t, d.ap.Handler(), path, cols, rows)
+}
+
+// attachVia is attachPath through any handler, so a guest's can be the one.
+func attachVia(t *testing.T, h http.Handler, path string, cols, rows int) string {
+	t.Helper()
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -132,6 +139,8 @@ func attachPath(t *testing.T, d *Daemon, path string, cols, rows int) string {
 		t.Fatalf("could not attach: %v", err)
 	}
 	defer c.CloseNow()
+	// A replay can be megabytes in one frame, far past the 32KB default.
+	c.SetReadLimit(64 << 20)
 
 	// The board sends this from `onopen`, which is after the upgrade. That is
 	// the whole ordering problem being tested.

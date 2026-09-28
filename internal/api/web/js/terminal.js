@@ -670,6 +670,9 @@ function openTerm(task) {
     // whatever the last GET said, so a tab that has not talked to the daemon
     // yet gets the same default the daemon would have used.
     scrollback: scrollbackLines(),
+    // OSC 8 links: the carryover notice's own, and xterm's default for the
+    // rest. See `termLinkHandler`.
+    linkHandler: termLinkHandler,
     // The session's own theme, so a terminal looks the same here as it does
     // in a terminal window, and two sessions are tellable apart by color.
     theme: themeFor(termTask)
@@ -690,6 +693,8 @@ function openTerm(task) {
   // because what makes a word a link is whether it is a file in that card's
   // directory, and nothing else.
   useFileLinks(term, task);
+  // The not-replayed notice's `open` and `load`, and nothing a program forges.
+  useCarryLinks(term);
   // Drop a file onto the pane. The same pipeline as paste, because whatever
   // gesture produced the bytes, the bytes go to the same place.
   wireTerminalDrops(screen);
@@ -1242,7 +1247,15 @@ function wireTerminalDrops(screen) {
     screen.classList.remove("dropping");
     if (!termTask) return;
     const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
-    if (!files.length) return;
+    if (!files.length) {
+      // A DROPPED BLOCK OF TEXT IS A PASTE. Left to the browser it went
+      // nowhere: xterm has no drop handler, so the text was never sent.
+      const text = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+      if (!text) return;
+      e.preventDefault();
+      sendPasteText(text);
+      return;
+    }
     e.preventDefault();
     if (isGuest()) { toast("files are not part of this link", guestWord); return; }
     uploadIntoTerm(files);

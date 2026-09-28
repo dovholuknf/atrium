@@ -140,8 +140,108 @@ type lastReply struct {
 // is at the end, and a transcript reaches ninety megabytes in a day.
 const transcriptTail = 2 << 20
 
+// mainReply is one line of a transcript that carries a main-thread assistant
+// reply's usage. A reply written in several content blocks is several lines
+// with the same MessageID and the same usage, so a caller that sums keeps one
+// per id.
+type mainReply struct {
+	MessageID string
+	Model     string
+	At        time.Time
+	Speed     string
+	// Input, CacheWrite and CacheRead are the request's input side. Their sum is
+	// the context the reply was answered on.
+	Input, CacheWrite, CacheRead int64
+	// Write5m and Write1h are CacheWrite split by TTL.
+	Write5m, Write1h int64
+	Output           int64
+}
+
+// Context is the whole prompt the reply was answered on.
+func (r *mainReply) Context() int64 { return r.Input + r.CacheWrite + r.CacheRead }
+
+// scanMainReplies calls fn for every main-thread assistant reply with usage in
+// a transcript, in file order. Subagent replies (`isSidechain`) are not the
+// card's prefix and are skipped.
+//
+// It returns how many bytes of COMPLETE lines it read, so a caller reading a
+// transcript that is still being written can start its next read there and
+// never on half a line. A last line with no newline is still offered to fn when
+// it parses, and not counted, so the next read offers it again.
+//
+// The one transcript reader: the keep-alive's last reply and the usage record
+// are both built on it.
+func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
+	type usage struct {
+		Input         int64  `json:"input_tokens"`
+		CacheWrite    int64  `json:"cache_creation_input_tokens"`
+		CacheRead     int64  `json:"cache_read_input_tokens"`
+		Output        int64  `json:"output_tokens"`
+		Speed         string `json:"speed"`
+		CacheCreation struct {
+			OneHour  int64 `json:"ephemeral_1h_input_tokens"`
+			FiveMins int64 `json:"ephemeral_5m_input_tokens"`
+		} `json:"cache_creation"`
+	}
+	offer := func(line []byte) {
+		if !bytes.Contains(line, []byte(`"assistant"`)) || !bytes.Contains(line, []byte(`"usage"`)) {
+			return
+		}
+		var e struct {
+			Type      string `json:"type"`
+			Sidechain bool   `json:"isSidechain"`
+			Timestamp string `json:"timestamp"`
+			Message   struct {
+				ID    string `json:"id"`
+				Model string `json:"model"`
+				Usage *usage `json:"usage"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.Sidechain || e.Message.Usage == nil {
+			return
+		}
+		at, err := time.Parse(time.RFC3339Nano, e.Timestamp)
+		if err != nil {
+			return
+		}
+		u := e.Message.Usage
+		fn(&mainReply{
+			MessageID: e.Message.ID, Model: e.Message.Model, At: at, Speed: u.Speed,
+			Input: u.Input, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead,
+			Write5m: u.CacheCreation.FiveMins, Write1h: u.CacheCreation.OneHour, Output: u.Output,
+		})
+	}
+	br := bufio.NewReaderSize(r, 1<<20)
+	var done int64
+	for {
+		line, err := br.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			// A line longer than the buffer, a pasted image or a big tool
+			// result. Gathered whole, to the bound the old scanner had.
+			whole := append([]byte(nil), line...)
+			for errors.Is(err, bufio.ErrBufferFull) && len(whole) < 32<<20 {
+				line, err = br.ReadSlice('\n')
+				whole = append(whole, line...)
+			}
+			if errors.Is(err, bufio.ErrBufferFull) {
+				return done, errors.New("a transcript line over 32MB")
+			}
+			line = whole
+		}
+		if err == io.EOF {
+			offer(line)
+			return done, nil
+		}
+		if err != nil {
+			return done, err
+		}
+		done += int64(len(line))
+		offer(line)
+	}
+}
+
 // readLastReply finds the last main-thread assistant reply with usage in a
-// transcript. Subagent replies (`isSidechain`) are not the card's prefix.
+// transcript.
 func readLastReply(path string) (*lastReply, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -157,56 +257,20 @@ func readLastReply(path string) (*lastReply, error) {
 			return nil, err
 		}
 	}
-	type usage struct {
-		Input         int64  `json:"input_tokens"`
-		CacheWrite    int64  `json:"cache_creation_input_tokens"`
-		CacheRead     int64  `json:"cache_read_input_tokens"`
-		Speed         string `json:"speed"`
-		CacheCreation struct {
-			OneHour  int64 `json:"ephemeral_1h_input_tokens"`
-			FiveMins int64 `json:"ephemeral_5m_input_tokens"`
-		} `json:"cache_creation"`
-	}
 	var (
 		out *lastReply
 		ttl time.Duration
 	)
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 1<<20), 32<<20)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if !bytes.Contains(line, []byte(`"assistant"`)) || !bytes.Contains(line, []byte(`"usage"`)) {
-			continue
-		}
-		var e struct {
-			Type      string `json:"type"`
-			Sidechain bool   `json:"isSidechain"`
-			Timestamp string `json:"timestamp"`
-			Message   struct {
-				Model string `json:"model"`
-				Usage *usage `json:"usage"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.Sidechain || e.Message.Usage == nil {
-			continue
-		}
-		at, err := time.Parse(time.RFC3339Nano, e.Timestamp)
-		if err != nil {
-			continue
-		}
-		u := e.Message.Usage
+	_, err = scanMainReplies(f, func(r *mainReply) {
 		switch {
-		case u.CacheCreation.OneHour > 0:
+		case r.Write1h > 0:
 			ttl = time.Hour
-		case u.CacheCreation.FiveMins > 0:
+		case r.Write5m > 0:
 			ttl = 5 * time.Minute
 		}
-		out = &lastReply{
-			Model: e.Message.Model, At: at, Speed: u.Speed,
-			Context: u.Input + u.CacheWrite + u.CacheRead,
-		}
-	}
-	if err := sc.Err(); err != nil {
+		out = &lastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
+	})
+	if err != nil {
 		return nil, err
 	}
 	if out == nil {
@@ -334,6 +398,10 @@ type keepalive struct {
 	hookFile string
 	// baseEnv is the environment a fork starts from.
 	baseEnv func() []string
+	// record saves one refresh's ledger row.
+	record func(*store.KeepaliveRefresh) error
+	// spent saves one refresh's row in the card's usage record. See usage.go.
+	spent func(*store.SessionUsage) error
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -343,6 +411,17 @@ type keepalive struct {
 	why map[string]string
 	// inFlight stops a slow fork from being started twice.
 	inFlight map[string]bool
+	// unsaved holds back a card whose last refresh row could not be saved. The
+	// warm window and the budget come from saved rows, so without it the next
+	// tick would see the old expiry and fork again.
+	unsaved map[string]unsavedRefresh
+}
+
+// unsavedRefresh holds a card's refreshes back until its cache would expire, or
+// until the card takes a real turn after the fork.
+type unsavedRefresh struct {
+	at, until time.Time
+	why       string
 }
 
 func newKeepalive(st *store.Store) *keepalive {
@@ -357,6 +436,9 @@ func newKeepalive(st *store.Store) *keepalive {
 		baseEnv:    os.Environ,
 		why:        map[string]string{},
 		inFlight:   map[string]bool{},
+		unsaved:    map[string]unsavedRefresh{},
+		record:     st.AddKeepaliveRefresh,
+		spent:      st.AddSessionUsage,
 	}
 }
 
@@ -565,6 +647,13 @@ func (k *keepalive) tick(ctx context.Context) {
 		card = k.clearOnRealTurn(t, card)
 		v := k.decide(t, card)
 		k.mu.Lock()
+		if u, held := k.unsaved[t.ID]; held {
+			if !k.now().Before(u.until) || (v.reply != nil && v.reply.At.After(u.at)) {
+				delete(k.unsaved, t.ID)
+			} else if v.act != "skip" || v.why == "not due" {
+				v = verdict{act: "skip", why: u.why}
+			}
+		}
 		k.why[t.ID] = v.why
 		busy := k.inFlight[t.ID]
 		k.mu.Unlock()
@@ -648,8 +737,26 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 			row.Input, row.Output = rec.Usage.Input, rec.Usage.Output
 		}
 	}
-	if err := k.st.AddKeepaliveRefresh(row); err != nil {
+	// The card's usage record too, where it sits beside the turns. A fork that
+	// never reached the API spent nothing and is not a row there.
+	if rec != nil && rec.Usage != nil {
+		if err := k.spent(usageOfRefresh(row)); err != nil {
+			log.Printf("[atrium] keep-alive: could not record the token use of a refresh of %s: %v", t.ID, err)
+		}
+	}
+	if err := k.record(row); err != nil {
 		log.Printf("[atrium] keep-alive: could not record a refresh of %s: %v", t.ID, err)
+		// The fork may have warmed the cache, so hold until that cache would expire.
+		until := sent.Add(v.reply.TTL)
+		if v.expiry.After(until) {
+			until = v.expiry
+		}
+		u := unsavedRefresh{at: sent, until: until,
+			why: "a refresh could not be saved, paused until " + until.Local().Format("15:04")}
+		k.mu.Lock()
+		k.unsaved[t.ID] = u
+		k.why[t.ID] = u.why
+		k.mu.Unlock()
 	}
 	if runErr != nil {
 		log.Printf("[atrium] keep-alive: fork for %s: %v", t.ID, runErr)
@@ -819,5 +926,9 @@ func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
 	if _, err := d.st.SetKeepaliveStateAt(taskID, state, d.ka.now()); err != nil {
 		return nil, err
 	}
+	// A hand on the switch also lifts a hold from an unsaved refresh.
+	d.ka.mu.Lock()
+	delete(d.ka.unsaved, taskID)
+	d.ka.mu.Unlock()
 	return d.ka.view(taskID), nil
 }

@@ -45,6 +45,16 @@ UNIT="atrium.service"
 db="${ATRIUM_DB:-$HOME/.atrium/atrium.db}"
 extra_args="${ATRIUM_SERVICE_ARGS:-}"
 
+# ATRIUM_SERVICE_VERB=room runs `atrium room`, the daemon attached to the hub
+# this machine already joined, instead of `atrium daemon`. That is what
+# scripts/provision-room.ps1 installs. Anything else is refused.
+verb_run="${ATRIUM_SERVICE_VERB:-daemon}"
+case "$verb_run" in
+    daemon|room) ;;
+    *) echo "ATRIUM_SERVICE_VERB must be daemon or room, not $verb_run" >&2
+       exit 2 ;;
+esac
+
 find_exe() {
     if [ -n "${ATRIUM_EXE:-}" ]; then
         printf '%s' "$ATRIUM_EXE"
@@ -108,13 +118,16 @@ linux_install() {
     #
     # A hand-installed atrium has no vendor unit, so one is written into the
     # user directory, with ExecStart pointed at the binary we actually found.
-    if [ -f /usr/lib/systemd/user/$UNIT ] || [ -f /lib/systemd/user/$UNIT ]; then
+    #
+    # A room always gets its own unit in the user directory, because the vendor
+    # unit runs `daemon` and a user unit of the same name overrides it.
+    if [ "$verb_run" = daemon ] && { [ -f /usr/lib/systemd/user/$UNIT ] || [ -f /lib/systemd/user/$UNIT ]; }; then
         say "using the packaged unit in /usr/lib/systemd/user."
     else
         # %h is systemd's own expansion for the user's home, so the written
         # unit stays correct if the home directory is ever a different path
         # inside a container or on a network mount.
-        sed -e "s#^ExecStart=.*#ExecStart=$exe daemon --db $db $extra_args#" \
+        sed -e "s#^ExecStart=.*#ExecStart=$exe $verb_run --db $db $extra_args#" \
             "$here/packaging/atrium.service" > "$linux_unit_dir/$UNIT"
         say "wrote $linux_unit_dir/$UNIT"
     fi
@@ -180,6 +193,7 @@ macos_install() {
     # There is no macOS equivalent of systemd's %h.
     sed -e "s#@SHELL@#${SHELL:-/bin/zsh}#g" \
         -e "s#@EXE@#$exe#g" \
+        -e "s#\" daemon --db#\" $verb_run --db#" \
         -e "s#@DB@#$db#g" \
         -e "s#@LOGDIR@#$macos_logdir#g" \
         -e "s#@HOME@#$HOME#g" \
@@ -253,7 +267,12 @@ macos_status() {
 # over the API and returned when it is actually done.
 graceful_stop() {
     if [ -n "$exe" ] && [ -x "$exe" ]; then
-        "$exe" stop 2>/dev/null || true
+        if [ "$verb_run" = room ]; then
+            # A room serves its own board on 7781 unless told otherwise.
+            "$exe" stop --url "${ATRIUM_ROOM_URL:-http://127.0.0.1:7781}" 2>/dev/null || true
+        else
+            "$exe" stop 2>/dev/null || true
+        fi
     fi
 }
 

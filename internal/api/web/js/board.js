@@ -760,9 +760,7 @@ function cardHTML(t) {
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
-      ${t.escalation && t.escalation.count > 0 ? `<span class="chip warn"
-        data-tip="${esc(t.escalation.text)}"
-        >stuck ${esc(String(t.escalation.minutes))}m</span>` : ""}
+      ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
         data-tip="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
           ". anyone with that address types into it as you would. right click to stop.")}"

@@ -676,6 +676,21 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 					"there is nothing else here.", http.StatusForbidden)
 				return
 			}
+			// NOT THE WHOLE PRE-RESTART HISTORY, and not the links to it. They
+			// are `/scrollback/older` by another route, which is refused below.
+			// The notice's links are dropped rather than refused, so a guest
+			// still reads the line and gets no action that would only fail.
+			q := r.URL.Query()
+			if q.Has("carry") {
+				http.Error(w, "the history from before the restart is not part of a shared session.",
+					http.StatusForbidden)
+				return
+			}
+			if q.Has("link") {
+				q.Del("link")
+				r = r.Clone(r.Context())
+				r.URL.RawQuery = q.Encode()
+			}
 			board.ServeHTTP(w, r)
 			return
 		}

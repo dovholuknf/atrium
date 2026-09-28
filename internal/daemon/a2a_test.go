@@ -337,6 +337,72 @@ func TestTheWatchdogCatchesASilentStopAndResetsWhenTheCardMoves(t *testing.T) {
 	}
 }
 
+// The tlsuv GHSA card, 2026-09-28. It reported, its turn ended, and two days
+// later a script typed `/model claude-opus-5-5` into it: a prompt with no turn
+// behind it. A room restart then resumed it onto an idle prompt with a fresh
+// `waiting_since`, and the watchdog rang STUCK from one minute. A prompt that
+// started no turn owes no report, and a resume is not a turn.
+func TestASlashCommandAndARestartAreNotASilentStop(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	if err := d.st.MarkReported(worker.ID); err != nil {
+		t.Fatal(err)
+	}
+	d.turnEnded(worker.ID)
+	time.Sleep(5 * time.Millisecond)
+
+	// The slash command: typed and recorded, and the card never leaves the prompt.
+	if err := d.st.AppendEvent(worker.ID, store.EventPrompted,
+		map[string]any{"text": "/model claude-opus-5-5", "via": "terminal"}); err != nil {
+		t.Fatal(err)
+	}
+	// The restart: the runner exits and is resumed onto the same idle prompt.
+	for _, s := range []string{store.StatusDone, store.StatusNeedsInput} {
+		if err := d.st.SetStatus(worker.ID, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := d.st.Get(worker.ID); !got.OwesReport() {
+		t.Fatal("the setup is wrong: the card should read as owing a report by the prompt alone")
+	}
+	for _, after := range []time.Duration{2 * time.Minute, time.Hour} {
+		if err := d.watchWorkers(time.Now().Add(after)); err != nil {
+			t.Fatal(err)
+		}
+		if x := d.esc.get(worker.ID); x != nil {
+			t.Fatalf("an idle card read stuck %s after a slash command and a resume: %+v", after, x)
+		}
+	}
+	if stopTurn(t, d, "worker"); len(pendingFrom(t, d, launcher.ID)) != 0 {
+		t.Fatalf("the launcher was told of a silent stop: %v", pendingFrom(t, d, launcher.ID))
+	}
+}
+
+// A card that did stop without reporting stays stuck across a restart, and
+// its clock is the turn's end, so the resume does not start the backoff over.
+func TestASilentStopKeepsItsClockAcrossAResume(t *testing.T) {
+	d := testDaemon(t)
+	_, worker := launchedPair(t, d)
+	d.turnEnded(worker.ID)
+	ended, err := d.st.TurnEndedAt(worker.ID)
+	if err != nil || ended == nil {
+		t.Fatalf("no turn end recorded: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	for _, s := range []string{store.StatusDone, store.StatusNeedsInput} {
+		if err := d.st.SetStatus(worker.ID, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.watchWorkers(ended.Add(10 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	x := d.esc.get(worker.ID)
+	if x == nil || x.Source != NoticeSilentStop || !x.Since.Equal(*ended) {
+		t.Fatalf("escalation %+v, want a silent stop counted from %s", x, ended)
+	}
+}
+
 // F7. One tool call running too long: the launcher is told once, the board
 // escalates, and nothing is killed.
 func TestTheWatchdogReportsAStuckTool(t *testing.T) {

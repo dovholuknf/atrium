@@ -731,6 +731,9 @@ type runner struct {
 	// must not mark the turn seen or its questions answered. See
 	// `promptWasPeer` and docs/seen-design.md.
 	peerSent time.Time
+	// peerCause is what that submission was, a say or a wake, for the usage
+	// record. See usage.go.
+	peerCause string
 	// inPaste is inside a bracketed paste, where a carriage return is text
 	// being pasted and not the operator pressing Enter.
 	inPaste bool
@@ -1151,9 +1154,21 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 	if banner != "" {
 		r.typeMu.Lock()
 		r.peerSent = time.Now()
+		r.peerCause = causeOfBanner(banner)
 		r.typeMu.Unlock()
 	}
 	return true, nil
+}
+
+// peerPromptCause is promptWasPeer with what the prompt was, or "" for the
+// operator's.
+func (r *runner) peerPromptCause(at time.Time) string {
+	if !r.promptWasPeer(at) {
+		return ""
+	}
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	return r.peerCause
 }
 
 // promptWasPeer reports whether a prompt arriving now is the peer message

@@ -606,7 +606,10 @@ const SOUNDS = {
 // the pile-up is worse than the wait.
 const DEFAULT_PREFS = {
   muted: false, volume: 0.35, input: "chime", perm: "alarm",
-  desktop: true, expiry: 30, debounce: 0
+  desktop: true, expiry: 30, debounce: 0,
+  // A launched card that is stuck: "alert" rings and marks the card, "mark"
+  // only marks it, "off" does neither.
+  stuck: "alert"
 };
 
 function loadPrefs() {
