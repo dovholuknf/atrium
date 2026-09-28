@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A request that names a card goes to the room holding it, whatever room the board's header names.** See
+  `docs/backlog-2.md` item 63, `docs/card-room-routing.md` and `docs/test-plan.md` section CD.
+
+  With three rooms attached, starting a done card and dragging it into a group both answered `sql: no rows in result
+  set`. The board puts the room of the last editor it had open on every write without a verb after the card id, so
+  `POST /v1/launch` (card in the body) and `PATCH /v1/tasks/<id>` went to the wrong room, and the hub read that
+  header before the card. Now the hub routes by the card: a `room~id` tag in the path or in a launch's `task_id`
+  names the room and is stripped on the way in, and a plain id is looked up across the attached rooms when there are
+  two or more. A card no attached room holds is a 404 from the hub naming the card and every room it asked, plus the
+  offline room it was last seen on. `internal/link`: HUB RESTART. Nothing on the room.
+
 - **A message queued on purpose wears a quiet envelope, and the `!` is kept for one held against its sender.** See
   `docs/backlog-2.md` item 42 and `docs/test-plan.md` section CC.
 
