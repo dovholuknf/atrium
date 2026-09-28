@@ -277,7 +277,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		return nil, http.StatusInternalServerError, err
 	}
 	if res.Relayed {
-		go d.drainRelays()
+		d.kickRelays()
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// Whatever it was doing, it is not doing now. Not for a worker's
