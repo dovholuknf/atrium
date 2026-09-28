@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Every Claude card's token use is on record, a row per turn, shown only in the card's details.** See
+  `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT.
+
+  At each Stop the room reads the replies the turn wrote to the runner's transcript, with the keep-alive's own reader,
+  one per message id, subagent replies left out, and writes one `session_usage` row: input, output, cache writes at
+  5m and 1h, cache read, the context, and a cost estimate on the models keep-alive has prices for. Each row says what
+  started the turn: `operator`, `say`, `restart-wake`, `keepalive` (from the refresh fork's receipt), `resume`, or
+  `unknown`. The first turn of a resumed runner is flagged whatever started it. Rows have no foreign key, so they
+  outlive the card, and a restarted room counts on from the last row. Before the room ran this, nothing is
+  recorded. The card dialog has a `token use` fold: totals, context now, and the newest 200 turns. Nothing on the
+  card face, the terminals list or a toast. `internal/store` (migration `0063_session_usage`), `internal/daemon`,
+  `internal/api`: ROOM RESTART. `internal/api/web`: HUB RESTART for the board a hub serves, and the room's own board
+  with the room restart. The hub proxies `/v1/tasks/{id}/usage` with no change of its own.
+
 - **The launch cap counts only running workers tagged `atrium:subagent`.** See `docs/test-plan.md` section BR.
 
   It counted every running supervised card carrying `origin:agent`, which every `atrium_launch` stamps. So one cap of

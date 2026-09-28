@@ -4097,3 +4097,76 @@ not appear in the worker's terminal. Approve it and the command runs.
 
 **Expected:** Claude Code's own permission flow runs in the worker's terminal. Nothing reaches the board and the
 review has no row for it.
+
+## BT. Token use is on record for every Claude turn, and shown only in a card's details
+
+BT1 to BT3 need the room built from this change and a room restart, and on a hub board the hub rebuilt and
+restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and `TestKeepaliveRefreshIsAUsageRow` in
+`internal/daemon/usage_test.go`, and `TestSessionUsage*` in `internal/store/usage_test.go`, cover the row per turn,
+dedupe by message id, subagent replies left out, the turn a blocked Stop continued, counting on from the last row
+after a restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
+
+### BT1. A turn is one row, with its cause
+
+1. Open a Claude card's details. Open the `token use` fold.
+2. Type a prompt into the card's terminal and let the turn end. Close and reopen the fold.
+
+**Expected:** one new row at the top, cause `you`, with in, out, write 5m, write 1h, read, the context and an
+estimate. `context now` matches the row's context. The totals grew by that row. Hovering the row names the model and
+how many requests the turn made.
+
+3. `atrium_say` to the card from another session and let that turn end.
+
+**Expected:** a row with cause `a say`. A message the Stop hook delivers into a finished turn starts a row of its
+own, `a say`, or `you` when every message came from the board.
+
+4. Leave a card idle on the 1h cache until keep-alive refreshes it (section BL).
+
+**Expected:** a row with cause `keep-alive`, its read about the card's context and its write near zero.
+
+### BT2. Nothing outside the details
+
+1. Look at the card face, the stack, the terminals list and the toasts while BT1 runs.
+
+**Expected:** no token figures anywhere but the details fold.
+
+### BT3. A restart keeps the record and flags the resumed turn
+
+1. Note the rows on one card. Restart the room. Let the after-restart wake, or a prompt of yours, run one turn.
+
+**Expected:** the old rows are all still there, nothing counted twice. The new row reads `restart wake · resumed`,
+or `resume` when you prompted it yourself, and is shaded.
+
+### BT4. Does a room restart miss the cache? A procedure, not a test to run casually
+
+This is what item 37's data was built to answer. It needs a restart that was going to happen anyway. Do not restart a
+room only to try it.
+
+1. Before the restart, write down the time. Every Claude card that took a turn or a keep-alive refresh inside the last
+   hour still has a warm cache.
+2. After the restart, let each resumed card run one turn: the wake, or a prompt.
+3. Read the rows from the room's `atrium.db`, where `:restart` is the time from step 1:
+
+   ```sql
+   SELECT u.task_id, u.cause, u.context,
+          u.cache_write_5m + u.cache_write_1h AS written, u.cache_read,
+          (SELECT p.context FROM session_usage p WHERE p.task_id = u.task_id AND p.ended_at < u.started_at
+             AND p.cause <> 'keepalive' ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
+          (SELECT MAX(p.ended_at) FROM session_usage p WHERE p.task_id = u.task_id
+             AND p.ended_at < u.started_at) AS last_warm
+   FROM session_usage u
+   WHERE u.after_resume = 1 AND u.started_at > :restart
+   ORDER BY u.started_at
+   ```
+
+   Or open each card's `token use` fold and read the shaded row and the row under it.
+4. Keep only the cards whose `last_warm` is less than the cache TTL (an hour for keep-alive cards) before the new
+   row's start. The rest would have missed with no restart at all.
+5. For each card kept: `written` about equal to `context_before` (90% or more) is a MISS, the whole prefix written
+   again. `written` small next to the context (5% or less, the new prompt and the reply) with `cache_read` at or
+   above `context_before` is a HIT.
+
+**Reading it:** mostly hits means a resume reads the cache and the restart's cost is the new turn. Mostly misses
+means every restart pays about one full write per card, `written` times the model's write price, and that total is
+the number item 38 decides on. Mixed: compare the models, the 1M variant (`[1m]`), and the Claude Code versions before
+and after the restart, which change the prefix.
