@@ -4225,3 +4225,85 @@ connection.
 **Expected:** the first run stops the room, removes the autostart, the binary, the room's key, its database and
 ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
 target before the first provision is still there. The second run says `provision state skip` and exits 0.
+
+## BV. Clicking into a terminal does not hold a say, and the readout says why one is held
+
+Needs a room built from this change and a room restart. Go tests in `internal/daemon/typedline_test.go` cover every
+terminal report xterm.js sends, word delete by all three keys, the keys the gate cannot follow, and the endpoint.
+The headless section `typing` covers the readout switch, its place above the shortcut strip, what it shows, and that
+it polls nothing while off. See `docs/backlog-2.md` item 33.
+
+### BV1. Focus and clicks are not typing
+
+1. In the gear's settings tick "show the typing gate readout". Attach a Claude card and leave the prompt empty.
+2. Click into the terminal, click out of it, click in again, and click a few places in the output.
+
+**Expected:** the readout, on the line directly above "ctrl-c copies a selection", reads `gate open` and `0 chars`,
+and `last key` does not reset on the clicks. From another session, `atrium_say` the card something. It is typed and
+submitted within a couple of seconds, not held behind "delivers when your input line is clear and idle".
+
+### BV2. The line is text, and a word delete is a word
+
+1. Type `git commit` in the prompt.
+
+**Expected:** the readout shows `line "git commit"`, `10 chars` and `gate closed` with `10 unsent character(s)`.
+
+2. Press ctrl-backspace, then alt-backspace.
+
+**Expected:** after the first the line reads `git `, after the second it is empty. Two seconds later the gate reads
+`open: line empty and quiet`. Do the same with ctrl-w.
+
+### BV3. A key the gate cannot follow holds, and says so
+
+1. On an empty prompt press the up arrow, so a previous prompt comes back.
+
+**Expected:** the gate reads `closed: not sure what is on the line, after an up or down arrow`. A say waits.
+Pressing ctrl-u, or Enter, opens it again.
+
+2. Type `abc`, press the left arrow, then backspace three times.
+
+**Expected:** the gate stays closed on `not sure what is on the line, after a cursor move`, until Enter, ctrl-c or
+ctrl-u.
+
+### BV4. Off costs nothing
+
+1. Untick the setting.
+
+**Expected:** the readout line goes. The browser's network panel shows no more requests to `/typing`.
+
+## BW. A card has an alias you mention it by
+
+Needs a room built from this change (it runs migration `0064_task_alias`) and a hub built from it for `atrium_say`
+and `atrium_peers`. Go tests in `internal/store/alias_test.go`, `internal/daemon/alias_test.go` and
+`TestResolvePeerAcceptsAnAlias` in `internal/link/control_mcp_test.go` cover the uniqueness, the refusal, the launch
+default and resolution. The headless section `alias` covers the chip and the menu's PATCH. See `docs/backlog-2.md`
+item 35.
+
+### BW1. A worker starts with its prefix
+
+1. From a session, `atrium_launch` a worker titled `sa99: alias check` with a brief that says to report done.
+
+**Expected:** its card wears an `@sa99` chip. `atrium_peers` from another session lists it with `"alias": "sa99"`.
+`atrium_say` to `@sa99` (and to `sa99`) reaches it.
+
+### BW2. Setting one by hand, and a clash
+
+1. Right click a resident card, such as dotfiles, and choose "alias…". Type `@dotfiles` and press ok.
+
+**Expected:** the card wears `@dotfiles`. `atrium tell dotfiles "ping"` from a session's shell reaches it, and
+`atrium peers` prints `dotfiles-NNNNN @dotfiles`.
+
+2. On a second card choose "alias…" and type `dotfiles`.
+
+**Expected:** a toast "that did not stick" that says `@dotfiles is already the alias of dotfiles-NNNNN (...)`. The
+second card's alias is unchanged.
+
+3. Choose "alias…" on the first card, empty the box and press ok.
+
+**Expected:** the chip goes, and `atrium_say` to `@dotfiles` answers "no session called ..." with the list.
+
+### BW3. An ended card lets go
+
+1. Exit the BW1 worker so its card goes to finished, then launch another worker titled `sa99: again`.
+
+**Expected:** the new card wears `@sa99`, and `atrium_say` to `@sa99` reaches the new one.

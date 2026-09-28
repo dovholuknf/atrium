@@ -5,6 +5,35 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card has an alias you mention it by, like `@dotfiles` or `@sa89`.** See `docs/backlog-2.md` item 35 and
+  `docs/test-plan.md` section BW.
+
+  Handles are made up by the board (`dotfiles-41800`) and nobody types them. Now each card can carry a short alias,
+  drawn on the card as an `@name` chip and set from "alias…" in the card menu or the terminal list. `atrium_say`,
+  `atrium tell`, `atrium ask --peer` and `atrium answer` take it wherever they take a handle, with or without the `@`,
+  and `atrium_peers` and `atrium peers` show it. A launched card whose title has a prefix with a digit (`sa89: ...`)
+  starts with that prefix as its alias. Anything else has none until it is set. An alias is unique among live cards:
+  taking one in use is refused and the refusal names the card holding it, and so is an alias equal to another live
+  card's handle, since a handle is matched first. An ended card keeps its alias but no longer answers to it. Schema:
+  migration `0064_task_alias` adds `task.alias`, and tolerates the column already being there. `internal/store`,
+  `internal/daemon`, `internal/api`: ROOM RESTART (runs the migration). `internal/link` (`atrium_say`, `atrium_peers`):
+  HUB RESTART. `internal/cli`: a new binary on the PATH.
+
+- **Clicking into a terminal no longer holds every say to it, and a readout shows what the gate thinks.** See
+  `docs/backlog-2.md` item 33 and `docs/test-plan.md` section BV.
+
+  The typing gate counted every byte the attach socket carried as the operator typing. Claude Code turns on focus
+  reporting, so clicking into or out of a terminal added two characters that nothing took away, and a say to that
+  card sat behind "delivers when your input line is clear and idle" with an empty prompt. Now the room keeps the
+  line's text rather than a count, and only keystrokes move it or the idle clock: focus, SGR, X10 and urxvt mouse
+  reports, device attribute, status, cursor position, mode and window replies, and OSC and DCS answers count
+  nothing. Control-backspace, alt-backspace and control-w delete a word (the rule that deletes least), not one
+  character. A key the room cannot follow, an up arrow, a history search, a yank, a cursor move on a written line,
+  keeps the gate shut until Enter, control-c or control-u. A new setting, "show the typing gate readout", puts a line
+  above the terminal's shortcut strip with the tracked line, its length, the time since the last key and whether the
+  gate is open and why, polled from `GET /v1/tasks/{id}/typing` only while it is on. `internal/daemon`: ROOM
+  RESTART. `internal/api/web`: ROOM RESTART (the room serves the board).
+
 - **One command makes another machine a room of this hub, over ssh and with no admin or sudo.** See
   `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.
 
