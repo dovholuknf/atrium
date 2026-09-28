@@ -1512,9 +1512,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline">A Claude session's prompt cache expires an hour after its last request, and
         the next turn then rewrites the whole context at twice the input price. With this on, atrium
-        refreshes an idle card's cache a few minutes before it expires, with a throwaway copy of the
-        conversation that may not use a tool and is discarded. The card's terminal and transcript are
-        never touched. A card stops by itself once its refreshes have cost an eighth of one rewrite, and
+        refreshes an idle card's cache a few minutes before it expires. It sends one word from a copy of
+        the conversation and then throws the copy away. The card's own conversation is never touched.
+        A card stops by itself once its refreshes have cost an eighth of one rewrite, and
         says so. This sets the default for cards started from now on. Cards already open keep their own
         switch, in each card's menu. On by default.</span>
       <span class="hintline" id="s-keepalive-spend"></span>
