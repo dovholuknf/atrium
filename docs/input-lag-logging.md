@@ -30,6 +30,10 @@ $env:ATRIUM_DEBUG_INPUTLAG = "1"     # log any hop over 20ms
 $env:ATRIUM_DEBUG_INPUTLAG = "5"     # or pick the threshold in ms
 ```
 
+The variable stays with the process it was set on. A runner the room launches, a keep-alive fork and a shell opened
+on a card do not inherit it, or any other `ATRIUM_DEBUG_` variable, so a worker's `go test` and the atrium binaries
+it runs are not timed. To time one runner, name the variable in its `environment` field.
+
 While it is set, settings says so under the checkbox, and the box reaches only the browser. Only a hop over the
 threshold is logged, so a healthy session stays quiet. Switching from the checkbox writes one `[inputlag] on from
 settings` or `off from settings` line. Every timing line starts with `[inputlag]` and a clock to the millisecond:

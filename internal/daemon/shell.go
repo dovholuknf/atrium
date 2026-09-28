@@ -260,6 +260,11 @@ func (d *Daemon) shellEnv(taskID string) []string {
 		if strings.HasPrefix(kv, "ATRIUM_AGENT_NAME=") || strings.HasPrefix(kv, "ATRIUM_TASK_ID=") {
 			continue
 		}
+		// The room's own debug switches stay with the room, for the reason in
+		// inheritedTaint: a `go test` typed here would fail the same way.
+		if strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_DEBUG_") {
+			continue
+		}
 		out = append(out, kv)
 	}
 	return append(out, "ATRIUM_TASK_ID="+taskID)
