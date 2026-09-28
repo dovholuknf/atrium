@@ -31,9 +31,9 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
 | 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | sa81 building |
-| 26 | Toasts pop and disappear in the same second | bug | not started |
-| 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
-| 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
+| 26 | Toasts pop and disappear in the same second | bug | DONE by sa83, `c843139`, not merged |
+| 27 | A say to a session that has gone waits forever, blaming the input line | bug | DONE by sa83, `04bad69`, Esc Esc `d1c2454`, chip tip `dc06056`, not merged |
+| 28 | The full headless board run fails most of the time on `claude/main` | bug | DONE by sa83, `39c76dc` `a74c95e` `2d47379`, not merged |
 
 ------------
 
@@ -620,6 +620,12 @@ top-right placement (`placeToasts`, item 18). Reproduce on the live board with t
 Fix: a toast stays its full life unless the user dismisses it or clicks it. Hovering pauses the timer. Headless test:
 raise a toast, then do each thing found above, and it is still on screen after 5s.
 
+Done 2026-09-28 by sa83 (`c843139`). Three causes. `reapToasts` took down a keyed toast the poll after its card
+stopped waiting, which a held message typed in at turn end does inside a second. The cap removed the oldest toast the
+moment a fourth arrived. Nothing held a toast under the pointer. The view switch, dialogs and `placeToasts` were
+checked and take nothing. An answered toast now says so and lives out its 9 seconds, a full stack queues until the
+oldest has been up 6 seconds, and hovering pauses the clock. Headless `toastLives`, test plan BM.
+
 ## 27. A say to a session that has gone waits forever, blaming the input line (bug)
 
 Raised 2026-09-26. The orchestrator said something to sa69 after its runner had exited. The answer was `queued`, and
@@ -629,6 +635,15 @@ input line to wait on.
 Expected: a say to a card with no running session answers `undeliverable` with a note (resume it first), or is held
 with `held_for: no session` and says so on the chip. A held message on a card that is deleted or finished does not
 stay forever. Decide whether a held message expires or is dropped when the card's runner ends.
+
+Done 2026-09-28 by sa83 (`04bad69`). The cause: the SessionEnd hook forgot the chip, but a runner that outlived
+its session stayed in the supervisor. The next backoff retry found the gate shut and `noteHeld` set `held_for: line`
+again, aged from the first hold. Chosen: `undeliverable`, with a note to resume first, and nothing queued. A held
+message is dropped from the on-screen retry when the session ends or the runner exits. It stays queued for a resumed
+session's hooks, because the sender was told `queued`. Gone means `done` or `dead` with no live pid, so a worker that
+reported done and still runs is still reached. Also: Esc Esc on a Claude prompt now counts as clearing the line
+(`d1c2454`). A lone Esc matched nothing in the keystroke count, so only control-c released held messages. The chip
+tooltip reads as clint asked (`dc06056`). Test plan BN. ROOM-SIDE apart from the tooltip.
 
 ## 28. The full headless board run fails most of the time on `claude/main` (bug)
 
@@ -640,6 +655,13 @@ history load did not go back to one page".
 
 A check that fails most runs hides real failures. Find the wait that times out, name it, move main-flow checks into
 named sections so each can run alone, and make the flaky waits wait on a condition rather than a clock.
+
+Done 2026-09-28 by sa83 (`39c76dc`, `a74c95e`, `2d47379`). The wait was the skin-scope check's
+`waitForFunction` for `sandstone`. A save raced the load's own settings reads, and a read answered first painted the
+old skin back. A throw now names its line. `skinScope`, `skinHeal` and `history` are sections. 34 waits passed
+`{timeout}` as the arg, so they took the 30s default. Board races fixed under the other flakes: history renders out
+of order, a save in flight losing the skin, a terminal connected after it closed. The restart gate waits for every
+stream to reopen, and settings-once counts its own page's reads.
 
 
 ------------

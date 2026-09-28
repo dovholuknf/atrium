@@ -5,6 +5,53 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A toast stays on screen for its whole life.** See `docs/test-plan.md` section BM (backlog-2 item 26).
+
+  Toasts popped and went within a second, for three reasons. A toast about a card waiting on you was taken down by
+  the next poll once that card ran again, and a held message typed in as the turn ends does that at once. A fourth
+  toast removed the oldest on arrival, so a burst went by in a blink. Nothing held a toast under the pointer. Now
+  an answered toast stays, dimmed and marked `· answered`, and goes when an ordinary toast would. A full stack
+  queues the newcomer until the oldest has been up 6 seconds, and a toast's clock starts when it is shown. Hovering
+  pauses its clock, and leaving gives back the time it had. The new headless section `toastLives` covers it and
+  fails on the old code. HUB-SIDE.
+
+- **A say to a card with no session answers `undeliverable`, and a held message goes when the session does.** See
+  `docs/test-plan.md` section BN (backlog-2 item 27).
+
+  A card that is `done` or `dead` with no live process took a say as `queued`, held it for the input line, and wore
+  `! 1` for eleven hours. The session end forgot the chip, but a runner that outlived its session kept the retry
+  going, and the next tick set `held_for: line` again. Now a say to such a card answers `undeliverable` with a note
+  to resume it first, and is not queued, so the resumed session does not get it twice. A worker that reported done
+  but still runs is still reached. A held message is dropped from the on-screen retry when the session ends or the
+  runner exits, so the chip goes, and it stays queued for a resumed session's hooks. ROOM-SIDE, needs a room
+  restart.
+
+- **Esc Esc on a Claude prompt releases held messages.** See `docs/test-plan.md` BN4.
+
+  The gate counts the operator's keystrokes to know the line is empty. Enter, control-c and control-u reset the
+  count, and a lone Esc matched nothing, so a line Claude Code cleared on Esc Esc still read as full and held
+  messages until a control-c. Two lone Escs within 2 seconds now clear the count on a Claude runner. A shell is left
+  alone, where Esc is a meta prefix. Clearing the scrollback empties no line and still releases nothing. ROOM-SIDE,
+  needs a room restart.
+
+- **The held chip's tooltip says how many, how long, what blocks them and what to do.** For example "2 messages have
+  been waiting to be delivered to this agent for 1h 2m 3s and are blocked by input in this terminal. Submit your
+  text to dequeue these messages". The age is full hours, minutes and seconds. The sender is no longer named. The
+  turn and dialog reasons take the same shape. HUB-SIDE.
+
+- **The full headless run passes.** Backlog-2 item 28.
+
+  It failed 5 runs in 5 on `claude/main`, always on `page.waitForFunction: Timeout 30000ms` in the main flow. A throw
+  now names its line in the file, which found the wait: the skin check saved a skin while the load's own settings
+  reads were still out, and a read answered before the save painted the old skin back. The board now lets a save in
+  flight own the skin. The skin checks, the skin heal and the history checks are sections of their own
+  (`skinScope`, `skinHeal`, `history`) that wait for the reads, not a clock. The keep-alive section is in the full
+  run now. 34 waits passed their timeout as the page function's argument, so they took the 30 second default. They
+  take it as the option now. The other flakes had board races under them: two history renders in flight drew
+  whichever answered last (the newest now wins, and a repaint keeps a "show more" in flight), and a terminal closed
+  before its first frame was still connected. The restart gate check now waits for every stream to reopen, and the
+  settings-once check counts its own page's reads. HUB-SIDE.
+
 - **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
   and `docs/test-plan.md` section BL.
 
