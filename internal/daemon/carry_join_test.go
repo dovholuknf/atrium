@@ -42,7 +42,7 @@ func TestNoMatchKeepsTheSavedHistoryWhole(t *testing.T) {
 func TestTheJoinedReplayKeepsEachRunsWidth(t *testing.T) {
 	r := &runner{carried: &carryover{cols: 188, bytes: []byte("● old line that only the saved file holds\r\n")}}
 	live := []byte("● live line from the new process, long enough\r\n")
-	out, cuts, trimmed := r.withCarried(live, []sizeCut{{0, 164, 0}}, 164, 1<<20)
+	out, cuts, trimmed, _ := r.withCarried(live, []sizeCut{{0, 164, 0}}, 164, 1<<20, false)
 	if trimmed {
 		t.Fatal("trimmed with plenty of room")
 	}
@@ -72,16 +72,16 @@ func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
 	old := savedLines(3 * carryReplayMax / 80)
 	r := &runner{carried: &carryover{cols: 188, bytes: old}}
 	live := []byte("● live line from the new process, long enough\r\n")
-	out, cuts, trimmed := r.withCarried(live, nil, 164, 512<<20)
+	out, cuts, trimmed, held := r.withCarried(live, nil, 164, 512<<20, false)
 	if trimmed {
 		t.Fatal("reported as cut by the setting, which would tell somebody to raise it")
 	}
 	prefix := len(out) - len(live)
-	if max := len(carryReplayNotice) + carryReplayMax; prefix > max {
-		t.Fatalf("replayed %d bytes of saved history, want at most %d", prefix, max)
+	if prefix > carryReplayMax {
+		t.Fatalf("replayed %d bytes of saved history, want at most %d", prefix, carryReplayMax)
 	}
-	if !bytes.HasPrefix(out, []byte(carryReplayNotice)) {
-		t.Fatalf("no notice saying where the rest is: %q", out[:min(len(out), 120)])
+	if held != len(old) {
+		t.Fatalf("said %d bytes were held back, the file is %d", held, len(old))
 	}
 	if !bytes.HasSuffix(out, live) || !bytes.Contains(out, carryDivider) {
 		t.Fatal("the live ring or the divider is missing")
@@ -100,11 +100,11 @@ func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
 func TestASmallScrollbackSettingStillCutsTheJoin(t *testing.T) {
 	r := &runner{carried: &carryover{cols: 188, bytes: savedLines(1000)}}
 	live := []byte("● live line from the new process, long enough\r\n")
-	out, _, trimmed := r.withCarried(live, nil, 164, 16<<10)
+	out, _, trimmed, held := r.withCarried(live, nil, 164, 16<<10, false)
 	if !trimmed || len(out) > 16<<10 {
 		t.Fatalf("trimmed=%v, %d bytes out of a 16KB setting", trimmed, len(out))
 	}
-	if bytes.Contains(out, []byte(carryReplayNotice)) {
+	if held != 0 {
 		t.Fatal("the replay bound's notice on a cut the setting made")
 	}
 }
@@ -116,7 +116,7 @@ func TestTheReprintIsFoundAtTheEndOfABigSavedFile(t *testing.T) {
 		"● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\n"...)
 	live := []byte("● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\nnew\r\n")
 	r := &runner{carried: &carryover{cols: 188, bytes: old}}
-	out, _, _ := r.withCarried(live, nil, 164, 512<<20)
+	out, _, _, _ := r.withCarried(live, nil, 164, 512<<20, false)
 	if n := bytes.Count(out, []byte("the answer the resumed session reprints")); n != 1 {
 		t.Fatalf("the reprinted answer appears %d times, want once", n)
 	}
@@ -145,7 +145,7 @@ func TestRealCarryJoinFindsTheReprint(t *testing.T) {
 		t.Log("no anchor matched: the whole saved history is kept")
 	}
 	r := &runner{carried: &carryover{cols: 188, bytes: old}}
-	joined, cuts, _ := r.withCarried(live, nil, 164, 32<<20)
+	joined, cuts, _, _ := r.withCarried(live, nil, 164, 32<<20, false)
 	began := time.Now()
 	out := replayCut(joined, "screen", cuts, 48)
 	t.Logf("screen replay of %d joined bytes took %v and produced %d bytes",

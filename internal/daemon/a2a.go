@@ -293,13 +293,38 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 // has no Stop hook. Returns whether a notice went.
 func (d *Daemon) silentStop(taskID string) bool {
 	t, err := d.st.Get(taskID)
-	if err != nil || !agentLaunched(t) || t.Status != store.StatusNeedsInput || !t.OwesReport() {
+	if err != nil || !agentLaunched(t) {
+		return false
+	}
+	ended, ok := d.stoppedSilently(t)
+	if !ok {
 		return false
 	}
 	body := fmt.Sprintf("%s ended its turn without reporting. It has been waiting since %s with "+
 		"nothing to say about the work. card %s",
-		t.WireName, t.WaitingSinceOr(time.Now()).Local().Format("15:04:05"), t.ID)
+		t.WireName, ended.Local().Format("15:04:05"), t.ID)
 	return d.notifyLauncher(t, NoticeSilentStop, t.PromptKey(), body)
+}
+
+// stoppedSilently reports whether a card is waiting after a turn that ran
+// since its last prompt and said nothing to its launcher, and when that turn
+// ended.
+//
+// A TURN HAS TO HAVE RUN. Owing a report is not enough: a built-in slash
+// command such as `/model` is a prompt that starts no turn, and a card a
+// restart resumed onto an idle prompt has a fresh `waiting_since` and no turn
+// behind it. Both read stuck when this asked only for a prompt newer than the
+// last report, and the restart made it ring again from one minute. The turn's
+// end is also the clock, so a restart does not restart the backoff.
+func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
+	if t.Status != store.StatusNeedsInput || !t.OwesReport() {
+		return time.Time{}, false
+	}
+	ended, err := d.st.TurnEndedAt(t.ID)
+	if err != nil || ended == nil || ended.Before(*t.PromptedAt) {
+		return time.Time{}, false
+	}
+	return *ended, true
 }
 
 // ── reachability (F15) ──────────────────────────────────────────────────────────
@@ -488,8 +513,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 // when the launcher has not been told yet. Nil when the card is fine.
 func (d *Daemon) stuckNow(t *store.Task, now time.Time) *Escalation {
 	who := t.DisplayTitle()
-	if t.Status == store.StatusNeedsInput && t.OwesReport() && t.WaitingSince != nil {
-		since := *t.WaitingSince
+	if since, ok := d.stoppedSilently(t); ok {
 		if now.Sub(since) >= SilentStopNotifyAfter {
 			d.silentStop(t.ID)
 		}

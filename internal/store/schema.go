@@ -1621,6 +1621,67 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS keepalive_refresh_at ON keepalive_refresh (at)`,
 		},
 	},
+	{
+		// WHEN A CARD'S LAST TURN ENDED: the moment it went from working to
+		// waiting. The silent-stop check needs a turn that ended after the last
+		// prompt, because a prompt that starts no turn (a built-in slash command
+		// such as `/model`) owes nobody a report, and neither does a card a
+		// restart resumed onto an idle prompt. `waiting_since` cannot say this: a
+		// restart resets it with no turn run.
+		//
+		// A table of its own for the reason 0057 gives. Seeded from the event
+		// log, so a card that really did stop without reporting before this
+		// landed still reads stuck.
+		name: "0062_turn_end",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS turn_end (
+				task_id  TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				ended_at TEXT NOT NULL
+			)`,
+			`INSERT OR IGNORE INTO turn_end (task_id, ended_at)
+				SELECT task_id, MAX(at) FROM event
+				WHERE kind = 'status-changed'
+				  AND json_extract(payload, '$.to') = 'needs-input'
+				  AND json_extract(payload, '$.from') IN ('running', 'needs-permission')
+				  AND task_id IN (SELECT id FROM task)
+				GROUP BY task_id`,
+		},
+	},
+	{
+		// TOKEN USE ON RECORD: one row per turn a card's runner took, summed
+		// from its own transcript, and one per keep-alive refresh. See
+		// usage.go and internal/daemon/usage.go.
+		//
+		// A row per turn and not per reply, so a card that runs for a month is
+		// thousands of rows and not hundreds of thousands. No foreign key: the
+		// point is history, and forgetting a card must not forget what it
+		// spent. `cause` is what started the turn, `after_resume` marks the
+		// first turn of a runner that was started on a resume.
+		name: "0063_session_usage",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS session_usage (
+				id             TEXT PRIMARY KEY,
+				task_id        TEXT NOT NULL,
+				resume_id      TEXT NOT NULL DEFAULT '',
+				started_at     TEXT NOT NULL,
+				ended_at       TEXT NOT NULL,
+				cause          TEXT NOT NULL,
+				after_resume   INTEGER NOT NULL DEFAULT 0,
+				model          TEXT NOT NULL DEFAULT '',
+				replies        INTEGER NOT NULL DEFAULT 0,
+				input          INTEGER NOT NULL DEFAULT 0,
+				output         INTEGER NOT NULL DEFAULT 0,
+				cache_write_5m INTEGER NOT NULL DEFAULT 0,
+				cache_write_1h INTEGER NOT NULL DEFAULT 0,
+				cache_read     INTEGER NOT NULL DEFAULT 0,
+				context        INTEGER NOT NULL DEFAULT 0,
+				last_message   TEXT NOT NULL DEFAULT '',
+				cost           REAL NOT NULL DEFAULT 0,
+				prices         TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS session_usage_task_at ON session_usage (task_id, ended_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

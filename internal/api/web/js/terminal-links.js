@@ -391,6 +391,118 @@ function openTermURL(ev, uri) {
   a.remove();
 }
 
+// ── the "not replayed here" notice's two actions ─────────
+//
+// An attach that held pre-restart history back starts with a grey line whose
+// `open` and `load` are OSC 8 links with an `atrium:` scheme (`carryLinkNotice`
+// in internal/daemon/carryover.go). Each carries a nonce this page made up for
+// the socket and sent as `?link=`. A program can print an `atrium:` link too,
+// but it never sees the nonce, so its link is dropped at parse time and does
+// nothing if clicked.
+
+// This socket's nonce, or "" when the pane attached to something with no
+// history to offer (a shell).
+let carryNonce = "";
+// The card whose next attach asks for all of it, once.
+let carryAllNext = "";
+// The load in flight: the spinner, and the timer that gives up on it.
+let carryLoading = null;
+
+function newCarryNonce() {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// `open` or `load` for a link this socket's notice drew, "" for anything else.
+function carryAction(uri) {
+  if (!carryNonce || !/^atrium:/i.test(uri || "")) return "";
+  let u;
+  try { u = new URL(uri); } catch (e) { return ""; }
+  if (u.searchParams.get("n") !== carryNonce) return "";
+  if (u.pathname === "carry/open") return "open";
+  if (u.pathname === "carry/load") return "load";
+  return "";
+}
+
+// THE PARSE-TIME HALF. Runs ahead of xterm's own OSC 8 handler and swallows
+// every link that is not http(s) or this socket's own, so a forged one is plain
+// text. `linkHandler` has to allow non-http schemes for ours to be a link at
+// all, and this keeps every other scheme as unclickable as it was before.
+function useCarryLinks(t) {
+  try {
+    t.parser.registerOscHandler(8, data => {
+      const uri = data.slice(data.indexOf(";") + 1);
+      if (!uri || /^https?:/i.test(uri)) return false;
+      return !carryAction(uri);
+    });
+  } catch (e) {
+    console.warn("the notice's links would not register:", e);
+  }
+}
+
+// THE CLICK-TIME HALF, xterm's `linkHandler` option. The nonce is checked again
+// because a line can outlive the socket that drew it.
+const termLinkHandler = {
+  allowNonHttpProtocols: true,
+  activate: (ev, uri) => {
+    const act = carryAction(uri);
+    if (act) {
+      if (ev && ev.button) return;
+      if (ev) ev.preventDefault();
+      carryAct(act, uri);
+      return;
+    }
+    if (!/^https?:/i.test(uri)) return;
+    // xterm's own answer for a link a program printed, kept as it was.
+    if (!confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) return;
+    const w = open();
+    if (!w) return;
+    try { w.opener = null; } catch (e) {}
+    w.location.href = uri;
+  }
+};
+
+function carryAct(act, uri) {
+  const t = termTask;
+  if (!t) return;
+  if (act === "open") {
+    openOlderScrollback(t.id);
+    return;
+  }
+  // LOAD IT IN. xterm cannot put bytes above its scrollback, so this is a
+  // reset and a re-attach that asks for all of it. `onopen` does the reset.
+  let n = 0;
+  try { n = Number(new URL(uri).searchParams.get("b")) || 0; } catch (e) {}
+  carryAllNext = t.id;
+  carryLoadBegin(n);
+  connectTerm(t.id);
+}
+
+// The paste spinner's box, saying what is landing.
+function carryLoadBegin(n) {
+  carryLoadEnd();
+  carryLoading = { timer: setTimeout(carryLoadEnd, 60000) };
+  showPasting(n ? "loading " + pasteSize(n) + " of history" : "loading the history");
+}
+
+function carryLoadEnd() {
+  if (!carryLoading) return;
+  clearTimeout(carryLoading.timer);
+  carryLoading = null;
+  pasteEnd();
+}
+
+// Where a load's replay has been parsed, so the spinner can go. The replay is
+// the first big frame. Every frame ahead of it is a short line.
+function carryLoadDone(bytes, done) {
+  if (!carryLoading || bytes.length < 4096) return done;
+  return function () {
+    if (done) done.apply(this, arguments);
+    carryLoadEnd();
+  };
+}
+
 // The colours are the theme's. A hit highlighted in board-blue on a dark green
 // terminal is the same mistake the rest of the chrome just stopped making.
 //
@@ -722,7 +834,16 @@ function connectTerm(taskID) {
   // Absent means the runner, which is what the daemon assumes too, so the
   // parameter is only ever added rather than always sent. That keeps the
   // ordinary URL identical to what it was before shells existed.
-  const kind = termKind === "shell" ? "?kind=shell" : "";
+  let kind = "?kind=shell";
+  carryNonce = "";
+  if (termKind !== "shell") {
+    // A fresh nonce for the notice's links on every socket, and all of the
+    // pre-restart history when its `load` asked for it. See `carryAction`.
+    carryNonce = newCarryNonce();
+    kind = "?link=" + carryNonce;
+    if (carryAllNext === taskID) kind += "&carry=all";
+  }
+  carryAllNext = "";
   // A new socket says what it is attached to for itself. Held over, this would
   // be the previous session's answer applied to this one, and switching from
   // an agent to a card's shell would bracket a paste the shell never asked for.
@@ -822,7 +943,8 @@ function connectTerm(taskID) {
       return;
     }
     pasteSawOutput();
-    writeRunnerOutput(term, new Uint8Array(e.data), lagOnOutput(followScroll));
+    const bytes = new Uint8Array(e.data);
+    writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
   termSock.onclose = async ev => {
     if (!term) return;
@@ -840,6 +962,7 @@ function connectTerm(taskID) {
     // of yet.
     if (termSock !== sock) return;
     traceCtl({ ev: "sock-close", code: ev ? ev.code : 0, reason: ev ? ev.reason : "" });
+    carryLoadEnd();
 
     // The daemon's own word for what just happened, or an empty string when
     // the close did not come from it at all: a connection that dropped carries
@@ -1093,8 +1216,12 @@ function connectTerm(taskID) {
 }
 
 function send(msg) {
+  sendFrame(JSON.stringify(msg));
+}
+
+// A frame already serialised, for a big paste that had to be measured first.
+function sendFrame(s) {
   if (!termSock || termSock.readyState !== WebSocket.OPEN) return;
-  const s = JSON.stringify(msg);
   traceIn(s);
   termSock.send(s);
 }
@@ -1446,8 +1573,13 @@ const followScrollFor = 1200;
 // `pasted` says the bytes came from a paste gesture (the paste event, the paste
 // box, right click, a drop or a pasted file's path) and starts the spinner's
 // clock. Typed keys never pass it, whatever their length.
+//
+// Input that arrives while a big paste waits to paint is queued behind it. See
+// `sendBigPaste`.
 function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
+  if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
+  if (pasted && d.length >= pasteBigAt) { sendBigPaste(d); return; }
   send({ t: "in", d });
   if (quiet) return;
   if (pasted) pasteBegin(d.length);
@@ -1478,18 +1610,93 @@ function sendInput(text, quiet, pasted) {
 const pasteShowAfterMs = 20;
 const pasteGiveUpMs = 20000;
 
+// A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
+//
+// Over loopback a 1MB frame drains in about 25ms and a 10MB one in about 160ms.
+// The daemon reads the whole frame and only then writes it to the pty, which is
+// where a big paste spends its time, so the first output after the drain is
+// usually the runner redrawing while it is still reading. Ended there, the box
+// was up for a frame or less, and a 1MB paste never painted it at all.
+//
+// And `send` itself holds the main thread, about 7ms per MB, so a box put up on
+// the 20ms timer waits behind the send it is meant to cover.
+//
+// So from this size the box goes up FIRST, the frame leaves once it has
+// painted, and it stays up at least `pasteHoldFor` before an echo may end it.
+// The hold is a floor so the box can be read, not a measure of the pty: the
+// board has no word from the daemon for when the write finished.
+const pasteBigAt = 256 * 1024;
+
+function pasteHoldFor(n) {
+  return Math.min(4000, Math.max(500, n / 1024));
+}
+
+// The daemon's read limit on one attach frame. A bigger one CLOSES THE SOCKET,
+// the paste is lost, and the terminal reconnects. See `SetReadLimit` in
+// internal/daemon/attach.go.
+const pasteFrameMax = 4 << 20;
+
+// Input that arrived while a big paste waits for its box to paint, in order, or
+// null when none is waiting.
+let pasteHeld = null;
+
+function sendBigPaste(d) {
+  const s = JSON.stringify({ t: "in", d });
+  const bytes = new TextEncoder().encode(s).length;
+  if (bytes > pasteFrameMax) {
+    toast("that paste is too big", `${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
+    return;
+  }
+  pasteBegin(d.length, true);
+  const f = pasteFlight;
+  const sock = termSock;
+  pasteHeld = [];
+  let gone = false;
+  const go = () => {
+    if (gone) return;
+    gone = true;
+    // THE TERMINAL CHANGED UNDER IT: a switch to another card or a reconnect.
+    // The paste and whatever was typed behind it belong to the one it was
+    // aimed at, so none of it goes to this one.
+    if (termSock !== sock) {
+      pasteHeld = null;
+      if (pasteFlight === f) pasteEnd();
+      toast("that paste did not go", "the terminal changed before it left");
+      return;
+    }
+    sendFrame(s);
+    if (pasteFlight === f) f.sent = true;
+    if (term) term.scrollToBottom();
+    followScrollUntil = Date.now() + followScrollFor;
+    const q = pasteHeld;
+    pasteHeld = null;
+    for (const [d2, quiet, pasted] of q) sendInput(d2, quiet, pasted);
+  };
+  // After the next paint. The timer alone covers a frame that never comes.
+  requestAnimationFrame(() => setTimeout(go, 0));
+  setTimeout(go, 100);
+}
+
 // The paste in flight, or null. A second paste replaces it, which is right:
 // the newer one is the one still to land.
 let pasteFlight = null;
 
-function pasteBegin(n) {
+// `big` shows the box at once and holds it. See `pasteBigAt`. A paste that
+// replaces a big one still inside its hold keeps that hold and the box, or a
+// small paste right behind a big one would take the box straight down.
+function pasteBegin(n, big) {
+  const prev = pasteFlight && pasteFlight.shown && pasteFlight.sock === termSock ? pasteFlight : null;
   pasteEnd();
-  const f = { sock: termSock, t0: Date.now(), n, timer: 0, shown: false };
+  const now = Date.now();
+  const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: !big,
+    holdUntil: Math.max(big ? now + pasteHoldFor(n) : 0, prev ? prev.holdUntil : 0), echoed: false };
+  const atOnce = big || now < f.holdUntil;
   pasteFlight = f;
   const tick = () => {
     if (pasteFlight !== f) return;
     if (termSock !== f.sock || !f.sock || Date.now() - f.t0 > pasteGiveUpMs) { pasteEnd(); return; }
-    if (!f.shown && Date.now() - f.t0 >= pasteShowAfterMs) { f.shown = true; pasteShow(f); }
+    if (f.echoed && Date.now() >= f.holdUntil) { pasteEnd(); return; }
+    if (!f.shown && (atOnce || Date.now() - f.t0 >= pasteShowAfterMs)) { f.shown = true; pasteShow(f); }
     // The first wait is the show delay, so the box is not held to the poll.
     f.timer = setTimeout(tick, f.shown ? 50 : pasteShowAfterMs);
   };
@@ -1498,12 +1705,25 @@ function pasteBegin(n) {
 
 // Called on every output frame. Ends the paste if its bytes have all left.
 // Read here rather than on the poll, so an echo that lands between two polls
-// is not missed.
+// is not missed. Inside a big paste's hold it is noted, and the poll ends it
+// when the hold runs out.
 function pasteSawOutput() {
-  if (pasteFlight && pasteFlight.sock && pasteFlight.sock.bufferedAmount === 0) pasteEnd();
+  const f = pasteFlight;
+  if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
+  if (Date.now() < f.holdUntil) { f.echoed = true; return; }
+  pasteEnd();
+}
+
+function pasteSize(n) {
+  return n < 1024 ? n + "B" : n < 1024 * 1024 ? Math.round(n / 1024) + "KB" : (n / 1048576).toFixed(1) + "MB";
 }
 
 function pasteShow(f) {
+  showPasting("pasting " + pasteSize(f.n));
+}
+
+// The spinner box itself, which a load of the pre-restart history wears too.
+function showPasting(say) {
   const host = document.getElementById("term-pane");
   if (!host) return;
   let el = document.getElementById("t-pasting");
@@ -1513,8 +1733,7 @@ function pasteShow(f) {
     el.setAttribute("role", "status");
     host.appendChild(el);
   }
-  const kb = f.n < 1024 ? f.n + "B" : f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
-  setHTML(el, `<span class="shspin"></span><span>pasting ${esc(kb)}</span>`);
+  setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
   el.hidden = false;
   placeToasts();
 }

@@ -3,7 +3,9 @@
 Keeping an idle card's prompt cache warm, so that coming back to it after an hour costs a cache read and not a
 cache write of its whole context.
 
-Status: design. Nothing here is built yet.
+Status: built. The room daemon runs the refresh loop (`internal/daemon/keepalive.go`), keeps the ledger in the
+store, and the board has the per-card switch, the settings default and the spend line. The sections below are the
+design it was built from.
 
 ## Why
 
@@ -427,12 +429,16 @@ clint's requirements, which override the first brief:
 - Launch environment: a card launched with keep-alive on gets `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` (see "Choosing
   the TTL"). A card turned on later that launched without the pin is still refreshed while its cache is `1h`, and
   skipped when it is `5m`.
-- **The ledger.** Every attempt is a row: card, the card's `resume_id`, the fork's session id, time, model,
-  outcome (`warmed`, `miss`, `refused`, `acted`, `failed`, `skipped:<why>`), cache read, cache write, input and
+- **The ledger.** Every fork is a row: card, the card's `resume_id`, the fork's session id, time, model,
+  outcome (`warmed`, `miss`, `refused`, `acted`, `failed`), cache read, cache write, input and
   output tokens, and cost from a price table in the daemon mirroring `$UsagePrices`. The row names the price
   table's version (the date it was copied), so a stale table shows and the raw token counts let a later reader
   reprice it. Each row also carries the inputs of the decision: the context C, the seconds left on the TTL,
   the budget spent before this attempt and the budget cap, so a surprising stop can be explained from the row.
+  A skip is not a row. The daemon keeps the last skip reason per card in memory and shows it on the card, so the
+  `skipped: <why>` names in this doc are those reasons, and they are gone after a restart. If a fork's row fails to
+  save, the daemon holds that card's refreshes in memory until the cache the fork may have warmed would expire, or
+  until the card takes a real turn, and the card shows why.
   Persisted, because the point is to see what it cost over a week. The card tooltip shows the current idle stretch
   (`kept warm 3x, $0.18 of $0.30`). The settings cog shows the week's refresh spend next to the switch, and the
   suspension with its reason and a button to clear it when there is one.

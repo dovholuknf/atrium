@@ -477,6 +477,7 @@ const server = http.createServer((req, res) => {
     // list keeps the row while dropping the live flag.
     if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
     if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
+    if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -3643,6 +3644,343 @@ async function pasteSpinnerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a big paste shows the spinner too ─────────────────────────────────────
+// Test plan BQ. The socket here behaves like Chromium's over loopback: `send`
+// holds the main thread about 7ms per MB and the frame drains about 25ms per MB
+// later. The runner echoes 2ms after the drain and keeps printing, the way a
+// runner still reading a big paste off its pty does. Every paste gesture, a
+// bracketed runner and a popped-out window must paint the box within a frame of
+// the paste and keep it up at least 300ms. A frame over the daemon's 4MB limit is
+// not sent, and says why.
+async function pasteBigSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__frames = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(str) {
+          const t = performance.now();
+          while (performance.now() - t < str.length / 1048576 * 7) { /* the send holds the thread */ }
+          window.__frames.push(str);
+          this.bufferedAmount += str.length;
+          setTimeout(() => {
+            this.bufferedAmount = Math.max(0, this.bufferedAmount - str.length);
+            if (str.length < 1000 || !this.onmessage) return;
+            // Echo, then a runner still busy with it.
+            setTimeout(() => this.onmessage({ data: "[Pasted text]" }), 2);
+            let n = 0;
+            const iv = setInterval(() => {
+              if (++n > 40 || !this.onmessage) { clearInterval(iv); return; }
+              this.onmessage({ data: "." });
+            }, 30);
+          }, str.length / 1048576 * 25);
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    // Drives one gesture and samples the box on every frame for 1.5s.
+    window.__pasteRun = gesture => new Promise(done => {
+      pasteEnd();
+      window.__frames = [];
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const seen = [];
+      const t0 = performance.now();
+      const loop = () => {
+        const t = performance.now() - t0;
+        if (vis()) seen.push(t);
+        if (t < 1500) { requestAnimationFrame(loop); return; }
+        done({ first: seen.length ? Math.round(seen[0]) : -1,
+          span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
+          sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
+          text: (document.getElementById("t-pasting") || {}).textContent || "" });
+      };
+      requestAnimationFrame(loop);
+      gesture();
+    });
+  });
+  const attach = async p => {
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+  };
+  const MB = 1048576;
+  const check = (name, got, want) => {
+    const big = got.sizes.filter(n => n > 1000);
+    if (big.length !== 1 || big[0] < want) {
+      fail(name + ": the paste did not leave as one frame of " + want + " bytes or more: " + JSON.stringify(got.sizes));
+      return;
+    }
+    if (got.first < 0 || got.first > 50 || got.span < 300) {
+      fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
+        JSON.stringify({ first: got.first, span: got.span }));
+    }
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await attach(p);
+
+    for (const mb of [1, 3]) {
+      // ctrl-v: the browser's paste event on the terminal.
+      const ctrlV = await p.evaluate(n => window.__pasteRun(() => {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "x".repeat(n));
+        document.getElementById("t-screen").dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }), mb * MB);
+      check("ctrl-v " + mb + "MB", ctrlV, mb * MB);
+
+      // Right click: the clipboard API.
+      const right = await p.evaluate(n => {
+        Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { readText: () => Promise.resolve("r".repeat(n)), read: () => Promise.resolve([]) } });
+        return window.__pasteRun(() => {
+          document.getElementById("t-screen").dispatchEvent(
+            new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+        });
+      }, mb * MB);
+      check("right click " + mb + "MB", right, mb * MB);
+
+      // The paste box.
+      const box = await p.evaluate(n => window.__pasteRun(() => {
+        openPasteBox("");
+        document.getElementById("t-paste-in").value = "b".repeat(n);
+        sendPasteBox();
+      }), mb * MB);
+      check("paste box " + mb + "MB", box, mb * MB);
+
+      // A dropped block of text, no files.
+      const drop = await p.evaluate(n => window.__pasteRun(() => {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "d".repeat(n));
+        document.getElementById("t-screen").dispatchEvent(
+          new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      }), mb * MB);
+      check("dropped text " + mb + "MB", drop, mb * MB);
+    }
+
+    // A runner that declares bracketed paste gets the markers and the spinner.
+    const bracketed = await p.evaluate(n => {
+      termCaps.bracketed_paste = true;
+      return window.__pasteRun(() => sendPasteText("y".repeat(n)));
+    }, MB);
+    check("bracketed 1MB", bracketed, MB);
+    if (!bracketed.heads.some(h => h.includes("\\u001b[200~"))) {
+      fail("a bracketed runner's big paste lost its markers: " + JSON.stringify(bracketed.heads));
+    }
+    await p.evaluate(() => { termCaps.bracketed_paste = false; });
+
+    // A key typed straight after a big paste goes after it, not ahead of it.
+    const order = await p.evaluate(n => window.__pasteRun(() => {
+      sendPasteText("o".repeat(n));
+      term.input("z", true);
+    }), MB);
+    const zAt = order.heads.findIndex(h => h.includes('"d":"z"'));
+    const bigAt = order.sizes.findIndex(s => s > 1000);
+    if (zAt < 0 || bigAt < 0 || zAt < bigAt) {
+      fail("a key typed after a big paste did not follow it: " + JSON.stringify(order.heads));
+    }
+
+    // A small paste right behind a big one keeps the big one's box and hold.
+    const pair = await p.evaluate(n => window.__pasteRun(() => {
+      sendPasteText("p".repeat(n));
+      sendPasteText("small");
+    }), MB);
+    check("a big paste then a small one", pair, MB);
+
+    // The terminal changes before the big frame leaves: nothing goes to the new one.
+    const moved = await p.evaluate(n => {
+      const old = termSock;
+      const fresh = new WebSocket(old.url);
+      fresh.readyState = 1;
+      return window.__pasteRun(() => {
+        sendPasteText("m".repeat(n));
+        term.input("k", true);
+        termSock = fresh;
+      }).then(got => {
+        termSock = old;
+        got.said = [...document.querySelectorAll(".toast")].map(t => t.textContent).join(" | ");
+        return got;
+      });
+    }, MB);
+    if (moved.sizes.length) fail("a big paste went to a terminal it was not aimed at: " + JSON.stringify(moved.heads));
+    if (!/did not go/.test(moved.said)) fail("a big paste dropped on a terminal change said nothing: " + JSON.stringify(moved.said));
+
+    // Over the daemon's 4MB frame limit: not sent, which would close the socket,
+    // and said so.
+    const huge = await p.evaluate(n => window.__pasteRun(() => sendPasteText("h".repeat(n))), 10 * MB);
+    if (huge.sizes.some(s => s > 4 * MB)) {
+      fail("a 10MB paste was sent in one frame, which the daemon closes the socket on: " + JSON.stringify(huge.sizes));
+    }
+    const said = await p.evaluate(() =>
+      [...document.querySelectorAll(".toast")].map(t => t.textContent).join(" | "));
+    if (!/too big/.test(said)) fail("a 10MB paste was not refused out loud: " + JSON.stringify(said));
+
+    // A popped-out window is the same terminal code.
+    const solo = await ctx.newPage();
+    solo.on("pageerror", e => errors.push(String(e)));
+    await solo.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await attach(solo);
+    const soloGot = await solo.evaluate(n => window.__pasteRun(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "s".repeat(n));
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    }), MB);
+    check("popped-out ctrl-v 1MB", soloGot, MB);
+    await solo.close();
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the big paste page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// ── the not-replayed notice opens or loads the pre-restart history ────────
+// Test plan BO. The daemon draws the notice's `open` and `load` as OSC 8
+// `atrium:` links carrying the nonce this socket sent as `?link=`. Clicking
+// open calls the cog's viewer, clicking load re-attaches with carry=all under
+// the paste spinner, and an `atrium:` link a program printed does nothing.
+async function carryLinkSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__socks = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+
+    // The notice the way the daemon writes it, then three forgeries a program
+    // printed: no nonce, a wrong nonce, and a scheme xterm would never link.
+    const setup = await p.evaluate(() => new Promise(done => {
+      window.__opened = [];
+      openOlderScrollback = id => { window.__opened.push(id); };
+      const s = window.__socks[window.__socks.length - 1];
+      const nonce = new URL(s.url, location.href).searchParams.get("link") || "";
+      const link = (uri, text) => "\x1b]8;;" + uri + "\x1b\\" + text + "\x1b]8;;\x1b\\";
+      const notice = "\x1b[38;5;244m[atrium] ---- " + link("atrium:carry/open?n=" + nonce, "OPENREAL") + " or " +
+        link("atrium:carry/load?n=" + nonce + "&b=5242880", "LOADREAL") + " ----\x1b[0m\r\n";
+      const forged = link("atrium:carry/open", "FORGEDBARE") + "\r\n" +
+        link("atrium:carry/open?n=deadbeefdeadbeefdeadbeefdeadbeef", "FORGEDNONCE") + "\r\n" +
+        link("atrium:carry/load?n=deadbeefdeadbeefdeadbeefdeadbeef", "FORGEDLOAD") + "\r\n";
+      const enc = new TextEncoder();
+      s.onmessage({ data: enc.encode(notice).buffer });
+      s.onmessage({ data: enc.encode(forged).buffer });
+      term.write("", () => done({ nonce, socks: window.__socks.length }));
+    }));
+    if (!setup.nonce || !/^[0-9a-f]{32}$/.test(setup.nonce)) {
+      fail("the attach sent no usable ?link= nonce: " + JSON.stringify(setup));
+    }
+
+    // Where a word is on screen, in page pixels.
+    const at = word => p.evaluate(w => {
+      const buf = term.buffer.active;
+      const rect = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const cw = rect.width / term.cols, ch = rect.height / term.rows;
+      for (let y = 0; y < term.rows; y++) {
+        const line = buf.getLine(buf.viewportY + y);
+        const x = line ? line.translateToString(true).indexOf(w) : -1;
+        if (x >= 0) return { x: rect.left + (x + 2.5) * cw, y: rect.top + (y + 0.5) * ch };
+      }
+      return null;
+    }, word);
+    const click = async word => {
+      const pt = await at(word);
+      if (!pt) { fail("the word " + word + " is not on screen"); return; }
+      await p.mouse.move(pt.x, pt.y);
+      await p.waitForTimeout(150);
+      await p.mouse.click(pt.x, pt.y);
+      await p.waitForTimeout(150);
+    };
+    const state = () => p.evaluate(() => ({
+      opened: window.__opened.slice(), socks: window.__socks.length,
+      last: window.__socks[window.__socks.length - 1].url
+    }));
+
+    // 1. A forged link does nothing: no viewer, no second socket.
+    for (const w of ["FORGEDBARE", "FORGEDNONCE", "FORGEDLOAD"]) await click(w);
+    const forged = await state();
+    if (forged.opened.length || forged.socks !== setup.socks) {
+      fail("an atrium: link a program printed did something: " + JSON.stringify(forged));
+    }
+
+    // 2. open calls the cog's viewer for this card.
+    await click("OPENREAL");
+    const opened = await state();
+    if (opened.opened.join() !== "land-live") {
+      fail("the notice's open did not call the history viewer: " + JSON.stringify(opened));
+    }
+
+    // 3. load re-attaches with carry=all, under the spinner, which goes once the
+    // replay has landed.
+    await click("LOADREAL");
+    const loaded = await p.evaluate(() => {
+      const el = document.getElementById("t-pasting");
+      return { socks: window.__socks.length, last: window.__socks[window.__socks.length - 1].url,
+        spin: !!(el && !el.hidden), text: el ? el.textContent : "" };
+    });
+    if (loaded.socks !== setup.socks + 1 || !/[?&]carry=all(&|$)/.test(loaded.last)) {
+      fail("the notice's load did not re-attach with carry=all: " + JSON.stringify(loaded));
+    }
+    if (!loaded.spin || !/loading 5\.0MB/.test(loaded.text)) {
+      fail("the load shows no spinner naming its size: " + JSON.stringify(loaded));
+    }
+    await p.waitForFunction(() => termSock && termSock.readyState === 1, null, { timeout: 5000 });
+    const landed = await p.evaluate(() => new Promise(done => {
+      termSock.onmessage({ data: new TextEncoder().encode("old line\r\n".repeat(1000)).buffer });
+      term.write("", () => setTimeout(() => {
+        const el = document.getElementById("t-pasting");
+        done({ spin: !!(el && !el.hidden), next: (() => { connectTerm("land-live"); return termSock.url; })() });
+      }, 50));
+    }));
+    if (landed.spin) fail("the load's spinner stayed up after the replay landed");
+    if (/carry=all/.test(landed.next)) fail("carry=all stuck to the next attach: " + landed.next);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the carry link page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -4389,6 +4727,134 @@ function threwAt(e) {
   return at ? " (at " + at.trim().replace(/^at /, "") + ")" : "";
 }
 
+// The stuck section's cards. A launched card a restart resumed onto an idle
+// prompt, one a `/model` was typed into, and one that ended a turn without
+// reporting. The room serves `escalation` only on the last, and only from
+// `stuckStep` 1. See internal/daemon/a2a.go and docs/test-plan.md BM.
+let stuckStep = 0;
+function stuckCards() {
+  const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
+  const cards = [
+    Object.assign({}, T1, launched, { id: "st-resumed", display_title: "resumed idle card" }),
+    Object.assign({}, T1, launched, { id: "st-slash", display_title: "slash command card" }),
+    Object.assign({}, T1, launched, { id: "st-stuck", display_title: "silent worker" }),
+  ];
+  if (stuckStep > 0) {
+    cards[2].escalation = { source: "silent-stop", since: new Date(Date.now() - 3 * 60000).toISOString(),
+      count: stuckStep, minutes: 3, text: "silent worker is STUCK: it stopped without reporting, 3 minutes" };
+  }
+  return cards;
+}
+
+// A STUCK CARD WEARS A MARK, AND THE GEAR DECIDES WHETHER IT RINGS. No mark
+// and no alert on the idle cards. A mark with a styled tooltip on the stuck
+// one, on the stack, the board and the terminal strip, and an alert. "only
+// mark the card" keeps the mark and drops the alert, and "off" drops both.
+async function stuckSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  tasksMode = "stuck";
+  stuckStep = 0;
+  const stuckToasts = () => sp.evaluate(() => {
+    try {
+      return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+        .filter(t => /is STUCK/.test((t.title || "") + " " + (t.body || ""))).length;
+    } catch (e) { return -1; }
+  });
+  const marks = () => sp.evaluate(() => {
+    const out = {};
+    document.querySelectorAll("#stack-list .stackrow").forEach(r => {
+      const m = r.querySelector(".chip.stuck");
+      out[r.dataset.id] = m ? { tip: m.getAttribute("data-tip") || "", title: m.hasAttribute("title"),
+        warn: m.classList.contains("warn"), svg: !!m.querySelector("svg") } : null;
+    });
+    return out;
+  });
+  const settle = async () => {
+    await sp.evaluate(() => runRefresh());
+    await new Promise(r => setTimeout(r, 400));
+  };
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="st-stuck"]', { state: "attached", timeout: 15000 });
+    await sp.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    await settle();
+    await settle();
+
+    // The idle cards: nothing on any of them, and nothing rang.
+    let m = await marks();
+    for (const id of ["st-resumed", "st-slash", "st-stuck"]) {
+      if (m[id] !== null) fail("a card the room did not call stuck wears the stuck mark: " + id);
+    }
+    if (await stuckToasts() !== 0) fail("an idle card raised a stuck alert.");
+
+    // Stuck: the mark, in the warn colour, with its own icon and a styled tooltip.
+    stuckStep = 1;
+    await settle();
+    m = await marks();
+    const s = m["st-stuck"];
+    if (!s) fail("a stuck card on the stack has no stuck mark.");
+    else {
+      if (!s.warn || !s.svg) fail("the stuck mark is not a warn-coloured icon: " + JSON.stringify(s));
+      if (s.title) fail("the stuck mark uses a native title, not a styled tooltip.");
+      if (!/stopped without reporting/.test(s.tip) || !/stuck since \S/.test(s.tip)) {
+        fail("the stuck mark's tooltip does not say why and since when: " + JSON.stringify(s.tip));
+      }
+    }
+    if (m["st-resumed"] || m["st-slash"]) fail("the idle cards picked up the mark beside a stuck one.");
+    const elsewhere = await sp.evaluate(cards => {
+      const on = html => { const b = document.createElement("div"); b.innerHTML = html; return !!b.querySelector(".chip.stuck"); };
+      return { board: on(cardHTML(cards[2])), strip: on(termRowChips(cards[2])),
+        boardIdle: on(cardHTML(cards[0])), stripIdle: on(termRowChips(cards[1])) };
+    }, stuckCards());
+    if (!elsewhere.board) fail("a stuck card on the board has no stuck mark.");
+    if (!elsewhere.strip) fail("a stuck card on the terminal strip has no stuck mark.");
+    if (elsewhere.boardIdle || elsewhere.stripIdle) fail("an idle card wears the mark on the board or the strip.");
+    await sp.waitForFunction(() => {
+      try { return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+        .some(t => /is STUCK/.test(t.title || "")); } catch (e) { return false; }
+    }, null, { timeout: 5000 }).catch(() => fail("a stuck card raised no alert."));
+
+    // The setting, in the gear: "alert" by default. "mark" rings nothing more
+    // on the next step and keeps the mark.
+    const def = await sp.evaluate(() => { paintSettings(); return document.getElementById("s-stuck").value; });
+    if (def !== "alert") fail("the stuck setting does not default to alerting: " + def);
+    const before = await stuckToasts();
+    await sp.evaluate(() => {
+      const el = document.getElementById("s-stuck");
+      el.value = "mark";
+      el.dispatchEvent(new Event("change"));
+    });
+    const saved = await sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound") || "{}").stuck);
+    if (saved !== "mark") fail("the stuck setting was not saved with the other alert settings: " + saved);
+    stuckStep = 2;
+    await settle();
+    if (await stuckToasts() !== before) fail("\"only mark the card\" still raised a stuck alert.");
+    m = await marks();
+    if (!m["st-stuck"]) fail("\"only mark the card\" took the mark down.");
+
+    // Off: no mark either.
+    await sp.evaluate(() => {
+      const el = document.getElementById("s-stuck");
+      el.value = "off";
+      el.dispatchEvent(new Event("change"));
+    });
+    stuckStep = 3;
+    await settle();
+    m = await marks();
+    if (m["st-stuck"]) fail("stuck alerts off still draws the mark.");
+    if (await stuckToasts() !== before) fail("stuck alerts off still raised an alert.");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    stuckStep = 0;
+  }
+  if (errors.length) fail("the stuck page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -4402,7 +4868,8 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection };
     try {
@@ -6318,12 +6785,17 @@ async function main() {
     await sayWhenSection(browser, base);
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
+    await pasteBigSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
+    // ── the not-replayed notice opens or loads the pre-restart history ─────
+    await carryLinkSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────
     await busyGuardSection(browser, base);
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await keepaliveSection(browser, base);
+    // ── a stuck card wears a mark, and the gear decides whether it rings ───
+    await stuckSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
