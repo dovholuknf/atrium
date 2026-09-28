@@ -19,7 +19,9 @@ func lagOnFor(t *testing.T) {
 // Off, an upgraded connection starts no clock, so nothing is timed and nothing
 // is left behind to close as a stale hop once the logging comes on.
 func TestLagConnTimesNothingWhenOff(t *testing.T) {
-	inputlag.SetLive(false)
+	if !inputlag.SetLive(false) {
+		t.Skip(inputlag.Env + " is set, so the setting cannot switch the logging off")
+	}
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()

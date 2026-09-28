@@ -1239,6 +1239,14 @@ func inheritedTaint(key string) bool {
 		// so a daemon started from inside a session cannot leak that session's
 		// room to the ones it launches: a child gets THIS daemon's room or none.
 		return true
+	case strings.HasPrefix(upper, "ATRIUM_DEBUG_"):
+		// Diagnostics for THIS process. The live scripts turn on
+		// ATRIUM_DEBUG_INPUTLAG for the room, and a runner that inherited it
+		// logged lag from every atrium binary it ran and failed `go test` in
+		// internal/link. The whole prefix, because every switch under it is a
+		// debug readout for the process it was set on. A runner that wants one
+		// names it in its harness env, which is applied after this filter.
+		return true
 	}
 	return false
 }

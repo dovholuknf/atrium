@@ -61,7 +61,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
-| 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | sa55, started 2026-09-28 |
+| 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE on `claude/inputlag-env-leak`, needs a room restart |
 
 ------------
 
@@ -1149,6 +1149,20 @@ Raised 2026-09-28. The live scripts `start-atrium-room.ps1`, `start-atrium-hub.p
 inherits it, so a worker's `go test` fails `internal/link` TestLagConnTimesNothingWhenOff, and any atrium binary a
 worker runs logs lag too. Also measure what the logging costs per keystroke, because clint says input has been slow
 lately.
+
+Done by sa55. `inheritedTaint` drops every `ATRIUM_DEBUG_` variable, which covers a launch, a restart, a
+keep-alive fork, a source and a recogniser, and `shellEnv` drops them from a card's shell. The whole prefix, because
+each switch under it is a readout for the process it was set on. A runner's own `environment` field still passes
+one on. ROOM-SIDE only (`internal/daemon`). Nothing on the hub changes. See `docs/test-plan.md` section CB.
+
+What the logging costs, from `BenchmarkRoomKeystroke*` and `BenchmarkHubKeystroke*` on the i9-13900H while it was
+busy: a keystroke and its echo cost the room about 64ns with the logging off and about 165ns with it on, and the hub
+about 15ns off and 53ns on. A logged line is about 0.8us and 248 bytes. Nothing is formatted under the threshold.
+On 2026-09-28 from 11:19 to 15:05 the room logged 354 lag lines (about 1.6 a minute, at most 30 in one minute,
+72KB). In every slow echo the room logged, atrium's share was at most 1.1ms and the rest was on the runner's side.
+The hub logs about 80 lines an hour even when idle. The room pings an idle attach every 45s, the browser's pong
+going up starts the hub's `echo` clock, and nothing comes back until the next ping, so each one logs a 45000ms
+echo. Any other frame sent up that gets no reply would do the same. That is noise, not lag.
 
 
 ------------

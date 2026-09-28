@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launched runner no longer inherits the room's `ATRIUM_DEBUG_INPUTLAG`.** See `docs/backlog-2.md` item 55 and
+  `docs/test-plan.md` section CB.
+
+  The live scripts start the room with the lag log on, and every runner it launched carried the variable. A worker's
+  `go test` then failed `internal/link` TestLagConnTimesNothingWhenOff, and every atrium binary a worker ran logged
+  lag. Every inherited `ATRIUM_DEBUG_` variable is now dropped from a runner's environment, from a keep-alive fork's,
+  from a source's or recogniser's, and from a card's shell. The room and the hub keep their own logging. A harness
+  that names one in its `env` still passes it on. That test also skips when the variable pins the switch, rather
+  than failing. Benchmarks in `internal/daemon` and `internal/link` time the per-keystroke hot path with the logging
+  on and off. `internal/daemon`: ROOM RESTART. Nothing HUB-SIDE.
 - **A card past a context threshold wears a mark, its launcher hears once, and a card's details are a hover away.**
   See `docs/backlog-2.md` item 45 and `docs/test-plan.md` section BZ.
 
