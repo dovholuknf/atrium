@@ -13,7 +13,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 4 | sa61: terminals pane group drag and group colours | paused | DONE, `b12b323`, deployed |
 | 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
 | 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
-| 7 | The held-message `!` chip says the wrong reason | bug | not started |
+| 7 | The held-message `!` chip says the wrong reason | bug | DONE with item 10, `1ff7503` |
 | 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
@@ -23,14 +23,17 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
-| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | not started, repro on `openziti/ziti` `backport/v2.0.x-ctrl-heartbeat-reconnect` 2026-09-25 |
+| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | sa82 building |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
-| 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
+| 20 | Selecting the terminal that is already attached re-renders its whole history | bug | DONE, `c57b550` |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
-| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | not started |
+| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | sa81 building |
+| 26 | Toasts pop and disappear in the same second | bug | not started |
+| 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
+| 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
 
 ------------
 
@@ -603,6 +606,40 @@ Watch for:
 - A new attach parameter is a new endpoint for a lent session (`overlay_guest.go` allowlist). A guest must not get
   `carry=all` unless it already gets the history.
 - The popped-out window takes the same path.
+
+## 26. Toasts pop and disappear in the same second (bug)
+
+Raised by clint 2026-09-27: toasts appear and are gone within a second, too fast to read. Also noted in passing under
+item 14 on 2026-09-21, so this is not new.
+
+`js/toasts.js` gives a toast 9s (30s for a permission), so something else removes it early. Find what. Candidates to
+check first: the dedupe that replaces the last toast (`toasts.js` near `:297`), a cap on the stack, a view switch or
+re-render that rebuilds `#toasts`, `landOnAlert` or a dialog close that clears it, the restart covers, and the new
+top-right placement (`placeToasts`, item 18). Reproduce on the live board with the terminals view and the stack view.
+
+Fix: a toast stays its full life unless the user dismisses it or clicks it. Hovering pauses the timer. Headless test:
+raise a toast, then do each thing found above, and it is still on screen after 5s.
+
+## 27. A say to a session that has gone waits forever, blaming the input line (bug)
+
+Raised 2026-09-26. The orchestrator said something to sa69 after its runner had exited. The answer was `queued`, and
+the card then wore `! 1` for over eleven hours with `held_for: line`, although the card was `done` with pid 0 and had no
+input line to wait on.
+
+Expected: a say to a card with no running session answers `undeliverable` with a note (resume it first), or is held
+with `held_for: no session` and says so on the chip. A held message on a card that is deleted or finished does not
+stay forever. Decide whether a held message expires or is dropped when the card's runner ends.
+
+## 28. The full headless board run fails most of the time on `claude/main` (bug)
+
+Raised 2026-09-27 by sa69. The full `scripts/test-board-headless.js` run failed on `claude/main` at `0305a19` in 2 of 3
+runs, and on the paste-spinner branch in 4 of 5. The common failure is `page.waitForFunction: Timeout 30000ms` thrown in
+the main flow, not a named section, so it cannot be run alone. Seen once each: "a cancelled countdown stayed on screen"
+(`restartGate`, passes alone), "a terminated pinned terminal's right-click menu offered no dismiss action", "a fresh
+history load did not go back to one page".
+
+A check that fails most runs hides real failures. Find the wait that times out, name it, move main-flow checks into
+named sections so each can run alone, and make the flaky waits wait on a condition rather than a clock.
 
 
 ------------
