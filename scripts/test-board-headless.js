@@ -2144,8 +2144,10 @@ async function toastLivesSection(browser, base) {
       window.__reaps = 0;
       const real = reapToasts;
       window.reapToasts = keys => { window.__reaps++; return real(keys); };
-      alerting.notify("gone9 is ready", "its turn ended", "stack", "", "gone9", "gone9", "", "",
-        { pending: true });
+      // The toast a pending alert raises, keyed by its card. Raised directly: the
+      // alert itself goes to whichever window has focus, and in the full run
+      // another page may.
+      toast("gone9 is ready", "its turn ended", "stack", "gone9", "gone9");
     });
     let born = Date.now();
     await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
