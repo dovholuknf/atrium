@@ -69,6 +69,13 @@ param(
     [string] $Http,
     [string] $LocationFile,
 
+    # What the task runs. `daemon` is a machine's own atrium with no hub. `room`
+    # is the same daemon attached to the hub this machine already joined, which
+    # is what scripts/provision-room.ps1 installs. For a room, -Addr is its
+    # agent address and -Http its own board, and -LocationFile does not apply.
+    [ValidateSet('daemon', 'room')]
+    [string] $Verb = 'daemon',
+
     # Remove the task instead of creating it.
     [switch] $Remove
 )
@@ -146,10 +153,17 @@ $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 # --headless`, which is the documented way to run a console program with no
 # window on Windows 10 1809 and later, and falls back to the plain invocation
 # where that is not available.
-$daemonArgs = "daemon --db `"$Db`""
-if ($Addr)         { $daemonArgs += " --addr `"$Addr`"" }
-if ($Http)         { $daemonArgs += " --http `"$Http`"" }
-if ($LocationFile) { $daemonArgs += " --location-file `"$LocationFile`"" }
+if ($Verb -eq 'room') {
+    $daemonArgs = "room --db `"$Db`""
+    if ($Addr)         { $daemonArgs += " --agent `"$Addr`"" }
+    if ($Http)         { $daemonArgs += " --http `"$Http`"" }
+    if ($LocationFile) { Write-Warning "-LocationFile does not apply to a room and was left out." }
+} else {
+    $daemonArgs = "daemon --db `"$Db`""
+    if ($Addr)         { $daemonArgs += " --addr `"$Addr`"" }
+    if ($Http)         { $daemonArgs += " --http `"$Http`"" }
+    if ($LocationFile) { $daemonArgs += " --location-file `"$LocationFile`"" }
+}
 
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 if (Test-Path $conhost) {
