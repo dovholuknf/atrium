@@ -367,7 +367,10 @@ async function doDispatch() {
   renderDispatch();
 }
 
-async function cancelDispatch(id) {
+// One at a time: see oneAtATime in js/core.js.
+function cancelDispatch(id) { return oneAtATime("dispatch:" + id, () => cancelDispatchNow(id)); }
+
+async function cancelDispatchNow(id) {
   try {
     await api("/v1/dispatch/" + encodeURIComponent(id), { method: "DELETE" });
   } catch (e) {
@@ -895,19 +898,13 @@ async function saveSource() {
 async function runSourceNow() {
   const id = document.getElementById("source").dataset.editing;
   if (!id) return;
-  const btn = document.getElementById("s-run");
-  btn.disabled = true;
-  btn.textContent = "running...";
   let res;
   try {
     res = await api("/v1/sources/" + encodeURIComponent(id) + "/run", { method: "POST" });
   } catch (e) {
     tellUser("could not run it", e.message);
-    btn.disabled = false; btn.textContent = "run it now";
     return;
   }
-  btn.disabled = false;
-  btn.textContent = "run it now";
   await renderSources();
   const fresh = allSources.find(x => x.id === id);
   if (fresh) showSourceStatus(fresh);

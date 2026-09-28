@@ -502,17 +502,25 @@ async function openTask(id) {
 //
 // `when` is "done" for send, which waits for the turn to end, or "immediate"
 // for the button beside it, typed in as soon as the input line is empty.
-async function sayToCurrent(when = "done") {
+//
+// Through `busyWhile` on both routes, so Enter pressed again while the first
+// is posting cannot send the same text twice. See js/core.js.
+function sayToCurrent(when = "done") {
   if (!current) return;
   const box = document.getElementById("d-say");
   const text = box.value.trim();
   if (!text) return;
-  const buttons = ["d-say-send", "d-say-now"].map(id => document.getElementById(id));
+  const other = document.getElementById(when === "immediate" ? "d-say-send" : "d-say-now");
+  if (other && other.dataset.busy) return;
+  const btn = document.getElementById(when === "immediate" ? "d-say-now" : "d-say-send");
+  return busyWhile(btn, () => sayNow(current, box, text, when), "sending…");
+}
+
+async function sayNow(task, box, text, when) {
   const how = document.getElementById("d-say-how");
-  buttons.forEach(b => { if (b) b.disabled = true; });
   how.textContent = "";
   try {
-    const res = await api(`/v1/tasks/${current.id}/message`, {
+    const res = await api(`/v1/tasks/${task.id}/message`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, when })
     });
@@ -521,8 +529,6 @@ async function sayToCurrent(when = "done") {
     await paintQueued();
   } catch (e) {
     how.textContent = `not sent: ${e.message || e}`;
-  } finally {
-    buttons.forEach(b => { if (b) b.disabled = false; });
   }
 }
 
@@ -867,12 +873,17 @@ function attachCurrent() {
   openTerm(task);
 }
 
-async function killTask() {
+// Keyed with the card menu's terminate. See oneAtATime in js/core.js.
+function killTask() {
   if (!current) return;
+  return oneAtATime("kill:" + current.id, () => killTaskNow(current));
+}
+
+async function killTaskNow(t) {
   if (!await confirmUser("stop this runner?",
-    `<b>${esc(current.display_title)}</b> is killed. The card and its history stay.`,
+    `<b>${esc(t.display_title)}</b> is killed. The card and its history stay.`,
     "stop it", "kill-runner")) return;
-  try { await api(`/v1/tasks/${current.id}/kill`, { method: "POST" }); }
+  try { await api(`/v1/tasks/${t.id}/kill`, { method: "POST" }); }
   catch (e) { toast("could not terminate", e.message); return; }
   detail.close();
   refresh();

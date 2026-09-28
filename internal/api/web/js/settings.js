@@ -301,7 +301,12 @@ async function loadGlobalAuto() {
 // that could only be temporary would just be a shorter lie.
 //
 // Enter takes the last button, so an hour is what a reflex gets.
-async function toggleGlobalAuto() {
+//
+// One at a time, so a second press while the first is asking or posting does
+// not flip it straight back. See oneAtATime in js/core.js.
+function toggleGlobalAuto() { return oneAtATime("global-auto", toggleGlobalAutoNow); }
+
+async function toggleGlobalAutoNow() {
   const on = !globalAuto;
   let minutes = 0;
   if (on) {

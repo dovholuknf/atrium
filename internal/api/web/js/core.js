@@ -473,3 +473,95 @@ function atriumMarkURL(size) {
   return c.toDataURL("image/png");
 }
 
+// ONE REQUEST PER PRESS, AND THE PRESS SHOWS.
+//
+// Every button that fires a request goes through here. The moment it is
+// pressed it wears a spinner and a working label, and it and the other actions
+// in its row are disabled until the request answers.
+// A second press, a second Enter, or a second call from code while the first is
+// in flight is refused here, not left for the daemon to reject: the resume
+// dialog took two clicks on a `launch` that showed nothing, and the second one
+// raised an error on a card the first had already started.
+//
+// `work` answers or throws. A throw re-enables everything and says why: inside
+// a dialog, as a line in that dialog, so the failure is not a modal stacked on
+// the modal that raised it and the form is still there to correct; anywhere
+// else, as a `tellUser`. Callers that already report their own failures catch
+// them and never throw, and lose nothing.
+//
+// `btn` is the element or its id. A missing button runs `work` unguarded, so a
+// caller reached from somewhere the button is not drawn still works. Answers
+// what `work` answered, or undefined when refused or failed.
+async function busyWhile(btn, work, label) {
+  if (typeof btn === "string") btn = document.getElementById(btn);
+  if (!btn) return work();
+  return busyNow(btn, work, label);
+}
+
+// The same guard for a request with no button left to wear it: a card menu
+// entry that closed its menu, or a confirmation that answered and went away.
+// Keyed by what the request is about, `kill:<card id>` say, so a second
+// `terminate` on the same card while the first is still asking or posting is
+// refused, and one on another card is not.
+const busyKeys = new Set();
+async function oneAtATime(key, work) {
+  if (busyKeys.has(key)) return undefined;
+  busyKeys.add(key);
+  try {
+    return await work();
+  } finally {
+    busyKeys.delete(key);
+  }
+}
+
+async function busyNow(btn, work, label) {
+  if (btn.dataset.busy) return undefined;
+  // The row of actions the button sits in, which is where its siblings are: a
+  // dialog's footer or toolbar, or a card's `.actions`. The whole dialog only
+  // when the button is in none, so a message sent from the card dialog does
+  // not grey out every control on the card.
+  const scope = btn.closest(".dlg-foot, .toolbar, .actions") || btn.closest("dialog");
+  const held = scope
+    ? [...scope.querySelectorAll("button")].filter(b =>
+      b !== btn && !b.disabled && !b.closest(".dlg-head"))
+    : [];
+  const why = scope && scope.querySelector(".busy-why");
+  if (why) why.remove();
+  const was = { html: btn.innerHTML, disabled: btn.disabled, width: btn.style.minWidth };
+  btn.style.minWidth = btn.offsetWidth ? btn.offsetWidth + "px" : was.width;
+  btn.dataset.busy = "1";
+  btn.setAttribute("aria-busy", "true");
+  btn.disabled = true;
+  btn.innerHTML = "<span class=\"busy-spin\" aria-hidden=\"true\"></span>" + esc(label || "working…");
+  held.forEach(b => { b.disabled = true; });
+  const done = () => {
+    delete btn.dataset.busy;
+    btn.removeAttribute("aria-busy");
+    btn.innerHTML = was.html;
+    btn.disabled = was.disabled;
+    btn.style.minWidth = was.width;
+    held.forEach(b => { b.disabled = false; });
+  };
+  try {
+    const out = await work();
+    done();
+    return out;
+  } catch (e) {
+    done();
+    const msg = (e && e.message) || String(e);
+    const dlg = btn.closest("dialog");
+    if (dlg && dlg.open) {
+      const line = document.createElement("p");
+      line.className = "busy-why";
+      line.setAttribute("role", "alert");
+      line.textContent = msg;
+      (btn.parentElement || dlg).insertAdjacentElement("beforebegin", line);
+      // Gone when the dialog closes, so the next open does not wear the last failure.
+      dlg.addEventListener("close", () => line.remove(), { once: true });
+    } else if (typeof tellUser === "function") {
+      tellUser("that did not work", msg);
+    }
+    return undefined;
+  }
+}
+
