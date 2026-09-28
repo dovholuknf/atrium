@@ -1227,6 +1227,11 @@ The reply path has to work both ways. A card on m1mini must be able to reach `at
 known to be needed: the hub's `/v1/tasks/m1mini~<id>/message` typed the orchestrator's question into an m1mini card,
 and the card answered, but the answer could not come back.
 
+**Status, 2026-09-28, sa58: built on `claude/cross-room-say`, not merged.** Design in `docs/cross-room-say-design.md`,
+reviewed by mercurius (`s_H1ILoNvxloBH`, ready_to_build). Test plan CD. Migration 0066. Needs a hub restart and a
+restart of every room, and atrium-control on m1mini (the provisioning script now registers it) before an m1mini card
+can answer. Not carried across rooms: the ledger's `ended` notice, and a remote launcher's verdict on a worker's work.
+
 ## 59. Spike on m1mini: more than one room per machine, and a blocked room that drains (design, spike)
 
 Raised 2026-09-28 by clint. Run it on m1mini. Two ideas:

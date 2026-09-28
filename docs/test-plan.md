@@ -4649,3 +4649,85 @@ shows `! 2`, because the immediate one asked to go in now.
 
 **Expected:** for the first hour the envelope. After it the `!`, with the tip `blocked by the session's turn, which
 it was sent to wait for`. The message still waits for the turn to end.
+
+## CD. `atrium_say` reaches a card on another room, `name@room`
+
+CD1 to CD8 need the hub AND every room involved built from this change, and a HUB RESTART and a ROOM RESTART (the
+hub carries the relay, each room relays and holds). Room m1mini is any second room. One migration, `0066_relay_outbox`.
+Go tests cover the route with a real hub and two fake rooms over TCP in `internal/link/relay_test.go` (delivery from
+`sa1@m1mini`, an alias, the sender's room taken from the connection, no sender refused, an unknown name, an unknown
+room, an unconfirmed post, peers across rooms, an old hub, the hub-side say through the sender's room and its
+old-room fallback, a same-room say, and a launch onto another room), the room side with a fake relay in
+`internal/daemon/relay_test.go` (relay, held and sent later, unconfirmed not held, old hub not held, a refusal passed
+back, `atrium tell`, a silent stop and a report to a remote launcher by card id, a say to a remote launcher paying
+the turn, the drain dropping an unconfirmed say and keeping a notice, expiry, and a launch keeping a tagged
+launcher), the stdio server in `internal/cli/control_relay_test.go`, and the grammar in both `address_test.go`
+files. See `docs/cross-room-say-design.md` and `docs/backlog-2.md` item 58.
+
+### CD1. A card on the hub's machine says to a card on m1mini
+
+1. From a session on the hub's own room, `atrium_peers` with `rooms: true`.
+2. `atrium_say` to one of m1mini's handles as `name@m1mini`, asking for a reply.
+
+**Expected:** the list has m1mini's live sessions marked `room: m1mini`, handles `name@m1mini`. The say answers
+`queued` or `terminal` with `to` = `name@m1mini`. On m1mini the text arrives through the gate or the hook behind the
+grey `[atrium] <you>@<your room> says:` label, never as if the operator typed it.
+
+### CD2. The m1mini card answers
+
+1. On m1mini, from the card that got CD1's message, `atrium_say` to the handle it was shown, `<you>@<your room>`.
+
+**Expected:** the reply arrives on the hub's machine the same way, labelled `name@m1mini says:`. This needs
+atrium-control on m1mini (CD7).
+
+### CD3. Aliases and case
+
+1. Say to `@alias@M1MINI`, then to `name@<your own room>`, then to a bare `name` that exists on both rooms.
+
+**Expected:** the alias resolves on m1mini. Your own room part stays local. A bare name is always your own room.
+
+### CD4. The target room is offline
+
+1. Stop the room on m1mini (not the hub). Say to `name@m1mini`.
+2. Start m1mini's room again.
+
+**Expected:** step 1 answers `held`, with a note that the hub or room m1mini is not answering and that it is kept on
+your room for up to 24 hours. Nothing is kept on the hub. Within a reaper tick of m1mini attaching, the message
+arrives there. `sqlite3 <db> "select count(*) from relay_outbox"` on your room is 0 after it goes.
+
+### CD5. A typo and a refusal
+
+1. Say to `name@atlantis`, then to `nobody@m1mini`.
+
+**Expected:** `atlantis` is refused at once naming the rooms the hub knows, and nothing is held. `nobody` is refused
+with the live handles on m1mini.
+
+### CD6. A worker on m1mini reports to its launcher on the hub's machine
+
+1. From the orchestrator on the hub's machine, `atrium_launch` with `room: m1mini`. The answer's handle is
+   `name@m1mini`.
+2. Let the worker end a turn without reporting, then have it `atrium_report` (stdio atrium-control on m1mini).
+3. Make its context pass the threshold, if practical.
+
+**Expected:** the card on m1mini shows `spawned_by` = `<orchestrator>@<its room>`. The orchestrator receives the
+silent-stop notice, then the report verbatim, each as a peer message from `name@m1mini`, and `launcher_told` is
+true. With the hub down between step 2's report and its delivery, the report is held on m1mini and arrives when the
+hub is back.
+
+### CD7. Provisioning registers atrium-control
+
+1. `pwsh -File scripts\provision-room.ps1 user@m1mini` (again, on an already provisioned machine).
+2. On m1mini, `claude mcp list`.
+3. `-Remove`, then `claude mcp list` again.
+
+**Expected:** a `provision mcp done` line the first time (or `ok` when it was already there), and
+`atrium-control` in the list, running `<atrium> control`. After `-Remove` it is gone. One somebody else registered
+is left alone with a `warn` line.
+
+### CD8. Skew
+
+1. Put an older binary on the hub and keep the new room. Say across rooms.
+2. Put the new hub back and an older room as the sender, with a hub-side session on it saying across rooms.
+
+**Expected:** step 1 is refused with "the hub is older than cross-room say", and nothing is held. Step 2 is
+delivered by the hub itself, and the note says the sender's room is older so its work ledger has no record of it.
