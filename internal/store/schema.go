@@ -1581,6 +1581,46 @@ var migrations = []struct {
 			`UPDATE harness SET mid_turn_input = 1 WHERE id IN ('claude', 'codex')`,
 		},
 	},
+	{
+		// THE CACHE KEEP-ALIVE: a card's switch, and every refresh it cost. See
+		// docs/cache-keepalive-design.md and keepalive.go.
+		//
+		// Tables of their own rather than columns on task, because a card that
+		// never ran Claude has no row and no opinion. `keepalive_card.state` is
+		// `on`, `off` or one of the `stopped:` reasons, and `state_at` is when it
+		// last changed, which is also the anchor a hand re-enable restarts the
+		// budget from. The ledger is persisted because the point of it is the
+		// week's cost.
+		name: "0061_cache_keepalive",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS keepalive_card (
+				task_id  TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				state    TEXT NOT NULL,
+				state_at TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS keepalive_refresh (
+				id           TEXT PRIMARY KEY,
+				task_id      TEXT NOT NULL,
+				resume_id    TEXT NOT NULL DEFAULT '',
+				fork_session TEXT NOT NULL DEFAULT '',
+				at           TEXT NOT NULL,
+				model        TEXT NOT NULL DEFAULT '',
+				outcome      TEXT NOT NULL,
+				context      INTEGER NOT NULL DEFAULT 0,
+				ttl_left_s   INTEGER NOT NULL DEFAULT 0,
+				spent_before REAL NOT NULL DEFAULT 0,
+				budget       REAL NOT NULL DEFAULT 0,
+				cache_read   INTEGER NOT NULL DEFAULT 0,
+				cache_write  INTEGER NOT NULL DEFAULT 0,
+				input        INTEGER NOT NULL DEFAULT 0,
+				output       INTEGER NOT NULL DEFAULT 0,
+				cost         REAL NOT NULL DEFAULT 0,
+				prices       TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS keepalive_refresh_task_at ON keepalive_refresh (task_id, at)`,
+			`CREATE INDEX IF NOT EXISTS keepalive_refresh_at ON keepalive_refresh (at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

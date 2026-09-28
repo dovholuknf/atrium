@@ -274,8 +274,13 @@ let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  return { global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS };
+  return Object.assign({ global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS },
+    kaSettings);
 }
+// The cache keep-alive's room settings, and every write the board made to it or
+// to a card's switch. See keepaliveSection.
+let kaSettings = {};
+let kaWrites = [];
 // The global auto switch the mocked daemon holds, and whether a room-scoped
 // settings read fails: the room the picker is scoped to has not re-attached yet,
 // so the hub cannot reach it. See the gauto-never-blank test.
@@ -383,6 +388,18 @@ const server = http.createServer((req, res) => {
   // no-room restart with 503 and a genuine missing card with 404, and the solo
   // window has to tell those apart. Placed before the list route, which is the
   // exact path "/v1/tasks" with no trailing id.
+  // A card's keep-alive switch. Recorded, and answered the way the daemon does.
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/keepalive") && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      kaWrites.push({ url, body });
+      sendJSON(res, { task_id: url.split("/")[3], keepalive: { state: body.on ? "on" : "off" } });
+    });
+    return;
+  }
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -459,6 +476,7 @@ const server = http.createServer((req, res) => {
     // down. Pinned so the row is present either way, the way a real lagging
     // list keeps the row while dropping the live flag.
     if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
+    if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -511,6 +529,15 @@ const server = http.createServer((req, res) => {
         let body = {};
         try { body = JSON.parse(raw || "{}"); } catch (e) {}
         const keys = Object.keys(body);
+        // The keep-alive's two settings, recorded so the test can read what the
+        // switch and the clear button sent.
+        if (keys.some(k => k.startsWith("cache_keepalive_"))) {
+          kaWrites.push({ url, body });
+          if ("cache_keepalive_default" in body) kaSettings.cache_keepalive_default = body.cache_keepalive_default;
+          if (body.cache_keepalive_suspended === false) kaSettings.cache_keepalive_suspended = "";
+          sendJSON(res, settingsBody(room));
+          return;
+        }
         // A skin-only save lands on the current scope: the hub for ALL, the room
         // when scoped. Anything else in the ALL view still needs a room (409),
         // which is the refusal the scoped skin does NOT get any more.
@@ -3606,6 +3633,145 @@ async function copySelectSection(browser, base) {
   tasksMode = was;
 }
 
+// The cache keep-alive's cards: one stopped at break-even, one being kept warm,
+// one on with nothing spent yet, and one with no switch at all (not Claude).
+const KA_CARDS = [
+  Object.assign({}, T1, { id: "ka-stop", display_title: "stopped card", keepalive: {
+    state: "stopped:break-even", state_at: "2026-09-27T18:00:00Z", refreshes: 5, spent: 0.3, budget: 0.3,
+    warm_until: "2026-09-27T17:42:00Z" } }),
+  Object.assign({}, T1, { id: "ka-warm", display_title: "warm card", keepalive: {
+    state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
+    warm_until: "2026-09-27T19:00:00Z" } }),
+  Object.assign({}, T1, { id: "ka-quiet", display_title: "quiet card", keepalive: {
+    state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 0, spent: 0, budget: 0.3 } }),
+  Object.assign({}, T1, { id: "ka-none", display_title: "shell card", runner: "shell" }),
+];
+
+// THE CACHE KEEP-ALIVE ON THE BOARD. The switch in the gear's settings sets the
+// default for new cards and saves it, a suspension shows with a clear button,
+// each card draws the right chip, the card menu's switch posts to the card, and
+// a break-even stop pushed on the stream lands in the toast log. See
+// js/keepalive.js and docs/cache-keepalive-design.md.
+async function keepaliveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const kp = await ctx.newPage();
+  const errors = [];
+  kp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  tasksMode = "keepalive";
+  kaWrites = [];
+  kaSettings = {
+    cache_keepalive_default: true, cache_keepalive_suspended: "two refreshes in a row on two cards missed the cache",
+    cache_keepalive_week_usd: 1.25, cache_keepalive_week_refreshes: 21,
+  };
+  try {
+    await kp.goto(base, { waitUntil: "domcontentloaded" });
+    await kp.waitForFunction(() => typeof paintKeepaliveSettings === "function" &&
+      typeof loadHousekeeping === "function", null, { timeout: 15000 });
+    await kp.evaluate(() => loadHousekeeping());
+
+    // The board switch: in the gear's settings, under its own heading, checked
+    // because the default is on.
+    const sw = await kp.evaluate(() => {
+      const el = document.getElementById("s-keepalive");
+      if (!el) return { missing: true };
+      let h = el.closest(".field");
+      while (h && !(h.matches && h.matches("h3.s-section"))) h = h.previousElementSibling;
+      return { checked: el.checked, heading: h ? h.textContent.trim() : "",
+        dialog: el.closest("dialog") ? el.closest("dialog").id : "",
+        spend: document.getElementById("s-keepalive-spend").textContent,
+        suspendedShown: !document.getElementById("s-keepalive-suspended").hidden,
+        why: document.getElementById("s-keepalive-why").textContent };
+    });
+    if (sw.missing) fail("the keep-alive switch is not in the settings.");
+    if (sw.dialog !== "settings") fail("the keep-alive switch is not in the gear's settings dialog: " + sw.dialog);
+    if (sw.heading !== "cache keep-alive") fail("the keep-alive switch sits under " + JSON.stringify(sw.heading));
+    if (!sw.checked) fail("the keep-alive switch is not checked when the default is on.");
+    if (!/21 refreshes, \$1\.25/.test(sw.spend)) fail("the week's spend reads " + JSON.stringify(sw.spend));
+    if (!sw.suspendedShown || !/missed the cache/.test(sw.why)) {
+      fail("a suspended room does not say so: " + JSON.stringify(sw));
+    }
+
+    // Unchecking it saves the default, and only the default.
+    await kp.evaluate(() => {
+      const el = document.getElementById("s-keepalive");
+      el.checked = false;
+      el.dispatchEvent(new Event("change"));
+    });
+    await kp.waitForFunction(() => true, null, { timeout: 500 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 300));
+    const saved = kaWrites.find(w => w.url === "/v1/settings" && "cache_keepalive_default" in w.body);
+    if (!saved || saved.body.cache_keepalive_default !== false || Object.keys(saved.body).length !== 1) {
+      fail("unchecking the switch did not save {cache_keepalive_default:false}: " + JSON.stringify(kaWrites));
+    }
+
+    // Clearing the suspension sends false and hides the notice.
+    await kp.evaluate(() => clearKeepaliveSuspension());
+    const cleared = kaWrites.find(w => w.body.cache_keepalive_suspended === false);
+    if (!cleared) fail("clearing the suspension did not post cache_keepalive_suspended:false.");
+    const stillShown = await kp.evaluate(() => !document.getElementById("s-keepalive-suspended").hidden);
+    if (stillShown) fail("the suspension notice stayed up after it was cleared.");
+
+    // The chips, from the card renderer the board uses.
+    const chips = await kp.evaluate(cards => cards.map(t => {
+      const box = document.createElement("div");
+      box.innerHTML = cardHTML(t);
+      const c = box.querySelector(".chip.keepalive");
+      return { id: t.id, text: c ? c.textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
+        tip: c ? c.getAttribute("data-tip") : "" };
+    }), KA_CARDS);
+    const by = Object.fromEntries(chips.map(c => [c.id, c]));
+    if (!by["ka-stop"].stopped || !/cold/.test(by["ka-stop"].text)) {
+      fail("a card stopped at break-even does not draw the stopped chip: " + JSON.stringify(by["ka-stop"]));
+    }
+    if (!/break-even/.test(by["ka-stop"].tip) || !/5 refreshes, \$0\.30 of a \$0\.30 budget/.test(by["ka-stop"].tip)) {
+      fail("the stopped chip's tooltip does not carry the spend: " + JSON.stringify(by["ka-stop"].tip));
+    }
+    if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x, \$0\.18 of \$0\.30/.test(by["ka-warm"].tip)) {
+      fail("a card being kept warm does not say so: " + JSON.stringify(by["ka-warm"]));
+    }
+    if (by["ka-quiet"].text) fail("a card with nothing spent drew a keep-alive chip.");
+    if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
+
+    // The card menu's switch: offered on a Claude card, reads its state, and
+    // posts to that card. Not offered on a card with no switch.
+    const menu = await kp.evaluate(async cards => {
+      const warm = keepaliveMenuItem(cards[1], () => {});
+      const none = keepaliveMenuItem(cards[3], () => {});
+      const stop = keepaliveMenuItem(cards[0], () => {});
+      await warm.act();
+      await stop.act();
+      return { warmLabel: warm.label, warmOn: warm.on, none, stopOn: stop.on, stopHelp: stop.help };
+    }, KA_CARDS);
+    if (menu.none !== null) fail("a card with no switch was offered one in its menu.");
+    if (menu.warmLabel !== "keep its cache warm" || menu.warmOn !== true) {
+      fail("the card menu's switch reads wrong: " + JSON.stringify(menu));
+    }
+    if (menu.stopOn !== false || !/break-even/.test(menu.stopHelp)) {
+      fail("a stopped card's menu switch does not read off with its reason: " + JSON.stringify(menu));
+    }
+    const offPost = kaWrites.find(w => w.url === "/v1/tasks/ka-warm/keepalive");
+    const onPost = kaWrites.find(w => w.url === "/v1/tasks/ka-stop/keepalive");
+    if (!offPost || offPost.body.on !== false) fail("turning a warm card off did not post on:false.");
+    if (!onPost || onPost.body.on !== true) fail("turning a stopped card back on did not post on:true.");
+
+    // A break-even stop pushed on the stream is a toast, and so in the toast log.
+    await kp.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    const payload = JSON.stringify({ task_id: "ka-stop", state: "stopped:break-even",
+      toast: "keep-alive stopped on stopped card at break-even after 5 refreshes, $0.30" });
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + payload + "\n\n"); } catch (e) {} });
+    await kp.waitForFunction(() => {
+      try { return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+        .some(t => /break-even after 5 refreshes/.test(t.body || "")); } catch (e) { return false; }
+    }, null, { timeout: 5000 }).catch(() => fail("a break-even stop on the stream did not reach the toast log."));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    kaSettings = {};
+  }
+  if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3619,7 +3785,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection };
+      copySelect: copySelectSection, keepalive: keepaliveSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }

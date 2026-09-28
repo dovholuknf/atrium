@@ -759,6 +759,7 @@ function cardHTML(t) {
       ${t.restart_wake ? `<span class="chip"
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
+      ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${t.escalation && t.escalation.count > 0 ? `<span class="chip warn"
         data-tip="${esc(t.escalation.text)}"
         >stuck ${esc(String(t.escalation.minutes))}m</span>` : ""}

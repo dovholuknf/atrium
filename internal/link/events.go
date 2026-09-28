@@ -70,6 +70,8 @@ var taggedFields = map[string][]string{
 	// spelling `task` is the cancel message's field. Both are ids.
 	"permission": {"id", "task_id", "task"},
 	"activity":   {"task_id"},
+	// The cache keep-alive's stops and refreshes. See internal/daemon/keepalive.go.
+	"keepalive": {"task_id"},
 }
 
 // feeds is one upstream stream per room, and the clients watching them.
