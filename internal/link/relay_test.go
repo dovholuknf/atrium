@@ -25,6 +25,8 @@ type relayRoom struct {
 	// post fails with this status.
 	noSay   bool
 	msgCode int
+	// sayAnswer, when set, is what POST /v1/say answers.
+	sayAnswer map[string]any
 	// launched is the body of the last POST /v1/launch.
 	launched map[string]any
 }
@@ -43,6 +45,10 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.said = append(f.said, body)
+		if f.sayAnswer != nil {
+			_ = json.NewEncoder(w).Encode(f.sayAnswer)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "to": body["to"], "card": "x~1",
 			"when": "immediate"})
 	case strings.HasPrefix(r.URL.Path, "/v1/tasks/") && strings.HasSuffix(r.URL.Path, "/message"):
@@ -241,7 +247,7 @@ func TestPeersAcrossRoomsAreMarkedWithTheirRoom(t *testing.T) {
 		t.Fatalf("peers = %+v, %v", ans, err)
 	}
 	if len(ans.Peers) != 1 || ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Room != "sg4" ||
-		ans.Peers[0].Card != "sg4~s1" || ans.Peers[0].Alias != "orch" {
+		ans.Peers[0].Card != "sg4~s1" || ans.Peers[0].Alias != "orch@sg4" {
 		t.Fatalf("peers = %+v, want only atrium-87300@sg4 (the done card and m1mini's own left out)", ans.Peers)
 	}
 }
@@ -335,6 +341,23 @@ func TestAHubSideSayToAnotherRoomGoesThroughTheSendersRoom(t *testing.T) {
 	}
 	if len(x.sg4.messages()) != 0 {
 		t.Fatal("the hub delivered it itself, when the sender's room should have")
+	}
+}
+
+// A held or unconfirmed answer from the sender's room reaches the hub-side
+// caller with its note, since that note is the whole of what to do next.
+func TestAHubSideSayPassesAHeldAnswerOn(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	for _, word := range []string{"held", "unconfirmed"} {
+		x.mini.mu.Lock()
+		x.mini.sayAnswer = map[string]any{"delivered": word, "to": "atrium-87300@sg4", "note": "the note for " + word}
+		x.mini.mu.Unlock()
+		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+			sayInput{To: "atrium-87300@sg4", Text: "hello"})
+		if err != nil || out.Delivered != word || out.Note != "the note for "+word {
+			t.Fatalf("%s: out = %+v, %v", word, out, err)
+		}
 	}
 }
 
