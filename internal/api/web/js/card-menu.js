@@ -30,6 +30,37 @@ function cannotResume(t) {
 // and nothing already running it.
 const canResume = (t) => !!t.resume_id && !t.supervised;
 
+// A card launched lean starts lean again on every resume and restart, because
+// the tag is on the card. See internal/daemon/lean.go. Each place that starts
+// one says so and offers the full setup instead (backlog-2 item 64).
+const LEAN_TAG = "atrium:lean";
+const isLeanCard = (t) => (t.tags || []).some(x => x === LEAN_TAG);
+
+// The card's tags without the lean marks, for a restart with the full setup.
+const unleanTags = (t) =>
+  (t.tags || []).filter(x => x !== LEAN_TAG && !x.startsWith("atrium:mcp:"));
+
+// The resume menu's entries, with `with my full setup` on a lean card.
+function resumeEntries(id, t) {
+  const out = [
+    {
+      label: "the last conversation",
+      act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "")
+    },
+    { label: "choose…", act: () => resumeCard(id, t, lastPlace(id)) }
+  ];
+  if (isLeanCard(t)) {
+    out.push({
+      label: "with my full setup",
+      help: "This card was launched lean, so it resumes lean: no user CLAUDE.md, " +
+        "memory, skills or your own MCP servers. This resumes the last conversation " +
+        "with all of them, and the card stops being lean.",
+      act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "", true)
+    });
+  }
+  return out;
+}
+
 // A session that has only just come up, as opposed to one that finished a turn.
 //
 // Both land in the same column and the column is right about both: each is
@@ -106,10 +137,11 @@ function unshelveCard(id) {
 // `pick` is the conversation to resume, when the caller already knows it.
 // Anything else, including empty, means ask. `the last conversation` passes the
 // card's own resume id and never sees the modal; `choose...` passes nothing.
-function resumeCard(id, t, where, pick) {
+// `full` starts a lean card with the operator's whole setup.
+function resumeCard(id, t, where, pick, full) {
   const why = cannotResume(t);
   if (why) { toast("cannot resume", why); return; }
-  return resumeNow(id, t, where, pick);
+  return resumeNow(id, t, where, pick, full);
 }
 
 // Resuming, without asking anything.
@@ -248,11 +280,11 @@ async function promoteCardNow(id, t) {
 
 // One at a time per card, so a second resume while the first is starting is
 // refused here. See oneAtATime in js/core.js.
-function resumeNow(id, t, where, pick) {
-  return oneAtATime("launch:" + bareId(id), () => resumeStart(id, t, where, pick));
+function resumeNow(id, t, where, pick, full) {
+  return oneAtATime("launch:" + bareId(id), () => resumeStart(id, t, where, pick, full));
 }
 
-async function resumeStart(id, t, where, pick) {
+async function resumeStart(id, t, where, pick, full) {
   // Which conversation, when the directory has more than one. Returns the
   // card's own resume id without asking when there is nothing to choose
   // between, and null when the choice was cancelled.
@@ -275,7 +307,9 @@ async function resumeStart(id, t, where, pick) {
       // Onto the same card, so the title and everything else on it stay put.
       // Sending them again would let a stale copy of the row overwrite what
       // the card says now.
-      title: "", why: "", prompt: ""
+      title: "", why: "", prompt: "",
+      // Left out, the card decides. False wins over a lean card's tag.
+      ...(full ? { lean: false } : {})
     })
   });
 
@@ -675,17 +709,11 @@ async function cardMenu(e, id) {
     // `choose...` is the same modal as before, unchanged, for when the common
     // case is wrong.
     t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume",
+      label: "resume", note: isLeanCard(t) ? "lean" : "",
       help: "Starts a runner in this card's directory and picks the " +
         "conversation back up where it stopped. It opens where this card was " +
         "last open, so there is nothing to answer.",
-      sub: [
-        {
-          label: "the last conversation",
-          act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "")
-        },
-        { label: "choose…", act: () => resumeCard(id, t, lastPlace(id)) }
-      ]
+      sub: resumeEntries(id, t)
     } : null,
     // Offer transcript actions when the card has a directory, without fetching
     // the list just to build the menu. Put promotion first for throwaways so

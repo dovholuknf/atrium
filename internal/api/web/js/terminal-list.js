@@ -666,17 +666,11 @@ async function termMenu(e, id) {
     // off `lastPlace` rather than being asked, and the conversation is the
     // card's own unless you ask to choose.
     t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume",
+      label: "resume", note: isLeanCard(t) ? "lean" : "",
       help: "Starts a runner in this card's directory and picks the " +
         "conversation back up where it stopped. It opens where this card was " +
         "last open.",
-      sub: [
-        {
-          label: "the last conversation",
-          act: () => resumeCard(id, t, lastPlace(id), t.resume_id || "")
-        },
-        { label: "choose…", act: () => resumeCard(id, t, lastPlace(id)) }
-      ]
+      sub: resumeEntries(id, t)
     } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,

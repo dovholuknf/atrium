@@ -146,7 +146,11 @@ type LaunchRequest struct {
 	// Lean starts a claude session with only what a worker needs, and MCP names
 	// the servers from the runner's MCP config it keeps beside atrium-control.
 	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
-	Lean bool     `json:"lean,omitempty"`
+	//
+	// A pointer, because absent and false differ. Absent leaves it to the card.
+	// False starts a lean card with the full setup and takes the lean tags off
+	// it, so its next reopen is not lean either.
+	Lean *bool    `json:"lean,omitempty"`
 	MCP  []string `json:"mcp,omitempty"`
 }
 
@@ -921,12 +925,19 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
 	}
-	if req.Lean {
+	// retag writes req.Tags even when it came out empty, which is a lean card
+	// whose only tag was the lean one.
+	retag := false
+	if req.Lean != nil {
 		base := req.Tags
 		if len(base) == 0 && task != nil {
 			base = task.Tags
 		}
-		req.Tags = mergeTags(base, leanTags(leanMCP))
+		if *req.Lean {
+			req.Tags = mergeTags(base, leanTags(leanMCP))
+		} else if kept, cut := withoutLeanTags(base); cut {
+			req.Tags, retag = kept, true
+		}
 	}
 	prompt := wanted
 
@@ -1134,7 +1145,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 	}
-	if len(req.Tags) > 0 {
+	if len(req.Tags) > 0 || retag {
 		if err := d.st.SetTags(created.ID, req.Tags); err != nil {
 			return nil, err
 		}

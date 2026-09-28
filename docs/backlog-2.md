@@ -70,7 +70,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
-| 64 | A card cannot stop being lean | bug, HIGH | not started |
+| 64 | A card cannot stop being lean | bug, HIGH | DONE by sa64, merged, needs room and hub restarts |
 | 65 | A deploy's revert snapshot is named after the hub's build, not the file it copies | bug | not started |
 
 ------------
@@ -1318,6 +1318,16 @@ Two fixes:
 - A tag edit that actually clears lean.
 
 Related: item 63, the same start onto an existing card.
+
+**Status, 2026-09-28, sa64: built on `claude/unlean-card`, merged, not deployed.** Test plan CF. `lean` on `/v1/launch` is now
+absent, true or false, and false wins over the card and takes `atrium:lean` and `atrium:mcp:*` off it, so a restart
+after it is not lean either. The room keeps one tag list per card with no override layer, and a `PATCH` of `tags`
+writes that list, so `leanOptions` already read the edited tags. A test proves a tag edit clears lean. The live card's
+events show starts after its tag edit came up `"lean": false`. The board notes a lean card on `resume` and on
+`restart this session`, and offers `with my full setup` and `restart with my full setup`.
+
+The live fix-ci card was in fact NOT lean after its second resume: no worker prompt, and the user settings loaded.
+The earlier "still lean" reading came from testing `--strict-mcp-config`, which every launch passes, lean or not.
 
 ## 65. A deploy's revert snapshot is named after the hub's build, not the file it copies (bug)
 
