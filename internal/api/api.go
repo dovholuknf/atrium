@@ -118,6 +118,12 @@ type Server struct {
 	// Message says something to a running session: typed into its terminal
 	// when atrium owns one, queued for the next hook otherwise.
 	Message http.HandlerFunc
+	// Say is a message by address rather than by card id, `name` on this room
+	// or `name@room` on another, and RoomPeers is who is on the other rooms.
+	// Owned by the daemon, which owns the relay to the hub. See
+	// internal/daemon/relay.go.
+	Say       http.HandlerFunc
+	RoomPeers http.HandlerFunc
 	// Report is a session on a card reporting to whoever launched it: the
 	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
 	// queue. See internal/daemon/finish.go.
@@ -519,6 +525,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
+	}
+	if s.Say != nil {
+		mux.HandleFunc("POST /v1/say", s.Say)
+	}
+	if s.RoomPeers != nil {
+		mux.HandleFunc("GET /v1/peers/rooms", s.RoomPeers)
 	}
 	if s.Report != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)

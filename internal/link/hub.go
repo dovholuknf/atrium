@@ -68,6 +68,12 @@ type Hub struct {
 	OnAttach func(name, host, version string)
 	OnDetach func(name, why string)
 
+	// Relay answers a room asking for something to be carried to another room:
+	// a message, or the list of who is there. `from` is the asking room, from
+	// its certificate. Nil refuses, which is right for a hub with no board to
+	// reach the other rooms through. See relay.go.
+	Relay func(ctx context.Context, from string, req RelayRequest) RelayAnswer
+
 	mu    sync.Mutex
 	rooms map[string]*attached
 	// builds are the binaries this hub can hand out, one per platform. Empty
@@ -226,6 +232,11 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// `upgrade.go`.
 		log.Printf("[hub] room %q is taking a %s/%s build", name, hi.OS, hi.Arch)
 		h.serveUpgrade(conn, hi)
+	case relayKind:
+		// A ROOM ASKING FOR SOMETHING TO BE CARRIED TO ANOTHER ROOM. Dialled by
+		// the room, answered once, closed. See `relay.go`.
+		defer conn.Close()
+		h.serveRelay(ctx, name, conn, br)
 	}
 }
 
