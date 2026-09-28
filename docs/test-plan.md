@@ -4579,3 +4579,28 @@ the runner editor, claude's `effort arguments` read `--effort` and `{effort}`, c
 
 **Expected:** the session starts on the runner's default effort and the tool result's note begins
 `WARNING: the room is older than launch options, so effort was NOT applied`.
+
+## CB. A launched runner does not inherit the room's lag log
+
+CB1 and CB2 need the room built from this change and a room restart. Nothing on the hub changes. Go tests cover it:
+`TestALaunchedRunnerDoesNotInheritTheRoomsDebugSwitches` in `internal/daemon/launch_env_test.go` launches a real
+process through the pty path and reads the environment it started with, `TestAShellDoesNotInheritTheRoomsDebugSwitches`
+covers a card's shell, and `TestKeepaliveRefreshesAnIdleCardInsideTheMargin` covers a keep-alive fork. See
+`docs/backlog-2.md` item 55.
+
+### CB1. A worker's environment
+
+1. Start the room with `ATRIUM_DEBUG_INPUTLAG=1`, as the live scripts do.
+2. Launch a worker from the board or with `atrium_launch`. In it, run `echo $env:ATRIUM_DEBUG_INPUTLAG` and
+   `go test ./internal/link/ -run TestLagConnTimesNothingWhenOff -count=1`.
+
+**Expected:** the echo prints nothing and the test passes. The room's own log still has `[inputlag]` lines for slow
+keystrokes.
+
+### CB2. A shell, and a harness that asks for it
+
+1. Open a shell on a card and run `echo $env:ATRIUM_DEBUG_INPUTLAG`.
+2. Edit a runner, add `ATRIUM_DEBUG_INPUTLAG=5` to its `environment, one KEY=value per line`, launch it, and run
+   the same echo in it.
+
+**Expected:** the shell prints nothing. The runner that named it prints `5`.

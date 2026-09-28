@@ -98,6 +98,7 @@ func TestInheritedTaint(t *testing.T) {
 	for _, k := range []string{
 		"CLAUDE_CODE_CHILD_SESSION", "claude_code_entrypoint", "CLAUDECODE",
 		"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_ROOM",
+		"ATRIUM_DEBUG_INPUTLAG", "atrium_debug_inputlag", "ATRIUM_DEBUG_ANYTHING",
 	} {
 		if !inheritedTaint(k) {
 			t.Errorf("%s should be stripped", k)

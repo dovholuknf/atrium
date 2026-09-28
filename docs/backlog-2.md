@@ -61,7 +61,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
+| 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
+| 57 | The live room leaks memory | bug, HIGH | not started |
+| 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | not started |
+| 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | not started |
+| 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
+| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
 
 ------------
 
@@ -1147,6 +1153,28 @@ differential test that feeds the same trace fixtures to `screen.go` and to xterm
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
 
+## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
+
+Raised 2026-09-28. The live scripts `start-atrium-room.ps1`, `start-atrium-hub.ps1` and `deploy-batch.ps1` set
+`ATRIUM_DEBUG_INPUTLAG=1` unless `-NoLagLog`, which is meant for atrium's own logging. Every runner the room launches
+inherits it, so a worker's `go test` fails `internal/link` TestLagConnTimesNothingWhenOff, and any atrium binary a
+worker runs logs lag too. Also measure what the logging costs per keystroke, because clint says input has been slow
+lately.
+
+Done by sa55. `inheritedTaint` drops every `ATRIUM_DEBUG_` variable. A launch, a restart, a keep-alive
+fork, a source and a recogniser all build their environment through `childEnvFrom`, which applies it, and `shellEnv` drops them from a card's shell. The whole prefix, because
+each switch under it is a readout for the process it was set on. A runner's own `environment` field still passes
+one on. ROOM-SIDE only (`internal/daemon`). Nothing on the hub changes. See `docs/test-plan.md` section CB.
+
+What the logging costs, from `BenchmarkRoomKeystroke*` and `BenchmarkHubKeystroke*` on the i9-13900H while it was
+busy: a keystroke and its echo cost the room about 64ns with the logging off and about 165ns with it on, and the hub
+about 15ns off and 53ns on. A logged line is about 0.8us and 248 bytes. Nothing is formatted under the threshold.
+On 2026-09-28 from 11:19 to 15:05 the room logged 354 lag lines (about 1.6 a minute, at most 30 in one minute,
+72KB). In every slow echo the room logged, atrium's share was at most 1.1ms and the rest was on the runner's side.
+The hub logs about 80 lines an hour even when idle. The room pings an idle attach every 45s, the browser's pong
+going up starts the hub's `echo` clock, and nothing comes back until the next ping, so each one logs a 45000ms
+echo. Any other frame sent up that gets no reply would do the same. That is noise, not lag.
+
 ## 56. Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen (feature, design first, HIGH)
 
 Raised 2026-09-28 by clint: "i need a backlog to make all dialogs fucking sexy. there is __no__ design given to the
@@ -1163,6 +1191,50 @@ Scope:
   sa87's compact details popup (item 45).
 
 Deliverable 1 is a design with before and after mockups, for clint to approve. Build only after that.
+
+## 57. The live room leaks memory (bug, HIGH)
+
+Raised 2026-09-28 by clint, from sa55's measurements while it worked item 55. The live room (up since 11:19)
+held about 15.9GB of private memory and a 5.7GB working set, and grew in bursts: 1.2GB in 2 minutes, then flat. The
+hub was 76MB. It is also the likelier cause of slow input than the lag log is: the machine sat at 52% CPU with 22
+claude processes.
+
+The room has no profiling endpoint, so nothing could say what holds the memory. First add a pprof endpoint to the
+room, on the loopback human listener only. Then take heap profiles across a growth burst and find the cause.
+
+## 58. `atrium_say` reaches cards on other rooms, `name@room` (feature, HIGH)
+
+Raised 2026-09-28 by clint: "atrium say needs to be cross room for sure". Today `atrium_say` refuses `m1mini~<id>`
+and the other room's handles. Only the hub's `/v1/tasks/<id>/message` reaches a card on another room.
+
+Addressing: `name@room` reaches a card on another room, and a bare `@name` (or `name`) stays in the sender's own
+room. Aliases work the same way, so this lines up with item 35's `@alias`.
+
+The reply path has to work both ways. A card on m1mini must be able to reach `atrium-87300@claude-sg4`. This is
+known to be needed: the hub's `/v1/tasks/m1mini~<id>/message` typed the orchestrator's question into an m1mini card,
+and the card answered, but the answer could not come back.
+
+## 59. Spike on m1mini: more than one room per machine, and a blocked room that drains (design, spike)
+
+Raised 2026-09-28 by clint. Run it on m1mini. Two ideas:
+
+- More than one room on one machine.
+- Marking a room blocked. A blocked room takes no new work and drains, while a fresh room instance on the same
+  machine picks up new work.
+
+The goal is to move work between rooms, so that a room restart kills nothing.
+
+## 60. The stdio control MCP has sa48's launch fields but no "room is older" warning (housekeeping)
+
+Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) took sa48's model, effort, args and
+env fields for item 48, but not the warning the hub's control MCP gives when the room is older than the change.
+Decide whether it needs the warning or should go away.
+
+## 61. A fake 45s hub echo in the lag log from the idle ping and pong (bug)
+
+Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
+pong going up starts the hub's echo clock. So every ping logs a fake echo of about 45000ms, and `hub.err` carries
+about 80 lag lines an hour with the board idle. The hub should not start the echo clock on a pong.
 
 
 ------------

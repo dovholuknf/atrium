@@ -238,6 +238,20 @@ func TestAShellDoesNotInheritSomebodyElsesCard(t *testing.T) {
 	}
 }
 
+// The room's own lag log is switched on in its environment. A shell opened on a
+// card must not carry it, or a `go test` typed there fails in internal/link.
+func TestAShellDoesNotInheritTheRoomsDebugSwitches(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	t.Setenv("ATRIUM_DEBUG_INPUTLAG", "1")
+	for _, kv := range d.shellEnv("card-3") {
+		if strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_DEBUG_") {
+			t.Fatalf("a shell inherited %s", kv)
+		}
+	}
+}
+
 // The configured shell wins over what the operating system reports, because
 // the one wanted is the operator's own and `COMSPEC` on a PowerShell machine
 // is not it.
