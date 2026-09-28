@@ -1487,6 +1487,31 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         seems large. Never touches shelved cards or the inbox.</span>
     </div>
 
+    <!-- The cache keep-alive. The default for NEW Claude cards, never applied to
+         a card that is already open: each card has its own switch in its menu.
+         See docs/cache-keepalive-design.md. -->
+    <h3 class="s-section">cache keep-alive</h3>
+    <div class="field">
+      <label class="eyebrow" for="s-keepalive">keep idle Claude sessions' caches warm</label>
+      <div class="picker">
+        <label><input id="s-keepalive" type="checkbox" onchange="saveKeepaliveDefault()">
+          on for new Claude cards</label>
+      </div>
+      <span class="hintline">A Claude session's prompt cache expires an hour after its last request, and
+        the next turn then rewrites the whole context at twice the input price. With this on, atrium
+        refreshes an idle card's cache a few minutes before it expires, with a throwaway copy of the
+        conversation that may not use a tool and is discarded. The card's terminal and transcript are
+        never touched. A card stops by itself once its refreshes have cost an eighth of one rewrite, and
+        says so. This sets the default for cards started from now on. Cards already open keep their own
+        switch, in each card's menu. On by default.</span>
+      <span class="hintline" id="s-keepalive-spend"></span>
+      <div class="hintline warn" id="s-keepalive-suspended" hidden>
+        <b>Suspended for this room:</b> <span id="s-keepalive-why"></span>.
+        No card is refreshed until this is cleared.
+        <button type="button" onclick="clearKeepaliveSuspension()">clear it</button>
+      </div>
+    </div>
+
 
 
 
@@ -2909,6 +2934,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      declaration and therefore hoisted, so loading this first would wrap a stub
      and the real definition would replace the wrapper. -->
 <script src="/js/toast-log.js"></script>
+<script src="/js/keepalive.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>

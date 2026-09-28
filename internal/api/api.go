@@ -142,6 +142,9 @@ type Server struct {
 	// Unshelve starts it again from where the conversation left off. Returns
 	// whether it started, and why not when it did not, so the board can say so.
 	Unshelve func(taskID string) (bool, string, error)
+	// SetKeepalive flips a card's cache keep-alive switch and returns what the
+	// board draws for it. Owned by the daemon. See internal/daemon/keepalive.go.
+	SetKeepalive func(taskID string, on bool) (any, error)
 
 	// Overlays reports how the board can be reached from elsewhere, and turns
 	// those ways on and off. Supplied by the daemon, which owns the child
@@ -499,6 +502,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
 	}
+	if s.SetKeepalive != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/keepalive", s.setKeepalive)
+	}
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a
 	// board that does not show the queue makes that look like nothing
@@ -605,6 +611,10 @@ type view struct {
 	// is back after a restart. Absent when there is none. See
 	// docs/restart-wake.md.
 	RestartWake any `json:"restart_wake,omitempty"`
+	// Keepalive is the card's cache keep-alive switch and its current idle
+	// stretch. Absent on a card with no switch, which is every card that is
+	// not Claude. See docs/cache-keepalive-design.md.
+	Keepalive any `json:"keepalive,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -658,6 +668,10 @@ var EscalationOf func(taskID string) any
 // daemon, which mirrors the store's rows in memory so this is no query per card.
 var RestartWakeOf func(taskID string) any
 
+// KeepaliveOf returns a card's cache keep-alive view, or nil. Supplied by the
+// daemon.
+var KeepaliveOf func(taskID string) any
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -683,6 +697,9 @@ func toView(t *store.Task) view {
 	}
 	if RestartWakeOf != nil {
 		v.RestartWake = RestartWakeOf(t.ID)
+	}
+	if KeepaliveOf != nil {
+		v.Keepalive = KeepaliveOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())

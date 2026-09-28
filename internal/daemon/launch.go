@@ -854,6 +854,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if room := strings.TrimSpace(d.opts.Room); room != "" {
 		atrium["ATRIUM_ROOM"] = room
 	}
+	// The cache keep-alive's switch for a new Claude card, from the room default,
+	// and the 1h cache pin when it is on. See keepalive.go.
+	d.keepaliveAtLaunch(task.ID, h, atrium)
 	env := childEnvFrom(base, h.Env, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""

@@ -3805,3 +3805,76 @@ in the same row are dim until it answers.
 
 **Expected:** both answer the same card, with no `already has a runner on it`. One runner is behind it. A third post
 made a minute later is refused as before, since that is a launch onto a card that is already running.
+
+## BL. The cache keep-alive refreshes an idle card and stops at break-even
+
+Needs a room restart first: the loop, the fork and the launch switch are in the room daemon. Run on the board with a
+Claude card on Opus 5.5 or Fable 5.1 whose context is over 50k. Go tests in `internal/daemon/keepalive_test.go`
+cover BL2 to BL6 with a fake fork and a fake clock. The headless section `keepalive` covers BL4 to BL6. See
+`docs/cache-keepalive-design.md`.
+
+**Re-run BL1 after any Claude Code upgrade** that changes sessions, settings sources, hooks or prompt caching. The
+design rests on how Claude Code behaves today, not on a contract.
+
+### BL1. The fork reads the card's cache, and does nothing else
+
+1. Pick an idle interactive card that took a turn in the last 50 minutes. Note its session id (the card's resume id)
+   and its directory.
+2. Write the block-all hook file the daemon writes (`~/.atrium/keepalive-block-tools.json`, or copy the JSON in
+   `keepaliveHookSettings` in `internal/daemon/keepalive.go`).
+3. In the card's directory, in PowerShell, with `ATRIUM_PERM_GATE=off` set:
+
+   ```powershell
+   claude -p "Automated cache refresh from atrium. Reply with the single word OK. Do not use tools." `
+       --resume <session id> --fork-session --no-session-persistence --model claude-opus-5-5 `
+       --setting-sources local --settings $HOME\.atrium\keepalive-block-tools.json --max-turns 1 `
+       --output-format json
+   ```
+
+**Expected:** `num_turns` is 1, `permission_denials` is empty and `result` is `OK`. `cache_read_input_tokens` is at
+least 90% of the card's context and `cache_creation_input_tokens` is under 5% of it. No new transcript appears
+under `~/.claude/projects/<the card's directory>/`, and the card's own transcript does not grow. A user hook that
+logs session starts, if you have one, writes nothing. Write the result down in this section: the date, the Claude
+Code version, the model, the context, the two token counts and pass or fail.
+
+### BL2. An idle card is kept warm, and says so
+
+1. On a card launched after the restart, check that its menu shows `keep its cache warm` switched on.
+2. Leave it idle, turn ended, for 56 minutes.
+
+**Expected:** a few minutes before the hour, the card grows a `❄ warm` chip. Its tooltip reads
+`kept warm 1x, $0.0x of $0.xx` and when the cache is warm until. The card's terminal shows nothing new and its
+transcript does not grow. The gear's settings show one refresh in the last 7 days.
+
+### BL3. It stops at break-even, with a toast
+
+1. Leave the card from BL2 idle. On Opus 5.5 it takes 5 refreshes, about 6 hours.
+
+**Expected:** at the sixth expiry the card is not refreshed. A toast says
+`keep-alive stopped on <card> at break-even after 5 refreshes, $0.xx`, and it is in the toast log. The chip turns
+to a dashed `❄ cold`, and its tooltip gives the refreshes, the spend against the budget and when the cache went
+cold. Answer the card: the chip goes, and the next idle stretch starts a fresh budget.
+
+### BL4. The board switch sets the default for new cards only
+
+1. Open the gear's settings. Under `cache keep-alive`, untick `on for new Claude cards`.
+2. Launch a new Claude card. Look at an older one.
+
+**Expected:** the save toast says cards already open keep their own switch. The new card's menu shows the switch off,
+and the older card's is unchanged. Tick it again afterwards.
+
+### BL5. The card switch overrides it
+
+1. On a card that stopped at break-even (BL3), switch `keep its cache warm` on in its menu.
+
+**Expected:** the chip goes and the card is kept warm again with a fresh budget.
+
+2. Switch it off, then answer the card and leave it idle for an hour.
+
+**Expected:** it is not refreshed. A card switched off by hand stays off through its own turns.
+
+### BL6. Only Claude cards have a switch
+
+1. Open the menu of a shell or codex card.
+
+**Expected:** there is no `keep its cache warm` entry and no keep-alive chip.

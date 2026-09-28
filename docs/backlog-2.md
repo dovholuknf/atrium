@@ -29,6 +29,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
+| 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | built on `claude/cache-keepalive`, not deployed, needs a room restart |
 
 ------------
 
@@ -552,6 +553,29 @@ keystroke in the find box, and every output line while it is open, overwrites th
 Fix: copy on select answers only a selection the user made with the pointer. Either set a guard around the
 find calls, or copy on the pointerup that ends a drag rather than on every selection change. Headless test: with
 copy on select on, typing in the find bar and stepping matches leaves the clipboard untouched, and a drag still copies.
+
+## 23. Keep idle Claude cards' prompt caches warm, and stop at break-even (feature)
+
+Raised by clint 2026-09-27. A cache write after a gap of more than an hour cost $160 of $1,674 last week (9.6%),
+and 37 of the 66 were on contexts of 200k or more. Design: `docs/cache-keepalive-design.md`, Mercurius session
+`s_E1mI65LNulw1`, ready_to_build in round 2. Built on `claude/cache-keepalive`. Test plan section BL.
+
+What it does: a forked headless resume of an idle card's conversation (`claude -p --resume --fork-session
+--no-session-persistence`, every tool refused by a hook, one turn, no user or project settings) reads the cached
+prefix shortly before it expires. The card's terminal and transcript are never touched. A card stops by itself
+once its refreshes since it went idle cost an eighth of one full 1h rewrite, with a logged toast and a `❄ cold`
+chip. Default on for new Claude cards, set in the gear. Each card has a switch in its menu.
+
+Open:
+
+- Deploy needs a room restart.
+- In a hub's ALL view the gear's switch saves like the other room settings (sweep, prune). Check it lands on a
+  board with more than one room.
+- BL1, the manual fork probe, must be re-run after a Claude Code upgrade that changes sessions, settings sources,
+  hooks or caching.
+- Re-derive the 1/8 budget from the transcripts once more data is in: the resume hazard came from 597 idle
+  stretches over 21 days, all Claude Code sessions on this machine, not only board cards.
+- Codex is out: OpenAI caching has no write premium and no client TTL. A separate item if that changes.
 
 
 ------------
