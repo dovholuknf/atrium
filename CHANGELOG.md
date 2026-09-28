@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A Claude card whose subagents are still out no longer tells you it is waiting on you.** See `docs/test-plan.md`
+  section BN (backlog-2 item 17).
+
+  A review panel starts its reviewers in the background, so the parent's own turn ends with them still working, and
+  each reviewer's report wakes the parent, which reads it and stops again. Every one of those Stops moved the card to
+  `needs input` and rang the board, three to five times per review. Claude Code's Stop payload lists what is still
+  running in `background_tasks`. The Stop hook now counts the running subagents in it and sends the count. While it
+  is above zero the room keeps the card in `running` with an idle badge, skips the silent-stop report and the seen
+  note, and ignores an `idle_prompt` notification. The Stop after the last report moves the card and rings once. A
+  question, a dialog, or a background shell still rings as before. Needs a hook binary rebuild and a room restart.
+  ROOM-SIDE.
+
 - **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
   and `docs/test-plan.md` section BL.
 

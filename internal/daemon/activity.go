@@ -165,6 +165,9 @@ type activityTracker struct {
 	// kept apart from `by` because it does not expire on the activity clock. See
 	// the HeldPeer note on Activity and `pendingInjector`.
 	held map[string]heldPeer
+	// background is how many subagents each card's last Stop said were still
+	// running. See turnPaused.
+	background map[string]int
 }
 
 // heldPeer is a queued injection waiting on the operator's line to clear, on
@@ -198,7 +201,33 @@ func newActivityTracker() *activityTracker {
 		tel:   map[string]*Telemetry{},
 		telAt: map[string]time.Time{},
 		held:  map[string]heldPeer{},
+
+		background: map[string]int{},
 	}
+}
+
+// setBackground records what a Stop said about subagents still running. Every
+// Stop replaces it, so the one after the last report puts it back to zero.
+func (a *activityTracker) setBackground(taskID string, n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if n > 0 {
+		a.background[taskID] = n
+	} else {
+		delete(a.background, taskID)
+	}
+}
+
+// onSubagents reports whether the card's last Stop left subagents running.
+//
+// Read from the Stop and not from the SubagentStart and SubagentStop tally.
+// Claude Code fires SubagentStop for more than the agents it started: a review
+// panel of four raised four of them within a second, a minute before any
+// reviewer had finished, and dozens more over the run.
+func (a *activityTracker) onSubagents(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.background[taskID] > 0
 }
 
 // get returns a copy of a task's activity, or nil when no events have arrived
@@ -502,6 +531,7 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.by, taskID)
 	delete(a.tel, taskID)
 	delete(a.held, taskID)
+	delete(a.background, taskID)
 }
 
 // ActivityEvent is what a hook posts to /activity.
@@ -625,6 +655,12 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// you something from one that had simply finished, and both landed in
 		// `ready` reading the same. That was the gap.
 		d.act.set(taskID, ActivityIdle, "")
+		// "Claude is waiting for your input" says only that the prompt has sat
+		// idle, and a session whose subagents are still out is idle on purpose.
+		// A question or a dialog still counts. See turnPaused.
+		if in.Event == "waiting" && in.Notification == "idle_prompt" && d.act.onSubagents(taskID) {
+			break
+		}
 		if in.Event == "waiting" {
 			d.turnEndedBecause(taskID, store.WaitingAsked)
 			// A PROMPT ON THE RUNNER'S OWN SCREEN, which is not the same as
