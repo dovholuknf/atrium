@@ -185,6 +185,11 @@ function landCard(id, over) {
 }
 let landList = [];
 let landPerms = [];
+// What the typing readout's endpoint answers, and every request it got.
+let typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
+let typingPolls = [];
+// Every PATCH that set a card's alias. See `aliasSection`.
+let aliasWrites = [];
 
 let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
 // One card per shipped terminal theme, filled in from the page's own table by
@@ -388,6 +393,13 @@ const server = http.createServer((req, res) => {
   // no-room restart with 503 and a genuine missing card with 404, and the solo
   // window has to tell those apart. Placed before the list route, which is the
   // exact path "/v1/tasks" with no trailing id.
+  // The typing gate readout's poll. Counted, so the section can prove it is not
+  // polled while the readout is off. See `typingSection`.
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/typing")) {
+    typingPolls.push(req.url);
+    sendJSON(res, typingAnswer);
+    return;
+  }
   // A card's keep-alive switch. Recorded, and answered the way the daemon does.
   if (url.startsWith("/v1/tasks/") && url.endsWith("/keepalive") && req.method === "POST") {
     let raw = "";
@@ -411,6 +423,7 @@ const server = http.createServer((req, res) => {
         let body = {};
         try { body = JSON.parse(raw || "{}"); } catch (e) {}
         if (id === "pin1" && typeof body.pinned === "boolean") PIN.pinned = body.pinned;
+        if ("alias" in body) aliasWrites.push({ id, body });
         // A theme kept from the picker, saved on the worn list so a reload reads it back.
         const worn = tasksMode === "worn" && wornTasks.find(t => t.id === id);
         if (worn && typeof body.theme === "string") { worn.theme = body.theme; sendJSON(res, worn); return; }
@@ -3536,6 +3549,161 @@ async function pasteSpinnerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the typing gate readout ───────────────────────────────────────────────
+// Off by default: no line drawn and the endpoint never asked. Switched on from
+// the gear's settings, it sits directly above the shortcut strip and shows the
+// line, the count, the time since the last key and the gate with its reason,
+// and it follows what the endpoint says. Switched off, the polling stops.
+// See js/typing.js and docs/test-plan.md.
+async function typingSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  typingPolls = [];
+  typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(1200);
+
+    const off = await p.evaluate(() => {
+      const el = document.getElementById("t-typing");
+      return { exists: !!el, hidden: el ? el.hidden : null };
+    });
+    if (!off.exists) fail("the terminal view has no typing readout line.");
+    if (!off.hidden) fail("the typing readout shows when nobody switched it on.");
+    if (typingPolls.length) fail("the typing endpoint was polled with the readout off: " + typingPolls.length + "x");
+
+    // Switched on through the settings checkbox, the way the operator does it.
+    const box = await p.evaluate(() => {
+      const el = document.getElementById("s-typing");
+      if (!el) return { missing: true };
+      el.checked = true;
+      el.dispatchEvent(new Event("change"));
+      return { dialog: el.closest("dialog") ? el.closest("dialog").id : "" };
+    });
+    if (box.missing) fail("the typing readout switch is not in the settings.");
+    else if (box.dialog !== "settings") fail("the typing readout switch is not in the gear's settings: " + box.dialog);
+
+    typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
+      reason: "13 unsent character(s) on the line" };
+    await p.waitForFunction(() => /git st/.test((document.getElementById("t-typing") || {}).textContent || ""),
+      null, { timeout: 5000 }).catch(() => {});
+    const on = await p.evaluate(() => {
+      const el = document.getElementById("t-typing");
+      const help = document.querySelector(".term-help");
+      return { hidden: el.hidden, text: el.textContent, shut: el.classList.contains("shut"),
+        aboveHelp: el.nextElementSibling === help,
+        stored: localStorage.getItem("atrium.debug.typing") };
+    });
+    if (on.hidden) fail("the typing readout stayed hidden after it was switched on.");
+    if (!on.aboveHelp) fail("the typing readout is not the line directly above the shortcut strip.");
+    if (on.stored !== "1") fail("switching the readout on was not remembered in this browser.");
+    for (const want of [/gate closed/, /13 unsent character/, /git st⏎second/, /13 chars/, /last key 0\.4s ago/]) {
+      if (!want.test(on.text)) fail("the typing readout does not show " + want + ": " + JSON.stringify(on.text));
+    }
+    if (!on.shut) fail("a closed gate is not marked closed on the readout.");
+    if (!typingPolls.some(u => u.startsWith("/v1/tasks/land-live/typing"))) {
+      fail("the readout did not ask about the attached card: " + JSON.stringify(typingPolls));
+    }
+
+    // It follows the endpoint: the gate opening shows on the next poll.
+    typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
+    await p.waitForFunction(() => /gate open/.test((document.getElementById("t-typing") || {}).textContent || ""),
+      null, { timeout: 5000 }).catch(() => {});
+    const opened = await p.evaluate(() => {
+      const el = document.getElementById("t-typing");
+      return { text: el.textContent, open: el.classList.contains("open") };
+    });
+    if (!/gate open: line empty and quiet/.test(opened.text) || !opened.open) {
+      fail("the readout did not follow the gate opening: " + JSON.stringify(opened));
+    }
+
+    // Off again: hidden, and the polling stops.
+    await p.evaluate(() => toggleTypingReadout(false));
+    await p.waitForTimeout(200);
+    const n = typingPolls.length;
+    await p.waitForTimeout(1300);
+    const after = await p.evaluate(() => document.getElementById("t-typing").hidden);
+    if (!after) fail("the typing readout stayed up after it was switched off.");
+    if (typingPolls.length !== n) fail("the typing endpoint was still polled after the readout was switched off.");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the typing readout page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// ── a card's alias ────────────────────────────────────────────────────────
+// A card with an alias wears it as an `@name` chip, one without draws none, the
+// card menu and the terminal list both offer "alias…", and setting one PATCHes
+// the card with what was typed. See js/alias.js and docs/test-plan.md BS.
+async function aliasSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const ap = await ctx.newPage();
+  const errors = [];
+  ap.on("pageerror", e => errors.push(String(e)));
+  aliasWrites = [];
+  try {
+    await ap.goto(base, { waitUntil: "domcontentloaded" });
+    await ap.waitForFunction(() => typeof cardHTML === "function" && typeof aliasMenuItem === "function",
+      null, { timeout: 15000 });
+    const got = await ap.evaluate(t1 => {
+      const draw = t => { const box = document.createElement("div"); box.innerHTML = cardHTML(t); return box; };
+      const withAlias = draw(Object.assign({}, t1, { id: "al1", alias: "sa89" }));
+      const without = draw(Object.assign({}, t1, { id: "al2" }));
+      const chip = withAlias.querySelector(".chip.alias");
+      const item = aliasMenuItem(Object.assign({}, t1, { id: "al1", alias: "sa89" }));
+      return {
+        chip: chip ? chip.textContent.trim() : "", tip: chip ? chip.getAttribute("data-tip") : "",
+        title: chip ? chip.hasAttribute("title") : false,
+        none: !!without.querySelector(".chip.alias"),
+        label: item && item.label, note: item && item.note,
+      };
+    }, T1);
+    if (got.chip !== "@sa89") fail("a card with an alias does not wear it: " + JSON.stringify(got));
+    if (!/atrium_say/.test(got.tip || "")) fail("the alias chip's tooltip does not say what it is for: " + got.tip);
+    if (got.title) fail("the alias chip carries a native title tooltip.");
+    if (got.none) fail("a card with no alias drew an alias chip.");
+    if (got.label !== "alias…" || got.note !== "@sa89") fail("the alias menu item reads wrong: " + JSON.stringify(got));
+
+    // Setting it PATCHes the card with what was typed, `@` and all: the room
+    // normalizes it.
+    await ap.evaluate(() => { window.__aliasDone = setTaskAlias("t1", ""); });
+    await ap.waitForSelector("#ask[open] #ask-input", { timeout: 5000 });
+    await ap.fill("#ask-input", "@dotfiles");
+    await ap.click("#ask-actions button.go, #ask-actions button:last-child");
+    await ap.evaluate(() => window.__aliasDone);
+    const w = aliasWrites.find(x => x.id === "t1");
+    if (!w || w.body.alias !== "@dotfiles") fail("setting an alias did not PATCH it: " + JSON.stringify(aliasWrites));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the alias page threw: " + errors.join(" | "));
+}
+
 // ── a big paste shows the spinner too ─────────────────────────────────────
 // Test plan BQ. The socket here behaves like Chromium's over loopback: `send`
 // holds the main thread about 7ms per MB and the frame drains about 25ms per MB
@@ -4424,7 +4592,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -6603,6 +6771,10 @@ async function main() {
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
     await pasteBigSection(browser, base);
+    // ── the typing gate readout, off until switched on ─────────────────────
+    await typingSection(browser, base);
+    // ── a card wears its alias, and the menu sets it ────────────────────────
+    await aliasSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
     // ── the not-replayed notice opens or loads the pre-restart history ─────

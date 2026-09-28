@@ -1019,6 +1019,20 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 	}
+	// AN ALIAS TO MENTION IT BY, from the title's prefix: `sa89` from
+	// `sa89: typing gate`. A fresh start on a card with none only, so a reopen
+	// keeps whatever the operator chose. One another live card holds already is
+	// not a reason to refuse the launch, so the card starts without one and
+	// the log says who has it. See store/alias.go.
+	if req.Resume == "" {
+		if a := store.DefaultAlias(req.Title); a != "" {
+			if t, err := d.st.Get(created.ID); err == nil && t.Alias == "" {
+				if err := d.st.SetAlias(created.ID, a); err != nil {
+					log.Printf("[atrium] %s starts with no alias: %v", created.ID, err)
+				}
+			}
+		}
+	}
 	// A WORK ITEM, for a card another session launched: the brief, the
 	// launcher, and a work state only a report, a verdict or the session
 	// ending moves. A fresh start only, so a resume or a reopen of an older
