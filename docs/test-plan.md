@@ -3882,3 +3882,78 @@ and the older card's is unchanged. Tick it again afterwards.
 1. Open the menu of a shell or codex card.
 
 **Expected:** there is no `keep its cache warm` entry and no keep-alive chip.
+
+## BM. A toast stays for its whole life
+
+Backlog-2 item 26. A toast used to go early three ways. When the card it was about stopped waiting (a held message
+typed in as the turn ends does that inside a second), the next poll took it down. A fourth toast removed the oldest
+at once. Nothing held one under the pointer. Now an answered toast says `· answered` and goes when an ordinary toast
+would. A full stack queues the newcomer until the oldest has been up 6 seconds. Hovering holds a toast. The headless
+sections `toastLives` and `toastStays` cover all three.
+
+### BM1. Answered is not gone
+
+1. Have a worker end its turn while you are on the board, with a message held for it (say something to it mid-turn
+   with `when: "done"`).
+
+**Expected:** the `<card> is ready` toast appears. When the held message is typed in and the card runs again, the
+toast stays, dimmed, with `· answered` after its title. It goes about 9 seconds after it appeared.
+
+### BM2. A burst waits its turn
+
+1. In the browser console, run `for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four")`.
+
+**Expected:** three toasts show and `burst 1` stays. About 6 seconds later `burst 1` goes and `burst 4` takes its
+place. At phone width the cap is one, and the same holds: each toast is up at least 6 seconds before the next
+replaces it.
+
+### BM3. Hovering holds it
+
+1. Raise a toast (BM2 with one), move the pointer onto it, and wait 15 seconds.
+
+**Expected:** it is still there. Move the pointer off it: it goes after the time it had left when you arrived.
+
+### BM4. A view switch and a dialog do not take it
+
+1. Raise a toast, switch to terminals and back, open and close the toast log.
+
+**Expected:** the toast is still there 5 seconds after it appeared.
+
+## BN. A say to a session that has gone, and a line cleared with Esc
+
+Backlog-2 item 27. A say to a card with no session behind it answered `queued`. It was held for the input line and
+the card wore `! 1` blaming that line for hours. A card is gone when it is `done` or `dead` and no process is alive
+for its pid. A say to one now answers `undeliverable` with a note to resume it first, and nothing is queued. A
+message already held when the session ends is dropped from the on-screen retry, so its chip goes. It stays queued
+for the hooks of a session resumed on that card. Separately, Esc Esc on a Claude prompt empties the line, so held
+messages go in; it used to take a control-c. The Go tests in `internal/daemon/nosession_test.go` and
+`escclear_test.go` cover both. They need a room restart.
+
+### BN1. A say to a finished card is refused
+
+1. Take a worker card that reported done and whose session has exited (`done`, no terminal).
+2. From another session, `atrium_say` to it.
+
+**Expected:** the answer says `undeliverable`, and its note says it has no running session, to resume it first and
+say it again. The card wears no `!` chip.
+
+### BN2. A worker that reported done but still runs is still reached
+
+1. Have a worker report done and keep its session open. `atrium_say` to it.
+
+**Expected:** the message is typed in, or queued behind your line as usual. It is not refused.
+
+### BN3. A held message goes when the session ends
+
+1. Type half a line into a worker's terminal. `atrium_say` to it. The card wears `!`.
+2. End the worker's session (`/exit` in its terminal).
+
+**Expected:** the `!` chip goes within a few seconds and does not come back.
+
+### BN4. Esc Esc releases a held message
+
+1. Type half a line into a Claude card's terminal and leave it. `atrium_say` to it: the chip reads `!`.
+2. Press Esc twice in that terminal, so Claude Code clears the line.
+
+**Expected:** within about 2 seconds the message is typed in and sent, and the chip goes. One Esc on its own, or Esc
+in a shell, does not release it.
