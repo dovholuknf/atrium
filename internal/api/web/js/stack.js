@@ -700,13 +700,27 @@ function noteChip(t) {
 // The name as typed, never interpreted. Atrium does not know what a model is
 // any more than it knows what a source is: it is text handed to the runner in
 // the shape that runner declared, and rendered back here unchanged.
+//
+// The effort and the extra args and env ride on the same chip, for the same
+// reason, and the env by name only: its values never leave the room. See
+// docs/launch-options-design.md.
 function modelChip(t) {
   const model = (t.model || "").trim();
-  if (!model) return "";
+  const effort = (t.effort || "").trim();
+  const args = t.launch_args || [];
+  const envKeys = t.launch_env_keys || [];
+  if (!model && !effort && !args.length && !envKeys.length) return "";
+  const label = [model, effort && `${effort} effort`].filter(Boolean).join(" · ") || "launch options";
+  const tip = [
+    model && `model ${model}`,
+    effort && `effort ${effort}`,
+    args.length && `extra args: ${args.join(" ")}`,
+    envKeys.length && `extra env: ${envKeys.join(", ")}`,
+  ].filter(Boolean).join(". ");
   return `<span class="chip model"
-    data-tip="${esc("this session was started on " + model + ". chosen once when it launched, " +
+    data-tip="${esc("this session was started with " + tip + ". chosen once when it launched, " +
       "and kept across a restart")}"
-    >${esc(model)}</span>`;
+    >${esc(label)}</span>`;
 }
 
 // Where this work came from, when it came from somewhere.

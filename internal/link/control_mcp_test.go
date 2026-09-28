@@ -227,6 +227,56 @@ func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
 	}
 }
 
+// The launch options reach the room as given, and a room that hands back a card
+// without them (one older than launch options) gets a warning in the result
+// rather than silence. See docs/launch-options-design.md.
+func TestLaunchForwardsItsOptionsAndWarnsWhenARoomDropsThem(t *testing.T) {
+	type sent struct {
+		Model  string            `json:"model"`
+		Effort string            `json:"effort"`
+		Args   []string          `json:"args"`
+		Env    map[string]string `json:"env"`
+	}
+	var got sent
+	echo := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = sent{}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		card := map[string]any{"id": "card1", "wire_name": "kid"}
+		if echo {
+			card["model"], card["effort"] = got.Model, got.Effort
+			card["launch_args"] = got.Args
+			card["launch_env_keys"] = []string{"K"}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(card)
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	in := launchInput{Cwd: "/w", Model: "claude-haiku-4-5-20251001", Effort: "low",
+		Args: []string{"--x"}, Env: map[string]string{"K": "v"}}
+
+	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != in.Model || got.Effort != "low" || strings.Join(got.Args, " ") != "--x" || got.Env["K"] != "v" {
+		t.Fatalf("the room got %+v", got)
+	}
+	if out.Model != in.Model || out.Effort != "low" || strings.Contains(out.Note, "WARNING") {
+		t.Fatalf("a room that applied them: out %+v", out)
+	}
+
+	echo = false
+	_, out, err = c.launchHandler(context.Background(), ctlReq("a", "beta"), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.Note, "effort, args, env were NOT applied") {
+		t.Fatalf("an older room's silence was passed on as success: %q", out.Note)
+	}
+}
+
 // capBoard stands in for the hub's own board when exercising the launch cap. It
 // serves a fixed task list on GET /v1/tasks and records whether a launch was
 // forwarded to POST /v1/launch, so a test can prove a refusal never reached the

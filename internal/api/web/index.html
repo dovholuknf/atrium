@@ -2391,6 +2391,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">appended when a launch names a model. put <code>{model}</code> where
         the name goes. leave empty for a runner that has no model.</span>
     </div>
+    <!-- Thinking effort, the same shape as the model. Empty means a launch that
+         asks for one is refused. -->
+    <div class="field">
+      <label class="eyebrow" for="h-effort">effort arguments, one per line</label>
+      <textarea id="h-effort" rows="2" spellcheck="false"
+        placeholder="--effort&#10;{effort}"></textarea>
+      <span class="hintline">appended when a launch names an effort. put <code>{effort}</code> where
+        the level goes. codex takes <code>-c</code> and <code>model_reasoning_effort={effort}</code>.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="h-model-env">model and effort by environment</label>
+      <input type="text" id="h-model-env" spellcheck="false" placeholder="model env var, if any">
+      <input type="text" id="h-effort-env" spellcheck="false" placeholder="effort env var, if any">
+      <span class="hintline">for a runner that reads them from a variable instead of a flag. the
+        launch sets the named variable to what was asked for.</span>
+    </div>
     <div class="field">
       <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
       <textarea id="h-exit" rows="2" spellcheck="false"
@@ -2620,6 +2636,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <datalist id="l-model-seen"></datalist>
       <span class="hintline" id="l-model-note">This launch only. The card remembers it so a
         restart comes back on the same model, and this field is empty again next time.</span>
+    </div>
+    <!-- Thinking effort, the same way: this launch only, text handed to the
+         runner in the shape its row declares, never a list of levels. -->
+    <div class="field" id="l-effort-field">
+      <label class="eyebrow" for="l-effort">effort</label>
+      <input type="text" id="l-effort" spellcheck="false"
+        placeholder="empty runs the runner's own default, such as low or high">
+      <span class="hintline">This launch only, kept on the card like the model. A runner with no
+        way to take an effort refuses the launch.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="l-title">title</label>

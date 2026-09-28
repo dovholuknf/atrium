@@ -4521,3 +4521,61 @@ change size. It follows the terminal to the second card. Clicking the strip agai
 **Expected:** the orchestrator gets one message: `<worker> is at <N>k context. Tell it to report what it has and
 stop, or hand off.` Nothing after the later turns, and nothing after the restart. A card you started yourself, past
 the same line, has the mark and sends nobody anything.
+
+
+## CA. A launch picks its model and effort, and passes extra args and env
+
+Backlog-2 item 48. `atrium_launch`, `atrium launch` and the board's launch dialog take `model` and `effort`, which
+each runner's row maps (claude: `--model`, `--effort`. codex: `--model`, `-c model_reasoning_effort=`), and `args`
+and `env`, passed as given. Nothing is checked against a list. A runner with no mapping refuses. The card keeps all
+four across a restart and shows them on its model chip, env by name only. See `docs/launch-options-design.md`. The
+Go tests are in `internal/daemon/launch_options_test.go`, `internal/store/launch_options_test.go` and
+`internal/link/control_mcp_test.go`. The room half needs a room restart (migration 0065), the `atrium_launch` half a
+hub restart.
+
+### CA1. An interviewer on haiku at low effort
+
+1. From a session, `atrium_launch` with `model: "claude-haiku-4-5-20251001"`, `effort: "low"` and a short brief.
+
+**Expected:** the card starts, its chip reads `claude-haiku-4-5-20251001 · low effort`, and the tool result carries
+`model` and `effort` with no WARNING in its note. In the card's details the launched event's `cmd` has
+`--model claude-haiku-4-5-20251001 --effort low`. `/status` in its terminal names Haiku 4.5.
+
+### CA2. Extra args and env
+
+1. `atrium launch --runner claude --effort high --arg --verbose --env DEMO_TOKEN=abc123` in a scratch directory.
+
+**Expected:** the chip's tooltip lists `extra args: --verbose` and `extra env: DEMO_TOKEN`. `abc123` appears nowhere
+on the board, in the card's JSON (`/v1/tasks`) or in its events. In the card's terminal, `!echo $DEMO_TOKEN` (or
+`%DEMO_TOKEN%`) prints `abc123`.
+
+### CA3. Refusals
+
+1. `atrium launch --runner ollama --effort low` (enable the row first, or use any row with no effort args).
+2. `atrium launch --env ATRIUM_TASK_ID=x`.
+
+**Expected:** 1 is refused with "has no way to be given an effort", naming `{effort}`. 2 is refused as atrium's own
+variable. Neither leaves a card.
+
+### CA4. A restart keeps them
+
+1. Restart the room with the CA1 card open.
+
+**Expected:** it comes back on the same model and effort: its chip is unchanged and the new launched event's `cmd`
+still has `--effort low`.
+
+### CA5. The board
+
+1. Open the launch dialog on claude. There is an `effort` box under `model`, empty. Launch with `low`.
+2. Open it again, and on a runner with no effort args.
+
+**Expected:** 1 launches at low effort. 2: the box is empty again, and hidden for the runner without effort args. In
+the runner editor, claude's `effort arguments` read `--effort` and `{effort}`, codex's `-c` and
+`model_reasoning_effort={effort}`.
+
+### CA6. A room older than this change
+
+1. From a hub with this change, `atrium_launch` with `effort: "low"` into a room without it.
+
+**Expected:** the session starts on the runner's default effort and the tool result's note begins
+`WARNING: the room is older than launch options, so effort was NOT applied`.
