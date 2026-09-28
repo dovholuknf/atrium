@@ -1079,7 +1079,8 @@ function termRowChips(t) {
     : "";
   // Unread and unanswered, which is where the operator is looking while workers
   // run. See js/seen.js.
-  const inner = newCardChip(t) + seenChips(t) + held + room + popped;
+  const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
+  const inner = stuck + newCardChip(t) + seenChips(t) + held + room + popped;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

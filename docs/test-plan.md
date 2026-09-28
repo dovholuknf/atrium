@@ -3878,3 +3878,47 @@ and the older card's is unchanged. Tick it again afterwards.
 1. Open the menu of a shell or codex card.
 
 **Expected:** there is no `keep its cache warm` entry and no keep-alive chip.
+
+## BM. A stuck card wears a mark, and a slash command or a restart does not make one stuck
+
+BM1 and BM2 need a room restart first: the silent-stop check is in the room daemon. BM3 and BM4 are board-only. Go
+tests `TestASlashCommandAndARestartAreNotASilentStop` and `TestASilentStopKeepsItsClockAcrossAResume` in
+`internal/daemon/a2a_test.go` cover BM1 and BM2. The headless section `stuck` covers BM3 and BM4. See
+`docs/backlog-2.md` item 25.
+
+### BM1. A slash command into an idle launched card is not a stuck card
+
+1. Launch a worker with `atrium_launch` and let it report with `atrium_report` and end its turn.
+2. From the board, type `/model claude-opus-5-5` into its terminal. Wait 3 minutes.
+
+**Expected:** no `is STUCK` notification or toast, and no stuck mark on the card. The launcher gets no
+`ended its turn without reporting` message.
+
+### BM2. A restart does not make an idle card stuck, or restart a real one's backoff
+
+1. With the card from BM1 idle, and a second worker that ended a turn without reporting (it rang `is STUCK` at
+   1 and 2 minutes), restart the room.
+2. Wait 5 minutes.
+
+**Expected:** the BM1 card stays unmarked and silent. The second worker still wears the mark, and its tooltip's
+`stuck since` is the time its turn ended, not the restart. It does not ring again at 1 and 2 minutes after the
+restart.
+
+### BM3. The mark and its tooltip
+
+1. Leave a worker stuck, as in BM2.
+
+**Expected:** a stopped-clock mark in the warn colour on its stack row, its board card and its terminal-strip row.
+Hovering shows a styled tooltip: `<card> is STUCK: it stopped without reporting, n minutes. stuck since hh:mm`.
+Type anything into the card: the mark goes when its turn starts.
+
+### BM4. The setting
+
+1. Open the gear's settings. Find `stuck agents`, set to `alert me, and mark the card`.
+2. Change it to `only mark the card`, and wait for a stuck worker's next backoff step.
+
+**Expected:** no notification or toast rings. The mark stays.
+
+3. Change it to `off`.
+
+**Expected:** the mark goes at once, and nothing rings. Reload: the setting holds. Set it back afterwards.
