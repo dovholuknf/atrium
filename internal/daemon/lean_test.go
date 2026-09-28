@@ -11,6 +11,8 @@ import (
 
 const leanTestMCP = `{"mcpServers":{
 	"mercurius":{"type":"http","url":"http://127.0.0.1:8088/mcp"},
+	"ziti":{"type":"http","url":"http://127.0.0.1:9000/mcp"},
+	"datawarehouse":{"type":"http","url":"http://127.0.0.1:9001/mcp"},
 	"atrium-control":{"type":"http","url":"http://127.0.0.1:7778/_hub/mcp"}}}`
 
 const leanTestSettings = `{
@@ -103,10 +105,17 @@ func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 	}
 }
 
-func TestLeanArgsKeepsOnlyAtriumControlByDefault(t *testing.T) {
-	read := leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP})
-	in := []string{"--mcp-config", "C:/atrium/mcp.json", "--strict-mcp-config"}
-	servers := func(extra []string) map[string]any {
+func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
+	read := leanTestRead(map[string]string{
+		"C:/atrium/mcp.json":  leanTestMCP,
+		"C:/atrium/bare.json": `{"mcpServers":{"atrium-control":{"type":"http","url":"http://x/_hub/mcp"}}}`,
+	})
+	servers := func(extra []string, config ...string) map[string]any {
+		if len(config) == 0 {
+			config = []string{"C:/atrium/mcp.json"}
+		}
+		in := append([]string{"--mcp-config"}, config...)
+		in = append(in, "--strict-mcp-config")
 		got, err := leanArgs(in, nil, "", extra, read)
 		if err != nil {
 			t.Fatal(err)
@@ -119,11 +128,15 @@ func TestLeanArgsKeepsOnlyAtriumControlByDefault(t *testing.T) {
 		}
 		return doc.MCPServers
 	}
-	if s := servers(nil); len(s) != 1 || s["atrium-control"] == nil {
-		t.Fatalf("default should be atrium-control alone, got %v", s)
+	if s := servers(nil); len(s) != 2 || s["atrium-control"] == nil || s["mercurius"] == nil {
+		t.Fatalf("default should be atrium-control and mercurius, got %v", s)
 	}
-	if s := servers([]string{"mercurius"}); len(s) != 2 || s["mercurius"] == nil {
-		t.Fatalf("mercurius asked for and not kept, got %v", s)
+	if s := servers([]string{"ziti"}); len(s) != 3 || s["ziti"] == nil {
+		t.Fatalf("ziti asked for and not kept, got %v", s)
+	}
+	// A default the config does not hold is left out, not refused.
+	if s := servers(nil, "C:/atrium/bare.json"); len(s) != 1 || s["atrium-control"] == nil {
+		t.Fatalf("a config without mercurius should give atrium-control alone, got %v", s)
 	}
 }
 
@@ -181,13 +194,13 @@ func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 	if lean, _ := leanOptions(LaunchRequest{}, nil); lean {
 		t.Fatal("a plain launch is not lean")
 	}
-	lean, mcp := leanOptions(LaunchRequest{Lean: true, MCP: []string{" mercurius", "atrium-control", "mercurius"}}, nil)
-	if !lean || len(mcp) != 1 || mcp[0] != "mercurius" {
+	lean, mcp := leanOptions(LaunchRequest{Lean: true, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil)
+	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("got %v %q", lean, mcp)
 	}
-	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"mercurius"}))}
+	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}))}
 	lean, mcp = leanOptions(LaunchRequest{}, card)
-	if !lean || len(mcp) != 1 || mcp[0] != "mercurius" {
+	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("a reopen of a lean card should start lean with its servers, got %v %q", lean, mcp)
 	}
 }

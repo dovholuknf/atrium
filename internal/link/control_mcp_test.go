@@ -214,7 +214,7 @@ func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
 		want sent
 	}{
 		{"default claude", launchInput{Cwd: "/w"}, sent{Lean: true}},
-		{"mercurius", launchInput{Cwd: "/w", MCP: []string{"mercurius"}}, sent{Lean: true, MCP: []string{"mercurius"}}},
+		{"extra server", launchInput{Cwd: "/w", MCP: []string{"ziti"}}, sent{Lean: true, MCP: []string{"ziti"}}},
 		{"turned off", launchInput{Cwd: "/w", Lean: &off}, sent{}},
 		{"other runner", launchInput{Cwd: "/w", Runner: "codex"}, sent{}},
 	} {

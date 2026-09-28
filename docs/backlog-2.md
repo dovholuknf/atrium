@@ -35,7 +35,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 26 | Toasts pop and disappear in the same second | bug | not started |
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
 | 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
-| 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221`, the room half needs a room restart |
+| 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221` `ac59568` `764e2a8`, the room half needs a room restart |
 | 30 | Peer review on the mercurius protocol, run in an atrium session | design | not started, 2 open questions |
 | 31 | STUCK fires on a worker whose turn ended while it waits on background runs | bug | not started |
 | 32 | A queued say from http-support never produced a backlog entry, and nothing can say why | bug | not started |
@@ -701,9 +701,9 @@ named sections so each can run alone, and make the flaky waits wait on a conditi
 Raised 2026-09-28 by clint. A worker started by `atrium_launch` inherits none of its launcher's conversation, yet it
 booted with the operator's whole setup, and its first request was ~40k tokens. sa85 measured every lever in Claude
 Code 2.1.283 and built a lean launch: `atrium_launch` now starts a claude worker with the user settings source
-dropped, a filtered copy of the user settings (permissions, env and hooks kept), atrium-control as its only MCP server,
-22 tools disallowed, a short worker system prompt and auto-memory off. `mcp: ["mercurius"]` adds a server, and
-`lean: false` launches as before. The same `-p` probe drops from 35,970 to 11,029 tokens in a worktree.
+dropped, a filtered copy of the user settings (permissions, env and hooks kept), atrium-control and mercurius as its
+only MCP servers, 22 tools disallowed, a short worker system prompt and auto-memory off. `mcp: [...]` adds servers,
+and `lean: false` launches as before. The same `-p` probe drops from 35,970 to 11,029 tokens in a worktree.
 
 See `docs/lean-workers-design.md` for the numbers and what a lean worker loses, and `docs/test-plan.md` section BP.
 Left: the end-to-end check through `atrium_launch` after a room restart, and the ~5.9k of system tools that
