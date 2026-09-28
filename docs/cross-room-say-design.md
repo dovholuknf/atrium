@@ -1,7 +1,6 @@
 # Cross-room `atrium_say` (backlog-2 item 58)
 
-Status: DRAFT, not yet reviewed. Written by sa58 before a context handoff. The next session finishes it, then runs the
-mercurius design review.
+Status: designed, under review. Written by sa58.
 
 ## What is true today
 
@@ -21,101 +20,181 @@ mercurius design review.
 - Launcher notices (`notifyLauncher` in `internal/daemon/a2a.go`, context size in `contextsize.go`, reports in
   `finish.go` through `store.NoticeSpec{ToID}` inside `RecordReport`) only find a launcher on the same room
   (`launcherOf`). `spawned_by` carries a bare handle.
+- A request the hub proxies to a room that is not attached answers 503 (`ErrNoRoom` in `proxy.go oops`). A room
+  that is attached and slow answers 503 too, and a broken link answers 502.
 
 ## Addressing grammar
 
-Parsed in one place per side (a shared helper in each of `internal/link` and `internal/daemon`, pinned together by
-a test, since neither imports the other).
+Parsed by one helper per side (`internal/link/address.go` and `internal/daemon/address.go`), pinned together by a
+table test in each package over the same cases, since neither package imports the other.
 
-- `name` or `@name`: the sender's own room. Unchanged behaviour. Handle first, then alias.
-- `name@room` or `@name@room`: card `name` (handle, then alias) on room `room`. Split on the LAST `@`. Room names
-  are matched case-insensitively, as the hub already does (`equalFold`, `keyOf`). Aliases cannot hold `@`
-  (`aliasShape`), and handles do not in practice.
-- `room~id` (the aggregate board's tagged id) and `id@room`: a card id on that room.
+- `name` or `@name`: the sender's own room. Unchanged behaviour. Handle first, then alias, then card id.
+- `name@room` or `@name@room`: card `name` (handle, then alias, then id) on room `room`. Split on the LAST `@`, so
+  a handle that holds an `@` still parses as long as the room part is given. Room names match case-insensitively,
+  as the hub already does (`equalFold`, `keyOf`). Aliases cannot hold `@` (`aliasShape`).
+- `room~id`, the aggregate board's tagged id, is the same as `id@room`.
 - A room part naming the sender's own room is the same as no room part.
+- An empty name or an empty room part (`sa1@`, `@m1mini`) is refused with the grammar in the sentence.
 - The sender is always written `handle@room` on a cross-room message, so the recipient replies to exactly what it
   was shown. The hub appends the room from the link certificate, never from the body, so a room cannot speak for
   another room.
 
 ## The route
 
-Two entry points, one delivery.
+```
+card on m1mini                    m1mini room               hub                    claude-sg4 room
+atrium_say to=atrium-87300@claude-sg4
+  stdio atrium control ---------> POST /v1/say
+                                  local ledger (peerSaid)
+                                  Room.Relay  ------ relay kind -----> serveRelay
+                                                                       resolve on claude-sg4
+                                                                       POST /v1/tasks/<id>/message
+                                                                       from=sa1@m1mini ----> QUEUED or typed
+                                                                                             through the gate
+                                  <------------------ answer ---------
+  <------------------------------ answer
+```
 
-1. HUB-SIDE, a card on the hub's machine using `/_hub/mcp`: `sayHandler` sees a room part that is not the caller's.
-   It forwards the say to the SENDER'S room (`POST /v1/say` on that room, below), so the sender's room records it
-   exactly as it records a room-originated one. A caller with no room header delivers straight to the target room
-   with `from` = its handle. A caller with no `X-Atrium-Agent` is refused for cross-room: an unnamed sender would be
-   typed as the operator, which rule 3 forbids.
-2. ROOM-SIDE, a card on any room using the stdio `atrium control` or `atrium tell`: the room's new `POST /v1/say`
-   (board API) and the agent listener's `/tell` accept the grammar. Local targets take today's path. A cross-room
-   target is relayed.
-3. LINK, new connection kind `relay`, room to hub, the same shape as `announce`: hello, welcome, one JSON request,
-   one JSON answer. Ops: `say` and `peers`. The hub requires the room to be attached (`h.Has(name)`).
-4. HUB-SIDE delivery: the hub resolves `name` in the target room through its own loopback board with
-   `X-Atrium-Room: <target>` (the same `controlMCP.resolvePeer` and `ask`), then posts
+1. ROOM-SIDE entry. The room's new `POST /v1/say` on the board API takes `{from, to, text, when}`. The agent
+   listener's `/tell` (`atrium tell`) takes the same grammar. A local target takes today's path, the same code
+   `handleMessage` runs. A cross-room target is relayed.
+2. HUB-SIDE entry, a card on the hub's machine using `/_hub/mcp`. `sayHandler` sees a room part that is not the
+   caller's and forwards the say to the SENDER'S room as `POST /v1/say`, so the sender's room records it exactly as
+   it records a say from its own stdio server. The route then continues as above. A caller with no
+   `X-Atrium-Agent` is refused for cross-room: an unnamed sender would be typed as the operator, which rule 3
+   forbids. A caller with no room header is also refused for cross-room, with a sentence, because there is no
+   sender's room to record it or to answer to.
+3. LINK. A new connection kind, `relay`, dialled by the room, the same shape as `announce`: hello, welcome, one
+   JSON request, one JSON answer, closed. Ops `say` and `peers`. The hub takes it from an attached room only.
+4. HUB-SIDE delivery. `serveRelay` resolves `name` in the target room through its own loopback board with
+   `X-Atrium-Room: <target>` (the existing `controlMCP.resolvePeer` and `ask`), then posts
    `/v1/tasks/<id>/message` with `from` = `handle@sourceRoom`. The target room delivers it as any peer message:
-   QUEUED, typed only through the gate (empty line, turn rule), carried by the hooks otherwise. Never as the operator.
-   The hub holds nothing: it answers the relay with the target room's answer.
+   QUEUED, typed only through the gate (empty line, turn rule), carried by the hooks otherwise. Never as the
+   operator. The hub holds nothing: it answers the relay with the target room's answer and forgets it.
 
-Why the sender's room and not the hub records the say: `peerSaid` (the work ledger and `MarkReported` when the
+Why the sender's room and not the hub records the say: `peerSaid` (the work ledger, and `MarkReported` when the
 target is the sender's launcher) is room-side and keyed on the local sender card. Routing every cross-room say
-through the sender's room keeps that single source of truth.
+through the sender's room keeps one record, in the one place that owns it.
+
+What the target room does with `from = sa1@m1mini`: `peerLimit` counts it under that name, the banner reads
+`[atrium] sa1@m1mini says:`, and `peerSaid` finds no local card by that name and records nothing, which is right
+because the sender's room already did.
+
+## What each side sees
+
+Before, a card on m1mini:
+
+```
+atrium_say to=atrium-87300@claude-sg4
+error: no session called "atrium-87300@claude-sg4". these would have worked: sa1, sa2
+```
+
+After, the sender:
+
+```
+{"delivered":"queued","to":"atrium-87300@claude-sg4","card":"claude-sg4~01K...","when":"immediate",
+ "note":"queued, not typed yet. ..."}
+```
+
+After, the recipient on claude-sg4, typed through the gate or carried by the hook:
+
+```
+[atrium] sa1@m1mini says: the build is green on macOS. sha 1a2b3c.
+```
+
+It answers with `atrium_say to=sa1@m1mini`, the handle it was shown.
+
+With m1mini's hub link down, the sender sees:
+
+```
+{"delivered":"held","to":"atrium-87300@claude-sg4","note":"the hub or room claude-sg4 is not answering. held on
+ this room and sent when it answers, for up to 24 hours. nothing is queued on the hub."}
+```
 
 ## Offline target, and what the sender is told
 
 - The relay tries synchronously first. Success returns the target room's answer (`terminal`, `queued`,
-  `undeliverable`, `when`, warning) with `to` = `handle@room`.
-- A definitive refusal (no such session on that room, it ended, too long, rate limited) is returned as an error and
-  nothing is kept. The not-found error lists the live handles on that room.
-- Unreachable (hub not attached, hub older than `relay`, target room not attached, link error, 502/503): the message
-  goes into a ROOM-SIDE outbox on the sender's room and the answer is `delivered: "held"` with a note naming the
-  room and saying it is sent when the hub and that room answer. Nothing is queued on the hub.
-- The outbox is drained on the reaper tick, right after an insert, and when the link reattaches. Kept 24 hours, then
-  dropped with an event on the sender's card and a log line. Automatic notices go into the same outbox, so a report
-  to a launcher on an offline room is not lost.
-- Migration: one table, `relay_outbox` (id, from_task, from_wire, to_room, to_name, text, when, source, created_at,
-  attempts, last_error, sent_at), appended at the END of the slice in `internal/store/schema.go`,
-  `CREATE TABLE IF NOT EXISTS`.
+  `undeliverable`, `queued-unconfirmed`, `when`, warning) with `to` = `handle@room` and `card` = `room~id`.
+- A definitive refusal from the target (no such session, it ended, too long, rate limited, bad `when`) is returned
+  to the sender as an error with the target's sentence, and nothing is kept. The not-found error lists the live
+  handles on that room, as a local one does.
+- Unreachable goes into a ROOM-SIDE outbox on the sender's room, and the answer is `delivered: "held"` with the
+  note above. Unreachable is: no link from this room right now, a link error, the hub saying the target room is not
+  attached, or the target room answering 502 or 503 through the hub.
+- The outbox is drained on the reaper tick, right after an insert, and when the link reattaches. One drain at a
+  time. Rows go oldest first. A row that meets a definitive refusal on drain is dropped with an event on the sender's
+  card and a log line, since the sender's turn that asked for it is long gone.
+- Kept 24 hours from when it was held, then dropped with the same event and log line.
+- Automatic notices to a launcher on another room go into the same outbox, so a report to a launcher on an offline
+  room is not lost.
+- Migration: one table, appended at the END of the slice in `internal/store/schema.go`, `CREATE TABLE IF NOT
+  EXISTS`:
+
+  ```sql
+  relay_outbox (id TEXT PRIMARY KEY, from_task TEXT, from_wire TEXT NOT NULL, to_room TEXT NOT NULL,
+    to_name TEXT NOT NULL, text TEXT NOT NULL, wait_turn INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL,
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '')
+  ```
+
+  A sent row is deleted, so the table only ever holds what is owed.
 
 ## Notices to a launcher on another room (rule 5)
 
 - `spawned_by` may be `handle@room`. The hub's `atrium_launch` gains an optional `room`: launching into another
-  room records `spawned_by` = `me@myroom`. A same-room launch is unchanged.
+  room records `spawned_by` = `me@myroom` on the new card. A same-room launch is unchanged.
 - `launcherOf` stays local. A new `remoteLauncher(worker)` returns `(name, room)` when `spawned_by` names another
-  room. `notifyLauncher` (silent stop, long tool, context size) and `finish` (report) enqueue into the outbox for a
-  remote launcher. `RecordReport` writes the outbox row in the same transaction it writes the local notice today.
-- `peerSaid` marks a worker reported when it says to `spawned_by` across rooms, compared after normalising both.
+  room and no local card is the launcher.
+- `notifyLauncher` (silent stop, long tool, context size) keeps its `RecordNotice` dedupe and then, for a remote
+  launcher, holds the notice in the outbox and kicks a drain. It returns true, so the caller does not retry.
+- `finish` (a report) writes the outbox row inside `RecordReport`'s transaction, through a new `ReportWrite.Relay`
+  beside `Notice`, so a crash cannot record the report and lose the notice. `launcher_told` is true.
+- The worker's own say to its launcher across rooms marks it reported: `sayAcross` compares the resolved
+  `handle@room` (and the address as typed) with `spawned_by`, case-insensitive on the room.
+- The ledger's `ended` notice (`queueNotice`) still needs a local arbiter card and is not carried across rooms by
+  this item. The silent-stop and report notices cover the case clint named.
+- The hub also sees it. The hub proxies the launcher's card list with `context_size` today. A notice reaches the
+  launcher's card as an ordinary queued peer message, which is on that card's timeline and so on the hub's board.
 
 ## Peers (rule 4)
 
 - Hub-side `atrium_peers` gains `rooms: true`, which lists live cards on every attached room from the aggregate
-  `/v1/tasks` (each row carries `room`). Rows from other rooms carry `room` and handle `name@room`. Without it the
-  answer says how many live sessions are on other rooms.
-- Room-side (stdio `atrium_peers`) gets the same through the relay op `peers`.
+  `/v1/tasks` (each row carries `room`, and a remembered row of a room that is not answering carries `offline` and
+  is left out). A row from another room carries `room`, handle `name@room` and card `room~id`. Rows of the caller's
+  own room keep bare handles. Without `rooms` the answer is unchanged.
+- Room-side (stdio `atrium_peers`, `rooms: true`) asks the room's new `GET /v1/peers/rooms`, which asks the hub
+  through the relay op `peers`. The hub answers from the same aggregate list, minus the asking room.
 
 ## Version skew
 
 - Old hub, new room: the `relay` hello is refused with "a connection is control, data, enrol, upgrade or announce".
-  The room says "the hub is older than cross-room say" and does NOT hold the message (it would never drain).
-- New hub, old room as sender: the old room has no `/v1/say`. The hub's forward gets a 404 and falls back to direct
-  delivery with `from` = `handle@room`, saying the sender's room is older so the ledger did not record it.
+  The room says "the hub is older than cross-room say" and does NOT hold the message, since nothing would ever
+  drain it. A held row that meets an old hub on drain (the hub was downgraded) stays and expires.
+- New hub, old room as sender (hub-side entry): the forward to `/v1/say` gets a 404. The hub falls back to
+  delivering directly with `from` = `handle@room`, and the answer's note says the sender's room is older, so its
+  work ledger did not record the message.
 - New hub, old room as target: `/v1/tasks/<id>/message` with `from` has existed since the peer bus. Works.
-- The link `Version` does not change: a new kind is additive.
+- New stdio `atrium control` against an old room: `/v1/say` is a 404, and a bare name falls back to today's path
+  (now with `from`). A cross-room name is refused with "this room is older than cross-room say".
+- The link `Version` does not change. A new kind is additive.
 
 ## A room without atrium-control
 
 m1mini today: no atrium-control, so its sessions cannot call `atrium_say` or `atrium_report` at all. They can still
 be reached (a relayed message is queued and carried by the hooks), and `atrium tell` works if the binary is on PATH.
-The fix is provisioning: `scripts/provision-room.ps1` (item 46) registers the stdio server at user scope,
-`claude mcp add --scope user atrium-control -- <atrium> control`, idempotently, and `-Remove` takes it off. The stdio
-server gains `from` on `atrium_say` and an `atrium_report`, so a room's cards can answer and report.
+The fix is provisioning: `scripts/provision-room.ps1` (item 46) registers the stdio server at user scope with
+`claude mcp add --scope user atrium-control -- <atrium> control`, idempotently, and `-Remove` takes it off. The
+stdio server gains `from` on `atrium_say` and an `atrium_report`, so a room's cards can answer and report.
 
 ## Which side each part lives on
 
 | Part | Side |
 |---|---|
-| Grammar parse, forward from `/_hub/mcp` say, relay server, target resolution, peers across rooms, launch `room` | HUB-SIDE |
-| `/v1/say`, `/tell` grammar, outbox and drain, remote launcher notices, report outbox, `peerSaid` across rooms | ROOM-SIDE |
-| stdio `atrium control` `from`, `atrium_report`, cross-room peers | ROOM-SIDE (runs on the room's machine) |
-| `relay` connection kind, `Room.Relay` client | link, both |
+| Grammar parse for `/_hub/mcp`, forward of a cross-room say to the sender's room, `serveRelay` (say, peers), `atrium_peers rooms`, `atrium_launch room` | HUB-SIDE |
+| Grammar parse, `POST /v1/say`, `/tell` grammar, `GET /v1/peers/rooms`, outbox and drain, remote launcher notices, report into the outbox, cross-room `peerSaid` | ROOM-SIDE |
+| stdio `atrium control`: `from`, `atrium_report`, grammar, `rooms` | ROOM-SIDE (runs on the room's machine) |
+| `relay` connection kind, `Room.Relay` client, `Room.OnAttach` | link, both |
 | provisioning registers atrium-control | script |
+
+## Review
+
+Filled in after the mercurius design review.
