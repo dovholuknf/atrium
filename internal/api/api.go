@@ -99,6 +99,10 @@ type Server struct {
 	// TextScrollback is the same history as plain text, for reading in a tab
 	// rather than in a terminal.
 	TextScrollback http.HandlerFunc
+	// TypingState is atrium's model of the operator's input line on a card's
+	// terminal and whether the peer gate is open, for the board's typing
+	// readout.
+	TypingState http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -477,6 +481,11 @@ func (s *Server) Handler() http.Handler {
 	// card's scrollback that does not go through one.
 	if s.TextScrollback != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/text", s.TextScrollback)
+	}
+	// What atrium thinks is on the operator's line and why a say is held.
+	// Polled by the board only while its typing readout is switched on.
+	if s.TypingState != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/typing", s.TypingState)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
