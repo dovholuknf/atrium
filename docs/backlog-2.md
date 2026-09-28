@@ -65,7 +65,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
 | 57 | The live room leaks memory | bug, HIGH | not started |
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | not started |
-| 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | not started |
+| 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
@@ -1239,6 +1239,8 @@ Raised 2026-09-28 by clint. Run it on m1mini. Two ideas:
   machine picks up new work.
 
 The goal is to move work between rooms, so that a room restart kills nothing.
+
+**Status, 2026-09-28: deep backlog, not started.** clint: "seems dumb. deep backlog".
 
 ## 60. The stdio control MCP has sa48's launch fields but no "room is older" warning (housekeeping)
 
