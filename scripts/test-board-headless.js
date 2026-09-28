@@ -3536,6 +3536,213 @@ async function pasteSpinnerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a big paste shows the spinner too ─────────────────────────────────────
+// Test plan BO. The socket here behaves like Chromium's over loopback: `send`
+// holds the main thread about 7ms per MB and the frame drains about 25ms per MB
+// later. The runner echoes 2ms after the drain and keeps printing, the way a
+// runner still reading a big paste off its pty does. Every paste gesture, a
+// bracketed runner and a popped-out window must paint the box within a frame of
+// the paste and keep it up at least 300ms. A frame over the daemon's 4MB limit is
+// not sent, and says why.
+async function pasteBigSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__frames = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(str) {
+          const t = performance.now();
+          while (performance.now() - t < str.length / 1048576 * 7) { /* the send holds the thread */ }
+          window.__frames.push(str);
+          this.bufferedAmount += str.length;
+          setTimeout(() => {
+            this.bufferedAmount = Math.max(0, this.bufferedAmount - str.length);
+            if (str.length < 1000 || !this.onmessage) return;
+            // Echo, then a runner still busy with it.
+            setTimeout(() => this.onmessage({ data: "[Pasted text]" }), 2);
+            let n = 0;
+            const iv = setInterval(() => {
+              if (++n > 40 || !this.onmessage) { clearInterval(iv); return; }
+              this.onmessage({ data: "." });
+            }, 30);
+          }, str.length / 1048576 * 25);
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    // Drives one gesture and samples the box on every frame for 1.5s.
+    window.__pasteRun = gesture => new Promise(done => {
+      pasteEnd();
+      window.__frames = [];
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const seen = [];
+      const t0 = performance.now();
+      const loop = () => {
+        const t = performance.now() - t0;
+        if (vis()) seen.push(t);
+        if (t < 1500) { requestAnimationFrame(loop); return; }
+        done({ first: seen.length ? Math.round(seen[0]) : -1,
+          span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
+          sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
+          text: (document.getElementById("t-pasting") || {}).textContent || "" });
+      };
+      requestAnimationFrame(loop);
+      gesture();
+    });
+  });
+  const attach = async p => {
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: 10000 });
+    await p.waitForTimeout(300);
+  };
+  const MB = 1048576;
+  const check = (name, got, want) => {
+    const big = got.sizes.filter(n => n > 1000);
+    if (big.length !== 1 || big[0] < want) {
+      fail(name + ": the paste did not leave as one frame of " + want + " bytes or more: " + JSON.stringify(got.sizes));
+      return;
+    }
+    if (got.first < 0 || got.first > 50 || got.span < 300) {
+      fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
+        JSON.stringify({ first: got.first, span: got.span }));
+    }
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.evaluate(() => attachTask("land-live"));
+    await attach(p);
+
+    for (const mb of [1, 3]) {
+      // ctrl-v: the browser's paste event on the terminal.
+      const ctrlV = await p.evaluate(n => window.__pasteRun(() => {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "x".repeat(n));
+        document.getElementById("t-screen").dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }), mb * MB);
+      check("ctrl-v " + mb + "MB", ctrlV, mb * MB);
+
+      // Right click: the clipboard API.
+      const right = await p.evaluate(n => {
+        Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { readText: () => Promise.resolve("r".repeat(n)), read: () => Promise.resolve([]) } });
+        return window.__pasteRun(() => {
+          document.getElementById("t-screen").dispatchEvent(
+            new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+        });
+      }, mb * MB);
+      check("right click " + mb + "MB", right, mb * MB);
+
+      // The paste box.
+      const box = await p.evaluate(n => window.__pasteRun(() => {
+        openPasteBox("");
+        document.getElementById("t-paste-in").value = "b".repeat(n);
+        sendPasteBox();
+      }), mb * MB);
+      check("paste box " + mb + "MB", box, mb * MB);
+
+      // A dropped block of text, no files.
+      const drop = await p.evaluate(n => window.__pasteRun(() => {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "d".repeat(n));
+        document.getElementById("t-screen").dispatchEvent(
+          new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      }), mb * MB);
+      check("dropped text " + mb + "MB", drop, mb * MB);
+    }
+
+    // A runner that declares bracketed paste gets the markers and the spinner.
+    const bracketed = await p.evaluate(n => {
+      termCaps.bracketed_paste = true;
+      return window.__pasteRun(() => sendPasteText("y".repeat(n)));
+    }, MB);
+    check("bracketed 1MB", bracketed, MB);
+    if (!bracketed.heads.some(h => h.includes("\\u001b[200~"))) {
+      fail("a bracketed runner's big paste lost its markers: " + JSON.stringify(bracketed.heads));
+    }
+    await p.evaluate(() => { termCaps.bracketed_paste = false; });
+
+    // A key typed straight after a big paste goes after it, not ahead of it.
+    const order = await p.evaluate(n => window.__pasteRun(() => {
+      sendPasteText("o".repeat(n));
+      term.input("z", true);
+    }), MB);
+    const zAt = order.heads.findIndex(h => h.includes('"d":"z"'));
+    const bigAt = order.sizes.findIndex(s => s > 1000);
+    if (zAt < 0 || bigAt < 0 || zAt < bigAt) {
+      fail("a key typed after a big paste did not follow it: " + JSON.stringify(order.heads));
+    }
+
+    // A small paste right behind a big one keeps the big one's box and hold.
+    const pair = await p.evaluate(n => window.__pasteRun(() => {
+      sendPasteText("p".repeat(n));
+      sendPasteText("small");
+    }), MB);
+    check("a big paste then a small one", pair, MB);
+
+    // The terminal changes before the big frame leaves: nothing goes to the new one.
+    const moved = await p.evaluate(n => {
+      const old = termSock;
+      const fresh = new WebSocket(old.url);
+      fresh.readyState = 1;
+      return window.__pasteRun(() => {
+        sendPasteText("m".repeat(n));
+        term.input("k", true);
+        termSock = fresh;
+      }).then(got => {
+        termSock = old;
+        got.said = [...document.querySelectorAll(".toast")].map(t => t.textContent).join(" | ");
+        return got;
+      });
+    }, MB);
+    if (moved.sizes.length) fail("a big paste went to a terminal it was not aimed at: " + JSON.stringify(moved.heads));
+    if (!/did not go/.test(moved.said)) fail("a big paste dropped on a terminal change said nothing: " + JSON.stringify(moved.said));
+
+    // Over the daemon's 4MB frame limit: not sent, which would close the socket,
+    // and said so.
+    const huge = await p.evaluate(n => window.__pasteRun(() => sendPasteText("h".repeat(n))), 10 * MB);
+    if (huge.sizes.some(s => s > 4 * MB)) {
+      fail("a 10MB paste was sent in one frame, which the daemon closes the socket on: " + JSON.stringify(huge.sizes));
+    }
+    const said = await p.evaluate(() =>
+      [...document.querySelectorAll(".toast")].map(t => t.textContent).join(" | "));
+    if (!/too big/.test(said)) fail("a 10MB paste was not refused out loud: " + JSON.stringify(said));
+
+    // A popped-out window is the same terminal code.
+    const solo = await ctx.newPage();
+    solo.on("pageerror", e => errors.push(String(e)));
+    await solo.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await attach(solo);
+    const soloGot = await solo.evaluate(n => window.__pasteRun(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "s".repeat(n));
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    }), MB);
+    check("popped-out ctrl-v 1MB", soloGot, MB);
+    await solo.close();
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the big paste page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -4087,7 +4294,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -6265,6 +6472,7 @@ async function main() {
     await sayWhenSection(browser, base);
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
+    await pasteBigSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────

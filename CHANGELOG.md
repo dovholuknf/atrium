@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A big paste shows the `pasting` spinner, a dropped block of text pastes, and a paste over 4MB is refused.** See
+  `docs/test-plan.md` section BO.
+
+  A paste of 256KB or more used to show the spinner for a frame or not at all. `send` holds the main thread about
+  7ms per MB, so the 20ms timer waited behind it, and the frame drains over loopback in tens of milliseconds while the
+  daemon is still writing it to the pty. The first output after the drain ended the box. Now a paste that big puts
+  the box up first, leaves once it has painted, and keeps the box up at least half a second, about a second per MB up
+  to four, before an echo may end it. Input typed while it waits to paint goes after it, and none of it goes if the
+  terminal switches card or reconnects first. A small paste straight after a big one keeps the big one's box. A block
+  of text dropped on the terminal went nowhere and is now a paste. A paste whose frame is over the daemon's 4MB read
+  limit used to close the socket and lose the paste. It is now not sent, and an alert says so. The new headless
+  section `pasteBig` covers every paste gesture, a bracketed runner and a popped-out window. HUB-SIDE.
+
 - **A slash command or a restart no longer makes a launched card read STUCK, and a stuck card wears a mark.** See
   `docs/backlog-2.md` item 25 and `docs/test-plan.md` section BM.
 
