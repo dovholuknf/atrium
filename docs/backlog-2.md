@@ -30,6 +30,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | built on `claude/cache-keepalive`, not deployed, needs a room restart |
+| 25 | sa80: false STUCK alert after a slash command and a restart; stuck mark on the card; gear setting | bug | built on `claude/stuck-indicator`, not deployed, the fix needs a room restart |
 
 ------------
 
@@ -576,6 +577,38 @@ Open:
 - Re-derive the 1/8 budget from the transcripts once more data is in: the resume hazard came from 597 idle
   stretches over 21 days, all Claude Code sessions on this machine, not only board cards.
 - Codex is out: OpenAI caching has no write premium and no client TTL. A separate item if that changes.
+
+## 25. A false STUCK alert, a stuck mark on the card, and a setting for it (bug)
+
+Raised by clint 2026-09-28 with two screenshots (`.atrium/incoming/20260928-075641-pasted.png`, `-075738-`): a
+desktop notification said `tlsuv GHSA: verify_cert_ca proof of exploit (red -> green) is STUCK: it stopped without
+reporting`, while the card sat idle at an empty prompt and its row showed nothing wrong. Built on
+`claude/stuck-indicator` by sa80. Test plan section BM.
+
+Cause, from the event store. The card reported at 2026-09-25 20:40Z and its last turn ended at 21:53Z. On
+2026-09-27 13:16Z the orchestrator typed `/model claude-opus-5-5` into seven cards within 1.3 seconds, as operator
+messages with no sender. A built-in slash command runs no model turn, so no status change and no Stop followed, but
+the `prompted` event stamped `prompted_at`. From then on the card owed a report (a prompt newer than the report),
+and the watchdog's silent-stop check asked for nothing else: `needs-input`, owes a report, a `waiting_since`. The
+room restart at 2026-09-28 07:50 resumed the card (done, then needs-input), which gave it a fresh `waiting_since`, so
+the backoff started again from one minute and rang. Only this card of the seven was agent-launched. The other six
+are human cards the watchdog does not watch.
+
+Fix (ROOM-SIDE): a silent stop needs a turn that ended after the last prompt. A new `turn_end` table (migration
+0062) stamps the moment a card goes from `running` or `needs-permission` to `needs-input`, seeded from the event log.
+A slash command and a resume never write it. The turn's end is also the escalation's clock, so a restart does not
+restart the backoff.
+
+Board (HUB-SIDE): a stuck card wears a stopped-clock mark in the warn colour on the stack, the board and the terminal
+strip, with a styled tooltip saying why and since when. It goes when the room clears the escalation, which is when
+the card moves. The gear's `stuck agents` setting: alert me and mark the card (default), only mark the card, or off.
+Stored with the other alert settings in `atrium.sound`.
+
+Open:
+
+- A card marked `dead` whose Stop hook still arrives goes `dead` to `needs-input` and records no turn end, because a
+  resume takes the same transition. Rare. It then reads not stuck.
+- The headless full run does not call `keepaliveSection` (sa78's). Only its HEADLESS_ONLY entry exists.
 
 
 ------------

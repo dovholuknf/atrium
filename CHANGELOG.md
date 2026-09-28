@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A slash command or a restart no longer makes a launched card read STUCK, and a stuck card wears a mark.** See
+  `docs/backlog-2.md` item 25 and `docs/test-plan.md` section BM.
+
+  The silent-stop check asked only for a card waiting on its prompt with a prompt newer than its last report. A
+  built-in slash command such as `/model` is a prompt that runs no turn, so it made an idle card owe a report, and a
+  room restart resumed that card with a fresh `waiting_since` and rang `is STUCK` again from one minute. Now a silent
+  stop needs a turn that ended after the prompt. A new `turn_end` table (migration 0062, seeded from the event log)
+  records when a card goes from working to waiting, and that moment is the backoff's clock, so a restart does not
+  start it over. Needs a room restart.
+
+  On the board, a stuck card wears a stopped-clock mark in the warn colour on the stack, the board and the terminal
+  strip, with a tooltip saying why and since when. It goes when the card moves. The gear's new `stuck agents`
+  setting alerts and marks (the default), only marks, or is off. HUB-SIDE.
+
 - **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
   and `docs/test-plan.md` section BL.
 
