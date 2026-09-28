@@ -29,7 +29,9 @@ import (
 type launchOpts struct {
 	boardURL, harness, cwd, title, why, resume string
 	prompt, source, externalID, itemURL        string
-	model                                      string
+	model, effort                              string
+	// Extra argv and KEY=VALUE environment for the runner, used as given.
+	args, env []string
 	// What the caller already knows about the work. See `LaunchRequest`:
 	// atrium derives none of it, and every one is optional.
 	repo, org, host, branch, window, theme string
@@ -69,6 +71,14 @@ func newLaunch() *cobra.Command {
 		"which model this session runs on, for this session only. the runner has to "+
 			"declare how it takes one, and a runner that cannot is refused rather than "+
 			"started on its default")
+	c.Flags().StringVar(&o.effort, "effort", "",
+		"the thinking effort, such as low or high, for this session only. passed in the shape the "+
+			"runner declares and not checked. a runner that cannot take one is refused")
+	c.Flags().StringArrayVar(&o.args, "arg", nil,
+		"an extra argument for the runner, used as given. repeat it for more, in order")
+	c.Flags().StringArrayVar(&o.env, "env", nil,
+		"an extra KEY=VALUE for the runner's environment. repeat it for more. "+
+			"the card shows the names, never the values")
 	c.Flags().StringVar(&o.source, "source", "",
 		"the system this came from, such as github or zendesk. atrium never interprets it")
 	c.Flags().StringVar(&o.externalID, "external", "",
@@ -90,6 +100,23 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
 	return c
+}
+
+// parseEnvPairs turns repeated --env KEY=VALUE flags into the map the launch
+// carries. A value may hold `=`, and only the first one splits.
+func parseEnvPairs(pairs []string) (map[string]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			return nil, fmt.Errorf("--env %q is not KEY=VALUE", p)
+		}
+		out[strings.TrimSpace(k)] = v
+	}
+	return out, nil
 }
 
 func launchAgent(o launchOpts) error {
@@ -116,7 +143,15 @@ func launchAgent(o launchOpts) error {
 			"a resumed conversation already has its instruction")
 	}
 
+	env, err := parseEnvPairs(o.env)
+	if err != nil {
+		return err
+	}
+
 	body, err := json.Marshal(map[string]any{
+		"effort":      o.effort,
+		"args":        o.args,
+		"env":         env,
 		"harness":     o.harness,
 		"cwd":         filepath.ToSlash(abs),
 		"title":       o.title,

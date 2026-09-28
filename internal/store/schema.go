@@ -1695,6 +1695,34 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS task_alias ON task (alias)`,
 		},
 	},
+	{
+		// LAUNCH OPTIONS: a thinking effort, and extra argv and environment
+		// passed through as given. See docs/launch-options-design.md.
+		//
+		// On `harness`, how a runner is ASKED for an effort, the way 0047 added
+		// `model_args`, and the env var names for a runner that takes model or
+		// effort that way. On `task`, what this card WAS asked for, so a reopen
+		// replays it exactly as it replays `task.model`.
+		//
+		// The backfill touches the `claude` and `codex` rows only, and only while
+		// still empty, as 0047 does: claude takes `--effort`, codex a config
+		// override. Nothing else is guessed at.
+		name: "0065_launch_options",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN effort_args TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE harness ADD COLUMN model_env TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE harness ADD COLUMN effort_env TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN launch_args TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE task ADD COLUMN launch_env TEXT NOT NULL DEFAULT '{}'`,
+			`UPDATE harness SET effort_args = '["--effort","{effort}"]'
+			   WHERE id = 'claude'
+			     AND (effort_args IS NULL OR effort_args = '' OR effort_args = '[]')`,
+			`UPDATE harness SET effort_args = '["-c","model_reasoning_effort={effort}"]'
+			   WHERE id = 'codex'
+			     AND (effort_args IS NULL OR effort_args = '' OR effort_args = '[]')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +58,14 @@ type LaunchRequest struct {
 	//
 	// Naming one for a harness with no ModelArgs is REFUSED. See runnerArgs.
 	Model string `json:"model,omitempty"`
+	// Effort is the thinking effort, handed over as the harness's EffortArgs or
+	// EffortEnv say to. Args and Env are extra argv and environment for the
+	// runner, used as given. All three are sticky with respect to the card, as
+	// Model is, and none is checked against a list. See
+	// docs/launch-options-design.md.
+	Effort string            `json:"effort,omitempty"`
+	Args   []string          `json:"args,omitempty"`
+	Env    map[string]string `json:"env,omitempty"`
 	// Source, ExternalID and URL record where this work came from. See
 	// store.SetOrigin and docs/intake-design.md.
 	Source     string `json:"source,omitempty"`
@@ -196,6 +205,20 @@ func expandTemplate(tmpl []string, cwd, title, cmd string, args []string) []stri
 // reason: a joined prompt with a quote in it becomes a shell's problem rather
 // than the runner's.
 func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []string, logged string, err error) {
+	return runnerArgsWith(h, resume, rawPrompt, launchOptions{Model: rawModel})
+}
+
+// launchOptions is what a launch passes to the runner beyond its prompt: the
+// two convenience fields each harness row maps, and extra argv used as given.
+// See docs/launch-options-design.md.
+type launchOptions struct {
+	Model, Effort string
+	Args          []string
+}
+
+// runnerArgsWith is runnerArgs with the effort and the extra argv as well.
+func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions) (args []string, logged string, err error) {
+	rawModel := o.Model
 	args = h.Args
 	if resume != "" {
 		if len(h.ResumeArgs) == 0 {
@@ -236,33 +259,18 @@ func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []st
 	// because those REPLACE the base arguments: a resumed session keeps the
 	// model it was started on, which is the whole point of the card holding
 	// it.
-	if model := strings.TrimSpace(rawModel); model != "" {
-		if len(h.ModelArgs) == 0 {
-			// REFUSED, NOT IGNORED. Starting on the default after being asked
-			// for something else is invisible until the output or the bill is
-			// wrong, and by then nobody remembers which session was which.
-			return nil, "", fmt.Errorf("%s has no way to be given a model. "+
-				"set model arguments on the runner, using {model} where the name goes", h.Label)
-		}
-		// The same refusal `{resume}` gets, for the same reason: arguments
-		// that never mention the value run, and run with the wrong one.
-		var carries bool
-		for _, a := range h.ModelArgs {
-			if strings.Contains(a, "{model}") {
-				carries = true
-			}
-		}
-		if !carries {
-			return nil, "", fmt.Errorf("%s takes a model as %s, which never uses the name "+
-				"asked for, so it would start on whatever that spells. put {model} where "+
-				"the name goes", h.Label, shellJoin(h.ModelArgs))
-		}
-		next := make([]string, 0, len(args)+len(h.ModelArgs))
-		next = append(next, args...)
-		for _, a := range h.ModelArgs {
-			next = append(next, strings.ReplaceAll(a, "{model}", model))
-		}
-		args = next
+	//
+	// Effort goes on the same way, after the model. The extra argv goes last
+	// before the prompt, so it can override an earlier flag on a runner that
+	// takes the last one.
+	if args, err = withMapped(h, args, "model", "name", h.ModelArgs, h.ModelEnv, rawModel); err != nil {
+		return nil, "", err
+	}
+	if args, err = withMapped(h, args, "effort", "level", h.EffortArgs, h.EffortEnv, o.Effort); err != nil {
+		return nil, "", err
+	}
+	if len(o.Args) > 0 {
+		args = append(append([]string{}, args...), o.Args...)
 	}
 
 	logged = shellJoin(append([]string{h.Cmd}, args...))
@@ -285,6 +293,103 @@ func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []st
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+// withMapped appends one convenience field (model or effort) in the shape the
+// harness row declares, or refuses when the row has no shape for it. The
+// placeholder is the field's own name in braces.
+//
+// A row that maps the field by env var only adds no argv here: launchOptionEnv sets
+// the variable. Either mapping counts as the runner being able to take it.
+func withMapped(h *store.Harness, args []string, field, noun string, tmpl []string, envName, raw string) ([]string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return args, nil
+	}
+	if len(tmpl) == 0 {
+		if strings.TrimSpace(envName) != "" {
+			return args, nil
+		}
+		// REFUSED, NOT IGNORED. Starting on the default after being asked
+		// for something else is invisible until the output or the bill is
+		// wrong, and by then nobody remembers which session was which.
+		return nil, fmt.Errorf("%s has no way to be given a%s %s. "+
+			"set %s arguments on the runner, using {%s} where the %s goes, or a %s env var",
+			h.Label, article(field), field, field, field, noun, field)
+	}
+	// The same refusal `{resume}` gets, for the same reason: arguments that
+	// never mention the value run, and run with the wrong one.
+	ph := "{" + field + "}"
+	var carries bool
+	for _, a := range tmpl {
+		if strings.Contains(a, ph) {
+			carries = true
+		}
+	}
+	if !carries {
+		return nil, fmt.Errorf("%s takes a%s %s as %s, which never uses the %s "+
+			"asked for, so it would start on whatever that spells. put %s where "+
+			"the %s goes", h.Label, article(field), field, shellJoin(tmpl), noun, ph, noun)
+	}
+	next := make([]string, 0, len(args)+len(tmpl))
+	next = append(next, args...)
+	for _, a := range tmpl {
+		next = append(next, strings.ReplaceAll(a, ph, value))
+	}
+	return next, nil
+}
+
+func article(word string) string {
+	if strings.ContainsRune("aeiou", rune(word[0])) {
+		return "n"
+	}
+	return ""
+}
+
+// launchOptionEnv is the environment one launch adds over the harness's own: the
+// extra env as given, then the model and effort vars the row maps. See the env
+// order in docs/launch-options-design.md.
+//
+// Three collisions are refused rather than settled by order, because each
+// would run the session on a value nobody can see was chosen. An `ATRIUM_` key
+// would lose to atrium's own block, and those are how the session is known. A
+// key the row maps for a field that was also asked for is two values for one
+// variable. And a row that maps model and effort to one variable cannot carry
+// both.
+func launchOptionEnv(h *store.Harness, extra map[string]string, model, effort string) (map[string]string, error) {
+	out := map[string]string{}
+	for k, v := range extra {
+		k = strings.TrimSpace(k)
+		if k == "" || strings.Contains(k, "=") {
+			return nil, fmt.Errorf("%q is not an environment variable name", k)
+		}
+		if strings.HasPrefix(strings.ToUpper(k), "ATRIUM_") {
+			return nil, fmt.Errorf("%s is atrium's own, and a launch cannot set it. "+
+				"atrium sets the ATRIUM_ variables that say which session this is", k)
+		}
+		out[k] = v
+	}
+	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	modelEnv, effortEnv := strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv)
+	if model != "" && effort != "" && modelEnv != "" && strings.EqualFold(modelEnv, effortEnv) {
+		return nil, fmt.Errorf("%s takes both model and effort in %s, so it cannot be given "+
+			"both. name one of them, or give the runner two variables", h.Label, modelEnv)
+	}
+	for _, m := range []struct{ name, field, value string }{
+		{modelEnv, "model", model}, {effortEnv, "effort", effort},
+	} {
+		if m.name == "" || m.value == "" {
+			continue
+		}
+		for k := range out {
+			if strings.EqualFold(k, m.name) {
+				return nil, fmt.Errorf("%s was given in env and is also where %s takes its %s. "+
+					"name the %s or set %s, not both", k, h.Label, m.field, m.field, k)
+			}
+		}
+		out[m.name] = m.value
+	}
+	return out, nil
 }
 
 // Launch starts a runner and returns the card it created.
@@ -758,7 +863,26 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if model == "" && task != nil {
 		model = task.Model
 	}
-	args, logged, err := runnerArgs(h, req.Resume, wanted, model)
+	// The effort and the extras fall back to the card the same way, each on
+	// its own, so a relaunch naming only a model keeps the card's effort.
+	effort, extraArgs, extraEnv := strings.TrimSpace(req.Effort), req.Args, req.Env
+	if task != nil {
+		if effort == "" {
+			effort = task.Effort
+		}
+		if len(extraArgs) == 0 {
+			extraArgs = task.LaunchArgs
+		}
+		if len(extraEnv) == 0 {
+			extraEnv = task.LaunchEnv
+		}
+	}
+	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
+	args, logged, err := runnerArgsWith(h, req.Resume, wanted, opts)
+	if err != nil {
+		return nil, err
+	}
+	addedEnv, err := launchOptionEnv(h, extraEnv, model, effort)
 	if err != nil {
 		return nil, err
 	}
@@ -914,7 +1038,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if gate, ok := permGateDefault(h.Env); ok {
 		atrium["ATRIUM_PERM_GATE"] = gate
 	}
-	env := childEnvFrom(base, h.Env, atrium)
+	env := childEnvFrom(base, overEnv(h.Env, addedEnv), atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 
@@ -927,7 +1051,15 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			freshArgs, err := finishArgs(h.Args)
+			// The same model, effort and extras as the resume, which is what
+			// the card asked for. Built from `h.Args` alone this came back on
+			// the runner's default model.
+			base, _, err := runnerArgsWith(h, "", "", opts)
+			if err != nil {
+				d.launchFailed(task.ID, err.Error())
+				return nil, err
+			}
+			freshArgs, err := finishArgs(base)
 			if err != nil {
 				d.launchFailed(task.ID, err.Error())
 				return nil, err
@@ -1057,6 +1189,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if err := d.st.SetModel(created.ID, model); err != nil {
 		return nil, err
 	}
+	if err := d.st.SetLaunchOptions(created.ID, effort, extraArgs, extraEnv); err != nil {
+		return nil, err
+	}
 	source, url := req.Source, req.URL
 	if req.SourceKind != "" {
 		source = req.SourceKind
@@ -1074,6 +1209,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// `cmd` is the command before the lean flags, which carry the whole
 		// settings copy. These two say what was added.
 		"lean": lean, "mcp": leanMCP,
+		// `cmd` carries the effort and extra args already. The env is keys
+		// only, because its values never leave the room's database.
+		"effort": effort, "env_keys": sortedKeys(extraEnv),
 	}); err != nil {
 		return nil, err
 	}
@@ -1308,6 +1446,31 @@ func briefPrompt(prompt string) string {
 // except the tainted keys, then the harness's own settings, then atrium's.
 func childEnv(harnessEnv map[string]string, atrium map[string]string) []string {
 	return childEnvFrom(os.Environ(), harnessEnv, atrium)
+}
+
+// overEnv is the harness env with one launch's additions over it. A copy, so
+// the harness row is never written to.
+func overEnv(harnessEnv, added map[string]string) map[string]string {
+	if len(added) == 0 {
+		return harnessEnv
+	}
+	out := make(map[string]string, len(harnessEnv)+len(added))
+	for k, v := range harnessEnv {
+		out[k] = v
+	}
+	for k, v := range added {
+		out[k] = v
+	}
+	return out
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // childEnvFrom is childEnv over a given base rather than this process's own.

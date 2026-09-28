@@ -871,6 +871,9 @@ async function editHarness(id, room, seed) {
   document.getElementById("h-resume").value = (h.resume_args || []).join("\n");
   document.getElementById("h-prompt").value = (h.prompt_args || []).join("\n");
   document.getElementById("h-model").value = (h.model_args || []).join("\n");
+  document.getElementById("h-effort").value = (h.effort_args || []).join("\n");
+  document.getElementById("h-model-env").value = h.model_env || "";
+  document.getElementById("h-effort-env").value = h.effort_env || "";
   document.getElementById("h-exit").value = (h.exit_keys || []).join("\n");
   document.getElementById("h-prepare").value = h.prepare || "";
   document.getElementById("h-bracket").checked = !!h.bracketed_paste;
@@ -910,6 +913,9 @@ function harnessFromForm() {
     resume_args: linesToList(document.getElementById("h-resume").value),
     prompt_args: linesToList(document.getElementById("h-prompt").value),
     model_args: linesToList(document.getElementById("h-model").value),
+    effort_args: linesToList(document.getElementById("h-effort").value),
+    model_env: document.getElementById("h-model-env").value.trim(),
+    effort_env: document.getElementById("h-effort-env").value.trim(),
     exit_keys: linesToList(document.getElementById("h-exit").value),
     prepare: document.getElementById("h-prepare").value.trim(),
     // Sent on every save, so editing a runner for something else does not
@@ -1101,11 +1107,19 @@ async function recogniseLink() {
 // The card remembers the model for restarts, but each launch starts with an
 // empty field. Hide the control for runners without model_args, such as shells.
 function setLaunchModel(h) {
+  // The effort box resets and hides the same way, for a runner with no way to
+  // take one.
+  const effortField = document.getElementById("l-effort-field");
+  const effortBox = document.getElementById("l-effort");
+  if (effortField && effortBox) {
+    effortField.hidden = !(h && ((h.effort_args || []).length || (h.effort_env || "").trim()));
+    effortBox.value = "";
+  }
   const field = document.getElementById("l-model-field");
   const box = document.getElementById("l-model");
   if (!field || !box) return;
 
-  const can = !!(h && (h.model_args || []).length);
+  const can = !!(h && ((h.model_args || []).length || (h.model_env || "").trim()));
   field.hidden = !can;
   box.value = "";
   if (!can) return;
@@ -1455,7 +1469,7 @@ function fillLaunchRoom(ontoTask) {
 function syncMore() {
   const more = document.getElementById("l-more");
   if (!more) return;
-  const filled = ["l-url", "l-model", "l-title", "l-tags", "l-why", "l-prompt"]
+  const filled = ["l-url", "l-model", "l-effort", "l-title", "l-tags", "l-why", "l-prompt"]
     .some(id => {
       const el = document.getElementById(id);
       return el && String(el.value || "").trim() !== "";
@@ -1522,7 +1536,9 @@ async function launchNow() {
       ? document.getElementById("l-prompt").value.trim() : "",
     // An empty model uses the runner default for new cards. Existing cards keep
     // their saved model when no replacement is supplied.
-    model: document.getElementById("l-model").value.trim()
+    model: document.getElementById("l-model").value.trim(),
+    // The same for the effort. See docs/launch-options-design.md.
+    effort: document.getElementById("l-effort").value.trim()
   });
   // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never
   // overwrites a card field with an empty value, so a plain launch says

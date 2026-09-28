@@ -414,6 +414,12 @@ type LaunchInput struct {
 	// Runner names a configured harness. Empty means claude.
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	// The launch options, as the hub's atrium_launch takes them. See
+	// docs/launch-options-design.md.
+	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, in the shape its runner row declares. not checked against any list. empty is the runner's default"`
+	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, in the shape its runner row declares. not checked. empty is the runner's default"`
+	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, used as given. shown on the card, so keep secrets out"`
+	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. the card shows the names only"`
 }
 
 type LaunchOutput struct {
@@ -508,6 +514,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": prompt, "tags": in.Tags,
+		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 	}
 	var t card
 	if err := ask(ctx, http.MethodPost, "/v1/launch", req, &t); err != nil {

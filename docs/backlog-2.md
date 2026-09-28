@@ -54,7 +54,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it, conflicts with 37 |
 | 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
 | 47 | A resident session's alias defaults from its name | feature | not started |
-| 48 | `atrium_launch` takes a model and a thinking effort | feature | not started |
+| 48 | `atrium_launch` takes a model and a thinking effort | feature | DONE by sa48 on `claude/launch-model-effort`, not merged, needs room and hub restarts |
 
 ------------
 
@@ -1055,6 +1055,13 @@ an interviewer for example, costs as much per turn as a full worker.
 Expected: `atrium_launch` takes an optional model and an optional thinking effort (`low`, `medium` or `high`), and
 the runner starts with them. Left out, the runner's defaults hold, as today. The card shows the model and effort it
 runs with.
+
+**Status, 2026-09-28, sa48: built on `claude/launch-model-effort`, not merged.** Widened by clint to a pass-through:
+`args` and `env` go to any runner as given, and `model` and `effort` are mapped per runner row (`effort_args`,
+`model_env`, `effort_env` beside `model_args`). Nothing holds a list of models or levels. Migration 0065. See
+`docs/launch-options-design.md` and `docs/test-plan.md` section BZ. Proven: `claude --model
+claude-haiku-4-5-20251001 --effort low` runs on Haiku 4.5 (58 thinking tokens against 222 at the default). Claude
+warns about and ignores an effort level it does not know rather than refusing it.
 
 
 ------------

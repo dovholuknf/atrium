@@ -97,6 +97,9 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 		TaskID:  taskID,
 		Resume:  d.reopenResume(fresh),
 		Model:   fresh.Model,
+		Effort:  fresh.Effort,
+		Args:    fresh.LaunchArgs,
+		Env:     fresh.LaunchEnv,
 	}
 	// launchLocked, not Launch: this call already holds the launch lock for this
 	// card and resume, and Launch would try to take it again.
