@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -696,18 +695,13 @@ type runner struct {
 	// else is going on, which is what the operator sitting at the keyboard feels.
 	// See `noteOperatorTyped`, `howBusy` and `injectPeer`.
 	//
-	// `midLine` is whether keystrokes have arrived since the last thing that
-	// ends a line, and `lastTyped` is when the most recent one landed. Between
-	// them they answer the only question that decides whether another session
-	// may type into this terminal.
-	//
-	// `unsent` is the real count of characters sitting on the operator's current
-	// line, and it is stricter than `midLine`. A printable key adds one, a
-	// backspace takes one off, and a submit or a cancel resets it to zero. So a
-	// line typed and then backspaced all the way back to empty reads as EMPTY
-	// here, where `midLine` alone still read it as dirty and refused an injection
-	// into a line that no longer had anything on it. Zero is the only count that
-	// lets a peer message be typed. See `noteOperatorTyped` and `peerGateOpen`.
+	// `line` is atrium's model of what is on the operator's current line, the
+	// text and not a count, and `lastTyped` is when the most recent keystroke
+	// landed. Between them they answer the only question that decides whether
+	// another session may type into this terminal. A line typed and then
+	// backspaced all the way back reads as EMPTY. Terminal reports (focus,
+	// mouse, device and cursor replies) move neither. See typedline.go,
+	// `noteOperatorTyped` and `peerGateOpen`.
 	//
 	// THE DAEMON IS THE RIGHT PLACE and the board is not, even though the
 	// board already tracks something similar for path completion. That copy is
@@ -723,9 +717,8 @@ type runner struct {
 	// runner's output to guess at this is the line `B2-20` declines to cross,
 	// and it would be a guess where this is a record.
 	typeMu    sync.Mutex
-	midLine   bool
+	line      typedLine
 	lastTyped time.Time
-	unsent    int
 	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
 	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
@@ -734,9 +727,6 @@ type runner struct {
 	// peerCause is what that submission was, a say or a wake, for the usage
 	// record. See usage.go.
 	peerCause string
-	// inPaste is inside a bracketed paste, where a carriage return is text
-	// being pasted and not the operator pressing Enter.
-	inPaste bool
 	// onKey is called after every operator keystroke is recorded, outside
 	// typeMu. It is how a deferred peer message learns the operator is back at
 	// the keyboard and re-arms its retry to the front of the backoff. Nil when
@@ -899,30 +889,17 @@ var (
 // bytes here would have atrium deciding the operator was busy because atrium
 // had just typed something.
 //
-// What ends a line: a bare carriage return submits it, and the two ways a line
-// is thrown away are control-c and control-u. All three reset the count to
-// zero. A backspace takes one character off, so a line edited all the way back
-// to nothing counts as empty rather than as something still being worked on,
-// which is the whole reason the count exists beside `midLine`. A printable key
-// adds one.
+// NOT EVERY BYTE ON THE SOCKET IS A KEY. The terminal answers focus changes,
+// clicks and queries on the same channel, and a frame of nothing but those
+// leaves the line, the idle clock and any waiting message exactly as they were.
+// Counting them is how clicking into a terminal held every say to it.
 //
-// NOT EVERY CARRIAGE RETURN IS ENTER. The board sends shift-enter as ESC CR and
-// ctrl-enter as a bare newline, and both put a newline INTO a multi-line prompt
-// without sending it. Reading either as a submit zeroed the count on every
-// multi-line prompt, so the gate opened on a half-written message and atrium
-// typed into it. Both now add to the line, as does a carriage return inside a
-// bracketed paste. A shell that submits on ctrl-enter is read as still busy
-// until its next plain Enter, which errs toward holding a message, never
-// toward typing over somebody.
-//
-// Other escape sequences count their bytes. An up arrow on an empty prompt
-// recalls a line, so treating it as text is closer to the truth than not.
-//
-// A UTF-8 lead or continuation byte counts as one each, so a multi-byte glyph
-// over-counts and a backspace after it clears only the last byte. The count
-// then floors at empty on a submit or a cancel, and a mid-line injection was
-// never going to land during active multi-byte input anyway, so the rough edge
-// costs nothing the gate cares about.
+// What each key does to the line is `typedLine.feed`'s. Enter, control-c and
+// control-u empty it. Backspace takes a character, and control-backspace,
+// alt-backspace and control-w take a word. Shift-enter (ESC CR), ctrl-enter (a
+// bare newline) and a carriage return inside a bracketed paste are newlines IN
+// the prompt, not a send: reading them as a submit once opened the gate on a
+// half-written message.
 func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return
@@ -930,45 +907,14 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	// typeMu, not r.mu: a human keystroke's bookkeeping must never wait behind a
 	// peer injection or output fanout. See the runner struct's typeMu note.
 	r.typeMu.Lock()
-	r.lastTyped = time.Now()
-	for i := 0; i < len(p); i++ {
-		b := p[i]
-		if b == 0x1b {
-			rest := p[i:]
-			switch {
-			case bytes.HasPrefix(rest, pasteStart):
-				r.inPaste = true
-				r.unsent++
-				i += len(pasteStart) - 1
-				continue
-			case bytes.HasPrefix(rest, pasteEnd):
-				r.inPaste = false
-				i += len(pasteEnd) - 1
-				continue
-			case len(rest) > 1 && rest[1] == '\r': // shift-enter: a newline, not a send
-				r.unsent++
-				i++
-				continue
-			}
-		}
-		switch {
-		case b == '\r' && !r.inPaste:
-			r.unsent = 0
-		case b == '\r' || b == '\n': // a newline inside the prompt
-			r.unsent++
-		case b == 0x03 || b == 0x15: // control-c, control-u
-			r.unsent = 0
-			r.inPaste = false
-		case b == 0x7f || b == 0x08: // delete, backspace
-			if r.unsent > 0 {
-				r.unsent--
-			}
-		case b >= 0x20:
-			r.unsent++
-		}
+	keyed := r.line.feed(p)
+	if keyed {
+		r.lastTyped = time.Now()
 	}
-	r.midLine = r.unsent > 0
 	r.typeMu.Unlock()
+	if !keyed {
+		return
+	}
 	// Outside typeMu, and last, so the reset a deferred message does cannot
 	// deadlock against the lock this just held. A keystroke means the operator
 	// is at the keyboard now, so any peer message waiting on a long backoff
@@ -1025,7 +971,7 @@ const (
 func (r *runner) howBusy() peerRoom {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
-	if r.midLine {
+	if !r.line.empty() {
 		return peerMidLine
 	}
 	if !r.lastTyped.IsZero() && time.Since(r.lastTyped) < peerQuiet {
@@ -1038,7 +984,7 @@ func (r *runner) howBusy() peerRoom {
 // right now.
 //
 // THE GATE, and it is stricter than `howBusy`. Two things have to hold at once:
-// the operator's current line is empty (`unsent` is zero, which counts a line
+// the operator's current line is empty (`typedLine.empty`, which counts a line
 // typed and then backspaced to nothing as empty), and no keystroke has landed
 // in the last `peerGateIdle`. So a message lands only in a real gap, never into
 // a part written line and never a fraction of a second after the operator
@@ -1050,13 +996,58 @@ func (r *runner) howBusy() peerRoom {
 func (r *runner) peerGateOpen() bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
-	if r.unsent != 0 {
-		return false
+	open, _ := r.gateLocked()
+	return open
+}
+
+// gateLocked is the gate and the reason for it, in words the readout shows.
+// The caller holds typeMu.
+func (r *runner) gateLocked() (bool, string) {
+	if r.line.unsure != "" {
+		return false, "not sure what is on the line, after " + r.line.unsure
+	}
+	if n := r.line.count(); n > 0 {
+		return false, fmt.Sprintf("%d unsent character(s) on the line", n)
 	}
 	if r.lastTyped.IsZero() {
-		return true
+		return true, "nothing typed here yet"
 	}
-	return time.Since(r.lastTyped) >= peerGateIdle
+	if since := time.Since(r.lastTyped); since < peerGateIdle {
+		return false, fmt.Sprintf("line empty, waiting for %s of quiet", peerGateIdle)
+	}
+	return true, "line empty and quiet"
+}
+
+// typingState is what the board's typing readout shows: atrium's model of the
+// operator's line and the gate it drives. See `handleTypingState`.
+type typingState struct {
+	Line    string `json:"line"`
+	Count   int    `json:"count"`
+	Unsure  string `json:"unsure,omitempty"`
+	InPaste bool   `json:"in_paste,omitempty"`
+	// SinceMS is how long ago the last keystroke landed, or -1 for never.
+	SinceMS int64  `json:"since_ms"`
+	Open    bool   `json:"open"`
+	Reason  string `json:"reason"`
+}
+
+// typing reads the state under typeMu. Only the readout asks, and only while
+// it is switched on, so the keystroke path pays nothing for it.
+func (r *runner) typing() typingState {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	s := typingState{
+		Line:    string(r.line.text),
+		Count:   r.line.count(),
+		Unsure:  r.line.unsure,
+		InPaste: r.line.inPaste,
+		SinceMS: -1,
+	}
+	if !r.lastTyped.IsZero() {
+		s.SinceMS = time.Since(r.lastTyped).Milliseconds()
+	}
+	s.Open, s.Reason = r.gateLocked()
+	return s
 }
 
 // writeOperatorInput writes the operator's own keystrokes to the pty under the
@@ -1773,6 +1764,9 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// BEFORE `add`, which is the moment an attach can find this runner. A
 	// viewer that arrived between the two would be sent the new terminal's
 	// first bytes and nothing before them, which is the bug being fixed.
+	if t, err := d.st.Get(taskID); err == nil {
+		r.line.escClears = clearsOnEsc(t.Runner)
+	}
 	d.adoptCarryover(r)
 	d.sup.add(r)
 
@@ -1868,7 +1862,13 @@ func (d *Daemon) awaitExit(r *runner) {
 	tail := lastOutput(r.buf.Tail(tailBytes), 12)
 	r.closePTY()
 	d.sup.remove(r.taskID)
-	// The process is gone, so nothing it was doing is still true.
+	// The process is gone, so nothing it was doing is still true. That includes
+	// a message held for its terminal: the retry is dropped now rather than at a
+	// backoff tick hours out, and the message stays queued for a resumed
+	// session's hooks.
+	if d.pending != nil {
+		d.pending.drop(r.taskID)
+	}
 	d.act.forget(r.taskID)
 
 	code := 0

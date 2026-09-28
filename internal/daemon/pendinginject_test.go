@@ -125,7 +125,7 @@ func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
 	// Open gate, so the only thing that can stop a type is the reconcile.
 	r.typeMu.Lock()
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
-	r.unsent = 0
+	r.line = typedLine{}
 	r.typeMu.Unlock()
 
 	m, _ := d.st.QueueFromPeer(target.ID, "handled already", "sg4/doer")

@@ -20,8 +20,8 @@ func TestANewlineInsideAPromptKeepsTheLineUnsent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := &runner{}
 			r.noteOperatorTyped(keys)
-			if r.unsent == 0 || !r.midLine {
-				t.Fatalf("%q left the line counted as empty: unsent=%d", keys, r.unsent)
+			if r.line.empty() {
+				t.Fatalf("%q left the line counted as empty: count=%d", keys, r.line.count())
 			}
 		})
 	}
@@ -33,8 +33,8 @@ func TestEnterControlCAndControlUStillEmptyTheLine(t *testing.T) {
 			r := &runner{}
 			r.noteOperatorTyped([]byte("a line\x1b\rmore"))
 			r.noteOperatorTyped([]byte(end))
-			if r.unsent != 0 || r.midLine {
-				t.Fatalf("%s did not empty the line: unsent=%d", name, r.unsent)
+			if !r.line.empty() {
+				t.Fatalf("%s did not empty the line: count=%d", name, r.line.count())
 			}
 		})
 	}
@@ -45,8 +45,8 @@ func TestEnterAfterAPasteSendsIt(t *testing.T) {
 	r := &runner{}
 	r.noteOperatorTyped([]byte("\x1b[200~pasted\rtext\x1b[201~"))
 	r.noteOperatorTyped([]byte("\r"))
-	if r.unsent != 0 {
-		t.Fatalf("enter after a paste did not send it: unsent=%d", r.unsent)
+	if !r.line.empty() {
+		t.Fatalf("enter after a paste did not send it: count=%d", r.line.count())
 	}
 }
 

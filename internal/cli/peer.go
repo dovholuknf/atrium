@@ -66,7 +66,7 @@ func newPeers() *cobra.Command {
 func newTell() *cobra.Command {
 	var name, hubURL, when string
 	c := &cobra.Command{
-		Use:   "tell <handle> <message>",
+		Use:   "tell <handle or @alias> <message>",
 		Short: "Say something to another session.",
 		Long: "Says something to another session. It is typed into that session's terminal as " +
 			"soon as its input line is empty and no dialog is open, even mid-turn, and otherwise " +
@@ -77,7 +77,7 @@ func newTell() *cobra.Command {
 			"should not disturb it mid-thought.\n\n" +
 			"The message is labeled with who sent it, and the receiving session is told it " +
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
-			"not know the handle.",
+			"not know the handle. A card's alias, `sa89` or `@dotfiles`, works in its place.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: speaksForItself(func(cmd *cobra.Command, args []string) error {
 			to := args[0]
@@ -138,7 +138,10 @@ func whoAmI(name string) string {
 }
 
 type peerRow struct {
-	Handle   string `json:"handle"`
+	Handle string `json:"handle"`
+	// Alias is the short name the operator gave it, printed beside the handle
+	// and accepted by `atrium tell` in its place.
+	Alias    string `json:"alias"`
 	Title    string `json:"title"`
 	Status   string `json:"status"`
 	Worktree string `json:"worktree"`
@@ -215,8 +218,8 @@ func listPeers(out io.Writer, hubURL, name string, fleet bool, since string) err
 func printPeers(out io.Writer, peers []peerRow) {
 	width := 0
 	for _, p := range peers {
-		if len(p.Handle) > width {
-			width = len(p.Handle)
+		if n := len(peerLabel(p)); n > width {
+			width = n
 		}
 	}
 
@@ -287,7 +290,15 @@ func printPeerRow(out io.Writer, width int, p peerRow) {
 	if p.Waiting > 0 {
 		queued = fmt.Sprintf("  [%d waiting]", p.Waiting)
 	}
-	fmt.Fprintf(out, "  %-*s  %s%s%s\n", width, p.Handle, oneLine(what), age, queued)
+	fmt.Fprintf(out, "  %-*s  %s%s%s\n", width, peerLabel(p), oneLine(what), age, queued)
+}
+
+// peerLabel is the handle, and the alias beside it when there is one.
+func peerLabel(p peerRow) string {
+	if p.Alias == "" {
+		return p.Handle
+	}
+	return p.Handle + " @" + p.Alias
 }
 
 // oneLine flattens and bounds a field that may hold a paragraph.
