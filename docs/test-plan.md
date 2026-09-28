@@ -3888,7 +3888,7 @@ and the older card's is unchanged. Tick it again afterwards.
 Backlog-2 item 26. A toast used to go early three ways. When the card it was about stopped waiting (a held message
 typed in as the turn ends does that inside a second), the next poll took it down. A fourth toast removed the oldest
 at once. Nothing held one under the pointer. Now an answered toast says `· answered` and goes when an ordinary toast
-would. A full stack queues the newcomer until the oldest has been up 6 seconds. Hovering holds a toast. The headless
+would. A full stack queues the newcomer until a toast leaves. Hovering holds a toast. The headless
 sections `toastLives` and `toastStays` cover all three.
 
 ### BM1. Answered is not gone
@@ -3903,9 +3903,8 @@ toast stays, dimmed, with `· answered` after its title. It goes about 9 seconds
 
 1. In the browser console, run `for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four")`.
 
-**Expected:** three toasts show and `burst 1` stays. About 6 seconds later `burst 1` goes and `burst 4` takes its
-place. At phone width the cap is one, and the same holds: each toast is up at least 6 seconds before the next
-replaces it.
+**Expected:** three toasts show and `burst 1` stays. About 9 seconds later `burst 1` goes and `burst 4` takes its
+place. At phone width the cap is one, and the same holds: each toast lives its 9 seconds before the next shows.
 
 ### BM3. Hovering holds it
 

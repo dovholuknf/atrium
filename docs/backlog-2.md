@@ -623,8 +623,8 @@ raise a toast, then do each thing found above, and it is still on screen after 5
 Done 2026-09-28 by sa83 (`c843139`). Three causes. `reapToasts` took down a keyed toast the poll after its card
 stopped waiting, which a held message typed in at turn end does inside a second. The cap removed the oldest toast the
 moment a fourth arrived. Nothing held a toast under the pointer. The view switch, dialogs and `placeToasts` were
-checked and take nothing. An answered toast now says so and lives out its 9 seconds, a full stack queues until the
-oldest has been up 6 seconds, and hovering pauses the clock. Headless `toastLives`, test plan BM.
+checked and take nothing. An answered toast now says so and lives out its 9 seconds, a full stack queues until a
+toast leaves, and hovering pauses the clock. Headless `toastLives`, test plan BM.
 
 ## 27. A say to a session that has gone waits forever, blaming the input line (bug)
 

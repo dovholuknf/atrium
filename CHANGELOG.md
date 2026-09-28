@@ -11,7 +11,7 @@ section heading is just "what landed in this iteration."
   the next poll once that card ran again, and a held message typed in as the turn ends does that at once. A fourth
   toast removed the oldest on arrival, so a burst went by in a blink. Nothing held a toast under the pointer. Now
   an answered toast stays, dimmed and marked `· answered`, and goes when an ordinary toast would. A full stack
-  queues the newcomer until the oldest has been up 6 seconds, and a toast's clock starts when it is shown. Hovering
+  queues the newcomer until a toast leaves, and a toast's clock starts when it is shown. Hovering
   pauses its clock, and leaving gives back the time it had. The new headless section `toastLives` covers it and
   fails on the old code. HUB-SIDE.
 
